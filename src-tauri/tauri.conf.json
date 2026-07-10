@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VisualTeX",
+  "version": "0.1.0",
+  "identifier": "com.visualtex.studio",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VisualTeX",
+        "width": 1240,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 650,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "专业的 LaTeX 可视化公式编辑器",
+    "longDescription": "使用可视化结构、智能命令候选和实时源码共同编辑 LaTeX 数学公式。"
+  }
+}
