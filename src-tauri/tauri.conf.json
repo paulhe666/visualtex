@@ -30,6 +30,7 @@
     "targets": "all",
     "category": "Productivity",
     "shortDescription": "专业的 LaTeX 可视化公式编辑器",
-    "longDescription": "使用可视化结构、智能命令候选和实时源码共同编辑 LaTeX 数学公式。"
+    "longDescription": "使用可视化结构、智能命令候选、PaddleOCR 公式识别和实时源码共同编辑 LaTeX 数学公式。",
+    "resources": ["ocr/worker.py"]
   }
 }

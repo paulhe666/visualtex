@@ -1,12 +1,15 @@
 import {
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
   forwardRef,
+  type ReactNode,
 } from "react";
 import { MathfieldElement } from "mathlive";
+import { flushSync } from "react-dom";
 import { Plus } from "lucide-react";
 import type { CommandSource, LatexCommand } from "../types/command";
 import { searchCommands } from "../autocomplete/CommandSearchEngine";
@@ -14,8 +17,17 @@ import { CommandSuggestionPopup } from "../autocomplete/CommandSuggestionPopup";
 import { useEditorStore } from "../stores/editorStore";
 import { normalizeChineseLatex } from "./normalizeChineseLatex";
 
+export interface MathEditorInsertionTarget {
+  lineId: string;
+  ranges: Array<[number, number]>;
+  direction: "forward" | "backward" | "none";
+}
+
 export interface MathEditorHandle {
   insertCommand: (command: LatexCommand, source?: "toolbar" | "history" | "shortcut") => void;
+  insertLatex: (latex: string) => void;
+  insertLatexAt: (target: MathEditorInsertionTarget, latex: string) => boolean;
+  appendLatex: (latex: string) => void;
   undo: () => void;
   redo: () => void;
   focus: () => void;
@@ -26,6 +38,8 @@ interface Props {
   lines: string[];
   onChange: (lines: string[]) => void;
   zoom: number;
+  onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
+  overlay?: ReactNode;
 }
 
 interface FormulaFieldProps {
@@ -38,6 +52,7 @@ interface FormulaFieldProps {
   onInput: (index: number, field: MathfieldElement) => void;
   onFocus: (index: number, field: MathfieldElement) => void;
   onKeyDown: (index: number, event: KeyboardEvent, field: MathfieldElement) => void;
+  onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
 }
 
 const trailingCommand = /\\([\p{L}]*)$/u;
@@ -90,7 +105,7 @@ function FormulaField(props: FormulaFieldProps) {
   const propsRef = useRef(props);
   propsRef.current = props;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
@@ -137,19 +152,76 @@ function FormulaField(props: FormulaFieldProps) {
       if (event.isComposing || composing) return;
       propsRef.current.onKeyDown(propsRef.current.index, event, field);
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      const offset = field.getOffsetFromPoint(event.clientX, event.clientY, {
-        bias: 1,
-      });
-      if (offset !== field.lastOffset) return;
+    const handlePaste = (event: ClipboardEvent) => {
+      const clipboard = event.clipboardData;
+      if (!clipboard || !propsRef.current.onPasteImage) return;
+
+      const item = Array.from(clipboard.items).find(
+        (candidate) =>
+          candidate.kind === "file" && candidate.type.startsWith("image/"),
+      );
+      const image = item?.getAsFile() ??
+        Array.from(clipboard.files).find((file) => file.type.startsWith("image/"));
+      if (!image) return;
 
       event.preventDefault();
+      event.stopPropagation();
+      propsRef.current.onFocus(propsRef.current.index, field);
+
+      const selection = field.selection;
+      propsRef.current.onPasteImage(image, {
+        lineId,
+        ranges: selection.ranges.map(
+          ([start, end]) => [start, end] as [number, number],
+        ),
+        direction: selection.direction ?? "none",
+      });
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+
+      const content = field.shadowRoot?.querySelector<HTMLElement>(
+        '[part="content"]',
+      );
+      const contentBounds = content?.getBoundingClientRect();
+      const hostBounds = host.getBoundingClientRect();
+      const clickedInsideHost =
+        event.clientX >= hostBounds.left &&
+        event.clientX <= hostBounds.right &&
+        event.clientY >= hostBounds.top &&
+        event.clientY <= hostBounds.bottom;
+      if (!clickedInsideHost) return;
+
+      const hasVisibleFormula = Boolean(field.value.trim()) && contentBounds;
+      const clickedInRightBlankArea = hasVisibleFormula
+        ? event.clientX > contentBounds.right + 6
+        : true;
+
+      // Preserve MathLive's native hit testing for every click on or between
+      // rendered formula atoms. Only the unused row area to the right maps to
+      // the mathematical end of the line.
+      if (!clickedInRightBlankArea) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const end = field.lastOffset;
       field.focus();
-      field.position = field.lastOffset;
+      field.selection = {
+        ranges: [[end, end]],
+        direction: "none",
+      };
+      field.position = end;
+      field.shadowRoot
+        ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
       propsRef.current.onFocus(propsRef.current.index, field);
     };
-
     host.replaceChildren(field);
+    // MathLive mounts a pre-filled field with the whole formula selected.
+    // Collapse that implicit selection so toolbar commands insert at the end
+    // instead of unexpectedly replacing/wrapping the entire line.
+    field.position = field.lastOffset;
     fieldRef.current = field;
     propsRef.current.register(lineId, field);
     field.addEventListener("compositionstart", handleCompositionStart);
@@ -157,7 +229,8 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("input", handleInput);
     field.addEventListener("focus", handleFocus);
     field.addEventListener("keydown", handleKeyDown, true);
-    field.addEventListener("pointerdown", handlePointerDown, true);
+    field.addEventListener("paste", handlePaste, true);
+    host.addEventListener("pointerdown", handlePointerDown, true);
 
     return () => {
       field.removeEventListener("compositionstart", handleCompositionStart);
@@ -165,7 +238,8 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("input", handleInput);
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("keydown", handleKeyDown, true);
-      field.removeEventListener("pointerdown", handlePointerDown, true);
+      field.removeEventListener("paste", handlePaste, true);
+      host.removeEventListener("pointerdown", handlePointerDown, true);
       propsRef.current.register(lineId, null);
       fieldRef.current = null;
       host.replaceChildren();
@@ -179,7 +253,13 @@ function FormulaField(props: FormulaFieldProps) {
     // 本地输入仅因中文规范化而与 store 不同时，不重建 MathLive 模型，
     // 否则会丢失当前光标、选区以及删除键的内部状态。
     if (normalizeChineseLatex(field.value) === props.latex) return;
-    field.value = props.latex;
+    field.setValue(props.latex, {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceAll",
+      selectionMode: "after",
+      silenceNotifications: true,
+    });
   }, [props.latex]);
 
   useEffect(() => {
@@ -214,13 +294,14 @@ function FormulaField(props: FormulaFieldProps) {
 }
 
 export const MathEditor = forwardRef<MathEditorHandle, Props>(
-  function MathEditor({ lines, onChange, zoom }, ref) {
+  function MathEditor({ lines, onChange, zoom, onPasteImage, overlay }, ref) {
     const surfaceRef = useRef<HTMLDivElement>(null);
     const fieldRefs = useRef(new Map<string, MathfieldElement>());
     const lineIdsRef = useRef<string[]>([]);
     const linesRef = useRef(lines);
     const activeIndexRef = useRef(0);
     const activeLineIdRef = useRef<string | null>(null);
+    const focusRequestRef = useRef(0);
     const pendingFocusRef = useRef<{
       lineId: string;
       index: number;
@@ -262,40 +343,72 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       index: number,
       moveToEnd = false,
       remainingAttempts = 8,
+      requestId = ++focusRequestRef.current,
     ) => {
       const lineId = lineIdsRef.current[index];
       if (!lineId) return;
 
-      window.requestAnimationFrame(() => {
-        const field = fieldRefs.current.get(lineId);
-        if (!field?.isConnected) {
-          if (remainingAttempts > 0) {
-            window.setTimeout(
-              () => focusLine(index, moveToEnd, remainingAttempts - 1),
-              0,
-            );
-          }
-          return;
+      activeIndexRef.current = index;
+      activeLineIdRef.current = lineId;
+      setActiveIndex(index);
+
+      const applyFocus = () => {
+        if (
+          requestId !== focusRequestRef.current ||
+          activeLineIdRef.current !== lineId
+        ) {
+          return false;
         }
 
-        activeIndexRef.current = index;
-        activeLineIdRef.current = lineId;
-        setActiveIndex(index);
+        const field = fieldRefs.current.get(lineId);
+        if (!field?.isConnected) return false;
+
         field.focus();
+        const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
+          '[part="keyboard-sink"]',
+        );
+        keyboardSink?.focus({ preventScroll: true });
+
         if (moveToEnd) {
-          field.executeCommand("moveToMathfieldEnd");
-          field.position = field.lastOffset;
+          const end = field.lastOffset;
+          field.selection = {
+            ranges: [[end, end]],
+            direction: "none",
+          };
+          field.position = end;
         }
+        return true;
+      };
+
+      const finishFocus = () => {
+        if (!applyFocus()) return false;
+
         pendingFocusRef.current = null;
 
-        if (moveToEnd) {
-          window.requestAnimationFrame(() => {
-            if (!field.isConnected) return;
-            field.focus();
-            field.executeCommand("moveToMathfieldEnd");
-            field.position = field.lastOffset;
-          });
-        }
+        // MathLive also performs an asynchronous internal focus transfer.
+        // Reapply the caret after that transfer without delaying the first
+        // usable keyboard focus.
+        window.requestAnimationFrame(() => {
+          if (!applyFocus()) return;
+          window.setTimeout(applyFocus, 80);
+        });
+        return true;
+      };
+
+      if (finishFocus()) return;
+
+      window.requestAnimationFrame(() => {
+        if (finishFocus() || remainingAttempts <= 0) return;
+        window.setTimeout(
+          () =>
+            focusLine(
+              index,
+              moveToEnd,
+              remainingAttempts - 1,
+              requestId,
+            ),
+          16,
+        );
       });
     };
 
@@ -439,20 +552,31 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       nextLines.splice(nextIndex, 0, "");
       lineIdsRef.current.splice(nextIndex, 0, nextLineId);
       linesRef.current = nextLines;
+      activeIndexRef.current = nextIndex;
+      activeLineIdRef.current = nextLineId;
+      setActiveIndex(nextIndex);
       pendingFocusRef.current = {
         lineId: nextLineId,
         index: nextIndex,
         moveToEnd: false,
       };
-      onChange(nextLines);
+      flushSync(() => onChange(nextLines));
       setQuery("");
-      window.setTimeout(() => focusLine(nextIndex), 0);
+      focusLine(nextIndex);
     };
 
     const removeEmptyLine = (index: number) => {
       if (linesRef.current.length <= 1) return;
 
       const removedLineId = lineIdsRef.current[index];
+      const removedField = removedLineId
+        ? fieldRefs.current.get(removedLineId)
+        : undefined;
+      // Release MathLive's global/internal keyboard focus before React removes
+      // the custom element. Otherwise its delayed blur can override the focus
+      // that we assign to the previous line.
+      removedField?.blur();
+
       const nextLines = linesRef.current.filter((_, lineIndex) => lineIndex !== index);
       lineIdsRef.current.splice(index, 1);
       if (removedLineId) fieldRefs.current.delete(removedLineId);
@@ -468,9 +592,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         index: previousIndex,
         moveToEnd: true,
       };
-      onChange(nextLines);
+      flushSync(() => onChange(nextLines));
       setQuery("");
-      window.setTimeout(() => focusLine(previousIndex, true), 0);
+      focusLine(previousIndex, true);
     };
 
     const handleKeyDown = (
@@ -538,19 +662,183 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      if (
-        event.key === "Backspace" &&
-        field.value.trim() === "" &&
-        linesRef.current.length > 1
-      ) {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        const visibleLatex = field
+          .getValue("latex-without-placeholders")
+          .trim();
+
+        if (visibleLatex === "" && linesRef.current.length > 1) {
+          event.preventDefault();
+          event.stopPropagation();
+          removeEmptyLine(index);
+          return;
+        }
+
+        // Preserve MathLive's native word/line deletion shortcuts such as
+        // Option+Backspace and Command+Backspace on macOS.
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+          return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
-        removeEmptyLine(index);
+
+        const beforeValue = field.value;
+        const beforePosition = field.position;
+        const command =
+          event.key === "Backspace" ? "deleteBackward" : "deleteForward";
+
+        field.executeCommand(command);
+
+        // At a fraction/root/matrix boundary MathLive may only move the caret
+        // on the first delete command, which feels like the key stopped working.
+        // If no content changed but the caret moved into the structure, perform
+        // the actual deletion in the same keystroke.
+        if (
+          field.value === beforeValue &&
+          field.position !== beforePosition &&
+          field.selectionIsCollapsed
+        ) {
+          field.executeCommand(command);
+        }
+
+        window.requestAnimationFrame(() => syncField(index, field));
       }
+    };
+
+    const normalizeInsertedLatex = (latex: string) =>
+      latex
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join("\\quad ");
+
+    const insertLatex = (latex: string) => {
+      const value = normalizeInsertedLatex(latex);
+      if (!value) return;
+
+      let targetIndex = lineIdsRef.current.indexOf(
+        activeLineIdRef.current ?? "",
+      );
+      if (targetIndex < 0) {
+        targetIndex = Math.min(
+          activeIndexRef.current,
+          Math.max(0, linesRef.current.length - 1),
+        );
+      }
+
+      const lineId = lineIdsRef.current[targetIndex];
+      const field = lineId ? fieldRefs.current.get(lineId) : undefined;
+      if (!field?.isConnected) return;
+
+      field.focus();
+      const inserted = field.insert(value, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceSelection",
+        selectionMode: "after",
+        focus: true,
+        scrollIntoView: false,
+      });
+      if (!inserted) return;
+
+      setQuery("");
+      setSelectedIndex(0);
+      syncField(targetIndex, field);
+      focusLine(targetIndex);
+    };
+
+    const insertLatexAt = (
+      target: MathEditorInsertionTarget,
+      latex: string,
+    ): boolean => {
+      const value = normalizeInsertedLatex(latex);
+      if (!value) return false;
+
+      const targetIndex = lineIdsRef.current.indexOf(target.lineId);
+      const field = fieldRefs.current.get(target.lineId);
+      if (targetIndex < 0 || !field?.isConnected) return false;
+
+      const lastOffset = field.lastOffset;
+      const ranges = target.ranges.length
+        ? target.ranges.map(([start, end]) => [
+            Math.max(0, Math.min(start, lastOffset)),
+            Math.max(0, Math.min(end, lastOffset)),
+          ] as [number, number])
+        : [[lastOffset, lastOffset] as [number, number]];
+
+      activeIndexRef.current = targetIndex;
+      activeLineIdRef.current = target.lineId;
+      setActiveIndex(targetIndex);
+      field.focus();
+      field.selection = {
+        ranges,
+        direction: target.direction,
+      };
+
+      const inserted = field.insert(value, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceSelection",
+        selectionMode: "after",
+        focus: true,
+        scrollIntoView: false,
+      });
+      if (!inserted) return false;
+
+      setQuery("");
+      setSelectedIndex(0);
+      syncField(targetIndex, field);
+      focusLine(targetIndex);
+      return true;
+    };
+
+    const appendLatex = (latex: string) => {
+      const values = latex
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!values.length) return;
+
+      const replacesOnlyBlankLine =
+        linesRef.current.length === 1 && !linesRef.current[0].trim();
+      const nextLines = replacesOnlyBlankLine
+        ? values
+        : [...linesRef.current, ...values];
+
+      if (replacesOnlyBlankLine) {
+        const firstLineId = lineIdsRef.current[0] ?? crypto.randomUUID();
+        lineIdsRef.current = [
+          firstLineId,
+          ...values.slice(1).map(() => crypto.randomUUID()),
+        ];
+      } else {
+        lineIdsRef.current.push(...values.map(() => crypto.randomUUID()));
+      }
+      linesRef.current = nextLines;
+
+      const lastIndex = nextLines.length - 1;
+      const lastLineId = lineIdsRef.current[lastIndex];
+      activeIndexRef.current = lastIndex;
+      activeLineIdRef.current = lastLineId;
+      setActiveIndex(lastIndex);
+      pendingFocusRef.current = {
+        lineId: lastLineId,
+        index: lastIndex,
+        moveToEnd: true,
+      };
+      flushSync(() => onChange(nextLines));
+      setQuery("");
+      focusLine(lastIndex, true);
     };
 
     useImperativeHandle(ref, () => ({
       insertCommand,
+      insertLatex,
+      insertLatexAt,
+      appendLatex,
       undo: () => {
         const index = activeIndexRef.current;
         const lineId = activeLineIdRef.current;
@@ -592,6 +880,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
     return (
       <div ref={surfaceRef} className="editor-surface multi-line-editor">
+        {overlay}
         <div className="mathfield-stack">
           {lines.map((line, index) => {
             const lineId = lineIdsRef.current[index];
@@ -612,6 +901,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 register={registerField}
                 onInput={syncField}
                 onFocus={(lineIndex, field) => {
+                  if (activeLineIdRef.current !== lineId) {
+                    focusRequestRef.current += 1;
+                  }
                   activeIndexRef.current = lineIndex;
                   activeLineIdRef.current = lineId;
                   setActiveIndex(lineIndex);
@@ -624,6 +916,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 onKeyDown={(lineIndex, event, field) =>
                   handleKeyDown(lineIndex, lineId, event, field)
                 }
+                onPasteImage={onPasteImage}
               />
             </div>
             );

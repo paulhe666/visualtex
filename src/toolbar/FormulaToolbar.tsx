@@ -113,7 +113,6 @@ export function FormulaToolbar({ onInsert }: Props) {
               type="button"
               className={"template-button" + previewSizeClass(command)}
               key={command.id}
-              onPointerDown={(event) => event.preventDefault()}
               onClick={() => onInsert(command)}
               title={
                 (isEn ? command.labelEn : command.labelZh) +

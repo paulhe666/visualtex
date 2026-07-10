@@ -521,7 +521,7 @@ input:focus-visible {
   flex-basis: 142px;
 }
 
-.template-button.is-compact .math-preview-field {
+.template-button.is-compact .math-preview {
   font-size: 15px;
   transform: scale(0.88);
   transform-origin: center;
@@ -539,24 +539,12 @@ input:focus-visible {
   overflow: hidden;
   contain: layout paint;
   pointer-events: none;
+  font-size: 18px;
 }
 
-.math-preview-field {
-  min-width: 0;
+.math-preview .ML__latex {
   max-width: 100%;
-  padding: 0 !important;
-  border: 0 !important;
-  outline: none !important;
-  background: transparent !important;
   pointer-events: none;
-  font-size: 18px;
-  color: inherit;
-  --caret-color: transparent;
-  --selection-background-color: transparent;
-}
-
-.template-button .math-preview-field {
-  font-size: 18px;
 }
 
 .workspace {
@@ -599,6 +587,60 @@ input:focus-visible {
   letter-spacing: -0.3px;
 }
 
+.canvas-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-ocr-model {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.canvas-ocr-model svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.canvas-ocr-model > span {
+  color: var(--text-faint);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+}
+
+.canvas-ocr-model select {
+  width: 146px;
+  height: 26px;
+  padding: 0 24px 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.canvas-ocr-model select:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.canvas-ocr-model select:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .canvas-controls {
   gap: 4px;
   padding: 3px;
@@ -637,6 +679,118 @@ input:focus-visible {
 .editor-surface:focus-within {
   border-color: var(--accent-border);
   box-shadow: 0 0 0 3px rgba(101, 88, 232, 0.07), var(--shadow-sm);
+}
+
+.inline-ocr-progress {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 24;
+  max-width: min(430px, calc(100% - 28px));
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 8px 28px rgba(28, 25, 55, 0.13);
+  backdrop-filter: blur(14px);
+}
+
+.inline-ocr-progress-icon {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.inline-ocr-progress > div {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inline-ocr-progress strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-ocr-progress > div > span {
+  color: var(--text-faint);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 7px;
+}
+
+.inline-ocr-progress.is-success {
+  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
+}
+
+.inline-ocr-progress.is-success .inline-ocr-progress-icon {
+  background: color-mix(in srgb, var(--success) 13%, transparent);
+  color: var(--success);
+}
+
+.inline-ocr-progress.is-error {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+}
+
+.inline-ocr-progress.is-error .inline-ocr-progress-icon {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.inline-ocr-progress.is-cancelled .inline-ocr-progress-icon {
+  background: color-mix(in srgb, var(--text-faint) 12%, transparent);
+  color: var(--text-muted);
+}
+
+.inline-ocr-cancel,
+.inline-ocr-dismiss {
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.inline-ocr-cancel {
+  padding: 0 8px;
+}
+
+.inline-ocr-dismiss {
+  width: 25px;
+  padding: 0;
+}
+
+.inline-ocr-cancel:hover,
+.inline-ocr-dismiss:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.inline-ocr-cancel:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .editor-hint {
@@ -1411,6 +1565,8 @@ kbd {
 }
 
 .formula-line .visual-mathfield {
+  width: 100%;
+  display: block;
   min-height: 80px;
   justify-content: flex-start;
   padding: 15px 22px !important;
@@ -1594,6 +1750,572 @@ kbd {
   box-shadow: var(--shadow-sm);
 }
 
+.ocr-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(980px, calc(100vw - 36px));
+  max-height: calc(100vh - 40px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  animation: dialog-in 170ms ease-out;
+}
+
+.ocr-dialog-header {
+  min-height: 72px;
+}
+
+.ocr-heading,
+.ocr-runtime-summary,
+.ocr-runtime-details,
+.ocr-file-meta,
+.ocr-result-heading,
+.ocr-result-actions,
+.ocr-progress-label,
+.ocr-input-tip {
+  display: flex;
+  align-items: center;
+}
+
+.ocr-heading {
+  gap: 11px;
+}
+
+.ocr-heading-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ocr-dialog-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 18px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.ocr-input-column,
+.ocr-output-column {
+  min-width: 0;
+}
+
+.ocr-output-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocr-drop-zone {
+  position: relative;
+  min-height: 258px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed var(--border-strong);
+  border-radius: 13px;
+  background: var(--bg-elevated);
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.ocr-drop-zone.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.ocr-drop-zone.has-image {
+  border-style: solid;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--border) 45%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--border) 45%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--border) 45%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--border) 45%, transparent) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.ocr-drop-zone img {
+  width: 100%;
+  height: 258px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.ocr-image-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+}
+
+.ocr-image-actions button,
+.ocr-drop-empty button,
+.ocr-runtime-details button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+.ocr-image-actions button {
+  height: 30px;
+  padding: 0 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ocr-drop-empty {
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.ocr-drop-empty strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ocr-drop-empty > span:not(.ocr-drop-icon) {
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.ocr-drop-empty button {
+  height: 32px;
+  margin-top: 3px;
+  padding: 0 13px;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ocr-drop-empty small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+}
+
+.ocr-drop-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 3px;
+  border: 1px solid var(--accent-border);
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.ocr-file-meta {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 31px;
+  padding: 0 4px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.ocr-file-meta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-model-field,
+.ocr-latex-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ocr-model-field {
+  margin-top: 12px;
+}
+
+.ocr-model-field > span,
+.ocr-latex-editor > span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ocr-model-field select,
+.ocr-latex-editor textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.ocr-model-field select {
+  height: 36px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.ocr-model-field select:focus,
+.ocr-latex-editor textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ocr-model-field small {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.ocr-model-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.ocr-model-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.ocr-input-tip {
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-soft) 38%, transparent);
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.ocr-input-tip svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.ocr-runtime-card,
+.ocr-result-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.ocr-runtime-card {
+  padding: 12px;
+}
+
+.ocr-runtime-summary {
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.ocr-runtime-summary > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ocr-runtime-summary strong {
+  font-size: 10px;
+}
+
+.ocr-runtime-summary span {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.ocr-runtime-icon {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-faint) 12%, transparent);
+  color: var(--text-muted);
+}
+
+.ocr-runtime-icon.is-ready {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+
+.ocr-runtime-details {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ocr-runtime-details > span {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-faint);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 7px;
+}
+
+.ocr-runtime-details button {
+  height: 24px;
+  padding: 0 8px;
+}
+
+.ocr-runtime-details button.is-danger:hover,
+.secondary-button.is-danger:hover {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--border));
+  color: var(--danger);
+}
+
+.ocr-install-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ocr-install-panel p {
+  margin: 0 0 9px;
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.ocr-install-panel .primary-button {
+  margin: 0;
+}
+
+.ocr-progress-label {
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 8px;
+}
+
+.ocr-progress-track {
+  height: 6px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.ocr-progress-track span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.ocr-install-panel small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 7px;
+}
+
+.ocr-result-card {
+  min-height: 280px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.ocr-result-heading {
+  min-height: 52px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ocr-result-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ocr-result-heading strong {
+  font-size: 10px;
+}
+
+.ocr-result-heading > span {
+  color: var(--text-faint);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 7px;
+}
+
+.ocr-empty-result,
+.ocr-recognizing-state {
+  min-height: 220px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.ocr-empty-result span,
+.ocr-recognizing-state span {
+  max-width: 320px;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.ocr-recognizing-state strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.ocr-recognizing-state .ocr-recognition-meta {
+  max-width: 340px;
+  color: var(--text-faint);
+  font-size: 7px;
+  line-height: 1.55;
+}
+
+.ocr-recognizing-state svg,
+.ocr-empty-result svg {
+  color: var(--accent);
+}
+
+.ocr-formula-preview {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.ocr-formula-preview .math-preview {
+  min-width: min-content;
+  overflow: visible;
+  font-size: 30px;
+}
+
+.ocr-latex-editor {
+  flex: 1;
+  padding: 11px 12px 12px;
+}
+
+.ocr-latex-editor textarea {
+  min-height: 92px;
+  flex: 1;
+  resize: vertical;
+  padding: 9px 10px;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.ocr-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  color: var(--danger);
+}
+
+.ocr-error-box svg {
+  flex: 0 0 auto;
+}
+
+.ocr-error-box pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.ocr-dialog-footer {
+  gap: 12px;
+}
+
+.ocr-dialog-footer > .secondary-button,
+.ocr-result-actions .secondary-button,
+.ocr-result-actions .primary-button {
+  margin: 0;
+}
+
+.ocr-result-actions {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+button:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.48;
+}
+
+.is-spinning {
+  animation: spin 850ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes toolbar-open {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1682,9 +2404,28 @@ kbd {
     height: 70px;
   }
 
+  .workspace-heading {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .canvas-ocr-model > span {
+    display: none;
+  }
+
+  .canvas-ocr-model select {
+    width: 118px;
+  }
+
   .editor-surface {
     padding-right: 26px;
     padding-left: 26px;
+  }
+
+  .inline-ocr-progress {
+    top: 8px;
+    right: 8px;
+    max-width: calc(100% - 16px);
   }
 
   .source-toggle-row > span {
