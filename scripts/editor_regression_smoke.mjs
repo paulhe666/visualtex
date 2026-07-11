@@ -135,6 +135,23 @@ async function main() {
       await sleep(35);
     };
 
+    const waitForEvaluation = async (
+      expression,
+      description,
+      timeoutMs = 5000,
+    ) => {
+      const started = Date.now();
+      let lastValue;
+      while (Date.now() - started < timeoutMs) {
+        lastValue = await evaluate(expression);
+        if (lastValue?.ready) return lastValue;
+        await sleep(50);
+      }
+      throw new Error(
+        `Timed out waiting for ${description}: ${JSON.stringify(lastValue)}`,
+      );
+    };
+
     const replaceFocusedText = async (text) => {
       const selectAll = {
         key: "a",
@@ -307,15 +324,39 @@ async function main() {
       throw new Error(`Recommendation remained visible after commit: ${JSON.stringify(nativeCommitState)}`);
     }
 
+    await waitForEvaluation(
+      `(() => {
+        const button = document.querySelector('button[aria-label="撤销"]');
+        return { ready: Boolean(button && !button.disabled), disabled: button?.disabled ?? true };
+      })()`,
+      "native candidate undo button",
+    );
     await evaluate(`document.querySelector('button[aria-label="撤销"]').click()`);
-    await sleep(260);
-    const nativeUndoValue = await evaluate(`document.querySelector("math-field").value`);
+    const nativeUndoState = await waitForEvaluation(
+      `(() => {
+        const value = document.querySelector("math-field").value;
+        const redo = document.querySelector('button[aria-label="重做"]');
+        return {
+          ready: value === ${JSON.stringify(nativeBeforeArrow.value)} && Boolean(redo && !redo.disabled),
+          value,
+          redoDisabled: redo?.disabled ?? true,
+        };
+      })()`,
+      "native candidate undo replay",
+    );
+    const nativeUndoValue = nativeUndoState.value;
     if (nativeUndoValue !== nativeBeforeArrow.value) {
       throw new Error(`Global undo did not restore the native candidate input: ${JSON.stringify({ nativeBeforeArrow, nativeUndoValue })}`);
     }
     await evaluate(`document.querySelector('button[aria-label="重做"]').click()`);
-    await sleep(260);
-    const nativeRedoValue = await evaluate(`document.querySelector("math-field").value`);
+    const nativeRedoState = await waitForEvaluation(
+      `(() => {
+        const value = document.querySelector("math-field").value;
+        return { ready: value === ${JSON.stringify(nativeCommitState.value)}, value };
+      })()`,
+      "native candidate redo replay",
+    );
+    const nativeRedoValue = nativeRedoState.value;
     if (nativeRedoValue !== nativeCommitState.value) {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
