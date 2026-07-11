@@ -3,7 +3,7 @@
   <h1>VisualTeX</h1>
   <p><strong>可视化 LaTeX 公式编辑器 · Visual LaTeX Formula Editor</strong></p>
   <p>
-    <a href="https://github.com/paulhe666/visualtex/releases/tag/v0.1.0">下载 v0.1.0 / Download v0.1.0</a>
+    <a href="https://github.com/paulhe666/visualtex/releases/tag/v0.1.1">下载 v0.1.1 / Download v0.1.1</a>
     ·
     <a href="#中文">中文</a>
     ·
@@ -17,17 +17,16 @@
 
 VisualTeX 是一款面向数学、物理、工程和科研写作场景的桌面 LaTeX 公式编辑器。它把结构化可视化编辑、LaTeX 源码、命令候选和本地公式 OCR 放在同一个工作区中，让用户无需安装 TeX Live，也能快速创建、修改、复制和整理数学公式。
 
-当前版本：**0.1.0**
+当前版本：**0.1.1**
 
 ## 下载
 
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
-| macOS Apple Silicon | [VisualTeX_0.1.0_aarch64.dmg](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_aarch64.dmg) | 适用于 M 系列 Apple 芯片 |
-| Windows x64 | [VisualTeX_0.1.0_x64-setup.exe](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_x64-setup.exe) | 推荐，大多数用户使用此安装程序 |
-| Windows x64 | [VisualTeX_0.1.0_x64_en-US.msi](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_x64_en-US.msi) | MSI 安装包 |
-| Linux x64 | [VisualTeX_0.1.0_amd64.AppImage](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_amd64.AppImage) | 通用 AppImage |
-| Debian / Ubuntu x64 | [VisualTeX_0.1.0_amd64.deb](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_amd64.deb) | Debian 软件包 |
+| macOS Apple Silicon | [VisualTeX_0.1.1_aarch64.dmg](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_aarch64.dmg) | 适用于 M 系列 Apple 芯片 |
+| Windows x64 | [VisualTeX_0.1.1_x64-setup.exe](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_x64-setup.exe) | NSIS 安装程序，安装开始时检测 OCR 所需 Python 环境 |
+| Linux x64 | [VisualTeX_0.1.1_amd64.AppImage](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_amd64.AppImage) | 通用 AppImage |
+| Debian / Ubuntu x64 | [VisualTeX_0.1.1_amd64.deb](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_amd64.deb) | Debian 软件包 |
 
 当前安装包尚未进行商业代码签名，因此 macOS Gatekeeper、Windows SmartScreen 或部分 Linux 桌面环境可能显示安全提醒。请确认安装包来自本仓库的正式 Release 页面。
 
@@ -95,21 +94,21 @@ OCR 为可选功能。第一次使用时需要安装独立 Python 运行环境�
 
 ### Windows
 
-优先使用 `VisualTeX_0.1.0_x64-setup.exe`。也可使用 MSI 安装包进行标准部署。若 SmartScreen 显示未知发布者，请确认文件来自本仓库 Release 后再继续。
+使用 `VisualTeX_0.1.1_x64-setup.exe`。安装程序会在复制文件前检测 OCR 所需的 64 位 Python 3.9–3.13；若环境不兼容，会明确提示，但仍允许继续安装不依赖 OCR 的公式编辑功能。若 SmartScreen 显示未知发布者，请确认文件来自本仓库 Release 后再继续。
 
 ### Linux
 
 AppImage：
 
 ```bash
-chmod +x VisualTeX_0.1.0_amd64.AppImage
-./VisualTeX_0.1.0_amd64.AppImage
+chmod +x VisualTeX_0.1.1_amd64.AppImage
+./VisualTeX_0.1.1_amd64.AppImage
 ```
 
 Debian / Ubuntu：
 
 ```bash
-sudo apt install ./VisualTeX_0.1.0_amd64.deb
+sudo apt install ./VisualTeX_0.1.1_amd64.deb
 ```
 
 ## OCR 环境说明
@@ -178,17 +177,16 @@ VisualTeX 始终以 LaTeX 字符串作为公式的单一数据源。可视化编
 
 VisualTeX is a desktop LaTeX formula editor for mathematics, physics, engineering, education, and scientific writing. It combines structured visual editing, editable LaTeX source, command suggestions, and local formula OCR in one workspace. No TeX Live installation is required for editing and copying formulas.
 
-Current version: **0.1.0**
+Current version: **0.1.1**
 
 ## Downloads
 
 | Platform | Package | Notes |
 | --- | --- | --- |
-| macOS Apple Silicon | [VisualTeX_0.1.0_aarch64.dmg](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_aarch64.dmg) | For Apple M-series Macs |
-| Windows x64 | [VisualTeX_0.1.0_x64-setup.exe](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_x64-setup.exe) | Recommended installer |
-| Windows x64 | [VisualTeX_0.1.0_x64_en-US.msi](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_x64_en-US.msi) | MSI package |
-| Linux x64 | [VisualTeX_0.1.0_amd64.AppImage](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_amd64.AppImage) | Portable AppImage |
-| Debian / Ubuntu x64 | [VisualTeX_0.1.0_amd64.deb](https://github.com/paulhe666/visualtex/releases/download/v0.1.0/VisualTeX_0.1.0_amd64.deb) | Debian package |
+| macOS Apple Silicon | [VisualTeX_0.1.1_aarch64.dmg](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_aarch64.dmg) | For Apple M-series Macs |
+| Windows x64 | [VisualTeX_0.1.1_x64-setup.exe](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_x64-setup.exe) | NSIS installer with an OCR Python prerequisite check |
+| Linux x64 | [VisualTeX_0.1.1_amd64.AppImage](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_amd64.AppImage) | Portable AppImage |
+| Debian / Ubuntu x64 | [VisualTeX_0.1.1_amd64.deb](https://github.com/paulhe666/visualtex/releases/download/v0.1.1/VisualTeX_0.1.1_amd64.deb) | Debian package |
 
 The current packages are not commercially code-signed. macOS Gatekeeper, Windows SmartScreen, or some Linux desktop environments may display a warning. Verify that the package was downloaded from the official Release page of this repository.
 
@@ -256,21 +254,21 @@ The current macOS package targets Apple Silicon. An Intel Mac build is not inclu
 
 ### Windows
 
-Use `VisualTeX_0.1.0_x64-setup.exe` for a normal installation, or the MSI package for managed deployment. If SmartScreen reports an unknown publisher, verify the file against the official Release page before continuing.
+Use `VisualTeX_0.1.1_x64-setup.exe`. Before copying files, the installer checks for the 64-bit Python 3.9–3.13 runtime required by OCR. An incompatible environment produces a clear warning while still allowing installation of all non-OCR editor features. If SmartScreen reports an unknown publisher, verify the file against the official Release page before continuing.
 
 ### Linux
 
 AppImage:
 
 ```bash
-chmod +x VisualTeX_0.1.0_amd64.AppImage
-./VisualTeX_0.1.0_amd64.AppImage
+chmod +x VisualTeX_0.1.1_amd64.AppImage
+./VisualTeX_0.1.1_amd64.AppImage
 ```
 
 Debian / Ubuntu:
 
 ```bash
-sudo apt install ./VisualTeX_0.1.0_amd64.deb
+sudo apt install ./VisualTeX_0.1.1_amd64.deb
 ```
 
 ## OCR runtime requirements

@@ -23,6 +23,19 @@ os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "BOS")
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ.setdefault("GLOG_minloglevel", "2")
 
+# The worker protocol is UTF-8 on every platform. Windows may otherwise inherit
+# a legacy console code page such as CP936/GBK.
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="strict")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="strict", line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(
+        encoding="utf-8",
+        errors="backslashreplace",
+        line_buffering=True,
+    )
+
 _PROTOCOL_STDOUT = sys.stdout
 _CURRENT_MODEL: Any = None
 _CURRENT_MODEL_NAME: Optional[str] = None
@@ -37,7 +50,9 @@ _MODEL_DOWNLOAD_MB = {
 
 
 def _emit(payload: Dict[str, Any]) -> None:
-    _PROTOCOL_STDOUT.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    # ASCII-safe JSON makes the pipe protocol independent of the user's system
+    # locale even if a dependency changes a stream encoding at runtime.
+    _PROTOCOL_STDOUT.write(json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n")
     _PROTOCOL_STDOUT.flush()
 
 

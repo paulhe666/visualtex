@@ -76,6 +76,56 @@ impl Drop for OcrWorker {
     }
 }
 
+fn read_worker_json<R: BufRead>(
+    reader: &mut R,
+    closed_message: &str,
+    response_name: &str,
+) -> Result<Value, String> {
+    loop {
+        let mut bytes = Vec::new();
+        let count = reader
+            .read_until(b'\n', &mut bytes)
+            .map_err(|error| format!("Unable to read {response_name}: {error}"))?;
+        if count == 0 {
+            return Err(closed_message.to_string());
+        }
+
+        while bytes
+            .last()
+            .is_some_and(|byte| matches!(*byte, b'\n' | b'\r'))
+        {
+            bytes.pop();
+        }
+        if bytes.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+
+        let first_non_whitespace = bytes
+            .iter()
+            .copied()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if first_non_whitespace != Some(b'{') {
+            // Native dependencies occasionally write diagnostics to stdout.
+            // Ignore those lines so they cannot corrupt the JSON protocol.
+            continue;
+        }
+
+        match serde_json::from_slice(&bytes) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                // This fallback prevents a legacy Windows code page from
+                // crashing the reader. New workers always emit ASCII-safe JSON.
+                let output = String::from_utf8_lossy(&bytes);
+                return serde_json::from_str(output.trim()).map_err(|lossy_error| {
+                    format!(
+                        "{response_name} returned invalid JSON: {error}; UTF-8-lossy parse: {lossy_error}; output={output:?}"
+                    )
+                });
+            }
+        }
+    }
+}
+
 impl OcrWorker {
     fn send(&mut self, app: &AppHandle, payload: &Value) -> Result<Value, String> {
         if let Some(status) = self.child.try_wait().map_err(|error| error.to_string())? {
@@ -92,18 +142,11 @@ impl OcrWorker {
             .map_err(|error| format!("Unable to flush OCR request: {error}"))?;
 
         loop {
-            let mut line = String::new();
-            let bytes = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(|error| format!("Unable to read OCR response: {error}"))?;
-            if bytes == 0 {
-                return Err("OCR worker closed its output stream".to_string());
-            }
-
-            let response: Value = serde_json::from_str(line.trim()).map_err(|error| {
-                format!("OCR worker returned invalid JSON: {error}; output={line:?}")
-            })?;
+            let response = read_worker_json(
+                &mut self.stdout,
+                "OCR worker closed its output stream",
+                "OCR response",
+            )?;
             if response.get("event").and_then(Value::as_str) == Some("progress") {
                 let _ = app.emit("ocr-recognition-progress", &response);
                 continue;
@@ -186,6 +229,7 @@ struct PythonProbe {
     major: u8,
     minor: u8,
     machine: String,
+    executable: String,
 }
 
 fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
@@ -274,44 +318,85 @@ fn command_output(command: &mut Command, label: &str) -> Result<String, String> 
     ))
 }
 
-fn probe_python(candidate: &Path) -> Result<PythonProbe, String> {
-    let script = r#"import json, platform, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'machine': platform.machine()}))"#;
-    let output = command_output(
-        Command::new(candidate).arg("-c").arg(script),
-        "Python version check",
-    )?;
+fn probe_python(
+    program: &Path,
+    prefix_args: &[String],
+    label: &str,
+) -> Result<PythonProbe, String> {
+    let script = r#"import json, platform, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'machine': platform.machine(), 'executable': sys.executable}))"#;
+    let mut command = Command::new(program);
+    command
+        .args(prefix_args)
+        .arg("-c")
+        .arg(script)
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
+    let output = command_output(&mut command, &format!("Python version check ({label})"))?;
     serde_json::from_str(&output)
         .map_err(|error| format!("Python returned an invalid version response: {error}"))
 }
 
 fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
+    let mut candidates: Vec<(String, PathBuf, Vec<String>)> = Vec::new();
+
     if let Ok(explicit) = env::var("VISUALTEX_PYTHON") {
-        candidates.push(PathBuf::from(explicit));
+        let explicit = explicit.trim().trim_matches('"');
+        if !explicit.is_empty() {
+            candidates.push((
+                "VISUALTEX_PYTHON".to_string(),
+                PathBuf::from(explicit),
+                Vec::new(),
+            ));
+        }
     }
+
+    if cfg!(windows) {
+        // The Windows Python launcher usually exposes installed runtimes via
+        // selectors rather than python3.13.exe-style command names. Probe each
+        // supported version explicitly so a default Python 3.14 installation
+        // cannot hide an installed 3.9–3.13 runtime.
+        for minor in (9..=13).rev() {
+            for launcher in ["py.exe", "py"] {
+                for selector in [format!("-V:3.{minor}"), format!("-3.{minor}")] {
+                    candidates.push((
+                        format!("{launcher} {selector}"),
+                        PathBuf::from(launcher),
+                        vec![selector],
+                    ));
+                }
+            }
+        }
+    }
+
     for name in [
         "python3.13",
         "python3.12",
         "python3.11",
         "python3.10",
+        "python3.9",
         "python3",
     ] {
-        candidates.push(PathBuf::from(name));
+        candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
     }
+
     if cfg!(windows) {
         for name in ["python.exe", "python", "py.exe", "py"] {
-            candidates.push(PathBuf::from(name));
+            candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
         }
     }
     if cfg!(target_os = "macos") {
-        candidates.push(PathBuf::from("/opt/homebrew/bin/python3"));
-        candidates.push(PathBuf::from("/usr/local/bin/python3"));
-        candidates.push(PathBuf::from("/usr/bin/python3"));
+        for path in [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ] {
+            candidates.push((path.to_string(), PathBuf::from(path), Vec::new()));
+        }
     }
 
     let mut failures = Vec::new();
-    for candidate in candidates {
-        match probe_python(&candidate) {
+    for (label, program, prefix_args) in candidates {
+        match probe_python(&program, &prefix_args, &label) {
             Ok(probe) => {
                 let version_ok = probe.major == 3 && (9..=13).contains(&probe.minor);
                 let machine = probe.machine.to_ascii_lowercase();
@@ -323,21 +408,24 @@ fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
                     true
                 };
                 if version_ok && architecture_ok {
-                    return Ok((candidate, probe));
+                    let executable = PathBuf::from(&probe.executable);
+                    if executable.as_os_str().is_empty() {
+                        failures.push(format!("{label}: Python did not report sys.executable"));
+                        continue;
+                    }
+                    return Ok((executable, probe));
                 }
                 failures.push(format!(
-                    "{}: Python {}, architecture {}",
-                    candidate.display(),
-                    probe.version,
-                    probe.machine
+                    "{label}: Python {}, architecture {}",
+                    probe.version, probe.machine
                 ));
             }
-            Err(error) => failures.push(format!("{}: {error}", candidate.display())),
+            Err(error) => failures.push(format!("{label}: {error}")),
         }
     }
 
     Err(format!(
-        "No compatible Python 3.9–3.13 interpreter was found. Checked:\n{}",
+        "未检测到可用于 OCR 的 64 位 Python 3.9–3.13。请安装 x64 Python 3.13，并启用 Python Launcher，然后完全重启 VisualTeX。Python 3.14 当前不兼容 PaddleOCR。\n\nNo compatible 64-bit Python 3.9–3.13 interpreter was found. Install x64 Python 3.13 with the Python Launcher enabled, then restart VisualTeX. Python 3.14 is not currently supported by PaddleOCR.\n\nChecked:\n{}",
         failures.join("\n")
     ))
 }
@@ -585,6 +673,8 @@ fn spawn_worker(
     let mut child = Command::new(&paths.python)
         .arg(&script)
         .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .env("VISUALTEX_PARENT_PID", std::process::id().to_string())
         .env("PADDLE_PDX_MODEL_SOURCE", "BOS")
         .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
@@ -617,17 +707,12 @@ fn spawn_worker(
         loaded_model: None,
     };
 
-    let mut ready_line = String::new();
-    worker
-        .stdout
-        .read_line(&mut ready_line)
-        .map_err(|error| format!("Unable to read OCR worker ready signal: {error}"))?;
-    let ready: Value = serde_json::from_str(ready_line.trim()).map_err(|error| {
-        format!(
-            "OCR worker did not return a valid ready signal: {error}; output={ready_line:?}; log={}",
-            log_path.display()
-        )
-    })?;
+    let ready = read_worker_json(
+        &mut worker.stdout,
+        "OCR worker closed before sending its ready signal",
+        "OCR worker ready signal",
+    )
+    .map_err(|error| format!("{error}; log={}", log_path.display()))?;
     if ready.get("event").and_then(Value::as_str) != Some("ready") {
         return Err(format!("Unexpected OCR worker ready response: {ready}"));
     }
@@ -884,6 +969,37 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running VisualTeX");
+}
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn worker_protocol_skips_non_utf8_diagnostics_before_json() {
+        let bytes = b"\xd5\xfd\xca\xbd\xc8\xd5\xd6\xbe\n{\"event\":\"ready\",\"ok\":true}\n";
+        let mut reader = BufReader::new(Cursor::new(bytes));
+
+        let value = read_worker_json(&mut reader, "closed", "test response")
+            .expect("reader should skip non-protocol diagnostic bytes");
+
+        assert_eq!(value.get("event").and_then(Value::as_str), Some("ready"));
+    }
+
+    #[test]
+    fn worker_protocol_decodes_ascii_escaped_unicode() {
+        let bytes = b"{\"message\":\"\\u6b63\\u5728\\u52a0\\u8f7d\"}\n";
+        let mut reader = BufReader::new(Cursor::new(bytes));
+
+        let value = read_worker_json(&mut reader, "closed", "test response")
+            .expect("escaped Unicode JSON should parse");
+
+        assert_eq!(
+            value.get("message").and_then(Value::as_str),
+            Some("正在加载")
+        );
+    }
 }
 
 #[cfg(all(test, unix))]
