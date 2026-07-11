@@ -309,43 +309,55 @@ function FormulaField(props: FormulaFieldProps) {
     field.style.fontSize = formulaFontSize(propsRef.current.zoom) + "px";
 
     let resizeFrame = 0;
+    let resizeTimer = 0;
+    let resizePass = 0;
+    const measureFrameSize = () => {
+      const fontSize = formulaFontSize(propsRef.current.zoom);
+      const content = field.shadowRoot?.querySelector<HTMLElement>(
+        '[part="content"]',
+      );
+      const atomRects = content
+        ? Array.from(
+            content.querySelectorAll<HTMLElement>("[data-atom-id]"),
+          )
+            .map((atom) => atom.getBoundingClientRect())
+            .filter((rect) => rect.height > 0 && rect.width >= 0)
+        : [];
+      const formulaHeight = atomRects.length
+        ? Math.max(...atomRects.map((rect) => rect.bottom)) -
+          Math.min(...atomRects.map((rect) => rect.top))
+        : fontSize;
+      const hasTallStructure = tallFormulaPattern.test(field.value);
+      const baseHeight = hasTallStructure
+        ? Math.max(36, fontSize * 1.34 + 16)
+        : Math.max(30, fontSize * 1.12 + 8);
+      const verticalPadding = hasTallStructure
+        ? Math.max(10, fontSize * 0.44)
+        : Math.max(8, fontSize * 0.26);
+      const nextHeight = Math.ceil(
+        Math.max(baseHeight, formulaHeight + verticalPadding),
+      );
+
+      field.classList.toggle("is-simple-formula", !hasTallStructure);
+      field.style.height = nextHeight + "px";
+      field.style.minHeight = nextHeight + "px";
+      host.closest<HTMLElement>(".formula-line")?.style.setProperty(
+        "--formula-row-height",
+        nextHeight + "px",
+      );
+
+      resizePass += 1;
+      if (resizePass < 4) {
+        resizeTimer = window.setTimeout(() => {
+          resizeFrame = window.requestAnimationFrame(measureFrameSize);
+        }, resizePass * 50);
+      }
+    };
     const syncFrameSize = () => {
       window.cancelAnimationFrame(resizeFrame);
-      resizeFrame = window.requestAnimationFrame(() => {
-        const fontSize = formulaFontSize(propsRef.current.zoom);
-        const content = field.shadowRoot?.querySelector<HTMLElement>(
-          '[part="content"]',
-        );
-        const atomRects = content
-          ? Array.from(
-              content.querySelectorAll<HTMLElement>("[data-atom-id]"),
-            )
-              .map((atom) => atom.getBoundingClientRect())
-              .filter((rect) => rect.height > 0 && rect.width >= 0)
-          : [];
-        const formulaHeight = atomRects.length
-          ? Math.max(...atomRects.map((rect) => rect.bottom)) -
-            Math.min(...atomRects.map((rect) => rect.top))
-          : fontSize;
-        const hasTallStructure = tallFormulaPattern.test(field.value);
-        const baseHeight = hasTallStructure
-          ? Math.max(36, fontSize * 1.34 + 16)
-          : Math.max(30, fontSize * 1.12 + 8);
-        const verticalPadding = hasTallStructure
-          ? Math.max(10, fontSize * 0.44)
-          : Math.max(8, fontSize * 0.26);
-        const nextHeight = Math.ceil(
-          Math.max(baseHeight, formulaHeight + verticalPadding),
-        );
-
-        field.classList.toggle("is-simple-formula", !hasTallStructure);
-        field.style.height = nextHeight + "px";
-        field.style.minHeight = nextHeight + "px";
-        host.closest<HTMLElement>(".formula-line")?.style.setProperty(
-          "--formula-row-height",
-          nextHeight + "px",
-        );
-      });
+      window.clearTimeout(resizeTimer);
+      resizePass = 0;
+      resizeFrame = window.requestAnimationFrame(measureFrameSize);
     };
     syncFrameSizeRef.current = syncFrameSize;
 
@@ -513,6 +525,7 @@ function FormulaField(props: FormulaFieldProps) {
 
     return () => {
       window.cancelAnimationFrame(resizeFrame);
+      window.clearTimeout(resizeTimer);
       resizeObserver?.disconnect();
       syncFrameSizeRef.current = null;
       field.removeEventListener("compositionstart", handleCompositionStart);
