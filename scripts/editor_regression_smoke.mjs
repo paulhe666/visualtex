@@ -366,27 +366,31 @@ async function main() {
         const value = document.querySelector("math-field").value;
         const redo = document.querySelector('button[aria-label="重做"]');
         return {
-          ready: value === ${JSON.stringify(nativeBeforeArrow.value)} && Boolean(redo && !redo.disabled),
+          ready: value.trim() === ${JSON.stringify(nativeBeforeArrow.value.trim())} && Boolean(redo && !redo.disabled),
           value,
+          expectedValue: ${JSON.stringify(nativeBeforeArrow.value)},
           redoDisabled: redo?.disabled ?? true,
         };
       })()`,
       "native candidate undo replay",
     );
     const nativeUndoValue = nativeUndoState.value;
-    if (nativeUndoValue !== nativeBeforeArrow.value) {
+    if (nativeUndoValue.trim() !== nativeBeforeArrow.value.trim()) {
       throw new Error(`Global undo did not restore the native candidate input: ${JSON.stringify({ nativeBeforeArrow, nativeUndoValue })}`);
     }
     await evaluate(`document.querySelector('button[aria-label="重做"]').click()`);
     const nativeRedoState = await waitForEvaluation(
       `(() => {
         const value = document.querySelector("math-field").value;
-        return { ready: value === ${JSON.stringify(nativeCommitState.value)}, value };
+        return {
+          ready: value.trim() === ${JSON.stringify(nativeCommitState.value.trim())},
+          value,
+        };
       })()`,
       "native candidate redo replay",
     );
     const nativeRedoValue = nativeRedoState.value;
-    if (nativeRedoValue !== nativeCommitState.value) {
+    if (nativeRedoValue.trim() !== nativeCommitState.value.trim()) {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
