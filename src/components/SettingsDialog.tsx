@@ -3,6 +3,7 @@ import {
   BrainCircuit,
   Languages,
   Moon,
+  RefreshCw,
   RotateCcw,
   SlidersHorizontal,
   Sun,
@@ -13,9 +14,10 @@ import { useEditorStore } from "../stores/editorStore";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onCheckForUpdates: () => void;
 }
 
-export function SettingsDialog({ open, onClose }: Props) {
+export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
@@ -29,6 +31,12 @@ export function SettingsDialog({ open, onClose }: Props) {
   const suggestionCount = useEditorStore((state) => state.suggestionCount);
   const setSuggestionCount = useEditorStore((state) => state.setSuggestionCount);
   const resetUsage = useEditorStore((state) => state.resetUsage);
+  const checkUpdatesOnStartup = useEditorStore(
+    (state) => state.checkUpdatesOnStartup,
+  );
+  const setCheckUpdatesOnStartup = useEditorStore(
+    (state) => state.setCheckUpdatesOnStartup,
+  );
   const isEn = language === "en";
 
   useEffect(() => {
@@ -223,6 +231,46 @@ export function SettingsDialog({ open, onClose }: Props) {
                 English
               </button>
             </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <RefreshCw size={18} />
+              <div>
+                <h3>{isEn ? "Application updates" : "应用更新"}</h3>
+                <p>
+                  {isEn
+                    ? "Check GitHub Releases for a newer stable version."
+                    : "通过 GitHub Releases 检查新的稳定版本。"}
+                </p>
+              </div>
+            </div>
+            <label className="switch-row">
+              <span>
+                <strong>{isEn ? "Check on startup" : "启动时检查更新"}</strong>
+                <small>
+                  {isEn
+                    ? "Disable to prevent automatic network requests and dialogs."
+                    : "关闭后不会自动联网检查，也不会显示更新弹窗。"}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                checked={checkUpdatesOnStartup}
+                onChange={(event) =>
+                  setCheckUpdatesOnStartup(event.target.checked)
+                }
+              />
+              <span className="switch-control" />
+            </label>
+            <button
+              type="button"
+              className="secondary-button settings-update-button"
+              onClick={onCheckForUpdates}
+            >
+              <RefreshCw size={15} />
+              {isEn ? "Check now" : "立即检查"}
+            </button>
           </div>
         </div>
 

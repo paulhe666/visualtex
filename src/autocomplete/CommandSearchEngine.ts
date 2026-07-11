@@ -55,6 +55,42 @@ function usageScore(query: string, usage?: CommandUsage): number {
   return frequency + recency + prefix + (usage.pinned ? 140 : 0);
 }
 
+const rankIntent = (commandId: string, ids: string[], maxScore = 250) => {
+  const index = ids.indexOf(commandId);
+  return index < 0 ? 0 : maxScore - index * 14;
+};
+
+function structuredOperatorScore(query: string, command: LatexCommand): number {
+  if (query === "s" || query.startsWith("su")) {
+    return rankIntent(command.id, ["sum", "series", "sigma", "Sigma"]);
+  }
+  if (query === "p" || query.startsWith("prod")) {
+    return rankIntent(command.id, ["prod", "productseries", "coproduct"]);
+  }
+  if (query === "i" || query.startsWith("int")) {
+    return rankIntent(command.id, [
+      "intplain",
+      "int",
+      "lineintegral",
+      "iint",
+      "surfaceintegral",
+      "iiint",
+      "volumeintegral",
+    ]);
+  }
+  if (query === "o" || query.startsWith("oi")) {
+    return rankIntent(command.id, [
+      "oint",
+      "closed-surface-integral",
+      "closed-volume-integral",
+    ]);
+  }
+  if (query === "l" || query.startsWith("lim")) {
+    return rankIntent(command.id, ["lim", "lim-infty", "lim-left", "lim-right"]);
+  }
+  return 0;
+}
+
 export function searchCommands(
   rawQuery: string,
   usage: Record<string, CommandUsage>,
@@ -68,6 +104,7 @@ export function searchCommands(
       score:
         textMatchScore(query, command) +
         command.defaultPriority / 5 +
+        structuredOperatorScore(query, command) +
         (personalize ? usageScore(query, usage[command.id]) : 0),
     }))
     .filter((item) => Number.isFinite(item.score))

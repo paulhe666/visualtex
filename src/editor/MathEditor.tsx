@@ -56,6 +56,11 @@ interface FormulaFieldProps {
 }
 
 const trailingCommand = /\\([\p{L}]*)$/u;
+const BASE_FORMULA_FONT_SIZE = 42;
+const MIN_FORMULA_FONT_SIZE = 22;
+
+const formulaFontSize = (zoom: number) =>
+  Math.max(MIN_FORMULA_FONT_SIZE, BASE_FORMULA_FONT_SIZE * zoom);
 
 function templateForSelection(
   command: LatexCommand,
@@ -80,6 +85,16 @@ function templateForSelection(
       return "\\int_{\\placeholder{}}^{\\placeholder{}} " + selectedLatex + "\\,\\mathrm{d}\\placeholder{}";
     case "intplain":
       return "\\int " + selectedLatex + "\\,\\mathrm{d}\\placeholder{}";
+    case "lineintegral":
+      return "\\int_{C} " + selectedLatex + "\\,\\mathrm{d}s";
+    case "surfaceintegral":
+      return "\\iint_{S} " + selectedLatex + "\\,\\mathrm{d}S";
+    case "volumeintegral":
+      return "\\iiint_{V} " + selectedLatex + "\\,\\mathrm{d}V";
+    case "closed-surface-integral":
+      return "\\oiint_{S} " + selectedLatex + "\\,\\mathrm{d}S";
+    case "closed-volume-integral":
+      return "\\oiiint_{V} " + selectedLatex + "\\,\\mathrm{d}V";
     case "frac":
     case "smallfrac":
     case "displayfrac":
@@ -102,6 +117,7 @@ function templateForSelection(
 function FormulaField(props: FormulaFieldProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<MathfieldElement | null>(null);
+  const syncFrameSizeRef = useRef<(() => void) | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -123,7 +139,27 @@ function FormulaField(props: FormulaFieldProps) {
         : "第 " + (propsRef.current.index + 1) + " 行公式",
     );
     field.removeAttribute("placeholder");
-    field.style.fontSize = 34 * propsRef.current.zoom + "px";
+    field.style.fontSize = formulaFontSize(propsRef.current.zoom) + "px";
+
+    let resizeFrame = 0;
+    const syncFrameSize = () => {
+      window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(() => {
+        const fontSize = formulaFontSize(propsRef.current.zoom);
+        const content = field.shadowRoot?.querySelector<HTMLElement>(
+          '[part="content"]',
+        );
+        const contentHeight = content?.getBoundingClientRect().height ?? fontSize;
+        const baseHeight = Math.ceil(fontSize * 1.72 + 28);
+        const nextHeight = Math.ceil(Math.max(baseHeight, contentHeight + 30));
+        field.style.minHeight = nextHeight + "px";
+        host.closest<HTMLElement>(".formula-line")?.style.setProperty(
+          "--formula-row-height",
+          nextHeight + "px",
+        );
+      });
+    };
+    syncFrameSizeRef.current = syncFrameSize;
 
     let composing = false;
     const handleCompositionStart = () => {
@@ -132,9 +168,13 @@ function FormulaField(props: FormulaFieldProps) {
     const handleCompositionEnd = () => {
       composing = false;
       propsRef.current.onInput(propsRef.current.index, field);
+      syncFrameSize();
     };
     const handleInput = () => {
-      if (!composing) propsRef.current.onInput(propsRef.current.index, field);
+      if (!composing) {
+        propsRef.current.onInput(propsRef.current.index, field);
+        syncFrameSize();
+      }
     };
     const handleFocus = () => {
       propsRef.current.onFocus(propsRef.current.index, field);
@@ -222,8 +262,15 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("keydown", handleKeyDown, true);
     field.addEventListener("paste", handlePaste, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
+    const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
+    const resizeObserver = content ? new ResizeObserver(syncFrameSize) : null;
+    if (content) resizeObserver?.observe(content);
+    syncFrameSize();
 
     return () => {
+      window.cancelAnimationFrame(resizeFrame);
+      resizeObserver?.disconnect();
+      syncFrameSizeRef.current = null;
       field.removeEventListener("compositionstart", handleCompositionStart);
       field.removeEventListener("compositionend", handleCompositionEnd);
       field.removeEventListener("input", handleInput);
@@ -231,6 +278,9 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("keydown", handleKeyDown, true);
       field.removeEventListener("paste", handlePaste, true);
       host.removeEventListener("pointerdown", handlePointerDown, true);
+      host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
+        "--formula-row-height",
+      );
       propsRef.current.register(lineId, null);
       fieldRef.current = null;
       host.replaceChildren();
@@ -251,11 +301,13 @@ function FormulaField(props: FormulaFieldProps) {
       selectionMode: "after",
       silenceNotifications: true,
     });
+    syncFrameSizeRef.current?.();
   }, [props.latex]);
 
   useEffect(() => {
     if (fieldRef.current) {
-      fieldRef.current.style.fontSize = 34 * props.zoom + "px";
+      fieldRef.current.style.fontSize = formulaFontSize(props.zoom) + "px";
+      syncFrameSizeRef.current?.();
     }
   }, [props.zoom]);
 
@@ -320,6 +372,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           : [],
       [query, usage, personalize, suggestionCount],
     );
+
+    const selectSuggestionIndex = (index: number) => {
+      selectedIndexRef.current = index;
+      setSelectedIndex(index);
+    };
 
     const focusLine = (
       index: number,
@@ -414,11 +471,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const surface = surfaceRef.current;
       if (!surface) return;
       const surfaceRect = surface.getBoundingClientRect();
+      const popupWidth = Math.min(420, Math.max(280, surfaceRect.width - 24));
+      const clampLeft = (left: number) =>
+        Math.max(12, Math.min(surfaceRect.width - popupWidth - 12, left));
       const caret = fieldWithCaret.getCaretPoint?.();
 
       if (caret) {
         setPopupPosition({
-          left: Math.max(20, Math.min(surfaceRect.width - 370, caret.x - surfaceRect.left)),
+          left: clampLeft(caret.x - surfaceRect.left),
           top: Math.max(
             64,
             caret.y - surfaceRect.top + (caret.height ?? 28) + 8,
@@ -427,7 +487,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       } else {
         const fieldRect = field.getBoundingClientRect();
         setPopupPosition({
-          left: Math.max(20, fieldRect.left - surfaceRect.left + 48),
+          left: clampLeft(fieldRect.left - surfaceRect.left + 48),
           top: fieldRect.bottom - surfaceRect.top + 8,
         });
       }
@@ -443,7 +503,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const match = normalized.match(trailingCommand);
       if (match) {
         setQuery("\\" + match[1]);
-        setSelectedIndex(0);
+        selectSuggestionIndex(0);
         requestAnimationFrame(() => updatePopupPosition(field));
       } else {
         setQuery("");
@@ -500,7 +560,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const finishInsertion = () => {
         recordCommand(command.id, activeQuery, source);
         setQuery("");
-        setSelectedIndex(0);
+        selectSuggestionIndex(0);
         syncField(targetIndex, field);
         field.focus();
       };
@@ -604,14 +664,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (event.key === "ArrowDown") {
           event.preventDefault();
           event.stopPropagation();
-          setSelectedIndex((current) => (current + 1) % liveSuggestions.length);
+          selectSuggestionIndex(
+            (selectedIndexRef.current + 1) % liveSuggestions.length,
+          );
           return;
         }
         if (event.key === "ArrowUp") {
           event.preventDefault();
           event.stopPropagation();
-          setSelectedIndex(
-            (current) => (current - 1 + liveSuggestions.length) % liveSuggestions.length,
+          selectSuggestionIndex(
+            (selectedIndexRef.current - 1 + liveSuggestions.length) % liveSuggestions.length,
           );
           return;
         }
@@ -726,7 +788,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!inserted) return;
 
       setQuery("");
-      setSelectedIndex(0);
+      selectSuggestionIndex(0);
       syncField(targetIndex, field);
       focusLine(targetIndex);
     };
@@ -770,7 +832,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!inserted) return false;
 
       setQuery("");
-      setSelectedIndex(0);
+      selectSuggestionIndex(0);
       syncField(targetIndex, field);
       focusLine(targetIndex);
       return true;
@@ -841,7 +903,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
     useEffect(() => {
       selectedIndexRef.current = selectedIndex;
-      if (selectedIndex >= suggestions.length) setSelectedIndex(0);
+      if (selectedIndex >= suggestions.length) selectSuggestionIndex(0);
     }, [suggestions.length, selectedIndex]);
 
     useEffect(() => {
@@ -919,7 +981,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           selectedIndex={selectedIndex}
           position={popupPosition}
           usage={usage}
-          onSelect={(command) =>
+          onHighlight={(index) => {
+            selectSuggestionIndex(index);
+            focusLine(activeIndexRef.current);
+          }}
+          onCommit={(command) =>
             insertCommand(command, "candidate", queryRef.current)
           }
         />

@@ -1,6 +1,6 @@
 [package]
 name = "visualtex"
-version = "0.1.2"
+version = "1.0.3"
 description = "A visual LaTeX formula editor"
 authors = ["VisualTeX"]
 edition = "2021"
@@ -17,3 +17,4 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
+tauri-plugin-opener = "2.5.4"

@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Braces,
@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   Plus,
   Redo2,
+  RefreshCw,
   Save,
   ScanLine,
   Settings2,
@@ -39,6 +40,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { useEditorStore } from "./stores/editorStore";
 import {
@@ -61,6 +63,11 @@ import {
   restartOcrWorker,
   type OcrModelName,
 } from "./ocr/ocrService";
+import {
+  checkForUpdates,
+  openReleasePage,
+  type UpdateCheckResult,
+} from "./update/updateService";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -91,6 +98,10 @@ function App() {
   );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
@@ -104,6 +115,7 @@ function App() {
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
+  const automaticUpdateCheckRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
@@ -120,6 +132,12 @@ function App() {
   const addHistory = useEditorStore((state) => state.addHistory);
   const loadDocument = useEditorStore((state) => state.loadDocument);
   const toDocument = useEditorStore((state) => state.toDocument);
+  const checkUpdatesOnStartup = useEditorStore(
+    (state) => state.checkUpdatesOnStartup,
+  );
+  const setCheckUpdatesOnStartup = useEditorStore(
+    (state) => state.setCheckUpdatesOnStartup,
+  );
   const isEn = language === "en";
   const latexLines = splitLatexLines(latex);
   const sourceLatex = formatLatex(latex, "display");
@@ -486,6 +504,43 @@ function App() {
     window.requestAnimationFrame(() => editorRef.current?.focus());
   };
 
+  const runUpdateCheck = useCallback(async (manual = true) => {
+    if (manual) setUpdateOpen(true);
+    setUpdateChecking(true);
+    setUpdateError("");
+    try {
+      const result = await checkForUpdates();
+      setUpdateResult(result);
+      if (manual || result.updateAvailable) setUpdateOpen(true);
+    } catch (error) {
+      if (manual) {
+        setUpdateError(
+          error instanceof Error
+            ? error.message
+            : isEn
+              ? "Unable to connect to the update server"
+              : "无法连接更新服务器",
+        );
+        setUpdateOpen(true);
+      }
+    } finally {
+      setUpdateChecking(false);
+    }
+  }, [isEn]);
+
+  useEffect(() => {
+    if (
+      !checkUpdatesOnStartup ||
+      onboardingOpen ||
+      automaticUpdateCheckRef.current
+    ) {
+      return;
+    }
+    automaticUpdateCheckRef.current = true;
+    const timer = window.setTimeout(() => void runUpdateCheck(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [checkUpdatesOnStartup, onboardingOpen, runUpdateCheck]);
+
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -494,7 +549,7 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen) return;
+      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) return;
       if (!event.metaKey || event.ctrlKey || event.altKey) return;
       const key = event.key.toLowerCase();
 
@@ -524,7 +579,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
 
   return (
     <div className="app-shell">
@@ -634,6 +689,14 @@ function App() {
               >
                 <CircleHelp size={16} />
                 <span>{isEn ? "Quick tour" : "新手教程"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => void runUpdateCheck(true))}
+              >
+                <RefreshCw size={16} />
+                <span>{isEn ? "Check for updates" : "检查更新"}</span>
               </button>
               <div className="app-menu-divider" />
               <div className="app-menu-language">
@@ -962,7 +1025,14 @@ function App() {
         </div>
       </footer>
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onCheckForUpdates={() => {
+          setSettingsOpen(false);
+          void runUpdateCheck(true);
+        }}
+      />
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -986,6 +1056,29 @@ function App() {
         open={onboardingOpen}
         language={language}
         onFinish={finishOnboarding}
+      />
+      <UpdateDialog
+        open={updateOpen}
+        language={language}
+        checking={updateChecking}
+        error={updateError}
+        result={updateResult}
+        checkOnStartup={checkUpdatesOnStartup}
+        onCheckOnStartupChange={setCheckUpdatesOnStartup}
+        onRetry={() => void runUpdateCheck(true)}
+        onOpenRelease={() => {
+          if (!updateResult) return;
+          void openReleasePage(updateResult.releaseUrl).catch((error) => {
+            setUpdateError(
+              error instanceof Error
+                ? error.message
+                : isEn
+                  ? "Unable to open the download page"
+                  : "无法打开下载页面",
+            );
+          });
+        }}
+        onClose={() => setUpdateOpen(false)}
       />
 
       {historyOpen && (

@@ -7,7 +7,8 @@ interface Props {
   suggestions: LatexCommand[];
   selectedIndex: number;
   position: { left: number; top: number };
-  onSelect: (command: LatexCommand) => void;
+  onHighlight: (index: number) => void;
+  onCommit: (command: LatexCommand) => void;
   usage: Record<string, { pinned: boolean; useCount: number }>;
 }
 
@@ -15,7 +16,8 @@ export function CommandSuggestionPopup({
   suggestions,
   selectedIndex,
   position,
-  onSelect,
+  onHighlight,
+  onCommit,
   usage,
 }: Props) {
   const language = useEditorStore((state) => state.language);
@@ -44,10 +46,12 @@ export function CommandSuggestionPopup({
             role="option"
             aria-selected={index === selectedIndex}
             className={"suggestion-item " + (index === selectedIndex ? "is-selected" : "")}
+            onMouseEnter={() => onHighlight(index)}
             onMouseDown={(event) => {
               event.preventDefault();
-              onSelect(command);
+              onHighlight(index);
             }}
+            onDoubleClick={() => onCommit(command)}
           >
             <span className="suggestion-preview">
               <MathPreview latex={command.previewLatex} />
@@ -64,6 +68,11 @@ export function CommandSuggestionPopup({
             {index === selectedIndex && <CornerDownLeft size={15} className="suggestion-enter" />}
           </button>
         ))}
+      </div>
+      <div className="suggestion-footer">
+        {isEn
+          ? "Click to select · Double-click to insert"
+          : "单击选择 · 双击插入"}
       </div>
     </div>
   );

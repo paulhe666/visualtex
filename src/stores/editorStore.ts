@@ -16,6 +16,7 @@ interface EditorState {
   sourceOpen: boolean;
   personalize: boolean;
   suggestionCount: number;
+  checkUpdatesOnStartup: boolean;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
@@ -26,6 +27,7 @@ interface EditorState {
   setSourceOpen: (open: boolean) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
+  setCheckUpdatesOnStartup: (enabled: boolean) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
@@ -47,6 +49,7 @@ export const useEditorStore = create<EditorState>()(
       sourceOpen: false,
       personalize: true,
       suggestionCount: 6,
+      checkUpdatesOnStartup: true,
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -58,6 +61,8 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+      setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
+        set({ checkUpdatesOnStartup }),
       recordCommand: (commandId, prefix) =>
         set((state) => {
           const now = Date.now();
@@ -143,6 +148,7 @@ export const useEditorStore = create<EditorState>()(
         sourceOpen: state.sourceOpen,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
+        checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         usage: state.usage,
         history: state.history,
       }),

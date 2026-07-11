@@ -4,6 +4,7 @@ import type { LatexCommand } from "../types/command";
 import {
   categoryLabels,
   categoryLabelsEn,
+  calculusCommandIds,
   commandRegistry,
   commonCommandIds,
 } from "../autocomplete/commandRegistry";
@@ -44,8 +45,13 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
   const isEn = language === "en";
 
   const visibleCommands = useMemo(() => {
-    if (activeCategory === "common") {
-      return commonCommandIds
+    const preferredIds = activeCategory === "common"
+      ? commonCommandIds
+      : activeCategory === "calculus"
+        ? calculusCommandIds
+        : null;
+    if (preferredIds) {
+      return preferredIds
         .map((id) => commandRegistry.find((command) => command.id === id))
         .filter((command): command is LatexCommand => Boolean(command));
     }
