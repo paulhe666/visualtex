@@ -900,7 +900,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const entry: ReplaceFormulaEntry = {
         type: "replace-formula",
         lineId,
-        beforeLatex: currentLine.latex,
+        beforeLatex: before.latex,
         afterLatex: after.latex,
         beforeSelection: before.selection,
         afterSelection: after.selection,
