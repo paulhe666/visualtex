@@ -128,7 +128,7 @@ export function OcrDialog({
     }
   }, []);
 
-  const refreshRuntime = useCallback(async () => {
+  const refreshRuntime = useCallback(async (forceRefresh = false) => {
     if (!isTauriEnvironment()) {
       setRuntime({
         installed: false,
@@ -146,7 +146,7 @@ export function OcrDialog({
 
     setCheckingRuntime(true);
     try {
-      setRuntime(await getOcrRuntimeStatus());
+      setRuntime(await getOcrRuntimeStatus(forceRefresh));
     } catch (runtimeError) {
       setError(readError(runtimeError));
     } finally {
@@ -157,8 +157,17 @@ export function OcrDialog({
   useEffect(() => {
     if (!open) return;
     setError("");
-    void refreshRuntime();
-  }, [open, refreshRuntime]);
+    if (runtime) return;
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (!cancelled) void refreshRuntime();
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [open, runtime, refreshRuntime]);
 
   useEffect(() => {
     if (!open) return;
@@ -269,7 +278,7 @@ export function OcrDialog({
       onNotify(isEn ? "OCR runtime installed" : "OCR 运行环境安装完成");
     } catch (installError) {
       setError(readError(installError));
-      await refreshRuntime();
+      await refreshRuntime(true);
     } finally {
       unlisten?.();
       setInstalling(false);
@@ -453,7 +462,11 @@ export function OcrDialog({
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={requestClose}>
+    <div
+      className="modal-backdrop ocr-modal-backdrop"
+      role="presentation"
+      onMouseDown={requestClose}
+    >
       <section
         ref={dialogRef}
         className="ocr-dialog"

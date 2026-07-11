@@ -41,7 +41,11 @@ import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
-import { useEditorStore } from "./stores/editorStore";
+import {
+  MAX_EDITOR_ZOOM,
+  MIN_EDITOR_ZOOM,
+  useEditorStore,
+} from "./stores/editorStore";
 import {
   copyLatex,
   formatLatex,
@@ -986,9 +990,15 @@ function App() {
                   type="button"
                   className="icon-button compact"
                   onClick={() => setZoom(zoom - 0.1)}
-                  disabled={zoom <= 0.5001}
+                  disabled={zoom <= MIN_EDITOR_ZOOM + 0.0001}
                   aria-label={isEn ? "Zoom out" : "缩小公式"}
-                  title={zoom <= 0.5001 ? (isEn ? "Minimum zoom: 50%" : "最小缩放：50%") : undefined}
+                  title={
+                    zoom <= MIN_EDITOR_ZOOM + 0.0001
+                      ? isEn
+                        ? "Minimum zoom: 20%"
+                        : "最小缩放：20%"
+                      : undefined
+                  }
                 >
                   <Minus size={15} />
                 </button>
@@ -997,9 +1007,15 @@ function App() {
                   type="button"
                   className="icon-button compact"
                   onClick={() => setZoom(zoom + 0.1)}
-                  disabled={zoom >= 1.5999}
+                  disabled={zoom >= MAX_EDITOR_ZOOM - 0.0001}
                   aria-label={isEn ? "Zoom in" : "放大公式"}
-                  title={zoom >= 1.5999 ? (isEn ? "Maximum zoom: 160%" : "最大缩放：160%") : undefined}
+                  title={
+                    zoom >= MAX_EDITOR_ZOOM - 0.0001
+                      ? isEn
+                        ? "Maximum zoom: 160%"
+                        : "最大缩放：160%"
+                      : undefined
+                  }
                 >
                   <Plus size={15} />
                 </button>

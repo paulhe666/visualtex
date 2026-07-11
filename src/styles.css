@@ -5348,6 +5348,32 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   }
 }
 
+/* Keep formula rows fluid in very wide editor panes. Historical theme rules
+   capped the stack at 880–960px, leaving large unused margins after resize. */
+.mathfield-stack,
+.mathfield-host,
+.formula-line .mathfield-host {
+  width: 100%;
+  max-width: none;
+}
+
+.mathfield-stack {
+  margin-inline: 0;
+}
+
+/* Opening OCR should not force the whole formula canvas through a live blur
+   pass. This is especially expensive in WebView on wide, multi-line pages. */
+.ocr-modal-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(10, 13, 17, 0.44);
+}
+
+.ocr-dialog {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 @media (max-height: 640px) {
   .code-format-menu {
     max-height: calc(100vh - 72px);

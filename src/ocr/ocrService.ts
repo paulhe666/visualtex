@@ -137,9 +137,11 @@ function requireTauri() {
   }
 }
 
-export async function getOcrRuntimeStatus(): Promise<OcrRuntimeStatus> {
+export async function getOcrRuntimeStatus(
+  forceRefresh = false,
+): Promise<OcrRuntimeStatus> {
   requireTauri();
-  return invoke<OcrRuntimeStatus>("get_ocr_runtime_status");
+  return invoke<OcrRuntimeStatus>("get_ocr_runtime_status", { forceRefresh });
 }
 
 export async function installOcrRuntime(): Promise<OcrRuntimeStatus> {

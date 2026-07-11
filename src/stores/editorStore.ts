@@ -14,6 +14,16 @@ import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 
 type Theme = "light" | "dark";
 export type Language = "cn" | "en";
+export const MIN_EDITOR_ZOOM = 0.2;
+export const MAX_EDITOR_ZOOM = 1.6;
+
+function normalizeEditorZoom(value: unknown) {
+  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
+  return Math.min(
+    MAX_EDITOR_ZOOM,
+    Math.max(MIN_EDITOR_ZOOM, Math.round(zoom * 10) / 10),
+  );
+}
 
 interface EditorState {
   title: string;
@@ -67,7 +77,7 @@ export const useEditorStore = create<EditorState>()(
       setLatex: (latex) => set({ latex: normalizeMultilineLatex(latex) }),
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
-      setZoom: (zoom) => set({ zoom: Math.min(1.6, Math.max(0.5, zoom)) }),
+      setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
       setLatexCodeFormat: (latexCodeFormat) =>
         set({
@@ -131,7 +141,7 @@ export const useEditorStore = create<EditorState>()(
               : "",
           ),
           theme: document.settings.theme,
-          zoom: document.settings.zoom,
+          zoom: normalizeEditorZoom(document.settings.zoom),
           latexCodeFormat: isLatexCodeFormat(document.settings.latexCodeFormat)
             ? document.settings.latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
@@ -182,6 +192,7 @@ export const useEditorStore = create<EditorState>()(
         return {
           ...currentState,
           ...persisted,
+          zoom: normalizeEditorZoom(persisted.zoom),
           latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
             ? persisted.latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,

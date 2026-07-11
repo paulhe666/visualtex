@@ -319,6 +319,60 @@ async function main() {
       throw new Error(`Simple formula is not vertically centered (delta ${simpleMetrics.centerDelta})`);
     }
 
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="缩小公式"]').click()`);
+      await sleep(70);
+    }
+    await setField("\\alpha");
+    const compactZoomMetrics = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      const line = document.querySelector(".formula-line");
+      const surface = document.querySelector(".editor-surface");
+      const stack = document.querySelector(".mathfield-stack");
+      const surfaceRect = surface.getBoundingClientRect();
+      const stackRect = stack.getBoundingClientRect();
+      return {
+        zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
+        zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
+        fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
+        lineHeight: line.getBoundingClientRect().height,
+        fieldHeight: field.getBoundingClientRect().height,
+        surfaceWidth: surfaceRect.width,
+        stackWidth: stackRect.width,
+        leftGap: stackRect.left - surfaceRect.left,
+        rightGap: surfaceRect.right - stackRect.right,
+      };
+    })()`);
+    if (
+      compactZoomMetrics.zoomLabel !== "20%" ||
+      !compactZoomMetrics.zoomOutDisabled ||
+      compactZoomMetrics.fontSize > 11.2 ||
+      compactZoomMetrics.lineHeight > 36
+    ) {
+      throw new Error(`20% zoom did not produce a compact formula row: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+    if (
+      compactZoomMetrics.leftGap > 70 ||
+      compactZoomMetrics.rightGap > 70 ||
+      compactZoomMetrics.stackWidth < compactZoomMetrics.surfaceWidth - 140
+    ) {
+      throw new Error(`Formula stack did not fill the wide editor surface: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+
+    await setField("\\frac{a}{b}");
+    const compactTallMetrics = await evaluate(`(() => ({
+      lineHeight: document.querySelector(".formula-line").getBoundingClientRect().height,
+      fieldHeight: document.querySelector("math-field").getBoundingClientRect().height,
+    }))()`);
+    if (compactTallMetrics.lineHeight <= compactZoomMetrics.lineHeight + 2) {
+      throw new Error(`Tall formula did not expand at 20% zoom: ${JSON.stringify({ compactZoomMetrics, compactTallMetrics })}`);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="放大公式"]').click()`);
+      await sleep(70);
+    }
+
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
       field.setValue("a\\\\int_{x}^{y}", {
@@ -349,6 +403,47 @@ async function main() {
     if (skippedOperator) {
       throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
     }
+
+    const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
+      const button = document.querySelector('button[aria-label="图片公式识别"]');
+      if (!button) {
+        reject(new Error("OCR toolbar button was not found"));
+        return;
+      }
+      const startedAt = performance.now();
+      const finish = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const backdrop = document.querySelector(".ocr-modal-backdrop");
+        if (!dialog || !backdrop) return false;
+        resolve({
+          elapsedMs: performance.now() - startedAt,
+          backdropFilter: getComputedStyle(backdrop).backdropFilter,
+          webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+        });
+        return true;
+      };
+      const observer = new MutationObserver(() => {
+        if (finish()) observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      button.click();
+      if (finish()) observer.disconnect();
+      window.setTimeout(() => {
+        observer.disconnect();
+        reject(new Error("OCR dialog did not appear within 500 ms"));
+      }, 500);
+    })`);
+    if (ocrOpenMetrics.elapsedMs > 250) {
+      throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    if (
+      ocrOpenMetrics.backdropFilter !== "none" &&
+      ocrOpenMetrics.webkitBackdropFilter !== "none"
+    ) {
+      throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
+    await sleep(120);
 
     await setField("a=b");
     await key("Enter", "Enter", 13);
@@ -506,6 +601,9 @@ async function main() {
       nativeCommitState,
       simpleMetrics,
       tallMetrics,
+      compactZoomMetrics,
+      compactTallMetrics,
+      ocrOpenMetrics,
       deletionStates,
       formatMenuState,
       alignFormatState,
