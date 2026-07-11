@@ -111,7 +111,10 @@ async function main() {
         returnByValue: true,
       });
       if (result.exceptionDetails) {
-        throw new Error(result.exceptionDetails.text || "Runtime.evaluate failed");
+        const description = result.exceptionDetails.exception?.description;
+        throw new Error(
+          description || result.exceptionDetails.text || "Runtime.evaluate failed",
+        );
       }
       return result.result.value;
     };
@@ -132,7 +135,31 @@ async function main() {
       await sleep(35);
     };
 
-    await evaluate(`localStorage.setItem("visualtex.onboarding.v2.completed", "true")`);
+    const replaceFocusedText = async (text) => {
+      const selectAll = {
+        key: "a",
+        code: "KeyA",
+        modifiers: 4,
+        windowsVirtualKeyCode: 65,
+        nativeVirtualKeyCode: 65,
+      };
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...selectAll,
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        ...selectAll,
+      });
+      await client.send("Input.insertText", { text });
+      await sleep(220);
+    };
+
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(650);
+    await evaluate(
+      `localStorage.setItem("visualtex.onboarding.v3.completed", "true")`,
+    );
     await client.send("Page.reload", { ignoreCache: true });
     await sleep(800);
     await evaluate(`new Promise((resolve) => {
@@ -140,9 +167,10 @@ async function main() {
       done();
     })`);
 
-    const setField = async (latex) => {
+    const setFieldAt = async (index, latex) => {
       await evaluate(`(() => {
-        const field = document.querySelector("math-field");
+        const field = document.querySelectorAll("math-field")[${index}];
+        if (!field) throw new Error("Formula field ${index} was not found");
         field.setValue(${JSON.stringify(latex)}, {
           mode: "math",
           format: "latex",
@@ -161,6 +189,8 @@ async function main() {
       })()`);
       await sleep(180);
     };
+
+    const setField = async (latex) => setFieldAt(0, latex);
 
     await setField("\\theta");
     const candidateBefore = await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`);
@@ -289,6 +319,60 @@ async function main() {
       throw new Error(`Simple formula is not vertically centered (delta ${simpleMetrics.centerDelta})`);
     }
 
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="缩小公式"]').click()`);
+      await sleep(70);
+    }
+    await setField("\\alpha");
+    const compactZoomMetrics = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      const line = document.querySelector(".formula-line");
+      const surface = document.querySelector(".editor-surface");
+      const stack = document.querySelector(".mathfield-stack");
+      const surfaceRect = surface.getBoundingClientRect();
+      const stackRect = stack.getBoundingClientRect();
+      return {
+        zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
+        zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
+        fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
+        lineHeight: line.getBoundingClientRect().height,
+        fieldHeight: field.getBoundingClientRect().height,
+        surfaceWidth: surfaceRect.width,
+        stackWidth: stackRect.width,
+        leftGap: stackRect.left - surfaceRect.left,
+        rightGap: surfaceRect.right - stackRect.right,
+      };
+    })()`);
+    if (
+      compactZoomMetrics.zoomLabel !== "20%" ||
+      !compactZoomMetrics.zoomOutDisabled ||
+      compactZoomMetrics.fontSize > 11.2 ||
+      compactZoomMetrics.lineHeight > 36
+    ) {
+      throw new Error(`20% zoom did not produce a compact formula row: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+    if (
+      compactZoomMetrics.leftGap > 70 ||
+      compactZoomMetrics.rightGap > 70 ||
+      compactZoomMetrics.stackWidth < compactZoomMetrics.surfaceWidth - 140
+    ) {
+      throw new Error(`Formula stack did not fill the wide editor surface: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+
+    await setField("\\frac{a}{b}");
+    const compactTallMetrics = await evaluate(`(() => ({
+      lineHeight: document.querySelector(".formula-line").getBoundingClientRect().height,
+      fieldHeight: document.querySelector("math-field").getBoundingClientRect().height,
+    }))()`);
+    if (compactTallMetrics.lineHeight <= compactZoomMetrics.lineHeight + 2) {
+      throw new Error(`Tall formula did not expand at 20% zoom: ${JSON.stringify({ compactZoomMetrics, compactTallMetrics })}`);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="放大公式"]').click()`);
+      await sleep(70);
+    }
+
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
       field.setValue("a\\\\int_{x}^{y}", {
@@ -320,13 +404,231 @@ async function main() {
       throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
     }
 
+    const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
+      const button = document.querySelector('button[aria-label="图片公式识别"]');
+      if (!button) {
+        reject(new Error("OCR toolbar button was not found"));
+        return;
+      }
+      const startedAt = performance.now();
+      const finish = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const backdrop = document.querySelector(".ocr-modal-backdrop");
+        if (!dialog || !backdrop) return false;
+        resolve({
+          elapsedMs: performance.now() - startedAt,
+          backdropFilter: getComputedStyle(backdrop).backdropFilter,
+          webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+        });
+        return true;
+      };
+      const observer = new MutationObserver(() => {
+        if (finish()) observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      button.click();
+      if (finish()) observer.disconnect();
+      window.setTimeout(() => {
+        observer.disconnect();
+        reject(new Error("OCR dialog did not appear within 500 ms"));
+      }, 500);
+    })`);
+    if (ocrOpenMetrics.elapsedMs > 250) {
+      throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    if (
+      ocrOpenMetrics.backdropFilter !== "none" &&
+      ocrOpenMetrics.webkitBackdropFilter !== "none"
+    ) {
+      throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    await sleep(220);
+    const ocrCenterMetrics = await evaluate(`(() => {
+      const dialog = document.querySelector(".ocr-dialog");
+      const rect = dialog.getBoundingClientRect();
+      return {
+        dialogCenterX: (rect.left + rect.right) / 2,
+        dialogCenterY: (rect.top + rect.bottom) / 2,
+        viewportCenterX: window.innerWidth / 2,
+        viewportCenterY: window.innerHeight / 2,
+        horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+        verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+      };
+    })()`);
+    if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
+      throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
+    await sleep(120);
+
+    await setField("a=b");
+    await key("Enter", "Enter", 13);
+    await sleep(180);
+    await setFieldAt(1, "c=d");
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(120);
+    const formatMenuState = await evaluate(`(() => {
+      const menu = document.querySelector(".code-format-menu");
+      const rect = menu.getBoundingClientRect();
+      return {
+        count: menu.querySelectorAll("button[data-format]").length,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      };
+    })()`);
+    if (formatMenuState.count !== 16) {
+      throw new Error(`Expected 16 LaTeX code formats, found ${formatMenuState.count}`);
+    }
+    if (
+      formatMenuState.left < 0 ||
+      formatMenuState.top < 0 ||
+      formatMenuState.right > formatMenuState.viewportWidth + 1 ||
+      formatMenuState.bottom > formatMenuState.viewportHeight + 1
+    ) {
+      throw new Error(`LaTeX code-format menu is outside the viewport: ${JSON.stringify(formatMenuState)}`);
+    }
+
+    await evaluate(`document.querySelector('[data-format="align-star"]').click()`);
+    await sleep(260);
+    const alignFormatState = await evaluate(`(() => {
+      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
+      const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+      return {
+        source,
+        sourceVisible: Boolean(document.querySelector(".source-panel")),
+        persistedFormat: persisted.state?.latexCodeFormat,
+      };
+    })()`);
+    if (!alignFormatState.sourceVisible) {
+      throw new Error("Selecting a LaTeX code format did not open the source panel");
+    }
+    if (
+      !alignFormatState.source.includes("\\begin{align*}") ||
+      !alignFormatState.source.includes("a&=b") ||
+      !alignFormatState.source.includes("c&=d") ||
+      !alignFormatState.source.includes("\\end{align*}")
+    ) {
+      throw new Error(`align* source was not generated correctly: ${alignFormatState.source}`);
+    }
+    if (alignFormatState.persistedFormat !== "align-star") {
+      throw new Error(`align* selection was not persisted: ${JSON.stringify(alignFormatState)}`);
+    }
+
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(100);
+    const alignSelectedAfterReopen = await evaluate(
+      `document.querySelector('[data-format="align-star"]')?.getAttribute("aria-checked")`,
+    );
+    if (alignSelectedAfterReopen !== "true") {
+      throw new Error("The current align* format was not marked as selected after reopening the menu");
+    }
+    await evaluate(`document.querySelector('[data-format="equation"]').click()`);
+    await sleep(260);
+    const equationFormatState = await evaluate(`(() => {
+      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
+      return {
+        source,
+        equationCount: (source.match(/\\\\begin\\{equation\\}/g) || []).length,
+        endCount: (source.match(/\\\\end\\{equation\\}/g) || []).length,
+        hasAlign: source.includes("\\\\begin{align"),
+      };
+    })()`);
+    if (
+      equationFormatState.equationCount !== 2 ||
+      equationFormatState.endCount !== 2 ||
+      equationFormatState.hasAlign
+    ) {
+      throw new Error(`equation source did not create independent environments: ${JSON.stringify(equationFormatState)}`);
+    }
+
+    const editedEquationSource = [
+      "\\begin{equation}",
+      "a=q",
+      "\\end{equation}",
+      "",
+      "\\begin{equation}",
+      "c=d",
+      "\\end{equation}",
+    ].join("\n");
+    await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
+    await replaceFocusedText(editedEquationSource);
+    const dirtyBeforeFormatSwitch = await evaluate(`(() => ({
+      dirty: Boolean(document.querySelector(".source-panel .unsaved-chip")),
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+    }))()`);
+    if (!dirtyBeforeFormatSwitch.dirty || !dirtyBeforeFormatSwitch.source.includes("a=q")) {
+      throw new Error(`CodeMirror draft edit was not registered: ${JSON.stringify(dirtyBeforeFormatSwitch)}`);
+    }
+
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(100);
+    await evaluate(`document.querySelector('[data-format="align-star"]').click()`);
+    await sleep(420);
+    const dirtyFormatSwitchState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      dirty: Boolean(document.querySelector(".source-panel .unsaved-chip")),
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+    }))()`);
+    if (
+      dirtyFormatSwitchState.dirty ||
+      !dirtyFormatSwitchState.source.includes("\\begin{align*}") ||
+      !dirtyFormatSwitchState.source.includes("a&=q") ||
+      dirtyFormatSwitchState.formulas[0] !== "a=q" ||
+      dirtyFormatSwitchState.formulas[1] !== "c=d"
+    ) {
+      throw new Error(`Unsynced source edits were lost during format switching: ${JSON.stringify(dirtyFormatSwitchState)}`);
+    }
+
+    await evaluate(`(() => {
+      localStorage.removeItem("visualtex.onboarding.v3.completed");
+      location.reload();
+    })()`);
+    await sleep(850);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelector(".onboarding-dialog") ? resolve(true) : setTimeout(done, 30);
+      done();
+    })`);
+    for (let index = 0; index < 3; index += 1) {
+      await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+      await sleep(100);
+    }
+    const onboardingFormatStep = await evaluate(`(() => ({
+      progressCount: document.querySelectorAll(".onboarding-progress > span").length,
+      visible: Boolean(document.querySelector(".onboarding-code-format-demo")),
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
+    }))()`);
+    if (
+      onboardingFormatStep.progressCount !== 7 ||
+      !onboardingFormatStep.visible ||
+      !onboardingFormatStep.title.includes("LaTeX") ||
+      !onboardingFormatStep.source.includes("\\begin{align*}")
+    ) {
+      throw new Error(`The onboarding LaTeX format step is incomplete: ${JSON.stringify(onboardingFormatStep)}`);
+    }
+
     console.log(JSON.stringify({
       thetaState,
       nativePopover,
       nativeCommitState,
       simpleMetrics,
       tallMetrics,
+      compactZoomMetrics,
+      compactTallMetrics,
+      ocrOpenMetrics,
+      ocrCenterMetrics,
       deletionStates,
+      formatMenuState,
+      alignFormatState,
+      alignSelectedAfterReopen,
+      equationFormatState,
+      dirtyBeforeFormatSwitch,
+      dirtyFormatSwitchState,
+      onboardingFormatStep,
     }, null, 2));
     console.log("Editor regression smoke test passed");
   } finally {

@@ -39,6 +39,7 @@ struct OcrState {
     worker: Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: Arc<AtomicU32>,
     cancel_generation: Arc<AtomicU64>,
+    runtime_status: Arc<Mutex<Option<OcrRuntimeStatus>>>,
 }
 
 impl Default for OcrState {
@@ -47,6 +48,7 @@ impl Default for OcrState {
             worker: Arc::new(Mutex::new(None)),
             worker_pid: Arc::new(AtomicU32::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
+            runtime_status: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -489,6 +491,26 @@ fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String>
     }
 }
 
+fn read_cached_runtime_status(
+    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+) -> Result<Option<OcrRuntimeStatus>, String> {
+    cache
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "OCR runtime status cache is unavailable".to_string())
+}
+
+fn write_cached_runtime_status(
+    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+    status: Option<OcrRuntimeStatus>,
+) -> Result<(), String> {
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "OCR runtime status cache is unavailable".to_string())?;
+    *guard = status;
+    Ok(())
+}
+
 fn cleanup_worker_temp(paths: &RuntimePaths) -> Result<(), String> {
     if paths.temp.exists() {
         fs::remove_dir_all(&paths.temp)
@@ -756,6 +778,7 @@ fn run_recognition(
     worker_state: &Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: &Arc<AtomicU32>,
     cancel_generation: &Arc<AtomicU64>,
+    runtime_status: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
     request: OcrImageRequest,
 ) -> Result<OcrRecognitionResult, String> {
     let request_generation = cancel_generation.load(Ordering::SeqCst);
@@ -774,9 +797,13 @@ fn run_recognition(
     }
 
     let paths = runtime_paths(app)?;
-    let status = get_runtime_status_inner(app)?;
-    if !status.installed {
-        return Err(format!("OCR runtime is not installed: {}", status.message));
+    if let Some(status) = read_cached_runtime_status(runtime_status)? {
+        if !status.installed {
+            return Err(format!("OCR runtime is not installed: {}", status.message));
+        }
+    }
+    if !paths.python.exists() {
+        return Err("OCR runtime is not installed: Python executable is missing".to_string());
     }
     fs::create_dir_all(&paths.input)
         .map_err(|error| format!("Unable to create OCR input directory: {error}"))?;
@@ -914,8 +941,25 @@ fn run_recognition(
 }
 
 #[tauri::command]
-fn get_ocr_runtime_status(app: AppHandle) -> Result<OcrRuntimeStatus, String> {
-    get_runtime_status_inner(&app)
+async fn get_ocr_runtime_status(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    force_refresh: Option<bool>,
+) -> Result<OcrRuntimeStatus, String> {
+    let runtime_status = state.runtime_status.clone();
+    if !force_refresh.unwrap_or(false) {
+        if let Some(status) = read_cached_runtime_status(&runtime_status)? {
+            return Ok(status);
+        }
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = get_runtime_status_inner(&app)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("OCR runtime status task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -925,9 +969,14 @@ async fn install_ocr_runtime(
 ) -> Result<OcrRuntimeStatus, String> {
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
-    tauri::async_runtime::spawn_blocking(move || install_runtime_inner(&app, &worker, &worker_pid))
-        .await
-        .map_err(|error| format!("OCR installer task failed: {error}"))?
+    let runtime_status = state.runtime_status.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = install_runtime_inner(&app, &worker, &worker_pid)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("OCR installer task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -939,8 +988,16 @@ async fn recognize_formula_image(
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
     let cancel_generation = state.cancel_generation.clone();
+    let runtime_status = state.runtime_status.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        run_recognition(&app, &worker, &worker_pid, &cancel_generation, request)
+        run_recognition(
+            &app,
+            &worker,
+            &worker_pid,
+            &cancel_generation,
+            &runtime_status,
+            request,
+        )
     })
     .await
     .map_err(|error| format!("OCR recognition task failed: {error}"))?
@@ -974,14 +1031,18 @@ async fn reset_ocr_runtime(
     state.cancel_generation.fetch_add(1, Ordering::SeqCst);
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
+    let runtime_status = state.runtime_status.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        write_cached_runtime_status(&runtime_status, None)?;
         stop_worker(&worker, &worker_pid)?;
         let paths = runtime_paths(&app)?;
         if paths.root.exists() {
             fs::remove_dir_all(&paths.root)
                 .map_err(|error| format!("Unable to remove OCR runtime: {error}"))?;
         }
-        get_runtime_status_inner(&app)
+        let status = get_runtime_status_inner(&app)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
     })
     .await
     .map_err(|error| format!("OCR reset task failed: {error}"))?
@@ -1031,6 +1092,35 @@ mod protocol_tests {
         assert_eq!(
             value.get("message").and_then(Value::as_str),
             Some("正在加载")
+        );
+    }
+
+    #[test]
+    fn runtime_status_cache_round_trips_and_clears() {
+        let cache = Arc::new(Mutex::new(None));
+        let expected = OcrRuntimeStatus {
+            installed: true,
+            python_path: Some("/tmp/visualtex-python".to_string()),
+            python_version: Some("3.13.0".to_string()),
+            paddle_version: Some(PADDLE_VERSION.to_string()),
+            paddleocr_version: Some(PADDLEOCR_VERSION.to_string()),
+            runtime_path: "/tmp/visualtex-ocr".to_string(),
+            message: "ready".to_string(),
+        };
+
+        write_cached_runtime_status(&cache, Some(expected.clone()))
+            .expect("cache write should succeed");
+        let cached = read_cached_runtime_status(&cache)
+            .expect("cache read should succeed")
+            .expect("cached status should exist");
+        assert_eq!(cached.python_version, expected.python_version);
+        assert!(cached.installed);
+
+        write_cached_runtime_status(&cache, None).expect("cache clear should succeed");
+        assert!(
+            read_cached_runtime_status(&cache)
+                .expect("cache read after clear should succeed")
+                .is_none()
         );
     }
 }

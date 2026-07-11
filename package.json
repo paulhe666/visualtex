@@ -1,7 +1,7 @@
 {
   "name": "visualtex",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test:editor": "node scripts/editor_regression_smoke.mjs",
+    "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {

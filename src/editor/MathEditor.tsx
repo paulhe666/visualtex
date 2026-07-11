@@ -57,7 +57,7 @@ interface FormulaFieldProps {
 
 const trailingCommand = /\\([\p{L}]*)$/u;
 const BASE_FORMULA_FONT_SIZE = 54;
-const MIN_FORMULA_FONT_SIZE = 28;
+const MIN_FORMULA_FONT_SIZE = BASE_FORMULA_FONT_SIZE * 0.2;
 
 const formulaFontSize = (zoom: number) =>
   Math.max(MIN_FORMULA_FONT_SIZE, BASE_FORMULA_FONT_SIZE * zoom);
@@ -251,9 +251,11 @@ function FormulaField(props: FormulaFieldProps) {
           : fontSize;
         const hasTallStructure = tallFormulaPattern.test(field.value);
         const baseHeight = hasTallStructure
-          ? Math.max(92, fontSize * 1.34 + 18)
-          : Math.max(72, fontSize * 1.12 + 12);
-        const verticalPadding = hasTallStructure ? 24 : 14;
+          ? Math.max(36, fontSize * 1.34 + 16)
+          : Math.max(30, fontSize * 1.12 + 8);
+        const verticalPadding = hasTallStructure
+          ? Math.max(10, fontSize * 0.44)
+          : Math.max(8, fontSize * 0.26);
         const nextHeight = Math.ceil(
           Math.max(baseHeight, formulaHeight + verticalPadding),
         );

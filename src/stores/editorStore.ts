@@ -1,11 +1,29 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { CommandSource, CommandUsage } from "../types/command";
-import type { FormulaDocument, FormulaHistoryItem } from "../types/formula";
+import type {
+  FormulaDocument,
+  FormulaHistoryItem,
+  LatexCodeFormat,
+} from "../types/formula";
+import {
+  DEFAULT_LATEX_CODE_FORMAT,
+  isLatexCodeFormat,
+} from "../clipboard/LatexCopyService";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 
 type Theme = "light" | "dark";
 export type Language = "cn" | "en";
+export const MIN_EDITOR_ZOOM = 0.2;
+export const MAX_EDITOR_ZOOM = 1.6;
+
+function normalizeEditorZoom(value: unknown) {
+  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
+  return Math.min(
+    MAX_EDITOR_ZOOM,
+    Math.max(MIN_EDITOR_ZOOM, Math.round(zoom * 10) / 10),
+  );
+}
 
 interface EditorState {
   title: string;
@@ -14,6 +32,7 @@ interface EditorState {
   language: Language;
   zoom: number;
   sourceOpen: boolean;
+  latexCodeFormat: LatexCodeFormat;
   personalize: boolean;
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
@@ -25,6 +44,7 @@ interface EditorState {
   setLanguage: (language: Language) => void;
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
+  setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
@@ -47,6 +67,7 @@ export const useEditorStore = create<EditorState>()(
       language: "cn",
       zoom: 1,
       sourceOpen: false,
+      latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       personalize: true,
       suggestionCount: 6,
       checkUpdatesOnStartup: true,
@@ -56,8 +77,14 @@ export const useEditorStore = create<EditorState>()(
       setLatex: (latex) => set({ latex: normalizeMultilineLatex(latex) }),
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
-      setZoom: (zoom) => set({ zoom: Math.min(1.6, Math.max(0.5, zoom)) }),
+      setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
+      setLatexCodeFormat: (latexCodeFormat) =>
+        set({
+          latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
+            ? latexCodeFormat
+            : DEFAULT_LATEX_CODE_FORMAT,
+        }),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
@@ -114,13 +141,16 @@ export const useEditorStore = create<EditorState>()(
               : "",
           ),
           theme: document.settings.theme,
-          zoom: document.settings.zoom,
+          zoom: normalizeEditorZoom(document.settings.zoom),
+          latexCodeFormat: isLatexCodeFormat(document.settings.latexCodeFormat)
+            ? document.settings.latexCodeFormat
+            : DEFAULT_LATEX_CODE_FORMAT,
         }),
       toDocument: () => {
         const state = get();
         const now = Date.now();
         return {
-          version: 2,
+          version: 3,
           title: state.title,
           formulas: state.latex.split("\n").map((latex) => ({
             id: crypto.randomUUID(),
@@ -132,7 +162,11 @@ export const useEditorStore = create<EditorState>()(
             updatedAt: now,
           })),
           macros: {},
-          settings: { theme: state.theme, zoom: state.zoom },
+          settings: {
+            theme: state.theme,
+            zoom: state.zoom,
+            latexCodeFormat: state.latexCodeFormat,
+          },
         };
       },
     }),
@@ -146,12 +180,24 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
+        latexCodeFormat: state.latexCodeFormat,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         usage: state.usage,
         history: state.history,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<EditorState>;
+        return {
+          ...currentState,
+          ...persisted,
+          zoom: normalizeEditorZoom(persisted.zoom),
+          latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
+            ? persisted.latexCodeFormat
+            : DEFAULT_LATEX_CODE_FORMAT,
+        };
+      },
     },
   ),
 );
