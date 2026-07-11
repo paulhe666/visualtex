@@ -103,6 +103,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Test LaTeX code formats
+        run: npm run test:latex-format
+
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
 

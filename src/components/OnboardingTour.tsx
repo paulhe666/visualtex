@@ -32,6 +32,7 @@ const copy: Record<Language, StepCopy[]> = {
     { title: "欢迎使用 VisualTeX", description: "用熟悉的方式输入公式，需要时随时查看源码。" },
     { title: "从公式库开始", description: "选择结构或符号，它会直接插入当前光标。" },
     { title: "保持双手在键盘上", description: "几个按键就能完成换行、跳转和删除。" },
+    { title: "切换 LaTeX 代码格式", description: "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。" },
     { title: "第一次使用 OCR", description: "先安装本地 OCR 环境；第一次识别某个模型时还需要联网下载模型文件。" },
     { title: "之后直接粘贴图片", description: "模型准备好后，把光标放进公式框，直接粘贴公式图片即可识别并插回原位置。" },
     { title: "随时检查更新", description: "打开左上角菜单，选择“检查更新”；也可以在设置中执行同一操作。" },
@@ -40,6 +41,7 @@ const copy: Record<Language, StepCopy[]> = {
     { title: "Welcome to VisualTeX", description: "Write formulas naturally and inspect the source whenever you need it." },
     { title: "Start from the formula library", description: "Choose a structure or symbol to insert it at the cursor." },
     { title: "Keep your hands on the keyboard", description: "A few keys cover line creation, navigation, and deletion." },
+    { title: "Switch the LaTeX code format", description: "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately." },
     { title: "First-time OCR setup", description: "Install the local OCR runtime first. The first recognition with each model also downloads that model from the internet." },
     { title: "Paste images directly afterward", description: "Once the model is ready, place the cursor in a formula field and paste an image to recognize and insert it at the saved position." },
     { title: "Check for updates anytime", description: "Open the top-left menu and choose “Check for updates”. The same action is also available in Settings." },
@@ -161,6 +163,29 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
             )}
 
             {step === 3 && (
+              <div className="onboarding-code-format-demo">
+                <div className="onboarding-code-format-toolbar">
+                  <Code2 size={16} />
+                  <strong>{isEn ? "LaTeX code format" : "LaTeX 代码格式"}</strong>
+                  <span>⌄</span>
+                </div>
+                <div className="onboarding-code-format-choice">
+                  <span>
+                    <small>{isEn ? "Independent" : "单公式环境"}</small>
+                    <strong>\\[ ... \\]</strong>
+                  </span>
+                  <span className="is-selected">
+                    <Check size={14} />
+                    <small>{isEn ? "Combined" : "多公式环境"}</small>
+                    <strong>align*</strong>
+                  </span>
+                </div>
+                <i><ArrowRight size={15} /></i>
+                <pre>{"\\begin{align*}\na &= b + c \\\\\\nd &= e - f\n\\end{align*}"}</pre>
+              </div>
+            )}
+
+            {step === 4 && (
               <div className="onboarding-ocr-setup-demo">
                 <span>
                   <ScanLine size={20} />
@@ -182,7 +207,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 4 && (
+            {step === 5 && (
               <div className="onboarding-paste-demo">
                 <div className="onboarding-paste-field">
                   <span className="onboarding-paste-caret" />
@@ -202,7 +227,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 5 && (
+            {step === 6 && (
               <div className="onboarding-update-demo">
                 <span>
                   <Menu size={20} />

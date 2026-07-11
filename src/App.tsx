@@ -6,7 +6,6 @@ import {
   ChevronDown,
   CircleHelp,
   Code2,
-  Copy,
   FilePlus2,
   FolderOpen,
   History,
@@ -46,12 +45,13 @@ import { useEditorStore } from "./stores/editorStore";
 import {
   copyLatex,
   formatLatex,
+  getLatexCodeFormatDefinition,
+  latexCodeFormats,
   parseLatexSource,
   splitLatexLines,
-  type CopyFormat,
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
-import type { FormulaDocument } from "./types/formula";
+import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import {
   OCR_MODELS,
   cancelOcrRecognition,
@@ -80,7 +80,7 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v2.completed";
+const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -129,6 +129,10 @@ function App() {
   const setZoom = useEditorStore((state) => state.setZoom);
   const sourceOpen = useEditorStore((state) => state.sourceOpen);
   const setSourceOpen = useEditorStore((state) => state.setSourceOpen);
+  const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const setLatexCodeFormat = useEditorStore(
+    (state) => state.setLatexCodeFormat,
+  );
   const addHistory = useEditorStore((state) => state.addHistory);
   const loadDocument = useEditorStore((state) => state.loadDocument);
   const toDocument = useEditorStore((state) => state.toDocument);
@@ -140,27 +144,32 @@ function App() {
   );
   const isEn = language === "en";
   const latexLines = splitLatexLines(latex);
-  const sourceLatex = formatLatex(latex, "display");
+  const sourceLatex = formatLatex(latex, latexCodeFormat);
+  const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
+  const codeFormatGroups = [
+    {
+      id: "single" as const,
+      title: isEn ? "Independent formula formats" : "单公式独立环境",
+      description: isEn
+        ? "Each non-empty formula field gets its own wrapper"
+        : "每个非空公式框分别生成一个完整环境",
+      formats: latexCodeFormats.filter((format) => format.group === "single"),
+    },
+    {
+      id: "multi" as const,
+      title: isEn ? "Combined multi-line environments" : "多公式合并环境",
+      description: isEn
+        ? "All non-empty formula fields become rows in one environment"
+        : "所有非空公式框合并成一个多行公式环境",
+      formats: latexCodeFormats.filter((format) => format.group === "multi"),
+    },
+  ];
   const selectedOcrModel =
     OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
   const inlineOcrModel =
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
-
-  const copyLabels: Record<CopyFormat, { title: string; hint: string }> = isEn
-    ? {
-        display: { title: "Display math (recommended)", hint: "$$ ... $$" },
-        plain: { title: "Raw LaTeX", hint: "\\frac{x}{y}" },
-        inline: { title: "Inline math", hint: "\\( ... \\)" },
-        equation: { title: "equation environment", hint: "\\begin{equation}" },
-      }
-    : {
-        display: { title: "独立公式（推荐）", hint: "$$ ... $$" },
-        plain: { title: "纯公式源码", hint: "\\frac{x}{y}" },
-        inline: { title: "行内公式", hint: "\\( ... \\)" },
-        equation: { title: "equation 环境", hint: "\\begin{equation}" },
-      };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -426,16 +435,27 @@ function App() {
     }
   };
 
-  const handleCopy = async (format: CopyFormat = "display") => {
+  const handleCodeFormatChange = (format: LatexCodeFormat) => {
+    const definition = getLatexCodeFormatDefinition(format);
+    setLatexCodeFormat(format);
+    setSourceOpen(true);
+    setCopyMenuOpen(false);
+    setToast(
+      isEn
+        ? `LaTeX code format: ${definition.titleEn}`
+        : `LaTeX 代码格式已切换为：${definition.titleZh}`,
+    );
+  };
+
+  const handleCopy = async () => {
     try {
-      await copyLatex(latex, format);
+      await copyLatex(latex, latexCodeFormat);
       addHistory(latex);
       setToast(
         isEn
-          ? "Copied " + copyLabels[format].title
-          : "已复制" + copyLabels[format].title,
+          ? `Copied ${currentCodeFormat.titleEn}`
+          : `已复制：${currentCodeFormat.titleZh}`,
       );
-      setCopyMenuOpen(false);
     } catch {
       setToast(
         isEn
@@ -790,15 +810,31 @@ function App() {
           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
             <Settings2 size={17} />
           </button>
-          <div className="copy-control">
-            <button type="button" className="copy-primary" onClick={() => handleCopy("display")}>
-              <Copy size={16} /> {isEn ? "Copy LaTeX" : "复制 LaTeX"}
+          <div className="copy-control code-format-control">
+            <button
+              type="button"
+              className="copy-primary code-format-primary"
+              aria-expanded={copyMenuOpen}
+              aria-haspopup="menu"
+              aria-controls="copy-format-menu"
+              title={
+                isEn
+                  ? `Current: ${currentCodeFormat.titleEn}`
+                  : `当前格式：${currentCodeFormat.titleZh}`
+              }
+              onClick={() => {
+                setMenuOpen(false);
+                setCopyMenuOpen((open) => !open);
+              }}
+            >
+              <Code2 size={16} />
+              <span>{isEn ? "LaTeX code format" : "LaTeX 代码格式"}</span>
             </button>
             <button
               ref={copyMenuButtonRef}
               type="button"
               className="copy-chevron"
-              aria-label={isEn ? "Choose copy format" : "选择复制格式"}
+              aria-label={isEn ? "Choose LaTeX code format" : "选择 LaTeX 代码格式"}
               aria-expanded={copyMenuOpen}
               aria-haspopup="menu"
               aria-controls="copy-format-menu"
@@ -813,21 +849,74 @@ function App() {
               <div
                 ref={copyMenuRef}
                 id="copy-format-menu"
-                className="copy-menu"
+                className="copy-menu code-format-menu"
                 role="menu"
-                aria-label={isEn ? "Copy format" : "复制格式"}
+                aria-label={isEn ? "LaTeX code format" : "LaTeX 代码格式"}
               >
-                <span className="copy-menu-label">
-                  {isEn ? "Copy format" : "复制格式"}
-                </span>
-                {(Object.keys(copyLabels) as CopyFormat[]).map((format) => (
-                  <button type="button" role="menuitem" key={format} onClick={() => handleCopy(format)}>
-                    <span>
-                      <strong>{copyLabels[format].title}</strong>
-                      <small>{copyLabels[format].hint}</small>
-                    </span>
-                    {format === "display" && <Check size={14} />}
-                  </button>
+                <div className="code-format-menu-header">
+                  <span className="copy-menu-label">
+                    {isEn ? "LaTeX code format" : "LaTeX 代码格式"}
+                  </span>
+                  <small>
+                    {isEn
+                      ? "Changes the source panel and copy output"
+                      : "同时改变下方源码区与复制结果"}
+                  </small>
+                </div>
+                {codeFormatGroups.map((group) => (
+                  <div
+                    className="code-format-group"
+                    role="group"
+                    aria-label={group.title}
+                    key={group.id}
+                  >
+                    <div className="code-format-group-heading">
+                      <strong>{group.title}</strong>
+                      <small>{group.description}</small>
+                    </div>
+                    {group.formats.map((format) => {
+                      const selected = format.id === latexCodeFormat;
+                      return (
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          data-format={format.id}
+                          className={selected ? "is-selected" : ""}
+                          key={format.id}
+                          onClick={() => handleCodeFormatChange(format.id)}
+                        >
+                          <span className="code-format-item-copy">
+                            <span className="code-format-item-title">
+                              <strong>
+                                {isEn ? format.titleEn : format.titleZh}
+                              </strong>
+                              {format.numbered !== undefined && (
+                                <em>
+                                  {format.numbered
+                                    ? isEn
+                                      ? "numbered"
+                                      : "编号"
+                                    : isEn
+                                      ? "no number"
+                                      : "无编号"}
+                                </em>
+                              )}
+                            </span>
+                            <small className="code-format-hint">{format.hint}</small>
+                            <small className="code-format-description">
+                              {isEn
+                                ? format.descriptionEn
+                                : format.descriptionZh}
+                            </small>
+                          </span>
+                          <span className="code-format-check" aria-hidden="true">
+                            {selected && <Check size={14} />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ))}
               </div>
             )}
@@ -995,14 +1084,15 @@ function App() {
               <LatexSourceEditor
                 latex={sourceLatex}
                 theme={theme}
-                onApply={(source) =>
+                format={latexCodeFormat}
+                onApply={(source, sourceFormat) =>
                   setLatex(
-                    parseLatexSource(source)
+                    parseLatexSource(source, sourceFormat)
                       .map(normalizeChineseLatex)
                       .join("\n"),
                   )
                 }
-                onCopy={() => handleCopy("display")}
+                onCopy={() => void handleCopy()}
               />
             )}
           </div>

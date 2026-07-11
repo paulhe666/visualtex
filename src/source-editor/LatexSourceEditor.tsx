@@ -5,24 +5,36 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import { Check, Code2, Copy, RotateCcw } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import type { LatexCodeFormat } from "../types/formula";
 
 interface Props {
   latex: string;
   theme: "light" | "dark";
-  onApply: (latex: string) => void;
+  format: LatexCodeFormat;
+  onApply: (latex: string, sourceFormat: LatexCodeFormat) => void;
   onCopy: () => void;
 }
 
-export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
+export function LatexSourceEditor({
+  latex,
+  theme,
+  format,
+  onApply,
+  onCopy,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const draftRef = useRef(latex);
   const sourceRef = useRef(latex);
   const dirtyRef = useRef(false);
   const suppressChangeRef = useRef(false);
+  const formatRef = useRef(format);
+  const onApplyRef = useRef(onApply);
+  const formatRefreshFrameRef = useRef<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
+  onApplyRef.current = onApply;
 
   const updateDirty = (value: boolean) => {
     dirtyRef.current = value;
@@ -73,6 +85,10 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
     updateDirty(false);
 
     return () => {
+      if (formatRefreshFrameRef.current !== null) {
+        window.cancelAnimationFrame(formatRefreshFrameRef.current);
+        formatRefreshFrameRef.current = null;
+      }
       view.destroy();
       viewRef.current = null;
     };
@@ -91,6 +107,37 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
     draftRef.current = latex;
   }, [latex]);
 
+  useEffect(() => {
+    const previousFormat = formatRef.current;
+    if (previousFormat === format) return;
+    formatRef.current = format;
+
+    if (!dirtyRef.current) return;
+    onApplyRef.current(draftRef.current, previousFormat);
+    updateDirty(false);
+
+    if (formatRefreshFrameRef.current !== null) {
+      window.cancelAnimationFrame(formatRefreshFrameRef.current);
+    }
+    formatRefreshFrameRef.current = window.requestAnimationFrame(() => {
+      formatRefreshFrameRef.current = window.requestAnimationFrame(() => {
+        const view = viewRef.current;
+        if (!view) return;
+        const nextSource = sourceRef.current;
+        const current = view.state.doc.toString();
+        if (current !== nextSource) {
+          suppressChangeRef.current = true;
+          view.dispatch({
+            changes: { from: 0, to: current.length, insert: nextSource },
+          });
+        }
+        draftRef.current = nextSource;
+        updateDirty(false);
+        formatRefreshFrameRef.current = null;
+      });
+    });
+  }, [format]);
+
   const replaceDraft = (value: string) => {
     const view = viewRef.current;
     if (!view) return;
@@ -102,7 +149,7 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
   };
 
   const applyDraft = () => {
-    onApply(draftRef.current);
+    onApply(draftRef.current, formatRef.current);
     sourceRef.current = draftRef.current;
     updateDirty(false);
   };

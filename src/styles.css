@@ -5046,6 +5046,105 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   50% { opacity: 0; }
 }
 
+.onboarding-code-format-demo {
+  width: calc(100% - 30px);
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 10px 8px;
+}
+
+.onboarding-code-format-toolbar {
+  grid-column: 1 / 2;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--primary-foreground);
+}
+
+.onboarding-code-format-toolbar strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-code-format-toolbar > span {
+  font-size: 13px;
+}
+
+.onboarding-code-format-choice {
+  grid-column: 1 / 2;
+  display: grid;
+  gap: 5px;
+}
+
+.onboarding-code-format-choice > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.onboarding-code-format-choice > span small {
+  grid-column: 1 / -1;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.onboarding-code-format-choice > span strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-code-format-choice > span.is-selected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
+  color: var(--accent);
+}
+
+.onboarding-code-format-demo > i {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  color: var(--text-faint);
+}
+
+.onboarding-code-format-demo > pre {
+  grid-column: 3 / 4;
+  grid-row: 1 / 3;
+  min-width: 0;
+  min-height: 142px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 13px;
+  overflow: hidden;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 720px), (max-height: 560px) {
   .onboarding-ocr-setup-demo,
   .onboarding-update-demo {
@@ -5058,13 +5157,199 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
     padding: 8px 6px;
   }
 
-  .onboarding-paste-demo {
+  .onboarding-paste-demo,
+  .onboarding-code-format-demo {
     width: calc(100% - 18px);
+  }
+
+  .onboarding-code-format-demo > pre {
+    min-height: 118px;
+    padding: 9px;
+    font-size: 8px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .onboarding-paste-caret {
     animation: none;
+  }
+}
+
+/* LaTeX code-format selector */
+.code-format-primary {
+  min-width: 158px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.code-format-menu {
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(720px, calc(100vh - 92px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.code-format-menu-header {
+  position: sticky;
+  z-index: 2;
+  top: -8px;
+  display: grid;
+  gap: 3px;
+  margin: -8px -8px 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.code-format-menu-header .copy-menu-label {
+  padding: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.code-format-menu-header > small {
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.code-format-group + .code-format-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.code-format-group-heading {
+  display: grid;
+  gap: 2px;
+  padding: 4px 8px 6px;
+}
+
+.code-format-group-heading strong {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.code-format-group-heading small {
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.code-format-menu button {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px !important;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.code-format-menu button + button {
+  margin-top: 3px;
+}
+
+.code-format-menu button:hover,
+.code-format-menu button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-border) 58%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+}
+
+.code-format-menu button.is-selected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+:root[data-theme="light"] .code-format-menu button.is-selected {
+  background: #f2f8ff;
+}
+
+.code-format-item-copy {
+  min-width: 0;
+  display: grid !important;
+  gap: 3px !important;
+}
+
+.code-format-item-title {
+  min-width: 0;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 7px !important;
+}
+
+.code-format-item-title strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-format-item-title em {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.code-format-hint {
+  overflow: hidden;
+  color: var(--accent) !important;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace !important;
+  font-size: 10px !important;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-format-description {
+  overflow: hidden;
+  color: var(--text-faint) !important;
+  font-family: inherit !important;
+  font-size: 9px !important;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-format-check {
+  width: 18px;
+  height: 18px;
+  display: grid !important;
+  place-items: center;
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .code-format-primary {
+    min-width: 0;
+  }
+
+  .code-format-primary span {
+    display: none;
+  }
+}
+
+@media (max-height: 640px) {
+  .code-format-menu {
+    max-height: calc(100vh - 72px);
   }
 }
