@@ -66,6 +66,7 @@ interface Props {
   activeLineId: string | null;
   zoom: number;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
+  onHistoryBusyChange?: (busy: boolean) => void;
   overlay?: ReactNode;
 }
 
@@ -585,7 +586,14 @@ function FormulaField(props: FormulaFieldProps) {
 
 export const MathEditor = forwardRef<MathEditorHandle, Props>(
   function MathEditor(
-    { lines, activeLineId, zoom, onPasteImage, overlay },
+    {
+      lines,
+      activeLineId,
+      zoom,
+      onPasteImage,
+      onHistoryBusyChange,
+      overlay,
+    },
     ref,
   ) {
     const surfaceRef = useRef<HTMLDivElement>(null);
@@ -925,6 +933,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
       const before = captureFieldSnapshot(field);
       const beforeActiveLineId = state.activeLineId;
+      onHistoryBusyChange?.(true);
       suppressedHistoryLineIdRef.current = lineId;
       let changed = false;
       let after = before;
@@ -949,33 +958,33 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             break;
           }
         }
+        if (before.latex === after.latex) {
+          field.resetUndo();
+          return false;
+        }
+
+        state.replaceFormulaLine(lineId, after.latex);
+        state.setActiveLineId(lineId);
+        linesRef.current = useEditorStore.getState().lines;
+        setActiveLine(lineId);
+        field.resetUndo();
+        historyManager.push({
+          type: "replace-formula",
+          lineId,
+          beforeLatex: before.latex,
+          afterLatex: after.latex,
+          beforeSelection: before.selection,
+          afterSelection: after.selection,
+          beforeActiveLineId,
+          afterActiveLineId: lineId,
+          timestamp: Date.now(),
+          source,
+        });
+        return true;
       } finally {
         suppressedHistoryLineIdRef.current = null;
+        onHistoryBusyChange?.(false);
       }
-
-      if (before.latex === after.latex) {
-        field.resetUndo();
-        return false;
-      }
-
-      state.replaceFormulaLine(lineId, after.latex);
-      state.setActiveLineId(lineId);
-      linesRef.current = useEditorStore.getState().lines;
-      setActiveLine(lineId);
-      field.resetUndo();
-      historyManager.push({
-        type: "replace-formula",
-        lineId,
-        beforeLatex: before.latex,
-        afterLatex: after.latex,
-        beforeSelection: before.selection,
-        afterSelection: after.selection,
-        beforeActiveLineId,
-        afterActiveLineId: lineId,
-        timestamp: Date.now(),
-        source,
-      });
-      return true;
     };
 
     const resolveTargetField = () => {

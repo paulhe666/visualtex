@@ -123,6 +123,7 @@ function App() {
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
+  const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
     return OCR_MODELS.some((item) => item.id === stored)
@@ -920,7 +921,11 @@ function App() {
               type="button"
               className="icon-button"
               onClick={() => void historyManager.undo()}
-              disabled={!historyState.canUndo || historyState.isReplaying}
+              disabled={
+                editorHistoryBusy ||
+                !historyState.canUndo ||
+                historyState.isReplaying
+              }
               aria-label={isEn ? "Undo" : "撤销"}
               title={isEn ? "Undo · ⌘/Ctrl+Z" : "撤销 · ⌘/Ctrl+Z"}
             >
@@ -930,7 +935,11 @@ function App() {
               type="button"
               className="icon-button"
               onClick={() => void historyManager.redo()}
-              disabled={!historyState.canRedo || historyState.isReplaying}
+              disabled={
+                editorHistoryBusy ||
+                !historyState.canRedo ||
+                historyState.isReplaying
+              }
               aria-label={isEn ? "Redo" : "重做"}
               title={isEn ? "Redo · ⇧⌘Z / Ctrl+Y" : "重做 · ⇧⌘Z / Ctrl+Y"}
             >
@@ -1179,6 +1188,7 @@ function App() {
             activeLineId={activeLineId}
             zoom={zoom}
             onPasteImage={handleEditorImagePaste}
+            onHistoryBusyChange={setEditorHistoryBusy}
             overlay={
               inlineOcr ? (
                 <div
