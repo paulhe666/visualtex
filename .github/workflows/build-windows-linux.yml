@@ -1,0 +1,100 @@
+name: Build Windows and Linux
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.*"
+      - "tsconfig*.json"
+      - ".github/workflows/build-windows-linux.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            label: Windows x64
+            bundles: nsis,msi
+            artifact_name: VisualTeX-0.1.0-Windows-x64
+            artifact_paths: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+          - platform: ubuntu-22.04
+            label: Linux x64
+            bundles: deb,appimage
+            artifact_name: VisualTeX-0.1.0-Linux-x64
+            artifact_paths: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build output
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Verify version 0.1.0
+        shell: bash
+        run: |
+          node -e "const p=require('./package.json'); const t=require('./src-tauri/tauri.conf.json'); if(p.version!=='0.1.0'||t.version!=='0.1.0'){throw new Error('package.json and tauri.conf.json must both be 0.1.0')}"
+          grep -q '^version = "0.1.0"$' src-tauri/Cargo.toml
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build installer packages
+        run: npm run tauri -- build --bundles "${{ matrix.bundles }}"
+
+      - name: Upload installer packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: 30

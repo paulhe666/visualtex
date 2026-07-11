@@ -10,3 +10,7 @@ ocr/output/
 
 src-tauri/target/
 src-tauri/gen/
+
+# Local Codex workspace skills and metadata
+.agents/
+.codex/

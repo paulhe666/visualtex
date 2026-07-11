@@ -122,16 +122,7 @@ function FormulaField(props: FormulaFieldProps) {
         ? "Formula line " + (propsRef.current.index + 1)
         : "第 " + (propsRef.current.index + 1) + " 行公式",
     );
-    field.setAttribute(
-      "placeholder",
-      propsRef.current.index === 0
-        ? isEn
-          ? "\\text{Enter a formula, press Enter for a new line}"
-          : "\\text{输入公式，按 Enter 新建下一行}"
-        : isEn
-          ? "\\text{Continue entering a formula}"
-          : "\\text{继续输入公式}",
-    );
+    field.removeAttribute("placeholder");
     field.style.fontSize = 34 * propsRef.current.zoom + "px";
 
     let composing = false;
@@ -278,16 +269,7 @@ function FormulaField(props: FormulaFieldProps) {
         ? "Formula line " + (props.index + 1)
         : "第 " + (props.index + 1) + " 行公式",
     );
-    field.setAttribute(
-      "placeholder",
-      props.index === 0
-        ? isEn
-          ? "\\text{Enter a formula, press Enter for a new line}"
-          : "\\text{输入公式，按 Enter 新建下一行}"
-        : isEn
-          ? "\\text{Continue entering a formula}"
-          : "\\text{继续输入公式}",
-    );
+    field.removeAttribute("placeholder");
   }, [props.index, props.language]);
 
   return <div ref={hostRef} className="mathfield-host" />;
@@ -926,17 +908,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             type="button"
             className="add-formula-line"
             onClick={() => addLineAfter(linesRef.current.length - 1)}
+            aria-label={isEn ? "Add formula line" : "添加公式行"}
+            title={isEn ? "Add formula line · Enter" : "添加公式行 · Enter"}
           >
             <Plus size={15} />
-            {isEn ? "Add formula line" : "添加公式行"}
           </button>
         </div>
-
-        <p className="editor-help">
-          {isEn
-            ? "Enter: new line · Backspace on empty line: delete · Tab: next placeholder · ↑↓: commands"
-            : "Enter 新建下一行 · 空行按 Backspace 删除 · Tab 切换占位符 · ↑↓ 选择命令"}
-        </p>
         <CommandSuggestionPopup
           suggestions={suggestions}
           selectedIndex={selectedIndex}

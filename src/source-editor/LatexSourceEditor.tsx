@@ -37,12 +37,12 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
     if (!hostRef.current) return;
 
     const editorTheme = EditorView.theme({
-      "&": { backgroundColor: "transparent", color: theme === "dark" ? "#dfe5f2" : "#202532" },
-      ".cm-content": { caretColor: "#6d5dfc", fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: "13px", padding: "10px 0" },
-      ".cm-gutters": { backgroundColor: "transparent", color: theme === "dark" ? "#657086" : "#a1a8b5", border: "none" },
-      ".cm-activeLine": { backgroundColor: theme === "dark" ? "#ffffff08" : "#6d5dfc08" },
+      "&": { backgroundColor: "transparent", color: "var(--text)" },
+      ".cm-content": { caretColor: "var(--accent)", fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace", fontSize: "12px", padding: "10px 0" },
+      ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-faint)", border: "none" },
+      ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--accent-soft) 38%, transparent)" },
       ".cm-focused": { outline: "none" },
-      ".cm-selectionBackground, ::selection": { backgroundColor: "#6d5dfc2e !important" },
+      ".cm-selectionBackground, ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 22%, transparent) !important" },
     });
 
     const state = EditorState.create({
@@ -113,9 +113,6 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
         <div className="source-title">
           <Code2 size={16} />
           <span>{isEn ? "LaTeX source" : "LaTeX 源码"}</span>
-          <span className="source-format-chip">
-            {isEn ? "Each line uses $$...$$" : "每行独立 $$...$$"}
-          </span>
           {dirty && (
             <span className="unsaved-chip">
               {isEn ? "Unsynced changes" : "有未同步更改"}
@@ -133,8 +130,14 @@ export function LatexSourceEditor({ latex, theme, onApply, onCopy }: Props) {
               </button>
             </>
           )}
-          <button type="button" className="text-button" onClick={onCopy}>
-            <Copy size={14} /> {isEn ? "Copy wrapped source" : "复制含环境源码"}
+          <button
+            type="button"
+            className="text-button source-copy-button"
+            onClick={onCopy}
+            aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+            title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+          >
+            <Copy size={14} />
           </button>
         </div>
       </div>

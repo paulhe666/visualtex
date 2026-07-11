@@ -44,7 +44,7 @@ export const useEditorStore = create<EditorState>()(
       theme: "light",
       language: "cn",
       zoom: 1,
-      sourceOpen: true,
+      sourceOpen: false,
       personalize: true,
       suggestionCount: 6,
       usage: {},
@@ -53,7 +53,7 @@ export const useEditorStore = create<EditorState>()(
       setLatex: (latex) => set({ latex: normalizeMultilineLatex(latex) }),
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
-      setZoom: (zoom) => set({ zoom: Math.min(1.6, Math.max(0.7, zoom)) }),
+      setZoom: (zoom) => set({ zoom: Math.min(1.6, Math.max(0.5, zoom)) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Star } from "lucide-react";
+import { PanelLeftClose, Star } from "lucide-react";
 import type { LatexCommand } from "../types/command";
 import {
   categoryLabels,
@@ -12,6 +12,7 @@ import { useEditorStore } from "../stores/editorStore";
 
 interface Props {
   onInsert: (command: LatexCommand) => void;
+  onClose: () => void;
 }
 
 const categories = [
@@ -37,9 +38,8 @@ const previewSizeClass = (command: LatexCommand) => {
   return (wide ? " is-wide" : "") + (compact ? " is-compact" : "");
 };
 
-export function FormulaToolbar({ onInsert }: Props) {
+export function FormulaToolbar({ onInsert, onClose }: Props) {
   const [activeCategory, setActiveCategory] = useState("common");
-  const [expanded, setExpanded] = useState(true);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
 
@@ -55,13 +55,24 @@ export function FormulaToolbar({ onInsert }: Props) {
   }, [activeCategory]);
 
   return (
-    <section
-      className={
-        "formula-toolbar " + (expanded ? "is-expanded" : "is-collapsed")
-      }
+    <aside
+      className="formula-toolbar"
       aria-label={isEn ? "Formula toolbar" : "公式工具栏"}
     >
-      <div className="toolbar-tabs">
+      <header className="formula-toolbar-header">
+        <strong>{isEn ? "Formula tools" : "公式工具"}</strong>
+        <button
+          type="button"
+          className="icon-button compact"
+          onClick={onClose}
+          aria-label={isEn ? "Hide formula tools" : "隐藏公式工具"}
+          title={isEn ? "Hide formula tools" : "隐藏公式工具"}
+        >
+          <PanelLeftClose size={16} />
+        </button>
+      </header>
+
+      <nav className="toolbar-tabs" aria-label={isEn ? "Formula categories" : "公式分类"}>
         {categories.map((category) => (
           <button
             key={category}
@@ -70,62 +81,34 @@ export function FormulaToolbar({ onInsert }: Props) {
               "toolbar-tab " +
               (activeCategory === category ? "is-active" : "")
             }
-            onClick={() => {
-              setActiveCategory(category);
-              if (!expanded) setExpanded(true);
-            }}
+            aria-pressed={activeCategory === category}
+            onClick={() => setActiveCategory(category)}
           >
             {category === "common" && <Star size={13} />}
             {(isEn ? categoryLabelsEn : categoryLabels)[category]}
           </button>
         ))}
-        <button
-          type="button"
-          className="toolbar-collapse-button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          title={
-            expanded
-              ? isEn
-                ? "Collapse formula toolbar"
-                : "收起公式选择栏"
-              : isEn
-                ? "Expand formula toolbar"
-                : "展开公式选择栏"
-          }
-        >
-          {expanded ? (
-            <>
-              {isEn ? "Collapse" : "收起"} <ChevronUp size={15} />
-            </>
-          ) : (
-            <>
-              {isEn ? "Expand" : "展开"} <ChevronDown size={15} />
-            </>
-          )}
-        </button>
+      </nav>
+
+      <div className="template-strip" aria-label={isEn ? "Formula templates" : "公式模板"}>
+        {visibleCommands.map((command) => (
+          <button
+            type="button"
+            className={"template-button" + previewSizeClass(command)}
+            key={command.id}
+            onClick={() => onInsert(command)}
+            title={
+              (isEn ? command.labelEn : command.labelZh) +
+              " · " +
+              command.command
+            }
+          >
+            <MathPreview latex={command.previewLatex} />
+            <span>{isEn ? command.labelEn : command.labelZh}</span>
+          </button>
+        ))}
       </div>
 
-      {expanded && (
-        <div className="template-strip">
-          {visibleCommands.map((command) => (
-            <button
-              type="button"
-              className={"template-button" + previewSizeClass(command)}
-              key={command.id}
-              onClick={() => onInsert(command)}
-              title={
-                (isEn ? command.labelEn : command.labelZh) +
-                " · " +
-                command.command
-              }
-            >
-              <MathPreview latex={command.previewLatex} />
-              <span>{isEn ? command.labelEn : command.labelZh}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </section>
+    </aside>
   );
 }

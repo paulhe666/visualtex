@@ -298,6 +298,11 @@ fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
     ] {
         candidates.push(PathBuf::from(name));
     }
+    if cfg!(windows) {
+        for name in ["python.exe", "python", "py.exe", "py"] {
+            candidates.push(PathBuf::from(name));
+        }
+    }
     if cfg!(target_os = "macos") {
         candidates.push(PathBuf::from("/opt/homebrew/bin/python3"));
         candidates.push(PathBuf::from("/usr/local/bin/python3"));
@@ -309,8 +314,14 @@ fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
         match probe_python(&candidate) {
             Ok(probe) => {
                 let version_ok = probe.major == 3 && (9..=13).contains(&probe.minor);
-                let architecture_ok = !cfg!(all(target_os = "macos", target_arch = "aarch64"))
-                    || probe.machine == "arm64";
+                let machine = probe.machine.to_ascii_lowercase();
+                let architecture_ok = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                    machine == "arm64" || machine == "aarch64"
+                } else if cfg!(any(target_os = "windows", target_os = "linux")) {
+                    matches!(machine.as_str(), "x86_64" | "amd64" | "x64")
+                } else {
+                    true
+                };
                 if version_ok && architecture_ok {
                     return Ok((candidate, probe));
                 }
@@ -581,6 +592,8 @@ fn spawn_worker(
         .env("PADDLE_HOME", paths.cache.join("paddle"))
         .env("XDG_CACHE_HOME", &paths.cache)
         .env("TMPDIR", &paths.temp)
+        .env("TMP", &paths.temp)
+        .env("TEMP", &paths.temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log_file_error))

@@ -15,8 +15,8 @@
         "title": "VisualTeX",
         "width": 1240,
         "height": 820,
-        "minWidth": 900,
-        "minHeight": 650,
+        "minWidth": 640,
+        "minHeight": 480,
         "resizable": true,
         "center": true
       }
@@ -31,6 +31,13 @@
     "category": "Productivity",
     "shortDescription": "专业的 LaTeX 可视化公式编辑器",
     "longDescription": "使用可视化结构、智能命令候选、PaddleOCR 公式识别和实时源码共同编辑 LaTeX 数学公式。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "resources": ["ocr/worker.py"]
   }
 }

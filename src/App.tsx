@@ -4,6 +4,7 @@ import {
   Braces,
   Check,
   ChevronDown,
+  CircleHelp,
   Code2,
   Copy,
   FilePlus2,
@@ -16,6 +17,8 @@ import {
   Moon,
   PanelBottomClose,
   PanelBottomOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Redo2,
   Save,
@@ -35,6 +38,8 @@ import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
+import { OnboardingTour } from "./components/OnboardingTour";
+import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { useEditorStore } from "./stores/editorStore";
 import {
   copyLatex,
@@ -68,13 +73,22 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v1.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const appMenuRef = useRef<HTMLDivElement>(null);
+  const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () => window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true",
+  );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -139,6 +153,15 @@ function App() {
   }, [isEn]);
 
   useEffect(() => {
+    const compactWindow = window.matchMedia("(max-width: 1040px)");
+    const handleCompactWindow = (event: MediaQueryListEvent) => {
+      if (event.matches) setSidebarOpen(false);
+    };
+    compactWindow.addEventListener("change", handleCompactWindow);
+    return () => compactWindow.removeEventListener("change", handleCompactWindow);
+  }, []);
+
+  useEffect(() => {
     if (!latex.trim()) return;
     const timeout = window.setTimeout(() => addHistory(latex), 1800);
     return () => window.clearTimeout(timeout);
@@ -149,6 +172,42 @@ function App() {
     const timeout = window.setTimeout(() => setToast(""), 1800);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    const menu = menuOpen ? appMenuRef.current : copyMenuOpen ? copyMenuRef.current : null;
+    const trigger = menuOpen ? menuButtonRef.current : copyMenuButtonRef.current;
+    if (!menu || !trigger) return;
+
+    const items = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+    );
+    const frame = window.requestAnimationFrame(() => items[0]?.focus());
+
+    const handleMenuKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuOpen(false);
+        setCopyMenuOpen(false);
+        trigger.focus({ preventScroll: true });
+        return;
+      }
+
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = currentIndex < 0
+        ? 0
+        : (currentIndex + direction + items.length) % items.length;
+      items[nextIndex]?.focus();
+    };
+
+    menu.addEventListener("keydown", handleMenuKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      menu.removeEventListener("keydown", handleMenuKeyDown);
+    };
+  }, [menuOpen, copyMenuOpen]);
 
   const inlineOcrStatus = inlineOcr?.status;
   useEffect(() => {
@@ -426,6 +485,52 @@ function App() {
     action();
   };
 
+  const finishOnboarding = () => {
+    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
+    setOnboardingOpen(false);
+    window.requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        setCopyMenuOpen(false);
+        return;
+      }
+
+      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen) return;
+      if (!event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+
+      if (key === "n") {
+        event.preventDefault();
+        newFormula();
+      } else if (key === "o") {
+        event.preventDefault();
+        fileInputRef.current?.click();
+      } else if (key === "s") {
+        event.preventDefault();
+        saveDocument();
+      } else if (key === ",") {
+        event.preventDefault();
+        setSettingsOpen(true);
+      } else if (key === "0") {
+        event.preventDefault();
+        setZoom(1);
+      } else if (key === "=" || key === "+") {
+        event.preventDefault();
+        setZoom(zoom + 0.1);
+      } else if (key === "-") {
+        event.preventDefault();
+        setZoom(zoom - 0.1);
+      }
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown);
+  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen]);
+
   return (
     <div className="app-shell">
       <input
@@ -439,35 +544,56 @@ function App() {
       <header className="app-header">
         <div className="brand-area">
           <button
+            ref={menuButtonRef}
             type="button"
             className={"menu-button " + (menuOpen ? "is-active" : "")}
             aria-label={isEn ? "Main menu" : "主菜单"}
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-controls="app-main-menu"
+            onClick={() => {
+              setCopyMenuOpen(false);
+              setMenuOpen((open) => !open);
+            }}
           >
             <Menu size={18} />
           </button>
-          <div className="brand-mark">
-            <Braces size={19} strokeWidth={2.3} />
+          <button
+            type="button"
+            className={"icon-button sidebar-toggle " + (sidebarOpen ? "is-active" : "")}
+            aria-label={sidebarOpen ? (isEn ? "Hide formula tools" : "隐藏公式工具") : (isEn ? "Show formula tools" : "显示公式工具")}
+            aria-pressed={sidebarOpen}
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+          </button>
+          <div className="brand-mark" aria-hidden="true">
+            <VisualTeXLogo className="visualtex-brand-logo" />
           </div>
           <div className="brand-copy">
             <strong>VisualTeX</strong>
-            <span>Formula Studio</span>
           </div>
 
           {menuOpen && (
-            <div className="app-menu-popover">
+            <div
+              ref={appMenuRef}
+              id="app-main-menu"
+              className="app-menu-popover"
+              role="menu"
+              aria-label={isEn ? "VisualTeX menu" : "VisualTeX 菜单"}
+            >
               <div className="app-menu-heading">
                 <strong>VisualTeX</strong>
                 <span>{isEn ? "Formula workspace" : "公式工作区"}</span>
               </div>
-              <button type="button" onClick={() => runMenuAction(newFormula)}>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
                 <kbd>⌘N</kbd>
               </button>
               <button
                 type="button"
+                role="menuitem"
                 onClick={() =>
                   runMenuAction(() => fileInputRef.current?.click())
                 }
@@ -476,7 +602,7 @@ function App() {
                 <span>{isEn ? "Open document" : "打开文档"}</span>
                 <kbd>⌘O</kbd>
               </button>
-              <button type="button" onClick={() => runMenuAction(saveDocument)}>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(saveDocument)}>
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
                 <kbd>⌘S</kbd>
@@ -484,6 +610,7 @@ function App() {
               <div className="app-menu-divider" />
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => runMenuAction(() => setHistoryOpen(true))}
               >
                 <History size={16} />
@@ -491,6 +618,7 @@ function App() {
               </button>
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => runMenuAction(() => setOcrOpen(true))}
               >
                 <ScanLine size={16} />
@@ -498,10 +626,19 @@ function App() {
               </button>
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => runMenuAction(() => setSettingsOpen(true))}
               >
                 <Settings2 size={16} />
                 <span>{isEn ? "Settings" : "设置"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => setOnboardingOpen(true))}
+              >
+                <CircleHelp size={16} />
+                <span>{isEn ? "Quick tour" : "新手教程"}</span>
               </button>
               <div className="app-menu-divider" />
               <div className="app-menu-language">
@@ -512,6 +649,8 @@ function App() {
                 <div>
                   <button
                     type="button"
+                    role="menuitemradio"
+                    aria-checked={language === "cn"}
                     className={language === "cn" ? "is-active" : ""}
                     onClick={() => setLanguage("cn")}
                   >
@@ -519,6 +658,8 @@ function App() {
                   </button>
                   <button
                     type="button"
+                    role="menuitemradio"
+                    aria-checked={language === "en"}
                     className={language === "en" ? "is-active" : ""}
                     onClick={() => setLanguage("en")}
                   >
@@ -536,41 +677,46 @@ function App() {
             onChange={(event) => setTitle(event.target.value)}
             aria-label={isEn ? "Formula document title" : "公式文档标题"}
           />
-          <span className={"save-state " + (savedPulse ? "is-saved" : "")}>
-            <Check size={12} /> {isEn ? "Auto saved" : "自动保存"}
+          <span
+            className={"save-state " + (savedPulse ? "is-saved" : "")}
+            aria-label={isEn ? "Saved" : "已保存"}
+            title={isEn ? "Saved" : "已保存"}
+          >
+            <Check size={13} />
           </span>
         </div>
 
         <div className="header-actions">
-          <div className="action-group">
-            <button type="button" className="icon-button" onClick={newFormula} title={isEn ? "New" : "新建"}>
+          <div className="action-group file-actions">
+            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · ⌘N" : "新建 · ⌘N"}>
               <FilePlus2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} title={isEn ? "Open" : "打开"}>
+            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · ⌘O" : "打开 · ⌘O"}>
               <FolderOpen size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={saveDocument} title={isEn ? "Save" : "保存到本地"}>
+            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · ⌘S" : "保存到本地 · ⌘S"}>
               <Save size={17} />
             </button>
           </div>
-          <div className="action-group">
-            <button type="button" className="icon-button" onClick={() => editorRef.current?.undo()} title={isEn ? "Undo" : "撤销"}>
+          <div className="action-group edit-actions">
+            <button type="button" className="icon-button" onClick={() => editorRef.current?.undo()} aria-label={isEn ? "Undo" : "撤销"} title={isEn ? "Undo · ⌘Z" : "撤销 · ⌘Z"}>
               <Undo2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => editorRef.current?.redo()} title={isEn ? "Redo" : "重做"}>
+            <button type="button" className="icon-button" onClick={() => editorRef.current?.redo()} aria-label={isEn ? "Redo" : "重做"} title={isEn ? "Redo · ⇧⌘Z" : "重做 · ⇧⌘Z"}>
               <Redo2 size={17} />
             </button>
           </div>
-          <button type="button" className="icon-button" onClick={() => setHistoryOpen(true)} title={isEn ? "Formula history" : "公式历史"}>
+          <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
-          <button type="button" className="icon-button" onClick={() => setOcrOpen(true)} title={isEn ? "Recognize formula image" : "图片公式识别"}>
+          <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
             <ScanLine size={17} />
           </button>
           <button
             type="button"
-            className="icon-button"
+            className="icon-button theme-toggle"
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            aria-label={theme === "light" ? (isEn ? "Switch to dark mode" : "切换深色模式") : (isEn ? "Switch to light mode" : "切换浅色模式")}
             title={
               isEn
                 ? theme === "light"
@@ -583,7 +729,7 @@ function App() {
           >
             {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
           </button>
-          <button type="button" className="icon-button" onClick={() => setSettingsOpen(true)} title={isEn ? "Settings" : "设置"}>
+          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
             <Settings2 size={17} />
           </button>
           <div className="copy-control">
@@ -591,20 +737,33 @@ function App() {
               <Copy size={16} /> {isEn ? "Copy LaTeX" : "复制 LaTeX"}
             </button>
             <button
+              ref={copyMenuButtonRef}
               type="button"
               className="copy-chevron"
               aria-label={isEn ? "Choose copy format" : "选择复制格式"}
-              onClick={() => setCopyMenuOpen((open) => !open)}
+              aria-expanded={copyMenuOpen}
+              aria-haspopup="menu"
+              aria-controls="copy-format-menu"
+              onClick={() => {
+                setMenuOpen(false);
+                setCopyMenuOpen((open) => !open);
+              }}
             >
               <ChevronDown size={15} />
             </button>
             {copyMenuOpen && (
-              <div className="copy-menu">
+              <div
+                ref={copyMenuRef}
+                id="copy-format-menu"
+                className="copy-menu"
+                role="menu"
+                aria-label={isEn ? "Copy format" : "复制格式"}
+              >
                 <span className="copy-menu-label">
                   {isEn ? "Copy format" : "复制格式"}
                 </span>
                 {(Object.keys(copyLabels) as CopyFormat[]).map((format) => (
-                  <button type="button" key={format} onClick={() => handleCopy(format)}>
+                  <button type="button" role="menuitem" key={format} onClick={() => handleCopy(format)}>
                     <span>
                       <strong>{copyLabels[format].title}</strong>
                       <small>{copyLabels[format].hint}</small>
@@ -618,25 +777,37 @@ function App() {
         </div>
       </header>
 
-      {menuOpen && (
+      {(menuOpen || copyMenuOpen) && (
         <button
           type="button"
           className="menu-dismiss-layer"
           aria-label={isEn ? "Close menu" : "关闭菜单"}
-          onClick={() => setMenuOpen(false)}
+          onClick={() => {
+            setMenuOpen(false);
+            setCopyMenuOpen(false);
+          }}
         />
       )}
 
-      <FormulaToolbar
-        onInsert={(command) => editorRef.current?.insertCommand(command)}
-      />
+      <main
+        className={`workspace${sidebarOpen ? " has-sidebar" : ""}`}
+      >
+        {sidebarOpen && (
+          <FormulaToolbar
+            onInsert={(command) => editorRef.current?.insertCommand(command)}
+            onClose={() => setSidebarOpen(false)}
+          />
+        )}
 
-      <main className="workspace">
-        <section className="formula-workspace">
-          <div className="workspace-heading">
-            <div>
-              <span className="eyebrow">FORMULA CANVAS</span>
-              <h1>{isEn ? "Visual formula" : "可视化公式"}</h1>
+        <section className="formula-workspace editor-pane">
+          <header className="workspace-heading pane-header editor-pane-header">
+            <div className="pane-title-group">
+              <span className="pane-icon" aria-hidden="true">
+                <Braces size={16} />
+              </span>
+              <div className="pane-title-copy">
+                <h1>{isEn ? "Visual editor" : "可视化编辑"}</h1>
+              </div>
             </div>
             <div className="canvas-tool-group">
               <label
@@ -648,7 +819,6 @@ function App() {
                 }
               >
                 <ScanLine size={14} />
-                <span>OCR</span>
                 <select
                   value={ocrModel}
                   disabled={inlineOcrIsBusy}
@@ -665,18 +835,33 @@ function App() {
                 </select>
               </label>
               <div className="canvas-controls">
-                <button type="button" className="icon-button small" onClick={() => setZoom(zoom - 0.1)} aria-label={isEn ? "Zoom out" : "缩小公式"}>
+                <button
+                  type="button"
+                  className="icon-button compact"
+                  onClick={() => setZoom(zoom - 0.1)}
+                  disabled={zoom <= 0.5001}
+                  aria-label={isEn ? "Zoom out" : "缩小公式"}
+                  title={zoom <= 0.5001 ? (isEn ? "Minimum zoom: 50%" : "最小缩放：50%") : undefined}
+                >
                   <Minus size={15} />
                 </button>
-                <span>{Math.round(zoom * 100)}%</span>
-                <button type="button" className="icon-button small" onClick={() => setZoom(zoom + 0.1)} aria-label={isEn ? "Zoom in" : "放大公式"}>
+                <span aria-live="polite" aria-atomic="true">{Math.round(zoom * 100)}%</span>
+                <button
+                  type="button"
+                  className="icon-button compact"
+                  onClick={() => setZoom(zoom + 0.1)}
+                  disabled={zoom >= 1.5999}
+                  aria-label={isEn ? "Zoom in" : "放大公式"}
+                  title={zoom >= 1.5999 ? (isEn ? "Maximum zoom: 160%" : "最大缩放：160%") : undefined}
+                >
                   <Plus size={15} />
                 </button>
               </div>
             </div>
-          </div>
+          </header>
 
-          <MathEditor
+          <div className="editor-pane-scroll">
+            <MathEditor
             ref={editorRef}
             lines={latexLines}
             zoom={zoom}
@@ -733,63 +918,52 @@ function App() {
                 </div>
               ) : null
             }
-          />
+            />
 
-          <div className="source-toggle-row">
+            <div className="source-toggle-row">
             <button
               type="button"
               className="source-toggle"
               onClick={() => setSourceOpen(!sourceOpen)}
+              aria-label={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
+              title={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
             >
               <Code2 size={15} />
-              {sourceOpen
-                ? isEn
-                  ? "Hide LaTeX source"
-                  : "收起 LaTeX 源码"
-                : isEn
-                  ? "Show LaTeX source"
-                  : "展开 LaTeX 源码"}
               {sourceOpen ? <PanelBottomClose size={15} /> : <PanelBottomOpen size={15} />}
             </button>
-            <span>
-              {isEn ? "Single source of truth · Two-way sync" : "单一数据源 · 双向同步"}
-            </span>
-          </div>
+            </div>
 
-          {sourceOpen && (
-            <LatexSourceEditor
-              latex={sourceLatex}
-              theme={theme}
-              onApply={(source) =>
-                setLatex(
-                  parseLatexSource(source)
-                    .map(normalizeChineseLatex)
-                    .join("\n"),
-                )
-              }
-              onCopy={() => handleCopy("display")}
-            />
-          )}
+            {sourceOpen && (
+              <LatexSourceEditor
+                latex={sourceLatex}
+                theme={theme}
+                onApply={(source) =>
+                  setLatex(
+                    parseLatexSource(source)
+                      .map(normalizeChineseLatex)
+                      .join("\n"),
+                  )
+                }
+                onCopy={() => handleCopy("display")}
+              />
+            )}
+          </div>
         </section>
+
       </main>
 
       <footer className="status-bar">
         <div>
           <span className="status-live-dot" />
-          {isEn ? "MathLive ready" : "MathLive 就绪"}
+          {isEn ? "Ready" : "就绪"}
         </div>
         <div>
           <span>
-            {latexLines.length} {isEn ? "formula lines" : "行公式"}
+            {latexLines.length} {isEn ? "lines" : "行"}
           </span>
-          <span className="status-divider" />
           <span>
-            {latex.length} {isEn ? "characters" : "字符"}
+            · {latex.length} {isEn ? "characters" : "字符"}
           </span>
-          <span className="status-divider" />
-          <span>{isEn ? "No TeX Live required" : "无需 TeX Live"}</span>
-          <span className="status-divider" />
-          <span>UTF-8</span>
         </div>
       </footer>
 
@@ -812,6 +986,11 @@ function App() {
         onInsert={(value) => editorRef.current?.insertLatex(value)}
         onAppend={(value) => editorRef.current?.appendLatex(value)}
         onNotify={setToast}
+      />
+      <OnboardingTour
+        open={onboardingOpen}
+        language={language}
+        onFinish={finishOnboarding}
       />
 
       {historyOpen && (

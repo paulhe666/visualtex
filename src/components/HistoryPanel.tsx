@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Clock3, Trash2, X } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { useEditorStore } from "../stores/editorStore";
@@ -9,10 +10,32 @@ interface Props {
 }
 
 export function HistoryPanel({ open, onClose, onRestore }: Props) {
+  const panelRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const history = useEditorStore((state) => state.history);
   const clearHistory = useEditorStore((state) => state.clearHistory);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => {
+      panelRef.current?.querySelector<HTMLElement>("button")?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus({ preventScroll: true });
+    };
+  }, [open]);
 
   const timeLabel = (time: number) =>
     new Intl.DateTimeFormat(isEn ? "en-US" : "zh-CN", {
@@ -22,12 +45,20 @@ export function HistoryPanel({ open, onClose, onRestore }: Props) {
       minute: "2-digit",
     }).format(time);
 
+  if (!open) return null;
+
   return (
-    <aside className={"history-panel " + (open ? "is-open" : "")} aria-hidden={!open}>
+    <aside
+      ref={panelRef}
+      className="history-panel is-open"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="history-panel-title"
+    >
       <header className="history-header">
         <div>
           <span className="eyebrow">RECENT</span>
-          <h2>{isEn ? "Formula history" : "公式历史"}</h2>
+          <h2 id="history-panel-title">{isEn ? "Formula history" : "公式历史"}</h2>
         </div>
         <button
           type="button"

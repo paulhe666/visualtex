@@ -92,6 +92,9 @@ export function OcrDialog({
   onNotify,
 }: OcrDialogProps) {
   const isEn = language === "en";
+  const dialogRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const recognizingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [runtime, setRuntime] = useState<OcrRuntimeStatus | null>(null);
@@ -201,6 +204,10 @@ export function OcrDialog({
       setRecognitionSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
     return () => window.clearInterval(timer);
+  }, [recognizing]);
+
+  useEffect(() => {
+    recognizingRef.current = recognizing;
   }, [recognizing]);
 
   const selectFile = useCallback(
@@ -332,9 +339,50 @@ export function OcrDialog({
   };
 
   const requestClose = () => {
-    if (recognizing) void handleCancelRecognition();
+    if (recognizingRef.current) void handleCancelRecognition();
     onClose();
   };
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("button, input, select")?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        requestClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus({ preventScroll: true });
+    };
+  }, [open]);
 
   const handleCopy = async () => {
     const value = normalizeResultLatex(latex);
@@ -398,6 +446,7 @@ export function OcrDialog({
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={requestClose}>
       <section
+        ref={dialogRef}
         className="ocr-dialog"
         role="dialog"
         aria-modal="true"

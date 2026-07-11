@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   BrainCircuit,
   Languages,
@@ -15,6 +16,8 @@ interface Props {
 }
 
 export function SettingsDialog({ open, onClose }: Props) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
   const setTheme = useEditorStore((state) => state.setTheme);
   const language = useEditorStore((state) => state.language);
@@ -28,11 +31,53 @@ export function SettingsDialog({ open, onClose }: Props) {
   const resetUsage = useEditorStore((state) => state.resetUsage);
   const isEn = language === "en";
 
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("button, input, select")?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="settings-dialog"
         role="dialog"
         aria-modal="true"
@@ -122,6 +167,7 @@ export function SettingsDialog({ open, onClose }: Props) {
               <button
                 type="button"
                 className={theme === "light" ? "is-active" : ""}
+                aria-pressed={theme === "light"}
                 onClick={() => setTheme("light")}
               >
                 <Sun size={16} /> {isEn ? "Light" : "浅色"}
@@ -129,6 +175,7 @@ export function SettingsDialog({ open, onClose }: Props) {
               <button
                 type="button"
                 className={theme === "dark" ? "is-active" : ""}
+                aria-pressed={theme === "dark"}
                 onClick={() => setTheme("dark")}
               >
                 <Moon size={16} /> {isEn ? "Dark" : "深色"}
@@ -141,7 +188,7 @@ export function SettingsDialog({ open, onClose }: Props) {
               </span>
               <input
                 type="range"
-                min="0.7"
+                min="0.5"
                 max="1.6"
                 step="0.1"
                 value={zoom}
@@ -162,6 +209,7 @@ export function SettingsDialog({ open, onClose }: Props) {
               <button
                 type="button"
                 className={language === "cn" ? "is-active" : ""}
+                aria-pressed={language === "cn"}
                 onClick={() => setLanguage("cn")}
               >
                 中文
@@ -169,6 +217,7 @@ export function SettingsDialog({ open, onClose }: Props) {
               <button
                 type="button"
                 className={language === "en" ? "is-active" : ""}
+                aria-pressed={language === "en"}
                 onClick={() => setLanguage("en")}
               >
                 English
