@@ -86,6 +86,51 @@ def _watch_parent_process() -> None:
     except ValueError:
         return
 
+    if os.name == "nt":
+        # On Windows, os.kill(pid, 0) is not a harmless existence check: Python
+        # routes non-console signals through TerminateProcess. Wait on a process
+        # handle instead so the OCR worker exits only after VisualTeX exits.
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize = 0x00100000
+        infinite = 0xFFFFFFFF
+        wait_object_0 = 0x00000000
+        wait_failed = 0xFFFFFFFF
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(synchronize, False, parent_pid)
+        if not handle:
+            _log(
+                "Unable to open the VisualTeX parent process handle on Windows; "
+                f"parent monitoring is disabled (error={ctypes.get_last_error()})"
+            )
+            return
+        try:
+            wait_result = kernel32.WaitForSingleObject(handle, infinite)
+        finally:
+            kernel32.CloseHandle(handle)
+
+        if wait_result == wait_object_0:
+            os._exit(0)
+        if wait_result == wait_failed:
+            _log(
+                "Waiting for the VisualTeX parent process failed on Windows; "
+                f"parent monitoring is disabled (error={ctypes.get_last_error()})"
+            )
+        else:
+            _log(
+                "Unexpected Windows parent wait result; parent monitoring is "
+                f"disabled (result={wait_result})"
+            )
+        return
+
     while True:
         time.sleep(2.0)
         try:

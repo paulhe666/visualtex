@@ -1,30 +1,21 @@
-name: Build Desktop Installers
+name: Release VisualTeX 0.1.2
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "src-tauri/**"
-      - "scripts/**"
-      - "package.json"
-      - "package-lock.json"
-      - "vite.config.*"
-      - "tsconfig*.json"
-      - ".github/workflows/build-windows-linux.yml"
+    tags:
+      - "v0.1.2"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: desktop-build-${{ github.ref }}
-  cancel-in-progress: true
+  group: visualtex-release-0.1.2
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: ${{ matrix.label }}
+  release:
+    name: Release ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
@@ -32,23 +23,13 @@ jobs:
           - platform: macos-14
             label: macOS Apple Silicon
             rust_target: aarch64-apple-darwin
-            build_args: --target aarch64-apple-darwin --bundles dmg
-            artifact_name: VisualTeX-0.1.2-macOS-Apple-Silicon
-            artifact_paths: |
-              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            args: --target aarch64-apple-darwin --bundles dmg
           - platform: windows-latest
             label: Windows x64
-            build_args: --bundles nsis
-            artifact_name: VisualTeX-0.1.2-Windows-x64
-            artifact_paths: |
-              src-tauri/target/release/bundle/nsis/*.exe
+            args: --bundles nsis
           - platform: ubuntu-22.04
             label: Linux x64
-            build_args: --bundles deb,appimage
-            artifact_name: VisualTeX-0.1.2-Linux-x64
-            artifact_paths: |
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/appimage/*.AppImage
+            args: --bundles deb,appimage
 
     runs-on: ${{ matrix.platform }}
 
@@ -102,13 +83,34 @@ jobs:
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
 
-      - name: Build installer packages
-        run: npm run tauri -- build ${{ matrix.build_args }}
-
-      - name: Upload installer packages
-        uses: actions/upload-artifact@v7
+      - name: Build and attach release installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_paths }}
-          if-no-files-found: error
-          retention-days: 30
+          tagName: v__VERSION__
+          releaseName: VisualTeX v__VERSION__
+          releaseBody: |
+            VisualTeX 0.1.2 fixes an OCR worker interruption specific to Windows.
+
+            Fixes:
+            - Replaces the invalid Windows `os.kill(parent_pid, 0)` parent-process check with a native process handle wait.
+            - Prevents the OCR worker from exiting during the first model load.
+            - Treats only the explicit `OCR_CANCELLED` signal as user cancellation.
+            - Shows the worker exit status and `worker.log` path for real OCR crashes.
+            - Adds a three-platform lifecycle smoke test that waits through the former two-second failure window before sending a worker ping.
+
+            macOS Apple Silicon:
+            - DMG installer
+
+            Windows x64:
+            - NSIS .exe installer with Python prerequisite detection
+
+            Linux x64:
+            - AppImage
+            - Debian .deb package
+
+            This release is unsigned. Windows SmartScreen and some Linux desktop environments may show a warning on first launch.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

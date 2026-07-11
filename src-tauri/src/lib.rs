@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+const OCR_CANCELLED: &str = "OCR_CANCELLED";
 const ALLOWED_MODELS: &[&str] = &[
     "PP-FormulaNet_plus-S",
     "PP-FormulaNet_plus-M",
@@ -62,6 +63,7 @@ struct OcrWorker {
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     pid_state: Arc<AtomicU32>,
+    log_path: PathBuf,
     loaded_model: Option<String>,
 }
 
@@ -127,26 +129,43 @@ fn read_worker_json<R: BufRead>(
 }
 
 impl OcrWorker {
+    fn worker_failure(&mut self, message: impl AsRef<str>) -> String {
+        let status = match self.child.try_wait() {
+            Ok(Some(status)) => status.to_string(),
+            Ok(None) => "still running".to_string(),
+            Err(error) => format!("status unavailable: {error}"),
+        };
+        format!(
+            "{}; worker_status={status}; log={}",
+            message.as_ref(),
+            self.log_path.display()
+        )
+    }
+
     fn send(&mut self, app: &AppHandle, payload: &Value) -> Result<Value, String> {
         if let Some(status) = self.child.try_wait().map_err(|error| error.to_string())? {
-            return Err(format!("OCR worker exited unexpectedly: {status}"));
+            return Err(format!(
+                "OCR worker exited unexpectedly: {status}; log={}",
+                self.log_path.display()
+            ));
         }
 
         serde_json::to_writer(&mut self.stdin, payload)
             .map_err(|error| format!("Unable to encode OCR request: {error}"))?;
         self.stdin
             .write_all(b"\n")
-            .map_err(|error| format!("Unable to send OCR request: {error}"))?;
+            .map_err(|error| self.worker_failure(format!("Unable to send OCR request: {error}")))?;
         self.stdin
             .flush()
-            .map_err(|error| format!("Unable to flush OCR request: {error}"))?;
+            .map_err(|error| self.worker_failure(format!("Unable to flush OCR request: {error}")))?;
 
         loop {
             let response = read_worker_json(
                 &mut self.stdout,
                 "OCR worker closed its output stream",
                 "OCR response",
-            )?;
+            )
+            .map_err(|error| self.worker_failure(error))?;
             if response.get("event").and_then(Value::as_str) == Some("progress") {
                 let _ = app.emit("ocr-recognition-progress", &response);
                 continue;
@@ -664,8 +683,20 @@ fn spawn_worker(
     fs::create_dir_all(&paths.temp)
         .map_err(|error| format!("Unable to create OCR temporary directory: {error}"))?;
     let log_path = paths.logs.join("worker.log");
-    let log_file = File::create(&log_path)
-        .map_err(|error| format!("Unable to create OCR worker log: {error}"))?;
+    let mut log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| format!("Unable to open OCR worker log: {error}"))?;
+    writeln!(
+        log_file,
+        "\n===== VisualTeX OCR worker start: pid pending, unix_ms={} =====",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default()
+    )
+    .map_err(|error| format!("Unable to initialize OCR worker log: {error}"))?;
     let log_file_error = log_file
         .try_clone()
         .map_err(|error| format!("Unable to clone OCR log handle: {error}"))?;
@@ -704,6 +735,7 @@ fn spawn_worker(
         stdin: BufWriter::new(stdin),
         stdout: BufReader::new(stdout),
         pid_state: worker_pid,
+        log_path: log_path.clone(),
         loaded_model: None,
     };
 
@@ -781,7 +813,7 @@ fn run_recognition(
 
     if cancel_generation.load(Ordering::SeqCst) != request_generation {
         let _ = fs::remove_file(&input_path);
-        return Err("OCR recognition was cancelled".to_string());
+        return Err(OCR_CANCELLED.to_string());
     }
 
     let response_result = (|| -> Result<Value, String> {
@@ -807,7 +839,7 @@ fn run_recognition(
         match first_result {
             Ok(response) => {
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
                 if response.get("ok").and_then(Value::as_bool) == Some(true) {
                     if let Some(worker) = guard.as_mut() {
@@ -818,7 +850,7 @@ fn run_recognition(
             }
             Err(first_error) => {
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
 
                 guard.take();
@@ -833,7 +865,7 @@ fn run_recognition(
                         )
                     })?;
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
                 if response.get("ok").and_then(Value::as_bool) == Some(true) {
                     if let Some(worker) = guard.as_mut() {

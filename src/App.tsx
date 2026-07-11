@@ -375,9 +375,10 @@ function App() {
       setToast(isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX");
       scheduleInlineOcrClear(1800);
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : typeof error === "string" ? error : "";
       const cancelled =
-        inlineOcrCancelRequestedRef.current ||
-        (error instanceof Error && error.message === "OCR_CANCELLED");
+        inlineOcrCancelRequestedRef.current || errorMessage.includes("OCR_CANCELLED");
       if (cancelled) {
         setInlineOcr((current) => ({
           status: "cancelled",
@@ -388,13 +389,7 @@ function App() {
         scheduleInlineOcrClear(1200);
       } else {
         const message =
-          error instanceof Error
-            ? error.message
-            : typeof error === "string"
-              ? error
-              : isEn
-                ? "Image OCR failed"
-                : "图片 OCR 失败";
+          errorMessage || (isEn ? "Image OCR failed" : "图片 OCR 失败");
         setInlineOcr((current) => ({
           status: "error",
           message,

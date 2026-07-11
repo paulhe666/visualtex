@@ -95,6 +95,7 @@ export function OcrDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const recognizingRef = useRef(false);
+  const cancellingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [runtime, setRuntime] = useState<OcrRuntimeStatus | null>(null);
@@ -210,6 +211,10 @@ export function OcrDialog({
     recognizingRef.current = recognizing;
   }, [recognizing]);
 
+  useEffect(() => {
+    cancellingRef.current = cancelling;
+  }, [cancelling]);
+
   const selectFile = useCallback(
     (nextFile: File) => {
       try {
@@ -282,6 +287,7 @@ export function OcrDialog({
     }
 
     setRecognizing(true);
+    cancellingRef.current = false;
     setCancelling(false);
     setRecognitionProgress({
       event: "progress",
@@ -307,7 +313,7 @@ export function OcrDialog({
       );
     } catch (recognitionError) {
       const message = readError(recognitionError);
-      if (cancelling || /cancelled|closed its output stream/i.test(message)) {
+      if (cancellingRef.current || message.includes("OCR_CANCELLED")) {
         onNotify(isEn ? "OCR recognition cancelled" : "OCR 识别已取消");
       } else {
         setError(message);
@@ -315,6 +321,7 @@ export function OcrDialog({
     } finally {
       unlisten?.();
       setRecognizing(false);
+      cancellingRef.current = false;
       setCancelling(false);
       setRecognitionProgress(null);
     }
@@ -322,6 +329,7 @@ export function OcrDialog({
 
   const handleCancelRecognition = async () => {
     if (!recognizing || cancelling) return;
+    cancellingRef.current = true;
     setCancelling(true);
     setRecognitionProgress((current) => ({
       event: "progress",
@@ -334,6 +342,7 @@ export function OcrDialog({
       await cancelOcrRecognition();
     } catch (cancelError) {
       setError(readError(cancelError));
+      cancellingRef.current = false;
       setCancelling(false);
     }
   };
