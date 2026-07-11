@@ -37,15 +37,7 @@
   !insertmacro VisualTeXProbeCommand "python.exe"
   !insertmacro VisualTeXProbeCommand "python"
 
-  MessageBox MB_ICONEXCLAMATION|MB_YESNO \
-    "未检测到可用于 OCR 的 64 位 Python 3.9–3.13。$$
-$$
-VisualTeX 编辑器仍可正常安装和使用，但图片公式 OCR 将不可用。请安装 x64 Python 3.13，并启用 Python Launcher。仅安装默认 Python 3.14 不兼容当前 OCR 运行环境。$$
-$$
-No compatible 64-bit Python 3.9–3.13 installation was detected. The editor can still be installed, but formula OCR will remain unavailable until a compatible Python runtime is installed.$$
-$$
-是否继续安装？ / Continue installation?" \
-    IDYES visualtex_python_continue
+  MessageBox MB_ICONEXCLAMATION|MB_YESNO "未检测到可用于 OCR 的 64 位 Python 3.9–3.13。$\r$\n$\r$\nVisualTeX 编辑器仍可正常安装和使用，但图片公式 OCR 将不可用。请安装 x64 Python 3.13，并启用 Python Launcher。仅安装默认 Python 3.14 不兼容当前 OCR 运行环境。$\r$\n$\r$\nNo compatible 64-bit Python 3.9–3.13 installation was detected. The editor can still be installed, but formula OCR will remain unavailable until a compatible Python runtime is installed.$\r$\n$\r$\n是否继续安装？ / Continue installation?" IDYES visualtex_python_continue
 
   Abort "VisualTeX installation cancelled because the OCR Python prerequisite is missing."
 
