@@ -935,10 +935,19 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const startedAt = performance.now();
         while (performance.now() - startedAt < 1000) {
           await new Promise<void>((resolve) =>
-            window.requestAnimationFrame(() => resolve()),
+            window.setTimeout(resolve, 16),
           );
           after = captureFieldSnapshot(field);
-          if (after.latex !== before.latex) break;
+          const nativeRecommendationVisible =
+            document
+              .getElementById("mathlive-suggestion-popover")
+              ?.classList.contains("is-visible") ?? false;
+          if (
+            after.latex !== before.latex &&
+            !nativeRecommendationVisible
+          ) {
+            break;
+          }
         }
       } finally {
         suppressedHistoryLineIdRef.current = null;
