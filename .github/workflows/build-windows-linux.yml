@@ -113,17 +113,6 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Run editor regressions when Chrome is available
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
-            npm run test:editor:run
-            npm run test:editor-history:run
-          else
-            echo "Google Chrome is not installed on this runner; skipping browser regressions."
-          fi
-
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 

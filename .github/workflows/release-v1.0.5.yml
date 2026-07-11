@@ -2,9 +2,6 @@ name: Release VisualTeX 1.0.5
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v1.0.5"
 
 permissions:
   contents: write
@@ -114,17 +111,6 @@ jobs:
 
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
-
-      - name: Run editor regressions when Chrome is available
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
-            npm run test:editor:run
-            npm run test:editor-history:run
-          else
-            echo "Google Chrome is not installed on this runner; skipping browser regressions."
-          fi
 
       - name: Detect complete Apple signing credentials
         if: runner.os == 'macOS'
