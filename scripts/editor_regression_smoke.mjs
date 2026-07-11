@@ -402,31 +402,50 @@ async function main() {
       const rects = [...content.querySelectorAll("[data-atom-id]")]
         .map((atom) => atom.getBoundingClientRect())
         .filter((rect) => rect.height > 0);
-      const top = Math.min(...rects.map((rect) => rect.top));
-      const bottom = Math.max(...rects.map((rect) => rect.bottom));
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
       const lineRect = line.getBoundingClientRect();
       return {
-        ready: field.classList.contains("is-simple-formula"),
+        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
         lineHeight: lineRect.height,
         fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
         centerDelta: Math.abs((top + bottom) / 2 - (lineRect.top + lineRect.bottom) / 2),
       };
     })()`, "simple formula row sizing");
 
     await setField("\\frac{a}{b}");
     const tallMetrics = await waitForEvaluation(`(() => {
-      const lineHeight = document.querySelector(".formula-line").getBoundingClientRect().height;
+      const line = document.querySelector(".formula-line");
       const field = document.querySelector("math-field");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const lineRect = line.getBoundingClientRect();
       return {
         ready:
           !field.classList.contains("is-simple-formula") &&
-          lineHeight > ${simpleMetrics.lineHeight},
-        lineHeight,
+          rects.length > 0 &&
+          top >= lineRect.top - 1 &&
+          bottom <= lineRect.bottom + 1,
+        lineHeight: lineRect.height,
         fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        topOverflow: Math.max(0, lineRect.top - top),
+        bottomOverflow: Math.max(0, bottom - lineRect.bottom),
       };
-    })()`, "tall formula row sizing");
-    if (!(simpleMetrics.lineHeight < tallMetrics.lineHeight)) {
-      throw new Error(`Simple formula row did not shrink (${simpleMetrics.lineHeight} vs ${tallMetrics.lineHeight})`);
+    })()`, "unclipped tall formula row sizing");
+    if (
+      tallMetrics.contentHeight > simpleMetrics.contentHeight + 2 &&
+      tallMetrics.lineHeight <= simpleMetrics.lineHeight + 2
+    ) {
+      throw new Error(`Formula row did not expand for taller rendered content: ${JSON.stringify({ simpleMetrics, tallMetrics })}`);
+    }
+    if (tallMetrics.topOverflow > 1 || tallMetrics.bottomOverflow > 1) {
+      throw new Error(`Tall formula is clipped by its row: ${JSON.stringify(tallMetrics)}`);
     }
     if (simpleMetrics.centerDelta > 10) {
       throw new Error(`Simple formula is not vertically centered (delta ${simpleMetrics.centerDelta})`);
@@ -437,25 +456,33 @@ async function main() {
       await sleep(70);
     }
     await setField("\\alpha");
-    const compactZoomMetrics = await evaluate(`(() => {
+    const compactZoomMetrics = await waitForEvaluation(`(() => {
       const field = document.querySelector("math-field");
       const line = document.querySelector(".formula-line");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
       const surface = document.querySelector(".editor-surface");
       const stack = document.querySelector(".mathfield-stack");
       const surfaceRect = surface.getBoundingClientRect();
       const stackRect = stack.getBoundingClientRect();
       return {
+        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
         zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
         zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
         fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
         lineHeight: line.getBoundingClientRect().height,
         fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
         surfaceWidth: surfaceRect.width,
         stackWidth: stackRect.width,
         leftGap: stackRect.left - surfaceRect.left,
         rightGap: surfaceRect.right - stackRect.right,
       };
-    })()`);
+    })()`, "compact simple formula sizing");
     if (
       compactZoomMetrics.zoomLabel !== "20%" ||
       !compactZoomMetrics.zoomOutDisabled ||
@@ -473,12 +500,37 @@ async function main() {
     }
 
     await setField("\\frac{a}{b}");
-    const compactTallMetrics = await evaluate(`(() => ({
-      lineHeight: document.querySelector(".formula-line").getBoundingClientRect().height,
-      fieldHeight: document.querySelector("math-field").getBoundingClientRect().height,
-    }))()`);
-    if (compactTallMetrics.lineHeight <= compactZoomMetrics.lineHeight + 2) {
+    const compactTallMetrics = await waitForEvaluation(`(() => {
+      const line = document.querySelector(".formula-line");
+      const field = document.querySelector("math-field");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const lineRect = line.getBoundingClientRect();
+      return {
+        ready:
+          !field.classList.contains("is-simple-formula") &&
+          rects.length > 0 &&
+          top >= lineRect.top - 1 &&
+          bottom <= lineRect.bottom + 1,
+        lineHeight: lineRect.height,
+        fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        topOverflow: Math.max(0, lineRect.top - top),
+        bottomOverflow: Math.max(0, bottom - lineRect.bottom),
+      };
+    })()`, "unclipped compact tall formula sizing");
+    if (
+      compactTallMetrics.contentHeight > compactZoomMetrics.contentHeight + 2 &&
+      compactTallMetrics.lineHeight <= compactZoomMetrics.lineHeight + 2
+    ) {
       throw new Error(`Tall formula did not expand at 20% zoom: ${JSON.stringify({ compactZoomMetrics, compactTallMetrics })}`);
+    }
+    if (compactTallMetrics.topOverflow > 1 || compactTallMetrics.bottomOverflow > 1) {
+      throw new Error(`Compact tall formula is clipped: ${JSON.stringify(compactTallMetrics)}`);
     }
 
     for (let index = 0; index < 8; index += 1) {
