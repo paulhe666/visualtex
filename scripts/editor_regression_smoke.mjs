@@ -442,6 +442,22 @@ async function main() {
     ) {
       throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
     }
+    await sleep(220);
+    const ocrCenterMetrics = await evaluate(`(() => {
+      const dialog = document.querySelector(".ocr-dialog");
+      const rect = dialog.getBoundingClientRect();
+      return {
+        dialogCenterX: (rect.left + rect.right) / 2,
+        dialogCenterY: (rect.top + rect.bottom) / 2,
+        viewportCenterX: window.innerWidth / 2,
+        viewportCenterY: window.innerHeight / 2,
+        horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+        verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+      };
+    })()`);
+    if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
+      throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
+    }
     await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
     await sleep(120);
 
@@ -604,6 +620,7 @@ async function main() {
       compactZoomMetrics,
       compactTallMetrics,
       ocrOpenMetrics,
+      ocrCenterMetrics,
       deletionStates,
       formatMenuState,
       alignFormatState,
