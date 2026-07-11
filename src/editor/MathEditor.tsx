@@ -913,6 +913,62 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       return true;
     };
 
+    const applyDeferredDiscreteFormulaMutation = async (
+      lineId: string,
+      field: MathfieldElement,
+      source: FormulaEditSource,
+      mutate: () => boolean,
+    ) => {
+      historyManager.commitPendingTransaction();
+      const state = useEditorStore.getState();
+      if (!state.lines.some((line) => line.id === lineId)) return false;
+
+      const before = captureFieldSnapshot(field);
+      const beforeActiveLineId = state.activeLineId;
+      suppressedHistoryLineIdRef.current = lineId;
+      let changed = false;
+      let after = before;
+      try {
+        changed = mutate();
+        if (!changed) return false;
+
+        const startedAt = performance.now();
+        while (performance.now() - startedAt < 1000) {
+          await new Promise<void>((resolve) =>
+            window.requestAnimationFrame(() => resolve()),
+          );
+          after = captureFieldSnapshot(field);
+          if (after.latex !== before.latex) break;
+        }
+      } finally {
+        suppressedHistoryLineIdRef.current = null;
+      }
+
+      if (before.latex === after.latex) {
+        field.resetUndo();
+        return false;
+      }
+
+      state.replaceFormulaLine(lineId, after.latex);
+      state.setActiveLineId(lineId);
+      linesRef.current = useEditorStore.getState().lines;
+      setActiveLine(lineId);
+      field.resetUndo();
+      historyManager.push({
+        type: "replace-formula",
+        lineId,
+        beforeLatex: before.latex,
+        afterLatex: after.latex,
+        beforeSelection: before.selection,
+        afterSelection: after.selection,
+        beforeActiveLineId,
+        afterActiveLineId: lineId,
+        timestamp: Date.now(),
+        source,
+      });
+      return true;
+    };
+
     const resolveTargetField = () => {
       let targetLineId = activeLineIdRef.current;
       let field = targetLineId
@@ -1224,20 +1280,20 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (event.key === "Enter" || event.key === "Tab") {
           event.preventDefault();
           event.stopPropagation();
-          const committed = applyDiscreteFormulaMutation(
+          void applyDeferredDiscreteFormulaMutation(
             lineId,
             field,
             "candidate",
             commitNativeSuggestion,
-          );
-          if (committed) {
+          ).then((committed) => {
+            if (!committed) return;
             setQuery("");
             selectSuggestionIndex(0);
             focusLine(lineId, {
               latex: normalizeChineseLatex(field.value),
               selection: captureSelection(field),
             });
-          }
+          });
           return;
         }
         if (event.key === "Escape") {
