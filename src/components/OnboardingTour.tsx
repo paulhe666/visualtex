@@ -7,7 +7,7 @@ import {
   Copy,
   Keyboard,
   PanelLeft,
-  ScanLine,
+  Save,
   X,
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
@@ -30,13 +30,13 @@ const copy: Record<Language, StepCopy[]> = {
     { title: "欢迎使用 VisualTeX", description: "用熟悉的方式输入公式，需要时随时查看源码。" },
     { title: "从公式库开始", description: "选择结构或符号，它会直接插入当前光标。" },
     { title: "保持双手在键盘上", description: "几个按键就能完成换行、跳转和删除。" },
-    { title: "从图片到 LaTeX", description: "粘贴图片识别公式，再复制或继续编辑。" },
+    { title: "复制与保存", description: "查看 LaTeX 源码、复制所需格式，或把文档保存到本地。" },
   ],
   en: [
     { title: "Welcome to VisualTeX", description: "Write formulas naturally and inspect the source whenever you need it." },
     { title: "Start from the formula library", description: "Choose a structure or symbol to insert it at the cursor." },
     { title: "Keep your hands on the keyboard", description: "A few keys cover line creation, navigation, and deletion." },
-    { title: "From image to LaTeX", description: "Paste an image, recognize the formula, then copy or keep editing." },
+    { title: "Copy and save", description: "Inspect the LaTeX source, copy the format you need, or save the document locally." },
   ],
 };
 
@@ -122,7 +122,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
                 <span><VisualTeXLogo className="onboarding-welcome-logo" /></span>
                 <div>
                   <strong>VisualTeX</strong>
-                  <small>{isEn ? "Formula workspace for macOS" : "macOS 公式工作台"}</small>
+                  <small>{isEn ? "Formula workspace for the web" : "网页版公式工作台"}</small>
                 </div>
               </div>
             )}
@@ -156,11 +156,11 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
 
             {step === 3 && (
               <div className="onboarding-workflow-demo">
-                <span><ScanLine size={20} /><strong>{isEn ? "Paste image" : "粘贴图片"}</strong><kbd>⌘V</kbd></span>
-                <i><ArrowRight size={15} /></i>
-                <span><Code2 size={20} /><strong>LaTeX</strong></span>
+                <span><Code2 size={20} /><strong>{isEn ? "Source" : "源码"}</strong></span>
                 <i><ArrowRight size={15} /></i>
                 <span><Copy size={20} /><strong>{isEn ? "Copy" : "复制"}</strong></span>
+                <i><ArrowRight size={15} /></i>
+                <span><Save size={20} /><strong>{isEn ? "Save" : "保存"}</strong></span>
               </div>
             )}
           </div>

@@ -15,9 +15,11 @@
 
 # 中文
 
-VisualTeX 是一款面向数学、物理、工程和科研写作场景的桌面 LaTeX 公式编辑器。它把结构化可视化编辑、LaTeX 源码、命令候选和本地公式 OCR 放在同一个工作区中，让用户无需安装 TeX Live，也能快速创建、修改、复制和整理数学公式。
+VisualTeX 是一款面向数学、物理、工程和科研写作场景的可视化 LaTeX 公式编辑器。当前 `web` 分支用于浏览器版本，保留结构化编辑、LaTeX 源码、命令候选、历史记录和文档导入导出；本地 OCR 仅在桌面版提供，网页版暂不启用。
 
 当前版本：**0.1.0**
+
+> 网页版数据默认保存在当前浏览器中，不会自动同步到其他设备。Cloudflare 部署说明见 [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md)。
 
 ## 下载
 
@@ -176,9 +178,11 @@ VisualTeX 始终以 LaTeX 字符串作为公式的单一数据源。可视化编
 
 # English
 
-VisualTeX is a desktop LaTeX formula editor for mathematics, physics, engineering, education, and scientific writing. It combines structured visual editing, editable LaTeX source, command suggestions, and local formula OCR in one workspace. No TeX Live installation is required for editing and copying formulas.
+VisualTeX is a visual LaTeX formula editor for mathematics, physics, engineering, education, and scientific writing. The current `web` branch targets browsers and keeps structured editing, editable LaTeX source, command suggestions, local history, and document import/export. Local OCR remains a desktop-only feature and is intentionally disabled on the web for now.
 
 Current version: **0.1.0**
+
+> Web data is stored in the current browser by default and does not automatically sync across devices. See [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md) for Cloudflare deployment instructions.
 
 ## Downloads
 
