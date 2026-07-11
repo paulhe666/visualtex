@@ -247,18 +247,39 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Flatten verified installer files
+        shell: bash
+        run: |
+          mkdir release-flat
+          copy_single_asset() {
+            local pattern="$1"
+            mapfile -d '' matches < <(find release-assets -type f -name "$pattern" -print0)
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "Expected exactly one asset matching $pattern, found ${#matches[@]}" >&2
+              exit 1
+            fi
+            cp "${matches[0]}" release-flat/
+          }
+          copy_single_asset '*.dmg'
+          copy_single_asset '*.exe'
+          copy_single_asset '*.deb'
+          copy_single_asset '*.AppImage'
+          rm -rf release-assets
+          mv release-flat release-assets
+
       - name: Verify downloaded artifact set and write checksums
         shell: bash
         run: |
-          test "$(find release-assets -type f -name '*.dmg' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name '*.exe' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name '*.deb' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name '*.AppImage' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
           (
             cd release-assets
             find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -print0 \
               | sort -z \
               | xargs -0 sha256sum > SHA256SUMS.txt
+            test "$(wc -l < SHA256SUMS.txt)" -eq 4
             sha256sum -c SHA256SUMS.txt
           )
 
