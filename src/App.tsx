@@ -233,9 +233,11 @@ function App() {
       applyEntry: async (entry, direction) => {
         const target = applyHistoryEntryToEditor(entry, direction);
         if (!target) return;
-        await new Promise<void>((resolve) =>
-          window.requestAnimationFrame(() => resolve()),
-        );
+        // Yield once so React can mount any line restored by the history entry.
+        // Do not wait on requestAnimationFrame here: background macOS windows
+        // and headless release checks can throttle animation frames indefinitely,
+        // leaving history replay active and the Redo action disabled.
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
         await editorRef.current?.restoreSelection(
           target.lineId,
           target.latex,
