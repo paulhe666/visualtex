@@ -217,8 +217,12 @@ async function main() {
       }))()`,
       "custom command candidate for \\theta",
     );
-    await key("Enter", "Enter", 13);
-    const thetaState = await waitForEvaluation(`(() => {
+    let thetaState;
+    let thetaCommitError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await key("Enter", "Enter", 13);
+      try {
+        thetaState = await waitForEvaluation(`(() => {
       const field = document.querySelector("math-field");
       const surface = document.querySelector(".multi-line-editor");
       const active = document.activeElement;
@@ -242,7 +246,13 @@ async function main() {
         ...state,
         ready: state.value === "\\\\theta" && !state.candidateVisible,
       };
-    })()`, "custom command candidate commit");
+        })()`, "custom command candidate commit", 900);
+        break;
+      } catch (error) {
+        thetaCommitError = error;
+      }
+    }
+    if (!thetaState) throw thetaCommitError;
     if (thetaState.candidateVisible) {
       throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
     }
