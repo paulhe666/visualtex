@@ -16,6 +16,11 @@ export type LatexCodeFormat =
   | "equation-split"
   | "equation-star-split";
 
+export interface FormulaLine {
+  id: string;
+  latex: string;
+}
+
 export interface FormulaBlock {
   id: string;
   latex: string;

@@ -44,15 +44,30 @@ import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import {
   MAX_EDITOR_ZOOM,
   MIN_EDITOR_ZOOM,
+  joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
+import {
+  historyManager,
+  useHistorySnapshot,
+} from "./history/HistoryManager";
+import {
+  applyHistoryEntryToEditor,
+  createBlankDocumentSnapshot,
+  documentSnapshotsEquivalent,
+  getEditorDocumentSnapshot,
+  reconcileFormulaLines,
+} from "./history/documentHistory";
+import type {
+  DocumentSnapshot,
+  ReplaceDocumentEntry,
+} from "./history/historyTypes";
 import {
   copyLatex,
   formatLatex,
   getLatexCodeFormatDefinition,
   latexCodeFormats,
   parseLatexSource,
-  splitLatexLines,
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
@@ -123,8 +138,8 @@ function App() {
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
-  const latex = useEditorStore((state) => state.latex);
-  const setLatex = useEditorStore((state) => state.setLatex);
+  const lines = useEditorStore((state) => state.lines);
+  const activeLineId = useEditorStore((state) => state.activeLineId);
   const theme = useEditorStore((state) => state.theme);
   const setTheme = useEditorStore((state) => state.setTheme);
   const language = useEditorStore((state) => state.language);
@@ -146,8 +161,9 @@ function App() {
   const setCheckUpdatesOnStartup = useEditorStore(
     (state) => state.setCheckUpdatesOnStartup,
   );
+  const historyState = useHistorySnapshot();
   const isEn = language === "en";
-  const latexLines = splitLatexLines(latex);
+  const latex = joinFormulaLines(lines);
   const sourceLatex = formatLatex(latex, latexCodeFormat);
   const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
   const codeFormatGroups = [
@@ -174,6 +190,77 @@ function App() {
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
+
+  const captureDocumentSnapshot = (): DocumentSnapshot =>
+    getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
+
+  const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
+    const lineId = snapshot.activeLineId;
+    if (!lineId) return;
+    const line = snapshot.lines.find((item) => item.id === lineId);
+    if (!line) return;
+    void editorRef.current?.restoreSelection(
+      lineId,
+      line.latex,
+      snapshot.selectionByLineId[lineId] ?? null,
+    );
+  };
+
+  const replaceDocumentWithHistory = (
+    after: DocumentSnapshot,
+    source: ReplaceDocumentEntry["source"],
+  ) => {
+    historyManager.commitPendingTransaction();
+    const before = captureDocumentSnapshot();
+    if (documentSnapshotsEquivalent(before, after)) return false;
+    useEditorStore.getState().replaceDocumentState(after);
+    const entry: ReplaceDocumentEntry = {
+      type: "replace-document",
+      before,
+      after,
+      source,
+      timestamp: Date.now(),
+    };
+    historyManager.push(entry);
+    window.requestAnimationFrame(() => restoreSnapshotFocus(after));
+    return true;
+  };
+
+  useEffect(() => {
+    historyManager.configure({
+      getDocumentSnapshot: () =>
+        getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
+      applyEntry: async (entry, direction) => {
+        const target = applyHistoryEntryToEditor(entry, direction);
+        if (!target) return;
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() => resolve()),
+        );
+        await editorRef.current?.restoreSelection(
+          target.lineId,
+          target.latex,
+          target.selection,
+        );
+      },
+    });
+    return () => historyManager.configure(null);
+  }, []);
+
+  useEffect(() => {
+    const checkpointTimer = window.setInterval(() => {
+      historyManager.commitPendingTransaction();
+      void historyManager.createCheckpoint("autosave");
+    }, 30_000);
+    const handleBeforeUnload = () => {
+      historyManager.commitPendingTransaction();
+      void historyManager.createCheckpoint("before-unload");
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.clearInterval(checkpointTimer);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -382,7 +469,8 @@ function App() {
         throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
       }
 
-      const inserted = editorRef.current?.insertLatexAt(target, recognizedLatex) ?? false;
+      const inserted =
+        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
       if (!inserted) {
         throw new Error(
           isEn
@@ -470,6 +558,8 @@ function App() {
   };
 
   const saveDocument = () => {
+    historyManager.commitPendingTransaction();
+    void historyManager.createCheckpoint("save-document");
     const document = toDocument();
     const blob = new Blob([JSON.stringify(document, null, 2)], {
       type: "application/json",
@@ -496,7 +586,20 @@ function App() {
       if (!parsed.formulas || !Array.isArray(parsed.formulas)) {
         throw new Error("invalid");
       }
+      historyManager.commitPendingTransaction();
+      const before = captureDocumentSnapshot();
       loadDocument(parsed);
+      const after = getEditorDocumentSnapshot({});
+      if (!documentSnapshotsEquivalent(before, after)) {
+        historyManager.push({
+          type: "replace-document",
+          before,
+          after,
+          source: "open-document",
+          timestamp: Date.now(),
+        });
+        window.requestAnimationFrame(() => restoreSnapshotFocus(after));
+      }
       setToast(isEn ? "Formula document opened" : "公式文档已打开");
     } catch {
       setToast(
@@ -511,10 +614,20 @@ function App() {
 
   const newFormula = () => {
     addHistory(latex);
-    setTitle(isEn ? "Untitled Formula" : "未命名公式");
-    setLatex("");
-    editorRef.current?.focus();
+    const after = createBlankDocumentSnapshot(
+      isEn ? "Untitled Formula" : "未命名公式",
+    );
+    replaceDocumentWithHistory(after, "new-document");
     setToast(isEn ? "Created a blank formula" : "已新建空白公式");
+  };
+
+  const handleTitleChange = (nextTitle: string) => {
+    const beforeTitle = useEditorStore.getState().title;
+    setTitle(nextTitle);
+    historyManager.recordTitleEdit({
+      beforeTitle,
+      afterTitle: nextTitle,
+    });
   };
 
   const runMenuAction = (action: () => void) => {
@@ -573,10 +686,29 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) return;
-      if (!event.metaKey || event.ctrlKey || event.altKey) return;
-      const key = event.key.toLowerCase();
+      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) {
+        return;
+      }
 
+      const target = event.target instanceof Element ? event.target : null;
+      const inCodeMirror = Boolean(target?.closest(".cm-editor"));
+      const primaryModifier = (event.metaKey || event.ctrlKey) && !event.altKey;
+      const key = event.key.toLowerCase();
+      const requestsUndo = primaryModifier && key === "z" && !event.shiftKey;
+      const requestsRedo =
+        primaryModifier &&
+        ((key === "z" && event.shiftKey) ||
+          (key === "y" && !event.shiftKey));
+
+      if (requestsUndo || requestsRedo) {
+        if (inCodeMirror) return;
+        event.preventDefault();
+        if (requestsRedo) void historyManager.redo();
+        else void historyManager.undo();
+        return;
+      }
+
+      if (!primaryModifier) return;
       if (key === "n") {
         event.preventDefault();
         newFormula();
@@ -756,7 +888,8 @@ function App() {
         <div className="document-title-area">
           <input
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => handleTitleChange(event.target.value)}
+            onBlur={() => historyManager.commitPendingTransaction()}
             aria-label={isEn ? "Formula document title" : "公式文档标题"}
           />
           <span
@@ -781,10 +914,24 @@ function App() {
             </button>
           </div>
           <div className="action-group edit-actions">
-            <button type="button" className="icon-button" onClick={() => editorRef.current?.undo()} aria-label={isEn ? "Undo" : "撤销"} title={isEn ? "Undo · ⌘Z" : "撤销 · ⌘Z"}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => void historyManager.undo()}
+              disabled={!historyState.canUndo || historyState.isReplaying}
+              aria-label={isEn ? "Undo" : "撤销"}
+              title={isEn ? "Undo · ⌘/Ctrl+Z" : "撤销 · ⌘/Ctrl+Z"}
+            >
               <Undo2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => editorRef.current?.redo()} aria-label={isEn ? "Redo" : "重做"} title={isEn ? "Redo · ⇧⌘Z" : "重做 · ⇧⌘Z"}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => void historyManager.redo()}
+              disabled={!historyState.canRedo || historyState.isReplaying}
+              aria-label={isEn ? "Redo" : "重做"}
+              title={isEn ? "Redo · ⇧⌘Z / Ctrl+Y" : "重做 · ⇧⌘Z / Ctrl+Y"}
+            >
               <Redo2 size={17} />
             </button>
           </div>
@@ -1026,9 +1173,9 @@ function App() {
           <div className="editor-pane-scroll">
             <MathEditor
             ref={editorRef}
-            lines={latexLines}
+            lines={lines}
+            activeLineId={activeLineId}
             zoom={zoom}
-            onChange={(nextLines) => setLatex(nextLines.join("\n"))}
             onPasteImage={handleEditorImagePaste}
             overlay={
               inlineOcr ? (
@@ -1101,13 +1248,27 @@ function App() {
                 latex={sourceLatex}
                 theme={theme}
                 format={latexCodeFormat}
-                onApply={(source, sourceFormat) =>
-                  setLatex(
-                    parseLatexSource(source, sourceFormat)
-                      .map(normalizeChineseLatex)
-                      .join("\n"),
+                onApply={(source, sourceFormat) => {
+                  const values = parseLatexSource(source, sourceFormat).map(
+                    normalizeChineseLatex,
+                  );
+                  const nextLines = reconcileFormulaLines(values, lines);
+                  const nextActiveLineId = nextLines.some(
+                    (line) => line.id === activeLineId,
                   )
-                }
+                    ? activeLineId
+                    : nextLines[0]?.id ?? null;
+                  replaceDocumentWithHistory(
+                    {
+                      title,
+                      lines: nextLines,
+                      activeLineId: nextActiveLineId,
+                      selectionByLineId:
+                        editorRef.current?.getSelectionMap() ?? {},
+                    },
+                    "source-apply",
+                  );
+                }}
                 onCopy={() => void handleCopy()}
               />
             )}
@@ -1123,7 +1284,7 @@ function App() {
         </div>
         <div>
           <span>
-            {latexLines.length} {isEn ? "lines" : "行"}
+            {lines.length} {isEn ? "lines" : "行"}
           </span>
           <span>
             · {latex.length} {isEn ? "characters" : "字符"}
@@ -1143,7 +1304,26 @@ function App() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onRestore={(value) => {
-          setLatex(value);
+          const values = value
+            .replace(/\r\n?/g, "\n")
+            .split("\n")
+            .map(normalizeChineseLatex);
+          const nextLines = reconcileFormulaLines(values, lines);
+          const nextActiveLineId = nextLines.some(
+            (line) => line.id === activeLineId,
+          )
+            ? activeLineId
+            : nextLines[0]?.id ?? null;
+          replaceDocumentWithHistory(
+            {
+              title,
+              lines: nextLines,
+              activeLineId: nextActiveLineId,
+              selectionByLineId:
+                editorRef.current?.getSelectionMap() ?? {},
+            },
+            "history-restore",
+          );
           setHistoryOpen(false);
           setToast(isEn ? "Formula restored" : "已恢复历史公式");
         }}
@@ -1154,8 +1334,8 @@ function App() {
         model={ocrModel}
         onModelChange={handleOcrModelChange}
         onClose={() => setOcrOpen(false)}
-        onInsert={(value) => editorRef.current?.insertLatex(value)}
-        onAppend={(value) => editorRef.current?.appendLatex(value)}
+        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
       />
       <OnboardingTour

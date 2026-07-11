@@ -41,7 +41,8 @@ VisualTeX 是一款面向数学、物理、工程和科研写作场景的桌面 
 - 可在已有选区上应用分式、根号、括号和上下标等结构；
 - 公式缩放范围为 20%–160%，简单公式使用紧凑行高，分式、积分、求和和矩阵会自动增高；
 - 公式输入区域会随可视化编辑面板宽度伸展，适配宽屏窗口；
-- 支持撤销、重做，并自动把中文内容规范为数学模式下的 `\text{...}`。
+- 文档级全局撤销与重做按照真实操作顺序覆盖多行输入、增删行、结构插入、OCR、源码应用、历史恢复和新建/打开文档，并恢复活动行、光标与选区；
+- 自动把中文内容规范为数学模式下的 `\text{...}`。
 
 ### 命令候选与快速输入
 
@@ -207,7 +208,8 @@ The current packages are not commercially code-signed. macOS Gatekeeper, Windows
 - Apply fractions, roots, brackets, and scripts to an existing selection;
 - Zoom formulas from 20% to 160%; simple formulas use compact rows while fractions, integrals, sums, and matrices expand automatically;
 - Formula fields stretch with the visual workspace on wide windows;
-- Undo, redo, and automatic normalization of Chinese text into math-compatible `\text{...}` expressions.
+- Document-level undo and redo follow one real-time global timeline across formula edits, line insertion/removal, structured commands, OCR, source application, history restoration, and new/open document operations while restoring the active line, caret, and selection;
+- Automatic normalization of Chinese text into math-compatible `\text{...}` expressions.
 
 ### Command suggestions and fast input
 

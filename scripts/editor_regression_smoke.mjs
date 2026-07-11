@@ -197,12 +197,29 @@ async function main() {
     if (!candidateBefore) throw new Error("Command candidate did not open for \\theta");
     await key("Enter", "Enter", 13);
     await sleep(250);
-    const thetaState = await evaluate(`(() => ({
-      value: document.querySelector("math-field").value,
-      candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-    }))()`);
+    const thetaState = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      const surface = document.querySelector(".multi-line-editor");
+      const active = document.activeElement;
+      return {
+        value: field.value,
+        selection: field.selection,
+        position: field.position,
+        lineCount: document.querySelectorAll(".formula-line").length,
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+        candidateCount: document.querySelectorAll(".suggestion-popup").length,
+        candidateConnected: document.querySelector(".suggestion-popup")?.isConnected ?? false,
+        candidateParentClass: document.querySelector(".suggestion-popup")?.parentElement?.className ?? "",
+        candidateParentQuery: document.querySelector(".suggestion-popup")?.parentElement?.dataset.commandQuery ?? "",
+        candidateText: document.querySelector(".suggestion-popup")?.innerText ?? "",
+        commandQuery: surface?.dataset.commandQuery ?? "",
+        activeLineId: surface?.dataset.activeLineId ?? "",
+        activeTag: active?.tagName ?? "",
+        activeClass: active?.className ?? "",
+      };
+    })()`);
     if (thetaState.candidateVisible) {
-      throw new Error("Command candidate remained open after committing \\theta");
+      throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
     }
 
     await setField("");
@@ -238,6 +255,7 @@ async function main() {
       const style = getComputedStyle(selected);
       return {
         command: selected?.dataset.command,
+        value: document.querySelector("math-field").value,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
@@ -287,6 +305,19 @@ async function main() {
     }
     if (nativeCommitState.nativeVisible || nativeCommitState.candidateVisible) {
       throw new Error(`Recommendation remained visible after commit: ${JSON.stringify(nativeCommitState)}`);
+    }
+
+    await evaluate(`document.querySelector('button[aria-label="撤销"]').click()`);
+    await sleep(260);
+    const nativeUndoValue = await evaluate(`document.querySelector("math-field").value`);
+    if (nativeUndoValue !== nativeBeforeArrow.value) {
+      throw new Error(`Global undo did not restore the native candidate input: ${JSON.stringify({ nativeBeforeArrow, nativeUndoValue })}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="重做"]').click()`);
+    await sleep(260);
+    const nativeRedoValue = await evaluate(`document.querySelector("math-field").value`);
+    if (nativeRedoValue !== nativeCommitState.value) {
+      throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
     await setField("\\alpha");
