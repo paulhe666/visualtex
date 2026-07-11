@@ -151,6 +151,7 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
               "toolbar-tab " +
               (activeCategory === category ? "is-active" : "")
             }
+            data-category={category}
             aria-pressed={activeCategory === category}
             onClick={() => setActiveCategory(category)}
           >
@@ -218,6 +219,7 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
             <button
               type="button"
               className="matrix-insert-button"
+              data-command-id="custom-matrix"
               onClick={insertCustomMatrix}
             >
               {isEn
@@ -231,6 +233,7 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
           <button
             type="button"
             className={"template-button" + previewSizeClass(command)}
+            data-command-id={command.id}
             key={command.id}
             onClick={() => onInsert(command)}
             title={

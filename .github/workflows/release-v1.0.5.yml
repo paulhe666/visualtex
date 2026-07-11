@@ -106,20 +106,24 @@ jobs:
       - name: Test LaTeX code formats
         run: npm run test:latex-format
 
+      - name: Test global history manager
+        run: npm run test:history
+
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
 
-      - name: Run editor regression test when Chrome is available
+      - name: Run editor regressions when Chrome is available
         if: runner.os == 'macOS'
         shell: bash
         run: |
           if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
-            npm run test:editor
+            npm run test:editor:run
+            npm run test:editor-history:run
           else
-            echo "Google Chrome is not installed on this runner; skipping the browser-only regression test."
+            echo "Google Chrome is not installed on this runner; skipping browser regressions."
           fi
 
       - name: Detect complete Apple signing credentials
@@ -295,6 +299,9 @@ jobs:
             VisualTeX 1.0.5 expands LaTeX code-format control, improves adaptive formula layout, and removes repeated OCR startup work.
 
             Highlights:
+            - Replaced per-Mathfield undo stacks with one document-level Undo/Redo timeline covering keyboard edits, line insertion/removal, toolbar and candidate insertion, OCR, source application, history restoration, and new/open document operations.
+            - Added stable formula line IDs and restores the active line, caret, and selection after every Undo/Redo replay.
+            - Added L1 grouped edit transactions, a bounded L2 operation log, and IndexedDB-backed L3 document checkpoints for large operations and recovery.
             - Replaced the one-time “Copy LaTeX” format menu with a persistent LaTeX code-format selector linked directly to the source editor.
             - Added 16 source formats, including raw source, inline/display delimiters, equation/equation*, align/align*, aligned, gather/gather*, multline/multline*, and equation with split.
             - Added automatic top-level relation alignment while preserving matrix-internal alignment markers and row separators.
