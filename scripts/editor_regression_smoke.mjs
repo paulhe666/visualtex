@@ -210,15 +210,19 @@ async function main() {
     const setField = async (latex) => setFieldAt(0, latex);
 
     await setField("\\theta");
-    const candidateBefore = await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`);
-    if (!candidateBefore) throw new Error("Command candidate did not open for \\theta");
+    await waitForEvaluation(
+      `(() => ({
+        ready: Boolean(document.querySelector(".suggestion-popup")),
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+      }))()`,
+      "custom command candidate for \\theta",
+    );
     await key("Enter", "Enter", 13);
-    await sleep(250);
-    const thetaState = await evaluate(`(() => {
+    const thetaState = await waitForEvaluation(`(() => {
       const field = document.querySelector("math-field");
       const surface = document.querySelector(".multi-line-editor");
       const active = document.activeElement;
-      return {
+      const state = {
         value: field.value,
         selection: field.selection,
         position: field.position,
@@ -234,7 +238,11 @@ async function main() {
         activeTag: active?.tagName ?? "",
         activeClass: active?.className ?? "",
       };
-    })()`);
+      return {
+        ...state,
+        ready: state.value === "\\\\theta" && !state.candidateVisible,
+      };
+    })()`, "custom command candidate commit");
     if (thetaState.candidateVisible) {
       throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
     }
@@ -246,18 +254,19 @@ async function main() {
     await key("e", "KeyE", 69);
     await key("t", "KeyT", 84);
     await key("a", "KeyA", 65);
-    await sleep(220);
-    const nativePopover = await evaluate(`(() => {
+    const nativePopover = await waitForEvaluation(`(() => {
       const panel = document.getElementById("mathlive-suggestion-popover");
-      if (!panel) return null;
+      if (!panel) return { ready: false, visible: false };
       const style = getComputedStyle(panel);
+      const visible = panel.classList.contains("is-visible") && style.display !== "none";
       return {
-        visible: panel.classList.contains("is-visible") && style.display !== "none",
+        ready: visible && Boolean(panel.querySelector("li.ML__popover__current")),
+        visible,
         background: style.backgroundColor,
         transition: style.transitionDuration,
         animation: style.animationDuration,
       };
-    })()`);
+    })()`, "MathLive recommendation popover");
     if (!nativePopover?.visible) {
       throw new Error("MathLive recommendation popover is not visible while typing a command");
     }
@@ -265,19 +274,21 @@ async function main() {
       throw new Error("MathLive recommendation popover still uses the old black/gray background");
     }
 
-    const nativeBeforeArrow = await evaluate(`(() => {
+    const nativeBeforeArrow = await waitForEvaluation(`(() => {
       const panel = document.getElementById("mathlive-suggestion-popover");
-      const selected = panel.querySelector("li.ML__popover__current");
+      const selected = panel?.querySelector("li.ML__popover__current");
+      if (!panel || !selected) return { ready: false };
       window.__visualtexStableNativePanel = panel;
       const style = getComputedStyle(selected);
       return {
+        ready: true,
         command: selected?.dataset.command,
         value: document.querySelector("math-field").value,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
       };
-    })()`);
+    })()`, "selected MathLive recommendation");
     if (nativeBeforeArrow.background === "rgb(31, 99, 142)") {
       throw new Error("Selected native recommendation still uses a solid dark-blue fill");
     }
@@ -286,19 +297,22 @@ async function main() {
     }
 
     await key("ArrowDown", "ArrowDown", 40);
-    await sleep(120);
-    const nativeAfterArrow = await evaluate(`(() => {
+    const nativeAfterArrow = await waitForEvaluation(`(() => {
       const panel = document.getElementById("mathlive-suggestion-popover");
-      const selected = panel.querySelector("li.ML__popover__current");
+      const selected = panel?.querySelector("li.ML__popover__current");
+      if (!panel || !selected) return { ready: false };
       const style = getComputedStyle(selected);
+      const samePanelNode = panel === window.__visualtexStableNativePanel;
+      const command = selected?.dataset.command;
       return {
-        samePanelNode: panel === window.__visualtexStableNativePanel,
-        command: selected?.dataset.command,
+        ready: samePanelNode && command === "\\\\thetasym",
+        samePanelNode,
+        command,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
       };
-    })()`);
+    })()`, "MathLive recommendation ArrowDown selection");
     if (!nativeAfterArrow.samePanelNode) {
       throw new Error("Arrow navigation replaced the native recommendation panel and can flicker");
     }
@@ -310,13 +324,18 @@ async function main() {
     }
 
     await key("Enter", "Enter", 13);
-    await sleep(250);
-    const nativeCommitState = await evaluate(`(() => ({
-      value: document.querySelector("math-field").value,
-      lineCount: document.querySelectorAll(".formula-line").length,
-      nativeVisible: document.getElementById("mathlive-suggestion-popover")?.classList.contains("is-visible") ?? false,
-      candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-    }))()`);
+    const nativeCommitState = await waitForEvaluation(`(() => {
+      const state = {
+        value: document.querySelector("math-field").value,
+        lineCount: document.querySelectorAll(".formula-line").length,
+        nativeVisible: document.getElementById("mathlive-suggestion-popover")?.classList.contains("is-visible") ?? false,
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+      };
+      return {
+        ...state,
+        ready: state.lineCount === 1 && state.value.endsWith("thetasym") && !state.nativeVisible && !state.candidateVisible,
+      };
+    })()`, "native MathLive recommendation commit");
     if (nativeCommitState.lineCount !== 1 || !nativeCommitState.value.endsWith("thetasym")) {
       throw new Error(`Enter did not commit the selected native MathLive recommendation: ${JSON.stringify(nativeCommitState)}`);
     }
