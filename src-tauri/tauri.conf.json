@@ -39,6 +39,9 @@
       "icons/icon.ico"
     ],
     "resources": ["ocr/worker.py"],
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "windows": {
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"

@@ -4506,3 +4506,565 @@ textarea:disabled {
     animation: none;
   }
 }
+
+/* Formula sizing, stable command candidates, and custom matrices. */
+.formula-line .visual-mathfield {
+  display: flex;
+  align-items: center;
+  padding: 7px 20px !important;
+  line-height: 1.08;
+}
+
+.formula-line .visual-mathfield::part(container),
+.formula-line .visual-mathfield::part(content) {
+  width: 100%;
+  min-height: 0;
+}
+
+.formula-line .visual-mathfield::part(container) {
+  display: flex;
+  align-items: center;
+}
+
+.formula-line .visual-mathfield.is-simple-formula {
+  padding-block: 5px !important;
+}
+
+/* MathLive's in-progress LaTeX recommendation panel is attached to <body>,
+   not inside the math-field shadow root. Keep it visible and use the same
+   light/blue visual language as VisualTeX's larger command candidate panel. */
+html body #mathlive-suggestion-popover {
+  min-width: 250px;
+  max-width: min(380px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 10px !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-md) !important;
+  isolation: isolate;
+}
+
+html body #mathlive-suggestion-popover.is-animated {
+  animation: none !important;
+  transition: none !important;
+}
+
+html body #mathlive-suggestion-popover.top-tip::after {
+  border-bottom-color: var(--surface) !important;
+}
+
+html body #mathlive-suggestion-popover.bottom-tip::after {
+  border-top-color: var(--surface) !important;
+}
+
+html body #mathlive-suggestion-popover ul {
+  max-height: 320px;
+  padding: 6px !important;
+  background: var(--surface);
+  overscroll-behavior: contain;
+}
+
+html body #mathlive-suggestion-popover li {
+  width: 100% !important;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 !important;
+  padding: 7px 9px !important;
+  border: 1px solid transparent;
+  border-radius: 7px !important;
+  color: var(--text);
+  transition: none !important;
+}
+
+html body #mathlive-suggestion-popover li + li {
+  margin-top: 3px !important;
+}
+
+html body #mathlive-suggestion-popover li:hover,
+html body #mathlive-suggestion-popover li.is-pressed,
+html body #mathlive-suggestion-popover li.is-active {
+  border-color: var(--accent-border) !important;
+  background: var(--accent-soft) !important;
+  color: var(--text) !important;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__command {
+  min-width: 72px;
+  color: var(--text);
+  font-size: 1.3rem !important;
+}
+
+html body #mathlive-suggestion-popover li.ML__popover__current {
+  border-color: var(--accent-border) !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html body #mathlive-suggestion-popover li.ML__popover__current .ML__popover__latex {
+  color: var(--text-muted) !important;
+}
+
+html body #mathlive-suggestion-popover li.ML__popover__current .ML__popover__command {
+  color: var(--text) !important;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__latex {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__keybinding {
+  color: var(--text-faint);
+  opacity: 1 !important;
+}
+
+:root[data-theme="light"] body #mathlive-suggestion-popover,
+:root[data-theme="light"] body #mathlive-suggestion-popover ul {
+  background: #ffffff !important;
+}
+
+:root[data-theme="light"] body #mathlive-suggestion-popover li.is-active,
+:root[data-theme="light"] body #mathlive-suggestion-popover li.is-pressed,
+:root[data-theme="light"] body #mathlive-suggestion-popover li:hover {
+  background: #f4f9ff !important;
+}
+
+:root[data-theme="light"] body #mathlive-suggestion-popover li.ML__popover__current {
+  border-color: #9fc8e5 !important;
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
+}
+
+.suggestion-popup {
+  width: min(440px, calc(100% - 24px));
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(24, 31, 40, 0.18), 0 2px 8px rgba(24, 31, 40, 0.08);
+  contain: paint;
+  isolation: isolate;
+  transform: translateZ(0);
+  animation: candidate-in 120ms ease-out;
+}
+
+:root[data-theme="light"] .suggestion-popup {
+  background: #ffffff;
+}
+
+.suggestion-header {
+  height: 38px;
+  padding: 0 13px;
+  border-bottom-color: var(--border);
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.suggestion-key-hint {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.suggestion-list {
+  max-height: 360px;
+  padding: 7px;
+  overscroll-behavior: contain;
+}
+
+.suggestion-item {
+  min-height: 64px;
+  grid-template-columns: 98px minmax(0, 1fr) 18px 18px;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: none;
+}
+
+.suggestion-item:hover {
+  border-color: color-mix(in srgb, var(--accent-border) 62%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface));
+}
+
+.suggestion-item.is-selected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 88%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+:root[data-theme="light"] .suggestion-item.is-selected {
+  background: #e8f3ff;
+}
+
+.suggestion-preview {
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.suggestion-preview .math-preview-field,
+.suggestion-preview .math-preview {
+  font-size: 19px;
+}
+
+.suggestion-command {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.suggestion-label {
+  font-size: 11px;
+}
+
+.suggestion-pin-slot,
+.suggestion-enter {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.suggestion-pin-slot:empty {
+  visibility: hidden;
+}
+
+.suggestion-enter {
+  opacity: 0;
+  color: var(--accent);
+  transition: none;
+}
+
+.suggestion-enter.is-visible {
+  opacity: 1;
+}
+
+.suggestion-footer {
+  min-height: 32px;
+  padding: 0 13px;
+  background: var(--bg-elevated);
+  font-size: 10px;
+}
+
+.matrix-builder {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface));
+}
+
+.matrix-builder-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.matrix-builder-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.matrix-builder-heading strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.matrix-builder-heading > div > span {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.matrix-size-badge {
+  min-width: 48px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix-delimiter-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.matrix-delimiter-options button {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-rows: 38px auto;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.matrix-delimiter-options button:hover,
+.matrix-delimiter-options button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--surface-hover);
+}
+
+.matrix-delimiter-options button.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.matrix-delimiter-options .math-preview {
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.matrix-delimiter-options button > span:last-child {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-dimension-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 7px;
+}
+
+.matrix-dimension-row > span {
+  padding-bottom: 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.matrix-dimension-row label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.matrix-dimension-row label > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.matrix-dimension-row select {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix-dimension-row select:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.matrix-insert-button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--primary-foreground);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.matrix-insert-button:hover,
+.matrix-insert-button:focus-visible {
+  background: var(--accent-hover);
+}
+
+@media (max-width: 900px) {
+  .formula-line .visual-mathfield {
+    padding-inline: 14px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .formula-line .visual-mathfield {
+    padding-inline: 9px !important;
+  }
+
+  .suggestion-popup {
+    width: min(420px, calc(100% - 16px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-popup,
+  .suggestion-item,
+  .suggestion-enter {
+    animation: none;
+    transition: none;
+  }
+}
+
+.onboarding-ocr-setup-demo,
+.onboarding-update-demo {
+  width: calc(100% - 30px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.onboarding-ocr-setup-demo > span,
+.onboarding-update-demo > span {
+  min-width: 0;
+  min-height: 118px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--accent);
+  text-align: center;
+}
+
+.onboarding-ocr-setup-demo strong,
+.onboarding-update-demo strong {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.onboarding-ocr-setup-demo small {
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.onboarding-ocr-setup-demo i,
+.onboarding-update-demo i,
+.onboarding-paste-demo > i {
+  color: var(--text-faint);
+}
+
+.onboarding-update-demo .onboarding-update-menu-item {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.onboarding-paste-demo {
+  width: calc(100% - 30px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 12px 8px;
+}
+
+.onboarding-paste-field {
+  grid-column: 1 / -1;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.onboarding-paste-field small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.onboarding-paste-caret {
+  width: 2px;
+  height: 42px;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: onboarding-caret-blink 1s steps(1, end) infinite;
+}
+
+.onboarding-paste-shortcut,
+.onboarding-paste-result {
+  min-width: 0;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--accent);
+  text-align: center;
+}
+
+.onboarding-paste-shortcut strong,
+.onboarding-paste-result strong {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.onboarding-paste-result .math-preview {
+  min-height: 30px;
+  font-size: 17px;
+}
+
+@keyframes onboarding-caret-blink {
+  50% { opacity: 0; }
+}
+
+@media (max-width: 720px), (max-height: 560px) {
+  .onboarding-ocr-setup-demo,
+  .onboarding-update-demo {
+    width: calc(100% - 18px);
+  }
+
+  .onboarding-ocr-setup-demo > span,
+  .onboarding-update-demo > span {
+    min-height: 94px;
+    padding: 8px 6px;
+  }
+
+  .onboarding-paste-demo {
+    width: calc(100% - 18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-paste-caret {
+    animation: none;
+  }
+}

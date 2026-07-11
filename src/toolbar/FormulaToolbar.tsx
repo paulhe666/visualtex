@@ -16,6 +16,8 @@ interface Props {
   onClose: () => void;
 }
 
+type MatrixDelimiter = "bmatrix" | "pmatrix" | "vmatrix";
+
 const categories = [
   "common",
   "structure",
@@ -26,6 +28,33 @@ const categories = [
   "set",
   "arrow",
   "physics",
+];
+
+const matrixSizes = Array.from({ length: 10 }, (_, index) => index + 1);
+const matrixDelimiterOptions: Array<{
+  id: MatrixDelimiter;
+  preview: string;
+  labelZh: string;
+  labelEn: string;
+}> = [
+  {
+    id: "vmatrix",
+    preview: "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}",
+    labelZh: "竖线",
+    labelEn: "Bars",
+  },
+  {
+    id: "bmatrix",
+    preview: "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}",
+    labelZh: "方括号",
+    labelEn: "Brackets",
+  },
+  {
+    id: "pmatrix",
+    preview: "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}",
+    labelZh: "圆括号",
+    labelEn: "Parentheses",
+  },
 ];
 
 const previewSizeClass = (command: LatexCommand) => {
@@ -39,8 +68,39 @@ const previewSizeClass = (command: LatexCommand) => {
   return (wide ? " is-wide" : "") + (compact ? " is-compact" : "");
 };
 
+function createMatrixCommand(
+  rows: number,
+  columns: number,
+  delimiter: MatrixDelimiter,
+): LatexCommand {
+  const matrixBody = Array.from({ length: rows }, () =>
+    Array.from({ length: columns }, () => "\\placeholder{}").join(" & "),
+  ).join(" \\\\ ");
+  const delimiterCopy = matrixDelimiterOptions.find(
+    (option) => option.id === delimiter,
+  ) ?? matrixDelimiterOptions[1];
+
+  return {
+    id: `custom-${delimiter}-${rows}x${columns}`,
+    command: `\\begin{${delimiter}}`,
+    insertTemplate: `\\begin{${delimiter}}${matrixBody}\\end{${delimiter}}`,
+    previewLatex: delimiterCopy.preview,
+    labelZh: `${rows}×${columns} ${delimiterCopy.labelZh}矩阵`,
+    labelEn: `${rows}×${columns} ${delimiterCopy.labelEn.toLowerCase()} matrix`,
+    aliases: ["matrix", delimiter],
+    keywords: ["矩阵", "自定义矩阵", `${rows}x${columns}`],
+    category: "matrix",
+    defaultPriority: 120,
+    supportedInMathMode: true,
+  };
+}
+
 export function FormulaToolbar({ onInsert, onClose }: Props) {
   const [activeCategory, setActiveCategory] = useState("common");
+  const [matrixRows, setMatrixRows] = useState(2);
+  const [matrixColumns, setMatrixColumns] = useState(2);
+  const [matrixDelimiter, setMatrixDelimiter] =
+    useState<MatrixDelimiter>("bmatrix");
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
 
@@ -59,6 +119,10 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
       (command) => command.category === activeCategory,
     );
   }, [activeCategory]);
+
+  const insertCustomMatrix = () => {
+    onInsert(createMatrixCommand(matrixRows, matrixColumns, matrixDelimiter));
+  };
 
   return (
     <aside
@@ -97,6 +161,72 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
       </nav>
 
       <div className="template-strip" aria-label={isEn ? "Formula templates" : "公式模板"}>
+        {activeCategory === "matrix" && (
+          <section className="matrix-builder" aria-label={isEn ? "Custom matrix" : "自定义矩阵"}>
+            <div className="matrix-builder-heading">
+              <div>
+                <strong>{isEn ? "Custom matrix" : "自定义矩阵"}</strong>
+                <span>{isEn ? "Up to 10 × 10" : "最大 10 × 10"}</span>
+              </div>
+              <span className="matrix-size-badge">
+                {matrixRows} × {matrixColumns}
+              </span>
+            </div>
+
+            <div className="matrix-delimiter-options" role="group" aria-label={isEn ? "Matrix delimiter" : "矩阵边界"}>
+              {matrixDelimiterOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={matrixDelimiter === option.id ? "is-active" : ""}
+                  aria-pressed={matrixDelimiter === option.id}
+                  onClick={() => setMatrixDelimiter(option.id)}
+                  title={isEn ? option.labelEn : option.labelZh}
+                >
+                  <MathPreview latex={option.preview} />
+                  <span>{isEn ? option.labelEn : option.labelZh}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="matrix-dimension-row">
+              <label>
+                <span>{isEn ? "Rows" : "行数"}</span>
+                <select
+                  value={matrixRows}
+                  onChange={(event) => setMatrixRows(Number(event.target.value))}
+                >
+                  {matrixSizes.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </label>
+              <span aria-hidden="true">×</span>
+              <label>
+                <span>{isEn ? "Columns" : "列数"}</span>
+                <select
+                  value={matrixColumns}
+                  onChange={(event) => setMatrixColumns(Number(event.target.value))}
+                >
+                  {matrixSizes.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              className="matrix-insert-button"
+              onClick={insertCustomMatrix}
+            >
+              {isEn
+                ? `Insert ${matrixRows} × ${matrixColumns} matrix`
+                : `插入 ${matrixRows} × ${matrixColumns} 矩阵`}
+            </button>
+          </section>
+        )}
+
         {visibleCommands.map((command) => (
           <button
             type="button"
@@ -114,7 +244,6 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
           </button>
         ))}
       </div>
-
     </aside>
   );
 }

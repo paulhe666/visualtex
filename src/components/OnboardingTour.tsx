@@ -4,9 +4,11 @@ import {
   ArrowRight,
   Check,
   Code2,
-  Copy,
+  Download,
   Keyboard,
+  Menu,
   PanelLeft,
+  RefreshCw,
   ScanLine,
   X,
 } from "lucide-react";
@@ -30,13 +32,17 @@ const copy: Record<Language, StepCopy[]> = {
     { title: "欢迎使用 VisualTeX", description: "用熟悉的方式输入公式，需要时随时查看源码。" },
     { title: "从公式库开始", description: "选择结构或符号，它会直接插入当前光标。" },
     { title: "保持双手在键盘上", description: "几个按键就能完成换行、跳转和删除。" },
-    { title: "从图片到 LaTeX", description: "粘贴图片识别公式，再复制或继续编辑。" },
+    { title: "第一次使用 OCR", description: "先安装本地 OCR 环境；第一次识别某个模型时还需要联网下载模型文件。" },
+    { title: "之后直接粘贴图片", description: "模型准备好后，把光标放进公式框，直接粘贴公式图片即可识别并插回原位置。" },
+    { title: "随时检查更新", description: "打开左上角菜单，选择“检查更新”；也可以在设置中执行同一操作。" },
   ],
   en: [
     { title: "Welcome to VisualTeX", description: "Write formulas naturally and inspect the source whenever you need it." },
     { title: "Start from the formula library", description: "Choose a structure or symbol to insert it at the cursor." },
     { title: "Keep your hands on the keyboard", description: "A few keys cover line creation, navigation, and deletion." },
-    { title: "From image to LaTeX", description: "Paste an image, recognize the formula, then copy or keep editing." },
+    { title: "First-time OCR setup", description: "Install the local OCR runtime first. The first recognition with each model also downloads that model from the internet." },
+    { title: "Paste images directly afterward", description: "Once the model is ready, place the cursor in a formula field and paste an image to recognize and insert it at the saved position." },
+    { title: "Check for updates anytime", description: "Open the top-left menu and choose “Check for updates”. The same action is also available in Settings." },
   ],
 };
 
@@ -81,7 +87,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [open, onFinish]);
 
   if (!open) return null;
 
@@ -155,12 +161,63 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
             )}
 
             {step === 3 && (
-              <div className="onboarding-workflow-demo">
-                <span><ScanLine size={20} /><strong>{isEn ? "Paste image" : "粘贴图片"}</strong><kbd>⌘V</kbd></span>
+              <div className="onboarding-ocr-setup-demo">
+                <span>
+                  <ScanLine size={20} />
+                  <strong>{isEn ? "Open Formula image OCR" : "打开“图片公式识别”"}</strong>
+                  <small>{isEn ? "From the app menu" : "从应用菜单进入"}</small>
+                </span>
                 <i><ArrowRight size={15} /></i>
-                <span><Code2 size={20} /><strong>LaTeX</strong></span>
+                <span>
+                  <Download size={20} />
+                  <strong>{isEn ? "Install runtime" : "安装 OCR 环境"}</strong>
+                  <small>{isEn ? "One-time setup" : "只需安装一次"}</small>
+                </span>
                 <i><ArrowRight size={15} /></i>
-                <span><Copy size={20} /><strong>{isEn ? "Copy" : "复制"}</strong></span>
+                <span>
+                  <Download size={20} />
+                  <strong>{isEn ? "Download model" : "首次下载模型"}</strong>
+                  <small>{isEn ? "On first recognition" : "第一次识别时进行"}</small>
+                </span>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="onboarding-paste-demo">
+                <div className="onboarding-paste-field">
+                  <span className="onboarding-paste-caret" />
+                  <small>{isEn ? "Formula field" : "公式输入框"}</small>
+                </div>
+                <span className="onboarding-paste-shortcut">
+                  <ScanLine size={20} />
+                  <strong>{isEn ? "Paste formula image" : "粘贴公式图片"}</strong>
+                  <kbd>⌘V</kbd>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span className="onboarding-paste-result">
+                  <Code2 size={20} />
+                  <strong>{isEn ? "Inserted at saved cursor" : "插回原光标位置"}</strong>
+                  <MathPreview latex="\\frac{a+b}{c}" />
+                </span>
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="onboarding-update-demo">
+                <span>
+                  <Menu size={20} />
+                  <strong>{isEn ? "Open app menu" : "打开左上角菜单"}</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span className="onboarding-update-menu-item">
+                  <RefreshCw size={20} />
+                  <strong>{isEn ? "Check for updates" : "检查更新"}</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span>
+                  <Check size={20} />
+                  <strong>{isEn ? "Review the result" : "查看版本结果"}</strong>
+                </span>
               </div>
             )}
           </div>

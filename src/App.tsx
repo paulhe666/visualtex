@@ -80,7 +80,7 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v1.completed";
+const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v2.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -498,11 +498,11 @@ function App() {
     action();
   };
 
-  const finishOnboarding = () => {
+  const finishOnboarding = useCallback(() => {
     window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
     setOnboardingOpen(false);
     window.requestAnimationFrame(() => editorRef.current?.focus());
-  };
+  }, []);
 
   const runUpdateCheck = useCallback(async (manual = true) => {
     if (manual) setUpdateOpen(true);

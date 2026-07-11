@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test:editor": "node scripts/editor_regression_smoke.mjs",
+    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

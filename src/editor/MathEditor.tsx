@@ -56,11 +56,98 @@ interface FormulaFieldProps {
 }
 
 const trailingCommand = /\\([\p{L}]*)$/u;
-const BASE_FORMULA_FONT_SIZE = 42;
-const MIN_FORMULA_FONT_SIZE = 22;
+const BASE_FORMULA_FONT_SIZE = 54;
+const MIN_FORMULA_FONT_SIZE = 28;
 
 const formulaFontSize = (zoom: number) =>
   Math.max(MIN_FORMULA_FONT_SIZE, BASE_FORMULA_FONT_SIZE * zoom);
+
+const tallFormulaPattern =
+  /\\(?:d?frac|tfrac|sqrt|sum|prod|int|iint|iiint|oint|oiint|oiiint|lim|begin|overset|underset|overline|underline)\b|[_^]/;
+const bareStructuredOperatorPattern =
+  /^\\(?:int|iint|iiint|oint|oiint|oiiint|sum|prod|lim|bigcup|bigcap)\s*$/;
+
+function findTrailingCommandRange(
+  field: MathfieldElement,
+  activeQuery: string,
+): [number, number] | null {
+  const normalizedQuery = activeQuery.trim();
+  if (!normalizedQuery) return null;
+
+  const candidateEnds = Array.from(
+    new Set([field.position, field.lastOffset].filter((offset) => offset >= 0)),
+  );
+  for (const end of candidateEnds) {
+    for (let start = end; start >= 0; start -= 1) {
+      const rangeLatex = field.getValue(start, end, "latex").trim();
+      if (rangeLatex === normalizedQuery) return [start, end];
+    }
+  }
+
+  return null;
+}
+
+function getVisibleNativeSuggestionItems(): HTMLElement[] {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel?.classList.contains("is-visible")) return [];
+  return Array.from(
+    panel.querySelectorAll<HTMLElement>("li[data-command]"),
+  );
+}
+
+function moveNativeSuggestionSelection(direction: 1 | -1): boolean {
+  const items = getVisibleNativeSuggestionItems();
+  if (!items.length) return false;
+
+  const currentIndex = items.findIndex((item) =>
+    item.classList.contains("ML__popover__current"),
+  );
+  const nextIndex =
+    currentIndex < 0
+      ? direction > 0
+        ? 0
+        : items.length - 1
+      : (currentIndex + direction + items.length) % items.length;
+
+  items.forEach((item, index) => {
+    const selected = index === nextIndex;
+    item.classList.toggle("ML__popover__current", selected);
+    item.setAttribute("aria-selected", String(selected));
+  });
+  items[nextIndex].scrollIntoView({ block: "nearest" });
+  return true;
+}
+
+function commitNativeSuggestion(): boolean {
+  const items = getVisibleNativeSuggestionItems();
+  if (!items.length) return false;
+  const selected =
+    items.find((item) => item.classList.contains("ML__popover__current")) ??
+    items[0];
+  selected.click();
+  return true;
+}
+
+function keepCaretAfterBareStructuredOperator(
+  field: MathfieldElement,
+  previousPosition: number,
+) {
+  if (field.position >= previousPosition || field.position >= field.lastOffset) {
+    return;
+  }
+
+  const operatorOffset = field.position + 1;
+  const operatorLatex =
+    field.getElementInfo(operatorOffset)?.latex?.trim() ||
+    field.getValue(field.position, operatorOffset, "latex").trim();
+  if (!bareStructuredOperatorPattern.test(operatorLatex)) return;
+
+  field.selection = {
+    ranges: [[operatorOffset, operatorOffset]],
+    direction: "none",
+  };
+  field.position = operatorOffset;
+}
 
 function templateForSelection(
   command: LatexCommand,
@@ -130,6 +217,8 @@ function FormulaField(props: FormulaFieldProps) {
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
     field.smartMode = false;
+    field.popoverPolicy = "auto";
+    field.maxMatrixCols = 10;
     field.setAttribute("math-virtual-keyboard-policy", "manual");
     const isEn = propsRef.current.language === "en";
     field.setAttribute(
@@ -149,9 +238,28 @@ function FormulaField(props: FormulaFieldProps) {
         const content = field.shadowRoot?.querySelector<HTMLElement>(
           '[part="content"]',
         );
-        const contentHeight = content?.getBoundingClientRect().height ?? fontSize;
-        const baseHeight = Math.ceil(fontSize * 1.72 + 28);
-        const nextHeight = Math.ceil(Math.max(baseHeight, contentHeight + 30));
+        const atomRects = content
+          ? Array.from(
+              content.querySelectorAll<HTMLElement>("[data-atom-id]"),
+            )
+              .map((atom) => atom.getBoundingClientRect())
+              .filter((rect) => rect.height > 0 && rect.width >= 0)
+          : [];
+        const formulaHeight = atomRects.length
+          ? Math.max(...atomRects.map((rect) => rect.bottom)) -
+            Math.min(...atomRects.map((rect) => rect.top))
+          : fontSize;
+        const hasTallStructure = tallFormulaPattern.test(field.value);
+        const baseHeight = hasTallStructure
+          ? Math.max(92, fontSize * 1.34 + 18)
+          : Math.max(72, fontSize * 1.12 + 12);
+        const verticalPadding = hasTallStructure ? 24 : 14;
+        const nextHeight = Math.ceil(
+          Math.max(baseHeight, formulaHeight + verticalPadding),
+        );
+
+        field.classList.toggle("is-simple-formula", !hasTallStructure);
+        field.style.height = nextHeight + "px";
         field.style.minHeight = nextHeight + "px";
         host.closest<HTMLElement>(".formula-line")?.style.setProperty(
           "--formula-row-height",
@@ -347,6 +455,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const [popupPosition, setPopupPosition] = useState({ left: 72, top: 132 });
     const selectedIndexRef = useRef(0);
     const queryRef = useRef("");
+    const suppressedSuggestionRef = useRef<{
+      lineId: string;
+      value: string;
+    } | null>(null);
     const usage = useEditorStore((state) => state.usage);
     const personalize = useEditorStore((state) => state.personalize);
     const suggestionCount = useEditorStore((state) => state.suggestionCount);
@@ -471,7 +583,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const surface = surfaceRef.current;
       if (!surface) return;
       const surfaceRect = surface.getBoundingClientRect();
-      const popupWidth = Math.min(420, Math.max(280, surfaceRect.width - 24));
+      const popupWidth = Math.min(440, Math.max(280, surfaceRect.width - 24));
       const clampLeft = (left: number) =>
         Math.max(12, Math.min(surfaceRect.width - popupWidth - 12, left));
       const caret = fieldWithCaret.getCaretPoint?.();
@@ -493,6 +605,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
     };
 
+    const refreshSuggestionQuery = (
+      lineId: string,
+      field: MathfieldElement,
+      normalized: string,
+    ) => {
+      const suppressed = suppressedSuggestionRef.current;
+      if (suppressed) {
+        if (suppressed.lineId === lineId && suppressed.value === normalized) {
+          setQuery("");
+          return;
+        }
+        suppressedSuggestionRef.current = null;
+      }
+
+      const match = normalized.match(trailingCommand);
+      if (match) {
+        setQuery("\\" + match[1]);
+        selectSuggestionIndex(0);
+        requestAnimationFrame(() => updatePopupPosition(field));
+      } else {
+        setQuery("");
+      }
+    };
+
     const syncField = (index: number, field: MathfieldElement) => {
       const normalized = normalizeChineseLatex(field.value);
       const nextLines = [...linesRef.current];
@@ -500,11 +636,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       linesRef.current = nextLines;
       onChange(nextLines);
 
-      const match = normalized.match(trailingCommand);
-      if (match) {
-        setQuery("\\" + match[1]);
-        selectSuggestionIndex(0);
-        requestAnimationFrame(() => updatePopupPosition(field));
+      const lineId = lineIdsRef.current[index];
+      if (lineId) {
+        refreshSuggestionQuery(lineId, field, normalized);
       } else {
         setQuery("");
       }
@@ -546,18 +680,32 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       setActiveIndex(targetIndex);
       field.focus();
 
+      let insertionTemplate: string;
       if (activeQuery) {
-        for (let index = 0; index < activeQuery.length; index += 1) {
-          field.executeCommand("deleteBackward");
+        const queryRange = findTrailingCommandRange(field, activeQuery);
+        if (!queryRange) {
+          setQuery("");
+          selectSuggestionIndex(0);
+          return;
         }
+        field.selection = {
+          ranges: [queryRange],
+          direction: "forward",
+        };
+        insertionTemplate = command.insertTemplate;
+      } else {
+        const selectedLatex = field.selectionIsCollapsed
+          ? ""
+          : field.getValue(field.selection);
+        insertionTemplate = templateForSelection(command, selectedLatex);
       }
 
-      const selectedLatex = field.selectionIsCollapsed
-        ? ""
-        : field.getValue(field.selection);
-      const insertionTemplate = templateForSelection(command, selectedLatex);
-
       const finishInsertion = () => {
+        const normalizedValue = normalizeChineseLatex(field.value);
+        suppressedSuggestionRef.current = {
+          lineId: targetLineId,
+          value: normalizedValue,
+        };
         recordCommand(command.id, activeQuery, source);
         setQuery("");
         selectSuggestionIndex(0);
@@ -693,7 +841,36 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
+          suppressedSuggestionRef.current = {
+            lineId,
+            value: normalizeChineseLatex(field.value),
+          };
           setQuery("");
+          return;
+        }
+      }
+
+      const nativeRecommendationVisible =
+        document
+          .getElementById("mathlive-suggestion-popover")
+          ?.classList.contains("is-visible") ?? false;
+      if (!liveSuggestions.length && nativeRecommendationVisible) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          event.stopPropagation();
+          moveNativeSuggestionSelection(event.key === "ArrowDown" ? 1 : -1);
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          commitNativeSuggestion();
+          return;
+        }
+        if (event.key === "Escape") {
+          // Escape only dismisses the panel and does not rebuild its rows, so
+          // MathLive can safely handle it itself.
           return;
         }
       }
@@ -734,16 +911,19 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
         field.executeCommand(command);
 
-        // At a fraction/root/matrix boundary MathLive may only move the caret
-        // on the first delete command, which feels like the key stopped working.
-        // If no content changed but the caret moved into the structure, perform
-        // the actual deletion in the same keystroke.
+        // MathLive moves the caret to the left of a large operator after the
+        // final empty limit branch is removed. Keep it on the operator's right
+        // so the next Backspace removes the integral/sum/product itself instead
+        // of unexpectedly deleting content that precedes it.
+        if (event.key === "Backspace" && field.selectionIsCollapsed) {
+          keepCaretAfterBareStructuredOperator(field, beforePosition);
+        }
+
         if (
           field.value === beforeValue &&
-          field.position !== beforePosition &&
-          field.selectionIsCollapsed
+          field.position === beforePosition
         ) {
-          field.executeCommand(command);
+          field.focus();
         }
 
         window.requestAnimationFrame(() => syncField(index, field));
@@ -951,11 +1131,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   activeIndexRef.current = lineIndex;
                   activeLineIdRef.current = lineId;
                   setActiveIndex(lineIndex);
-                  const match = field.value.match(trailingCommand);
-                  if (match) {
-                    setQuery("\\" + match[1]);
-                    requestAnimationFrame(() => updatePopupPosition(field));
-                  }
+                  refreshSuggestionQuery(
+                    lineId,
+                    field,
+                    normalizeChineseLatex(field.value),
+                  );
                 }}
                 onKeyDown={(lineIndex, event, field) =>
                   handleKeyDown(lineIndex, lineId, event, field)
@@ -981,10 +1161,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           selectedIndex={selectedIndex}
           position={popupPosition}
           usage={usage}
-          onHighlight={(index) => {
-            selectSuggestionIndex(index);
-            focusLine(activeIndexRef.current);
-          }}
+          onHighlight={selectSuggestionIndex}
           onCommit={(command) =>
             insertCommand(command, "candidate", queryRef.current)
           }
