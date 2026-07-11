@@ -395,7 +395,7 @@ async function main() {
     }
 
     await setField("\\alpha");
-    const simpleMetrics = await evaluate(`(() => {
+    const simpleMetrics = await waitForEvaluation(`(() => {
       const line = document.querySelector(".formula-line");
       const field = document.querySelector("math-field");
       const content = field.shadowRoot.querySelector('[part="content"]');
@@ -406,17 +406,25 @@ async function main() {
       const bottom = Math.max(...rects.map((rect) => rect.bottom));
       const lineRect = line.getBoundingClientRect();
       return {
+        ready: field.classList.contains("is-simple-formula"),
         lineHeight: lineRect.height,
         fieldHeight: field.getBoundingClientRect().height,
         centerDelta: Math.abs((top + bottom) / 2 - (lineRect.top + lineRect.bottom) / 2),
       };
-    })()`);
+    })()`, "simple formula row sizing");
 
     await setField("\\frac{a}{b}");
-    const tallMetrics = await evaluate(`(() => ({
-      lineHeight: document.querySelector(".formula-line").getBoundingClientRect().height,
-      fieldHeight: document.querySelector("math-field").getBoundingClientRect().height,
-    }))()`);
+    const tallMetrics = await waitForEvaluation(`(() => {
+      const lineHeight = document.querySelector(".formula-line").getBoundingClientRect().height;
+      const field = document.querySelector("math-field");
+      return {
+        ready:
+          !field.classList.contains("is-simple-formula") &&
+          lineHeight > ${simpleMetrics.lineHeight},
+        lineHeight,
+        fieldHeight: field.getBoundingClientRect().height,
+      };
+    })()`, "tall formula row sizing");
     if (!(simpleMetrics.lineHeight < tallMetrics.lineHeight)) {
       throw new Error(`Simple formula row did not shrink (${simpleMetrics.lineHeight} vs ${tallMetrics.lineHeight})`);
     }
