@@ -47,13 +47,6 @@ jobs:
               src-tauri/target/release/bundle/appimage/*.AppImage
 
     runs-on: ${{ matrix.platform }}
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
 
     steps:
       - name: Check out source
@@ -126,6 +119,13 @@ jobs:
       - name: Detect complete Apple signing credentials
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           if [[ -n "$APPLE_CERTIFICATE" && -n "$APPLE_CERTIFICATE_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$APPLE_TEAM_ID" && -n "$KEYCHAIN_PASSWORD" ]]; then
             echo "MAC_SIGNING_READY=true" >> "$GITHUB_ENV"
@@ -137,6 +137,10 @@ jobs:
       - name: Import Apple Developer ID certificate
         if: runner.os == 'macOS' && env.MAC_SIGNING_READY == 'true'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/visualtex-certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/visualtex-signing.keychain-db"
@@ -155,7 +159,20 @@ jobs:
           fi
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
 
-      - name: Build installer packages
+      - name: Build non-macOS installer packages
+        if: runner.os != 'macOS'
+        run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Build signed and notarized macOS installer
+        if: runner.os == 'macOS' && env.MAC_SIGNING_READY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Build fallback ad-hoc signed macOS installer
+        if: runner.os == 'macOS' && env.MAC_SIGNING_READY != 'true'
         run: npm run tauri -- build ${{ matrix.build_args }}
 
       - name: Verify macOS DMG, app bundle, signature, and notarization status
