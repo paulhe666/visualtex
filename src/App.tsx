@@ -41,6 +41,7 @@ import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
+import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   MAX_EDITOR_ZOOM,
   MIN_EDITOR_ZOOM,
@@ -1105,211 +1106,77 @@ function App() {
         />
       )}
 
-      <main
-        className={`workspace${sidebarOpen ? " has-sidebar" : ""}`}
-      >
-        {sidebarOpen && (
-          <FormulaToolbar
-            onInsert={(command) => editorRef.current?.insertCommand(command)}
-            onClose={() => setSidebarOpen(false)}
-          />
-        )}
-
-        <section className="formula-workspace editor-pane">
-          <header className="workspace-heading pane-header editor-pane-header">
-            <div className="pane-title-group">
-              <span className="pane-icon" aria-hidden="true">
-                <Braces size={16} />
-              </span>
-              <div className="pane-title-copy">
-                <h1>{isEn ? "Visual editor" : "可视化编辑"}</h1>
-              </div>
-            </div>
-            <div className="canvas-tool-group">
-              <label
-                className="canvas-ocr-model"
-                title={
-                  isEn
-                    ? "Model used when an image is pasted into a formula field"
-                    : "在公式输入框中粘贴图片时使用的 OCR 模型"
-                }
-              >
-                <ScanLine size={14} />
-                <select
-                  value={ocrModel}
-                  disabled={inlineOcrIsBusy}
-                  onChange={(event) =>
-                    handleOcrModelChange(event.target.value as OcrModelName)
-                  }
-                  aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
-                >
-                  {OCR_MODELS.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {isEn ? item.labelEn : item.labelZh}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="canvas-controls">
-                <button
-                  type="button"
-                  className="icon-button compact"
-                  onClick={() => setZoom(zoom - 0.1)}
-                  disabled={zoom <= MIN_EDITOR_ZOOM + 0.0001}
-                  aria-label={isEn ? "Zoom out" : "缩小公式"}
-                  title={
-                    zoom <= MIN_EDITOR_ZOOM + 0.0001
-                      ? isEn
-                        ? "Minimum zoom: 20%"
-                        : "最小缩放：20%"
-                      : undefined
-                  }
-                >
-                  <Minus size={15} />
-                </button>
-                <span aria-live="polite" aria-atomic="true">{Math.round(zoom * 100)}%</span>
-                <button
-                  type="button"
-                  className="icon-button compact"
-                  onClick={() => setZoom(zoom + 0.1)}
-                  disabled={zoom >= MAX_EDITOR_ZOOM - 0.0001}
-                  aria-label={isEn ? "Zoom in" : "放大公式"}
-                  title={
-                    zoom >= MAX_EDITOR_ZOOM - 0.0001
-                      ? isEn
-                        ? "Maximum zoom: 160%"
-                        : "最大缩放：160%"
-                      : undefined
-                  }
-                >
-                  <Plus size={15} />
-                </button>
-              </div>
-            </div>
-          </header>
-
-          <div className="editor-pane-scroll">
-            <MathEditor
-            ref={editorRef}
-            lines={lines}
-            activeLineId={activeLineId}
-            zoom={zoom}
-            onPasteImage={handleEditorImagePaste}
-            onHistoryBusyChange={setEditorHistoryBusy}
-            overlay={
-              inlineOcr ? (
-                <div
-                  className={`inline-ocr-progress is-${inlineOcr.status}`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span className="inline-ocr-progress-icon">
-                    {inlineOcr.status === "running" ||
-                    inlineOcr.status === "cancelling" ? (
-                      <LoaderCircle size={17} className="is-spinning" />
-                    ) : inlineOcr.status === "success" ? (
-                      <Check size={17} />
-                    ) : inlineOcr.status === "error" ? (
-                      <AlertCircle size={17} />
-                    ) : (
-                      <X size={17} />
-                    )}
-                  </span>
-                  <div>
-                    <strong>{inlineOcr.message}</strong>
-                    <span>
-                      {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
-                      {" · "}
-                      {inlineOcr.seconds}
-                      {isEn ? "s" : " 秒"}
-                    </span>
-                  </div>
-                  {inlineOcrIsBusy ? (
-                    <button
-                      type="button"
-                      className="inline-ocr-cancel"
-                      onClick={cancelInlineOcr}
-                      disabled={inlineOcr.status === "cancelling"}
-                    >
-                      <X size={13} />
-                      {isEn ? "Cancel" : "取消"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="inline-ocr-dismiss"
-                      onClick={() => setInlineOcr(null)}
-                      aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-              ) : null
-            }
-            />
-
-            <div className="source-toggle-row">
-            <button
-              type="button"
-              className="source-toggle"
-              onClick={() => setSourceOpen(!sourceOpen)}
-              aria-label={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
-              title={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
+      <EditorWorkspace
+        mode="desktop"
+        showFileActions
+        showUpdateActions
+        showOfficeActions={false}
+        showOcrActions
+        editorRef={editorRef}
+        sidebarOpen={sidebarOpen}
+        onSidebarOpenChange={setSidebarOpen}
+        onHistoryBusyChange={setEditorHistoryBusy}
+        onPasteImage={handleEditorImagePaste}
+        onCopy={handleCopy}
+        onReplaceDocument={replaceDocumentWithHistory}
+        ocrModel={ocrModel}
+        ocrModels={OCR_MODELS}
+        ocrBusy={inlineOcrIsBusy}
+        onOcrModelChange={(model) =>
+          handleOcrModelChange(model as OcrModelName)
+        }
+        ocrOverlay={
+          inlineOcr ? (
+            <div
+              className={`inline-ocr-progress is-${inlineOcr.status}`}
+              role="status"
+              aria-live="polite"
             >
-              <Code2 size={15} />
-              {sourceOpen ? <PanelBottomClose size={15} /> : <PanelBottomOpen size={15} />}
-            </button>
+              <span className="inline-ocr-progress-icon">
+                {inlineOcr.status === "running" ||
+                inlineOcr.status === "cancelling" ? (
+                  <LoaderCircle size={17} className="is-spinning" />
+                ) : inlineOcr.status === "success" ? (
+                  <Check size={17} />
+                ) : inlineOcr.status === "error" ? (
+                  <AlertCircle size={17} />
+                ) : (
+                  <X size={17} />
+                )}
+              </span>
+              <div>
+                <strong>{inlineOcr.message}</strong>
+                <span>
+                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {" · "}
+                  {inlineOcr.seconds}
+                  {isEn ? "s" : " 秒"}
+                </span>
+              </div>
+              {inlineOcrIsBusy ? (
+                <button
+                  type="button"
+                  className="inline-ocr-cancel"
+                  onClick={cancelInlineOcr}
+                  disabled={inlineOcr.status === "cancelling"}
+                >
+                  <X size={13} />
+                  {isEn ? "Cancel" : "取消"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-ocr-dismiss"
+                  onClick={() => setInlineOcr(null)}
+                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
-
-            {sourceOpen && (
-              <LatexSourceEditor
-                latex={sourceLatex}
-                theme={theme}
-                format={latexCodeFormat}
-                onApply={(source, sourceFormat) => {
-                  const values = parseLatexSource(source, sourceFormat).map(
-                    normalizeChineseLatex,
-                  );
-                  const nextLines = reconcileFormulaLines(values, lines);
-                  const nextActiveLineId = nextLines.some(
-                    (line) => line.id === activeLineId,
-                  )
-                    ? activeLineId
-                    : nextLines[0]?.id ?? null;
-                  replaceDocumentWithHistory(
-                    {
-                      title,
-                      lines: nextLines,
-                      activeLineId: nextActiveLineId,
-                      selectionByLineId:
-                        editorRef.current?.getSelectionMap() ?? {},
-                    },
-                    "source-apply",
-                  );
-                }}
-                onCopy={() => void handleCopy()}
-              />
-            )}
-          </div>
-        </section>
-
-      </main>
-
-      <footer className="status-bar">
-        <div>
-          <span className="status-live-dot" />
-          {isEn ? "Ready" : "就绪"}
-        </div>
-        <div>
-          <span>
-            {lines.length} {isEn ? "lines" : "行"}
-          </span>
-          <span>
-            · {latex.length} {isEn ? "characters" : "字符"}
-          </span>
-        </div>
-      </footer>
+          ) : null
+        }
+      />
 
       <SettingsDialog
         open={settingsOpen}
