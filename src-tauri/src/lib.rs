@@ -11,6 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod office;
+
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
@@ -157,9 +159,9 @@ impl OcrWorker {
         self.stdin
             .write_all(b"\n")
             .map_err(|error| self.worker_failure(format!("Unable to send OCR request: {error}")))?;
-        self.stdin
-            .flush()
-            .map_err(|error| self.worker_failure(format!("Unable to flush OCR request: {error}")))?;
+        self.stdin.flush().map_err(|error| {
+            self.worker_failure(format!("Unable to flush OCR request: {error}"))
+        })?;
 
         loop {
             let response = read_worker_json(
@@ -917,7 +919,7 @@ fn run_recognition(
         if let Some(details) = response.details {
             if !details.trim().is_empty() {
                 let detail_tail = tail_text(&details, 3000);
-                message.push_str("\n");
+                message.push('\n');
                 message.push_str(detail_tail.trim());
             }
         }
@@ -1053,13 +1055,23 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(OcrState::default())
+        .setup(|app| {
+            let office_state = office::initialize(app.handle()).map_err(std::io::Error::other)?;
+            app.manage(office_state.clone());
+            office::start(office_state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,
             cancel_ocr_recognition,
             restart_ocr_worker,
-            reset_ocr_runtime
+            reset_ocr_runtime,
+            office::lifecycle::get_office_companion_status,
+            office::lifecycle::start_office_companion,
+            office::lifecycle::stop_office_companion,
+            office::lifecycle::regenerate_office_certificate
         ])
         .run(tauri::generate_context!())
         .expect("error while running VisualTeX");
@@ -1117,11 +1129,9 @@ mod protocol_tests {
         assert!(cached.installed);
 
         write_cached_runtime_status(&cache, None).expect("cache clear should succeed");
-        assert!(
-            read_cached_runtime_status(&cache)
-                .expect("cache read after clear should succeed")
-                .is_none()
-        );
+        assert!(read_cached_runtime_status(&cache)
+            .expect("cache read after clear should succeed")
+            .is_none());
     }
 }
 

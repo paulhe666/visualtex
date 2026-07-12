@@ -4,9 +4,9 @@
   "version": "1.0.6",
   "identifier": "com.visualtex.studio",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run build:office && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:all",
     "frontendDist": "../dist"
   },
   "app": {
@@ -38,7 +38,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["ocr/worker.py"],
+    "resources": {
+      "ocr/worker.py": "ocr/worker.py",
+      "../dist-office/": "office/"
+    },
     "macOS": {
       "signingIdentity": "-"
     },
