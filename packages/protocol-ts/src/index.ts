@@ -340,6 +340,13 @@ export interface PdfTextGlyph {
   fontSizePoints: number;
 }
 
+export interface PdfTextLine {
+  pageIndex: number;
+  text: string;
+  rect: PdfRect;
+  glyphs: PdfTextGlyph[];
+}
+
 export interface PdfTextHit {
   pageIndex: number;
   glyphIndex: number;
@@ -628,6 +635,9 @@ export const desktopApi = {
   },
   pdfTextHit(pdfPath: string, pageIndex: number, x: number, y: number): Promise<PdfTextHit | null> {
     return invoke("pdf_text_hit", { pdfPath, pageIndex, x, y });
+  },
+  pdfTextLines(pdfPath: string, pageIndex: number, regions: PdfRect[]): Promise<PdfTextLine[]> {
+    return invoke("pdf_text_lines", { pdfPath, pageIndex, regions });
   },
   buildLayoutMap(pdfPath: string): Promise<LayoutMapArtifact> {
     return invoke("build_layout_map", { pdfPath });

@@ -12,10 +12,11 @@ use vt_protocol::{
     CompileArtifact, DocumentOcrResult, DocumentSnapshot, ExternalChangeReport,
     ExternalConflictOutcome, ExternalConflictResolution, ExternalFileChange, FileId,
     FormulaOcrResult, ForwardSearchResult, InverseSearchResult, LayoutMapArtifact,
-    NodeAttributesPatch, NodeId, OcrWorkerHealth, PdfDocumentInfo, PdfRenderRequest,
-    PdfRenderedImage, PdfTextHit, ProjectDependencyGraph, ProjectIndex, ProjectReplaceOutcome,
-    ProjectReplacePlan, ProjectReplaceRequest, ProjectSearchMatch, ProjectSearchRequest,
-    ProjectTemplateSummary, Revision, SymbolRenameRequest, TextEdit, ToolInfo,
+    NodeAttributesPatch, NodeId, OcrWorkerHealth, PdfDocumentInfo, PdfRect, PdfRenderRequest,
+    PdfRenderedImage, PdfTextHit, PdfTextLine, ProjectDependencyGraph, ProjectIndex,
+    ProjectReplaceOutcome, ProjectReplacePlan, ProjectReplaceRequest, ProjectSearchMatch,
+    ProjectSearchRequest, ProjectTemplateSummary, Revision, SymbolRenameRequest, TextEdit,
+    ToolInfo,
 };
 
 #[derive(Default)]
@@ -704,6 +705,19 @@ fn pdf_text_hit(
 }
 
 #[tauri::command]
+fn pdf_text_lines(
+    pdf_path: PathBuf,
+    page_index: u32,
+    regions: Vec<PdfRect>,
+    state: State<'_, AppState>,
+) -> Result<Vec<PdfTextLine>, String> {
+    with_core(&state, |core| {
+        core.pdf_text_lines(&pdf_path, page_index, &regions)
+            .map_err(|error| error.to_string())
+    })
+}
+
+#[tauri::command]
 async fn build_layout_map(
     pdf_path: PathBuf,
     state: State<'_, AppState>,
@@ -807,6 +821,7 @@ pub fn run() {
             pdf_document_info,
             render_pdf,
             pdf_text_hit,
+            pdf_text_lines,
             build_layout_map,
             detect_toolchain
         ])

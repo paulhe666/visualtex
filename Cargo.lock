@@ -5104,7 +5104,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "visualstudio"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "image",
@@ -5134,7 +5134,7 @@ dependencies = [
 
 [[package]]
 name = "visualtex-cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -5173,7 +5173,7 @@ dependencies = [
 
 [[package]]
 name = "vt-bridge"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "serde",
@@ -5187,7 +5187,7 @@ dependencies = [
 
 [[package]]
 name = "vt-buffer"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "proptest",
  "ropey",
@@ -5199,7 +5199,7 @@ dependencies = [
 
 [[package]]
 name = "vt-compiler"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "dunce",
@@ -5212,7 +5212,7 @@ dependencies = [
 
 [[package]]
 name = "vt-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5237,7 +5237,7 @@ dependencies = [
 
 [[package]]
 name = "vt-index"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "proptest",
  "regex",
@@ -5247,7 +5247,7 @@ dependencies = [
 
 [[package]]
 name = "vt-latex-semantic"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "insta",
  "proptest",
@@ -5260,7 +5260,7 @@ dependencies = [
 
 [[package]]
 name = "vt-latex-syntax"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "codebook-tree-sitter-latex",
  "proptest",
@@ -5272,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "vt-layout-map"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "regex",
  "tempfile",
@@ -5287,7 +5287,7 @@ dependencies = [
 
 [[package]]
 name = "vt-models"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -5299,7 +5299,7 @@ dependencies = [
 
 [[package]]
 name = "vt-ocr"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "image",
  "serde",
@@ -5313,7 +5313,7 @@ dependencies = [
 
 [[package]]
 name = "vt-pdf"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "image",
  "pdfium-auto",
@@ -5327,7 +5327,7 @@ dependencies = [
 
 [[package]]
 name = "vt-project"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "serde",
@@ -5343,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "vt-protocol"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "serde",
@@ -5354,7 +5354,7 @@ dependencies = [
 
 [[package]]
 name = "vt-rpc"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "serde",
@@ -5369,7 +5369,7 @@ dependencies = [
 
 [[package]]
 name = "vt-synctex"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dunce",
  "tempfile",
@@ -5381,7 +5381,7 @@ dependencies = [
 
 [[package]]
 name = "vt-uri"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "thiserror 2.0.18",

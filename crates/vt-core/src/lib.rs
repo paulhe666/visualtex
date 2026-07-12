@@ -17,11 +17,11 @@ use vt_protocol::{
     AppliedEdit, CompileArtifact, DocumentOcrResult, DocumentSnapshot, EditOrigin,
     ExternalChangeKind, ExternalChangeReport, ExternalConflictOutcome, ExternalConflictResolution,
     ExternalFileChange, FileId, ForwardSearchResult, InverseSearchResult, LayoutMapArtifact,
-    NodeAttributesPatch, NodeId, OperationId, PdfDocumentInfo, PdfRenderRequest, PdfRenderedImage,
-    PdfTextHit, ProjectDependencyGraph, ProjectIndex, ProjectReplaceFilePlan,
-    ProjectReplaceOutcome, ProjectReplacePlan, ProjectReplaceRequest, ProjectSearchMatch,
-    ProjectSearchRequest, ProjectTemplateSummary, ProjectTextReplacement, Revision, SymbolKind,
-    SymbolRenameKind, SymbolRenameRequest, TextEdit, VisualNode, VisualPatch,
+    NodeAttributesPatch, NodeId, OperationId, PdfDocumentInfo, PdfRect, PdfRenderRequest,
+    PdfRenderedImage, PdfTextHit, PdfTextLine, ProjectDependencyGraph, ProjectIndex,
+    ProjectReplaceFilePlan, ProjectReplaceOutcome, ProjectReplacePlan, ProjectReplaceRequest,
+    ProjectSearchMatch, ProjectSearchRequest, ProjectTemplateSummary, ProjectTextReplacement,
+    Revision, SymbolKind, SymbolRenameKind, SymbolRenameRequest, TextEdit, VisualNode, VisualPatch,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -427,6 +427,18 @@ impl CoreService {
     ) -> Result<Option<PdfTextHit>, CoreError> {
         let pdf_path = self.validated_pdf_path(pdf_path)?;
         Ok(self.pdf_service().text_hit(pdf_path, page_index, x, y)?)
+    }
+
+    pub fn pdf_text_lines(
+        &self,
+        pdf_path: &Path,
+        page_index: u32,
+        regions: &[PdfRect],
+    ) -> Result<Vec<PdfTextLine>, CoreError> {
+        let pdf_path = self.validated_pdf_path(pdf_path)?;
+        Ok(self
+            .pdf_service()
+            .text_lines(pdf_path, page_index, regions)?)
     }
 
     pub fn project_index(&self) -> Result<ProjectIndex, CoreError> {

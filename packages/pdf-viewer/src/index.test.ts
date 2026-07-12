@@ -4,14 +4,18 @@ import type {
   NodeKind,
   PdfTextGlyph,
   PdfTextHit,
+  PdfTextLine,
   SourceSpan,
   VisualNode,
 } from "@visualtex/protocol";
 import {
   findDirectEdit,
   findDirectEditFromSource,
+  filterVisualLinesForParagraph,
+  findDirectEditFromTextHit,
   isDirectlyEditable,
   sourceByteOffsetAtLineColumn,
+  splitParagraphDraftByVisualLines,
 } from "./index";
 
 const defaultSource = { fileId: "file-1", startByte: 10, endByte: 20 };
@@ -59,6 +63,15 @@ function textHit(glyphs: PdfTextGlyph[], glyphIndex: number): PdfTextHit {
     glyphIndex,
     glyph: selected,
     lineGlyphs: glyphs,
+  };
+}
+
+function textLine(glyphs: PdfTextGlyph[]): PdfTextLine {
+  return {
+    pageIndex: 0,
+    text: glyphs.map((candidate) => candidate.text).join(""),
+    rect: { page: 1, x: 100, y: 120, width: Math.max(8, glyphs.length * 9), height: 14 },
+    glyphs,
   };
 }
 
@@ -182,6 +195,94 @@ describe("compiled-page direct editing", () => {
     expect(math?.node.id).toBe(formula.id);
     expect(mathWithoutColumn?.node.id).toBe(formula.id);
     expect(proseWithoutColumn?.node.id).toBe(paragraph.id);
+  });
+
+  it("selects a medium-confidence paragraph from PDF text even when inverse SyncTeX returns the wrong line", () => {
+    const text = "\\begin{document}\n这是正文开头 $E=mc^2$ 后面仍然是正文。\n\\end{document}\n";
+    const paragraphSpan = {
+      fileId: "file-1",
+      startByte: sourceByteOffsetAtLineColumn(text, 2, 1)!,
+      endByte: sourceByteOffsetAtLineColumn(text, 2, 30)!,
+    };
+    const formulaSpan = {
+      fileId: "file-1",
+      startByte: sourceByteOffsetAtLineColumn(text, 2, 8)!,
+      endByte: sourceByteOffsetAtLineColumn(text, 2, 16)!,
+    };
+    const paragraph = node("paragraph", "paragraph", "这是正文开头 $E=mc^2$ 后面仍然是正文。", paragraphSpan);
+    paragraph.support = "partial";
+    const formula = node("formula", "inline_math", "E=mc^2", formulaSpan);
+    const sharedRect = { page: 1, x: 80, y: 120, width: 340, height: 24 };
+    const layouts = [
+      layout(paragraph.id, sharedRect, "medium", paragraphSpan),
+      layout(formula.id, sharedRect, "high", formulaSpan),
+    ];
+    const lineGlyphs = Array.from("这是正文开头E=mc2后面仍然是正文。", (character, index) =>
+      glyph(index, character, 100 + index * 9),
+    );
+    const proseHit = textHit(lineGlyphs, 16);
+
+    const fromWrongSourceLine = findDirectEditFromSource(
+      0,
+      300,
+      130,
+      text,
+      "main.tex",
+      { sourcePath: "C:/paper/main.tex", line: 3, column: null, offset: null },
+      proseHit,
+      layouts,
+      [paragraph, formula],
+    );
+    const withoutSyncTex = findDirectEditFromTextHit(
+      0,
+      300,
+      130,
+      proseHit,
+      layouts,
+      [paragraph, formula],
+    );
+
+    expect(fromWrongSourceLine?.node.id).toBe(paragraph.id);
+    expect(withoutSyncTex?.node.id).toBe(paragraph.id);
+  });
+
+  it("filters a drifting SyncTeX line that actually belongs to the following paragraph", () => {
+    const source = "第一段正文在这里，并且会自动换行。";
+    const first = textLine(Array.from("第一段正文在这里，", (character, index) =>
+      glyph(index, character, 100 + index * 9),
+    ));
+    const second = textLine(Array.from("并且会自动换行。", (character, index) =>
+      glyph(100 + index, character, 100 + index * 9),
+    ));
+    const drifted = textLine(Array.from("下一段正文不应显示。", (character, index) =>
+      glyph(200 + index, character, 100 + index * 9),
+    ));
+
+    expect(filterVisualLinesForParagraph(source, [first, second, drifted]))
+      .toEqual([first, second]);
+  });
+
+  it("splits a paragraph into the PDF visual lines while retaining inline formula source", () => {
+    const source = "第一行正文比较长，第二部分包含 $E=mc^2$，最后还有一些正文。";
+    const firstGlyphs = Array.from("第一行正文比较长，", (character, index) =>
+      glyph(index, character, 100 + index * 9),
+    );
+    const secondGlyphs = Array.from("第二部分包含E=mc2，", (character, index) =>
+      glyph(100 + index, character, 100 + index * 9),
+    );
+    const thirdGlyphs = Array.from("最后还有一些正文。", (character, index) =>
+      glyph(200 + index, character, 100 + index * 9),
+    );
+
+    expect(splitParagraphDraftByVisualLines(source, [
+      textLine(firstGlyphs),
+      textLine(secondGlyphs),
+      textLine(thirdGlyphs),
+    ])).toEqual([
+      "第一行正文比较长，",
+      "第二部分包含 $E=mc^2$，",
+      "最后还有一些正文。",
+    ]);
   });
 
   it("converts Unicode line and character columns to UTF-8 byte offsets", () => {

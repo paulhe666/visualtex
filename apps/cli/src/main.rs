@@ -68,6 +68,15 @@ enum Command {
         x: f32,
         y: f32,
     },
+    /// Extract PDFium visual text lines inside a page rectangle.
+    PdfTextLines {
+        pdf_path: PathBuf,
+        page: u32,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
     /// Build a shadow-instrumented node-to-PDF layout map.
     LayoutMap { path: PathBuf, pdf_path: PathBuf },
     /// Resolve a source line to one or more PDF rectangles using SyncTeX.
@@ -414,6 +423,30 @@ async fn main() -> anyhow::Result<()> {
             let page_index = page.saturating_sub(1);
             let hit = service.text_hit(pdf_path, page_index, x, y)?;
             println!("{}", serde_json::to_string_pretty(&hit)?);
+        }
+        Command::PdfTextLines {
+            pdf_path,
+            page,
+            x,
+            y,
+            width,
+            height,
+        } => {
+            let cache = std::env::temp_dir().join("visualtex-pdf-text-cache");
+            let service = vt_pdf::PdfService::new(cache);
+            let page_index = page.saturating_sub(1);
+            let lines = service.text_lines(
+                pdf_path,
+                page_index,
+                &[vt_protocol::PdfRect {
+                    page,
+                    x,
+                    y,
+                    width,
+                    height,
+                }],
+            )?;
+            println!("{}", serde_json::to_string_pretty(&lines)?);
         }
         Command::LayoutMap { path, pdf_path } => {
             let pdf_path = std::fs::canonicalize(&pdf_path).unwrap_or(pdf_path);

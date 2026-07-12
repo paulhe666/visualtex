@@ -504,6 +504,15 @@ pub struct PdfTextGlyph {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PdfTextLine {
+    pub page_index: u32,
+    pub text: String,
+    pub rect: PdfRect,
+    pub glyphs: Vec<PdfTextGlyph>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PdfTextHit {
     pub page_index: u32,
     pub glyph_index: u32,

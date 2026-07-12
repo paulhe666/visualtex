@@ -10,7 +10,7 @@ use pdfium_render::prelude::{
 use sha2::{Digest, Sha256};
 use vt_protocol::{
     PdfDocumentInfo, PdfPageInfo, PdfPixelDiffPage, PdfPixelDiffReport, PdfPixelRect, PdfRect,
-    PdfRenderRequest, PdfRenderedImage, PdfTextGlyph, PdfTextHit,
+    PdfRenderRequest, PdfRenderedImage, PdfTextGlyph, PdfTextHit, PdfTextLine,
 };
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -230,6 +230,98 @@ impl PdfService {
         }))
     }
 
+    pub fn text_lines(
+        &self,
+        pdf_path: impl AsRef<Path>,
+        page_index: u32,
+        regions: &[PdfRect],
+    ) -> Result<Vec<PdfTextLine>, PdfError> {
+        let info = self.document_info(pdf_path)?;
+        let page_count = info.pages.len() as u32;
+        if page_index >= page_count {
+            return Err(PdfError::PageOutOfBounds {
+                index: page_index,
+                page_count,
+            });
+        }
+        let page_info = &info.pages[page_index as usize];
+        let pdfium = pdfium()?;
+        let document = pdfium
+            .load_pdf_from_file(&info.pdf_path, None)
+            .map_err(pdfium_error)?;
+        let page = document
+            .pages()
+            .get(page_index as u16)
+            .map_err(pdfium_error)?;
+        let text = page.text().map_err(pdfium_error)?;
+        let page_regions = regions
+            .iter()
+            .filter(|rect| rect.page == page_index + 1 && rect.width > 0.0 && rect.height > 0.0)
+            .collect::<Vec<_>>();
+
+        let mut raw_lines = Vec::<Vec<PdfTextGlyph>>::new();
+        let mut current = Vec::<PdfTextGlyph>::new();
+        for character in text.chars().iter() {
+            let raw = character.unicode_string().unwrap_or_default();
+            if raw.contains('\r') || raw.contains('\n') {
+                if !current.is_empty() {
+                    raw_lines.push(std::mem::take(&mut current));
+                }
+                continue;
+            }
+            if let Some(glyph) = pdf_text_glyph(&character, page_index, page_info.height_points) {
+                current.push(glyph);
+            }
+        }
+        if !current.is_empty() {
+            raw_lines.push(current);
+        }
+
+        let mut lines = Vec::new();
+        for mut glyphs in raw_lines {
+            if !page_regions.is_empty() {
+                glyphs.retain(|glyph| {
+                    page_regions
+                        .iter()
+                        .any(|region| pdf_rects_intersect(&glyph.rect, region, 2.0))
+                });
+            }
+            if glyphs.is_empty() {
+                continue;
+            }
+            glyphs.sort_by(|left, right| {
+                left.rect
+                    .x
+                    .total_cmp(&right.rect.x)
+                    .then_with(|| left.index.cmp(&right.index))
+            });
+            glyphs.dedup_by_key(|glyph| glyph.index);
+            let Some(rect) = union_glyph_rects(&glyphs, page_index + 1) else {
+                continue;
+            };
+            let text = glyphs.iter().map(|glyph| glyph.text.as_str()).collect();
+            lines.push(PdfTextLine {
+                page_index,
+                text,
+                rect,
+                glyphs,
+            });
+        }
+        lines.sort_by(|left, right| {
+            left.rect
+                .y
+                .total_cmp(&right.rect.y)
+                .then_with(|| left.rect.x.total_cmp(&right.rect.x))
+        });
+        lines.dedup_by(|left, right| {
+            left.glyphs.first().map(|glyph| glyph.index)
+                == right.glyphs.first().map(|glyph| glyph.index)
+                && left.glyphs.last().map(|glyph| glyph.index)
+                    == right.glyphs.last().map(|glyph| glyph.index)
+        });
+        Ok(lines)
+    }
+
     pub fn compare_documents(
         &self,
         left_pdf: impl AsRef<Path>,
@@ -365,6 +457,35 @@ fn pdf_text_glyph(
         },
         font_name: character.font_name(),
         font_size_points: character.scaled_font_size().value,
+    })
+}
+
+fn pdf_rects_intersect(left: &PdfRect, right: &PdfRect, padding: f32) -> bool {
+    left.page == right.page
+        && left.x <= right.x + right.width + padding
+        && left.x + left.width + padding >= right.x
+        && left.y <= right.y + right.height + padding
+        && left.y + left.height + padding >= right.y
+}
+
+fn union_glyph_rects(glyphs: &[PdfTextGlyph], page: u32) -> Option<PdfRect> {
+    let first = glyphs.first()?;
+    let mut left = first.rect.x;
+    let mut top = first.rect.y;
+    let mut right = first.rect.x + first.rect.width;
+    let mut bottom = first.rect.y + first.rect.height;
+    for glyph in &glyphs[1..] {
+        left = left.min(glyph.rect.x);
+        top = top.min(glyph.rect.y);
+        right = right.max(glyph.rect.x + glyph.rect.width);
+        bottom = bottom.max(glyph.rect.y + glyph.rect.height);
+    }
+    Some(PdfRect {
+        page,
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
     })
 }
 

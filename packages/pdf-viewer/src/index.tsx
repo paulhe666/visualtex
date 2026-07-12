@@ -34,6 +34,7 @@ import {
   type PdfRenderedImage,
   type PdfTextGlyph,
   type PdfTextHit,
+  type PdfTextLine,
   type VisualNode,
 } from "@visualtex/protocol";
 import "./styles.css";
@@ -71,6 +72,8 @@ export interface DirectEditState {
   viewportAnchor?: ViewportAnchor;
   draft: string;
   attributes: NodeAttributes;
+  visualLines?: PdfTextLine[];
+  activeVisualLine?: number;
 }
 
 interface RenderedPageProps {
@@ -426,6 +429,287 @@ export function inlineFormulaNodeAtTextHit(
   return best?.node ?? null;
 }
 
+export function paragraphNodeAtTextHit(
+  hit: PdfTextHit,
+  candidates: VisualNode[],
+): VisualNode | null {
+  const sequence = normalizedGlyphSequence(hit.lineGlyphs);
+  if (!sequence.text) return null;
+  const hitPositions = sequence.glyphIndices
+    .map((glyphIndex, index) => glyphIndex === hit.glyphIndex ? index : -1)
+    .filter((index) => index >= 0);
+  const hitPosition = hitPositions[0] ?? Math.floor(sequence.text.length / 2);
+  const contextStart = Math.max(0, hitPosition - 6);
+  const contextEnd = Math.min(sequence.text.length, hitPosition + 7);
+  const context = sequence.text.slice(contextStart, contextEnd);
+  let best: { node: VisualNode; score: number } | null = null;
+
+  for (const node of candidates) {
+    if (node.kind !== "paragraph" || !node.text) continue;
+    const paragraph = normalizeLatexForPdfMatch(node.text);
+    if (!paragraph) continue;
+    let score = 0;
+    if (paragraph.includes(sequence.text)) {
+      score = 10_000 + sequence.text.length;
+    } else if (sequence.text.includes(paragraph) && paragraph.length >= 4) {
+      score = 8_000 + paragraph.length;
+    } else if (context.length >= 4 && paragraph.includes(context)) {
+      score = 5_000 + context.length;
+    } else {
+      for (let radius = 5; radius >= 2; radius -= 1) {
+        const fragment = sequence.text.slice(
+          Math.max(0, hitPosition - radius),
+          Math.min(sequence.text.length, hitPosition + radius + 1),
+        );
+        if (fragment.length >= 4 && paragraph.includes(fragment)) {
+          score = 1_000 + fragment.length;
+          break;
+        }
+      }
+    }
+    if (score > 0 && (!best || score > best.score)) best = { node, score };
+  }
+  return best?.node ?? null;
+}
+
+function canUseCorroboratedParagraph(
+  node: VisualNode,
+  layout: LayoutBox,
+  paragraphAtHit: VisualNode | null,
+): boolean {
+  return node.id === paragraphAtHit?.id
+    && node.kind === "paragraph"
+    && (node.support === "native" || node.support === "partial")
+    && ["exact", "high", "medium"].includes(layout.confidence);
+}
+
+interface ParagraphProjection {
+  text: string;
+  sourceIndices: number[];
+}
+
+function projectParagraphSource(source: string): ParagraphProjection {
+  let text = "";
+  const sourceIndices: number[] = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index]!;
+    if (character === "\\") {
+      const command = source.slice(index + 1).match(/^[A-Za-z]+/)?.[0];
+      if (command) {
+        const visible = latexSymbolMap[command];
+        if (visible) {
+          for (const value of normalizeVisibleCharacter(visible)) {
+            text += value;
+            sourceIndices.push(index);
+          }
+        }
+        index += command.length + 1;
+        continue;
+      }
+      const escaped = source[index + 1];
+      if (escaped) {
+        for (const value of normalizeVisibleCharacter(escaped)) {
+          text += value;
+          sourceIndices.push(index);
+        }
+        index += 2;
+        continue;
+      }
+    }
+    if (character === "$" || character === "{" || character === "}"
+      || character === "_" || character === "^") {
+      index += 1;
+      continue;
+    }
+    for (const value of normalizeVisibleCharacter(character)) {
+      text += value;
+      sourceIndices.push(index);
+    }
+    index += 1;
+  }
+  return { text, sourceIndices };
+}
+
+export function filterVisualLinesForParagraph(
+  source: string,
+  visualLines: PdfTextLine[],
+): PdfTextLine[] {
+  if (visualLines.length <= 1) return visualLines;
+  const projection = projectParagraphSource(source).text;
+  if (!projection) return visualLines.slice(0, 1);
+  const selected: PdfTextLine[] = [];
+  let cursor = 0;
+  for (const line of visualLines) {
+    const visible = normalizedGlyphSequence(line.glyphs).text;
+    if (!visible) continue;
+    const exact = projection.indexOf(visible, cursor);
+    if (exact >= 0) {
+      selected.push(line);
+      cursor = exact + visible.length;
+      continue;
+    }
+    const fragmentLength = Math.min(12, Math.max(6, Math.floor(visible.length * 0.45)));
+    let fragmentMatch = -1;
+    for (let start = 0; start + fragmentLength <= visible.length; start += 1) {
+      const fragment = visible.slice(start, start + fragmentLength);
+      const position = projection.indexOf(fragment, cursor);
+      if (position >= 0) {
+        fragmentMatch = position;
+        break;
+      }
+    }
+    if (fragmentMatch >= 0) {
+      selected.push(line);
+      cursor = fragmentMatch + fragmentLength;
+    }
+  }
+  return selected.length > 0 ? selected : visualLines.slice(0, 1);
+}
+
+export function splitParagraphDraftByVisualLines(
+  source: string,
+  visualLines: PdfTextLine[],
+): string[] {
+  if (visualLines.length <= 1) return [source];
+  const projection = projectParagraphSource(source);
+  if (!projection.text || projection.sourceIndices.length === 0) {
+    return source.split(/\r?\n/).filter((line, index, values) => line.length > 0 || values.length === 1);
+  }
+
+  const normalizedLines = visualLines
+    .map((line) => normalizedGlyphSequence(line.glyphs).text)
+    .filter(Boolean);
+  if (normalizedLines.length <= 1) return [source];
+
+  const sourceStarts = [0];
+  let projectionCursor = 0;
+  let consumedLength = 0;
+  const totalVisibleLength = normalizedLines.reduce((sum, line) => sum + line.length, 0);
+  for (let lineIndex = 0; lineIndex < normalizedLines.length; lineIndex += 1) {
+    const line = normalizedLines[lineIndex]!;
+    let match = projection.text.indexOf(line, projectionCursor);
+    if (match < 0) {
+      const ratio = totalVisibleLength > 0 ? consumedLength / totalVisibleLength : 0;
+      match = Math.min(
+        projection.text.length - 1,
+        Math.max(projectionCursor, Math.round(ratio * projection.text.length)),
+      );
+    }
+    if (lineIndex > 0) {
+      const sourceStart = projection.sourceIndices[Math.max(0, match)] ?? source.length;
+      sourceStarts.push(Math.max(sourceStarts[sourceStarts.length - 1]!, sourceStart));
+    }
+    projectionCursor = Math.max(projectionCursor, match + line.length);
+    consumedLength += line.length;
+  }
+
+  const rows = sourceStarts.map((start, index) => {
+    const end = sourceStarts[index + 1] ?? source.length;
+    return source.slice(start, end).replace(/^\s+|\s+$/g, "");
+  });
+  return rows.length > 0 ? rows : [source];
+}
+
+function ParagraphLineEditor({
+  nodeId,
+  source,
+  visualLines,
+  activeLine,
+  partial,
+  onChange,
+}: {
+  nodeId: string;
+  source: string;
+  visualLines: PdfTextLine[];
+  activeLine: number;
+  partial: boolean;
+  onChange: (source: string) => void;
+}) {
+  const [rows, setRows] = useState(() => splitParagraphDraftByVisualLines(source, visualLines));
+  useEffect(() => {
+    setRows(splitParagraphDraftByVisualLines(source, visualLines));
+  }, [nodeId]);
+
+  const updateRow = (index: number, value: string) => {
+    const next = rows.map((row, rowIndex) => rowIndex === index ? value : row);
+    setRows(next);
+    onChange(next.join("\n"));
+  };
+
+  return (
+    <div className="vt-paragraph-editor">
+      <div className="vt-paragraph-line-heading">
+        <div>
+          <strong>正文排版行</strong>
+          <span>PDF 中每一行对应一个编辑框；重新排版后行数可能变化</span>
+        </div>
+        <span>{rows.length} 行</span>
+      </div>
+      {partial && (
+        <p>
+          该段包含行内公式或 LaTeX 命令。公式源码会保留在所属文字行中，例如 <code>$v_&#123;GS&#125;$</code>。
+        </p>
+      )}
+      <div className="vt-paragraph-lines">
+        {rows.map((row, index) => (
+          <label
+            className={`vt-paragraph-line${index === activeLine ? " active" : ""}`}
+            key={`${nodeId}-${index}`}
+          >
+            <span>{index + 1}</span>
+            <input
+              autoFocus={index === activeLine}
+              value={row}
+              onChange={(event) => updateRow(index, event.target.value)}
+              aria-label={`编辑正文第 ${index + 1} 行`}
+            />
+          </label>
+        ))}
+      </div>
+      <details className="vt-paragraph-source-details">
+        <summary>查看或直接编辑整段 LaTeX</summary>
+        <textarea
+          value={rows.join("\n")}
+          onChange={(event) => {
+            const next = event.target.value.split("\n");
+            setRows(next);
+            onChange(event.target.value);
+          }}
+          aria-label="编辑整段 LaTeX"
+          rows={Math.max(5, rows.length + 1)}
+        />
+      </details>
+    </div>
+  );
+}
+
+export function findDirectEditFromTextHit(
+  pageIndex: number,
+  x: number,
+  y: number,
+  textHit: PdfTextHit,
+  layoutBoxes: LayoutBox[],
+  nodes: VisualNode[],
+): DirectEditState | null {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const entries = layoutBoxes
+    .map((layout) => ({ layout, node: nodesById.get(layout.nodeId) }))
+    .filter((entry): entry is { layout: LayoutBox; node: VisualNode } => Boolean(entry.node))
+    .filter(({ layout }) => layout.rects.some((rect) => rect.page === pageIndex + 1));
+  const formula = inlineFormulaNodeAtTextHit(textHit, entries.map((entry) => entry.node));
+  const paragraph = formula
+    ? null
+    : paragraphNodeAtTextHit(textHit, entries.map((entry) => entry.node));
+  const selected = entries.find(({ node, layout }) =>
+    node.id === formula?.id && isDirectlyEditable(node, layout),
+  ) ?? entries.find(({ node, layout }) =>
+    node.id === paragraph?.id
+      && (isDirectlyEditable(node, layout) || canUseCorroboratedParagraph(node, layout, paragraph)),
+  );
+  return selected ? stateForNode(pageIndex, selected.node, selected.layout, x, y) : null;
+}
+
 export function findDirectEditFromSource(
   pageIndex: number,
   x: number,
@@ -450,16 +734,27 @@ export function findDirectEditFromSource(
   if (!lineRange || offset === null) return null;
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const hasColumn = result.column !== null && result.column !== undefined && result.column >= 0;
-  const unsorted = layoutBoxes
+  const pageEntries = layoutBoxes
     .map((layout) => ({ layout, node: nodesById.get(layout.nodeId) }))
-    .filter((entry): entry is { layout: LayoutBox; node: VisualNode } =>
-      Boolean(entry.node && isDirectlyEditable(entry.node, entry.layout)),
+    .filter((entry): entry is { layout: LayoutBox; node: VisualNode } => Boolean(entry.node))
+    .filter(({ layout }) => layout.rects.some((rect) => rect.page === pageIndex + 1));
+  const paragraphAtHit = textHit
+    ? paragraphNodeAtTextHit(textHit, pageEntries.map((entry) => entry.node))
+    : null;
+  const unsorted = pageEntries
+    .filter(({ node, layout }) =>
+      isDirectlyEditable(node, layout)
+      || canUseCorroboratedParagraph(node, layout, paragraphAtHit),
     )
-    .filter(({ node }) =>
-      (node.source.startByte <= offset && offset <= node.source.endByte)
-      || (node.source.startByte < lineRange.end && node.source.endByte > lineRange.start),
+    .filter(({ node, layout }) =>
+      node.id === paragraphAtHit?.id
+      || (node.source.startByte <= offset && offset <= node.source.endByte)
+      || (node.source.startByte < lineRange.end && node.source.endByte > lineRange.start)
+      || layout.rects.some((rect) =>
+        rect.page === pageIndex + 1 && containsPoint(rect, x, y),
+      ),
     );
-  const formulaAtHit = !hasColumn && textHit
+  const formulaAtHit = textHit
     ? inlineFormulaNodeAtTextHit(textHit, unsorted.map((entry) => entry.node))
     : null;
   const matching = unsorted.sort((left, right) => {
@@ -478,6 +773,10 @@ export function findDirectEditFromSource(
         const leftFormula = left.node.id === formulaAtHit.id;
         const rightFormula = right.node.id === formulaAtHit.id;
         if (leftFormula !== rightFormula) return leftFormula ? -1 : 1;
+      } else if (paragraphAtHit) {
+        const leftParagraph = left.node.id === paragraphAtHit.id;
+        const rightParagraph = right.node.id === paragraphAtHit.id;
+        if (leftParagraph !== rightParagraph) return leftParagraph ? -1 : 1;
       } else if (!hasColumn) {
         const leftParagraph = left.node.kind === "paragraph";
         const rightParagraph = right.node.kind === "paragraph";
@@ -662,7 +961,7 @@ function DirectEditOverlay({
         top: window.innerHeight / 2,
         bottom: window.innerHeight / 2,
       };
-      const preferredWidth = isMath ? 760 : edit.node.kind === "paragraph" ? 620 : 680;
+      const preferredWidth = isMath ? 760 : edit.node.kind === "paragraph" ? 760 : 680;
       const width = Math.max(320, Math.min(preferredWidth, window.innerWidth - 24));
       const measuredHeight = panel?.getBoundingClientRect().height ?? 420;
       const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12));
@@ -728,20 +1027,15 @@ function DirectEditOverlay({
               onChange={onChange}
             />
           ) : edit.node.kind === "paragraph" ? (
-            <div className="vt-paragraph-editor">
-              {edit.node.support === "partial" && (
-                <p>
-                  该段包含行内公式或其他 LaTeX 命令；普通文字可直接增删，保留 <code>$…$</code> 等内嵌语法即可。
-                </p>
-              )}
-              <textarea
-                autoFocus
-                value={edit.draft}
-                onChange={(event) => onChange(event.target.value)}
-                aria-label="编辑页面正文"
-                rows={Math.max(7, edit.draft.split("\n").length + 2)}
-              />
-            </div>
+            <ParagraphLineEditor
+              key={edit.node.id}
+              nodeId={edit.node.id}
+              source={edit.draft}
+              visualLines={edit.visualLines ?? []}
+              activeLine={edit.activeVisualLine ?? 0}
+              partial={edit.node.support === "partial"}
+              onChange={onChange}
+            />
           ) : (
             <input
               autoFocus
@@ -873,16 +1167,60 @@ function RenderedPage({
         nodes,
       );
     }
+    if (!hit && textHit) {
+      hit = findDirectEditFromTextHit(
+        page.index,
+        point.x,
+        point.y,
+        textHit,
+        layoutBoxes,
+        nodes,
+      );
+    }
     if (sequence !== clickSequenceRef.current) {
       setResolvingHit(false);
       return;
     }
     hit ??= findDirectEdit(page.index, point.x, point.y, layoutBoxes, nodes);
-    setResolvingHit(false);
     if (!hit) {
+      setResolvingHit(false);
       if (inverseResult) onInverseSearch?.(inverseResult);
       return;
     }
+
+    if (hit.node.kind === "paragraph") {
+      let visualLines: PdfTextLine[] = [];
+      try {
+        visualLines = await desktopApi.pdfTextLines(
+          info.pdfPath,
+          page.index,
+          hit.layout.rects.filter((rect) => rect.page === page.index + 1),
+        );
+      } catch {
+        // A single clicked PDF line is still enough to offer the line editor.
+      }
+      if (visualLines.length === 0 && textHit) {
+        const rect = unionRects(textHit.lineGlyphs.map((glyph) => glyph.rect));
+        if (rect) {
+          visualLines = [{
+            pageIndex: page.index,
+            text: textHit.lineGlyphs.map((glyph) => glyph.text).join(""),
+            rect,
+            glyphs: textHit.lineGlyphs,
+          }];
+        }
+      }
+      visualLines = filterVisualLinesForParagraph(hit.draft, visualLines);
+      const activeVisualLine = Math.max(0, visualLines.findIndex((line) =>
+        line.glyphs.some((glyph) => glyph.index === textHit?.glyphIndex),
+      ));
+      hit = { ...hit, visualLines, activeVisualLine };
+    }
+    if (sequence !== clickSequenceRef.current) {
+      setResolvingHit(false);
+      return;
+    }
+    setResolvingHit(false);
     const next = { ...hit, viewportAnchor: viewportAnchorForRect(hit.hitRect) };
     onDirectEdit(next);
     onNodeSelect?.(next.node);
@@ -968,24 +1306,41 @@ function RenderedPage({
         ))}
       </div>
       {editable && directEdit?.pageIndex === page.index && (
-        <span
-          className={`vt-pdf-selected-node ${directEdit.node.kind}`}
-          style={{
-            left: `${(directEdit.hitRect.x / widthPoints) * 100}%`,
-            top: `${(directEdit.hitRect.y / heightPoints) * 100}%`,
-            width: `${(directEdit.hitRect.width / widthPoints) * 100}%`,
-            height: `${(directEdit.hitRect.height / heightPoints) * 100}%`,
-          }}
-        >
-          {directEdit.node.kind === "figure" && (
-            <button
-              type="button"
-              className="vt-pdf-image-resize-handle"
-              title="拖动修改图片宽度"
-              onPointerDown={handleImageResize}
-            />
-          )}
-        </span>
+        directEdit.node.kind === "paragraph" && directEdit.visualLines?.length ? (
+          <>
+            {directEdit.visualLines.map((line, index) => (
+              <span
+                className={`vt-pdf-selected-text-line${index === directEdit.activeVisualLine ? " active" : ""}`}
+                key={`${line.glyphs[0]?.index ?? index}-${line.glyphs.at(-1)?.index ?? index}`}
+                style={{
+                  left: `${(line.rect.x / widthPoints) * 100}%`,
+                  top: `${(line.rect.y / heightPoints) * 100}%`,
+                  width: `${(line.rect.width / widthPoints) * 100}%`,
+                  height: `${(line.rect.height / heightPoints) * 100}%`,
+                }}
+              />
+            ))}
+          </>
+        ) : (
+          <span
+            className={`vt-pdf-selected-node ${directEdit.node.kind}`}
+            style={{
+              left: `${(directEdit.hitRect.x / widthPoints) * 100}%`,
+              top: `${(directEdit.hitRect.y / heightPoints) * 100}%`,
+              width: `${(directEdit.hitRect.width / widthPoints) * 100}%`,
+              height: `${(directEdit.hitRect.height / heightPoints) * 100}%`,
+            }}
+          >
+            {directEdit.node.kind === "figure" && (
+              <button
+                type="button"
+                className="vt-pdf-image-resize-handle"
+                title="拖动修改图片宽度"
+                onPointerDown={handleImageResize}
+              />
+            )}
+          </span>
+        )
       )}
       <span className="vt-pdf-page-number">{page.index + 1}</span>
     </article>
@@ -1198,7 +1553,7 @@ export function PdfViewer({
       </div>
       <footer className="vt-pdf-hint">
         {editable
-          ? "页面保持真实编译排版；单击正文、标题、公式、图片或表格后，在浮动工作台中编辑并重新排版。"
+          ? "页面保持真实编译排版；单击正文会按 PDF 实际行显示编辑框，公式、图片和表格在各自工作台中编辑。"
           : "双击页面内容可通过 SyncTeX 跳转到对应源码。"}
       </footer>
       {editable && directEdit && (
