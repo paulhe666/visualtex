@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>a6d13cf2-54e8-4dfa-a20c-15de864ab3c5</Id>
+  <Version>1.0.6.0</Version>
+  <ProviderName>VisualTeX</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="VisualTeX" />
+  <Description DefaultValue="在 PowerPoint 中使用完整 VisualTeX 编辑器创建和重新编辑公式。" />
+  <IconUrl DefaultValue="https://127.0.0.1:43127/icons/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://127.0.0.1:43127/icons/icon-80.png" />
+  <SupportUrl DefaultValue="https://127.0.0.1:43127/bridge/index.html" />
+  <AppDomains>
+    <AppDomain>https://127.0.0.1:43127</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://127.0.0.1:43127/bridge/index.html" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides
+    xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+    xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.1">
+        <bt:Set Name="PowerPointApi" MinVersion="1.5" />
+      </bt:Sets>
+    </Requirements>
+    <Hosts>
+      <Host xsi:type="Presentation">
+        <DesktopFormFactor>
+          <FunctionFile resid="Commands.Url" />
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="VisualTeX.Group">
+                <Label resid="VisualTeX.GroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16" />
+                  <bt:Image size="32" resid="Icon.32" />
+                  <bt:Image size="80" resid="Icon.80" />
+                </Icon>
+                <Control xsi:type="Button" id="VisualTeX.NewFormula.Button">
+                  <Label resid="VisualTeX.NewFormula.Label" />
+                  <Supertip>
+                    <Title resid="VisualTeX.NewFormula.Label" />
+                    <Description resid="VisualTeX.NewFormula.Description" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>VisualTeX.NewFormula</FunctionName>
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="VisualTeX.EditFormula.Button">
+                  <Label resid="VisualTeX.EditFormula.Label" />
+                  <Supertip>
+                    <Title resid="VisualTeX.EditFormula.Label" />
+                    <Description resid="VisualTeX.EditFormula.Description" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>VisualTeX.EditSelectedFormula</FunctionName>
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="VisualTeX.OpenDesktop.Button">
+                  <Label resid="VisualTeX.OpenDesktop.Label" />
+                  <Supertip>
+                    <Title resid="VisualTeX.OpenDesktop.Label" />
+                    <Description resid="VisualTeX.OpenDesktop.Description" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>VisualTeX.OpenDesktopApp</FunctionName>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://127.0.0.1:43127/icons/icon-16.png" />
+        <bt:Image id="Icon.32" DefaultValue="https://127.0.0.1:43127/icons/icon-32.png" />
+        <bt:Image id="Icon.80" DefaultValue="https://127.0.0.1:43127/icons/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Commands.Url" DefaultValue="https://127.0.0.1:43127/bridge/index.html" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="VisualTeX.GroupLabel" DefaultValue="VisualTeX" />
+        <bt:String id="VisualTeX.NewFormula.Label" DefaultValue="新建公式" />
+        <bt:String id="VisualTeX.EditFormula.Label" DefaultValue="编辑所选公式" />
+        <bt:String id="VisualTeX.OpenDesktop.Label" DefaultValue="打开 VisualTeX" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="VisualTeX.NewFormula.Description" DefaultValue="弹出完整 VisualTeX 编辑器并在当前幻灯片插入公式。" />
+        <bt:String id="VisualTeX.EditFormula.Description" DefaultValue="重新编辑当前选中的 VisualTeX 公式。" />
+        <bt:String id="VisualTeX.OpenDesktop.Description" DefaultValue="打开 VisualTeX 桌面应用。" />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

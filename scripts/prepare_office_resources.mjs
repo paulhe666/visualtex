@@ -9,6 +9,11 @@ const mathJaxRoot = join(root, "node_modules", "mathjax-full");
 const source = join(packageRoot, "dist");
 const target = join(root, "office", "vendor", "office-js");
 const licenses = join(root, "office", "licenses");
+const icons = join(root, "office", "icons");
+const manifests = join(root, "office", "manifests");
+const companionOrigin = "https://127.0.0.1:43127";
+const wordAddinId = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
+const powerpointAddinId = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 
 const rootFiles = [
   "office.js",
@@ -17,6 +22,40 @@ const rootFiles = [
   "o15apptofilemappingtable.js",
   "es6-promise.js",
 ];
+
+function fourPartVersion(value) {
+  const parts = String(value)
+    .split(".")
+    .map((part) => part.match(/^\d+/)?.[0])
+    .filter(Boolean)
+    .slice(0, 4);
+  while (parts.length < 4) parts.push("0");
+  return parts.join(".");
+}
+
+function renderManifest(template, appVersion) {
+  const rendered = template
+    .replaceAll("{{WORD_ADDIN_ID}}", wordAddinId)
+    .replaceAll("{{POWERPOINT_ADDIN_ID}}", powerpointAddinId)
+    .replaceAll("{{MANIFEST_VERSION}}", fourPartVersion(appVersion))
+    .replaceAll("{{COMPANION_ORIGIN}}", companionOrigin);
+  if (rendered.includes("{{") || rendered.includes("}}")) {
+    throw new Error("Office manifest still contains unresolved placeholders");
+  }
+  const forbidden = [
+    "appsforoffice.microsoft.com",
+    "github.com",
+    "githubusercontent.com",
+    "googleapis.com",
+    "gstatic.com",
+    "unpkg.com",
+    "jsdelivr.net",
+    "cloudflare.com",
+  ];
+  const remote = forbidden.find((domain) => rendered.includes(domain));
+  if (remote) throw new Error(`Office manifest contains forbidden domain: ${remote}`);
+  return rendered;
+}
 
 function sanitizeOfficeSource(value) {
   return value
@@ -41,6 +80,8 @@ async function copySanitized(relativePath) {
 await rm(target, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
 await mkdir(licenses, { recursive: true });
+await mkdir(icons, { recursive: true });
+await mkdir(manifests, { recursive: true });
 
 for (const file of rootFiles) await copySanitized(file);
 
@@ -64,14 +105,41 @@ await cp(
   join(mathJaxRoot, "LICENSE"),
   join(licenses, "MATHJAX-LICENSE.txt"),
 );
+await cp(
+  join(root, "src-tauri", "icons", "32x32.png"),
+  join(icons, "icon-16.png"),
+);
+await cp(
+  join(root, "src-tauri", "icons", "32x32.png"),
+  join(icons, "icon-32.png"),
+);
+await cp(
+  join(root, "src-tauri", "icons", "128x128.png"),
+  join(icons, "icon-80.png"),
+);
 
-const packageJson = JSON.parse(
+const appPackageJson = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+);
+for (const [templateName, outputName] of [
+  ["visualtex-word.template.xml", "VisualTeX.Word.xml"],
+  ["visualtex-powerpoint.template.xml", "VisualTeX.PowerPoint.xml"],
+]) {
+  const template = await readFile(join(manifests, templateName), "utf8");
+  await writeFile(
+    join(manifests, outputName),
+    renderManifest(template, appPackageJson.version),
+    "utf8",
+  );
+}
+
+const officePackageJson = JSON.parse(
   await readFile(join(packageRoot, "package.json"), "utf8"),
 );
 const officeJs = await readFile(join(target, "office.js"));
 const manifest = {
-  package: packageJson.name,
-  version: packageJson.version,
+  package: officePackageJson.name,
+  version: officePackageJson.version,
   officeJsSha256: createHash("sha256").update(officeJs).digest("hex"),
   scope: "macOS Word and PowerPoint plus all Office UI locale strings",
 };

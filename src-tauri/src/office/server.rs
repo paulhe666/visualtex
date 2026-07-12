@@ -309,6 +309,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             ServeDir::new(ui_root.join("vendor").join("office-js")),
         )
         .nest_service("/licenses", ServeDir::new(ui_root.join("licenses")))
+        .nest_service("/icons", ServeDir::new(ui_root.join("icons")))
         .fallback(not_found)
         .layer(RequestBodyLimitLayer::new(MAX_OFFICE_REQUEST_BYTES))
         .layer(middleware::from_fn_with_state(

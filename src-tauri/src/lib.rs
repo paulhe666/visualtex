@@ -1071,7 +1071,13 @@ pub fn run() {
             office::lifecycle::get_office_companion_status,
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
-            office::lifecycle::regenerate_office_certificate
+            office::lifecycle::get_office_integration_status,
+            office::lifecycle::install_office_integration,
+            office::lifecycle::repair_office_integration,
+            office::lifecycle::uninstall_office_integration,
+            office::lifecycle::regenerate_office_certificate,
+            office::lifecycle::open_word,
+            office::lifecycle::open_powerpoint
         ])
         .run(tauri::generate_context!())
         .expect("error while running VisualTeX");
