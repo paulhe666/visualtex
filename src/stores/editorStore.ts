@@ -14,6 +14,10 @@ import {
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
+import {
+  DEFAULT_SUGGESTION_COUNT,
+  normalizeSuggestionCount,
+} from "./settingNormalizers";
 
 type Theme = "light" | "dark";
 export type Language = "cn" | "en";
@@ -154,7 +158,7 @@ export const useEditorStore = create<EditorState>()(
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       personalize: true,
-      suggestionCount: 6,
+      suggestionCount: DEFAULT_SUGGESTION_COUNT,
       checkUpdatesOnStartup: true,
       usage: {},
       history: [],
@@ -214,7 +218,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
-        set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+        set({ suggestionCount: normalizeSuggestionCount(suggestionCount) }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
       recordCommand: (commandId, prefix) =>
@@ -337,6 +341,11 @@ export const useEditorStore = create<EditorState>()(
           latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
             ? persisted.latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
+          personalize:
+            typeof persisted.personalize === "boolean"
+              ? persisted.personalize
+              : currentState.personalize,
+          suggestionCount: normalizeSuggestionCount(persisted.suggestionCount),
         };
       },
     },

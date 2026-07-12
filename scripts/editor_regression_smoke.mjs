@@ -4,7 +4,8 @@ import process from "node:process";
 
 const previewPort = 4173;
 const debugPort = 9223;
-const baseUrl = `http://127.0.0.1:${previewPort}`;
+const externalBaseUrl = process.env.VISUALTEX_TEST_URL?.replace(/\/$/, "");
+const baseUrl = externalBaseUrl || `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -62,11 +63,13 @@ class CdpClient {
 }
 
 async function main() {
-  const preview = spawn(
-    process.execPath,
-    ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(previewPort)],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
+  const preview = externalBaseUrl
+    ? null
+    : spawn(
+        process.execPath,
+        ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(previewPort)],
+        { cwd: process.cwd(), stdio: "ignore" },
+      );
   let chrome;
   let client;
 
@@ -222,9 +225,20 @@ async function main() {
 
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(650);
-    await evaluate(
-      `localStorage.setItem("visualtex.onboarding.v3.completed", "true")`,
-    );
+    await evaluate(`(() => {
+      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+      localStorage.setItem("visualtex.onboarding.web.v3.completed", "true");
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      const lineId = crypto.randomUUID();
+      persisted.state = {
+        ...(persisted.state || {}),
+        lines: [{ id: lineId, latex: "" }],
+        activeLineId: lineId,
+        suggestionCount: 0,
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await sleep(800);
     await evaluate(`new Promise((resolve) => {
@@ -448,9 +462,27 @@ async function main() {
     await reloadEditor();
     await setField("\\alpha");
     await waitForEvaluation(
-      `(() => ({
-        ready: Boolean(document.querySelector(".suggestion-popup")),
-      }))()`,
+      `(() => {
+        const field = document.querySelector("math-field");
+        const surface = document.querySelector(".multi-line-editor");
+        const nativePanel = document.getElementById("mathlive-suggestion-popover");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          ready: Boolean(document.querySelector(".suggestion-popup")),
+          fieldValue: field?.value ?? "",
+          fieldPosition: field?.position ?? -1,
+          commandQuery: surface?.dataset.commandQuery ?? "",
+          customVisible: Boolean(document.querySelector(".suggestion-popup")),
+          nativeVisible: nativePanel?.classList.contains("is-visible") ?? false,
+          onboardingVisible: Boolean(document.querySelector(".onboarding-backdrop")),
+          updateVisible: Boolean(document.querySelector(".update-dialog")),
+          language: persisted?.state?.language ?? null,
+          personalize: persisted?.state?.personalize ?? null,
+          suggestionCount: persisted?.state?.suggestionCount ?? null,
+          activeTag: document.activeElement?.tagName ?? "",
+          activeClass: document.activeElement?.className ?? "",
+        };
+      })()`,
       "custom command candidate for \\alpha",
     );
     await key("Enter", "Enter", 13);
@@ -1031,7 +1063,7 @@ async function main() {
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");
-    preview.kill("SIGTERM");
+    preview?.kill("SIGTERM");
     await sleep(300);
     await rm(chromeProfile, { recursive: true, force: true }).catch(() => undefined);
   }
