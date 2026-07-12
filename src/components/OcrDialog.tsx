@@ -95,6 +95,7 @@ export function OcrDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const recognizingRef = useRef(false);
+  const cancellingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [runtime, setRuntime] = useState<OcrRuntimeStatus | null>(null);
@@ -127,7 +128,7 @@ export function OcrDialog({
     }
   }, []);
 
-  const refreshRuntime = useCallback(async () => {
+  const refreshRuntime = useCallback(async (forceRefresh = false) => {
     if (!isTauriEnvironment()) {
       setRuntime({
         installed: false,
@@ -145,7 +146,7 @@ export function OcrDialog({
 
     setCheckingRuntime(true);
     try {
-      setRuntime(await getOcrRuntimeStatus());
+      setRuntime(await getOcrRuntimeStatus(forceRefresh));
     } catch (runtimeError) {
       setError(readError(runtimeError));
     } finally {
@@ -156,8 +157,17 @@ export function OcrDialog({
   useEffect(() => {
     if (!open) return;
     setError("");
-    void refreshRuntime();
-  }, [open, refreshRuntime]);
+    if (runtime) return;
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (!cancelled) void refreshRuntime();
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [open, runtime, refreshRuntime]);
 
   useEffect(() => {
     if (!open) return;
@@ -209,6 +219,10 @@ export function OcrDialog({
   useEffect(() => {
     recognizingRef.current = recognizing;
   }, [recognizing]);
+
+  useEffect(() => {
+    cancellingRef.current = cancelling;
+  }, [cancelling]);
 
   const selectFile = useCallback(
     (nextFile: File) => {
@@ -264,7 +278,7 @@ export function OcrDialog({
       onNotify(isEn ? "OCR runtime installed" : "OCR 运行环境安装完成");
     } catch (installError) {
       setError(readError(installError));
-      await refreshRuntime();
+      await refreshRuntime(true);
     } finally {
       unlisten?.();
       setInstalling(false);
@@ -282,6 +296,7 @@ export function OcrDialog({
     }
 
     setRecognizing(true);
+    cancellingRef.current = false;
     setCancelling(false);
     setRecognitionProgress({
       event: "progress",
@@ -307,7 +322,7 @@ export function OcrDialog({
       );
     } catch (recognitionError) {
       const message = readError(recognitionError);
-      if (cancelling || /cancelled|closed its output stream/i.test(message)) {
+      if (cancellingRef.current || message.includes("OCR_CANCELLED")) {
         onNotify(isEn ? "OCR recognition cancelled" : "OCR 识别已取消");
       } else {
         setError(message);
@@ -315,6 +330,7 @@ export function OcrDialog({
     } finally {
       unlisten?.();
       setRecognizing(false);
+      cancellingRef.current = false;
       setCancelling(false);
       setRecognitionProgress(null);
     }
@@ -322,6 +338,7 @@ export function OcrDialog({
 
   const handleCancelRecognition = async () => {
     if (!recognizing || cancelling) return;
+    cancellingRef.current = true;
     setCancelling(true);
     setRecognitionProgress((current) => ({
       event: "progress",
@@ -334,6 +351,7 @@ export function OcrDialog({
       await cancelOcrRecognition();
     } catch (cancelError) {
       setError(readError(cancelError));
+      cancellingRef.current = false;
       setCancelling(false);
     }
   };
@@ -444,7 +462,11 @@ export function OcrDialog({
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={requestClose}>
+    <div
+      className="modal-backdrop ocr-modal-backdrop"
+      role="presentation"
+      onMouseDown={requestClose}
+    >
       <section
         ref={dialogRef}
         className="ocr-dialog"

@@ -1,7 +1,8 @@
 {
   "name": "visualtex",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.6",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,14 +12,23 @@
     "deploy:web": "npx wrangler deploy",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test:editor:run": "node scripts/editor_regression_smoke.mjs",
+    "test:editor": "npm run build && npm run test:editor:run",
+    "test:editor-history:run": "node scripts/editor_history_regression.mjs",
+    "test:editor-history": "npm run build && npm run test:editor-history:run",
+    "test:history": "node scripts/history_manager_smoke.mjs",
+    "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
+    "test:update-notes": "node --experimental-strip-types scripts/update_notes_smoke.mjs",
+    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",
-    "codemirror-lang-latex": "^0.4.1",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
     "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "codemirror-lang-latex": "^0.4.1",
     "lucide-react": "^0.468.0",
     "mathlive": "^0.109.0",
     "react": "^19.1.0",

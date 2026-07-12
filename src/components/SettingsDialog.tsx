@@ -3,6 +3,7 @@ import {
   BrainCircuit,
   Languages,
   Moon,
+  RefreshCw,
   RotateCcw,
   SlidersHorizontal,
   Sun,
@@ -13,9 +14,10 @@ import { useEditorStore } from "../stores/editorStore";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onCheckForUpdates: () => void;
 }
 
-export function SettingsDialog({ open, onClose }: Props) {
+export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
@@ -29,6 +31,12 @@ export function SettingsDialog({ open, onClose }: Props) {
   const suggestionCount = useEditorStore((state) => state.suggestionCount);
   const setSuggestionCount = useEditorStore((state) => state.setSuggestionCount);
   const resetUsage = useEditorStore((state) => state.resetUsage);
+  const checkUpdatesOnStartup = useEditorStore(
+    (state) => state.checkUpdatesOnStartup,
+  );
+  const setCheckUpdatesOnStartup = useEditorStore(
+    (state) => state.setCheckUpdatesOnStartup,
+  );
   const isEn = language === "en";
 
   useEffect(() => {
@@ -223,6 +231,46 @@ export function SettingsDialog({ open, onClose }: Props) {
                 English
               </button>
             </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <RefreshCw size={18} />
+              <div>
+                <h3>{isEn ? "Application updates" : "应用更新"}</h3>
+                <p>
+                  {isEn
+                    ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
+                    : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
+                </p>
+              </div>
+            </div>
+            <label className="switch-row">
+              <span>
+                <strong>{isEn ? "Automatic update notifications" : "自动更新提醒"}</strong>
+                <small>
+                  {isEn
+                    ? "When disabled, VisualTeX will never check or notify automatically. Manual checks remain available."
+                    : "关闭后将永久停止自动检查和主动弹窗，但仍可手动检查。"}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                checked={checkUpdatesOnStartup}
+                onChange={(event) =>
+                  setCheckUpdatesOnStartup(event.target.checked)
+                }
+              />
+              <span className="switch-control" />
+            </label>
+            <button
+              type="button"
+              className="secondary-button settings-update-button"
+              onClick={onCheckForUpdates}
+            >
+              <RefreshCw size={15} />
+              {isEn ? "Check now" : "立即检查"}
+            </button>
           </div>
         </div>
 
