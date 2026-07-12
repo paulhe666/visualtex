@@ -1,4 +1,5 @@
 use crate::office::certificate::{ensure_office_install, regenerate_certificate};
+use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
@@ -55,15 +56,18 @@ pub fn initialize(app: &AppHandle) -> Result<OfficeCompanionState, String> {
         install: root.join("install.json"),
         sessions: root.join("sessions"),
         recovery: root.join("recovery"),
+        formula_cache: root.join("formulas"),
         ui_root: resolve_ui_root(app)?,
         root,
     };
     let install_token = ensure_office_install(&paths)?;
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
+    let formula_cache = FormulaMetadataCache::new(&paths).map_err(|error| error.to_string())?;
     Ok(OfficeCompanionState::new(
         paths,
         install_token,
         session_store,
+        formula_cache,
         ocr_worker_available(app),
     ))
 }

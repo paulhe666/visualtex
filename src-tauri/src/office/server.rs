@@ -1,4 +1,4 @@
-use crate::office::sessions::{CreateOfficeSessionInput, SessionError};
+use crate::office::sessions::{CreateOfficeSessionInput, SessionError, VisualTeXFormulaMetadata};
 use crate::office::state::{
     OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
@@ -173,6 +173,29 @@ async fn patch_session(
     }
 }
 
+async fn get_formula_metadata(
+    AxumPath(formula_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    let cache = context.companion.formula_cache.clone();
+    match run_session_operation(move || cache.get(&formula_id)).await {
+        Ok(metadata) => Json(metadata).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
+async fn put_formula_metadata(
+    AxumPath(formula_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+    Json(metadata): Json<VisualTeXFormulaMetadata>,
+) -> Response {
+    let cache = context.companion.formula_cache.clone();
+    match run_session_operation(move || cache.put(&formula_id, metadata)).await {
+        Ok(saved) => Json(saved).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
 async fn delete_session(
     AxumPath(session_id): AxumPath<String>,
     State(context): State<ServerContext>,
@@ -268,6 +291,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route(
             "/sessions/{session_id}",
             get(get_session).patch(patch_session).delete(delete_session),
+        )
+        .route(
+            "/formulas/{formula_id}/metadata",
+            get(get_formula_metadata).put(put_formula_metadata),
         )
         .fallback(api_not_found);
 
@@ -390,11 +417,14 @@ mod tests {
             install: root.join("install.json"),
             sessions: root.join("sessions"),
             recovery: root.join("recovery"),
+            formula_cache: root.join("formulas"),
             ui_root,
             root,
         };
         let session_store = SessionStore::new(&paths).expect("session store");
-        OfficeCompanionState::new(paths, "a".repeat(64), session_store, true)
+        let formula_cache = crate::office::formula_cache::FormulaMetadataCache::new(&paths)
+            .expect("formula metadata cache");
+        OfficeCompanionState::new(paths, "a".repeat(64), session_store, formula_cache, true)
     }
 
     #[test]
@@ -551,6 +581,89 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn formula_metadata_cache_api_round_trips_and_validates_identity() {
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        let token = state.install_token.to_string();
+        let router = build_router(state);
+        let formula_id = uuid::Uuid::new_v4().to_string();
+        let line_id = uuid::Uuid::new_v4().to_string();
+        let metadata = serde_json::json!({
+            "schema": "visualtex-formula",
+            "schemaVersion": 1,
+            "formulaId": formula_id,
+            "title": "Cached Formula",
+            "latex": "a=b",
+            "lines": [{ "id": line_id, "latex": "a=b" }],
+            "codeFormat": "raw",
+            "displayMode": "inline",
+            "createdWithVersion": "1.0.6",
+            "updatedWithVersion": "1.0.6",
+            "createdAt": "2026-07-12T00:00:00Z",
+            "updatedAt": "2026-07-12T00:00:00Z"
+        });
+
+        let put = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/formulas/{formula_id}/metadata"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(metadata.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(put.status(), StatusCode::OK);
+
+        let get = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/api/v1/formulas/{formula_id}/metadata"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get.status(), StatusCode::OK);
+        let body = get.into_body().collect().await.unwrap().to_bytes();
+        let loaded: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(loaded["formulaId"], formula_id);
+        assert_eq!(loaded["latex"], "a=b");
+
+        let mismatched_id = uuid::Uuid::new_v4().to_string();
+        let conflict = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/formulas/{mismatched_id}/metadata"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(metadata.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+        let unauthorized = router
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/api/v1/formulas/{formula_id}/metadata"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

@@ -191,7 +191,7 @@ fn sync_directory(path: &Path) -> Result<(), SessionError> {
     })
 }
 
-fn valid_uuid(value: &str) -> bool {
+pub(crate) fn valid_uuid(value: &str) -> bool {
     Uuid::parse_str(value)
         .map(|uuid| uuid.to_string() == value.to_ascii_lowercase())
         .unwrap_or(false)
@@ -618,6 +618,7 @@ mod tests {
             install: root.join("install.json"),
             sessions: root.join("sessions"),
             recovery: root.join("recovery"),
+            formula_cache: root.join("formulas"),
             ui_root: temp.path().join("ui"),
             root,
         }

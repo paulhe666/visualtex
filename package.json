@@ -23,6 +23,8 @@
     "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
     "test:update-notes": "node --experimental-strip-types scripts/update_notes_smoke.mjs",
     "test:svg-export": "node --experimental-strip-types scripts/svg_export_smoke.mjs",
+    "test:office-metadata": "node --experimental-strip-types scripts/office_metadata_smoke.mjs",
+    "test:word-adapter": "tsx scripts/word_adapter_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {
@@ -32,6 +34,7 @@
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "codemirror-lang-latex": "^0.4.1",
+    "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",
     "mathjax-full": "^3.2.2",
     "mathlive": "^0.109.0",
@@ -46,6 +49,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
+    "tsx": "^4.20.6",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   }

@@ -1,3 +1,4 @@
+import { WordAdapter } from "./WordAdapter";
 import type {
   CreateOfficeSessionInput,
   OfficeFormulaSession,
@@ -57,5 +58,5 @@ export function officeHostFromReadyInfo(host: Office.HostType): OfficeHost {
 }
 
 export function createOfficeHostAdapter(host: OfficeHost): OfficeHostAdapter {
-  return new PendingOfficeHostAdapter(host);
+  return host === "word" ? new WordAdapter() : new PendingOfficeHostAdapter(host);
 }

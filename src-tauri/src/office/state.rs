@@ -1,3 +1,4 @@
+use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::sessions::SessionStore;
 use axum_server::Handle;
 use serde::Serialize;
@@ -20,6 +21,7 @@ pub struct OfficePaths {
     pub install: PathBuf,
     pub sessions: PathBuf,
     pub recovery: PathBuf,
+    pub formula_cache: PathBuf,
     pub ui_root: PathBuf,
 }
 
@@ -56,6 +58,7 @@ pub struct OfficeCompanionState {
     pub status: Arc<RwLock<OfficeCompanionStatus>>,
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
     pub session_store: SessionStore,
+    pub formula_cache: FormulaMetadataCache,
     pub ocr_available: bool,
 }
 
@@ -64,6 +67,7 @@ impl OfficeCompanionState {
         paths: OfficePaths,
         install_token: String,
         session_store: SessionStore,
+        formula_cache: FormulaMetadataCache,
         ocr_available: bool,
     ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
@@ -73,6 +77,7 @@ impl OfficeCompanionState {
             status: Arc::new(RwLock::new(status)),
             server_handle: Arc::new(Mutex::new(None)),
             session_store,
+            formula_cache,
             ocr_available,
         }
     }
