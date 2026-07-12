@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run build:desktop",
+    "build:desktop": "tsc --noEmit && vite build",
+    "prepare:office": "node scripts/prepare_office_resources.mjs",
+    "build:office": "npm run prepare:office && tsc -p tsconfig.office.json --noEmit && vite build -c vite.office.config.ts && node scripts/finalize_office_build.mjs",
+    "build:all": "npm run build:desktop && npm run build:office",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -34,7 +38,9 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@microsoft/office-js": "^1.1.110",
     "@tauri-apps/cli": "^2.5.0",
+    "@types/office-js": "^1.0.599",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
