@@ -494,6 +494,25 @@ pub struct PdfRenderedImage {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PdfTextGlyph {
+    pub index: u32,
+    pub text: String,
+    pub rect: PdfRect,
+    pub font_name: String,
+    pub font_size_points: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfTextHit {
+    pub page_index: u32,
+    pub glyph_index: u32,
+    pub glyph: PdfTextGlyph,
+    pub line_glyphs: Vec<PdfTextGlyph>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PdfPixelDiffPage {
     pub page_index: u32,
     pub width_pixels: u32,

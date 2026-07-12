@@ -1,0 +1,30 @@
+\documentclass[UTF8]{ctexart}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{mwe}
+\usepackage{float}
+
+\title{visualstudio 可视化编辑回归测试}
+\author{visualstudio}
+
+\begin{document}
+\maketitle
+
+\section{正文与公式}
+这是一段包含普通中文、英文 text 和行内公式 $E=mc^2$ 的正文，用于验证点击公式外文字时只打开正文编辑器。
+
+另一段包含下标公式 $v_{GS}-V_{TN}$，并允许直接增加、删除和修改普通文字。
+
+\begin{equation}
+R_o=\frac{v_t}{i_t}=r_{ds}\left(1+g_mR_s\right)
+\end{equation}
+
+\section{图片编辑}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.55\linewidth]{example-image}
+  \caption{用于验证宽度拖动、位置、图注和标签修改的示例图片}
+  \label{fig:visual-edit}
+\end{figure}
+
+\end{document}

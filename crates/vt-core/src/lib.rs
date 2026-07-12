@@ -18,10 +18,10 @@ use vt_protocol::{
     ExternalChangeKind, ExternalChangeReport, ExternalConflictOutcome, ExternalConflictResolution,
     ExternalFileChange, FileId, ForwardSearchResult, InverseSearchResult, LayoutMapArtifact,
     NodeAttributesPatch, NodeId, OperationId, PdfDocumentInfo, PdfRenderRequest, PdfRenderedImage,
-    ProjectDependencyGraph, ProjectIndex, ProjectReplaceFilePlan, ProjectReplaceOutcome,
-    ProjectReplacePlan, ProjectReplaceRequest, ProjectSearchMatch, ProjectSearchRequest,
-    ProjectTemplateSummary, ProjectTextReplacement, Revision, SymbolKind, SymbolRenameKind,
-    SymbolRenameRequest, TextEdit, VisualNode, VisualPatch,
+    PdfTextHit, ProjectDependencyGraph, ProjectIndex, ProjectReplaceFilePlan,
+    ProjectReplaceOutcome, ProjectReplacePlan, ProjectReplaceRequest, ProjectSearchMatch,
+    ProjectSearchRequest, ProjectTemplateSummary, ProjectTextReplacement, Revision, SymbolKind,
+    SymbolRenameKind, SymbolRenameRequest, TextEdit, VisualNode, VisualPatch,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -416,6 +416,17 @@ impl CoreService {
     pub fn render_pdf(&self, mut request: PdfRenderRequest) -> Result<PdfRenderedImage, CoreError> {
         request.pdf_path = self.validated_pdf_path(&request.pdf_path)?;
         Ok(self.pdf_service().render(&request)?)
+    }
+
+    pub fn pdf_text_hit(
+        &self,
+        pdf_path: &Path,
+        page_index: u32,
+        x: f32,
+        y: f32,
+    ) -> Result<Option<PdfTextHit>, CoreError> {
+        let pdf_path = self.validated_pdf_path(pdf_path)?;
+        Ok(self.pdf_service().text_hit(pdf_path, page_index, x, y)?)
     }
 
     pub fn project_index(&self) -> Result<ProjectIndex, CoreError> {

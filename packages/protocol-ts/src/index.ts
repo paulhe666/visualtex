@@ -332,6 +332,21 @@ export interface PdfRect {
   height: number;
 }
 
+export interface PdfTextGlyph {
+  index: number;
+  text: string;
+  rect: PdfRect;
+  fontName: string;
+  fontSizePoints: number;
+}
+
+export interface PdfTextHit {
+  pageIndex: number;
+  glyphIndex: number;
+  glyph: PdfTextGlyph;
+  lineGlyphs: PdfTextGlyph[];
+}
+
 export type MappingConfidence = "exact" | "high" | "medium" | "low" | "unmapped";
 export type MappingMethod =
   | "shadow_marker_and_sync_tex"
@@ -610,6 +625,9 @@ export const desktopApi = {
   },
   renderPdf(request: PdfRenderRequest): Promise<PdfRenderedImage> {
     return invoke("render_pdf", { request });
+  },
+  pdfTextHit(pdfPath: string, pageIndex: number, x: number, y: number): Promise<PdfTextHit | null> {
+    return invoke("pdf_text_hit", { pdfPath, pageIndex, x, y });
   },
   buildLayoutMap(pdfPath: string): Promise<LayoutMapArtifact> {
     return invoke("build_layout_map", { pdfPath });

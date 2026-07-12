@@ -5,12 +5,12 @@ visualstudio is an offline-first LaTeX paper editor built around one authoritati
 ## Implemented product path
 
 - Safe project discovery, templates, multi-file buffers, atomic save, recovery and external-editor conflict handling.
-- CodeMirror source editing and real compiled-page structured editing with MathLive formula overlays on one undo/redo history.
+- CodeMirror source editing and real compiled-page structured editing on one undo/redo history, including a VisualTeX 1.0.6-derived formula workbench with command candidates, selection-aware insertion and matrix construction.
 - Tree-sitter incremental LaTeX syntax trees with malformed-input recovery, verbatim/minted protection ranges and project include-cycle detection.
 - Tolerant LaTeX semantics with native, partial, opaque and unstable nodes.
 - Project index, dependency graph, search, hash-guarded replacement and typed label/citation rename.
 - Real local latexmk/Tectonic compilation with XeLaTeX, pdfLaTeX or LuaLaTeX, isolated output, diagnostics, timeout and restricted shell escape.
-- PDFium page/tile rendering, Windows-safe atomic cache writes, pixel-validated shadow node-to-page mapping, PDF overlays and bidirectional SyncTeX.
+- PDFium page/tile rendering, Windows-safe atomic cache writes, pixel-validated shadow node-to-page mapping, glyph-level prose/formula hit testing, PDF overlays and bidirectional SyncTeX.
 - Offline formula and full-page OCR review workflows with bounded image import and optional verified local model packages.
 - VS Code custom editor with `TextDocument` authority, `WorkspaceEdit`, Core reconnect, PDF and OCR panels.
 - Authenticated persistent loopback Bridge, TeXstudio adapters, versioned `visualtex://` actions and Node Adapter SDK.
@@ -67,7 +67,7 @@ visualstudio --project ./paper
 
 Compiled artifacts are stored under `.visualtex/build`, PDF cache under `.visualtex/cache/pdf`, OCR imports under `.visualtex/ocr-input`, and recovery data under `.visualtex/recovery`.
 
-In the desktop app, compile the project and switch to **结构化编辑**. The editor keeps the real PDF page visible; high-confidence titles, paragraphs, inline/display formulas, figures and tables can be clicked in place. Confirming an edit writes the change to the authoritative LaTeX buffer, reveals the corresponding source position and coalesces automatic recompilation so concurrent `latexmk` processes cannot write the same output directory.
+In the desktop app, compile the project and switch to **结构化编辑**. The editor keeps the real PDF page visible and combines SyncTeX with PDFium glyph bounds so ordinary prose and an inline formula on the same line can be clicked separately. Formulas open a viewport-clamped floating workbench derived from VisualTeX 1.0.6, with blue selection styling, command candidates, selection-aware fraction/root/script insertion, custom matrices, clearing and whole-node deletion. Paragraphs support adding, removing and replacing text. Figures expose controlled LaTeX editing for path, width, float placement, caption and label; the page resize handle writes a `width=…\\linewidth` value rather than pretending LaTeX floats have arbitrary pixel coordinates. Confirming an edit writes to the authoritative LaTeX buffer and coalesces automatic recompilation.
 
 ## CLI
 
@@ -83,6 +83,7 @@ PDF and SyncTeX:
 
 ```bash
 cargo run -p visualtex-cli -- pdf-diff left.pdf right.pdf
+cargo run -p visualtex-cli -- pdf-text-hit paper.pdf 1 300 400
 cargo run -p visualtex-cli -- layout-map ./paper .visualtex/build/main.pdf
 cargo run -p visualtex-cli -- forward-search ./paper main.tex 20 1 .visualtex/build/main.pdf
 cargo run -p visualtex-cli -- inverse-search ./paper .visualtex/build/main.pdf 1 300 400

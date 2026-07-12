@@ -61,6 +61,13 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         tolerance: u8,
     },
+    /// Inspect the PDFium text glyph at a page coordinate.
+    PdfTextHit {
+        pdf_path: PathBuf,
+        page: u32,
+        x: f32,
+        y: f32,
+    },
     /// Build a shadow-instrumented node-to-PDF layout map.
     LayoutMap { path: PathBuf, pdf_path: PathBuf },
     /// Resolve a source line to one or more PDF rectangles using SyncTeX.
@@ -396,7 +403,20 @@ async fn main() -> anyhow::Result<()> {
             let report = service.compare_documents(left_pdf, right_pdf, width, tolerance)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        Command::PdfTextHit {
+            pdf_path,
+            page,
+            x,
+            y,
+        } => {
+            let cache = std::env::temp_dir().join("visualtex-pdf-text-cache");
+            let service = vt_pdf::PdfService::new(cache);
+            let page_index = page.saturating_sub(1);
+            let hit = service.text_hit(pdf_path, page_index, x, y)?;
+            println!("{}", serde_json::to_string_pretty(&hit)?);
+        }
         Command::LayoutMap { path, pdf_path } => {
+            let pdf_path = std::fs::canonicalize(&pdf_path).unwrap_or(pdf_path);
             let mut core = CoreService::open_project(path)?;
             let artifact = core.build_layout_map(&pdf_path).await?;
             println!("{}", serde_json::to_string_pretty(&artifact)?);
@@ -411,6 +431,7 @@ async fn main() -> anyhow::Result<()> {
             column,
             pdf_path,
         } => {
+            let pdf_path = std::fs::canonicalize(&pdf_path).unwrap_or(pdf_path);
             let core = CoreService::open_project(path)?;
             let result = core
                 .forward_search(&source_file, line, column, &pdf_path)
@@ -424,6 +445,7 @@ async fn main() -> anyhow::Result<()> {
             x,
             y,
         } => {
+            let pdf_path = std::fs::canonicalize(&pdf_path).unwrap_or(pdf_path);
             let core = CoreService::open_project(path)?;
             let result = core.inverse_search(&pdf_path, page, x, y).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);

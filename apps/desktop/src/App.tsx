@@ -334,15 +334,6 @@ export default function App() {
       });
   };
 
-  const scheduleVisualEdit = (nodeId: string, content: string) => {
-    pendingVisualRef.current = { nodeId, content };
-    if (visualTimerRef.current !== null) window.clearTimeout(visualTimerRef.current);
-    visualTimerRef.current = window.setTimeout(() => {
-      visualTimerRef.current = null;
-      enqueuePendingVisual();
-    }, 240);
-  };
-
   const commitVisualEdit = (nodeId: string, content: string) => {
     pendingVisualRef.current = { nodeId, content };
     if (visualTimerRef.current !== null) {
@@ -350,6 +341,41 @@ export default function App() {
       visualTimerRef.current = null;
     }
     enqueuePendingVisual();
+  };
+
+  const deleteVisualNode = async (node: VisualNode) => {
+    try {
+      await flushEdits();
+      const current = snapshotRef.current;
+      if (!current) return;
+      const currentNode = current.nodes.find((candidate) => candidate.id === node.id)
+        ?? current.nodes.find(
+          (candidate) => candidate.kind === node.kind
+            && candidate.source.startByte === node.source.startByte
+            && candidate.source.endByte === node.source.endByte,
+        );
+      if (!currentNode) throw new Error("页面节点已因重排失效，请重新点击最新 PDF 区域");
+      const outcome = await desktopApi.applyTextEdit({
+        operationId: createOperationId(),
+        origin: currentNode.kind === "inline_math" || currentNode.kind === "display_math"
+          ? "mathEditor"
+          : "visualEditor",
+        fileId: current.fileId,
+        baseRevision: current.revision,
+        startByte: currentNode.source.startByte,
+        endByte: currentNode.source.endByte,
+        replacement: "",
+      });
+      handleEditOutcome(current.fileId, outcome);
+      setSelectedNode(null);
+      setLayoutMap(null);
+      setPdfHighlights([]);
+      await refreshCurrentFile();
+      setNotice("节点已从 LaTeX 源码中删除；可以使用撤销恢复。重新编译后页面会更新。");
+    } catch (cause) {
+      setError(`删除节点失败：${errorMessage(cause)}`);
+      await refreshCurrentFile().catch(() => undefined);
+    }
   };
 
   const commitNodeAttributes = async (node: VisualNode, patch: NodeAttributesPatch) => {
@@ -1795,9 +1821,12 @@ export default function App() {
               highlights={pdfHighlights}
               layoutBoxes={layoutMap?.boxes ?? []}
               nodes={snapshot.nodes}
+              sourceText={snapshot.text}
+              sourcePath={snapshot.path}
               editable={rightTab === "structure"}
               onNodeSelect={handleVisualNodeSelect}
               onNodeCommit={(node, content) => commitVisualEdit(node.id, content)}
+              onNodeDelete={(node) => void deleteVisualNode(node)}
               onNodeAttributesCommit={(node, patch) => void commitNodeAttributes(node, patch)}
               onInverseSearch={(result) => void handleInverseSearch(result)}
               onError={(message) => setError(`PDF 页面失败：${message}`)}
@@ -1899,8 +1928,12 @@ export default function App() {
             <div className="inspector-content">
               <dl><dt>类型</dt><dd>{selectedNode.kind}</dd><dt>支持级别</dt><dd>{selectedNode.support}</dd><dt>源码范围</dt><dd>{selectedNode.source.startByte}–{selectedNode.source.endByte}</dd></dl>
               {mathNode ? (
-                <MathNodeEditor value={mathNode.text ?? ""} disabled={mathNode.support !== "native"} onChange={(value) => scheduleVisualEdit(mathNode.id, value)} />
-              ) : <p className="muted">在“结构化编辑”中点击公式，可在真实页面位置使用 MathLive 编辑。</p>}
+                <div className="inspector-formula-summary">
+                  <span>LaTeX 内容</span>
+                  <code>{mathNode.text ?? ""}</code>
+                  <p className="muted">公式只在“结构化编辑”的浮动工作台中修改，避免两个编辑器同时写入同一节点。</p>
+                </div>
+              ) : <p className="muted">在“结构化编辑”中点击正文、公式、图片或表格，可打开对应的浮动编辑工作台。</p>}
             </div>
           ) : <p className="muted inspector-empty">选择一个结构节点以查看属性。</p>}
         </aside>

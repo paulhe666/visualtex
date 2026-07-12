@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use image::{DynamicImage, ImageFormat, RgbaImage, imageops};
-use pdfium_render::prelude::{PdfPageRenderRotation, PdfRenderConfig, Pdfium};
+use pdfium_render::prelude::{
+    PdfPageRenderRotation, PdfPageTextChar, PdfPoints, PdfRenderConfig, Pdfium,
+};
 use sha2::{Digest, Sha256};
 use vt_protocol::{
-    PdfDocumentInfo, PdfPageInfo, PdfPixelDiffPage, PdfPixelDiffReport, PdfPixelRect,
-    PdfRenderRequest, PdfRenderedImage,
+    PdfDocumentInfo, PdfPageInfo, PdfPixelDiffPage, PdfPixelDiffReport, PdfPixelRect, PdfRect,
+    PdfRenderRequest, PdfRenderedImage, PdfTextGlyph, PdfTextHit,
 };
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -153,6 +155,81 @@ impl PdfService {
         })
     }
 
+    pub fn text_hit(
+        &self,
+        pdf_path: impl AsRef<Path>,
+        page_index: u32,
+        x: f32,
+        y: f32,
+    ) -> Result<Option<PdfTextHit>, PdfError> {
+        if !x.is_finite() || !y.is_finite() {
+            return Ok(None);
+        }
+        let info = self.document_info(pdf_path)?;
+        let page_count = info.pages.len() as u32;
+        if page_index >= page_count {
+            return Err(PdfError::PageOutOfBounds {
+                index: page_index,
+                page_count,
+            });
+        }
+        let page_info = &info.pages[page_index as usize];
+        if x < 0.0 || y < 0.0 || x > page_info.width_points || y > page_info.height_points {
+            return Ok(None);
+        }
+
+        let pdfium = pdfium()?;
+        let document = pdfium
+            .load_pdf_from_file(&info.pdf_path, None)
+            .map_err(pdfium_error)?;
+        let page = document
+            .pages()
+            .get(page_index as u16)
+            .map_err(pdfium_error)?;
+        let text = page.text().map_err(pdfium_error)?;
+        let chars = text.chars();
+        let pdf_y = page_info.height_points - y;
+        let hit = chars.get_char_near_point(
+            PdfPoints::new(x),
+            PdfPoints::new(6.0),
+            PdfPoints::new(pdf_y),
+            PdfPoints::new(8.0),
+        );
+        let Some(hit) = hit else {
+            return Ok(None);
+        };
+        let Some(hit_glyph) = pdf_text_glyph(&hit, page_index, page_info.height_points) else {
+            return Ok(None);
+        };
+        let hit_center_y = hit_glyph.rect.y + hit_glyph.rect.height / 2.0;
+        let hit_line_tolerance = hit_glyph.font_size_points.max(hit_glyph.rect.height) * 1.15 + 2.0;
+        let mut line_glyphs = chars
+            .iter()
+            .filter_map(|character| {
+                let glyph = pdf_text_glyph(&character, page_index, page_info.height_points)?;
+                let center_y = glyph.rect.y + glyph.rect.height / 2.0;
+                (center_y - hit_center_y)
+                    .abs()
+                    .le(&hit_line_tolerance)
+                    .then_some(glyph)
+            })
+            .collect::<Vec<_>>();
+        line_glyphs.sort_by(|left, right| {
+            left.rect
+                .x
+                .total_cmp(&right.rect.x)
+                .then_with(|| left.rect.y.total_cmp(&right.rect.y))
+                .then_with(|| left.index.cmp(&right.index))
+        });
+
+        Ok(Some(PdfTextHit {
+            page_index,
+            glyph_index: hit_glyph.index,
+            glyph: hit_glyph,
+            line_glyphs,
+        }))
+    }
+
     pub fn compare_documents(
         &self,
         left_pdf: impl AsRef<Path>,
@@ -253,6 +330,42 @@ impl PdfService {
 
 fn pdfium() -> Result<Pdfium, PdfError> {
     pdfium_auto::bind_bundled().map_err(|error| PdfError::PdfiumUnavailable(error.to_string()))
+}
+
+fn pdf_text_glyph(
+    character: &PdfPageTextChar<'_>,
+    page_index: u32,
+    page_height_points: f32,
+) -> Option<PdfTextGlyph> {
+    let text = character.unicode_string()?;
+    if text
+        .chars()
+        .all(|value| value == '\r' || value == '\n' || value == '\0')
+    {
+        return None;
+    }
+    let bounds = character
+        .loose_bounds()
+        .or_else(|_| character.tight_bounds())
+        .ok()?;
+    let width = bounds.width().value;
+    let height = bounds.height().value;
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    Some(PdfTextGlyph {
+        index: character.index() as u32,
+        text,
+        rect: PdfRect {
+            page: page_index + 1,
+            x: bounds.left().value,
+            y: page_height_points - bounds.top().value,
+            width,
+            height,
+        },
+        font_name: character.font_name(),
+        font_size_points: character.scaled_font_size().value,
+    })
 }
 
 fn canonical_pdf(path: &Path) -> Result<PathBuf, PdfError> {

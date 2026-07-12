@@ -173,6 +173,10 @@ button.primary:hover, .compile-button:hover { background: #234bd9; }
 .inspector-content dt { color: var(--muted); }
 .inspector-content dd { margin: 0; word-break: break-word; }
 .inspector-empty { padding: 14px; }
+.inspector-formula-summary { display: grid; gap: 8px; }
+.inspector-formula-summary > span { color: var(--muted); font-size: 11px; font-weight: 600; }
+.inspector-formula-summary code { display: block; max-height: 140px; overflow: auto; padding: 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-subtle); white-space: pre-wrap; word-break: break-word; font-size: 11px; }
+.inspector-formula-summary p { margin: 0; line-height: 1.5; }
 .muted { color: var(--muted); }
 .transaction-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px; background: rgba(12,18,28,.48); backdrop-filter: blur(3px); }
 .transaction-dialog { width: min(820px, 96vw); max-height: min(760px, 92vh); display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--panel); box-shadow: 0 24px 70px rgba(7,12,24,.3); }

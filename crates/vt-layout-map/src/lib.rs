@@ -465,12 +465,30 @@ async fn collect_synctex_rects(
 }
 
 fn sample_source_positions(start: (u32, u32), end: (u32, u32), limit: usize) -> Vec<(u32, u32)> {
-    if start.0 >= end.0 {
-        return if start == end {
-            vec![start]
-        } else {
-            vec![start, end]
-        };
+    if start.0 == end.0 {
+        if start.1 >= end.1 {
+            return if start == end {
+                vec![start]
+            } else {
+                vec![start, end]
+            };
+        }
+        let column_count = (end.1 - start.1 + 1) as usize;
+        let stride = column_count.div_ceil(limit.max(2)).max(1) as u32;
+        let mut samples = Vec::with_capacity(column_count.min(limit) + 2);
+        samples.push(start);
+        let mut column = start.1.saturating_add(stride);
+        while column < end.1 {
+            samples.push((start.0, column));
+            column = column.saturating_add(stride);
+        }
+        samples.push(end);
+        samples.sort_unstable();
+        samples.dedup();
+        return samples;
+    }
+    if start.0 > end.0 {
+        return vec![start, end];
     }
     let line_count = (end.0 - start.0 + 1) as usize;
     let stride = line_count.div_ceil(limit.max(2));
@@ -539,7 +557,10 @@ fn mapping_quality(
 fn supports_high_confidence_sync_tex(node: &VisualNode) -> bool {
     node.support == SupportLevel::Native
         || (node.support == SupportLevel::Partial
-            && matches!(node.kind, NodeKind::Figure | NodeKind::Table))
+            && matches!(
+                node.kind,
+                NodeKind::Paragraph | NodeKind::Figure | NodeKind::Table
+            ))
 }
 
 fn sync_tex_is_node_specific(node: &VisualNode) -> bool {
@@ -645,6 +666,36 @@ mod tests {
         assert!(sampled.len() <= 12);
         assert_eq!(sampled.first(), Some(&(1, 1)));
         assert_eq!(sampled.last(), Some(&(1_000, 1)));
+    }
+
+    #[test]
+    fn single_line_sampling_includes_interior_columns() {
+        assert_eq!(
+            sample_source_positions((4, 2), (4, 12), 4),
+            vec![(4, 2), (4, 5), (4, 8), (4, 11), (4, 12)]
+        );
+        let sampled = sample_source_positions((2, 1), (2, 1_000), 10);
+        assert!(sampled.len() <= 12);
+        assert_eq!(sampled.first(), Some(&(2, 1)));
+        assert_eq!(sampled.last(), Some(&(2, 1_000)));
+    }
+
+    #[test]
+    fn partial_paragraph_with_inline_latex_can_use_high_confidence_sync_tex() {
+        let source = "正文含有 $E=mc^2$ 以及普通文字。";
+        let mut node = paragraph_node(source, 0, source.len());
+        node.support = SupportLevel::Partial;
+        let rect = PdfRect {
+            page: 1,
+            x: 10.0,
+            y: 20.0,
+            width: 120.0,
+            height: 14.0,
+        };
+        assert_eq!(
+            mapping_quality(&node, None, None, &[rect], true),
+            (MappingConfidence::High, MappingMethod::SyncTex)
+        );
     }
 
     #[test]

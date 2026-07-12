@@ -1,0 +1,251 @@
+.vt-math-editor {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  color: var(--text, #1d2430);
+}
+
+.vt-math-field-shell {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--border, #d5dbe5);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 55%);
+}
+
+.vt-math-field-host {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.vt-visualtex-math-field {
+  width: 100%;
+  min-height: 82px;
+  padding: 14px 16px !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  color: var(--text, #1d2430);
+  font-size: 30px;
+  --caret-color: var(--accent, #3569d4);
+  --selection-background-color: color-mix(in srgb, var(--accent, #3569d4) 24%, transparent);
+  --selection-color: var(--text, #1d2430);
+  --contains-highlight-background-color: color-mix(in srgb, var(--accent, #3569d4) 11%, transparent);
+  --placeholder-color: color-mix(in srgb, var(--accent, #3569d4) 58%, transparent);
+}
+
+.vt-visualtex-math-field::part(menu-toggle),
+.vt-visualtex-math-field::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+.vt-command-suggestions {
+  position: fixed;
+  z-index: 10020;
+  left: 10px;
+  top: calc(100% + 7px);
+  width: min(460px, calc(100vw - 42px));
+  max-height: min(390px, 52vh);
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--border-strong, #bcc5d3);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  box-shadow: 0 16px 42px rgb(18 30 52 / 24%);
+}
+
+.vt-command-suggestions header {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px 6px;
+  color: var(--muted, #697386);
+  font-size: 11px;
+}
+
+.vt-command-suggestions header small {
+  font-size: 10px;
+}
+
+.vt-command-suggestions > button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.vt-command-suggestions > button:hover,
+.vt-command-suggestions > button.active {
+  border-color: color-mix(in srgb, var(--accent, #3569d4) 42%, var(--border, #d5dbe5));
+  background: color-mix(in srgb, var(--accent, #3569d4) 10%, var(--panel, #fff));
+}
+
+.vt-command-suggestions > button.active {
+  box-shadow: inset 3px 0 0 var(--accent, #3569d4);
+}
+
+.vt-command-suggestions > button > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.vt-command-suggestions strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text, #1d2430);
+  font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.vt-command-suggestions small {
+  color: var(--muted, #697386);
+  font-size: 11px;
+}
+
+.vt-formula-preview {
+  min-width: 0;
+  min-height: 30px;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text, #1d2430);
+  font-size: 17px;
+}
+
+.vt-formula-toolbar {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border, #d5dbe5);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-subtle, #eef1f5) 64%, var(--panel, #fff));
+}
+
+.vt-formula-toolbar-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.vt-formula-toolbar-tabs button {
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #697386);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.vt-formula-toolbar-tabs button:hover,
+.vt-formula-toolbar-tabs button.active {
+  border-color: color-mix(in srgb, var(--accent, #3569d4) 36%, var(--border, #d5dbe5));
+  background: color-mix(in srgb, var(--accent, #3569d4) 11%, transparent);
+  color: var(--accent, #3569d4);
+}
+
+.vt-formula-command-grid {
+  max-height: 206px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+  overflow: auto;
+  padding: 1px;
+}
+
+.vt-formula-command-grid > button {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-rows: minmax(34px, 1fr) auto;
+  place-items: center;
+  gap: 3px;
+  padding: 6px 5px;
+  border: 1px solid var(--border, #d5dbe5);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  color: inherit;
+}
+
+.vt-formula-command-grid > button:hover,
+.vt-formula-command-grid > button:focus-visible {
+  border-color: var(--accent, #3569d4);
+  background: color-mix(in srgb, var(--accent, #3569d4) 8%, var(--panel, #fff));
+  outline: none;
+}
+
+.vt-formula-command-grid > button > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted, #697386);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.vt-matrix-builder {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--border, #d5dbe5);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  font-size: 11px;
+}
+
+.vt-matrix-builder strong {
+  margin-right: auto;
+}
+
+.vt-matrix-builder label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vt-matrix-builder select,
+.vt-matrix-builder button {
+  height: 28px;
+  border: 1px solid var(--border, #d5dbe5);
+  border-radius: 6px;
+  background: var(--panel, #fff);
+  color: inherit;
+  font-size: 11px;
+}
+
+.vt-matrix-builder button {
+  padding: 0 9px;
+  border-color: var(--accent, #3569d4);
+  color: var(--accent, #3569d4);
+}
+
+@media (max-width: 720px) {
+  .vt-visualtex-math-field {
+    min-height: 70px;
+    font-size: 25px;
+  }
+
+  .vt-formula-command-grid {
+    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  }
+
+  .vt-matrix-builder {
+    flex-wrap: wrap;
+  }
+}
