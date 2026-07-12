@@ -121,6 +121,7 @@ function App() {
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
@@ -645,13 +646,20 @@ function App() {
   }, []);
 
   const runUpdateCheck = useCallback(async (manual = true) => {
-    if (manual) setUpdateOpen(true);
+    if (manual) {
+      setAutomaticUpdatePrompt(false);
+      setUpdateResult(null);
+      setUpdateOpen(true);
+    }
     setUpdateChecking(true);
     setUpdateError("");
     try {
       const result = await checkForUpdates();
       setUpdateResult(result);
-      if (manual || result.updateAvailable) setUpdateOpen(true);
+      if (manual || result.updateAvailable) {
+        setAutomaticUpdatePrompt(!manual && result.updateAvailable);
+        setUpdateOpen(true);
+      }
     } catch (error) {
       if (manual) {
         setUpdateError(
@@ -662,6 +670,8 @@ function App() {
               : "无法连接更新服务器",
         );
         setUpdateOpen(true);
+      } else {
+        automaticUpdateCheckRef.current = false;
       }
     } finally {
       setUpdateChecking(false);
@@ -676,9 +686,26 @@ function App() {
     ) {
       return;
     }
-    automaticUpdateCheckRef.current = true;
-    const timer = window.setTimeout(() => void runUpdateCheck(false), 1200);
-    return () => window.clearTimeout(timer);
+
+    let timer = 0;
+    const runWhenOnline = () => {
+      if (
+        automaticUpdateCheckRef.current ||
+        !useEditorStore.getState().checkUpdatesOnStartup
+      ) {
+        return;
+      }
+      automaticUpdateCheckRef.current = true;
+      timer = window.setTimeout(() => void runUpdateCheck(false), 1200);
+    };
+
+    window.addEventListener("online", runWhenOnline);
+    if (navigator.onLine) runWhenOnline();
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", runWhenOnline);
+    };
   }, [checkUpdatesOnStartup, onboardingOpen, runUpdateCheck]);
 
   useEffect(() => {
@@ -1043,34 +1070,14 @@ function App() {
                           type="button"
                           role="menuitemradio"
                           aria-checked={selected}
+                          aria-label={`${isEn ? format.titleEn : format.titleZh}: ${format.hint}`}
                           data-format={format.id}
                           className={selected ? "is-selected" : ""}
                           key={format.id}
                           onClick={() => handleCodeFormatChange(format.id)}
                         >
                           <span className="code-format-item-copy">
-                            <span className="code-format-item-title">
-                              <strong>
-                                {isEn ? format.titleEn : format.titleZh}
-                              </strong>
-                              {format.numbered !== undefined && (
-                                <em>
-                                  {format.numbered
-                                    ? isEn
-                                      ? "numbered"
-                                      : "编号"
-                                    : isEn
-                                      ? "no number"
-                                      : "无编号"}
-                                </em>
-                              )}
-                            </span>
                             <small className="code-format-hint">{format.hint}</small>
-                            <small className="code-format-description">
-                              {isEn
-                                ? format.descriptionEn
-                                : format.descriptionZh}
-                            </small>
                           </span>
                           <span className="code-format-check" aria-hidden="true">
                             {selected && <Check size={14} />}
@@ -1362,6 +1369,7 @@ function App() {
         error={updateError}
         result={updateResult}
         checkOnStartup={checkUpdatesOnStartup}
+        automaticPrompt={automaticUpdatePrompt}
         onCheckOnStartupChange={setCheckUpdatesOnStartup}
         onRetry={() => void runUpdateCheck(true)}
         onOpenRelease={() => {

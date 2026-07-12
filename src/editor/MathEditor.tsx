@@ -142,6 +142,7 @@ const tallFormulaPattern =
   /\\(?:d?frac|tfrac|sqrt|sum|prod|int|iint|iiint|oint|oiint|oiiint|lim|begin|overset|underset|overline|underline)\b|[_^]/;
 const bareStructuredOperatorPattern =
   /^\\(?:int|iint|iiint|oint|oiint|oiiint|sum|prod|lim|bigcup|bigcap)\s*$/;
+const scriptContainerPattern = /^[_^]\{[\s\S]*\}$/;
 
 function findTrailingCommandRange(
   field: MathfieldElement,
@@ -430,7 +431,15 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onCommitPending();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing || composing) return;
+      // `composing` can remain true after MathLive commits a command without a
+      // matching compositionend event. A new non-composing key proves that the
+      // IME transaction has ended, so release the stale local guard as well.
+      if (event.isComposing) return;
+      if (composing) {
+        composing = false;
+        compositionStartRef.current = null;
+        lastSnapshotRef.current = captureFieldSnapshot(field);
+      }
       propsRef.current.onKeyDown(propsRef.current.index, event, field);
     };
     const handlePaste = (event: ClipboardEvent) => {
@@ -1080,11 +1089,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 direction: "forward",
               };
             }
+            const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
             return field.insert(insertionTemplate, {
               mode: "math",
               format: "latex",
               insertionMode: "replaceSelection",
-              selectionMode: "placeholder",
+              selectionMode: hasPlaceholder ? "placeholder" : "after",
               focus: true,
               scrollIntoView: false,
             });
@@ -1236,9 +1246,33 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      const liveMatch = field.value.match(trailingCommand);
+      const insertsChineseIdeographicComma =
+        event.code === "Backslash" &&
+        event.key === "、" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+      if (insertsChineseIdeographicComma) {
+        // macOS 中文输入法会在这个物理键上先触发 Backslash keydown，
+        // 随后再通过输入法事务提交“、”。这里只阻止 MathLive 根据
+        // 物理键位额外插入反斜杠，顿号本身交给后续 composition/input。
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      const normalizedFieldValue = normalizeChineseLatex(field.value);
+      const suppressedSuggestion = suppressedSuggestionRef.current;
+      const suppressesCurrentTrailingCommand =
+        suppressedSuggestion?.lineId === lineId &&
+        suppressedSuggestion.value.trim() === normalizedFieldValue.trim();
+      const liveMatch = suppressesCurrentTrailingCommand
+        ? null
+        : field.value.match(trailingCommand);
       const liveQuery = liveMatch ? "\\" + liveMatch[1] : "";
-      const candidateQuery = liveQuery || query;
+      const candidateQuery = suppressesCurrentTrailingCommand
+        ? ""
+        : liveQuery || query;
       const liveSuggestions = candidateQuery
         ? searchCommands(
             candidateQuery,
@@ -1301,7 +1335,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         document
           .getElementById("mathlive-suggestion-popover")
           ?.classList.contains("is-visible") ?? false;
-      if (!liveSuggestions.length && nativeRecommendationVisible) {
+      if (
+        !suppressesCurrentTrailingCommand &&
+        !liveSuggestions.length &&
+        nativeRecommendationVisible
+      ) {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
           event.stopPropagation();
@@ -1370,9 +1408,23 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const command =
           event.key === "Backspace" ? "deleteBackward" : "deleteForward";
 
+        const trailingStructuredLatex =
+          event.key === "Backspace"
+            ? field.getElementInfo(beforePosition)?.latex?.trim() ?? ""
+            : "";
         suppressedHistoryLineIdRef.current = lineId;
         try {
           field.executeCommand(command);
+          if (
+            event.key === "Backspace" &&
+            field.value === before.latex &&
+            scriptContainerPattern.test(trailingStructuredLatex)
+          ) {
+            // MathLive first moves into a terminal super/subscript container
+            // without deleting anything. Complete the same Backspace action by
+            // deleting its final atom so the editor cannot become stuck there.
+            field.executeCommand("deleteBackward");
+          }
         } finally {
           suppressedHistoryLineIdRef.current = null;
         }
@@ -1406,6 +1458,60 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           source: "keyboard",
         });
         return;
+      }
+
+      if (
+        (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey
+      ) {
+        const direction = event.key === "ArrowUp" ? -1 : 1;
+        const targetIndex = index + direction;
+        const targetLine = linesRef.current[targetIndex];
+        if (targetLine) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          historyManager.commitPendingTransaction();
+          queryRef.current = "";
+          setQuery("");
+
+          const targetField = fieldRefs.current.get(targetLine.id);
+          const targetPosition = Math.max(
+            0,
+            Math.min(
+              field.position,
+              targetField?.lastOffset ?? targetLine.latex.length,
+            ),
+          );
+          const targetSelection: MathSelectionSnapshot = {
+            ranges: [[targetPosition, targetPosition]],
+            direction: "none",
+          };
+          setActiveLine(targetLine.id);
+          if (targetField?.isConnected) {
+            const applyTargetFocus = () => {
+              setActiveLine(targetLine.id);
+              targetField.focus();
+              targetField.shadowRoot
+                ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+                ?.focus({ preventScroll: true });
+              targetField.selection = targetSelection;
+              targetField.position = targetPosition;
+            };
+            applyTargetFocus();
+            window.requestAnimationFrame(applyTargetFocus);
+            window.setTimeout(applyTargetFocus, 0);
+            window.setTimeout(applyTargetFocus, 80);
+          } else {
+            focusLine(targetLine.id, {
+              latex: targetLine.latex,
+              selection: targetSelection,
+            });
+          }
+          return;
+        }
       }
 
       if (
@@ -1704,11 +1810,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 onCommitPending={() => historyManager.commitPendingTransaction()}
                 onFocus={(_lineIndex, field) => {
                   setActiveLine(lineId);
-                  refreshSuggestionQuery(
+                  const normalizedValue = normalizeChineseLatex(field.value);
+                  suppressedSuggestionRef.current = {
                     lineId,
-                    field,
-                    normalizeChineseLatex(field.value),
-                  );
+                    value: normalizedValue,
+                  };
+                  queryRef.current = "";
+                  setQuery("");
                 }}
                 onKeyDown={(lineIndex, event, field) =>
                   handleKeyDown(lineIndex, lineId, event, field)

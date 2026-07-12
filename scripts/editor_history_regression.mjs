@@ -580,6 +580,10 @@ async function main() {
     await resetDocument({ lines: [{ id: "candidate-line", latex: "" }] });
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
+      field.focus();
+      field.shadowRoot
+        ?.querySelector('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
       field.setValue("\\\\the", {
         mode: "math",
         format: "latex",
@@ -588,7 +592,6 @@ async function main() {
         silenceNotifications: true,
       });
       field.position = field.lastOffset;
-      field.focus();
       field.dispatchEvent(new InputEvent("input", {
         bubbles: true,
         composed: true,

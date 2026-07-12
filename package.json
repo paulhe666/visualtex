@@ -1,7 +1,8 @@
 {
   "name": "visualtex",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +17,7 @@
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:history": "node scripts/history_manager_smoke.mjs",
     "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
+    "test:update-notes": "node --experimental-strip-types scripts/update_notes_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {

@@ -240,18 +240,18 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
                 <h3>{isEn ? "Application updates" : "应用更新"}</h3>
                 <p>
                   {isEn
-                    ? "Check GitHub Releases for a newer stable version."
-                    : "通过 GitHub Releases 检查新的稳定版本。"}
+                    ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
+                    : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
                 </p>
               </div>
             </div>
             <label className="switch-row">
               <span>
-                <strong>{isEn ? "Check on startup" : "启动时检查更新"}</strong>
+                <strong>{isEn ? "Automatic update notifications" : "自动更新提醒"}</strong>
                 <small>
                   {isEn
-                    ? "Disable to prevent automatic network requests and dialogs."
-                    : "关闭后不会自动联网检查，也不会显示更新弹窗。"}
+                    ? "When disabled, VisualTeX will never check or notify automatically. Manual checks remain available."
+                    : "关闭后将永久停止自动检查和主动弹窗，但仍可手动检查。"}
                 </small>
               </span>
               <input

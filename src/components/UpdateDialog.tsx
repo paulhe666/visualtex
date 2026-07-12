@@ -1,13 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   Download,
   LoaderCircle,
   RefreshCw,
+  Sparkles,
   WifiOff,
+  Wrench,
   X,
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
+import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
 
 interface Props {
@@ -17,6 +20,7 @@ interface Props {
   error: string;
   result: UpdateCheckResult | null;
   checkOnStartup: boolean;
+  automaticPrompt: boolean;
   onCheckOnStartupChange: (enabled: boolean) => void;
   onRetry: () => void;
   onOpenRelease: () => void;
@@ -30,6 +34,7 @@ export function UpdateDialog({
   error,
   result,
   checkOnStartup,
+  automaticPrompt,
   onCheckOnStartupChange,
   onRetry,
   onOpenRelease,
@@ -38,6 +43,10 @@ export function UpdateDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const isEn = language === "en";
+  const releaseNotes = useMemo(
+    () => localizeReleaseNotes(result?.releaseNotes ?? "", language),
+    [language, result?.releaseNotes],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -79,13 +88,32 @@ export function UpdateDialog({
   if (!open) return null;
 
   const updateAvailable = Boolean(result?.updateAvailable);
+  const hasReleaseNotes =
+    releaseNotes.features.length > 0 ||
+    releaseNotes.fixes.length > 0 ||
+    releaseNotes.other.length > 0;
+  const publishedDate = result?.publishedAt
+    ? new Intl.DateTimeFormat(isEn ? "en-US" : "zh-CN", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }).format(new Date(result.publishedAt))
+    : "";
   const title = checking
-    ? isEn ? "Checking for updates" : "正在检查更新"
+    ? isEn
+      ? "Checking for updates"
+      : "正在检查更新"
     : error
-      ? isEn ? "Unable to check" : "暂时无法检查更新"
+      ? isEn
+        ? "Unable to check"
+        : "暂时无法检查更新"
       : updateAvailable
-        ? isEn ? "A new version is available" : "发现新版本"
-        : isEn ? "VisualTeX is up to date" : "VisualTeX 已是最新版本";
+        ? isEn
+          ? "A new version is available"
+          : "发现新版本"
+        : isEn
+          ? "VisualTeX is up to date"
+          : "VisualTeX 已是最新版本";
 
   return (
     <div className="modal-backdrop update-backdrop" role="presentation">
@@ -98,7 +126,12 @@ export function UpdateDialog({
       >
         <header className="dialog-header update-dialog-header">
           <div className="update-title-group">
-            <span className={"update-dialog-icon " + (error ? "is-error" : updateAvailable ? "is-available" : "")}>
+            <span
+              className={
+                "update-dialog-icon " +
+                (error ? "is-error" : updateAvailable ? "is-available" : "")
+              }
+            >
               {checking ? (
                 <LoaderCircle size={19} className="is-spinning" />
               ) : error ? (
@@ -126,10 +159,18 @@ export function UpdateDialog({
 
         <div className="update-dialog-content">
           {checking ? (
-            <p>{isEn ? "Connecting to the VisualTeX release server…" : "正在连接 VisualTeX 发布服务器…"}</p>
+            <p>
+              {isEn
+                ? "Connecting to the VisualTeX release server…"
+                : "正在连接 VisualTeX 发布服务器…"}
+            </p>
           ) : error ? (
             <>
-              <p>{isEn ? "Check your network connection and try again." : "请检查网络连接后重试。"}</p>
+              <p>
+                {isEn
+                  ? "Check your network connection and try again."
+                  : "请检查网络连接后重试。"}
+              </p>
               <code>{error}</code>
             </>
           ) : result ? (
@@ -145,27 +186,104 @@ export function UpdateDialog({
                   <strong>v{result.latestVersion}</strong>
                 </span>
               </div>
-              <p>
-                {updateAvailable
-                  ? isEn
-                    ? "Download the installer for your platform from GitHub Releases."
-                    : "前往 GitHub Releases 下载适合当前平台的安装包。"
-                  : isEn
+
+              {updateAvailable ? (
+                <>
+                  <div className="update-release-heading">
+                    <strong>{result.releaseName}</strong>
+                    {publishedDate && (
+                      <small>
+                        {isEn ? `Published ${publishedDate}` : `发布于 ${publishedDate}`}
+                      </small>
+                    )}
+                  </div>
+
+                  {hasReleaseNotes ? (
+                    <div className="update-release-notes">
+                      {releaseNotes.features.length > 0 && (
+                        <section>
+                          <h3>
+                            <Sparkles size={15} />
+                            {isEn ? "New features" : "新增功能"}
+                          </h3>
+                          <ul>
+                            {releaseNotes.features.map((item, index) => (
+                              <li key={`feature-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                      {releaseNotes.fixes.length > 0 && (
+                        <section>
+                          <h3>
+                            <Wrench size={15} />
+                            {isEn ? "Bug fixes" : "问题修复"}
+                          </h3>
+                          <ul>
+                            {releaseNotes.fixes.map((item, index) => (
+                              <li key={`fix-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                      {releaseNotes.other.length > 0 && (
+                        <section>
+                          <h3>{isEn ? "Other changes" : "其他更新"}</h3>
+                          <ul>
+                            {releaseNotes.other.map((item, index) => (
+                              <li key={`other-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                    </div>
+                  ) : (
+                    <p>
+                      {isEn
+                        ? "Open GitHub Releases to view the complete update details and download the installer for your platform."
+                        : "前往 GitHub Releases 查看完整更新说明，并下载适合当前平台的安装包。"}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p>
+                  {isEn
                     ? "You are using the latest stable version."
                     : "你正在使用最新的稳定版本。"}
-              </p>
+                </p>
+              )}
             </>
           ) : null}
 
           <label className="update-preference-row">
             <input
               type="checkbox"
-              checked={checkOnStartup}
-              onChange={(event) => onCheckOnStartupChange(event.target.checked)}
+              checked={automaticPrompt ? !checkOnStartup : checkOnStartup}
+              onChange={(event) =>
+                onCheckOnStartupChange(
+                  automaticPrompt ? !event.target.checked : event.target.checked,
+                )
+              }
             />
             <span>
-              <strong>{isEn ? "Check automatically on startup" : "启动时自动检查更新"}</strong>
-              <small>{isEn ? "No dialog appears when this is disabled." : "关闭后启动应用时不会进行检查或弹窗。"}</small>
+              <strong>
+                {automaticPrompt
+                  ? isEn
+                    ? "Do not remind me again"
+                    : "以后不再提醒"
+                  : isEn
+                    ? "Check automatically on startup"
+                    : "启动时自动检查更新"}
+              </strong>
+              <small>
+                {automaticPrompt
+                  ? isEn
+                    ? "Automatic update notifications will stay off. You can turn them back on in Settings."
+                    : "以后不会再主动弹出更新提示，可在设置中重新开启。"
+                  : isEn
+                    ? "When disabled, VisualTeX will not make automatic update requests or show update notifications."
+                    : "关闭后不会自动联网检查，也不会主动显示更新弹窗。"}
+              </small>
             </span>
           </label>
         </div>
