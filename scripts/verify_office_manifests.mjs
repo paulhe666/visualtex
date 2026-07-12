@@ -61,10 +61,25 @@ function validateManifest(xml, { id, baseHost, overrideHost, apiSet }) {
   }
   assert.ok(!xml.includes("{{"));
   assert.ok(!xml.includes("localhost"));
-  assert.ok(!xml.includes("http://"));
-  const urls = [...xml.matchAll(/https:\/\/[^"<]+/g)].map((match) => match[0]);
-  assert.ok(urls.length > 0);
-  assert.ok(urls.every((url) => url.startsWith(`${expected.origin}/`)));
+  const httpsUrls = [...xml.matchAll(/https:\/\/[^"<\s]+/g)].map(
+    (match) => match[0],
+  );
+  assert.ok(httpsUrls.length > 0);
+  assert.ok(
+    httpsUrls.every(
+      (url) => url === expected.origin || url.startsWith(`${expected.origin}/`),
+    ),
+  );
+  const httpUrls = [...xml.matchAll(/http:\/\/[^"<\s]+/g)].map(
+    (match) => match[0],
+  );
+  assert.ok(
+    httpUrls.every(
+      (url) =>
+        url.startsWith("http://schemas.microsoft.com/") ||
+        url.startsWith("http://www.w3.org/"),
+    ),
+  );
 }
 
 validateManifest(word, {

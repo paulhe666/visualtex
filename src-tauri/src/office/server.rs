@@ -2,14 +2,15 @@ use crate::office::sessions::{CreateOfficeSessionInput, SessionError, VisualTeXF
 use crate::office::state::{
     OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
-use axum::extract::{Path as AxumPath, Request, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::body::Bytes;
+use axum::extract::{Path as AxumPath, Query, Request, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::net::TcpListener;
 use std::path::Path;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -112,6 +113,200 @@ async fn api_status(
     State(context): State<ServerContext>,
 ) -> Json<crate::office::state::OfficeCompanionStatus> {
     Json(context.companion.snapshot())
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrStatusQuery {
+    force_refresh: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OcrEventsQuery {
+    cursor: Option<u64>,
+    event: Option<String>,
+}
+
+fn ocr_error_response(error: String) -> Response {
+    let status = if error.contains("OCR_CANCELLED") {
+        StatusCode::CONFLICT
+    } else if error.contains("not installed") || error.contains("Python executable is missing") {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+    (status, Json(serde_json::json!({ "error": error }))).into_response()
+}
+
+fn ocr_app(context: &ServerContext) -> Result<tauri::AppHandle, Box<Response>> {
+    context.companion.app.clone().ok_or_else(|| {
+        Box::new(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "The VisualTeX OCR service is unavailable in this runtime"
+                })),
+            )
+                .into_response(),
+        )
+    })
+}
+
+async fn get_ocr_status(
+    State(context): State<ServerContext>,
+    Query(query): Query<OcrStatusQuery>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context
+        .companion
+        .ocr
+        .runtime_status(app, query.force_refresh.unwrap_or(false))
+        .await
+    {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn install_ocr(State(context): State<ServerContext>) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.install_runtime(app).await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+fn ocr_header(headers: &HeaderMap, name: &'static str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+async fn recognize_ocr(
+    State(context): State<ServerContext>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if !content_type
+        .to_ascii_lowercase()
+        .starts_with("application/octet-stream")
+    {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(serde_json::json!({
+                "error": "OCR recognition requires application/octet-stream"
+            })),
+        )
+            .into_response();
+    }
+    if body.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "The OCR image is empty" })),
+        )
+            .into_response();
+    }
+    if body.len() > crate::MAX_IMAGE_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(serde_json::json!({
+                "error": "The OCR image is larger than the 20 MB limit"
+            })),
+        )
+            .into_response();
+    }
+
+    let model = ocr_header(&headers, "x-visualtex-ocr-model")
+        .unwrap_or_else(|| "PP-FormulaNet_plus-M".to_string());
+    let extension =
+        ocr_header(&headers, "x-visualtex-ocr-extension").unwrap_or_else(|| "png".to_string());
+    if model.len() > 80 || extension.len() > 12 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid OCR request headers" })),
+        )
+            .into_response();
+    }
+
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    let request = crate::OcrImageRequest {
+        bytes: body.to_vec(),
+        extension,
+        model,
+    };
+    match context.companion.ocr.recognize(app, request).await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn cancel_ocr(State(context): State<ServerContext>) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.cancel(&app) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn restart_ocr(State(context): State<ServerContext>) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.restart(app).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn reset_ocr(State(context): State<ServerContext>) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.reset_runtime(app).await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn get_ocr_events(
+    State(context): State<ServerContext>,
+    Query(query): Query<OcrEventsQuery>,
+) -> Response {
+    if query.event.as_ref().is_some_and(|event| event.len() > 64) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid OCR event filter" })),
+        )
+            .into_response();
+    }
+    Json(
+        context
+            .companion
+            .ocr
+            .poll_events(query.cursor.unwrap_or(u64::MAX), query.event.as_deref()),
+    )
+    .into_response()
 }
 
 async fn run_session_operation<T>(
@@ -296,6 +491,13 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             "/formulas/{formula_id}/metadata",
             get(get_formula_metadata).put(put_formula_metadata),
         )
+        .route("/ocr/status", get(get_ocr_status))
+        .route("/ocr/install", post(install_ocr))
+        .route("/ocr/recognize", post(recognize_ocr))
+        .route("/ocr/cancel", post(cancel_ocr))
+        .route("/ocr/restart", post(restart_ocr))
+        .route("/ocr/reset", post(reset_ocr))
+        .route("/ocr/events", get(get_ocr_events))
         .fallback(api_not_found);
 
     Router::new()
@@ -425,7 +627,15 @@ mod tests {
         let session_store = SessionStore::new(&paths).expect("session store");
         let formula_cache = crate::office::formula_cache::FormulaMetadataCache::new(&paths)
             .expect("formula metadata cache");
-        OfficeCompanionState::new(paths, "a".repeat(64), session_store, formula_cache, true)
+        OfficeCompanionState::new(
+            None,
+            crate::OcrState::default(),
+            paths,
+            "a".repeat(64),
+            session_store,
+            formula_cache,
+            true,
+        )
     }
 
     #[test]
@@ -840,5 +1050,112 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(missing_dialog.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ocr_api_requires_token_and_validates_image_requests() {
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        let token = state.install_token.to_string();
+        let router = build_router(state);
+
+        let unauthorized = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/v1/ocr/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let unavailable = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/v1/ocr/status?forceRefresh=true")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let events = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/v1/ocr/events?event=ocr-recognition-progress")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(events.status(), StatusCode::OK);
+        let events_body = events.into_body().collect().await.unwrap().to_bytes();
+        let events_json: serde_json::Value = serde_json::from_slice(&events_body).unwrap();
+        assert_eq!(events_json["cursor"], 0);
+        assert_eq!(events_json["events"], serde_json::json!([]));
+
+        let wrong_media = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/api/v1/ocr/recognize")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong_media.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+        let empty = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/api/v1/ocr/recognize")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/octet-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+
+        let oversized = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/api/v1/ocr/recognize")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/octet-stream")
+                    .body(Body::from(vec![0_u8; crate::MAX_IMAGE_BYTES + 1]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let invalid_filter = router
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/api/v1/ocr/events?event={}", "x".repeat(65)))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid_filter.status(), StatusCode::BAD_REQUEST);
     }
 }

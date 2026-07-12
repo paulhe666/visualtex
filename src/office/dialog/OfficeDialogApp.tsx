@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, LoaderCircle, X } from "lucide-react";
+import { AlertCircle, Check, LoaderCircle, ScanLine, X } from "lucide-react";
+import { OcrDialog } from "../../components/OcrDialog";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import {
   historyManager,
@@ -23,10 +24,40 @@ import {
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../types/formula";
-import type { MathEditorHandle } from "../../editor/MathEditor";
+import type {
+  MathEditorHandle,
+  MathEditorInsertionTarget,
+} from "../../editor/MathEditor";
 import type { OfficeExportResult } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
+import {
+  OCR_MODELS,
+  cancelOcrRecognition,
+  fileToOcrRequest,
+  getOcrRuntimeStatus,
+  listenOcrRecognitionProgress,
+  recognizeFormulaImage,
+  restartOcrWorker,
+  type OcrModelName,
+} from "../../ocr/ocrService";
+
+type InlineOcrStatus =
+  | "running"
+  | "cancelling"
+  | "success"
+  | "error"
+  | "cancelled";
+
+interface InlineOcrState {
+  status: InlineOcrStatus;
+  message: string;
+  seconds: number;
+  model: OcrModelName;
+}
+
+const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
+const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 
 function documentFingerprint(
   title: string,
@@ -50,6 +81,18 @@ export function OfficeDialogApp() {
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [toast, setToast] = useState("");
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
+    const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
+    return OCR_MODELS.some((item) => item.id === stored)
+      ? (stored as OcrModelName)
+      : DEFAULT_OCR_MODEL;
+  });
+  const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+  const inlineOcrBusyRef = useRef(false);
+  const inlineOcrCancelRequestedRef = useRef(false);
+  const inlineOcrRunIdRef = useRef(0);
+  const inlineOcrClearTimerRef = useRef<number | null>(null);
   const { sessionId, session, loading, error, save } = useOfficeSession();
 
   const title = useEditorStore((state) => state.title);
@@ -61,6 +104,12 @@ export function OfficeDialogApp() {
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
+  const selectedOcrModel =
+    OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
+  const inlineOcrModel =
+    OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
+  const inlineOcrIsBusy =
+    inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
 
   const originalFingerprint = useMemo(() => {
     if (!session) return "";
@@ -281,6 +330,206 @@ export function OfficeDialogApp() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    if (!inlineOcrIsBusy) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setInlineOcr((current) =>
+        current
+          ? {
+              ...current,
+              seconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+            }
+          : current,
+      );
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [inlineOcrIsBusy]);
+
+  useEffect(
+    () => () => {
+      if (inlineOcrClearTimerRef.current !== null) {
+        window.clearTimeout(inlineOcrClearTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleInlineOcrClear = (delay: number) => {
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+    }
+    inlineOcrClearTimerRef.current = window.setTimeout(() => {
+      setInlineOcr(null);
+      inlineOcrClearTimerRef.current = null;
+    }, delay);
+  };
+
+  const handleOcrModelChange = (nextModel: OcrModelName) => {
+    if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+    setOcrModel(nextModel);
+    window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
+    void restartOcrWorker().catch(() => undefined);
+  };
+
+  const cancelInlineOcr = async () => {
+    if (!inlineOcrBusyRef.current) return;
+    inlineOcrCancelRequestedRef.current = true;
+    setInlineOcr((current) =>
+      current
+        ? {
+            ...current,
+            status: "cancelling",
+            message: isEn ? "Cancelling OCR…" : "正在取消 OCR…",
+          }
+        : current,
+    );
+    try {
+      await cancelOcrRecognition();
+    } catch {
+      // A worker that already exited is equivalent to successful cancellation.
+    }
+  };
+
+  const handleEditorImagePaste = async (
+    file: File,
+    target: MathEditorInsertionTarget,
+  ) => {
+    if (inlineOcrBusyRef.current) {
+      setToast(
+        isEn
+          ? "Another pasted image is being recognized"
+          : "已有一张粘贴图片正在识别",
+      );
+      return;
+    }
+
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+      inlineOcrClearTimerRef.current = null;
+    }
+
+    const runId = ++inlineOcrRunIdRef.current;
+    inlineOcrBusyRef.current = true;
+    inlineOcrCancelRequestedRef.current = false;
+    setInlineOcr({
+      status: "running",
+      message: isEn
+        ? "Checking the local OCR runtime…"
+        : "正在检查本地 OCR 环境…",
+      seconds: 0,
+      model: ocrModel,
+    });
+
+    let unlisten: (() => void) | undefined;
+    try {
+      const runtime = await getOcrRuntimeStatus();
+      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+      if (!runtime.installed) {
+        setOcrOpen(true);
+        throw new Error(
+          isEn
+            ? "Install the OCR runtime before pasting an image"
+            : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
+        );
+      }
+
+      unlisten = await listenOcrRecognitionProgress((progress) => {
+        if (
+          inlineOcrRunIdRef.current !== runId ||
+          progress.model !== ocrModel
+        ) {
+          return;
+        }
+        setInlineOcr((current) =>
+          current ? { ...current, message: progress.message } : current,
+        );
+      });
+
+      const request = await fileToOcrRequest(file, ocrModel);
+      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+      const result = await recognizeFormulaImage(request);
+      if (
+        inlineOcrCancelRequestedRef.current ||
+        inlineOcrRunIdRef.current !== runId
+      ) {
+        throw new Error("OCR_CANCELLED");
+      }
+
+      const recognizedLatex = result.formulas
+        .map((formula) => formula.latex.trim())
+        .filter(Boolean)
+        .join("\n");
+      if (!recognizedLatex) {
+        throw new Error(
+          isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式",
+        );
+      }
+
+      const inserted =
+        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
+      if (!inserted) {
+        throw new Error(
+          isEn
+            ? "The original formula line no longer exists; the OCR result was not inserted"
+            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+        );
+      }
+
+      setInlineOcr((current) => ({
+        status: "success",
+        message: result.backgroundInverted
+          ? isEn
+            ? "Recognized and inserted · dark background inverted"
+            : "识别完成并已插入 · 已自动反色"
+          : isEn
+            ? "Recognized and inserted at the saved cursor"
+            : "识别完成，已插入原光标位置",
+        seconds: current?.seconds ?? 0,
+        model: ocrModel,
+      }));
+      setToast(
+        isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX",
+      );
+      scheduleInlineOcrClear(1800);
+    } catch (reason) {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === "string"
+            ? reason
+            : "";
+      const cancelled =
+        inlineOcrCancelRequestedRef.current || message.includes("OCR_CANCELLED");
+      if (cancelled) {
+        setInlineOcr((current) => ({
+          status: "cancelled",
+          message: isEn ? "OCR cancelled" : "OCR 已取消",
+          seconds: current?.seconds ?? 0,
+          model: ocrModel,
+        }));
+        scheduleInlineOcrClear(1200);
+      } else {
+        const visibleMessage =
+          message || (isEn ? "Image OCR failed" : "图片 OCR 失败");
+        setInlineOcr((current) => ({
+          status: "error",
+          message: visibleMessage,
+          seconds: current?.seconds ?? 0,
+          model: ocrModel,
+        }));
+        setToast(visibleMessage);
+        scheduleInlineOcrClear(4500);
+      }
+    } finally {
+      unlisten?.();
+      if (inlineOcrRunIdRef.current === runId) {
+        inlineOcrBusyRef.current = false;
+        inlineOcrCancelRequestedRef.current = false;
+      }
+    }
+  };
+
   const saveCurrentSession = useCallback(
     async (status: "editing" | "committing" | "cancelled") => {
       if (!session) throw new Error("Office Session 尚未加载。");
@@ -383,6 +632,15 @@ export function OfficeDialogApp() {
           <button
             type="button"
             className="secondary-button"
+            onClick={() => setOcrOpen(true)}
+            disabled={inlineOcrIsBusy}
+          >
+            <ScanLine size={15} />
+            {isEn ? "Image OCR" : "图片 OCR"}
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
             onClick={() => void historyManager.undo()}
             disabled={historyBusy || !historyState.canUndo || historyState.isReplaying}
           >
@@ -404,7 +662,7 @@ export function OfficeDialogApp() {
         showFileActions={false}
         showUpdateActions={false}
         showOfficeActions
-        showOcrActions={false}
+        showOcrActions={true}
         primaryActionLabel={
           session.mode === "edit"
             ? isEn
@@ -420,8 +678,77 @@ export function OfficeDialogApp() {
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onHistoryBusyChange={setHistoryBusy}
+        onPasteImage={handleEditorImagePaste}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
+        ocrModel={ocrModel}
+        ocrModels={OCR_MODELS}
+        ocrBusy={inlineOcrIsBusy}
+        onOcrModelChange={(model) =>
+          handleOcrModelChange(model as OcrModelName)
+        }
+        ocrOverlay={
+          inlineOcr ? (
+            <div
+              className={`inline-ocr-progress is-${inlineOcr.status}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="inline-ocr-progress-icon">
+                {inlineOcr.status === "running" ||
+                inlineOcr.status === "cancelling" ? (
+                  <LoaderCircle size={17} className="is-spinning" />
+                ) : inlineOcr.status === "success" ? (
+                  <Check size={17} />
+                ) : inlineOcr.status === "error" ? (
+                  <AlertCircle size={17} />
+                ) : (
+                  <X size={17} />
+                )}
+              </span>
+              <div>
+                <strong>{inlineOcr.message}</strong>
+                <span>
+                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {" · "}
+                  {inlineOcr.seconds}
+                  {isEn ? "s" : " 秒"}
+                </span>
+              </div>
+              {inlineOcrIsBusy ? (
+                <button
+                  type="button"
+                  className="inline-ocr-cancel"
+                  onClick={() => void cancelInlineOcr()}
+                  disabled={inlineOcr.status === "cancelling"}
+                >
+                  <X size={13} />
+                  {isEn ? "Cancel" : "取消"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-ocr-dismiss"
+                  onClick={() => setInlineOcr(null)}
+                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          ) : null
+        }
+      />
+
+      <OcrDialog
+        open={ocrOpen}
+        language={language}
+        model={ocrModel}
+        onModelChange={handleOcrModelChange}
+        onClose={() => setOcrOpen(false)}
+        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
+        onNotify={setToast}
       />
 
       {toast && (

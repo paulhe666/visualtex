@@ -36,6 +36,7 @@ import {
   fileToOcrRequest,
   getOcrRuntimeStatus,
   installOcrRuntime,
+  isOfficeCompanionEnvironment,
   isTauriEnvironment,
   listenOcrInstallProgress,
   listenOcrRecognitionProgress,
@@ -129,7 +130,7 @@ export function OcrDialog({
   }, []);
 
   const refreshRuntime = useCallback(async (forceRefresh = false) => {
-    if (!isTauriEnvironment()) {
+    if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
       setRuntime({
         installed: false,
         pythonPath: null,
@@ -672,7 +673,11 @@ export function OcrDialog({
                         type="button"
                         className="primary-button"
                         onClick={handleInstall}
-                        disabled={!isTauriEnvironment() || checkingRuntime}
+                        disabled={
+                          (!isTauriEnvironment() &&
+                            !isOfficeCompanionEnvironment()) ||
+                          checkingRuntime
+                        }
                       >
                         <Download size={15} />
                         {isEn ? "Install OCR runtime" : "安装 OCR 运行环境"}

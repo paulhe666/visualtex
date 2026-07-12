@@ -5,6 +5,7 @@ use crate::office::manifest::ManifestHost;
 use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
+use crate::OcrState;
 use std::path::PathBuf;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
@@ -47,7 +48,7 @@ fn ocr_worker_available(app: &AppHandle) -> bool {
             .is_file()
 }
 
-pub fn initialize(app: &AppHandle) -> Result<OfficeCompanionState, String> {
+pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState, String> {
     let app_data = app.path().app_data_dir().map_err(|error| {
         format!("Unable to resolve VisualTeX application data directory: {error}")
     })?;
@@ -67,6 +68,8 @@ pub fn initialize(app: &AppHandle) -> Result<OfficeCompanionState, String> {
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     let formula_cache = FormulaMetadataCache::new(&paths).map_err(|error| error.to_string())?;
     Ok(OfficeCompanionState::new(
+        Some(app.clone()),
+        ocr,
         paths,
         install_token,
         session_store,

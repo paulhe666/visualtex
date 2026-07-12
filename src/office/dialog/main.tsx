@@ -2,7 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "../../styles.css";
+import { configureOcrTransport } from "../../ocr/ocrService";
+import { officeOcrTransport } from "../api/ocrHttpTransport";
 import { OfficeDialogApp } from "./OfficeDialogApp";
+
+configureOcrTransport(officeOcrTransport);
 
 function mount() {
   const root = document.getElementById("root");

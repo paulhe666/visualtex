@@ -1,6 +1,4 @@
-use crate::office::manifest::{
-    render_manifest, ManifestHost, POWERPOINT_MANIFEST_FILE, WORD_MANIFEST_FILE,
-};
+use crate::office::manifest::{render_manifest, ManifestHost};
 use crate::office::state::{OfficeCompanionStatus, OfficePaths, OFFICE_UI_VERSION};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
@@ -358,6 +356,7 @@ pub fn open_office_application(host: ManifestHost) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::office::manifest::{POWERPOINT_MANIFEST_FILE, WORD_MANIFEST_FILE};
     use tempfile::TempDir;
 
     #[test]

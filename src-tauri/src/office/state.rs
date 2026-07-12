@@ -1,10 +1,12 @@
 use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::sessions::SessionStore;
+use crate::OcrState;
 use axum_server::Handle;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
+use tauri::AppHandle;
 
 pub const OFFICE_BIND_IP: [u8; 4] = [127, 0, 0, 1];
 pub const OFFICE_PORT: u16 = 43_127;
@@ -53,6 +55,8 @@ impl OfficeCompanionStatus {
 
 #[derive(Clone)]
 pub struct OfficeCompanionState {
+    pub app: Option<AppHandle>,
+    pub ocr: OcrState,
     pub paths: Arc<OfficePaths>,
     pub install_token: Arc<String>,
     pub status: Arc<RwLock<OfficeCompanionStatus>>,
@@ -64,6 +68,8 @@ pub struct OfficeCompanionState {
 
 impl OfficeCompanionState {
     pub fn new(
+        app: Option<AppHandle>,
+        ocr: OcrState,
         paths: OfficePaths,
         install_token: String,
         session_store: SessionStore,
@@ -72,6 +78,8 @@ impl OfficeCompanionState {
     ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
         Self {
+            app,
+            ocr,
             paths: Arc::new(paths),
             install_token: Arc::new(install_token),
             status: Arc::new(RwLock::new(status)),

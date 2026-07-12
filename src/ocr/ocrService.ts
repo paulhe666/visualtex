@@ -1,5 +1,43 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+export type UnlistenFn = () => void;
+
+export interface OcrTransportEvent<T> {
+  event: string;
+  id: number;
+  payload: T;
+}
+
+export interface OcrTransport {
+  environment: "desktop" | "office";
+  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  listen<T>(
+    eventName: string,
+    handler: (event: OcrTransportEvent<T>) => void,
+  ): Promise<UnlistenFn>;
+}
+
+let configuredTransport: OcrTransport | null = null;
+
+export function configureOcrTransport(transport: OcrTransport) {
+  configuredTransport = transport;
+}
+
+function activeTransport() {
+  if (!configuredTransport) {
+    throw new Error("VisualTeX OCR transport has not been initialized.");
+  }
+  return configuredTransport;
+}
+
+function invoke<T>(command: string, args?: Record<string, unknown>) {
+  return activeTransport().invoke<T>(command, args);
+}
+
+function listen<T>(
+  eventName: string,
+  handler: (event: OcrTransportEvent<T>) => void,
+) {
+  return activeTransport().listen(eventName, handler);
+}
 
 export const OCR_MODELS = [
   {
@@ -92,7 +130,26 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 export const isTauriEnvironment = () =>
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  configuredTransport?.environment === "desktop";
+
+export const isOfficeCompanionEnvironment = () => {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+  const token =
+    window.__VISUALTEX_INSTALL_TOKEN__ ??
+    document
+      .querySelector<HTMLMetaElement>('meta[name="visualtex-install-token"]')
+      ?.content;
+  return (
+    configuredTransport?.environment === "office" &&
+    window.location.protocol === "https:" &&
+    window.location.hostname === "127.0.0.1" &&
+    window.location.port === "43127" &&
+    typeof token === "string" &&
+    token.length >= 32
+  );
+};
 
 export function getImageExtension(file: File): string {
   const fromName = file.name.split(".").pop()?.toLocaleLowerCase() ?? "";
@@ -131,50 +188,52 @@ export async function fileToOcrRequest(
   };
 }
 
-function requireTauri() {
-  if (!isTauriEnvironment()) {
-    throw new Error("OCR 只在 VisualTeX 桌面应用中可用，请通过 Tauri 应用测试");
+function requireOcrEnvironment() {
+  if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
+    throw new Error(
+      "OCR 只在 VisualTeX 桌面应用或本地 Office 编辑器中可用。",
+    );
   }
 }
 
 export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke<OcrRuntimeStatus>("get_ocr_runtime_status", { forceRefresh });
 }
 
 export async function installOcrRuntime(): Promise<OcrRuntimeStatus> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke<OcrRuntimeStatus>("install_ocr_runtime");
 }
 
 export async function recognizeFormulaImage(
   request: OcrImageRequest,
 ): Promise<OcrRecognitionResult> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke<OcrRecognitionResult>("recognize_formula_image", { request });
 }
 
 export async function cancelOcrRecognition(): Promise<void> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke("cancel_ocr_recognition");
 }
 
 export async function restartOcrWorker(): Promise<void> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke("restart_ocr_worker");
 }
 
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {
-  requireTauri();
+  requireOcrEnvironment();
   return invoke<OcrRuntimeStatus>("reset_ocr_runtime");
 }
 
 export async function listenOcrRecognitionProgress(
   listener: (progress: OcrRecognitionProgress) => void,
 ): Promise<UnlistenFn> {
-  requireTauri();
+  requireOcrEnvironment();
   return listen<OcrRecognitionProgress>("ocr-recognition-progress", (event) => {
     listener(event.payload);
   });
@@ -183,7 +242,7 @@ export async function listenOcrRecognitionProgress(
 export async function listenOcrInstallProgress(
   listener: (progress: OcrInstallProgress) => void,
 ): Promise<UnlistenFn> {
-  requireTauri();
+  requireOcrEnvironment();
   return listen<OcrInstallProgress>("ocr-install-progress", (event) => {
     listener(event.payload);
   });

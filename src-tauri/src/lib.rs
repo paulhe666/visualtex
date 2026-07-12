@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -15,7 +16,7 @@ mod office;
 
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
-const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+pub(crate) const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const OCR_CANCELLED: &str = "OCR_CANCELLED";
 const ALLOWED_MODELS: &[&str] = &[
     "PP-FormulaNet_plus-S",
@@ -24,6 +25,66 @@ const ALLOWED_MODELS: &[&str] = &[
     "PP-FormulaNet-S",
     "PP-FormulaNet-L",
 ];
+const MAX_OCR_EVENTS: usize = 256;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OcrEventRecord {
+    id: u64,
+    event: String,
+    payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OcrEventEnvelope {
+    cursor: u64,
+    events: Vec<OcrEventRecord>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct OcrEventBus {
+    next_id: Arc<AtomicU64>,
+    events: Arc<Mutex<VecDeque<OcrEventRecord>>>,
+}
+
+impl OcrEventBus {
+    fn publish<T: Serialize>(&self, event: &str, payload: &T) {
+        let Ok(payload) = serde_json::to_value(payload) else {
+            return;
+        };
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut events) = self.events.lock() {
+            events.push_back(OcrEventRecord {
+                id,
+                event: event.to_string(),
+                payload,
+            });
+            while events.len() > MAX_OCR_EVENTS {
+                events.pop_front();
+            }
+        }
+    }
+
+    pub(crate) fn poll(&self, cursor: u64, event: Option<&str>) -> OcrEventEnvelope {
+        let events = self
+            .events
+            .lock()
+            .map(|events| {
+                events
+                    .iter()
+                    .filter(|item| item.id > cursor)
+                    .filter(|item| event.is_none_or(|name| item.event == name))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        OcrEventEnvelope {
+            cursor: self.next_id.load(Ordering::SeqCst),
+            events,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct RuntimePaths {
@@ -37,11 +98,13 @@ struct RuntimePaths {
     temp: PathBuf,
 }
 
-struct OcrState {
+#[derive(Clone)]
+pub(crate) struct OcrState {
     worker: Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: Arc<AtomicU32>,
     cancel_generation: Arc<AtomicU64>,
     runtime_status: Arc<Mutex<Option<OcrRuntimeStatus>>>,
+    events: OcrEventBus,
 }
 
 impl Default for OcrState {
@@ -51,6 +114,7 @@ impl Default for OcrState {
             worker_pid: Arc::new(AtomicU32::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             runtime_status: Arc::new(Mutex::new(None)),
+            events: OcrEventBus::default(),
         }
     }
 }
@@ -59,6 +123,108 @@ impl Drop for OcrState {
     fn drop(&mut self) {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
         let _ = terminate_worker_process(&self.worker_pid);
+    }
+}
+
+impl OcrState {
+    pub(crate) async fn runtime_status(
+        &self,
+        app: AppHandle,
+        force_refresh: bool,
+    ) -> Result<OcrRuntimeStatus, String> {
+        let runtime_status = self.runtime_status.clone();
+        if !force_refresh {
+            if let Some(status) = read_cached_runtime_status(&runtime_status)? {
+                return Ok(status);
+            }
+        }
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let status = get_runtime_status_inner(&app)?;
+            write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+            Ok(status)
+        })
+        .await
+        .map_err(|error| format!("OCR runtime status task failed: {error}"))?
+    }
+
+    pub(crate) async fn install_runtime(&self, app: AppHandle) -> Result<OcrRuntimeStatus, String> {
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let status = install_runtime_inner(&app, &worker, &worker_pid)?;
+            write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+            Ok(status)
+        })
+        .await
+        .map_err(|error| format!("OCR installer task failed: {error}"))?
+    }
+
+    pub(crate) async fn recognize(
+        &self,
+        app: AppHandle,
+        request: OcrImageRequest,
+    ) -> Result<OcrRecognitionResult, String> {
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let cancel_generation = self.cancel_generation.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            run_recognition(
+                &app,
+                &worker,
+                &worker_pid,
+                &cancel_generation,
+                &runtime_status,
+                request,
+            )
+        })
+        .await
+        .map_err(|error| format!("OCR recognition task failed: {error}"))?
+    }
+
+    pub(crate) fn cancel(&self, app: &AppHandle) -> Result<(), String> {
+        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        terminate_worker_process(&self.worker_pid)?;
+        cleanup_worker_temp(&runtime_paths(app)?)
+    }
+
+    pub(crate) async fn restart(&self, app: AppHandle) -> Result<(), String> {
+        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            stop_worker(&worker, &worker_pid)?;
+            cleanup_worker_temp(&runtime_paths(&app)?)
+        })
+        .await
+        .map_err(|error| format!("OCR restart task failed: {error}"))?
+    }
+
+    pub(crate) async fn reset_runtime(&self, app: AppHandle) -> Result<OcrRuntimeStatus, String> {
+        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            write_cached_runtime_status(&runtime_status, None)?;
+            stop_worker(&worker, &worker_pid)?;
+            let paths = runtime_paths(&app)?;
+            if paths.root.exists() {
+                fs::remove_dir_all(&paths.root)
+                    .map_err(|error| format!("Unable to remove OCR runtime: {error}"))?;
+            }
+            let status = get_runtime_status_inner(&app)?;
+            write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+            Ok(status)
+        })
+        .await
+        .map_err(|error| format!("OCR reset task failed: {error}"))?
+    }
+
+    pub(crate) fn poll_events(&self, cursor: u64, event: Option<&str>) -> OcrEventEnvelope {
+        self.events.poll(cursor, event)
     }
 }
 
@@ -172,6 +338,9 @@ impl OcrWorker {
             .map_err(|error| self.worker_failure(error))?;
             if response.get("event").and_then(Value::as_str) == Some("progress") {
                 let _ = app.emit("ocr-recognition-progress", &response);
+                if let Some(state) = app.try_state::<OcrState>() {
+                    state.events.publish("ocr-recognition-progress", &response);
+                }
                 continue;
             }
             return Ok(response);
@@ -181,7 +350,7 @@ impl OcrWorker {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OcrInstallProgress {
+pub(crate) struct OcrInstallProgress {
     stage: String,
     percent: u8,
     message: String,
@@ -190,7 +359,7 @@ struct OcrInstallProgress {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OcrRuntimeStatus {
+pub(crate) struct OcrRuntimeStatus {
     installed: bool,
     python_path: Option<String>,
     python_version: Option<String>,
@@ -202,10 +371,10 @@ struct OcrRuntimeStatus {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OcrImageRequest {
-    bytes: Vec<u8>,
-    extension: String,
-    model: String,
+pub(crate) struct OcrImageRequest {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) extension: String,
+    pub(crate) model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,7 +384,7 @@ struct OcrFormulaResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OcrRecognitionResult {
+pub(crate) struct OcrRecognitionResult {
     model: String,
     elapsed_ms: u64,
     processed_width: u32,
@@ -303,15 +472,16 @@ fn emit_progress(
     message: impl Into<String>,
     detail: Option<String>,
 ) {
-    let _ = app.emit(
-        "ocr-install-progress",
-        OcrInstallProgress {
-            stage: stage.to_string(),
-            percent,
-            message: message.into(),
-            detail,
-        },
-    );
+    let progress = OcrInstallProgress {
+        stage: stage.to_string(),
+        percent,
+        message: message.into(),
+        detail,
+    };
+    let _ = app.emit("ocr-install-progress", &progress);
+    if let Some(state) = app.try_state::<OcrState>() {
+        state.events.publish("ocr-install-progress", &progress);
+    }
 }
 
 fn tail_text(value: &str, max_chars: usize) -> String {
@@ -948,20 +1118,9 @@ async fn get_ocr_runtime_status(
     state: State<'_, OcrState>,
     force_refresh: Option<bool>,
 ) -> Result<OcrRuntimeStatus, String> {
-    let runtime_status = state.runtime_status.clone();
-    if !force_refresh.unwrap_or(false) {
-        if let Some(status) = read_cached_runtime_status(&runtime_status)? {
-            return Ok(status);
-        }
-    }
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let status = get_runtime_status_inner(&app)?;
-        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
-        Ok(status)
-    })
-    .await
-    .map_err(|error| format!("OCR runtime status task failed: {error}"))?
+    state
+        .runtime_status(app, force_refresh.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]
@@ -969,16 +1128,7 @@ async fn install_ocr_runtime(
     app: AppHandle,
     state: State<'_, OcrState>,
 ) -> Result<OcrRuntimeStatus, String> {
-    let worker = state.worker.clone();
-    let worker_pid = state.worker_pid.clone();
-    let runtime_status = state.runtime_status.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let status = install_runtime_inner(&app, &worker, &worker_pid)?;
-        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
-        Ok(status)
-    })
-    .await
-    .map_err(|error| format!("OCR installer task failed: {error}"))?
+    state.install_runtime(app).await
 }
 
 #[tauri::command]
@@ -987,42 +1137,17 @@ async fn recognize_formula_image(
     state: State<'_, OcrState>,
     request: OcrImageRequest,
 ) -> Result<OcrRecognitionResult, String> {
-    let worker = state.worker.clone();
-    let worker_pid = state.worker_pid.clone();
-    let cancel_generation = state.cancel_generation.clone();
-    let runtime_status = state.runtime_status.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        run_recognition(
-            &app,
-            &worker,
-            &worker_pid,
-            &cancel_generation,
-            &runtime_status,
-            request,
-        )
-    })
-    .await
-    .map_err(|error| format!("OCR recognition task failed: {error}"))?
+    state.recognize(app, request).await
 }
 
 #[tauri::command]
 fn cancel_ocr_recognition(app: AppHandle, state: State<'_, OcrState>) -> Result<(), String> {
-    state.cancel_generation.fetch_add(1, Ordering::SeqCst);
-    terminate_worker_process(&state.worker_pid)?;
-    cleanup_worker_temp(&runtime_paths(&app)?)
+    state.cancel(&app)
 }
 
 #[tauri::command]
 async fn restart_ocr_worker(app: AppHandle, state: State<'_, OcrState>) -> Result<(), String> {
-    state.cancel_generation.fetch_add(1, Ordering::SeqCst);
-    let worker = state.worker.clone();
-    let worker_pid = state.worker_pid.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        stop_worker(&worker, &worker_pid)?;
-        cleanup_worker_temp(&runtime_paths(&app)?)
-    })
-    .await
-    .map_err(|error| format!("OCR restart task failed: {error}"))?
+    state.restart(app).await
 }
 
 #[tauri::command]
@@ -1030,33 +1155,19 @@ async fn reset_ocr_runtime(
     app: AppHandle,
     state: State<'_, OcrState>,
 ) -> Result<OcrRuntimeStatus, String> {
-    state.cancel_generation.fetch_add(1, Ordering::SeqCst);
-    let worker = state.worker.clone();
-    let worker_pid = state.worker_pid.clone();
-    let runtime_status = state.runtime_status.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        write_cached_runtime_status(&runtime_status, None)?;
-        stop_worker(&worker, &worker_pid)?;
-        let paths = runtime_paths(&app)?;
-        if paths.root.exists() {
-            fs::remove_dir_all(&paths.root)
-                .map_err(|error| format!("Unable to remove OCR runtime: {error}"))?;
-        }
-        let status = get_runtime_status_inner(&app)?;
-        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
-        Ok(status)
-    })
-    .await
-    .map_err(|error| format!("OCR reset task failed: {error}"))?
+    state.reset_runtime(app).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let ocr_state = OcrState::default();
+    let office_ocr_state = ocr_state.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(OcrState::default())
-        .setup(|app| {
-            let office_state = office::initialize(app.handle()).map_err(std::io::Error::other)?;
+        .manage(ocr_state)
+        .setup(move |app| {
+            let office_state = office::initialize(app.handle(), office_ocr_state.clone())
+                .map_err(std::io::Error::other)?;
             app.manage(office_state.clone());
             office::start(office_state);
             Ok(())
@@ -1111,6 +1222,40 @@ mod protocol_tests {
             value.get("message").and_then(Value::as_str),
             Some("正在加载")
         );
+    }
+
+    #[test]
+    fn ocr_event_bus_supports_cursor_filtering_and_bounded_history() {
+        let events = OcrEventBus::default();
+        let baseline = events.poll(u64::MAX, None);
+        assert_eq!(baseline.cursor, 0);
+        assert!(baseline.events.is_empty());
+
+        events.publish(
+            "ocr-install-progress",
+            &json!({ "stage": "python", "percent": 5 }),
+        );
+        events.publish(
+            "ocr-recognition-progress",
+            &json!({ "stage": "model", "model": "PP-FormulaNet_plus-M" }),
+        );
+
+        let install_only = events.poll(0, Some("ocr-install-progress"));
+        assert_eq!(install_only.cursor, 2);
+        assert_eq!(install_only.events.len(), 1);
+        assert_eq!(install_only.events[0].event, "ocr-install-progress");
+
+        let incremental = events.poll(1, None);
+        assert_eq!(incremental.events.len(), 1);
+        assert_eq!(incremental.events[0].id, 2);
+
+        for index in 0..(MAX_OCR_EVENTS + 20) {
+            events.publish("ocr-recognition-progress", &json!({ "index": index }));
+        }
+        let bounded = events.poll(0, None);
+        assert_eq!(bounded.events.len(), MAX_OCR_EVENTS);
+        assert_eq!(bounded.cursor, (MAX_OCR_EVENTS + 22) as u64);
+        assert!(bounded.events.first().is_some_and(|event| event.id > 1));
     }
 
     #[test]

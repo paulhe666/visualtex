@@ -9,10 +9,12 @@ const stripRemoteFallbackMarkers = {
   name: "visualtex-office-strip-remote-fallback-markers",
   enforce: "post" as const,
   renderChunk(code: string) {
-    const sanitized = code.replaceAll(
-      "jsdelivr.net/",
-      "visualtex-local-vendor.invalid/",
-    );
+    const sanitized = code
+      .replaceAll("jsdelivr.net/", "visualtex-local-vendor.invalid/")
+      .replaceAll(
+        "https://esm.run/@cortex-js/compute-engine",
+        "visualtex-local-vendor.invalid/compute-engine",
+      );
     return sanitized === code ? null : { code: sanitized, map: null };
   },
 };
