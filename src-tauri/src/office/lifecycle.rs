@@ -1,5 +1,6 @@
 use crate::office::certificate::{ensure_office_install, regenerate_certificate};
 use crate::office::server;
+use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
 use std::path::PathBuf;
 use tauri::path::BaseDirectory;
@@ -58,9 +59,11 @@ pub fn initialize(app: &AppHandle) -> Result<OfficeCompanionState, String> {
         root,
     };
     let install_token = ensure_office_install(&paths)?;
+    let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     Ok(OfficeCompanionState::new(
         paths,
         install_token,
+        session_store,
         ocr_worker_available(app),
     ))
 }

@@ -1,3 +1,4 @@
+use crate::office::sessions::{CreateOfficeSessionInput, SessionError};
 use crate::office::state::{
     OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
@@ -5,7 +6,7 @@ use axum::extract::{Path as AxumPath, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use serde::Serialize;
@@ -94,6 +95,11 @@ async fn dialog(
     if !valid_session_id(&session_id) {
         return Err(StatusCode::NOT_FOUND);
     }
+    let store = context.companion.session_store.clone();
+    let lookup_id = session_id.clone();
+    run_session_operation(move || store.get(&lookup_id))
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
     read_office_html(
         &context.companion.paths.ui_root,
         "dialog/index.html",
@@ -106,6 +112,76 @@ async fn api_status(
     State(context): State<ServerContext>,
 ) -> Json<crate::office::state::OfficeCompanionStatus> {
     Json(context.companion.snapshot())
+}
+
+async fn run_session_operation<T>(
+    operation: impl FnOnce() -> Result<T, SessionError> + Send + 'static,
+) -> Result<T, SessionError>
+where
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| SessionError::Io(format!("Office Session task failed: {error}")))?
+}
+
+fn session_error_response(error: SessionError) -> Response {
+    let status = match error {
+        SessionError::Invalid(_) => StatusCode::BAD_REQUEST,
+        SessionError::NotFound => StatusCode::NOT_FOUND,
+        SessionError::Conflict(_) => StatusCode::CONFLICT,
+        SessionError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status,
+        Json(serde_json::json!({ "error": error.to_string() })),
+    )
+        .into_response()
+}
+
+async fn create_session(
+    State(context): State<ServerContext>,
+    Json(input): Json<CreateOfficeSessionInput>,
+) -> Response {
+    let store = context.companion.session_store.clone();
+    match run_session_operation(move || store.create(input)).await {
+        Ok(session) => (StatusCode::CREATED, Json(session)).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
+async fn get_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    let store = context.companion.session_store.clone();
+    match run_session_operation(move || store.get(&session_id)).await {
+        Ok(session) => Json(session).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
+async fn patch_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+    Json(patch): Json<serde_json::Value>,
+) -> Response {
+    let store = context.companion.session_store.clone();
+    match run_session_operation(move || store.patch(&session_id, patch)).await {
+        Ok(session) => Json(session).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
+async fn delete_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    let store = context.companion.session_store.clone();
+    match run_session_operation(move || store.delete(&session_id)).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => session_error_response(error),
+    }
 }
 
 async fn api_not_found() -> impl IntoResponse {
@@ -188,6 +264,11 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
     let ui_root = companion.paths.ui_root.clone();
     let api = Router::new()
         .route("/status", get(api_status))
+        .route("/sessions", post(create_session))
+        .route(
+            "/sessions/{session_id}",
+            get(get_session).patch(patch_session).delete(delete_session),
+        )
         .fallback(api_not_found);
 
     Router::new()
@@ -275,6 +356,7 @@ pub fn stop(companion: &OfficeCompanionState) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::office::sessions::SessionStore;
     use axum::body::Body;
     use axum::http::Request as HttpRequest;
     use http_body_util::BodyExt;
@@ -311,7 +393,8 @@ mod tests {
             ui_root,
             root,
         };
-        OfficeCompanionState::new(paths, "a".repeat(64), true)
+        let session_store = SessionStore::new(&paths).expect("session store");
+        OfficeCompanionState::new(paths, "a".repeat(64), session_store, true)
     }
 
     #[test]
@@ -468,5 +551,180 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn session_api_supports_create_edit_cancel_and_delete() {
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        let token = state.install_token.to_string();
+        let router = build_router(state);
+
+        let create = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/api/v1/sessions")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "mode": "create",
+                            "host": "word",
+                            "title": "API Formula",
+                            "autoCommitOnClose": true
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create.status(), StatusCode::CREATED);
+        let create_body = create.into_body().collect().await.unwrap().to_bytes();
+        let created: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+        let session_id = created["id"].as_str().unwrap().to_string();
+        let line_id = created["lines"][0]["id"].as_str().unwrap().to_string();
+
+        let dialog = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/dialog/{session_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(dialog.status(), StatusCode::OK);
+
+        let patch = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "title": "Updated Formula",
+                            "lines": [{ "id": line_id, "latex": "a=b" }],
+                            "dirty": true,
+                            "status": "editing"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(patch.status(), StatusCode::OK);
+
+        let get = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get.status(), StatusCode::OK);
+        let get_body = get.into_body().collect().await.unwrap().to_bytes();
+        let loaded: serde_json::Value = serde_json::from_slice(&get_body).unwrap();
+        assert_eq!(loaded["title"], "Updated Formula");
+        assert_eq!(loaded["lines"][0]["latex"], "a=b");
+
+        let cancel = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "status": "cancelled",
+                            "explicitCancel": true
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancel.status(), StatusCode::OK);
+
+        let invalid_commit = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "status": "committing",
+                            "explicitCancel": false,
+                            "exportResult": {
+                                "svg": "<svg viewBox=\"0 0 10 10\"></svg>",
+                                "svgBase64": "PHN2Zz48L3N2Zz4=",
+                                "pngBase64": null,
+                                "width": 10,
+                                "height": 10,
+                                "baseline": 8
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid_commit.status(), StatusCode::CONFLICT);
+
+        let delete = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delete.status(), StatusCode::NO_CONTENT);
+
+        let missing = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/api/v1/sessions/{session_id}"))
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        let missing_dialog = router
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!("/dialog/{session_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing_dialog.status(), StatusCode::NOT_FOUND);
     }
 }

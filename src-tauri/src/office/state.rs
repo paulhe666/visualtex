@@ -1,3 +1,4 @@
+use crate::office::sessions::SessionStore;
 use axum_server::Handle;
 use serde::Serialize;
 use std::net::SocketAddr;
@@ -54,17 +55,24 @@ pub struct OfficeCompanionState {
     pub install_token: Arc<String>,
     pub status: Arc<RwLock<OfficeCompanionStatus>>,
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
+    pub session_store: SessionStore,
     pub ocr_available: bool,
 }
 
 impl OfficeCompanionState {
-    pub fn new(paths: OfficePaths, install_token: String, ocr_available: bool) -> Self {
+    pub fn new(
+        paths: OfficePaths,
+        install_token: String,
+        session_store: SessionStore,
+        ocr_available: bool,
+    ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
         Self {
             paths: Arc::new(paths),
             install_token: Arc::new(install_token),
             status: Arc::new(RwLock::new(status)),
             server_handle: Arc::new(Mutex::new(None)),
+            session_store,
             ocr_available,
         }
     }
