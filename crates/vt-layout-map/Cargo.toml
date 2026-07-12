@@ -1,0 +1,19 @@
+[package]
+name = "vt-layout-map"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+regex.workspace = true
+tokio.workspace = true
+walkdir.workspace = true
+thiserror.workspace = true
+vt-compiler.workspace = true
+vt-pdf.workspace = true
+vt-protocol.workspace = true
+vt-synctex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

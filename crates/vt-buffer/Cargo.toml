@@ -1,0 +1,15 @@
+[package]
+name = "vt-buffer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ropey.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

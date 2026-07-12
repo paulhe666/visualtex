@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VisualTeX Next",
+  "version": "0.1.0",
+  "identifier": "io.visualtex.next",
+  "build": {
+    "beforeDevCommand": "corepack pnpm dev:web",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "corepack pnpm build:web",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VisualTeX Next",
+        "width": 1500,
+        "height": 940,
+        "minWidth": 980,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; img-src 'self' asset: http://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; frame-src 'self' asset: http://asset.localhost blob:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [
+            "$HOME/**/.visualtex/build/**",
+            "$HOME/**/.visualtex/cache/pdf/**",
+            "$HOME/**/.visualtex/ocr-input/**"
+          ],
+          "deny": ["$HOME/**/.visualtex/recovery/**"],
+          "requireLiteralLeadingDot": false
+        }
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["visualtex"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [],
+    "category": "Productivity",
+    "shortDescription": "Offline bidirectional LaTeX paper editor",
+    "longDescription": "VisualTeX Next keeps LaTeX sources authoritative while providing structured visual editing and real PDF preview."
+  }
+}

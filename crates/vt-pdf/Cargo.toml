@@ -1,0 +1,18 @@
+[package]
+name = "vt-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+image.workspace = true
+pdfium-auto.workspace = true
+pdfium-render.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

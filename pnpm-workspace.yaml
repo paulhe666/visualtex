@@ -1,0 +1,5 @@
+packages:
+  - "apps/desktop"
+  - "apps/vscode-extension"
+  - "packages/*"
+  - "tests/end-to-end"

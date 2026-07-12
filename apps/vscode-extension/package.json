@@ -1,0 +1,59 @@
+{
+  "name": "visualtex-next-vscode",
+  "displayName": "VisualTeX Next",
+  "description": "Offline structured visual editing for LaTeX projects using the VisualTeX Core.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "visualtex",
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Other", "Programming Languages"],
+  "activationEvents": [
+    "onCustomEditor:visualtex.visualEditor",
+    "onCommand:visualtex.openVisualEditor",
+    "onCommand:visualtex.compile",
+    "onCommand:visualtex.reconnectCore"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "visualtex.openVisualEditor", "title": "VisualTeX: Open Visual Editor" },
+      { "command": "visualtex.compile", "title": "VisualTeX: Compile Project" },
+      { "command": "visualtex.reconnectCore", "title": "VisualTeX: Reconnect Core" }
+    ],
+    "customEditors": [
+      {
+        "viewType": "visualtex.visualEditor",
+        "displayName": "VisualTeX Visual Editor",
+        "selector": [{ "filenamePattern": "*.tex" }],
+        "priority": "option"
+      }
+    ],
+    "configuration": {
+      "title": "VisualTeX Next",
+      "properties": {
+        "visualtex.corePath": {
+          "type": "string",
+          "default": "visualtex",
+          "description": "Path to the VisualTeX CLI executable."
+        },
+        "visualtex.modelsRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Optional directory containing installed offline VisualTeX model packages. Leave empty to use the CLI default or VISUALTEX_MODELS_ROOT."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root . --exclude 'dist/**'",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

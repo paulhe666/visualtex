@@ -1,0 +1,19 @@
+[package]
+name = "vt-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+vt-protocol.workspace = true
+vt-rpc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

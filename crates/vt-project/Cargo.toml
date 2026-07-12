@@ -1,0 +1,19 @@
+[package]
+name = "vt-project"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+vt-buffer.workspace = true
+vt-protocol.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "vt-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+vt-buffer.workspace = true
+vt-compiler.workspace = true
+vt-index.workspace = true
+vt-latex-syntax.workspace = true
+vt-latex-semantic.workspace = true
+vt-layout-map.workspace = true
+vt-pdf.workspace = true
+vt-project.workspace = true
+vt-protocol.workspace = true
+vt-synctex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

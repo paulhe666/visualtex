@@ -1,0 +1,18 @@
+[package]
+name = "vt-rpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+vt-core.workspace = true
+vt-models.workspace = true
+vt-ocr.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

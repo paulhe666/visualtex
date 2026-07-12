@@ -1,0 +1,14 @@
+[package]
+name = "vt-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+regex.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

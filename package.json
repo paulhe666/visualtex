@@ -1,0 +1,14 @@
+{
+  "name": "visualtex-next",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.19.0",
+  "scripts": {
+    "dev": "pnpm --filter @visualtex/desktop dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "desktop": "pnpm --filter @visualtex/desktop tauri"
+  }
+}

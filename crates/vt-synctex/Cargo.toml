@@ -1,0 +1,17 @@
+[package]
+name = "vt-synctex"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dunce.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

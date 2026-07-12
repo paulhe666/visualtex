@@ -1,0 +1,78 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/vt-bridge",
+  "crates/vt-protocol",
+  "crates/vt-buffer",
+  "crates/vt-latex-syntax",
+  "crates/vt-latex-semantic",
+  "crates/vt-layout-map",
+  "crates/vt-index",
+  "crates/vt-ocr",
+  "crates/vt-models",
+  "crates/vt-pdf",
+  "crates/vt-project",
+  "crates/vt-compiler",
+  "crates/vt-core",
+  "crates/vt-rpc",
+  "crates/vt-synctex",
+  "crates/vt-uri",
+  "apps/cli",
+  "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["VisualTeX Next contributors"]
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+directories = "6.0"
+dunce = "1.0"
+notify = "8.2"
+once_cell = "1.21"
+parking_lot = "0.12"
+proptest = "1.9"
+regex = "1.12"
+ropey = "1.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+pdfium-auto = { version = "0.3", features = ["bundled"] }
+pdfium-render = "=0.8.37"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+tempfile = "3.23"
+thiserror = "2.0"
+tokio = { version = "1.48", features = ["fs", "io-std", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = { version = "2.5", features = ["serde"] }
+uuid = { version = "1.18", features = ["v4", "v5", "serde"] }
+walkdir = "2.5"
+tree-sitter = "0.25.10"
+codebook-tree-sitter-latex = "0.6.1"
+windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Storage_FileSystem"] }
+
+vt-bridge = { path = "crates/vt-bridge" }
+vt-protocol = { path = "crates/vt-protocol" }
+vt-buffer = { path = "crates/vt-buffer" }
+vt-latex-syntax = { path = "crates/vt-latex-syntax" }
+vt-latex-semantic = { path = "crates/vt-latex-semantic" }
+vt-layout-map = { path = "crates/vt-layout-map" }
+vt-index = { path = "crates/vt-index" }
+vt-ocr = { path = "crates/vt-ocr" }
+vt-models = { path = "crates/vt-models" }
+vt-pdf = { path = "crates/vt-pdf" }
+vt-project = { path = "crates/vt-project" }
+vt-compiler = { path = "crates/vt-compiler" }
+vt-core = { path = "crates/vt-core" }
+vt-rpc = { path = "crates/vt-rpc" }
+vt-synctex = { path = "crates/vt-synctex" }
+vt-uri = { path = "crates/vt-uri" }

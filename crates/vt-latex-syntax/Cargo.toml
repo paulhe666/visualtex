@@ -1,0 +1,15 @@
+[package]
+name = "vt-latex-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codebook-tree-sitter-latex.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tree-sitter.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

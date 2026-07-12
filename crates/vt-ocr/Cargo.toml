@@ -1,0 +1,17 @@
+[package]
+name = "vt-ocr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

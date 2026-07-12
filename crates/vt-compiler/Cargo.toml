@@ -1,0 +1,16 @@
+[package]
+name = "vt-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+dunce.workspace = true
+regex.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+vt-protocol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
