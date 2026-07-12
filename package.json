@@ -25,6 +25,7 @@
     "test:svg-export": "node --experimental-strip-types scripts/svg_export_smoke.mjs",
     "test:office-metadata": "node --experimental-strip-types scripts/office_metadata_smoke.mjs",
     "test:word-adapter": "tsx scripts/word_adapter_smoke.mjs",
+    "test:powerpoint-adapter": "tsx scripts/powerpoint_adapter_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {

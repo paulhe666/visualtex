@@ -1,3 +1,4 @@
+import { PowerPointAdapter } from "./PowerPointAdapter";
 import { WordAdapter } from "./WordAdapter";
 import type {
   CreateOfficeSessionInput,
@@ -21,36 +22,6 @@ export interface OfficeHostAdapter {
   showMessage(message: string): void;
 }
 
-class PendingOfficeHostAdapter implements OfficeHostAdapter {
-  constructor(readonly host: OfficeHost) {}
-
-  async readSelection(mode: OfficeSessionMode): Promise<OfficeSelectionContext> {
-    if (mode === "edit") {
-      throw new Error(
-        "当前选中的对象不是 VisualTeX 公式。请先选择由 VisualTeX 插入的公式。",
-      );
-    }
-    return {
-      sourceDocumentId: null,
-      sourceObjectId: null,
-      sessionSeed: {},
-    };
-  }
-
-  async applySession(): Promise<void> {
-    throw new Error(`${this.host} adapter is not installed yet`);
-  }
-
-  async openDesktopApp(): Promise<void> {
-    window.location.href = "visualtex://office/start";
-  }
-
-  showMessage(message: string) {
-    const status = document.getElementById("bridge-status");
-    if (status) status.textContent = message;
-  }
-}
-
 export function officeHostFromReadyInfo(host: Office.HostType): OfficeHost {
   if (host === Office.HostType.Word) return "word";
   if (host === Office.HostType.PowerPoint) return "powerpoint";
@@ -58,5 +29,5 @@ export function officeHostFromReadyInfo(host: Office.HostType): OfficeHost {
 }
 
 export function createOfficeHostAdapter(host: OfficeHost): OfficeHostAdapter {
-  return host === "word" ? new WordAdapter() : new PendingOfficeHostAdapter(host);
+  return host === "word" ? new WordAdapter() : new PowerPointAdapter();
 }

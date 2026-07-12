@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  decodePowerPointObjectReference,
+  encodePowerPointObjectReference,
+  formulaIdFromPowerPointShapeName,
+  powerpointShapeName,
+} from "../src/office/metadata/powerpointMetadata.ts";
+import {
   createFormulaMetadata,
   decodeFormulaMetadata,
   encodeFormulaMetadata,
@@ -66,5 +72,22 @@ assert.throws(() =>
   }),
 );
 assert.equal(isVisualTeXFormulaMetadata({ ...metadata, lines: [] }), false);
+
+const shapeName = powerpointShapeName(formulaId);
+assert.equal(shapeName, `VisualTeX_${formulaId}`);
+assert.equal(formulaIdFromPowerPointShapeName(shapeName), formulaId);
+assert.equal(formulaIdFromPowerPointShapeName("Ordinary Picture"), null);
+
+const objectReference = {
+  slideId: "slide/id:包含空格",
+  shapeId: "shape/id:αβ",
+};
+const encodedReference = encodePowerPointObjectReference(objectReference);
+assert.match(encodedReference, /^visualtex-ppt:v1:[A-Za-z0-9_-]+$/);
+assert.deepEqual(
+  decodePowerPointObjectReference(encodedReference),
+  objectReference,
+);
+assert.equal(decodePowerPointObjectReference(`${encodedReference}!!`), null);
 
 console.log("Office formula metadata smoke test passed");
