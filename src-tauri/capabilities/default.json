@@ -3,5 +3,14 @@
   "identifier": "default",
   "description": "Default capability for VisualTeX",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/paulhe666/visualtex/releases" },
+        { "url": "https://github.com/paulhe666/visualtex/releases/*" }
+      ]
+    }
+  ]
 }

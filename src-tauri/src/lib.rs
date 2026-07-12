@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+const OCR_CANCELLED: &str = "OCR_CANCELLED";
 const ALLOWED_MODELS: &[&str] = &[
     "PP-FormulaNet_plus-S",
     "PP-FormulaNet_plus-M",
@@ -38,6 +39,7 @@ struct OcrState {
     worker: Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: Arc<AtomicU32>,
     cancel_generation: Arc<AtomicU64>,
+    runtime_status: Arc<Mutex<Option<OcrRuntimeStatus>>>,
 }
 
 impl Default for OcrState {
@@ -46,6 +48,7 @@ impl Default for OcrState {
             worker: Arc::new(Mutex::new(None)),
             worker_pid: Arc::new(AtomicU32::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
+            runtime_status: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -62,6 +65,7 @@ struct OcrWorker {
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     pid_state: Arc<AtomicU32>,
+    log_path: PathBuf,
     loaded_model: Option<String>,
 }
 
@@ -76,34 +80,94 @@ impl Drop for OcrWorker {
     }
 }
 
+fn read_worker_json<R: BufRead>(
+    reader: &mut R,
+    closed_message: &str,
+    response_name: &str,
+) -> Result<Value, String> {
+    loop {
+        let mut bytes = Vec::new();
+        let count = reader
+            .read_until(b'\n', &mut bytes)
+            .map_err(|error| format!("Unable to read {response_name}: {error}"))?;
+        if count == 0 {
+            return Err(closed_message.to_string());
+        }
+
+        while bytes
+            .last()
+            .is_some_and(|byte| matches!(*byte, b'\n' | b'\r'))
+        {
+            bytes.pop();
+        }
+        if bytes.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+
+        let first_non_whitespace = bytes
+            .iter()
+            .copied()
+            .find(|byte| !byte.is_ascii_whitespace());
+        if first_non_whitespace != Some(b'{') {
+            // Native dependencies occasionally write diagnostics to stdout.
+            // Ignore those lines so they cannot corrupt the JSON protocol.
+            continue;
+        }
+
+        match serde_json::from_slice(&bytes) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                // This fallback prevents a legacy Windows code page from
+                // crashing the reader. New workers always emit ASCII-safe JSON.
+                let output = String::from_utf8_lossy(&bytes);
+                return serde_json::from_str(output.trim()).map_err(|lossy_error| {
+                    format!(
+                        "{response_name} returned invalid JSON: {error}; UTF-8-lossy parse: {lossy_error}; output={output:?}"
+                    )
+                });
+            }
+        }
+    }
+}
+
 impl OcrWorker {
+    fn worker_failure(&mut self, message: impl AsRef<str>) -> String {
+        let status = match self.child.try_wait() {
+            Ok(Some(status)) => status.to_string(),
+            Ok(None) => "still running".to_string(),
+            Err(error) => format!("status unavailable: {error}"),
+        };
+        format!(
+            "{}; worker_status={status}; log={}",
+            message.as_ref(),
+            self.log_path.display()
+        )
+    }
+
     fn send(&mut self, app: &AppHandle, payload: &Value) -> Result<Value, String> {
         if let Some(status) = self.child.try_wait().map_err(|error| error.to_string())? {
-            return Err(format!("OCR worker exited unexpectedly: {status}"));
+            return Err(format!(
+                "OCR worker exited unexpectedly: {status}; log={}",
+                self.log_path.display()
+            ));
         }
 
         serde_json::to_writer(&mut self.stdin, payload)
             .map_err(|error| format!("Unable to encode OCR request: {error}"))?;
         self.stdin
             .write_all(b"\n")
-            .map_err(|error| format!("Unable to send OCR request: {error}"))?;
+            .map_err(|error| self.worker_failure(format!("Unable to send OCR request: {error}")))?;
         self.stdin
             .flush()
-            .map_err(|error| format!("Unable to flush OCR request: {error}"))?;
+            .map_err(|error| self.worker_failure(format!("Unable to flush OCR request: {error}")))?;
 
         loop {
-            let mut line = String::new();
-            let bytes = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(|error| format!("Unable to read OCR response: {error}"))?;
-            if bytes == 0 {
-                return Err("OCR worker closed its output stream".to_string());
-            }
-
-            let response: Value = serde_json::from_str(line.trim()).map_err(|error| {
-                format!("OCR worker returned invalid JSON: {error}; output={line:?}")
-            })?;
+            let response = read_worker_json(
+                &mut self.stdout,
+                "OCR worker closed its output stream",
+                "OCR response",
+            )
+            .map_err(|error| self.worker_failure(error))?;
             if response.get("event").and_then(Value::as_str) == Some("progress") {
                 let _ = app.emit("ocr-recognition-progress", &response);
                 continue;
@@ -186,6 +250,7 @@ struct PythonProbe {
     major: u8,
     minor: u8,
     machine: String,
+    executable: String,
 }
 
 fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
@@ -274,44 +339,85 @@ fn command_output(command: &mut Command, label: &str) -> Result<String, String> 
     ))
 }
 
-fn probe_python(candidate: &Path) -> Result<PythonProbe, String> {
-    let script = r#"import json, platform, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'machine': platform.machine()}))"#;
-    let output = command_output(
-        Command::new(candidate).arg("-c").arg(script),
-        "Python version check",
-    )?;
+fn probe_python(
+    program: &Path,
+    prefix_args: &[String],
+    label: &str,
+) -> Result<PythonProbe, String> {
+    let script = r#"import json, platform, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'machine': platform.machine(), 'executable': sys.executable}))"#;
+    let mut command = Command::new(program);
+    command
+        .args(prefix_args)
+        .arg("-c")
+        .arg(script)
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
+    let output = command_output(&mut command, &format!("Python version check ({label})"))?;
     serde_json::from_str(&output)
         .map_err(|error| format!("Python returned an invalid version response: {error}"))
 }
 
 fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
+    let mut candidates: Vec<(String, PathBuf, Vec<String>)> = Vec::new();
+
     if let Ok(explicit) = env::var("VISUALTEX_PYTHON") {
-        candidates.push(PathBuf::from(explicit));
+        let explicit = explicit.trim().trim_matches('"');
+        if !explicit.is_empty() {
+            candidates.push((
+                "VISUALTEX_PYTHON".to_string(),
+                PathBuf::from(explicit),
+                Vec::new(),
+            ));
+        }
     }
+
+    if cfg!(windows) {
+        // The Windows Python launcher usually exposes installed runtimes via
+        // selectors rather than python3.13.exe-style command names. Probe each
+        // supported version explicitly so a default Python 3.14 installation
+        // cannot hide an installed 3.9–3.13 runtime.
+        for minor in (9..=13).rev() {
+            for launcher in ["py.exe", "py"] {
+                for selector in [format!("-V:3.{minor}"), format!("-3.{minor}")] {
+                    candidates.push((
+                        format!("{launcher} {selector}"),
+                        PathBuf::from(launcher),
+                        vec![selector],
+                    ));
+                }
+            }
+        }
+    }
+
     for name in [
         "python3.13",
         "python3.12",
         "python3.11",
         "python3.10",
+        "python3.9",
         "python3",
     ] {
-        candidates.push(PathBuf::from(name));
+        candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
     }
+
     if cfg!(windows) {
         for name in ["python.exe", "python", "py.exe", "py"] {
-            candidates.push(PathBuf::from(name));
+            candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
         }
     }
     if cfg!(target_os = "macos") {
-        candidates.push(PathBuf::from("/opt/homebrew/bin/python3"));
-        candidates.push(PathBuf::from("/usr/local/bin/python3"));
-        candidates.push(PathBuf::from("/usr/bin/python3"));
+        for path in [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ] {
+            candidates.push((path.to_string(), PathBuf::from(path), Vec::new()));
+        }
     }
 
     let mut failures = Vec::new();
-    for candidate in candidates {
-        match probe_python(&candidate) {
+    for (label, program, prefix_args) in candidates {
+        match probe_python(&program, &prefix_args, &label) {
             Ok(probe) => {
                 let version_ok = probe.major == 3 && (9..=13).contains(&probe.minor);
                 let machine = probe.machine.to_ascii_lowercase();
@@ -323,21 +429,24 @@ fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
                     true
                 };
                 if version_ok && architecture_ok {
-                    return Ok((candidate, probe));
+                    let executable = PathBuf::from(&probe.executable);
+                    if executable.as_os_str().is_empty() {
+                        failures.push(format!("{label}: Python did not report sys.executable"));
+                        continue;
+                    }
+                    return Ok((executable, probe));
                 }
                 failures.push(format!(
-                    "{}: Python {}, architecture {}",
-                    candidate.display(),
-                    probe.version,
-                    probe.machine
+                    "{label}: Python {}, architecture {}",
+                    probe.version, probe.machine
                 ));
             }
-            Err(error) => failures.push(format!("{}: {error}", candidate.display())),
+            Err(error) => failures.push(format!("{label}: {error}")),
         }
     }
 
     Err(format!(
-        "No compatible Python 3.9–3.13 interpreter was found. Checked:\n{}",
+        "未检测到可用于 OCR 的 64 位 Python 3.9–3.13。请安装 x64 Python 3.13，并启用 Python Launcher，然后完全重启 VisualTeX。Python 3.14 当前不兼容 PaddleOCR。\n\nNo compatible 64-bit Python 3.9–3.13 interpreter was found. Install x64 Python 3.13 with the Python Launcher enabled, then restart VisualTeX. Python 3.14 is not currently supported by PaddleOCR.\n\nChecked:\n{}",
         failures.join("\n")
     ))
 }
@@ -380,6 +489,26 @@ fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String>
             message: error,
         }),
     }
+}
+
+fn read_cached_runtime_status(
+    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+) -> Result<Option<OcrRuntimeStatus>, String> {
+    cache
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "OCR runtime status cache is unavailable".to_string())
+}
+
+fn write_cached_runtime_status(
+    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+    status: Option<OcrRuntimeStatus>,
+) -> Result<(), String> {
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "OCR runtime status cache is unavailable".to_string())?;
+    *guard = status;
+    Ok(())
 }
 
 fn cleanup_worker_temp(paths: &RuntimePaths) -> Result<(), String> {
@@ -576,8 +705,20 @@ fn spawn_worker(
     fs::create_dir_all(&paths.temp)
         .map_err(|error| format!("Unable to create OCR temporary directory: {error}"))?;
     let log_path = paths.logs.join("worker.log");
-    let log_file = File::create(&log_path)
-        .map_err(|error| format!("Unable to create OCR worker log: {error}"))?;
+    let mut log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| format!("Unable to open OCR worker log: {error}"))?;
+    writeln!(
+        log_file,
+        "\n===== VisualTeX OCR worker start: pid pending, unix_ms={} =====",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default()
+    )
+    .map_err(|error| format!("Unable to initialize OCR worker log: {error}"))?;
     let log_file_error = log_file
         .try_clone()
         .map_err(|error| format!("Unable to clone OCR log handle: {error}"))?;
@@ -585,6 +726,8 @@ fn spawn_worker(
     let mut child = Command::new(&paths.python)
         .arg(&script)
         .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .env("VISUALTEX_PARENT_PID", std::process::id().to_string())
         .env("PADDLE_PDX_MODEL_SOURCE", "BOS")
         .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
@@ -614,20 +757,16 @@ fn spawn_worker(
         stdin: BufWriter::new(stdin),
         stdout: BufReader::new(stdout),
         pid_state: worker_pid,
+        log_path: log_path.clone(),
         loaded_model: None,
     };
 
-    let mut ready_line = String::new();
-    worker
-        .stdout
-        .read_line(&mut ready_line)
-        .map_err(|error| format!("Unable to read OCR worker ready signal: {error}"))?;
-    let ready: Value = serde_json::from_str(ready_line.trim()).map_err(|error| {
-        format!(
-            "OCR worker did not return a valid ready signal: {error}; output={ready_line:?}; log={}",
-            log_path.display()
-        )
-    })?;
+    let ready = read_worker_json(
+        &mut worker.stdout,
+        "OCR worker closed before sending its ready signal",
+        "OCR worker ready signal",
+    )
+    .map_err(|error| format!("{error}; log={}", log_path.display()))?;
     if ready.get("event").and_then(Value::as_str) != Some("ready") {
         return Err(format!("Unexpected OCR worker ready response: {ready}"));
     }
@@ -639,6 +778,7 @@ fn run_recognition(
     worker_state: &Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: &Arc<AtomicU32>,
     cancel_generation: &Arc<AtomicU64>,
+    runtime_status: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
     request: OcrImageRequest,
 ) -> Result<OcrRecognitionResult, String> {
     let request_generation = cancel_generation.load(Ordering::SeqCst);
@@ -657,9 +797,13 @@ fn run_recognition(
     }
 
     let paths = runtime_paths(app)?;
-    let status = get_runtime_status_inner(app)?;
-    if !status.installed {
-        return Err(format!("OCR runtime is not installed: {}", status.message));
+    if let Some(status) = read_cached_runtime_status(runtime_status)? {
+        if !status.installed {
+            return Err(format!("OCR runtime is not installed: {}", status.message));
+        }
+    }
+    if !paths.python.exists() {
+        return Err("OCR runtime is not installed: Python executable is missing".to_string());
     }
     fs::create_dir_all(&paths.input)
         .map_err(|error| format!("Unable to create OCR input directory: {error}"))?;
@@ -696,7 +840,7 @@ fn run_recognition(
 
     if cancel_generation.load(Ordering::SeqCst) != request_generation {
         let _ = fs::remove_file(&input_path);
-        return Err("OCR recognition was cancelled".to_string());
+        return Err(OCR_CANCELLED.to_string());
     }
 
     let response_result = (|| -> Result<Value, String> {
@@ -722,7 +866,7 @@ fn run_recognition(
         match first_result {
             Ok(response) => {
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
                 if response.get("ok").and_then(Value::as_bool) == Some(true) {
                     if let Some(worker) = guard.as_mut() {
@@ -733,7 +877,7 @@ fn run_recognition(
             }
             Err(first_error) => {
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
 
                 guard.take();
@@ -748,7 +892,7 @@ fn run_recognition(
                         )
                     })?;
                 if cancel_generation.load(Ordering::SeqCst) != request_generation {
-                    return Err("OCR recognition was cancelled".to_string());
+                    return Err(OCR_CANCELLED.to_string());
                 }
                 if response.get("ok").and_then(Value::as_bool) == Some(true) {
                     if let Some(worker) = guard.as_mut() {
@@ -797,8 +941,25 @@ fn run_recognition(
 }
 
 #[tauri::command]
-fn get_ocr_runtime_status(app: AppHandle) -> Result<OcrRuntimeStatus, String> {
-    get_runtime_status_inner(&app)
+async fn get_ocr_runtime_status(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    force_refresh: Option<bool>,
+) -> Result<OcrRuntimeStatus, String> {
+    let runtime_status = state.runtime_status.clone();
+    if !force_refresh.unwrap_or(false) {
+        if let Some(status) = read_cached_runtime_status(&runtime_status)? {
+            return Ok(status);
+        }
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = get_runtime_status_inner(&app)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("OCR runtime status task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -808,9 +969,14 @@ async fn install_ocr_runtime(
 ) -> Result<OcrRuntimeStatus, String> {
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
-    tauri::async_runtime::spawn_blocking(move || install_runtime_inner(&app, &worker, &worker_pid))
-        .await
-        .map_err(|error| format!("OCR installer task failed: {error}"))?
+    let runtime_status = state.runtime_status.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = install_runtime_inner(&app, &worker, &worker_pid)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("OCR installer task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -822,8 +988,16 @@ async fn recognize_formula_image(
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
     let cancel_generation = state.cancel_generation.clone();
+    let runtime_status = state.runtime_status.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        run_recognition(&app, &worker, &worker_pid, &cancel_generation, request)
+        run_recognition(
+            &app,
+            &worker,
+            &worker_pid,
+            &cancel_generation,
+            &runtime_status,
+            request,
+        )
     })
     .await
     .map_err(|error| format!("OCR recognition task failed: {error}"))?
@@ -857,14 +1031,18 @@ async fn reset_ocr_runtime(
     state.cancel_generation.fetch_add(1, Ordering::SeqCst);
     let worker = state.worker.clone();
     let worker_pid = state.worker_pid.clone();
+    let runtime_status = state.runtime_status.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        write_cached_runtime_status(&runtime_status, None)?;
         stop_worker(&worker, &worker_pid)?;
         let paths = runtime_paths(&app)?;
         if paths.root.exists() {
             fs::remove_dir_all(&paths.root)
                 .map_err(|error| format!("Unable to remove OCR runtime: {error}"))?;
         }
-        get_runtime_status_inner(&app)
+        let status = get_runtime_status_inner(&app)?;
+        write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+        Ok(status)
     })
     .await
     .map_err(|error| format!("OCR reset task failed: {error}"))?
@@ -873,6 +1051,7 @@ async fn reset_ocr_runtime(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(OcrState::default())
         .invoke_handler(tauri::generate_handler![
             get_ocr_runtime_status,
@@ -884,6 +1063,66 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running VisualTeX");
+}
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn worker_protocol_skips_non_utf8_diagnostics_before_json() {
+        let bytes = b"\xd5\xfd\xca\xbd\xc8\xd5\xd6\xbe\n{\"event\":\"ready\",\"ok\":true}\n";
+        let mut reader = BufReader::new(Cursor::new(bytes));
+
+        let value = read_worker_json(&mut reader, "closed", "test response")
+            .expect("reader should skip non-protocol diagnostic bytes");
+
+        assert_eq!(value.get("event").and_then(Value::as_str), Some("ready"));
+    }
+
+    #[test]
+    fn worker_protocol_decodes_ascii_escaped_unicode() {
+        let bytes = b"{\"message\":\"\\u6b63\\u5728\\u52a0\\u8f7d\"}\n";
+        let mut reader = BufReader::new(Cursor::new(bytes));
+
+        let value = read_worker_json(&mut reader, "closed", "test response")
+            .expect("escaped Unicode JSON should parse");
+
+        assert_eq!(
+            value.get("message").and_then(Value::as_str),
+            Some("正在加载")
+        );
+    }
+
+    #[test]
+    fn runtime_status_cache_round_trips_and_clears() {
+        let cache = Arc::new(Mutex::new(None));
+        let expected = OcrRuntimeStatus {
+            installed: true,
+            python_path: Some("/tmp/visualtex-python".to_string()),
+            python_version: Some("3.13.0".to_string()),
+            paddle_version: Some(PADDLE_VERSION.to_string()),
+            paddleocr_version: Some(PADDLEOCR_VERSION.to_string()),
+            runtime_path: "/tmp/visualtex-ocr".to_string(),
+            message: "ready".to_string(),
+        };
+
+        write_cached_runtime_status(&cache, Some(expected.clone()))
+            .expect("cache write should succeed");
+        let cached = read_cached_runtime_status(&cache)
+            .expect("cache read should succeed")
+            .expect("cached status should exist");
+        assert_eq!(cached.python_version, expected.python_version);
+        assert!(cached.installed);
+
+        write_cached_runtime_status(&cache, None).expect("cache clear should succeed");
+        assert!(
+            read_cached_runtime_status(&cache)
+                .expect("cache read after clear should succeed")
+                .is_none()
+        );
+    }
 }
 
 #[cfg(all(test, unix))]

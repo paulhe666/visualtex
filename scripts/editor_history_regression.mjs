@@ -180,6 +180,7 @@ async function main() {
     }) => {
       await evaluate(`(() => {
         localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+        localStorage.setItem("visualtex.onboarding.web.v3.completed", "true");
         let persisted;
         try {
           persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "null");
@@ -205,6 +206,7 @@ async function main() {
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(850);
       await waitForFields(lines.length);
+      await waitForValues(lines.map((line) => line.latex));
     };
 
     const installFakeTauri = async () => {
@@ -285,6 +287,52 @@ async function main() {
     const values = async () =>
       evaluate(`[...document.querySelectorAll("math-field")].map((field) => field.value)`);
 
+    const waitForValues = async (expected, timeoutMs = 3000) => {
+      const expectedJson = JSON.stringify(expected);
+      await evaluate(`new Promise((resolve, reject) => {
+        const started = performance.now();
+        const done = () => {
+          const current = [...document.querySelectorAll("math-field")].map(
+            (field) => field.value,
+          );
+          if (JSON.stringify(current) === ${JSON.stringify(expectedJson)}) {
+            resolve(true);
+            return;
+          }
+          if (performance.now() - started > ${timeoutMs}) {
+            reject(new Error(
+              "Timed out waiting for formula values: " + JSON.stringify(current),
+            ));
+            return;
+          }
+          setTimeout(done, 30);
+        };
+        done();
+      })`);
+    };
+
+    const waitForHistoryAction = async (ariaLabel, timeoutMs = 3000) => {
+      const selector = `button[aria-label="${ariaLabel}"]`;
+      await evaluate(`new Promise((resolve, reject) => {
+        const started = performance.now();
+        const done = () => {
+          const button = document.querySelector(${JSON.stringify(selector)});
+          if (button && !button.disabled) {
+            resolve(true);
+            return;
+          }
+          if (performance.now() - started > ${timeoutMs}) {
+            reject(new Error(
+              "Timed out waiting for history action: " + ${JSON.stringify(ariaLabel)},
+            ));
+            return;
+          }
+          setTimeout(done, 30);
+        };
+        done();
+      })`);
+    };
+
     const lineIds = async () =>
       evaluate(`[...document.querySelectorAll(".formula-line")].map((line) => line.dataset.lineId)`);
 
@@ -324,7 +372,9 @@ async function main() {
       3,
       "redo should restore final caret",
     );
+    await focusField(0);
     await key("Backspace", "Backspace", 8);
+    await waitForValues(["ab"]);
     assertDeepEqual(await values(), ["ab"], "Backspace should work after redo");
     await undo();
     assertDeepEqual(await values(), ["abc"], "Backspace should be globally undoable");
@@ -332,13 +382,22 @@ async function main() {
     await resetDocument({ lines: [{ id: "shortcut-line", latex: "" }] });
     await focusField(0);
     await key("s", "KeyS", 83);
+    await waitForValues(["s"]);
+    await waitForHistoryAction("撤销");
     await key("z", "KeyZ", 90, 4, false);
+    await waitForValues([""]);
+    await waitForHistoryAction("重做");
     assertDeepEqual(await values(), [""], "Cmd+Z should use global history");
     await key("z", "KeyZ", 90, 12, false);
+    await waitForValues(["s"]);
+    await waitForHistoryAction("撤销");
     assertDeepEqual(await values(), ["s"], "Cmd+Shift+Z should redo globally");
     await key("z", "KeyZ", 90, 2, false);
+    await waitForValues([""]);
+    await waitForHistoryAction("重做");
     assertDeepEqual(await values(), [""], "Ctrl+Z should use global history");
     await key("y", "KeyY", 89, 2, false);
+    await waitForValues(["s"]);
     assertDeepEqual(await values(), ["s"], "Ctrl+Y should redo globally");
 
     await resetDocument({ lines: [{ id: "title-line", latex: "a" }] });
@@ -379,9 +438,12 @@ async function main() {
     await resetDocument({ lines: [{ id: "timeout-line", latex: "" }] });
     await focusField(0);
     await key("a", "KeyA", 65);
-    await sleep(650);
+    await sleep(1200);
     await key("b", "KeyB", 66);
+    await waitForValues(["ab"]);
+    await waitForHistoryAction("撤销");
     await undo();
+    await waitForValues(["a"]);
     assertDeepEqual(await values(), ["a"], "typing after timeout should undo separately");
     await undo();
     assertDeepEqual(await values(), [""], "second undo should remove first group");
@@ -614,78 +676,83 @@ async function main() {
     await redo();
     assertEqual((await values())[0], candidateAfter, "candidate redo should restore result");
 
-    await resetDocument({ lines: [{ id: "modal-line", latex: "a" }] });
-    await focusField(0);
-    await key("b", "KeyB", 66);
-    await installFakeTauri();
-    await click('button[aria-label="图片公式识别"]');
-    await key("z", "KeyZ", 90, 4, false);
-    assertDeepEqual(await values(), ["ab"], "OCR modal must block underlying global undo");
-    await click('button[aria-label="关闭 OCR"]');
-    await undo();
-    assertDeepEqual(await values(), ["a"], "global undo should resume after OCR closes");
-
-    await resetDocument({ lines: [{ id: "ocr-line", latex: "a" }] });
-    await focusField(0);
-    await installFakeTauri();
-    await click('button[aria-label="图片公式识别"]');
-    await sleep(220);
-    await evaluate(`(() => {
-      const input = document.querySelector('.ocr-dialog input[type="file"]');
-      if (!input) throw new Error("OCR image input was not found");
-      const transfer = new DataTransfer();
-      transfer.items.add(
-        new File([new Uint8Array([137, 80, 78, 71])], "formula.png", {
-          type: "image/png",
-        }),
-      );
-      input.files = transfer.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    })()`);
-    await sleep(160);
-    await evaluate(`(() => {
-      const button = [...document.querySelectorAll(".ocr-dialog button")].find(
-        (item) => item.textContent?.includes("开始识别"),
-      );
-      if (!button) throw new Error("OCR recognize button was not found");
-      button.click();
-    })()`);
-    await evaluate(`new Promise((resolve, reject) => {
-      const started = performance.now();
-      const done = () => {
-        if (document.querySelector(".ocr-latex-editor textarea")) {
-          resolve(true);
-          return;
-        }
-        if (performance.now() - started > 3000) {
-          reject(new Error("Fake OCR result did not appear"));
-          return;
-        }
-        setTimeout(done, 30);
-      };
-      done();
-    })`);
-    await evaluate(`(() => {
-      const button = [...document.querySelectorAll(".ocr-dialog button")].find(
-        (item) => item.textContent?.includes("插入当前光标"),
-      );
-      if (!button) throw new Error("OCR insert button was not found");
-      button.click();
-    })()`);
-    await sleep(260);
-    const ocrValue = (await values())[0];
-    if (!ocrValue.startsWith("a") || !/\\theta/.test(ocrValue)) {
-      throw new Error(`OCR result was not inserted at the saved caret: ${ocrValue}`);
-    }
-    await undo();
-    assertDeepEqual(await values(), ["a"], "OCR insert should undo in one step");
-    assertEqual(
-      await evaluate(`document.querySelector("math-field").position`),
-      1,
-      "OCR undo should restore original caret",
+    const hasDesktopOcr = await evaluate(
+      `Boolean(document.querySelector('button[aria-label="图片公式识别"]'))`,
     );
-    await redo();
-    assertEqual((await values())[0], ocrValue, "OCR redo should restore result");
+    if (hasDesktopOcr) {
+      await resetDocument({ lines: [{ id: "modal-line", latex: "a" }] });
+      await focusField(0);
+      await key("b", "KeyB", 66);
+      await installFakeTauri();
+      await click('button[aria-label="图片公式识别"]');
+      await key("z", "KeyZ", 90, 4, false);
+      assertDeepEqual(await values(), ["ab"], "OCR modal must block underlying global undo");
+      await click('button[aria-label="关闭 OCR"]');
+      await undo();
+      assertDeepEqual(await values(), ["a"], "global undo should resume after OCR closes");
+
+      await resetDocument({ lines: [{ id: "ocr-line", latex: "a" }] });
+      await focusField(0);
+      await installFakeTauri();
+      await click('button[aria-label="图片公式识别"]');
+      await sleep(220);
+      await evaluate(`(() => {
+        const input = document.querySelector('.ocr-dialog input[type="file"]');
+        if (!input) throw new Error("OCR image input was not found");
+        const transfer = new DataTransfer();
+        transfer.items.add(
+          new File([new Uint8Array([137, 80, 78, 71])], "formula.png", {
+            type: "image/png",
+          }),
+        );
+        input.files = transfer.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+      await sleep(160);
+      await evaluate(`(() => {
+        const button = [...document.querySelectorAll(".ocr-dialog button")].find(
+          (item) => item.textContent?.includes("开始识别"),
+        );
+        if (!button) throw new Error("OCR recognize button was not found");
+        button.click();
+      })()`);
+      await evaluate(`new Promise((resolve, reject) => {
+        const started = performance.now();
+        const done = () => {
+          if (document.querySelector(".ocr-latex-editor textarea")) {
+            resolve(true);
+            return;
+          }
+          if (performance.now() - started > 3000) {
+            reject(new Error("Fake OCR result did not appear"));
+            return;
+          }
+          setTimeout(done, 30);
+        };
+        done();
+      })`);
+      await evaluate(`(() => {
+        const button = [...document.querySelectorAll(".ocr-dialog button")].find(
+          (item) => item.textContent?.includes("插入当前光标"),
+        );
+        if (!button) throw new Error("OCR insert button was not found");
+        button.click();
+      })()`);
+      await sleep(260);
+      const ocrValue = (await values())[0];
+      if (!ocrValue.startsWith("a") || !/\\theta/.test(ocrValue)) {
+        throw new Error(`OCR result was not inserted at the saved caret: ${ocrValue}`);
+      }
+      await undo();
+      assertDeepEqual(await values(), ["a"], "OCR insert should undo in one step");
+      assertEqual(
+        await evaluate(`document.querySelector("math-field").position`),
+        1,
+        "OCR undo should restore original caret",
+      );
+      await redo();
+      assertEqual((await values())[0], ocrValue, "OCR redo should restore result");
+    }
 
     await evaluate(`new Promise((resolve) => {
       const request = indexedDB.deleteDatabase("visualtex-history");

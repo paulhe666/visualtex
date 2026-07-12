@@ -99,7 +99,7 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v2.completed";
+const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);

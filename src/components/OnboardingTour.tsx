@@ -6,7 +6,9 @@ import {
   Code2,
   Copy,
   Keyboard,
+  Menu,
   PanelLeft,
+  RefreshCw,
   Save,
   X,
 } from "lucide-react";
@@ -27,16 +29,64 @@ interface StepCopy {
 
 const copy: Record<Language, StepCopy[]> = {
   cn: [
-    { title: "欢迎使用 VisualTeX", description: "用熟悉的方式输入公式，需要时随时查看源码。" },
-    { title: "从公式库开始", description: "选择结构或符号，它会直接插入当前光标。" },
-    { title: "保持双手在键盘上", description: "几个按键就能完成换行、跳转和删除。" },
-    { title: "复制与保存", description: "查看 LaTeX 源码、复制所需格式，或把文档保存到本地。" },
+    {
+      title: "欢迎使用 VisualTeX",
+      description: "用熟悉的方式输入公式，需要时随时查看源码。",
+    },
+    {
+      title: "从公式库开始",
+      description: "选择结构或符号，它会直接插入当前光标。",
+    },
+    {
+      title: "保持双手在键盘上",
+      description: "通过键盘完成换行、候选选择、结构跳转和跨行移动。",
+    },
+    {
+      title: "切换 LaTeX 代码格式",
+      description:
+        "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。",
+    },
+    {
+      title: "自动检查新版本",
+      description:
+        "联网后会自动检查正式版本；也可以在菜单或设置中手动检查，并按当前语言查看更新内容。",
+    },
+    {
+      title: "复制、保存与继续编辑",
+      description:
+        "复制所需的 LaTeX 格式，或把完整文档保存到本地浏览器设备中。",
+    },
   ],
   en: [
-    { title: "Welcome to VisualTeX", description: "Write formulas naturally and inspect the source whenever you need it." },
-    { title: "Start from the formula library", description: "Choose a structure or symbol to insert it at the cursor." },
-    { title: "Keep your hands on the keyboard", description: "A few keys cover line creation, navigation, and deletion." },
-    { title: "Copy and save", description: "Inspect the LaTeX source, copy the format you need, or save the document locally." },
+    {
+      title: "Welcome to VisualTeX",
+      description:
+        "Write formulas naturally and inspect the source whenever you need it.",
+    },
+    {
+      title: "Start from the formula library",
+      description: "Choose a structure or symbol to insert it at the cursor.",
+    },
+    {
+      title: "Keep your hands on the keyboard",
+      description:
+        "Create rows, choose candidates, move through structures, and navigate between formula rows from the keyboard.",
+    },
+    {
+      title: "Switch the LaTeX code format",
+      description:
+        "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately.",
+    },
+    {
+      title: "Check for new versions automatically",
+      description:
+        "VisualTeX checks stable releases when a connection is available. You can also check manually and read notes in the current language.",
+    },
+    {
+      title: "Copy, save, and keep editing",
+      description:
+        "Copy the LaTeX format you need or save the complete document to the current browser device.",
+    },
   ],
 };
 
@@ -81,7 +131,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [open, onFinish]);
 
   if (!open) return null;
 
@@ -96,7 +146,9 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
       >
         <header className="onboarding-header">
           <div className="onboarding-brand">
-            <span><VisualTeXLogo className="onboarding-brand-logo" /></span>
+            <span>
+              <VisualTeXLogo className="onboarding-brand-logo" />
+            </span>
             <strong>VisualTeX</strong>
           </div>
           <button
@@ -119,10 +171,16 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
           <div className={`onboarding-stage step-${step}`}>
             {step === 0 && (
               <div className="onboarding-welcome-mark">
-                <span><VisualTeXLogo className="onboarding-welcome-logo" /></span>
+                <span>
+                  <VisualTeXLogo className="onboarding-welcome-logo" />
+                </span>
                 <div>
                   <strong>VisualTeX</strong>
-                  <small>{isEn ? "Formula workspace for the web" : "网页版公式工作台"}</small>
+                  <small>
+                    {isEn
+                      ? "Formula workspace for the web"
+                      : "网页版公式工作台"}
+                  </small>
                 </div>
               </div>
             )}
@@ -134,8 +192,15 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
                   <span>{isEn ? "Formula tools" : "公式工具"}</span>
                 </div>
                 <div className="onboarding-formula-grid">
-                  {["\\frac{a}{b}", "\\sqrt{x}", "\\int_a^b f(x)\\,dx", "\\sum_{i=1}^{n} a_i"].map((latex) => (
-                    <span key={latex}><MathPreview latex={latex} /></span>
+                  {[
+                    "\\frac{a}{b}",
+                    "\\sqrt{x}",
+                    "\\int_a^b f(x)\\,dx",
+                    "\\sum_{i=1}^{n} a_i",
+                  ].map((latex) => (
+                    <span key={latex}>
+                      <MathPreview latex={latex} />
+                    </span>
                   ))}
                 </div>
               </div>
@@ -147,37 +212,132 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
                   <MathPreview latex="\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}" />
                 </div>
                 <div className="onboarding-key-row">
-                  <span><Keyboard size={14} /><kbd>Enter</kbd><small>{isEn ? "New line" : "新建一行"}</small></span>
-                  <span><kbd>Tab</kbd><small>{isEn ? "Next field" : "下个位置"}</small></span>
-                  <span><kbd>⌫</kbd><small>{isEn ? "Delete empty line" : "删除空行"}</small></span>
+                  <span>
+                    <Keyboard size={14} />
+                    <kbd>Enter</kbd>
+                    <small>{isEn ? "New line" : "新建一行"}</small>
+                  </span>
+                  <span>
+                    <kbd>↑ ↓</kbd>
+                    <small>{isEn ? "Switch rows" : "切换公式行"}</small>
+                  </span>
+                  <span>
+                    <kbd>Tab</kbd>
+                    <small>{isEn ? "Next field" : "下个位置"}</small>
+                  </span>
                 </div>
               </div>
             )}
 
             {step === 3 && (
+              <div className="onboarding-code-format-demo">
+                <div className="onboarding-code-format-toolbar">
+                  <Code2 size={16} />
+                  <strong>
+                    {isEn ? "LaTeX code format" : "LaTeX 代码格式"}
+                  </strong>
+                  <span>⌄</span>
+                </div>
+                <div className="onboarding-code-format-choice">
+                  <span>
+                    <small>{isEn ? "Independent" : "单公式环境"}</small>
+                    <strong>\\[ ... \\]</strong>
+                  </span>
+                  <span className="is-selected">
+                    <Check size={14} />
+                    <small>{isEn ? "Combined" : "多公式环境"}</small>
+                    <strong>align*</strong>
+                  </span>
+                </div>
+                <i>
+                  <ArrowRight size={15} />
+                </i>
+                <pre>{"\\begin{align*}\na &= b + c \\\\\\nd &= e - f\n\\end{align*}"}</pre>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="onboarding-update-demo">
+                <span>
+                  <Menu size={20} />
+                  <strong>{isEn ? "Open app menu" : "打开左上角菜单"}</strong>
+                </span>
+                <i>
+                  <ArrowRight size={15} />
+                </i>
+                <span className="onboarding-update-menu-item">
+                  <RefreshCw size={20} />
+                  <strong>{isEn ? "Check for updates" : "检查更新"}</strong>
+                </span>
+                <i>
+                  <ArrowRight size={15} />
+                </i>
+                <span>
+                  <Check size={20} />
+                  <strong>
+                    {isEn ? "Read localized notes" : "查看双语更新内容"}
+                  </strong>
+                </span>
+              </div>
+            )}
+
+            {step === 5 && (
               <div className="onboarding-workflow-demo">
-                <span><Code2 size={20} /><strong>{isEn ? "Source" : "源码"}</strong></span>
-                <i><ArrowRight size={15} /></i>
-                <span><Copy size={20} /><strong>{isEn ? "Copy" : "复制"}</strong></span>
-                <i><ArrowRight size={15} /></i>
-                <span><Save size={20} /><strong>{isEn ? "Save" : "保存"}</strong></span>
+                <span>
+                  <Code2 size={20} />
+                  <strong>{isEn ? "Source" : "源码"}</strong>
+                </span>
+                <i>
+                  <ArrowRight size={15} />
+                </i>
+                <span>
+                  <Copy size={20} />
+                  <strong>{isEn ? "Copy" : "复制"}</strong>
+                </span>
+                <i>
+                  <ArrowRight size={15} />
+                </i>
+                <span>
+                  <Save size={20} />
+                  <strong>{isEn ? "Save" : "保存"}</strong>
+                </span>
               </div>
             )}
           </div>
         </div>
 
         <footer className="onboarding-footer">
-          <button type="button" className="onboarding-skip" onClick={onFinish}>
+          <button
+            type="button"
+            className="onboarding-skip"
+            onClick={onFinish}
+          >
             {isEn ? "Skip" : "跳过"}
           </button>
-          <div className="onboarding-progress" aria-label={isEn ? "Tutorial progress" : "教程进度"}>
+          <div
+            className="onboarding-progress"
+            aria-label={isEn ? "Tutorial progress" : "教程进度"}
+          >
             {steps.map((_, index) => (
-              <span key={index} className={index === step ? "is-active" : index < step ? "is-complete" : ""} />
+              <span
+                key={index}
+                className={
+                  index === step
+                    ? "is-active"
+                    : index < step
+                      ? "is-complete"
+                      : ""
+                }
+              />
             ))}
           </div>
           <div className="onboarding-actions">
             {step > 0 && (
-              <button type="button" className="secondary-button" onClick={() => setStep((value) => value - 1)}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setStep((value) => value - 1)}
+              >
                 <ArrowLeft size={15} />
                 {isEn ? "Back" : "上一步"}
               </button>
@@ -185,10 +345,18 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
             <button
               type="button"
               className="primary-button"
-              onClick={() => lastStep ? onFinish() : setStep((value) => value + 1)}
+              onClick={() =>
+                lastStep ? onFinish() : setStep((value) => value + 1)
+              }
             >
               {lastStep ? <Check size={15} /> : null}
-              {lastStep ? (isEn ? "Start editing" : "开始使用") : (isEn ? "Continue" : "继续")}
+              {lastStep
+                ? isEn
+                  ? "Start editing"
+                  : "开始使用"
+                : isEn
+                  ? "Continue"
+                  : "继续"}
               {!lastStep ? <ArrowRight size={15} /> : null}
             </button>
           </div>

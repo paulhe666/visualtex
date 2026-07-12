@@ -23,6 +23,19 @@ os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "BOS")
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ.setdefault("GLOG_minloglevel", "2")
 
+# The worker protocol is UTF-8 on every platform. Windows may otherwise inherit
+# a legacy console code page such as CP936/GBK.
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="strict")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="strict", line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(
+        encoding="utf-8",
+        errors="backslashreplace",
+        line_buffering=True,
+    )
+
 _PROTOCOL_STDOUT = sys.stdout
 _CURRENT_MODEL: Any = None
 _CURRENT_MODEL_NAME: Optional[str] = None
@@ -37,7 +50,9 @@ _MODEL_DOWNLOAD_MB = {
 
 
 def _emit(payload: Dict[str, Any]) -> None:
-    _PROTOCOL_STDOUT.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    # ASCII-safe JSON makes the pipe protocol independent of the user's system
+    # locale even if a dependency changes a stream encoding at runtime.
+    _PROTOCOL_STDOUT.write(json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n")
     _PROTOCOL_STDOUT.flush()
 
 
@@ -69,6 +84,51 @@ def _watch_parent_process() -> None:
     try:
         parent_pid = int(raw_parent_pid)
     except ValueError:
+        return
+
+    if os.name == "nt":
+        # On Windows, os.kill(pid, 0) is not a harmless existence check: Python
+        # routes non-console signals through TerminateProcess. Wait on a process
+        # handle instead so the OCR worker exits only after VisualTeX exits.
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize = 0x00100000
+        infinite = 0xFFFFFFFF
+        wait_object_0 = 0x00000000
+        wait_failed = 0xFFFFFFFF
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(synchronize, False, parent_pid)
+        if not handle:
+            _log(
+                "Unable to open the VisualTeX parent process handle on Windows; "
+                f"parent monitoring is disabled (error={ctypes.get_last_error()})"
+            )
+            return
+        try:
+            wait_result = kernel32.WaitForSingleObject(handle, infinite)
+        finally:
+            kernel32.CloseHandle(handle)
+
+        if wait_result == wait_object_0:
+            os._exit(0)
+        if wait_result == wait_failed:
+            _log(
+                "Waiting for the VisualTeX parent process failed on Windows; "
+                f"parent monitoring is disabled (error={ctypes.get_last_error()})"
+            )
+        else:
+            _log(
+                "Unexpected Windows parent wait result; parent monitoring is "
+                f"disabled (result={wait_result})"
+            )
         return
 
     while True:

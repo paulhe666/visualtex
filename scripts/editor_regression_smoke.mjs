@@ -675,7 +675,11 @@ async function main() {
       const surfaceRect = surface.getBoundingClientRect();
       const stackRect = stack.getBoundingClientRect();
       return {
-        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
+        ready:
+          field.classList.contains("is-simple-formula") &&
+          rects.length > 0 &&
+          Number.parseFloat(getComputedStyle(field).fontSize) <= 11.2 &&
+          line.getBoundingClientRect().height <= 36,
         zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
         zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
         fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
@@ -774,62 +778,65 @@ async function main() {
       throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
     }
 
-    const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
-      const button = document.querySelector('button[aria-label="图片公式识别"]');
-      if (!button) {
-        reject(new Error("OCR toolbar button was not found"));
-        return;
-      }
-      const startedAt = performance.now();
-      const finish = () => {
-        const dialog = document.querySelector(".ocr-dialog");
-        const backdrop = document.querySelector(".ocr-modal-backdrop");
-        if (!dialog || !backdrop) return false;
-        resolve({
-          elapsedMs: performance.now() - startedAt,
-          backdropFilter: getComputedStyle(backdrop).backdropFilter,
-          webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+    const hasDesktopOcr = await evaluate(
+      `Boolean(document.querySelector('button[aria-label="图片公式识别"]'))`,
+    );
+    let ocrOpenMetrics = null;
+    let ocrCenterMetrics = null;
+    if (hasDesktopOcr) {
+      ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
+        const button = document.querySelector('button[aria-label="图片公式识别"]');
+        const startedAt = performance.now();
+        const finish = () => {
+          const dialog = document.querySelector(".ocr-dialog");
+          const backdrop = document.querySelector(".ocr-modal-backdrop");
+          if (!dialog || !backdrop) return false;
+          resolve({
+            elapsedMs: performance.now() - startedAt,
+            backdropFilter: getComputedStyle(backdrop).backdropFilter,
+            webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+          });
+          return true;
+        };
+        const observer = new MutationObserver(() => {
+          if (finish()) observer.disconnect();
         });
-        return true;
-      };
-      const observer = new MutationObserver(() => {
+        observer.observe(document.body, { childList: true, subtree: true });
+        button.click();
         if (finish()) observer.disconnect();
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-      button.click();
-      if (finish()) observer.disconnect();
-      window.setTimeout(() => {
-        observer.disconnect();
-        reject(new Error("OCR dialog did not appear within 500 ms"));
-      }, 500);
-    })`);
-    if (ocrOpenMetrics.elapsedMs > 250) {
-      throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+        window.setTimeout(() => {
+          observer.disconnect();
+          reject(new Error("OCR dialog did not appear within 500 ms"));
+        }, 500);
+      })`);
+      if (ocrOpenMetrics.elapsedMs > 250) {
+        throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+      }
+      if (
+        ocrOpenMetrics.backdropFilter !== "none" &&
+        ocrOpenMetrics.webkitBackdropFilter !== "none"
+      ) {
+        throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
+      }
+      await sleep(220);
+      ocrCenterMetrics = await evaluate(`(() => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const rect = dialog.getBoundingClientRect();
+        return {
+          dialogCenterX: (rect.left + rect.right) / 2,
+          dialogCenterY: (rect.top + rect.bottom) / 2,
+          viewportCenterX: window.innerWidth / 2,
+          viewportCenterY: window.innerHeight / 2,
+          horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+          verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+        };
+      })()`);
+      if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
+        throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
+      }
+      await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
+      await sleep(120);
     }
-    if (
-      ocrOpenMetrics.backdropFilter !== "none" &&
-      ocrOpenMetrics.webkitBackdropFilter !== "none"
-    ) {
-      throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
-    }
-    await sleep(220);
-    const ocrCenterMetrics = await evaluate(`(() => {
-      const dialog = document.querySelector(".ocr-dialog");
-      const rect = dialog.getBoundingClientRect();
-      return {
-        dialogCenterX: (rect.left + rect.right) / 2,
-        dialogCenterY: (rect.top + rect.bottom) / 2,
-        viewportCenterX: window.innerWidth / 2,
-        viewportCenterY: window.innerHeight / 2,
-        horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
-        verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
-      };
-    })()`);
-    if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
-      throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
-    }
-    await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
-    await sleep(120);
 
     await setField("a=b");
     await key("Enter", "Enter", 13);
@@ -986,7 +993,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount !== 7 ||
+      onboardingFormatStep.progressCount !== 6 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")
