@@ -1,5 +1,5 @@
 [package]
-name = "visualtex-desktop"
+name = "visualstudio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -27,10 +27,13 @@ tauri-plugin-dialog = "2.6"
 tauri-plugin-fs = "2.4"
 tauri-plugin-opener = "2.5"
 tokio.workspace = true
+vt-compiler.workspace = true
 vt-core.workspace = true
+vt-layout-map.workspace = true
 vt-models.workspace = true
 vt-ocr.workspace = true
 vt-protocol.workspace = true
+vt-synctex.workspace = true
 vt-uri.workspace = true
 
 [dev-dependencies]

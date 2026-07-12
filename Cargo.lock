@@ -5103,27 +5103,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "visualtex-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "serde_json",
- "tokio",
- "tracing-subscriber",
- "vt-bridge",
- "vt-core",
- "vt-models",
- "vt-ocr",
- "vt-pdf",
- "vt-protocol",
- "vt-rpc",
- "vt-uri",
-]
-
-[[package]]
-name = "visualtex-desktop"
-version = "0.1.0"
+name = "visualstudio"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "image",
@@ -5141,10 +5122,32 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "vt-compiler",
  "vt-core",
+ "vt-layout-map",
  "vt-models",
  "vt-ocr",
  "vt-protocol",
+ "vt-synctex",
+ "vt-uri",
+]
+
+[[package]]
+name = "visualtex-cli"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
+ "vt-bridge",
+ "vt-core",
+ "vt-models",
+ "vt-ocr",
+ "vt-pdf",
+ "vt-protocol",
+ "vt-rpc",
  "vt-uri",
 ]
 
@@ -5170,7 +5173,7 @@ dependencies = [
 
 [[package]]
 name = "vt-bridge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -5184,7 +5187,7 @@ dependencies = [
 
 [[package]]
 name = "vt-buffer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "ropey",
@@ -5196,7 +5199,7 @@ dependencies = [
 
 [[package]]
 name = "vt-compiler"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dunce",
@@ -5209,7 +5212,7 @@ dependencies = [
 
 [[package]]
 name = "vt-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5234,7 +5237,7 @@ dependencies = [
 
 [[package]]
 name = "vt-index"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "regex",
@@ -5244,7 +5247,7 @@ dependencies = [
 
 [[package]]
 name = "vt-latex-semantic"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "insta",
  "proptest",
@@ -5257,7 +5260,7 @@ dependencies = [
 
 [[package]]
 name = "vt-latex-syntax"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "codebook-tree-sitter-latex",
  "proptest",
@@ -5269,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "vt-layout-map"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "tempfile",
@@ -5284,7 +5287,7 @@ dependencies = [
 
 [[package]]
 name = "vt-models"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -5296,7 +5299,7 @@ dependencies = [
 
 [[package]]
 name = "vt-ocr"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "image",
  "serde",
@@ -5310,7 +5313,7 @@ dependencies = [
 
 [[package]]
 name = "vt-pdf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "image",
  "pdfium-auto",
@@ -5324,7 +5327,7 @@ dependencies = [
 
 [[package]]
 name = "vt-project"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -5340,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "vt-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde",
@@ -5351,7 +5354,7 @@ dependencies = [
 
 [[package]]
 name = "vt-rpc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -5366,7 +5369,7 @@ dependencies = [
 
 [[package]]
 name = "vt-synctex"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dunce",
  "tempfile",
@@ -5378,7 +5381,7 @@ dependencies = [
 
 [[package]]
 name = "vt-uri"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "thiserror 2.0.18",

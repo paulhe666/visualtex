@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completionContextAt, computeSourceChange } from "./index";
+import { completionContextAt, computeSourceChange, sourcePositionAtUtf8Byte } from "./index";
 
 describe("computeSourceChange", () => {
   it("uses UTF-8 byte offsets for Chinese text", () => {
@@ -20,6 +20,26 @@ describe("computeSourceChange", () => {
 
   it("returns null for identical strings", () => {
     expect(computeSourceChange("same", "same")).toBeNull();
+  });
+});
+
+describe("sourcePositionAtUtf8Byte", () => {
+  it("maps UTF-8 byte spans to one-based source positions without splitting Unicode", () => {
+    const source = "第一行\nA😀中B";
+    const byteAtChinese = new TextEncoder().encode("第一行\nA😀").length;
+    expect(sourcePositionAtUtf8Byte(source, byteAtChinese)).toEqual({
+      line: 2,
+      column: 4,
+      utf16Offset: 7,
+    });
+  });
+
+  it("clamps byte offsets that land inside a scalar to its start", () => {
+    expect(sourcePositionAtUtf8Byte("A中B", 2)).toEqual({
+      line: 1,
+      column: 2,
+      utf16Offset: 1,
+    });
   });
 });
 

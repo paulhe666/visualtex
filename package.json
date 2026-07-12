@@ -1,7 +1,7 @@
 {
-  "name": "visualtex-next",
+  "name": "visualstudio",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@10.19.0",
   "scripts": {
     "dev": "pnpm --filter @visualtex/desktop dev",

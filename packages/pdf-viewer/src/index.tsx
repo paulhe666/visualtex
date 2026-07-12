@@ -39,6 +39,7 @@ export interface PdfViewerProps {
   highlights?: PdfRect[];
   layoutBoxes?: LayoutBox[];
   nodes?: VisualNode[];
+  editable?: boolean;
   onInverseSearch?: (result: InverseSearchResult) => void;
   onNodeSelect?: (node: VisualNode) => void;
   onNodeCommit?: (node: VisualNode, content: string) => void;
@@ -46,7 +47,7 @@ export interface PdfViewerProps {
   onError?: (message: string) => void;
 }
 
-interface DirectEditState {
+export interface DirectEditState {
   pageIndex: number;
   node: VisualNode;
   layout: LayoutBox;
@@ -64,6 +65,7 @@ interface RenderedPageProps {
   highlights: PdfRect[];
   layoutBoxes: LayoutBox[];
   nodes: VisualNode[];
+  editable: boolean;
   directEdit: DirectEditState | null;
   onDirectEdit: (edit: DirectEditState | null) => void;
   onNodeSelect?: (node: VisualNode) => void;
@@ -166,10 +168,16 @@ function useRenderedImage(
   return rendered;
 }
 
-function isDirectlyEditable(node: VisualNode, layout: LayoutBox): boolean {
+export function isDirectlyEditable(node: VisualNode, layout: LayoutBox): boolean {
   if (layout.confidence !== "exact" && layout.confidence !== "high") return false;
   if (node.support === "native") {
-    return ["section", "subsection", "paragraph", "display_math"].includes(node.kind);
+    return [
+      "section",
+      "subsection",
+      "paragraph",
+      "inline_math",
+      "display_math",
+    ].includes(node.kind);
   }
   return node.support === "partial" && ["figure", "table"].includes(node.kind);
 }
@@ -196,7 +204,7 @@ function unionRects(rects: PdfRect[]): PdfRect | null {
   return { page, x: left, y: top, width: right - left, height: bottom - top };
 }
 
-function findDirectEdit(
+export function findDirectEdit(
   pageIndex: number,
   x: number,
   y: number,
@@ -224,7 +232,8 @@ function findDirectEdit(
   candidates.sort((left, right) => {
     const leftArea = left.rect.width * left.rect.height;
     const rightArea = right.rect.width * right.rect.height;
-    const kindPriority = (node: VisualNode) => (node.kind === "display_math" ? 0 : 1);
+    const kindPriority = (node: VisualNode) =>
+      node.kind === "inline_math" || node.kind === "display_math" ? 0 : 1;
     return kindPriority(left.node) - kindPriority(right.node) || leftArea - rightArea;
   });
   return candidates[0] ?? null;
@@ -338,14 +347,14 @@ function DirectEditOverlay({
       onDoubleClick={(event) => event.stopPropagation()}
     >
       <div className="vt-pdf-direct-label">
-        <span>{edit.node.kind === "display_math" ? "公式" : edit.node.kind === "paragraph" ? "正文" : edit.node.kind === "figure" ? "图片属性" : edit.node.kind === "table" ? "表格属性" : "标题"}</span>
+        <span>{edit.node.kind === "inline_math" || edit.node.kind === "display_math" ? "公式" : edit.node.kind === "paragraph" ? "正文" : edit.node.kind === "figure" ? "图片属性" : edit.node.kind === "table" ? "表格属性" : "标题"}</span>
         <span>{edit.layout.confidence}</span>
       </div>
       <div className="vt-pdf-direct-body">
         {edit.node.kind === "figure" || edit.node.kind === "table" ? (
           <AttributeEditor edit={edit} onChange={onAttributesChange} />
-        ) : edit.node.kind === "display_math" ? (
-          <MathNodeEditor value={edit.draft} onChange={onChange} />
+        ) : edit.node.kind === "inline_math" || edit.node.kind === "display_math" ? (
+          <MathNodeEditor value={edit.draft} autoFocus onChange={onChange} />
         ) : edit.node.kind === "paragraph" ? (
           <textarea
             autoFocus
@@ -380,6 +389,7 @@ function RenderedPage({
   highlights,
   layoutBoxes,
   nodes,
+  editable,
   directEdit,
   onDirectEdit,
   onNodeSelect,
@@ -411,6 +421,7 @@ function RenderedPage({
   };
 
   const handleSingleClick = (event: MouseEvent<HTMLElement>) => {
+    if (!editable) return;
     const point = pdfCoordinates(event);
     if (!point) return;
     const hit = findDirectEdit(page.index, point.x, point.y, layoutBoxes, nodes);
@@ -433,7 +444,7 @@ function RenderedPage({
   return (
     <article
       ref={pageRef}
-      className="vt-pdf-page"
+      className={`vt-pdf-page${editable ? " editable" : ""}`}
       data-page-index={page.index}
       style={{ width: cssWidth, height: cssHeight }}
       onClick={handleSingleClick}
@@ -468,7 +479,7 @@ function RenderedPage({
           />
         ))}
       </div>
-      {directEdit?.pageIndex === page.index && (
+      {editable && directEdit?.pageIndex === page.index && (
         <DirectEditOverlay
           edit={directEdit}
           page={displayPage}
@@ -525,6 +536,7 @@ export function PdfViewer({
   highlights = [],
   layoutBoxes = [],
   nodes = [],
+  editable = false,
   onInverseSearch,
   onNodeSelect,
   onNodeCommit,
@@ -543,6 +555,10 @@ export function PdfViewer({
   const pageRefs = useRef(new Map<number, HTMLElement>());
   const errorRef = useRef(onError);
   errorRef.current = onError;
+
+  useEffect(() => {
+    if (!editable) setDirectEdit(null);
+  }, [editable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -632,7 +648,11 @@ export function PdfViewer({
           <input type="checkbox" checked={grayscale} onChange={(event) => setGrayscale(event.target.checked)} />
           灰度
         </label>
-        <span className="vt-pdf-editable-count" title="当前可安全直接编辑的页面节点">可编辑 {directlyEditableCount}</span>
+        {editable && (
+          <span className="vt-pdf-editable-count" title="当前可安全直接编辑的页面节点">
+            可编辑 {directlyEditableCount}
+          </span>
+        )}
         <span className="vt-pdf-fingerprint" title={info.fingerprint}>{info.fingerprint.slice(0, 10)}</span>
       </header>
 
@@ -668,6 +688,7 @@ export function PdfViewer({
                   highlights={visibleHighlights}
                   layoutBoxes={layoutBoxes}
                   nodes={nodes}
+                  editable={editable}
                   directEdit={directEdit}
                   onDirectEdit={setDirectEdit}
                   onNodeSelect={onNodeSelect}
@@ -683,7 +704,9 @@ export function PdfViewer({
         </div>
       </div>
       <footer className="vt-pdf-hint">
-        单击高置信度正文、标题、陈列公式、图片或表格可直接编辑；双击其他区域通过 SyncTeX 跳转源码。
+        {editable
+          ? "页面保持真实编译排版；单击正文、标题、公式、图片或表格原位编辑，写回源码后自动重新编译。"
+          : "双击页面内容可通过 SyncTeX 跳转到对应源码。"}
       </footer>
     </section>
   );

@@ -362,17 +362,20 @@ impl CoreService {
         Ok(())
     }
 
-    pub async fn compile(&mut self) -> Result<CompileArtifact, CoreError> {
+    pub fn prepare_compile(&mut self) -> Result<CompileRequest, CoreError> {
         self.save_all()?;
         let root_id = self.project.root_file_id()?;
         let revision = self.project.buffer(root_id)?.revision;
-        Ok(vt_compiler::compile(CompileRequest {
+        Ok(CompileRequest {
             project_root: self.project.root.clone(),
             config: self.project.config.clone(),
             source_revision: revision,
             timeout: Duration::from_secs(120),
         })
-        .await?)
+    }
+
+    pub async fn compile(&mut self) -> Result<CompileArtifact, CoreError> {
+        Ok(vt_compiler::compile(self.prepare_compile()?).await?)
     }
 
     pub async fn detect_toolchain(&self) -> Vec<vt_protocol::ToolInfo> {
@@ -674,10 +677,10 @@ impl CoreService {
         })
     }
 
-    pub async fn build_layout_map(
+    pub fn prepare_layout_map(
         &mut self,
         authoritative_pdf: &Path,
-    ) -> Result<LayoutMapArtifact, CoreError> {
+    ) -> Result<LayoutMapRequest, CoreError> {
         self.save_all()?;
         let authoritative_pdf = self.validated_pdf_path(authoritative_pdf)?;
         let root_id = self.project.root_file_id()?;
@@ -687,7 +690,7 @@ impl CoreService {
             .get(&root_id)
             .map(|document| document.nodes.clone())
             .unwrap_or_default();
-        Ok(vt_layout_map::build_layout_map(LayoutMapRequest {
+        Ok(LayoutMapRequest {
             project_root: self.project.root.clone(),
             config: self.project.config.clone(),
             source_revision: buffer.revision,
@@ -696,7 +699,13 @@ impl CoreService {
             nodes,
             authoritative_pdf,
         })
-        .await?)
+    }
+
+    pub async fn build_layout_map(
+        &mut self,
+        authoritative_pdf: &Path,
+    ) -> Result<LayoutMapArtifact, CoreError> {
+        Ok(vt_layout_map::build_layout_map(self.prepare_layout_map(authoritative_pdf)?).await?)
     }
 
     fn pdf_service(&self) -> PdfService {
@@ -1346,6 +1355,21 @@ mod tests {
         .unwrap();
         let updated = core.root_snapshot().unwrap();
         assert!(updated.text.contains("\\section{方法}"));
+    }
+
+    #[test]
+    fn compile_request_is_detached_while_core_remains_available() {
+        let temp = tempdir().unwrap();
+        let mut core = CoreService::init_project(temp.path()).unwrap();
+        let expected_root = core.project_root().to_path_buf();
+        let request = core.prepare_compile().unwrap();
+
+        assert_eq!(request.project_root, expected_root);
+        assert_eq!(
+            request.source_revision,
+            core.root_snapshot().unwrap().revision
+        );
+        assert!(!core.root_snapshot().unwrap().dirty);
     }
 
     #[test]

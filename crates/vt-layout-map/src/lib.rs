@@ -137,14 +137,12 @@ pub async fn build_layout_map(
     } else {
         HashMap::new()
     };
-    let pixel_diff = pdf_service
-        .compare_documents(
-            &request.authoritative_pdf,
-            &shadow_pdf_path,
-            PIXEL_COMPARE_WIDTH,
-            PIXEL_COMPARE_TOLERANCE,
-        )
-        .ok();
+    let pixel_diff = Some(pdf_service.compare_documents(
+        &request.authoritative_pdf,
+        &shadow_pdf_path,
+        PIXEL_COMPARE_WIDTH,
+        PIXEL_COMPARE_TOLERANCE,
+    )?);
     let pixel_exact = pixel_diff.as_ref().is_some_and(pixel_diff_is_exact);
 
     let instrumented_by_id = instrumented_nodes
@@ -550,6 +548,7 @@ fn sync_tex_is_node_specific(node: &VisualNode) -> bool {
         NodeKind::Section
             | NodeKind::Subsection
             | NodeKind::Paragraph
+            | NodeKind::InlineMath
             | NodeKind::DisplayMath
             | NodeKind::Figure
             | NodeKind::Table
@@ -646,6 +645,24 @@ mod tests {
         assert!(sampled.len() <= 12);
         assert_eq!(sampled.first(), Some(&(1, 1)));
         assert_eq!(sampled.last(), Some(&(1_000, 1)));
+    }
+
+    #[test]
+    fn inline_math_sync_tex_mapping_is_high_confidence_when_layout_is_unchanged() {
+        let source = "$E=mc^2$";
+        let mut node = paragraph_node(source, 0, source.len());
+        node.kind = NodeKind::InlineMath;
+        let rect = PdfRect {
+            page: 1,
+            x: 72.0,
+            y: 120.0,
+            width: 48.0,
+            height: 12.0,
+        };
+        assert_eq!(
+            mapping_quality(&node, None, None, &[rect], true),
+            (MappingConfidence::High, MappingMethod::SyncTex)
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ import "mathlive/static.css";
 export interface MathNodeEditorProps {
   value: string;
   disabled?: boolean;
+  autoFocus?: boolean;
   onChange: (latex: string) => void;
   onCommit?: (latex: string) => void;
 }
@@ -13,6 +14,7 @@ export interface MathNodeEditorProps {
 export function MathNodeEditor({
   value,
   disabled = false,
+  autoFocus = false,
   onChange,
   onCommit,
 }: MathNodeEditorProps) {
@@ -40,6 +42,7 @@ export function MathNodeEditor({
     field.addEventListener("change", handleChange);
     hostRef.current.appendChild(field);
     fieldRef.current = field;
+    if (autoFocus && !disabled) queueMicrotask(() => field.focus());
 
     return () => {
       field.removeEventListener("input", handleInput);

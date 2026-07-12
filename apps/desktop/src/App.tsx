@@ -55,11 +55,11 @@ import {
 } from "@visualtex/protocol";
 import {
   SourceEditor,
+  sourcePositionAtUtf8Byte,
   type SourceChange,
   type SourceCompletion,
   type SourceReveal,
 } from "@visualtex/source-editor";
-import { VisualEditor } from "@visualtex/visual-editor";
 import {
   OCR_REGION_KIND_OPTIONS,
   changeOcrRegionKind,
@@ -153,6 +153,8 @@ export default function App() {
   const pendingVisualRef = useRef<PendingVisualEdit | null>(null);
   const visualTimerRef = useRef<number | null>(null);
   const compileTimerRef = useRef<number | null>(null);
+  const compilingRef = useRef(false);
+  const pendingCompileRef = useRef(false);
   const cursorTimerRef = useRef<number | null>(null);
   const indexTimerRef = useRef<number | null>(null);
   const searchTimerRef = useRef<number | null>(null);
@@ -339,6 +341,15 @@ export default function App() {
       visualTimerRef.current = null;
       enqueuePendingVisual();
     }, 240);
+  };
+
+  const commitVisualEdit = (nodeId: string, content: string) => {
+    pendingVisualRef.current = { nodeId, content };
+    if (visualTimerRef.current !== null) {
+      window.clearTimeout(visualTimerRef.current);
+      visualTimerRef.current = null;
+    }
+    enqueuePendingVisual();
   };
 
   const commitNodeAttributes = async (node: VisualNode, patch: NodeAttributesPatch) => {
@@ -536,20 +547,44 @@ export default function App() {
 
   const compile = async (silent = false) => {
     if (!snapshotRef.current) return;
+    if (compilingRef.current) {
+      pendingCompileRef.current = true;
+      if (!silent) setNotice("当前编译完成后将自动编译最新内容。");
+      return;
+    }
+
+    compilingRef.current = true;
     if (!silent) setBusy("正在编译真实 PDF");
     setError(null);
     try {
       await flushEdits();
       const nextArtifact = await desktopApi.compile();
+      await refreshCurrentFile();
+
+      if (nextArtifact.sourceRevision !== snapshotRef.current?.revision) {
+        pendingCompileRef.current = true;
+        return;
+      }
+
       setArtifact(nextArtifact);
       setLayoutMap(null);
       setPdfHighlights([]);
-      await refreshCurrentFile();
       if (nextArtifact.status === "succeeded" && nextArtifact.pdfPath) {
         try {
           const nextLayoutMap = await desktopApi.buildLayoutMap(nextArtifact.pdfPath);
-          if (nextLayoutMap.sourceRevision === snapshotRef.current?.revision) {
+          if (nextLayoutMap.sourceRevision !== snapshotRef.current?.revision) {
+            pendingCompileRef.current = true;
+          } else if (nextLayoutMap.compileStatus !== "succeeded") {
+            setLayoutMap(null);
+            setError("结构化页面映射编译失败；请在编译日志中检查影子工程诊断。");
+          } else {
             setLayoutMap(nextLayoutMap);
+            const editableCount = nextLayoutMap.boxes.filter(
+              (box) => box.confidence === "exact" || box.confidence === "high",
+            ).length;
+            if (editableCount === 0) {
+              setNotice("PDF 已生成，但当前文档没有通过排版一致性校验的可直接编辑节点；仍可双击页面跳转源码。");
+            }
           }
         } catch (layoutError) {
           setError(`PDF 节点映射失败，预览仍可使用：${errorMessage(layoutError)}`);
@@ -560,7 +595,12 @@ export default function App() {
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
+      compilingRef.current = false;
       if (!silent) setBusy(null);
+      if (pendingCompileRef.current && snapshotRef.current) {
+        pendingCompileRef.current = false;
+        window.setTimeout(() => void compile(true), 0);
+      }
     }
   };
 
@@ -595,6 +635,19 @@ export default function App() {
       line,
       column,
       requestId: Date.now(),
+    });
+  };
+
+  const handleVisualNodeSelect = (node: VisualNode) => {
+    setSelectedNode(node);
+    const current = snapshotRef.current;
+    if (!current || node.source.fileId !== current.fileId) return;
+    const position = sourcePositionAtUtf8Byte(current.text, node.source.startByte);
+    setSourceReveal({
+      line: position.line,
+      column: position.column,
+      requestId: Date.now(),
+      focus: false,
     });
   };
 
@@ -1203,10 +1256,10 @@ export default function App() {
       {templateChooser}
       <main className="welcome-shell">
         <section className="welcome-card">
-          <div className="brand-mark">VT</div>
-          <p className="eyebrow">VisualTeX Next</p>
+          <div className="brand-mark">VS</div>
+          <p className="eyebrow">visualstudio</p>
           <h1>真实 PDF 排版驱动的离线论文编辑器</h1>
-          <p className="welcome-copy">LaTeX 源文件始终是唯一权威内容。源码编辑、结构化编辑和本机 TeX 编译通过同一修订链同步。</p>
+          <p className="welcome-copy">LaTeX 源文件始终是唯一权威内容。源码与真实编译页面双向同步，标题、正文和公式可在页面中原位编辑。</p>
           <div className="welcome-actions">
             <button className="primary" onClick={() => void openProject(false)}><FolderOpen size={18} />打开项目</button>
             <button onClick={() => void openTemplateChooser()}><FilePlus2 size={18} />创建项目</button>
@@ -1223,7 +1276,7 @@ export default function App() {
     <main className="app-shell">
       {templateChooser}
       <header className="topbar">
-        <div className="brand-compact"><span>VT</span><strong>VisualTeX Next</strong></div>
+        <div className="brand-compact"><span>VS</span><strong>visualstudio</strong></div>
         <div className="document-title" title={snapshot.path}>{title}</div>
         <div className="toolbar">
           <button title="打开项目" onClick={() => void openProject(false)}><FolderOpen size={17} /></button>
@@ -1253,8 +1306,8 @@ export default function App() {
                 <h2>{externalConflicts[0].path}</h2>
                 <p>
                   {externalConflicts[0].kind === "deleted"
-                    ? "这个文件已被外部程序删除，但 VisualTeX 中仍保留当前缓冲。"
-                    : "磁盘文件已被外部程序修改，同时 VisualTeX 中存在未保存内容。"}
+                    ? "这个文件已被外部程序删除，但 visualstudio 中仍保留当前缓冲。"
+                    : "磁盘文件已被外部程序修改，同时 visualstudio 中存在未保存内容。"}
                 </p>
               </div>
               <span className="conflict-count">1 / {externalConflicts.length}</span>
@@ -1267,7 +1320,7 @@ export default function App() {
                   onClick={() => void resolveExternalConflict(externalConflicts[0]!, "reload_disk")}
                 >
                   <strong>载入磁盘版本</strong>
-                  <span>放弃 VisualTeX 中尚未保存的内容。</span>
+                  <span>放弃 visualstudio 中尚未保存的内容。</span>
                 </button>
               )}
               <button
@@ -1291,11 +1344,11 @@ export default function App() {
                     ? "保存本地冲突副本并保留缓冲"
                     : "保存本地冲突副本后载入磁盘"}
                 </strong>
-                <span>先将 VisualTeX 缓冲写入 .visualtex/conflicts，再采用安全处理。</span>
+                <span>先将 visualstudio 缓冲写入 .visualtex/conflicts，再采用安全处理。</span>
               </button>
             </div>
             <footer>
-              <p>在选择处理方式前，VisualTeX 不会覆盖磁盘文件。</p>
+              <p>在选择处理方式前，visualstudio 不会覆盖磁盘文件。</p>
             </footer>
           </section>
         </div>
@@ -1732,35 +1785,29 @@ export default function App() {
 
         <section className="preview-panel panel">
           <div className="panel-tabs">
-            <button className={rightTab === "pdf" ? "active" : ""} onClick={() => setRightTab("pdf")}><BookOpen size={15} />PDF</button>
+            <button className={rightTab === "pdf" ? "active" : ""} onClick={() => setRightTab("pdf")}><BookOpen size={15} />PDF 预览</button>
             <button className={rightTab === "structure" ? "active" : ""} onClick={() => setRightTab("structure")}>结构化编辑</button>
           </div>
-          {rightTab === "pdf" ? (
-            artifact?.pdfPath && artifact.status === "succeeded" ? (
-              <PdfViewer
-                pdfPath={artifact.pdfPath}
-                buildKey={artifact.buildId}
-                highlights={pdfHighlights}
-                layoutBoxes={layoutMap?.boxes ?? []}
-                nodes={snapshot.nodes}
-                onNodeSelect={setSelectedNode}
-                onNodeCommit={(node, content) => scheduleVisualEdit(node.id, content)}
-                onNodeAttributesCommit={(node, patch) => void commitNodeAttributes(node, patch)}
-                onInverseSearch={(result) => void handleInverseSearch(result)}
-                onError={(message) => setError(`PDF 预览失败：${message}`)}
-              />
-            ) : (
-              <div className="empty-preview"><Hammer size={28} /><p>编译后在此显示由 PDFium 渲染的真实 PDF 页面</p><button onClick={() => void compile(false)}>立即编译</button></div>
-            )
-          ) : (
-            <VisualEditor
+          {artifact?.pdfPath && artifact.status === "succeeded" ? (
+            <PdfViewer
+              pdfPath={artifact.pdfPath}
+              buildKey={artifact.buildId}
+              highlights={pdfHighlights}
+              layoutBoxes={layoutMap?.boxes ?? []}
               nodes={snapshot.nodes}
-              revision={snapshot.revision}
-              onNodeEdit={scheduleVisualEdit}
-              onNodeSelect={setSelectedNode}
-              onUndo={() => void undoRedo("undo")}
-              onRedo={() => void undoRedo("redo")}
+              editable={rightTab === "structure"}
+              onNodeSelect={handleVisualNodeSelect}
+              onNodeCommit={(node, content) => commitVisualEdit(node.id, content)}
+              onNodeAttributesCommit={(node, patch) => void commitNodeAttributes(node, patch)}
+              onInverseSearch={(result) => void handleInverseSearch(result)}
+              onError={(message) => setError(`PDF 页面失败：${message}`)}
             />
+          ) : (
+            <div className="empty-preview">
+              <Hammer size={28} />
+              <p>{rightTab === "structure" ? "先编译生成真实页面，再直接点击页面中的标题、正文和公式进行编辑" : "编译后在此显示由 PDFium 渲染的真实 PDF 页面"}</p>
+              <button onClick={() => void compile(false)}>立即编译</button>
+            </div>
           )}
         </section>
 
@@ -1853,7 +1900,7 @@ export default function App() {
               <dl><dt>类型</dt><dd>{selectedNode.kind}</dd><dt>支持级别</dt><dd>{selectedNode.support}</dd><dt>源码范围</dt><dd>{selectedNode.source.startByte}–{selectedNode.source.endByte}</dd></dl>
               {mathNode ? (
                 <MathNodeEditor value={mathNode.text ?? ""} disabled={mathNode.support !== "native"} onChange={(value) => scheduleVisualEdit(mathNode.id, value)} />
-              ) : <p className="muted">在“结构化编辑”中选择公式节点，可在此使用 MathLive 编辑。</p>}
+              ) : <p className="muted">在“结构化编辑”中点击公式，可在真实页面位置使用 MathLive 编辑。</p>}
             </div>
           ) : <p className="muted inspector-empty">选择一个结构节点以查看属性。</p>}
         </aside>

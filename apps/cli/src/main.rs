@@ -217,25 +217,9 @@ fn launch_desktop(project_root: &Path) -> anyhow::Result<()> {
     let project_root = project_root.canonicalize()?;
     let _ = CoreService::open_project(&project_root)?;
 
-    if let Some(executable) = std::env::var_os("VISUALTEX_DESKTOP_BIN") {
-        ProcessCommand::new(executable)
-            .arg("--project")
-            .arg(&project_root)
-            .spawn()?;
-        return Ok(());
-    }
-
-    if let Ok(current) = std::env::current_exe()
-        && let Some(directory) = current.parent()
-    {
-        let file_name = if cfg!(windows) {
-            "visualtex-desktop.exe"
-        } else {
-            "visualtex-desktop"
-        };
-        let sibling = directory.join(file_name);
-        if sibling.is_file() {
-            ProcessCommand::new(sibling)
+    for variable in ["VISUALSTUDIO_BIN", "VISUALTEX_DESKTOP_BIN"] {
+        if let Some(executable) = std::env::var_os(variable) {
+            ProcessCommand::new(executable)
                 .arg("--project")
                 .arg(&project_root)
                 .spawn()?;
@@ -243,24 +227,44 @@ fn launch_desktop(project_root: &Path) -> anyhow::Result<()> {
         }
     }
 
+    if let Ok(current) = std::env::current_exe()
+        && let Some(directory) = current.parent()
+    {
+        let file_names: &[&str] = if cfg!(windows) {
+            &["visualstudio.exe", "visualtex-desktop.exe"]
+        } else {
+            &["visualstudio", "visualtex-desktop"]
+        };
+        for file_name in file_names {
+            let sibling = directory.join(file_name);
+            if sibling.is_file() {
+                ProcessCommand::new(sibling)
+                    .arg("--project")
+                    .arg(&project_root)
+                    .spawn()?;
+                return Ok(());
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         let status = ProcessCommand::new("open")
             .arg("-a")
-            .arg("VisualTeX Next")
+            .arg("visualstudio")
             .arg("--args")
             .arg("--project")
             .arg(&project_root)
             .status()?;
         if !status.success() {
-            anyhow::bail!("macOS could not launch the VisualTeX Next application bundle");
+            anyhow::bail!("macOS could not launch the visualstudio application bundle");
         }
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        ProcessCommand::new("visualtex-desktop")
+        ProcessCommand::new("visualstudio")
             .arg("--project")
             .arg(&project_root)
             .spawn()?;

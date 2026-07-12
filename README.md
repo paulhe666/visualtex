@@ -1,16 +1,16 @@
-# VisualTeX Next
+# visualstudio
 
-VisualTeX Next is an offline-first LaTeX paper editor built around one authoritative UTF-8 source model. The Tauri desktop app, CLI, VS Code extension, TeXstudio Bridge and other adapters all use the same revisioned Rust Core.
+visualstudio is an offline-first LaTeX paper editor built around one authoritative UTF-8 source model. The Tauri desktop app, CLI, VS Code extension, TeXstudio Bridge and other adapters all use the same revisioned Rust Core.
 
 ## Implemented product path
 
 - Safe project discovery, templates, multi-file buffers, atomic save, recovery and external-editor conflict handling.
-- CodeMirror source editing, ProseMirror structured editing and MathLive formula editing on one undo/redo history.
+- CodeMirror source editing and real compiled-page structured editing with MathLive formula overlays on one undo/redo history.
 - Tree-sitter incremental LaTeX syntax trees with malformed-input recovery, verbatim/minted protection ranges and project include-cycle detection.
 - Tolerant LaTeX semantics with native, partial, opaque and unstable nodes.
 - Project index, dependency graph, search, hash-guarded replacement and typed label/citation rename.
 - Real local latexmk/Tectonic compilation with XeLaTeX, pdfLaTeX or LuaLaTeX, isolated output, diagnostics, timeout and restricted shell escape.
-- PDFium page/tile rendering, cache, pixel comparison, shadow node-to-page mapping, PDF overlays and bidirectional SyncTeX.
+- PDFium page/tile rendering, Windows-safe atomic cache writes, pixel-validated shadow node-to-page mapping, PDF overlays and bidirectional SyncTeX.
 - Offline formula and full-page OCR review workflows with bounded image import and optional verified local model packages.
 - VS Code custom editor with `TextDocument` authority, `WorkspaceEdit`, Core reconnect, PDF and OCR panels.
 - Authenticated persistent loopback Bridge, TeXstudio adapters, versioned `visualtex://` actions and Node Adapter SDK.
@@ -62,10 +62,12 @@ cargo run -p visualtex-cli -- open ./paper
 The desktop binary also accepts:
 
 ```bash
-visualtex-desktop --project ./paper
+visualstudio --project ./paper
 ```
 
 Compiled artifacts are stored under `.visualtex/build`, PDF cache under `.visualtex/cache/pdf`, OCR imports under `.visualtex/ocr-input`, and recovery data under `.visualtex/recovery`.
+
+In the desktop app, compile the project and switch to **结构化编辑**. The editor keeps the real PDF page visible; high-confidence titles, paragraphs, inline/display formulas, figures and tables can be clicked in place. Confirming an edit writes the change to the authoritative LaTeX buffer, reveals the corresponding source position and coalesces automatic recompilation so concurrent `latexmk` processes cannot write the same output directory.
 
 ## CLI
 
@@ -176,7 +178,7 @@ The deterministic `--mock` mode is for tests and integration development. Images
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo check -p visualtex-desktop
+cargo check -p visualstudio
 corepack pnpm -r typecheck
 corepack pnpm -r test
 corepack pnpm -r build
@@ -206,4 +208,4 @@ Detailed design and limits:
 
 ## License
 
-VisualTeX Next is licensed under the MIT License. See `LICENSE`.
+visualstudio is licensed under the MIT License. See `LICENSE`.

@@ -147,10 +147,14 @@
   overflow: hidden;
   background: #fff;
   box-shadow: 0 4px 18px rgb(23 31 47 / 18%);
-  cursor: text;
+  cursor: default;
   content-visibility: auto;
   contain-intrinsic-size: 800px 1132px;
   user-select: none;
+}
+
+.vt-pdf-page.editable {
+  cursor: text;
 }
 
 .vt-pdf-page > img {
@@ -206,6 +210,7 @@
   user-select: text;
 }
 
+.vt-pdf-direct-overlay.inline_math,
 .vt-pdf-direct-overlay.display_math {
   min-width: 320px;
 }

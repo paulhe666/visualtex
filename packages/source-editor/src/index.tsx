@@ -16,6 +16,7 @@ export interface SourceReveal {
   line: number;
   column?: number | null;
   requestId: number;
+  focus?: boolean;
 }
 
 export type SourceCompletionKind = "label" | "citation" | "command";
@@ -43,6 +44,31 @@ export interface SourceEditorProps {
 }
 
 const utf8Length = (value: string): number => new TextEncoder().encode(value).length;
+
+export interface SourcePosition {
+  line: number;
+  column: number;
+  utf16Offset: number;
+}
+
+export function sourcePositionAtUtf8Byte(value: string, requestedByte: number): SourcePosition {
+  const targetByte = Math.max(0, Math.min(utf8Length(value), requestedByte));
+  let consumedBytes = 0;
+  let utf16Offset = 0;
+  for (const character of value) {
+    const characterBytes = utf8Length(character);
+    if (consumedBytes + characterBytes > targetByte) break;
+    consumedBytes += characterBytes;
+    utf16Offset += character.length;
+  }
+  const prefix = value.slice(0, utf16Offset);
+  const lastLineBreak = prefix.lastIndexOf("\n");
+  return {
+    line: prefix.split("\n").length,
+    column: utf16Offset - lastLineBreak,
+    utf16Offset,
+  };
+}
 
 export function completionContextAt(linePrefix: string): SourceCompletionContext | null {
   const reference = linePrefix.match(/\\(?:ref|eqref|autoref|cref|Cref)\{([^{}]*)$/);
@@ -240,8 +266,8 @@ export function SourceEditor({
       selection: { anchor: position },
       effects: EditorView.scrollIntoView(position, { y: "center" }),
     });
-    view.focus();
-  }, [reveal?.requestId, reveal?.line, reveal?.column]);
+    if (reveal.focus !== false) view.focus();
+  }, [reveal?.requestId, reveal?.line, reveal?.column, reveal?.focus]);
 
   return <div ref={hostRef} className="vt-source-editor" aria-label="LaTeX source editor" />;
 }

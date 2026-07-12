@@ -210,7 +210,7 @@ fn ensure_deep_link_project(app: &AppHandle, project: &Path) -> Result<DocumentS
             .map_err(|error| error.to_string())?;
         if current != target {
             return Err(
-                "A different project is already open. Use the VisualTeX UI to switch projects so unsaved buffers are not discarded."
+                "A different project is already open. Use the visualstudio UI to switch projects so unsaved buffers are not discarded."
                     .to_owned(),
             );
         }
@@ -260,15 +260,22 @@ fn handle_visualtex_uri(app: AppHandle, value: &str) {
         } => {
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<AppState>();
-                let core = state.core.lock().take();
-                let Some(core) = core else {
-                    emit_deep_link_error(&app, "No project is open");
-                    return;
-                };
-                let result = core
-                    .forward_search(&source_file, line, column, &pdf_path)
-                    .await;
-                *state.core.lock() = Some(core);
+                let project_root =
+                    match with_core(&state, |core| Ok(core.project_root().to_path_buf())) {
+                        Ok(project_root) => project_root,
+                        Err(error) => {
+                            emit_deep_link_error(&app, error);
+                            return;
+                        }
+                    };
+                let result = vt_synctex::forward_search(
+                    &project_root,
+                    &source_file,
+                    line,
+                    column,
+                    &pdf_path,
+                )
+                .await;
                 match result {
                     Ok(result) => {
                         let _ = app.emit("visualtex://forward-search-result", result);
@@ -286,13 +293,15 @@ fn handle_visualtex_uri(app: AppHandle, value: &str) {
         } => {
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<AppState>();
-                let core = state.core.lock().take();
-                let Some(core) = core else {
-                    emit_deep_link_error(&app, "No project is open");
-                    return;
-                };
-                let result = core.inverse_search(&pdf_path, page, x, y).await;
-                *state.core.lock() = Some(core);
+                let project_root =
+                    match with_core(&state, |core| Ok(core.project_root().to_path_buf())) {
+                        Ok(project_root) => project_root,
+                        Err(error) => {
+                            emit_deep_link_error(&app, error);
+                            return;
+                        }
+                    };
+                let result = vt_synctex::inverse_search(&project_root, &pdf_path, page, x, y).await;
                 match result {
                     Ok(result) => {
                         let _ = app.emit("visualtex://inverse-search-result", result);
@@ -623,14 +632,12 @@ fn apply_project_replace(
 
 #[tauri::command]
 async fn compile_project(state: State<'_, AppState>) -> Result<CompileArtifact, String> {
-    let mut core = state
-        .core
-        .lock()
-        .take()
-        .ok_or_else(|| "No project is open".to_owned())?;
-    let result = core.compile().await.map_err(|error| error.to_string());
-    *state.core.lock() = Some(core);
-    result
+    let request = with_core(&state, |core| {
+        core.prepare_compile().map_err(|error| error.to_string())
+    })?;
+    vt_compiler::compile(request)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -641,17 +648,10 @@ async fn forward_search(
     pdf_path: PathBuf,
     state: State<'_, AppState>,
 ) -> Result<ForwardSearchResult, String> {
-    let core = state
-        .core
-        .lock()
-        .take()
-        .ok_or_else(|| "No project is open".to_owned())?;
-    let result = core
-        .forward_search(&source_file, line, column, &pdf_path)
+    let project_root = with_core(&state, |core| Ok(core.project_root().to_path_buf()))?;
+    vt_synctex::forward_search(&project_root, &source_file, line, column, &pdf_path)
         .await
-        .map_err(|error| error.to_string());
-    *state.core.lock() = Some(core);
-    result
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -662,17 +662,10 @@ async fn inverse_search(
     y: f32,
     state: State<'_, AppState>,
 ) -> Result<InverseSearchResult, String> {
-    let core = state
-        .core
-        .lock()
-        .take()
-        .ok_or_else(|| "No project is open".to_owned())?;
-    let result = core
-        .inverse_search(&pdf_path, page, x, y)
+    let project_root = with_core(&state, |core| Ok(core.project_root().to_path_buf()))?;
+    vt_synctex::inverse_search(&project_root, &pdf_path, page, x, y)
         .await
-        .map_err(|error| error.to_string());
-    *state.core.lock() = Some(core);
-    result
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -701,29 +694,19 @@ async fn build_layout_map(
     pdf_path: PathBuf,
     state: State<'_, AppState>,
 ) -> Result<LayoutMapArtifact, String> {
-    let mut core = state
-        .core
-        .lock()
-        .take()
-        .ok_or_else(|| "No project is open".to_owned())?;
-    let result = core
-        .build_layout_map(&pdf_path)
+    let request = with_core(&state, |core| {
+        core.prepare_layout_map(&pdf_path)
+            .map_err(|error| error.to_string())
+    })?;
+    vt_layout_map::build_layout_map(request)
         .await
-        .map_err(|error| error.to_string());
-    *state.core.lock() = Some(core);
-    result
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn detect_toolchain(state: State<'_, AppState>) -> Result<Vec<ToolInfo>, String> {
-    let core = state
-        .core
-        .lock()
-        .take()
-        .ok_or_else(|| "No project is open".to_owned())?;
-    let tools = core.detect_toolchain().await;
-    *state.core.lock() = Some(core);
-    Ok(tools)
+    with_core(&state, |_core| Ok(()))?;
+    Ok(vt_compiler::detect_toolchain().await)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -756,14 +739,14 @@ pub fn run() {
                         let state = app.state::<AppState>();
                         if let Err(error) = install_core(core, app.handle(), &state) {
                             eprintln!(
-                                "VisualTeX could not install startup project {}: {error}",
+                                "visualstudio could not install startup project {}: {error}",
                                 path.display()
                             );
                         }
                     }
                     Err(error) => {
                         eprintln!(
-                            "VisualTeX could not open startup project {}: {error}",
+                            "visualstudio could not open startup project {}: {error}",
                             path.display()
                         );
                     }
@@ -813,7 +796,7 @@ pub fn run() {
             detect_toolchain
         ])
         .run(tauri::generate_context!())
-        .expect("error while running VisualTeX Next");
+        .expect("error while running visualstudio");
 }
 
 #[cfg(test)]
@@ -826,7 +809,7 @@ mod tests {
     fn startup_project_argument_supports_flag_equals_and_positional_paths() {
         assert_eq!(
             startup_project_argument([
-                OsString::from("visualtex-desktop"),
+                OsString::from("visualstudio"),
                 OsString::from("--project"),
                 OsString::from("论文 项目"),
             ]),
@@ -834,21 +817,21 @@ mod tests {
         );
         assert_eq!(
             startup_project_argument([
-                OsString::from("visualtex-desktop"),
+                OsString::from("visualstudio"),
                 OsString::from("--project=/tmp/含 空格"),
             ]),
             Some(PathBuf::from("/tmp/含 空格"))
         );
         assert_eq!(
             startup_project_argument([
-                OsString::from("visualtex-desktop"),
+                OsString::from("visualstudio"),
                 OsString::from("relative project"),
             ]),
             Some(PathBuf::from("relative project"))
         );
         assert_eq!(
             startup_project_argument([
-                OsString::from("visualtex-desktop"),
+                OsString::from("visualstudio"),
                 OsString::from("visualtex://open?v=1&project=%2Ftmp%2Fpaper"),
             ]),
             None

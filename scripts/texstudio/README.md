@@ -1,4 +1,4 @@
-# VisualTeX Next — TeXstudio Bridge
+# visualstudio — TeXstudio Bridge
 
 This adapter connects TeXstudio to the same versioned VisualTeX Core used by the desktop app and VS Code extension. It does not patch TeXstudio and does not modify TeXstudio configuration automatically.
 
@@ -27,10 +27,11 @@ cargo install --path apps/cli
 
 The CLI looks for the desktop executable in this order:
 
-1. `VISUALTEX_DESKTOP_BIN`;
-2. `visualtex-desktop` beside the `visualtex` CLI;
-3. the installed `VisualTeX Next` application bundle on macOS;
-4. `visualtex-desktop` on `PATH` on Windows/Linux.
+1. `VISUALSTUDIO_BIN`;
+2. legacy `VISUALTEX_DESKTOP_BIN`;
+3. `visualstudio` beside the `visualtex` CLI, then the legacy `visualtex-desktop` name;
+4. the installed `visualstudio` application bundle on macOS;
+5. `visualstudio` on `PATH` on Windows/Linux.
 
 Set `VISUALTEX_BIN` when the CLI executable is not named `visualtex` or is outside `PATH`.
 

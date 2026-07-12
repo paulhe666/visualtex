@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -402,7 +402,10 @@ fn save_png_atomic(image: DynamicImage, destination: &Path) -> Result<(), PdfErr
     image
         .save_with_format(&temporary, ImageFormat::Png)
         .map_err(|error| PdfError::Image(error.to_string()))?;
-    File::open(&temporary)?.sync_all()?;
+    OpenOptions::new()
+        .write(true)
+        .open(&temporary)?
+        .sync_all()?;
     match fs::rename(&temporary, destination) {
         Ok(()) => {}
         Err(error) if destination.is_file() => {
@@ -464,6 +467,25 @@ mod tests {
         fs::write(&path, b"second").unwrap();
         let second = fingerprint_file(&path).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn atomic_png_save_flushes_and_publishes_the_cache_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("nested/page.png");
+        let image =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255])));
+
+        save_png_atomic(image, &destination).unwrap();
+
+        assert_eq!(image::image_dimensions(&destination).unwrap(), (3, 2));
+        assert_eq!(
+            fs::read_dir(destination.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .count(),
+            1
+        );
     }
 
     #[test]
