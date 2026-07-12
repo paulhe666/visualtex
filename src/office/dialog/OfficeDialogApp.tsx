@@ -24,6 +24,7 @@ import {
 } from "../../clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../types/formula";
 import type { MathEditorHandle } from "../../editor/MathEditor";
+import type { OfficeExportResult } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
 
@@ -44,6 +45,7 @@ export function OfficeDialogApp() {
   const loadedSessionIdRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
+  const exportRunIdRef = useRef(0);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
@@ -161,36 +163,95 @@ export function OfficeDialogApp() {
     return () => historyManager.configure(null);
   }, [captureSnapshot]);
 
+  const generateExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
+    if (!latex.trim()) return null;
+    const [{ latexToSvg }, { svgToPng }] = await Promise.all([
+      import("../../export/latexToSvg"),
+      import("../../export/svgToPng"),
+    ]);
+    const svg = await latexToSvg(latex, {
+      displayMode: true,
+      fontSizePt: 14,
+      paddingPx: 10,
+      background: "transparent",
+    });
+    let pngBase64: string | undefined;
+    try {
+      pngBase64 = (
+        await svgToPng(svg, {
+          scale: 2,
+          background: "transparent",
+        })
+      ).base64;
+    } catch {
+      // SVG is the primary Office representation. PNG remains an optional
+      // runtime fallback when a browser canvas is available.
+    }
+    return {
+      svg: svg.svg,
+      svgBase64: svg.base64,
+      pngBase64,
+      width: svg.width,
+      height: svg.height,
+      baseline: svg.baseline,
+    };
+  }, [latex]);
+
   useEffect(() => {
     if (!session || !sessionId) return;
+    const runId = ++exportRunIdRef.current;
     const timer = window.setTimeout(() => {
-      if (lastSavedFingerprintRef.current === currentFingerprint &&
-          session.autoCommitOnClose === autoCommitOnClose) {
+      if (
+        lastSavedFingerprintRef.current === currentFingerprint &&
+        session.autoCommitOnClose === autoCommitOnClose
+      ) {
         return;
       }
-      void save({
-        title,
-        lines,
-        activeLineId,
-        codeFormat: latexCodeFormat,
-        dirty,
-        status: "editing",
-        autoCommitOnClose,
-        error: null,
-      })
-        .then(() => {
-          lastSavedFingerprintRef.current = currentFingerprint;
+      void generateExportResult()
+        .then((exportResult) => {
+          if (runId !== exportRunIdRef.current) return null;
+          return save({
+            title,
+            lines,
+            activeLineId,
+            codeFormat: latexCodeFormat,
+            dirty,
+            status: "editing",
+            autoCommitOnClose,
+            exportResult,
+            exportWidth: exportResult?.width ?? 0,
+            exportHeight: exportResult?.height ?? 0,
+            error: null,
+          });
+        })
+        .then((saved) => {
+          if (saved && runId === exportRunIdRef.current) {
+            lastSavedFingerprintRef.current = currentFingerprint;
+          }
         })
         .catch((reason) => {
-          setToast(
+          const message =
             reason instanceof Error
               ? reason.message
               : isEn
-                ? "Unable to save the Office session"
-                : "无法保存 Office Session",
-          );
+                ? "Unable to export the Office formula"
+                : "无法导出 Office 公式";
+          void save({
+            title,
+            lines,
+            activeLineId,
+            codeFormat: latexCodeFormat,
+            dirty,
+            status: "failed",
+            autoCommitOnClose,
+            exportResult: null,
+            exportWidth: 0,
+            exportHeight: 0,
+            error: message,
+          }).catch(() => undefined);
+          setToast(message);
         });
-    }, 450);
+    }, 250);
     return () => window.clearTimeout(timer);
   }, [
     sessionId,
@@ -205,6 +266,7 @@ export function OfficeDialogApp() {
     autoCommitOnClose,
     save,
     isEn,
+    generateExportResult,
   ]);
 
   useEffect(() => {
@@ -222,6 +284,11 @@ export function OfficeDialogApp() {
   const saveCurrentSession = useCallback(
     async (status: "editing" | "committing" | "cancelled") => {
       if (!session) throw new Error("Office Session 尚未加载。");
+      const exportResult =
+        status === "cancelled" ? session.exportResult : await generateExportResult();
+      if (status === "committing" && !exportResult) {
+        throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
+      }
       const next = await save({
         title,
         lines,
@@ -231,6 +298,9 @@ export function OfficeDialogApp() {
         status,
         autoCommitOnClose,
         explicitCancel: status === "cancelled",
+        exportResult,
+        exportWidth: exportResult?.width ?? 0,
+        exportHeight: exportResult?.height ?? 0,
         error: null,
       });
       lastSavedFingerprintRef.current = currentFingerprint;
@@ -245,6 +315,8 @@ export function OfficeDialogApp() {
       dirty,
       autoCommitOnClose,
       currentFingerprint,
+      generateExportResult,
+      isEn,
     ],
   );
 

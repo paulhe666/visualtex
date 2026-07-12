@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageRoot = join(root, "node_modules", "@microsoft", "office-js");
+const mathJaxRoot = join(root, "node_modules", "mathjax-full");
 const source = join(packageRoot, "dist");
 const target = join(root, "office", "vendor", "office-js");
 const licenses = join(root, "office", "licenses");
@@ -58,6 +59,10 @@ for (const entry of entries) {
 await cp(
   join(packageRoot, "LICENSE.md"),
   join(licenses, "OFFICE-JS-LICENSE.md"),
+);
+await cp(
+  join(mathJaxRoot, "LICENSE"),
+  join(licenses, "MATHJAX-LICENSE.txt"),
 );
 
 const packageJson = JSON.parse(

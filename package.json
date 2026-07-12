@@ -22,6 +22,7 @@
     "test:history": "node scripts/history_manager_smoke.mjs",
     "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
     "test:update-notes": "node --experimental-strip-types scripts/update_notes_smoke.mjs",
+    "test:svg-export": "node --experimental-strip-types scripts/svg_export_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "@tauri-apps/plugin-opener": "^2.5.4",
     "codemirror-lang-latex": "^0.4.1",
     "lucide-react": "^0.468.0",
+    "mathjax-full": "^3.2.2",
     "mathlive": "^0.109.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

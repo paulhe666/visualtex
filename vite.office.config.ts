@@ -22,6 +22,9 @@ export default defineConfig({
   base: "/",
   publicDir: "office",
   clearScreen: false,
+  esbuild: {
+    legalComments: "none",
+  },
   build: {
     outDir: "dist-office",
     emptyOutDir: true,
