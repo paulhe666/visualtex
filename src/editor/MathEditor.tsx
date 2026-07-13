@@ -86,6 +86,7 @@ interface FormulaFieldProps {
   latex: string;
   zoom: number;
   language: "cn" | "en";
+  autoPairDelimiters: boolean;
   register: (lineId: string, field: MathfieldElement | null) => void;
   onEdit: (edit: FormulaFieldEdit, field: MathfieldElement) => void;
   onFocus: (index: number, field: MathfieldElement) => void;
@@ -226,6 +227,31 @@ function keepCaretAfterBareStructuredOperator(
   field.position = operatorOffset;
 }
 
+function getScriptCaretRegion(field: MathfieldElement): "upper" | "lower" | null {
+  const markers = Array.from(
+    field.shadowRoot?.querySelectorAll<HTMLElement>(
+      ".ML__placeholder-selected, .ML__selected, .ML__caret",
+    ) ?? [],
+  );
+  const caret = markers.find((marker) =>
+    marker.closest(".ML__msubsup, .ML__op-group"),
+  );
+  // Side scripts use ML__msubsup; large operators such as sum/product render
+  // their over/under limits directly inside ML__op-group.
+  const script = caret?.closest<HTMLElement>(".ML__msubsup, .ML__op-group");
+  if (!caret || !script) return null;
+
+  // MathLive's caret itself can span most of a tall large-operator box. Its
+  // immediate row wrapper has the actual upper/lower-limit geometry.
+  const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+  const scriptBounds = script.getBoundingClientRect();
+  if (!caretBounds.height || !scriptBounds.height) return null;
+  return caretBounds.top + caretBounds.height / 2 <
+    scriptBounds.top + scriptBounds.height / 2
+    ? "upper"
+    : "lower";
+}
+
 function templateForSelection(
   command: LatexCommand,
   selectedLatex: string,
@@ -293,9 +319,11 @@ function FormulaField(props: FormulaFieldProps) {
 
     const lineId = propsRef.current.lineId;
     const field = new MathfieldElement();
+    MathfieldElement.locale = propsRef.current.language === "en" ? "en" : "zh-cn";
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
     field.smartMode = false;
+    field.smartFence = propsRef.current.autoPairDelimiters;
     field.popoverPolicy = "auto";
     field.maxMatrixCols = 10;
     field.setAttribute("math-virtual-keyboard-policy", "manual");
@@ -591,8 +619,15 @@ function FormulaField(props: FormulaFieldProps) {
   }, [props.zoom]);
 
   useEffect(() => {
+    if (fieldRef.current) {
+      fieldRef.current.smartFence = props.autoPairDelimiters;
+    }
+  }, [props.autoPairDelimiters]);
+
+  useEffect(() => {
     const field = fieldRef.current;
     if (!field) return;
+    MathfieldElement.locale = props.language === "en" ? "en" : "zh-cn";
     const isEn = props.language === "en";
     field.setAttribute(
       "aria-label",
@@ -648,6 +683,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const suggestionCount = useEditorStore((state) => state.suggestionCount);
     const recordCommand = useEditorStore((state) => state.recordCommand);
     const language = useEditorStore((state) => state.language);
+    const autoPairDelimiters = useEditorStore(
+      (state) => state.autoPairDelimiters,
+    );
     const isEn = language === "en";
 
     linesRef.current = lines;
@@ -1467,6 +1505,31 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         !event.metaKey &&
         !event.shiftKey
       ) {
+        const scriptRegion = getScriptCaretRegion(field);
+        const requestedRegion = event.key === "ArrowUp" ? "upper" : "lower";
+        if (scriptRegion) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (scriptRegion !== requestedRegion) {
+            field.executeCommand("moveToOpposite");
+          }
+          return;
+        }
+
+        const beforeSelection = captureSelection(field);
+        const movedInsideFormula = field.executeCommand(
+          event.key === "ArrowUp" ? "moveUp" : "moveDown",
+        );
+        const afterSelection = captureSelection(field);
+        if (
+          movedInsideFormula &&
+          JSON.stringify(beforeSelection) !== JSON.stringify(afterSelection)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+
         const direction = event.key === "ArrowUp" ? -1 : 1;
         const targetIndex = index + direction;
         const targetLine = linesRef.current[targetIndex];
@@ -1805,6 +1868,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 latex={line.latex}
                 zoom={zoom}
                 language={language}
+                autoPairDelimiters={autoPairDelimiters}
                 register={registerField}
                 onEdit={handleFieldEdit}
                 onCommitPending={() => historyManager.commitPendingTransaction()}

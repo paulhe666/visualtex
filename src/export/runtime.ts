@@ -53,7 +53,10 @@ function prepareLatex(latex: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length <= 1) return normalized;
-  return `\\begin{aligned}${lines.join("\\\\")}\\end{aligned}`;
+  // `aligned` uses a right/left pair around every alignment marker. Without
+  // an explicit marker MathJax right-aligns rows of different widths. Keep
+  // the whole formula as one image, but anchor every row on its left edge.
+  return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
 }
 
 function extractSvg(markup: string) {
