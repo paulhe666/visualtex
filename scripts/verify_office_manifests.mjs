@@ -29,7 +29,7 @@ execFileSync("xmllint", ["--noout", wordPath, powerpointPath], {
 const expected = {
   wordId: "d6fcb260-4c37-4f73-a173-cf24674f81f2",
   powerpointId: "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5",
-  version: "1.0.17.0",
+  version: "1.0.18.0",
   origin: "https://127.0.0.1:43127",
 };
 

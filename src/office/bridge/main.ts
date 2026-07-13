@@ -2,13 +2,13 @@ import "../../styles.css";
 import { getPowerPointInteractionEvents } from "../api/companionClient";
 import { OfficeBridge } from "./OfficeBridge";
 import {
-  startOfficeDialogCommand,
-  type OfficeCommandEvent,
-} from "./commandLifecycle";
-import {
   createOfficeHostAdapter,
   officeHostFromReadyInfo,
 } from "../adapters/OfficeHostAdapter";
+
+interface OfficeCommandEvent {
+  completed?: () => void;
+}
 
 function command(
   run: (bridge: OfficeBridge) => Promise<void>,
@@ -24,11 +24,9 @@ function dialogCommand(
   bridgeProvider: () => OfficeBridge,
 ) {
   return (event?: OfficeCommandEvent) => {
-    // PowerPoint requires FunctionFile commands to complete promptly. The editor
-    // lifecycle continues in the persistent bridge page after this callback, so
-    // keeping the Office command open only leaves the ribbon stuck on
-    // "processing" and can eventually trigger an add-in command timeout.
-    startOfficeDialogCommand(() => bridgeProvider().run(mode), event);
+    void bridgeProvider()
+      .run(mode)
+      .finally(() => event?.completed?.());
   };
 }
 
@@ -89,7 +87,7 @@ void Office.onReady().then((info) => {
         .finally(() => {
           pollRunning = false;
         });
-    }, 100);
+    }, 150);
   } catch (error) {
     setBridgeStatus(
       error instanceof Error ? error.message : "VisualTeX Office Bridge 初始化失败。",

@@ -35,6 +35,13 @@ for (const [name, latex] of cases) {
     `${name} external href`,
   );
   assert.ok(!/url\(\s*["']?https?:/i.test(result.svg), `${name} remote CSS URL`);
+  if (name !== "root") {
+    assert.match(
+      result.svg,
+      /<rect\b[^>]*fill-opacity="0\.001"/,
+      `${name} transparent PowerPoint hit target`,
+    );
+  }
   assert.equal(result.base64, svgToBase64(result.svg));
   const decoded = new TextDecoder().decode(
     Uint8Array.from(atob(result.base64), (character) => character.charCodeAt(0)),

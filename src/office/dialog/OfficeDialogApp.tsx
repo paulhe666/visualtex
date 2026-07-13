@@ -64,9 +64,12 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const USE_NATIVE_POWERPOINT_COMMIT = /Macintosh|Mac OS X/i.test(
-  navigator.userAgent,
-);
+const USE_NATIVE_POWERPOINT_COMMIT =
+  document
+    .querySelector<HTMLMetaElement>(
+      'meta[name="visualtex-native-powerpoint-commit"]',
+    )
+    ?.content.toLowerCase() === "true";
 
 function documentFingerprint(
   title: string,

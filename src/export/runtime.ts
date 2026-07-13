@@ -159,10 +159,16 @@ export function latexToSvg(
     })
     .replaceAll("currentColor", "#111111");
 
+  const openingEnd = svg.indexOf(">");
   if (options.background === "white") {
-    const openingEnd = svg.indexOf(">");
     const background = `<rect x="${padded.x}" y="${padded.y}" width="${padded.width}" height="${padded.height}" fill="#ffffff"/>`;
     svg = `${svg.slice(0, openingEnd + 1)}${background}${svg.slice(openingEnd + 1)}`;
+  } else {
+    // PowerPoint otherwise hit-tests only the painted glyph paths of a
+    // transparent SVG. A practically invisible filled rectangle makes the
+    // entire formula bounds selectable and double-clickable at normal zoom.
+    const hitTarget = `<rect x="${padded.x}" y="${padded.y}" width="${padded.width}" height="${padded.height}" fill="#000000" fill-opacity="0.001"/>`;
+    svg = `${svg.slice(0, openingEnd + 1)}${hitTarget}${svg.slice(openingEnd + 1)}`;
   }
 
   assertSelfContained(svg);

@@ -1,24 +1,5 @@
 import assert from "node:assert/strict";
 
-const { startOfficeDialogCommand } = await import(
-  "../src/office/bridge/commandLifecycle.ts"
-);
-let immediateCompletionCount = 0;
-let resolveLongRunningCommand;
-const longRunningCommand = new Promise((resolve) => {
-  resolveLongRunningCommand = resolve;
-});
-startOfficeDialogCommand(
-  () => longRunningCommand,
-  { completed: () => { immediateCompletionCount += 1; } },
-);
-assert.equal(
-  immediateCompletionCount,
-  1,
-  "PowerPoint must release the ribbon command before the editor lifecycle finishes",
-);
-resolveLongRunningCommand();
-
 let currentSessionId = crypto.randomUUID();
 let currentFormulaId = crypto.randomUUID();
 let currentLineId = crypto.randomUUID();
@@ -26,6 +7,7 @@ let dialogMessageHandler = null;
 let dialogClosedHandler = null;
 let dialogCloseCount = 0;
 let applyCount = 0;
+let nativeCommitCount = 0;
 const appliedLatex = [];
 const statusMessages = [];
 
@@ -126,8 +108,8 @@ globalThis.fetch = async (input, init = {}) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        appVersion: "1.0.17",
-        officeUiVersion: "1.0.17",
+        appVersion: "1.0.18",
+        officeUiVersion: "1.0.18",
         protocolVersion: 1,
         ocrAvailable: true,
       }),
@@ -154,6 +136,19 @@ globalThis.fetch = async (input, init = {}) => {
     if (init.method === "PATCH") {
       Object.assign(session, JSON.parse(init.body), { updatedAt: Date.now() });
     }
+    return new Response(JSON.stringify(session), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (
+    url === `/api/v1/powerpoint/sessions/${currentSessionId}/commit` &&
+    init.method === "POST"
+  ) {
+    nativeCommitCount += 1;
+    session.status = "completed";
+    session.updatedAt = Date.now();
     return new Response(JSON.stringify(session), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -233,5 +228,28 @@ assert.equal(applyCount, 2, "closing the dialog must auto-commit the persisted P
 assert.equal(session.status, "completed");
 assert.equal(closeCompletedCount, 1, "manual close must complete the Office command after auto-commit");
 assert.deepEqual(appliedLatex, [String.raw`\alpha+x`, String.raw`\sum_{i=1}^{n}x_i`]);
+
+// Scenario 3: even if an Office dialog falls back to its parent bridge, a
+// native macOS PowerPoint Session must still use the native commit endpoint.
+currentSessionId = crypto.randomUUID();
+currentFormulaId = crypto.randomUUID();
+currentLineId = crypto.randomUUID();
+session = createSession();
+const nativeAdapter = {
+  ...adapter,
+  async readSelection() {
+    return {
+      sourceDocumentId: "visualtex-ppt-native-presentation:Deck.pptx",
+      sourceObjectId: "visualtex-ppt-native-slide:256:1",
+      sessionSeed: { displayMode: "block" },
+    };
+  },
+};
+const nativeBridge = new OfficeBridge(nativeAdapter);
+await nativeBridge.run("create", () => undefined);
+setFormulaDraft("committing", String.raw`\beta+y`);
+await new Promise((resolve) => setTimeout(resolve, 500));
+assert.equal(nativeCommitCount, 1, "native PowerPoint Session must commit natively");
+assert.equal(applyCount, 2, "native commit must not call the Office.js adapter");
 
 console.log("PowerPoint Office command lifecycle, commit polling and close auto-commit passed");

@@ -1,5 +1,6 @@
 import { ensureCompanionReady } from "../api/companionClient";
 import {
+  commitNativePowerPointSession,
   createOfficeSession,
   getOfficeSession,
   updateOfficeSession,
@@ -16,6 +17,21 @@ function sessionHasFormula(lines: Array<{ latex: string }>) {
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function isNativePowerPointSession(session: {
+  host: string;
+  sourceDocumentId: string | null;
+  sourceObjectId: string | null;
+}) {
+  return (
+    session.host === "powerpoint" &&
+    (session.sourceDocumentId?.startsWith(
+      "visualtex-ppt-native-presentation:",
+    ) ||
+      session.sourceObjectId?.startsWith("visualtex-ppt-native-slide:") ||
+      session.sourceObjectId?.startsWith("visualtex-ppt-native-edit:"))
+  );
 }
 
 function showCommandError(adapter: OfficeHostAdapter, message: string) {
@@ -272,8 +288,12 @@ export class OfficeBridge {
       }
 
       await updateOfficeSession(sessionId, { status: "committing", error: null });
-      await this.adapter.applySession(session);
-      await updateOfficeSession(sessionId, { status: "completed", error: null });
+      if (isNativePowerPointSession(session)) {
+        await commitNativePowerPointSession(sessionId);
+      } else {
+        await this.adapter.applySession(session);
+        await updateOfficeSession(sessionId, { status: "completed", error: null });
+      }
       this.activeSessionId = null;
       if (closeAfterSuccess) this.dialog.close();
       this.adapter.showMessage(

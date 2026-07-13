@@ -62,7 +62,14 @@ fn valid_session_id(value: &str) -> bool {
 fn inject_install_token(html: &str, token: &str) -> Result<String, StatusCode> {
     let marker = "</head>";
     let index = html.find(marker).ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let meta = format!("<meta name=\"visualtex-install-token\" content=\"{token}\" />\n");
+    let native_powerpoint_commit = if cfg!(target_os = "macos") {
+        "true"
+    } else {
+        "false"
+    };
+    let meta = format!(
+        "<meta name=\"visualtex-install-token\" content=\"{token}\" />\n<meta name=\"visualtex-native-powerpoint-commit\" content=\"{native_powerpoint_commit}\" />\n"
+    );
     Ok(format!("{}{}{}", &html[..index], meta, &html[index..]))
 }
 
@@ -1104,6 +1111,7 @@ mod tests {
         let bridge_body = bridge.into_body().collect().await.unwrap().to_bytes();
         let bridge_html = String::from_utf8(bridge_body.to_vec()).unwrap();
         assert!(bridge_html.contains("visualtex-install-token"));
+        assert!(bridge_html.contains("visualtex-native-powerpoint-commit"));
         assert!(bridge_html.contains(state.install_token.as_str()));
 
         let invalid_dialog = router

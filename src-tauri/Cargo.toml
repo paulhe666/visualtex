@@ -1,6 +1,6 @@
 [package]
 name = "visualtex"
-version = "1.0.17"
+version = "1.0.18"
 description = "A visual LaTeX formula editor"
 authors = ["VisualTeX"]
 license = "MIT"
