@@ -1,4 +1,5 @@
 use crate::office::formula_cache::FormulaMetadataCache;
+use crate::office::platform::{self, OfficePlatformBackend};
 use crate::office::powerpoint_native::PowerPointInteractionBus;
 use crate::office::sessions::SessionStore;
 use crate::OcrState;
@@ -64,6 +65,7 @@ pub struct OfficeCompanionState {
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
     pub session_store: SessionStore,
     pub formula_cache: FormulaMetadataCache,
+    pub platform_backend: Arc<dyn OfficePlatformBackend>,
     pub powerpoint_interactions: PowerPointInteractionBus,
     pub ocr_available: bool,
 }
@@ -79,6 +81,7 @@ impl OfficeCompanionState {
         ocr_available: bool,
     ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
+        let platform_backend = platform::create_backend(app.as_ref(), &paths);
         Self {
             app,
             ocr,
@@ -88,6 +91,7 @@ impl OfficeCompanionState {
             server_handle: Arc::new(Mutex::new(None)),
             session_store,
             formula_cache,
+            platform_backend,
             powerpoint_interactions: PowerPointInteractionBus::default(),
             ocr_available,
         }

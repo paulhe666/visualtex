@@ -26,11 +26,13 @@ const metadata = createFormulaMetadata({
   lines,
   codeFormat: "align-star",
   displayMode: "block",
+  numbered: true,
   appVersion: "1.0.6",
 });
 
 assert.equal(metadata.latex, lines.map((line) => line.latex).join("\n"));
 assert.ok(isVisualTeXFormulaMetadata(metadata));
+assert.equal(metadata.numbered, true);
 
 const encoded = encodeFormulaMetadata(metadata);
 assert.match(encoded, /^visualtex:v1:deflate:[A-Za-z0-9_-]+$/);

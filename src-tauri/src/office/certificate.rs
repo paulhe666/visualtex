@@ -28,6 +28,8 @@ pub struct CertificateMetadata {
     pub not_before: i64,
     pub not_after: i64,
     pub sha256_fingerprint: String,
+    #[serde(default)]
+    pub key_algorithm: String,
 }
 
 #[cfg(unix)]
@@ -42,6 +44,7 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
     let directory = fs::File::open(path).map_err(|error| {
         format!(
@@ -52,6 +55,14 @@ fn sync_directory(path: &Path) -> Result<(), String> {
     directory
         .sync_all()
         .map_err(|error| format!("Unable to sync directory {}: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), String> {
+    // Windows does not allow opening a directory with std::fs::File solely
+    // to call sync_all(). The temporary file itself has already been flushed
+    // before the atomic rename, so no extra directory sync is available here.
+    Ok(())
 }
 
 fn atomic_write(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
@@ -123,15 +134,45 @@ fn ensure_install_config(paths: &OfficePaths) -> Result<String, String> {
     Ok(config.install_token)
 }
 
+fn expected_key_algorithm() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "rsa-2048-sha256"
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "ecdsa-p256-sha256"
+    }
+}
+
+fn certificate_metadata_matches_platform(paths: &OfficePaths) -> bool {
+    fs::read(&paths.certificate_metadata)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<CertificateMetadata>(&bytes).ok())
+        .is_some_and(|metadata| metadata.key_algorithm == expected_key_algorithm())
+}
+
 fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
     if paths.certificate.is_file()
         && paths.private_key.is_file()
         && paths.certificate_metadata.is_file()
+        && certificate_metadata_matches_platform(paths)
     {
         set_mode(&paths.certificate, 0o644)?;
         set_mode(&paths.private_key, 0o600)?;
         set_mode(&paths.certificate_metadata, 0o644)?;
         return Ok(());
+    }
+
+    for path in [
+        &paths.certificate,
+        &paths.private_key,
+        &paths.certificate_metadata,
+    ] {
+        if path.exists() {
+            fs::remove_file(path)
+                .map_err(|error| format!("Unable to remove stale {}: {error}", path.display()))?;
+        }
     }
 
     let now = OffsetDateTime::now_utc();
@@ -156,6 +197,10 @@ fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
         SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)),
     ];
 
+    #[cfg(target_os = "windows")]
+    let key_pair = KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256)
+        .map_err(|error| format!("Unable to generate Office TLS RSA private key: {error}"))?;
+    #[cfg(not(target_os = "windows"))]
     let key_pair = KeyPair::generate()
         .map_err(|error| format!("Unable to generate Office TLS private key: {error}"))?;
     let certificate = params
@@ -171,6 +216,7 @@ fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
         not_before: not_before.unix_timestamp(),
         not_after: not_after.unix_timestamp(),
         sha256_fingerprint: hex::encode(fingerprint),
+        key_algorithm: expected_key_algorithm().to_string(),
     };
     let metadata_json = serde_json::to_vec_pretty(&metadata)
         .map_err(|error| format!("Unable to encode certificate metadata: {error}"))?;

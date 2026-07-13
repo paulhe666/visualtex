@@ -1110,6 +1110,11 @@ pub fn run() {
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
             office::lifecycle::get_office_integration_status,
+            office::lifecycle::get_office_platform_status,
+            office::lifecycle::set_office_integration_mode,
+            office::lifecycle::install_windows_ole_integration,
+            office::lifecycle::uninstall_windows_ole_integration,
+            office::lifecycle::repair_windows_office_integration,
             office::lifecycle::install_office_integration,
             office::lifecycle::repair_office_integration,
             office::lifecycle::uninstall_office_integration,
@@ -1134,10 +1139,15 @@ pub fn run() {
         tauri::RunEvent::Reopen { .. } => {
             let _ = office::background::reveal_main_window(app);
         }
-        #[cfg(target_os = "macos")]
         tauri::RunEvent::ExitRequested { .. } => {
+            #[cfg(target_os = "macos")]
             if let Err(error) = office::background::pause_launch_agent_for_quit() {
                 eprintln!("Unable to pause VisualTeX Office background service: {error}");
+            }
+            if let Some(state) = app.try_state::<office::state::OfficeCompanionState>() {
+                if let Err(error) = state.platform_backend.shutdown() {
+                    eprintln!("Unable to stop the VisualTeX Office platform backend: {error}");
+                }
             }
         }
         _ => {}

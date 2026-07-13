@@ -41,6 +41,7 @@ import {
   listenOcrInstallProgress,
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
+  resolveAvailableOcrModel,
   resetOcrRuntime,
   restartOcrWorker,
   validateOcrImage,
@@ -163,13 +164,9 @@ export function OcrDialog({
   }, [isEn]);
 
   useEffect(() => {
-    if (
-      runtime?.installed &&
-      model !== defaultModel &&
-      !runtime.installedModels.includes(model)
-    ) {
-      onModelChange(defaultModel as OcrModelName);
-    }
+    if (!runtime?.installed) return;
+    const availableModel = resolveAvailableOcrModel(runtime, model);
+    if (availableModel !== model) onModelChange(availableModel);
   }, [defaultModel, model, onModelChange, runtime]);
 
   useEffect(() => {
@@ -598,7 +595,7 @@ export function OcrDialog({
               >
                 {OCR_MODELS.map((item) => {
                   const available =
-                    item.id === defaultModel || installedModels.includes(item.id);
+                    installedModels.includes(item.id);
                   return (
                     <option value={item.id} key={item.id} disabled={!available}>
                       {isEn ? item.labelEn : item.labelZh}

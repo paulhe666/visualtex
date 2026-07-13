@@ -100,6 +100,8 @@ pub struct VisualTeXFormulaMetadata {
     pub lines: Vec<MetadataLine>,
     pub code_format: String,
     pub display_mode: String,
+    #[serde(default)]
+    pub numbered: bool,
     pub created_with_version: String,
     pub updated_with_version: String,
     pub created_at: String,
@@ -121,6 +123,8 @@ pub struct OfficeFormulaSession {
     pub code_format: String,
     #[serde(default = "default_display_mode")]
     pub display_mode: String,
+    #[serde(default)]
+    pub numbered: bool,
     pub export_width: f64,
     pub export_height: f64,
     pub export_result: Option<OfficeExportResult>,
@@ -148,6 +152,7 @@ pub struct CreateOfficeSessionInput {
     pub active_line_id: Option<String>,
     pub code_format: Option<String>,
     pub display_mode: Option<String>,
+    pub numbered: Option<bool>,
     pub export_width: Option<f64>,
     pub export_height: Option<f64>,
     pub original_metadata: Option<VisualTeXFormulaMetadata>,
@@ -184,6 +189,7 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<(), SessionError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), SessionError> {
     let directory = fs::File::open(path).map_err(|error| {
         SessionError::Io(format!(
@@ -197,6 +203,11 @@ fn sync_directory(path: &Path) -> Result<(), SessionError> {
             path.display()
         ))
     })
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), SessionError> {
+    Ok(())
 }
 
 pub(crate) fn valid_uuid(value: &str) -> bool {
@@ -399,6 +410,12 @@ impl SessionStore {
                 "Office Session displayMode must be inline or block".to_string(),
             ));
         }
+        let numbered = input.numbered.unwrap_or(false);
+        if numbered && (input.host != OfficeHost::Word || display_mode != "block") {
+            return Err(SessionError::Invalid(
+                "Only Word display formulas can use equation numbering".to_string(),
+            ));
+        }
         let session = OfficeFormulaSession {
             id,
             mode: input.mode,
@@ -411,6 +428,7 @@ impl SessionStore {
             active_line_id,
             code_format: input.code_format.unwrap_or_else(|| "raw".to_string()),
             display_mode,
+            numbered,
             export_width: input.export_width.unwrap_or_default(),
             export_height: input.export_height.unwrap_or_default(),
             export_result: None,
@@ -453,6 +471,7 @@ impl SessionStore {
             "activeLineId",
             "codeFormat",
             "displayMode",
+            "numbered",
             "exportWidth",
             "exportHeight",
             "exportResult",
@@ -508,6 +527,11 @@ impl SessionStore {
         if !matches!(next.display_mode.as_str(), "inline" | "block") {
             return Err(SessionError::Invalid(
                 "Office Session displayMode must be inline or block".to_string(),
+            ));
+        }
+        if next.numbered && (next.host != OfficeHost::Word || next.display_mode != "block") {
+            return Err(SessionError::Invalid(
+                "Only Word display formulas can use equation numbering".to_string(),
             ));
         }
 
@@ -671,6 +695,7 @@ mod tests {
             active_line_id: None,
             code_format: None,
             display_mode: None,
+            numbered: None,
             export_width: None,
             export_height: None,
             original_metadata: None,
@@ -729,6 +754,33 @@ mod tests {
     }
 
     #[test]
+    fn equation_numbering_requires_a_word_display_formula() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+
+        let mut numbered = create_input();
+        numbered.display_mode = Some("block".to_string());
+        numbered.numbered = Some(true);
+        let session = store.create(numbered).unwrap();
+        assert!(session.numbered);
+
+        let inline_error = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "displayMode": "inline" }),
+            )
+            .unwrap_err();
+        assert!(matches!(inline_error, SessionError::Invalid(_)));
+
+        let mut powerpoint = create_input();
+        powerpoint.host = OfficeHost::Powerpoint;
+        powerpoint.display_mode = Some("block".to_string());
+        powerpoint.numbered = Some(true);
+        let powerpoint_error = store.create(powerpoint).unwrap_err();
+        assert!(matches!(powerpoint_error, SessionError::Invalid(_)));
+    }
+
+    #[test]
     fn edit_session_requires_existing_formula_id() {
         let temp = TempDir::new().unwrap();
         let store = SessionStore::new(&paths(&temp)).unwrap();
@@ -754,6 +806,7 @@ mod tests {
             lines: vec![],
             code_format: "raw".to_string(),
             display_mode: "block".to_string(),
+            numbered: false,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

@@ -28,6 +28,7 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<(), SessionError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), SessionError> {
     let directory = fs::File::open(path).map_err(|error| {
         SessionError::Io(format!(
@@ -41,6 +42,11 @@ fn sync_directory(path: &Path) -> Result<(), SessionError> {
             path.display()
         ))
     })
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), SessionError> {
+    Ok(())
 }
 
 fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), SessionError> {
@@ -57,6 +63,11 @@ fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), SessionE
     if metadata.lines.is_empty() || metadata.lines.len() > 512 {
         return Err(SessionError::Invalid(
             "Formula metadata contains an invalid line collection".to_string(),
+        ));
+    }
+    if metadata.numbered && metadata.display_mode != "block" {
+        return Err(SessionError::Invalid(
+            "Only display formulas can use equation numbering".to_string(),
         ));
     }
     if metadata
@@ -218,6 +229,7 @@ mod tests {
             }],
             code_format: "raw".to_string(),
             display_mode: "inline".to_string(),
+            numbered: false,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

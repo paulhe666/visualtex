@@ -1,11 +1,11 @@
 import { ensureCompanionReady } from "../api/companionClient";
 import {
-  commitNativePowerPointSession,
   createOfficeSession,
   getOfficeSession,
   updateOfficeSession,
+  type OfficeFormulaSession,
   type OfficeSessionMode,
-} from "../api/sessionClient";
+} from "../shared/sessionClient";
 import type { OfficeHostAdapter } from "../adapters/OfficeHostAdapter";
 import { officeErrorMessage } from "../errors";
 import { DialogController } from "./DialogController";
@@ -15,23 +15,31 @@ function sessionHasFormula(lines: Array<{ latex: string }>) {
   return lines.some((line) => line.latex.trim().length > 0);
 }
 
+function sessionHasRequiredExport(
+  session: OfficeFormulaSession,
+  adapter: OfficeHostAdapter,
+) {
+  if (!session.exportResult) return false;
+  return (
+    adapter.requiredExportFormat !== "png" ||
+    Boolean(session.exportResult.pngBase64?.trim())
+  );
+}
+
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function isNativePowerPointSession(session: {
-  host: string;
-  sourceDocumentId: string | null;
-  sourceObjectId: string | null;
-}) {
-  return (
-    session.host === "powerpoint" &&
-    (session.sourceDocumentId?.startsWith(
-      "visualtex-ppt-native-presentation:",
-    ) ||
-      session.sourceObjectId?.startsWith("visualtex-ppt-native-slide:") ||
-      session.sourceObjectId?.startsWith("visualtex-ppt-native-edit:"))
-  );
+export type OfficeSessionCommitter = (
+  session: OfficeFormulaSession,
+  adapter: OfficeHostAdapter,
+) => Promise<void>;
+
+async function defaultCommitter(
+  session: OfficeFormulaSession,
+  adapter: OfficeHostAdapter,
+) {
+  await adapter.applySession(session);
 }
 
 function showCommandError(adapter: OfficeHostAdapter, message: string) {
@@ -52,7 +60,10 @@ export class OfficeBridge {
   private sessionWatchRunning = false;
   private commitRunning = false;
 
-  constructor(private readonly adapter: OfficeHostAdapter) {}
+  constructor(
+    private readonly adapter: OfficeHostAdapter,
+    private readonly commitWithPlatform: OfficeSessionCommitter = defaultCommitter,
+  ) {}
 
   async run(mode: OfficeSessionMode, onCommandCompleted?: () => void) {
     if (this.commandRunning || this.dialog.isOpen) {
@@ -202,10 +213,15 @@ export class OfficeBridge {
       let session = await getOfficeSession(sessionId);
       for (
         let attempt = 0;
-        attempt < 15 &&
+        // The dialog persists SVG immediately, then finishes PNG
+        // rasterization in the background. Windows OLE requires that PNG,
+        // so allow the final in-flight save to reach the companion before
+        // deciding that a directly closed editor cannot be committed.
+        attempt < 50 &&
         session.status !== "completed" &&
         session.status !== "cancelled" &&
-        (!sessionHasFormula(session.lines) || !session.exportResult);
+        (!sessionHasFormula(session.lines) ||
+          !sessionHasRequiredExport(session, this.adapter));
         attempt += 1
       ) {
         await delay(100);
@@ -222,7 +238,7 @@ export class OfficeBridge {
       const shouldAutoCommit =
         session.autoCommitOnClose &&
         sessionHasFormula(session.lines) &&
-        Boolean(session.exportResult) &&
+        sessionHasRequiredExport(session, this.adapter) &&
         (session.mode === "create" || session.dirty);
 
       if (shouldAutoCommit) {
@@ -236,7 +252,7 @@ export class OfficeBridge {
           explicitCancel: false,
         });
         this.adapter.showMessage("空公式已取消，Office 文档未修改。");
-      } else if (!session.exportResult) {
+      } else if (!sessionHasRequiredExport(session, this.adapter)) {
         await updateOfficeSession(sessionId, {
           status: "failed",
           error: "公式导出尚未成功，已保留恢复记录。",
@@ -288,12 +304,8 @@ export class OfficeBridge {
       }
 
       await updateOfficeSession(sessionId, { status: "committing", error: null });
-      if (isNativePowerPointSession(session)) {
-        await commitNativePowerPointSession(sessionId);
-      } else {
-        await this.adapter.applySession(session);
-        await updateOfficeSession(sessionId, { status: "completed", error: null });
-      }
+      await this.commitWithPlatform(session, this.adapter);
+      await updateOfficeSession(sessionId, { status: "completed", error: null });
       this.activeSessionId = null;
       if (closeAfterSuccess) this.dialog.close();
       this.adapter.showMessage(

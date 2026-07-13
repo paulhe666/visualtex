@@ -44,6 +44,7 @@ import {
   getOcrRuntimeStatus,
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
+  resolveAvailableOcrModel,
   restartOcrWorker,
   type OcrModelName,
 } from "../../ocr/ocrService";
@@ -76,12 +77,14 @@ function documentFingerprint(
   lines: Array<{ id: string; latex: string }>,
   codeFormat: string,
   displayMode: "inline" | "block",
+  numbered: boolean,
 ) {
   return JSON.stringify({
     title,
     lines: lines.map((line) => line.latex),
     codeFormat,
     displayMode,
+    numbered,
   });
 }
 
@@ -93,10 +96,15 @@ export function OfficeDialogApp() {
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const exportRunIdRef = useRef(0);
+  const latestCompleteExportRef = useRef<{
+    fingerprint: string;
+    exportResult: OfficeExportResult;
+  } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
+  const [numbered, setNumbered] = useState(false);
   const [toast, setToast] = useState("");
   const [ocrOpen, setOcrOpen] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
@@ -135,12 +143,13 @@ export function OfficeDialogApp() {
       session.originalMetadata?.lines ?? session.lines,
       session.originalMetadata?.codeFormat ?? session.codeFormat,
       session.originalMetadata?.displayMode ?? session.displayMode,
+      session.originalMetadata?.numbered ?? session.numbered ?? false,
     );
   }, [session?.id]);
 
   const currentFingerprint = useMemo(
-    () => documentFingerprint(title, lines, latexCodeFormat, displayMode),
-    [title, lines, latexCodeFormat, displayMode],
+    () => documentFingerprint(title, lines, latexCodeFormat, displayMode, numbered),
+    [title, lines, latexCodeFormat, displayMode, numbered],
   );
   const dirty = Boolean(session) && currentFingerprint !== originalFingerprint;
 
@@ -168,12 +177,18 @@ export function OfficeDialogApp() {
     }
     setAutoCommitOnClose(session.autoCommitOnClose);
     setDisplayMode(session.displayMode);
-    lastSavedFingerprintRef.current = documentFingerprint(
+    setNumbered(session.displayMode === "block" && Boolean(session.numbered));
+    const loadedFingerprint = documentFingerprint(
       session.title,
       nextLines,
       session.codeFormat,
       session.displayMode,
+      session.displayMode === "block" && Boolean(session.numbered),
     );
+    lastSavedFingerprintRef.current = loadedFingerprint;
+    latestCompleteExportRef.current = session.exportResult?.pngBase64
+      ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
+      : null;
   }, [session?.id, isEn]);
 
   const captureSnapshot = useCallback(
@@ -293,12 +308,13 @@ export function OfficeDialogApp() {
       // of waiting for PNG rasterization, so closing the Office dialog cannot
       // lose the final keystrokes.
       const exportResult = generateSvgExportResult();
-      void save({
+      const draftUpdate = {
         title,
         lines,
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        numbered: displayMode === "block" && numbered,
         dirty,
         status: "editing",
         autoCommitOnClose,
@@ -306,7 +322,8 @@ export function OfficeDialogApp() {
         exportWidth: exportResult?.width ?? 0,
         exportHeight: exportResult?.height ?? 0,
         error: null,
-      })
+      } as const;
+      void save(draftUpdate)
         .then((saved) => {
           if (saved && runId === exportRunIdRef.current) {
             lastSavedFingerprintRef.current = currentFingerprint;
@@ -321,6 +338,41 @@ export function OfficeDialogApp() {
                 : "无法保存 Office 公式";
           setToast(message);
         });
+      // Windows OLE inserts a PNG file. Keep rasterization off the critical
+      // keystroke-save path, but persist the full export as soon as it is
+      // ready so the title-bar close button has a committable final draft.
+      if (exportResult) {
+        void generateExportResult()
+          .then((completeExport) => {
+            if (
+              !completeExport?.pngBase64 ||
+              runId !== exportRunIdRef.current ||
+              finalizingRef.current
+            ) {
+              return;
+            }
+            latestCompleteExportRef.current = {
+              fingerprint: currentFingerprint,
+              exportResult: completeExport,
+            };
+            return save({
+              ...draftUpdate,
+              exportResult: completeExport,
+              exportWidth: completeExport.width,
+              exportHeight: completeExport.height,
+            }).then((saved) => {
+              if (saved && runId === exportRunIdRef.current) {
+                lastSavedFingerprintRef.current = currentFingerprint;
+              }
+            });
+          })
+          .catch(() => {
+            // The immediate SVG save is still recoverable. The explicit
+            // insert/update path reports rasterization errors to the user.
+          });
+      } else {
+        latestCompleteExportRef.current = null;
+      }
     } catch (reason) {
       const message =
         reason instanceof Error
@@ -340,23 +392,30 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    numbered,
     dirty,
     autoCommitOnClose,
     save,
     isEn,
     generateSvgExportResult,
+    generateExportResult,
   ]);
 
   useEffect(() => {
     if (!sessionId) return;
     const finalDraftUpdate = (status: "editing" | "committing") => {
-      const exportResult = generateSvgExportResult();
+      const cached = latestCompleteExportRef.current;
+      const exportResult =
+        cached?.fingerprint === currentFingerprint
+          ? cached.exportResult
+          : generateSvgExportResult();
       return {
         title,
         lines,
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        numbered: displayMode === "block" && numbered,
         dirty,
         status,
         autoCommitOnClose,
@@ -377,23 +436,34 @@ export function OfficeDialogApp() {
         // The regular save path reports export errors while the page is open.
       }
     };
-    const commitFinalPowerPointDraft = () => {
+    const commitFinalDraft = () => {
+      const cached = latestCompleteExportRef.current;
       if (
         finalizingRef.current ||
-        session?.host !== "powerpoint" ||
-        !USE_NATIVE_POWERPOINT_COMMIT ||
         !autoCommitOnClose ||
-        !latex.trim()
+        !latex.trim() ||
+        cached?.fingerprint !== currentFingerprint ||
+        !cached.exportResult.pngBase64
       ) {
         persistFinalDraft();
         return;
       }
       try {
         finalizingRef.current = true;
-        void commitNativePowerPointSessionKeepalive(
-          sessionId,
-          finalDraftUpdate("committing"),
-        ).catch(() => undefined);
+        const update = finalDraftUpdate("committing");
+        if (session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT) {
+          void commitNativePowerPointSessionKeepalive(sessionId, update).catch(
+            () => undefined,
+          );
+        } else {
+          // Marking the complete draft as committing in one keepalive PATCH
+          // prevents a delayed SVG-only autosave from overwriting its PNG.
+          // The parent Office bridge observes the state and performs the host
+          // insertion after the dialog has closed.
+          void saveOfficeSessionKeepalive(sessionId, update).catch(
+            () => undefined,
+          );
+        }
       } catch {
         // Closing a dialog is best-effort; the explicit insert button reports errors.
       }
@@ -401,12 +471,12 @@ export function OfficeDialogApp() {
     const persistWhenHidden = () => {
       if (document.visibilityState === "hidden") persistFinalDraft();
     };
-    window.addEventListener("pagehide", commitFinalPowerPointDraft);
-    window.addEventListener("beforeunload", commitFinalPowerPointDraft);
+    window.addEventListener("pagehide", commitFinalDraft);
+    window.addEventListener("beforeunload", commitFinalDraft);
     document.addEventListener("visibilitychange", persistWhenHidden);
     return () => {
-      window.removeEventListener("pagehide", commitFinalPowerPointDraft);
-      window.removeEventListener("beforeunload", commitFinalPowerPointDraft);
+      window.removeEventListener("pagehide", commitFinalDraft);
+      window.removeEventListener("beforeunload", commitFinalDraft);
       document.removeEventListener("visibilitychange", persistWhenHidden);
     };
   }, [
@@ -417,8 +487,10 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    numbered,
     dirty,
     autoCommitOnClose,
+    currentFingerprint,
     generateSvgExportResult,
     latex,
   ]);
@@ -539,6 +611,12 @@ export function OfficeDialogApp() {
         );
       }
 
+      const availableOcrModel = resolveAvailableOcrModel(runtime, ocrModel);
+      if (availableOcrModel !== ocrModel) {
+        setOcrModel(availableOcrModel);
+        window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, availableOcrModel);
+      }
+
       unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
@@ -551,7 +629,7 @@ export function OfficeDialogApp() {
         );
       });
 
-      const request = await fileToOcrRequest(file, ocrModel);
+      const request = await fileToOcrRequest(file, availableOcrModel);
       if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
       const result = await recognizeFormulaImage(request);
       if (
@@ -649,6 +727,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        numbered: displayMode === "block" && numbered,
         dirty,
         status,
         autoCommitOnClose,
@@ -668,6 +747,7 @@ export function OfficeDialogApp() {
       activeLineId,
       latexCodeFormat,
       displayMode,
+      numbered,
       dirty,
       autoCommitOnClose,
       currentFingerprint,
@@ -763,7 +843,10 @@ export function OfficeDialogApp() {
               <button
                 type="button"
                 className={displayMode === "inline" ? "is-active" : ""}
-                onClick={() => setDisplayMode("inline")}
+                onClick={() => {
+                  setDisplayMode("inline");
+                  setNumbered(false);
+                }}
                 disabled={session.mode === "edit"}
               >
                 {isEn ? "Inline" : "行内"}
@@ -777,6 +860,16 @@ export function OfficeDialogApp() {
                 {isEn ? "Display" : "行间"}
               </button>
             </div>
+          ) : null}
+          {session.host === "word" && displayMode === "block" ? (
+            <label className="office-auto-commit-setting">
+              <input
+                type="checkbox"
+                checked={numbered}
+                onChange={(event) => setNumbered(event.target.checked)}
+              />
+              <span>{isEn ? "Add equation number" : "添加公式编号"}</span>
+            </label>
           ) : null}
           <label className="office-auto-commit-setting">
             <input

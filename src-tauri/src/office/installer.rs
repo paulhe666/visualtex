@@ -112,12 +112,18 @@ fn read_manifest_version(path: &Path) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
     let directory = fs::File::open(path)
         .map_err(|error| format!("Unable to open {} for sync: {error}", path.display()))?;
     directory
         .sync_all()
         .map_err(|error| format!("Unable to sync {}: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(unix)]

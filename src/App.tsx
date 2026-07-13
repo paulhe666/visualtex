@@ -80,6 +80,7 @@ import {
   isTauriEnvironment,
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
+  resolveAvailableOcrModel,
   restartOcrWorker,
   type OcrModelName,
 } from "./ocr/ocrService";
@@ -439,6 +440,12 @@ function App() {
         );
       }
 
+      const availableOcrModel = resolveAvailableOcrModel(runtime, ocrModel);
+      if (availableOcrModel !== ocrModel) {
+        setOcrModel(availableOcrModel);
+        window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, availableOcrModel);
+      }
+
       unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
@@ -456,7 +463,7 @@ function App() {
         );
       });
 
-      const request = await fileToOcrRequest(file, ocrModel);
+      const request = await fileToOcrRequest(file, availableOcrModel);
       if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
       const result = await recognizeFormulaImage(request);
       if (

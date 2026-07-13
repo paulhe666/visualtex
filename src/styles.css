@@ -5649,6 +5649,38 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   grid-column: 1 / -1;
 }
 
+.office-platform-status-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.office-platform-status-line > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.settings-control-row select {
+  min-width: 132px;
+}
+
 .office-status-card header {
   display: flex;
   align-items: center;

@@ -8,10 +8,14 @@ on:
     paths:
       - "src/**"
       - "src-tauri/**"
+      - "src-windows/**"
+      - "office/**"
+      - "ocr/**"
+      - "*.html"
       - "scripts/**"
       - "package.json"
       - "package-lock.json"
-      - "vite.config.*"
+      - "vite*.config.*"
       - "tsconfig*.json"
       - ".github/workflows/build-windows-linux.yml"
 
@@ -33,19 +37,19 @@ jobs:
             label: macOS Apple Silicon
             rust_target: aarch64-apple-darwin
             build_args: --target aarch64-apple-darwin --bundles dmg
-            artifact_name: VisualTeX-1.0.18-macOS-Apple-Silicon
+            artifact_name: VisualTeX-1.0.20-macOS-Apple-Silicon
             artifact_paths: |
               src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           - platform: windows-latest
             label: Windows x64
             build_args: --bundles nsis
-            artifact_name: VisualTeX-1.0.18-Windows-x64
+            artifact_name: VisualTeX-1.0.20-Windows-x64
             artifact_paths: |
-              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/nsis/VisualTeX_1.0.20_x64-setup.exe
           - platform: ubuntu-22.04
             label: Linux x64
             build_args: --bundles deb,appimage
-            artifact_name: VisualTeX-1.0.18-Linux-x64
+            artifact_name: VisualTeX-1.0.20-Linux-x64
             artifact_paths: |
               src-tauri/target/release/bundle/deb/*.deb
               src-tauri/target/release/bundle/appimage/*.AppImage
@@ -83,6 +87,12 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up .NET 8
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -95,14 +105,21 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Verify version 1.0.18
+      - name: Verify version 1.0.20
         shell: bash
         run: |
-          node -e "const p=require('./package.json'); const t=require('./src-tauri/tauri.conf.json'); if(p.version!=='1.0.18'||t.version!=='1.0.18'){throw new Error('package.json and tauri.conf.json must both be 1.0.18')}"
-          grep -q '^version = "1.0.18"$' src-tauri/Cargo.toml
+          node -e "const p=require('./package.json'); const t=require('./src-tauri/tauri.conf.json'); if(p.version!=='1.0.20'||t.version!=='1.0.20'){throw new Error('package.json and tauri.conf.json must both be 1.0.20')}"
+          grep -q '^version = "1.0.20"$' src-tauri/Cargo.toml
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Verify Windows Office architecture and manifests
+        if: runner.os == 'Windows'
+        run: |
+          npm run test:windows-office-architecture
+          npm run test:office-platform-boundaries
+          npm run verify:office-manifest
 
       - name: Test LaTeX code formats
         run: npm run test:latex-format
@@ -116,27 +133,39 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
 
-      - name: Build installer packages
+      - name: Build Windows installer package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item "src-tauri/target/release/bundle/nsis" -Recurse -Force -ErrorAction SilentlyContinue
+          npm run tauri:build -- ${{ matrix.build_args }}
+
+      - name: Build macOS and Linux installer packages
+        if: runner.os != 'Windows'
         run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Verify macOS DMG integrity
         if: runner.os == 'macOS'
         env:
-          EXPECTED_VERSION: 1.0.18
+          EXPECTED_VERSION: 1.0.20
         run: bash scripts/verify_macos_dmg.sh "$(find src-tauri/target -type f -path '*/release/bundle/dmg/*.dmg' -print -quit)"
 
       - name: Verify Windows NSIS installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
-          if (-not $installer -or $installer.Length -lt 1MB) { throw "NSIS installer is missing or unexpectedly small" }
+          $installers = @(Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
+          $installer = $installers[0]
+          if ($installer.Name -ne "VisualTeX_1.0.20_x64-setup.exe" -or $installer.Length -lt 1MB) {
+            throw "NSIS installer has an unexpected name or size: $($installer.Name)"
+          }
           & 7z t $installer.FullName
           if ($LASTEXITCODE -ne 0) { throw "NSIS installer archive verification failed" }
 

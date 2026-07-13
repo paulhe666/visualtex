@@ -87,6 +87,19 @@ export interface OcrRuntimeStatus {
   message: string;
 }
 
+export function resolveAvailableOcrModel(
+  runtime: Pick<OcrRuntimeStatus, "installedModels" | "defaultModel">,
+  requested: OcrModelName,
+): OcrModelName {
+  const installed = new Set(runtime.installedModels);
+  if (installed.has(requested)) return requested;
+  if (installed.has(runtime.defaultModel)) {
+    return runtime.defaultModel as OcrModelName;
+  }
+  const fallback = OCR_MODELS.find((item) => installed.has(item.id));
+  return fallback?.id ?? requested;
+}
+
 export interface OcrInstallProgress {
   stage: string;
   percent: number;

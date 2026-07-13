@@ -24,9 +24,7 @@ function dialogCommand(
   bridgeProvider: () => OfficeBridge,
 ) {
   return (event?: OfficeCommandEvent) => {
-    void bridgeProvider()
-      .run(mode)
-      .finally(() => event?.completed?.());
+    void bridgeProvider().run(mode, () => event?.completed?.());
   };
 }
 

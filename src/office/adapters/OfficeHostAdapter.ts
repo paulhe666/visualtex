@@ -15,6 +15,7 @@ export interface OfficeSelectionContext {
 
 export interface OfficeHostAdapter {
   readonly host: OfficeHost;
+  readonly requiredExportFormat?: "svg" | "png";
 
   readSelection(mode: OfficeSessionMode): Promise<OfficeSelectionContext>;
   applySession(session: OfficeFormulaSession): Promise<void>;

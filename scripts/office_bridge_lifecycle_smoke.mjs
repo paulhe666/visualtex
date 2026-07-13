@@ -39,7 +39,7 @@ function createSession() {
   };
 }
 
-function setFormulaDraft(status, latex) {
+function setFormulaDraft(status, latex, includePng = true) {
   Object.assign(session, {
     lines: [{ id: currentLineId, latex }],
     activeLineId: currentLineId,
@@ -50,7 +50,7 @@ function setFormulaDraft(status, latex) {
     exportResult: {
       svg: "<svg></svg>",
       svgBase64: "svg-base64",
-      pngBase64: "png-base64",
+      pngBase64: includePng ? "png-base64" : undefined,
       width: 80,
       height: 32,
       baseline: 24,
@@ -160,6 +160,7 @@ globalThis.fetch = async (input, init = {}) => {
 
 const adapter = {
   host: "powerpoint",
+  requiredExportFormat: "png",
   async readSelection() {
     return {
       sourceDocumentId: "presentation-1",
@@ -181,6 +182,7 @@ const adapter = {
 };
 
 const { OfficeBridge } = await import("../src/office/bridge/OfficeBridge.ts");
+const { MacOfficeBridge } = await import("../src/office/macos/MacOfficeBridge.ts");
 
 // Scenario 1: PowerPoint loses DialogMessageReceived, but the editor has already
 // persisted status=committing. The bridge watcher must still insert the formula.
@@ -220,16 +222,42 @@ await closeBridge.run("create", () => {
 });
 assert.equal(closeCompletedCount, 0, "manual-close command must remain alive before the dialog closes");
 
-setFormulaDraft("editing", String.raw`\sum_{i=1}^{n}x_i`);
+setFormulaDraft("editing", String.raw`\sum_{i=1}^{n}x_i`, false);
 dialogClosedHandler?.({ error: 12006 });
-await new Promise((resolve) => setTimeout(resolve, 350));
+await new Promise((resolve) => setTimeout(resolve, 250));
+assert.equal(
+  applyCount,
+  1,
+  "closing must not submit the SVG-only draft to a PNG-backed Windows adapter",
+);
+session.exportResult.pngBase64 = "png-base64-after-close";
+session.updatedAt = Date.now();
+await new Promise((resolve) => setTimeout(resolve, 450));
 
-assert.equal(applyCount, 2, "closing the dialog must auto-commit the persisted PowerPoint formula");
+assert.equal(
+  applyCount,
+  2,
+  "closing the dialog must wait for and auto-commit the persisted PNG draft",
+);
 assert.equal(session.status, "completed");
 assert.equal(closeCompletedCount, 1, "manual close must complete the Office command after auto-commit");
 assert.deepEqual(appliedLatex, [String.raw`\alpha+x`, String.raw`\sum_{i=1}^{n}x_i`]);
 
-// Scenario 3: even if an Office dialog falls back to its parent bridge, a
+// Scenario 3: direct close must also apply a dirty edit Session, not only a
+// newly-created formula.
+currentSessionId = crypto.randomUUID();
+currentFormulaId = crypto.randomUUID();
+currentLineId = crypto.randomUUID();
+session = createSession();
+const editBridge = new OfficeBridge(adapter);
+await editBridge.run("edit", () => undefined);
+setFormulaDraft("editing", String.raw`\int_0^1 x^2\,dx`);
+dialogClosedHandler?.({ error: 12006 });
+await new Promise((resolve) => setTimeout(resolve, 350));
+assert.equal(applyCount, 3, "closing a dirty edit dialog must update the formula");
+assert.equal(session.status, "completed");
+
+// Scenario 4: even if an Office dialog falls back to its parent bridge, a
 // native macOS PowerPoint Session must still use the native commit endpoint.
 currentSessionId = crypto.randomUUID();
 currentFormulaId = crypto.randomUUID();
@@ -245,11 +273,11 @@ const nativeAdapter = {
     };
   },
 };
-const nativeBridge = new OfficeBridge(nativeAdapter);
+const nativeBridge = new MacOfficeBridge(nativeAdapter);
 await nativeBridge.run("create", () => undefined);
 setFormulaDraft("committing", String.raw`\beta+y`);
 await new Promise((resolve) => setTimeout(resolve, 500));
 assert.equal(nativeCommitCount, 1, "native PowerPoint Session must commit natively");
-assert.equal(applyCount, 2, "native commit must not call the Office.js adapter");
+assert.equal(applyCount, 3, "native commit must not call the Office.js adapter");
 
 console.log("PowerPoint Office command lifecycle, commit polling and close auto-commit passed");

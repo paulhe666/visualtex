@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xsi:type="TaskPaneApp">
+  <Id>{{POWERPOINT_ADDIN_ID}}</Id>
+  <Version>{{MANIFEST_VERSION}}</Version>
+  <ProviderName>VisualTeX</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="VisualTeX" />
+  <Description DefaultValue="VisualTeX macOS PowerPoint 公式集成。" />
+  <IconUrl DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-80.png" />
+  <SupportUrl DefaultValue="{{COMPANION_ORIGIN}}/bridge/index.html" />
+  <AppDomains><AppDomain>{{COMPANION_ORIGIN}}</AppDomain></AppDomains>
+  <Hosts><Host Name="Presentation" /></Hosts>
+  <DefaultSettings><SourceLocation DefaultValue="{{COMPANION_ORIGIN}}/bridge/index.html" /></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements><bt:Sets DefaultMinVersion="1.1"><bt:Set Name="PowerPointApi" MinVersion="1.1" /><bt:Set Name="ImageCoercion" MinVersion="1.1" /></bt:Sets></Requirements>
+    <Hosts>
+      <Host xsi:type="Presentation">
+        <DesktopFormFactor>
+          <FunctionFile resid="Commands.Url" />
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="VisualTeX.Group">
+                <Label resid="Group.Label" />
+                <Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon>
+                <Control xsi:type="Button" id="VisualTeX.New"><Label resid="New.Label" /><Supertip><Title resid="New.Label" /><Description resid="New.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.NewFormula</FunctionName></Action></Control>
+                <Control xsi:type="Button" id="VisualTeX.Edit"><Label resid="Edit.Label" /><Supertip><Title resid="Edit.Label" /><Description resid="Edit.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.EditSelectedFormula</FunctionName></Action></Control>
+                <Control xsi:type="Button" id="VisualTeX.Open"><Label resid="Open.Label" /><Supertip><Title resid="Open.Label" /><Description resid="Open.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.OpenDesktopApp</FunctionName></Action></Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images><bt:Image id="Icon.16" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-16.png" /><bt:Image id="Icon.32" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-32.png" /><bt:Image id="Icon.80" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-80.png" /></bt:Images>
+      <bt:Urls><bt:Url id="Commands.Url" DefaultValue="{{COMPANION_ORIGIN}}/bridge/index.html" /></bt:Urls>
+      <bt:ShortStrings><bt:String id="Group.Label" DefaultValue="VisualTeX" /><bt:String id="New.Label" DefaultValue="新建公式" /><bt:String id="Edit.Label" DefaultValue="编辑所选公式" /><bt:String id="Open.Label" DefaultValue="打开 VisualTeX" /></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="New.Desc" DefaultValue="在当前幻灯片中插入 VisualTeX 公式。" /><bt:String id="Edit.Desc" DefaultValue="编辑当前选中的 VisualTeX 公式。" /><bt:String id="Open.Desc" DefaultValue="打开 VisualTeX 桌面应用。" /></bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

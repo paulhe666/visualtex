@@ -3,20 +3,40 @@ use crate::office::certificate::{ensure_office_install, regenerate_certificate};
 use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::installer::{self, OfficeIntegrationStatus};
 use crate::office::manifest::ManifestHost;
+use crate::office::platform::{OfficeIntegrationMode, OfficePlatformStatus};
 use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
 use crate::OcrState;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::process::Command;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tokio::time::{sleep, Duration};
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, target_os = "macos"))]
 fn development_ui_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
-        .join("dist-office")
+        .join("dist-office-macos")
+}
+
+#[cfg(all(debug_assertions, target_os = "windows"))]
+fn development_ui_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("dist-office-windows-ole")
+}
+
+#[cfg(all(
+    debug_assertions,
+    not(any(target_os = "macos", target_os = "windows"))
+))]
+fn development_ui_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("dist-office-macos")
 }
 
 fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -37,7 +57,7 @@ fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
     Err(
-        "Office UI resources are missing. Run `npm run build:office` before starting VisualTeX."
+        "Office UI resources are missing. Run the platform Office build before starting VisualTeX."
             .to_string(),
     )
 }
@@ -233,11 +253,132 @@ pub async fn regenerate_office_certificate(
 }
 
 #[tauri::command]
+pub fn get_office_platform_status(
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> OfficePlatformStatus {
+    state.platform_backend.status()
+}
+
+#[tauri::command]
+pub fn set_office_integration_mode(
+    mode: OfficeIntegrationMode,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<OfficePlatformStatus, String> {
+    state.platform_backend.set_mode(mode)
+}
+
+#[cfg(target_os = "windows")]
+fn run_windows_script(app: &AppHandle, script_name: &str, arguments: &[&str]) -> Result<(), String> {
+    let script = app
+        .path()
+        .resolve(
+            format!("scripts/{script_name}"),
+            BaseDirectory::Resource,
+        )
+        .map_err(|error| format!("Unable to resolve Windows Office script: {error}"))?;
+    if !script.is_file() {
+        return Err(format!(
+            "Windows Office script is missing: {}",
+            script.display()
+        ));
+    }
+    let status = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&script)
+        .args(arguments)
+        .status()
+        .map_err(|error| format!("Unable to start Windows Office script: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Windows Office script {} failed with {status}",
+            script.display()
+        ))
+    }
+}
+
+#[tauri::command]
+pub fn install_windows_ole_integration(
+    app: AppHandle,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<OfficePlatformStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        run_windows_script(&app, "install_windows_ole.ps1", &[])?;
+        return state
+            .platform_backend
+            .set_mode(OfficeIntegrationMode::Ole);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, state);
+        Err("Windows OLE integration can be installed only on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn uninstall_windows_ole_integration(
+    app: AppHandle,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<OfficePlatformStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        run_windows_script(&app, "uninstall_windows_ole.ps1", &[])?;
+        return state
+            .platform_backend
+            .set_mode(OfficeIntegrationMode::Auto);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, state);
+        Err("Windows OLE integration can be removed only on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn repair_windows_office_integration(
+    app: AppHandle,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<OfficePlatformStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        run_windows_script(&app, "install_windows_ole.ps1", &[])?;
+        state
+            .platform_backend
+            .set_mode(OfficeIntegrationMode::Ole)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, state);
+        Err("Windows Office repair is available only on Windows".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn open_word() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return Command::new("cmd.exe")
+            .args(["/C", "start", "", "winword.exe"])
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Unable to launch Microsoft Word: {error}"));
+    }
+    #[cfg(not(target_os = "windows"))]
     installer::open_office_application(ManifestHost::Word)
 }
 
 #[tauri::command]
 pub fn open_powerpoint() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return Command::new("cmd.exe")
+            .args(["/C", "start", "", "powerpnt.exe"])
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Unable to launch Microsoft PowerPoint: {error}"));
+    }
+    #[cfg(not(target_os = "windows"))]
     installer::open_office_application(ManifestHost::PowerPoint)
 }

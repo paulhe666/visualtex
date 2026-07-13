@@ -5,9 +5,10 @@ pub const POWERPOINT_ADDIN_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 pub const WORD_MANIFEST_FILE: &str = "VisualTeX.Word.xml";
 pub const POWERPOINT_MANIFEST_FILE: &str = "VisualTeX.PowerPoint.xml";
 
-const WORD_TEMPLATE: &str = include_str!("../../../office/manifests/visualtex-word.template.xml");
+const WORD_TEMPLATE: &str =
+    include_str!("../../../office/macos/manifests/visualtex-word.template.xml");
 const POWERPOINT_TEMPLATE: &str =
-    include_str!("../../../office/manifests/visualtex-powerpoint.template.xml");
+    include_str!("../../../office/macos/manifests/visualtex-powerpoint.template.xml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManifestHost {

@@ -1,4 +1,44 @@
-; VisualTeX Windows installer prerequisite check.
+; VisualTeX Windows installer prerequisite check and per-user OLE choice.
+; VSTO remains a deferred development path and is not shipped by this installer.
+
+Var VisualTeXOfficeChoice
+Var VisualTeXOfficeOnlyRadio
+Var VisualTeXOfficeOleRadio
+
+Page custom VisualTeXOfficePageCreate VisualTeXOfficePageLeave
+
+Function VisualTeXOfficePageCreate
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 0 100% 30u "请选择是否启用 Windows Office OLE 集成 / Choose Windows Office OLE integration"
+  Pop $0
+
+  ${NSD_CreateRadioButton} 0 38u 100% 16u "仅 VisualTeX（不安装 Office 插件） / VisualTeX only"
+  Pop $VisualTeXOfficeOnlyRadio
+
+  ${NSD_CreateRadioButton} 0 62u 100% 16u "VisualTeX + OLE Office 集成（安装简单）"
+  Pop $VisualTeXOfficeOleRadio
+  ${NSD_Check} $VisualTeXOfficeOleRadio
+
+  ${NSD_CreateLabel} 0 92u 100% 42u "OLE 使用 Office.js Ribbon 与当前用户命名管道。安装程序会清理或禁用旧版 VisualTeX VSTO 加载项，避免重复按钮。"
+  Pop $0
+
+  nsDialogs::Show
+FunctionEnd
+
+Function VisualTeXOfficePageLeave
+  ${NSD_GetState} $VisualTeXOfficeOleRadio $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $VisualTeXOfficeChoice "ole"
+    Return
+  ${EndIf}
+  StrCpy $VisualTeXOfficeChoice "none"
+FunctionEnd
+
 ; The editor itself works without Python, so an incompatible environment warns
 ; the user instead of silently failing later or blocking installation outright.
 
@@ -49,4 +89,48 @@ visualtex_python_ok:
   DetailPrint "Compatible Python 3.9–3.13 x64 runtime detected."
 
 visualtex_python_check_done:
+!macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
+  ${If} $VisualTeXOfficeChoice == "ole"
+    ; Best-effort removal of legacy VisualTeX VSTO MSI instances. The OLE
+    ; installer also forces any surviving add-in LoadBehavior values to zero.
+    IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 +3
+    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+    Pop $0
+    IfFileExists "$INSTDIR\scripts\install_windows_ole.ps1" 0 visualtex_office_missing
+    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_ole.ps1"`
+    Pop $0
+    StrCmp $0 "0" visualtex_office_done
+    MessageBox MB_ICONEXCLAMATION "VisualTeX 已安装，但 OLE Office 集成安装失败。可在设置中点击修复。"
+    Goto visualtex_office_done
+  ${Else}
+    IfFileExists "$INSTDIR\scripts\uninstall_windows_ole.ps1" 0 +3
+    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
+    Pop $0
+    IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_office_done
+    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+    Pop $0
+    Goto visualtex_office_done
+  ${EndIf}
+
+visualtex_office_missing:
+  MessageBox MB_ICONEXCLAMATION "Windows OLE Office 安装资源缺失。VisualTeX 主程序已正常安装。"
+  Goto visualtex_office_done
+
+visualtex_office_done:
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  IfFileExists "$INSTDIR\scripts\uninstall_windows_ole.ps1" 0 +3
+  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
+  Pop $0
+  IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 +3
+  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+  Pop $0
+  IfFileExists "$INSTDIR\scripts\remove_windows_office_certificate.ps1" 0 visualtex_preuninstall_done
+  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\remove_windows_office_certificate.ps1"`
+  Pop $0
+visualtex_preuninstall_done:
 !macroend
