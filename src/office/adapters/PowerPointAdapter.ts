@@ -31,6 +31,10 @@ import type {
   OfficeSelectionContext,
 } from "./OfficeHostAdapter";
 
+const USE_NATIVE_POWERPOINT_EDIT_TARGET =
+  typeof navigator !== "undefined" &&
+  /Macintosh|Mac OS X/i.test(navigator.userAgent);
+
 const POWERPOINT_ALT_TEXT_TITLE = "VisualTeX Formula";
 const POWERPOINT_FORMULA_ID_TAG = "VISUALTEX_FORMULA_ID";
 const POWERPOINT_METADATA_COUNT_TAG = "VISUALTEX_META_COUNT";
@@ -673,6 +677,13 @@ function createSessionSeed(metadata: VisualTeXFormulaMetadata) {
   };
 }
 
+function encodeNativePowerPointEditTarget(slideIndex: number, shapeName: string) {
+  const encodedName = Array.from(new TextEncoder().encode(shapeName), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return `visualtex-ppt-native-edit:${slideIndex}:${encodedName}`;
+}
+
 export class PowerPointAdapter implements OfficeHostAdapter {
   readonly host = "powerpoint" as const;
 
@@ -738,9 +749,23 @@ export class PowerPointAdapter implements OfficeHostAdapter {
       );
     }
 
+    const nativeEditTarget = USE_NATIVE_POWERPOINT_EDIT_TARGET
+      ? selected.native
+        ? {
+            slideIndex: selected.native.slideIndex,
+            shapeName: selected.native.shapeName,
+          }
+        : await getNativePowerPointSelection().catch(() => null)
+      : null;
+
     return {
       sourceDocumentId,
-      sourceObjectId: encodePowerPointObjectReference(selected),
+      sourceObjectId: nativeEditTarget
+        ? encodeNativePowerPointEditTarget(
+            nativeEditTarget.slideIndex,
+            nativeEditTarget.shapeName,
+          )
+        : encodePowerPointObjectReference(selected),
       sessionSeed: {
         ...createSessionSeed(metadata),
         exportWidth: selected.width / 0.75,

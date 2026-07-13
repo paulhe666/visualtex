@@ -1,5 +1,24 @@
 import assert from "node:assert/strict";
 
+const { startOfficeDialogCommand } = await import(
+  "../src/office/bridge/commandLifecycle.ts"
+);
+let immediateCompletionCount = 0;
+let resolveLongRunningCommand;
+const longRunningCommand = new Promise((resolve) => {
+  resolveLongRunningCommand = resolve;
+});
+startOfficeDialogCommand(
+  () => longRunningCommand,
+  { completed: () => { immediateCompletionCount += 1; } },
+);
+assert.equal(
+  immediateCompletionCount,
+  1,
+  "PowerPoint must release the ribbon command before the editor lifecycle finishes",
+);
+resolveLongRunningCommand();
+
 let currentSessionId = crypto.randomUUID();
 let currentFormulaId = crypto.randomUUID();
 let currentLineId = crypto.randomUUID();
@@ -107,8 +126,8 @@ globalThis.fetch = async (input, init = {}) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        appVersion: "1.0.16",
-        officeUiVersion: "1.0.16",
+        appVersion: "1.0.17",
+        officeUiVersion: "1.0.17",
         protocolVersion: 1,
         ocrAvailable: true,
       }),

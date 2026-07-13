@@ -6,7 +6,7 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
   <Id>d6fcb260-4c37-4f73-a173-cf24674f81f2</Id>
-  <Version>1.0.16.0</Version>
+  <Version>1.0.17.0</Version>
   <ProviderName>VisualTeX</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
   <DisplayName DefaultValue="VisualTeX" />

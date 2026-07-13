@@ -12,6 +12,8 @@ const SHAPE_PREFIX: &str = "VisualTeX_";
 const WORD_METADATA_PREFIX: &str = "visualtex:v1:deflate:";
 const MAX_EVENTS: usize = 64;
 const APPLESCRIPT_TIMEOUT: Duration = Duration::from_secs(20);
+const APPLESCRIPT_QUERY_TIMEOUT: Duration = Duration::from_secs(3);
+const APPLESCRIPT_LOCK_TIMEOUT: Duration = Duration::from_secs(3);
 static POWERPOINT_APPLESCRIPT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -49,6 +51,7 @@ pub struct PowerPointInteractionEvent {
 #[derive(Debug, Default)]
 struct InteractionState {
     next_cursor: u64,
+    delivered_cursor: u64,
     events: VecDeque<PowerPointInteractionEvent>,
 }
 
@@ -80,22 +83,31 @@ impl PowerPointInteractionBus {
         }
     }
 
-    pub fn after(&self, cursor: u64) -> Vec<PowerPointInteractionEvent> {
+    pub fn take_after(&self, cursor: u64) -> Vec<PowerPointInteractionEvent> {
         self.inner
             .lock()
-            .map(|state| {
-                state
+            .map(|mut state| {
+                let threshold = cursor.max(state.delivered_cursor);
+                let events = state
                     .events
                     .iter()
-                    .filter(|event| event.cursor > cursor)
+                    .filter(|event| event.cursor > threshold)
                     .cloned()
-                    .collect()
+                    .collect::<Vec<_>>();
+                if let Some(last) = events.last() {
+                    state.delivered_cursor = last.cursor;
+                }
+                events
             })
             .unwrap_or_default()
     }
 }
 
 fn run_applescript(script: &str) -> Result<String, String> {
+    run_applescript_with_timeout(script, APPLESCRIPT_TIMEOUT)
+}
+
+fn run_applescript_with_timeout(script: &str, timeout: Duration) -> Result<String, String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = script;
@@ -104,9 +116,24 @@ fn run_applescript(script: &str) -> Result<String, String> {
 
     #[cfg(target_os = "macos")]
     {
-        let _operation_guard = POWERPOINT_APPLESCRIPT_LOCK
-            .lock()
-            .map_err(|_| "PowerPoint automation lock is unavailable".to_string())?;
+        let lock_deadline = Instant::now() + APPLESCRIPT_LOCK_TIMEOUT;
+        let _operation_guard = loop {
+            match POWERPOINT_APPLESCRIPT_LOCK.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::WouldBlock) if Instant::now() < lock_deadline => {
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    return Err(
+                        "PowerPoint is still finishing another VisualTeX operation. Try again."
+                            .to_string(),
+                    );
+                }
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    return Err("PowerPoint automation lock is unavailable".to_string());
+                }
+            }
+        };
         let mut child = Command::new("/usr/bin/osascript")
             .arg("-e")
             .arg(script)
@@ -114,7 +141,7 @@ fn run_applescript(script: &str) -> Result<String, String> {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| format!("Unable to launch AppleScript: {error}"))?;
-        let deadline = Instant::now() + APPLESCRIPT_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
@@ -201,7 +228,10 @@ end tell"#
 }
 
 pub fn selected_shape() -> Result<PowerPointNativeSelection, String> {
-    parse_selection(&run_applescript(&selection_script(None))?)
+    parse_selection(&run_applescript_with_timeout(
+        &selection_script(None),
+        APPLESCRIPT_QUERY_TIMEOUT,
+    )?)
 }
 
 pub fn mark_selected_formula(formula_id: &str) -> Result<PowerPointNativeSelection, String> {
@@ -209,7 +239,10 @@ pub fn mark_selected_formula(formula_id: &str) -> Result<PowerPointNativeSelecti
         return Err("Invalid VisualTeX formula id".to_string());
     }
     let shape_name = format!("{SHAPE_PREFIX}{formula_id}");
-    parse_selection(&run_applescript(&selection_script(Some(&shape_name)))?)
+    parse_selection(&run_applescript_with_timeout(
+        &selection_script(Some(&shape_name)),
+        APPLESCRIPT_QUERY_TIMEOUT,
+    )?)
 }
 
 pub fn upsert_formula_picture_from_clipboard(
@@ -218,6 +251,8 @@ pub fn upsert_formula_picture_from_clipboard(
     width: f64,
     height: f64,
     replace_existing: bool,
+    original_slide_index: Option<u32>,
+    original_shape_name: Option<&str>,
     expected_presentation_identity: Option<&str>,
     target_slide_id: Option<u32>,
     target_slide_index: Option<u32>,
@@ -238,12 +273,32 @@ pub fn upsert_formula_picture_from_clipboard(
     let attempt_id = uuid::Uuid::new_v4().simple().to_string();
     let pending_name = format!("VisualTeXPending_{attempt_id}");
     let original_name = format!("VisualTeXOriginal_{attempt_id}");
-    if target_slide_index.is_some_and(|index| index == 0) {
+    if target_slide_index.is_some_and(|index| index == 0)
+        || original_slide_index.is_some_and(|index| index == 0)
+        || original_slide_index.is_some() != original_shape_name.is_some()
+    {
         return Err("Invalid VisualTeX target slide index".to_string());
     }
     let replacement_setup = if replace_existing {
-        format!(
-            r#"set matchingSlideIndexes to {{}}
+        if let (Some(slide_index), Some(original_shape_name)) =
+            (original_slide_index, original_shape_name)
+        {
+            let original_shape_name = applescript_string(original_shape_name)?;
+            format!(
+                r#"set currentSlide to slide {slide_index} of active presentation
+if not (exists shape {original_shape_name} of currentSlide) then error "The selected VisualTeX formula no longer exists"
+set originalShape to shape {original_shape_name} of currentSlide
+set originalLeft to left position of originalShape
+set targetTop to top of originalShape
+set originalWidth to width of originalShape
+set targetHeight to height of originalShape
+set targetWidth to targetHeight * ({width} / {height})
+set targetLeft to originalLeft + ((originalWidth - targetWidth) / 2)
+set targetRotation to rotation of originalShape"#
+            )
+        } else {
+            format!(
+                r#"set matchingSlideIndexes to {{}}
 repeat with candidateSlideNumber from 1 to count of slides of active presentation
 set candidateSlide to slide candidateSlideNumber of active presentation
 if exists shape "{shape_name}" of candidateSlide then set end of matchingSlideIndexes to slide index of candidateSlide
@@ -251,12 +306,15 @@ end repeat
 if (count of matchingSlideIndexes) is not 1 then error "The selected VisualTeX formula is not unique in the active presentation"
 set currentSlide to slide (item 1 of matchingSlideIndexes) of active presentation
 set originalShape to shape "{shape_name}" of currentSlide
-set targetLeft to left position of originalShape
+set originalLeft to left position of originalShape
 set targetTop to top of originalShape
-set targetWidth to width of originalShape
+set originalWidth to width of originalShape
 set targetHeight to height of originalShape
+set targetWidth to targetHeight * ({width} / {height})
+set targetLeft to originalLeft + ((originalWidth - targetWidth) / 2)
 set targetRotation to rotation of originalShape"#
-        )
+            )
+        }
     } else {
         let slide_selection = if let Some(slide_id) = target_slide_id {
             format!(
@@ -283,9 +341,21 @@ set targetTop to 72
 set targetRotation to 0"#
         )
     };
+    let cleanup_conflicting_shape =
+        if replace_existing && original_shape_name.is_some_and(|name| name != shape_name) {
+            format!(
+                r#"repeat with cleanupSlideNumber from 1 to count of slides of active presentation
+set cleanupSlide to slide cleanupSlideNumber of active presentation
+if exists shape "{shape_name}" of cleanupSlide then delete shape "{shape_name}" of cleanupSlide
+end repeat"#
+            )
+        } else {
+            String::new()
+        };
     let replacement_finish = if replace_existing {
         format!(
-            r#"set name of originalShape to "{original_name}"
+            r#"{cleanup_conflicting_shape}
+set name of originalShape to "{original_name}"
 set originalShape to shape "{original_name}" of currentSlide
 set name of insertedShape to "{shape_name}"
 set insertedShape to shape "{shape_name}" of currentSlide
@@ -410,24 +480,19 @@ end try"#
 }
 
 pub fn active_slide_snapshot() -> Result<PowerPointNativeSlideSnapshot, String> {
-    let output = run_applescript(
+    let output = run_applescript_with_timeout(
         r#"tell application "Microsoft PowerPoint"
 if not (exists active presentation) then error "No active PowerPoint presentation"
 set currentSlide to slide of view of active window
 set fieldSeparator to ASCII character 31
-set itemSeparator to ASCII character 30
 set presentationIdentity to name of active presentation as text
 try
     set presentationPath to full name of active presentation as text
     if presentationPath is not "" then set presentationIdentity to presentationPath
 end try
-set shapeNames to ""
-repeat with candidateShape in shapes of currentSlide
-    if shapeNames is not "" then set shapeNames to shapeNames & itemSeparator
-    set shapeNames to shapeNames & (name of candidateShape as text)
-end repeat
-return presentationIdentity & fieldSeparator & (slide index of currentSlide as text) & fieldSeparator & (slide id of currentSlide as text) & fieldSeparator & (count of shapes of currentSlide as text) & fieldSeparator & shapeNames
+return presentationIdentity & fieldSeparator & (slide index of currentSlide as text) & fieldSeparator & (slide id of currentSlide as text) & fieldSeparator & (count of shapes of currentSlide as text) & fieldSeparator
 end tell"#,
+        APPLESCRIPT_QUERY_TIMEOUT,
     )?;
     let fields: Vec<&str> = output.split('\u{1f}').collect();
     if fields.len() != 5 {
@@ -630,6 +695,10 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
             std::thread::spawn(move || {
+                // PowerPoint updates the selected Shape just after the second
+                // mouse-down event. Reading immediately can still return the
+                // previous selection, especially on slides with many objects.
+                std::thread::sleep(Duration::from_millis(160));
                 let Ok(selection) = selected_shape() else {
                     return;
                 };
@@ -711,10 +780,11 @@ mod tests {
             "VisualTeX_00000000-0000-4000-8000-000000000001".to_string(),
             "00000000-0000-4000-8000-000000000001".to_string(),
         );
-        let events = bus.after(0);
+        let events = bus.take_after(0);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].host, "powerpoint");
-        assert!(bus.after(events[0].cursor).is_empty());
+        assert!(bus.take_after(0).is_empty());
+        assert!(bus.take_after(events[0].cursor).is_empty());
     }
 
     #[test]

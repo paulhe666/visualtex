@@ -506,6 +506,23 @@ fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMeta
     }
 }
 
+fn decode_powerpoint_native_edit_reference(value: &str) -> Option<(u32, String)> {
+    let reference = value.strip_prefix("visualtex-ppt-native-edit:")?;
+    let (slide_index, encoded_name) = reference.split_once(':')?;
+    let slide_index = slide_index.parse::<u32>().ok().filter(|value| *value > 0)?;
+    if encoded_name.is_empty() || encoded_name.len() > 512 || encoded_name.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(encoded_name.len() / 2);
+    for pair in encoded_name.as_bytes().chunks_exact(2) {
+        let digits = std::str::from_utf8(pair).ok()?;
+        bytes.push(u8::from_str_radix(digits, 16).ok()?);
+    }
+    let shape_name = String::from_utf8(bytes).ok()?;
+    (!shape_name.is_empty() && !shape_name.chars().any(char::is_control))
+        .then_some((slide_index, shape_name))
+}
+
 fn commit_powerpoint_session_blocking(
     companion: OfficeCompanionState,
     session_id: String,
@@ -564,12 +581,18 @@ fn commit_powerpoint_session_blocking(
         .source_document_id
         .as_deref()
         .and_then(|value| value.strip_prefix("visualtex-ppt-native-presentation:"));
+    let edit_target = session
+        .source_object_id
+        .as_deref()
+        .and_then(decode_powerpoint_native_edit_reference);
     let insertion = powerpoint_native::upsert_formula_picture_from_clipboard(
         &session.formula_id,
         &temporary.to_string_lossy(),
         natural_width * scale,
         natural_height * scale,
         session.mode == OfficeSessionMode::Edit,
+        edit_target.as_ref().map(|value| value.0),
+        edit_target.as_ref().map(|value| value.1.as_str()),
         expected_presentation_identity,
         target_slide_reference.and_then(|value| value.0),
         target_slide_reference.and_then(|value| value.1),
@@ -625,7 +648,7 @@ async fn get_powerpoint_events(
         context
             .companion
             .powerpoint_interactions
-            .after(query.cursor.unwrap_or_default()),
+            .take_after(query.cursor.unwrap_or_default()),
     )
 }
 
@@ -1001,6 +1024,22 @@ mod tests {
         assert!(constant_time_eq(b"same-token", b"same-token"));
         assert!(!constant_time_eq(b"same-token", b"same-tokeN"));
         assert!(!constant_time_eq(b"same-token", b"same-token-longer"));
+    }
+
+    #[test]
+    fn native_edit_reference_preserves_the_exact_selected_shape() {
+        let decoded = decode_powerpoint_native_edit_reference(
+            "visualtex-ppt-native-edit:12:47726170686963203131",
+        )
+        .expect("native edit reference");
+        assert_eq!(decoded, (12, "Graphic 11".to_string()));
+        assert!(decode_powerpoint_native_edit_reference(
+            "visualtex-ppt-native-edit:0:47726170686963"
+        )
+        .is_none());
+        assert!(
+            decode_powerpoint_native_edit_reference("visualtex-ppt-native-edit:1:xyz").is_none()
+        );
     }
 
     #[test]

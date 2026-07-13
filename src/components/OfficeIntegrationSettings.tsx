@@ -84,7 +84,7 @@ type OfficeAction =
   | "word"
   | "powerpoint";
 
-const EXPECTED_MANIFEST_VERSION = "1.0.16.0";
+const EXPECTED_MANIFEST_VERSION = "1.0.17.0";
 
 function isDesktopRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -577,8 +577,8 @@ export function OfficeIntegrationSettings() {
           <ShieldAlert size={15} />
           <span>
             {isEn
-              ? "The installed manifest does not match VisualTeX 1.0.16. Use Repair Office Integration."
-              : "已安装 manifest 与 VisualTeX 1.0.16 不匹配，请执行“修复 Office 集成”。"}
+              ? "The installed manifest does not match VisualTeX 1.0.17. Use Repair Office Integration."
+              : "已安装 manifest 与 VisualTeX 1.0.17 不匹配，请执行“修复 Office 集成”。"}
           </span>
         </div>
       )}
