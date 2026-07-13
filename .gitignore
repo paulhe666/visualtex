@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-office/
+dist-ocr/
+.cache/visualtex-ocr/
 .vite/
 .DS_Store
 *.log

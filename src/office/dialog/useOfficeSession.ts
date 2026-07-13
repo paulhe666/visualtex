@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getOfficeSession,
   updateOfficeSession,
@@ -18,6 +18,7 @@ export function useOfficeSession() {
   const [session, setSession] = useState<OfficeFormulaSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const reload = useCallback(async () => {
     if (!sessionId) {
@@ -45,11 +46,27 @@ export function useOfficeSession() {
   }, [reload]);
 
   const save = useCallback(
-    async (update: UpdateOfficeSessionInput) => {
-      if (!sessionId) throw new Error("Missing VisualTeX Office session id.");
-      const next = await updateOfficeSession(sessionId, update);
-      setSession(next);
-      return next;
+    (update: UpdateOfficeSessionInput) => {
+      if (!sessionId) {
+        return Promise.reject(
+          new Error("Missing VisualTeX Office session id."),
+        );
+      }
+
+      // Office autosave and the explicit commit button can fire almost at the
+      // same time. Serialize PATCH requests so an older autosave can never
+      // arrive after, and overwrite, a committing Session.
+      const request = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => updateOfficeSession(sessionId, update));
+      saveQueueRef.current = request.then(
+        () => undefined,
+        () => undefined,
+      );
+      return request.then((next) => {
+        setSession(next);
+        return next;
+      });
     },
     [sessionId],
   );

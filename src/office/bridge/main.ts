@@ -1,4 +1,5 @@
 import "../../styles.css";
+import { getPowerPointInteractionEvents } from "../api/companionClient";
 import { OfficeBridge } from "./OfficeBridge";
 import {
   createOfficeHostAdapter,
@@ -18,6 +19,17 @@ function command(
   };
 }
 
+function dialogCommand(
+  mode: "create" | "edit",
+  bridgeProvider: () => OfficeBridge,
+) {
+  return (event?: CommandEvent) => {
+    void bridgeProvider()
+      .run(mode)
+      .finally(() => event?.completed?.());
+  };
+}
+
 function setBridgeStatus(message: string) {
   const status = document.getElementById("bridge-status");
   if (status) status.textContent = message;
@@ -31,11 +43,11 @@ void Office.onReady().then((info) => {
 
     Office.actions.associate(
       "VisualTeX.NewFormula",
-      command((value) => value.run("create"), getBridge),
+      dialogCommand("create", getBridge),
     );
     Office.actions.associate(
       "VisualTeX.EditSelectedFormula",
-      command((value) => value.run("edit"), getBridge),
+      dialogCommand("edit", getBridge),
     );
     Office.actions.associate(
       "VisualTeX.OpenDesktopApp",
@@ -47,6 +59,35 @@ void Office.onReady().then((info) => {
         ? "VisualTeX Word Bridge 已就绪。"
         : "VisualTeX PowerPoint Bridge 已就绪。",
     );
+
+    let interactionCursor = 0;
+    let pollRunning = false;
+    void getPowerPointInteractionEvents(0)
+      .then((events) => {
+        interactionCursor = events.reduce(
+          (latest, event) => Math.max(latest, event.cursor),
+          0,
+        );
+      })
+      .catch(() => undefined);
+
+    window.setInterval(() => {
+      if (pollRunning) return;
+      pollRunning = true;
+      void getPowerPointInteractionEvents(interactionCursor)
+        .then(async (events) => {
+          for (const event of events) {
+            interactionCursor = Math.max(interactionCursor, event.cursor);
+            if (event.host === host && event.kind === "edit-selected") {
+              await bridge.run("edit");
+            }
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          pollRunning = false;
+        });
+    }, 250);
   } catch (error) {
     setBridgeStatus(
       error instanceof Error ? error.message : "VisualTeX Office Bridge 初始化失败。",

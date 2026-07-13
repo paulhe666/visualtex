@@ -42,15 +42,15 @@ for (const [name, latex] of cases) {
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
-const emptyError = await latexToSvg("", {
-  displayMode: true,
-  fontSizePt: 12,
-  paddingPx: 8,
-  background: "transparent",
-}).then(
-  () => null,
-  (error) => error,
+assert.throws(
+  () =>
+    latexToSvg("", {
+      displayMode: true,
+      fontSizePt: 12,
+      paddingPx: 8,
+      background: "transparent",
+    }),
+  /Cannot export an empty formula/,
 );
-assert.ok(emptyError instanceof Error);
 
 console.log(`SVG export smoke test passed (${cases.length} formula classes)`);

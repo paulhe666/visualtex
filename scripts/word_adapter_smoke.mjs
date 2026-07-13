@@ -1,115 +1,164 @@
 import assert from "node:assert/strict";
 import { createFormulaMetadata } from "../src/office/metadata/formulaMetadata.ts";
 
-const formulaId = crypto.randomUUID();
-const lineId = crypto.randomUUID();
 let cachedMetadata = null;
-let rejectSvgOnce = true;
-let nextControlId = 1;
-const controls = [];
+let rejectPngOnce = false;
+const allPictures = [];
+const paragraphs = [];
+const legacyControls = [];
+let selectedPictures = [];
+
+class FakeCollection {
+  constructor(itemsProvider) {
+    this.itemsProvider = itemsProvider;
+  }
+  get items() {
+    return this.itemsProvider();
+  }
+  load() {
+    return this;
+  }
+}
+
+class FakeParagraph {
+  constructor(text = "") {
+    this.text = text;
+    this.alignment = "Left";
+    this.spaceBefore = 0;
+    this.spaceAfter = 0;
+    this.pictures = [];
+  }
+  load() {
+    return this;
+  }
+  getRange() {
+    return new FakeRange({ paragraph: this });
+  }
+  insertInlinePictureFromBase64(base64, location) {
+    if (location === "Replace") {
+      for (const picture of [...this.pictures]) picture.remove();
+    }
+    const picture = new FakePicture(base64, this);
+    this.pictures.push(picture);
+    allPictures.push(picture);
+    selectedPictures = [picture];
+    return picture;
+  }
+}
 
 class FakePicture {
-  constructor(base64) {
+  constructor(base64, paragraph) {
     this.base64 = base64;
+    this.paragraph = paragraph;
     this.altTextTitle = "";
     this.altTextDescription = "";
     this.width = 0;
     this.height = 0;
     this.lockAspectRatio = false;
-    this.control = null;
+    this.fontPosition = 0;
   }
-
-  insertContentControl() {
-    const control = new FakeControl(this);
-    this.control = control;
-    controls.push(control);
-    selection.contentControls.items = [control];
-    return control;
+  getRange() {
+    return new FakeRange({ picture: this, paragraph: this.paragraph });
+  }
+  remove() {
+    const globalIndex = allPictures.indexOf(this);
+    if (globalIndex >= 0) allPictures.splice(globalIndex, 1);
+    const paragraphIndex = this.paragraph.pictures.indexOf(this);
+    if (paragraphIndex >= 0) this.paragraph.pictures.splice(paragraphIndex, 1);
+    selectedPictures = selectedPictures.filter((picture) => picture !== this);
   }
 }
 
 class FakeRange {
-  constructor(control = null) {
-    this.control = control;
-    this.inlinePictures = {
-      items: control ? [control.picture] : [],
+  constructor({ picture = null, paragraph = null } = {}) {
+    this.picture = picture;
+    this.paragraph = paragraph ?? paragraphs[0];
+    this.inlinePictures = new FakeCollection(() =>
+      picture ? [picture] : selectedPictures,
+    );
+    this.contentControls = new FakeCollection(() => []);
+    this.parentContentControlOrNullObject = {
+      isNullObject: true,
       load() {
         return this;
       },
     };
+    this.paragraphs = {
+      getFirst: () => this.paragraph,
+    };
+    this.font = {};
+    Object.defineProperty(this.font, "position", {
+      get: () => this.picture?.fontPosition ?? 0,
+      set: (value) => {
+        if (this.picture) this.picture.fontPosition = value;
+      },
+    });
   }
-
   insertInlinePictureFromBase64(base64, location) {
-    if (rejectSvgOnce && base64 === "svg-base64") {
-      rejectSvgOnce = false;
-      throw new Error("SVG unsupported by simulated Word host");
+    if (rejectPngOnce && base64 === "png-base64") {
+      rejectPngOnce = false;
+      throw new Error("PNG unsupported by simulated Word host");
     }
-    const picture = new FakePicture(base64);
-    if (location === "Replace" && this.control) {
-      this.control.picture = picture;
-      picture.control = this.control;
-      this.inlinePictures.items = [picture];
+    if (location === "Replace" && this.picture) {
+      const paragraph = this.picture.paragraph;
+      this.picture.remove();
+      const replacement = new FakePicture(base64, paragraph);
+      paragraph.pictures.push(replacement);
+      allPictures.push(replacement);
+      selectedPictures = [replacement];
+      return replacement;
     }
+    if (location === "Replace") {
+      for (const picture of [...selectedPictures]) picture.remove();
+    }
+    const picture = new FakePicture(base64, this.paragraph);
+    this.paragraph.pictures.push(picture);
+    allPictures.push(picture);
+    selectedPictures = [picture];
     return picture;
   }
-
-  insertContentControl() {
-    throw new Error("unused");
+  insertParagraph(text, location) {
+    assert.equal(location, "After");
+    const paragraph = new FakeParagraph(text);
+    paragraphs.push(paragraph);
+    return paragraph;
   }
+  select() {}
+}
 
-  select(mode) {
-    this.selectedMode = mode;
+class FakeLegacyControl {
+  constructor(formulaId) {
+    this.id = 1;
+    this.tag = `visualtex:${formulaId}`;
+    this.title = "VisualTeX Formula";
+    this.deleted = false;
+  }
+  load() {
+    return this;
+  }
+  delete(keepContent) {
+    assert.equal(keepContent, true);
+    this.deleted = true;
   }
 }
 
-class FakeControl {
-  constructor(picture) {
-    this.id = nextControlId++;
-    this.tag = "";
-    this.title = "";
-    this.appearance = "";
-    this.cannotDelete = false;
-    this.cannotEdit = false;
-    this.isNullObject = false;
-    this.picture = picture;
-  }
-
-  load() {
-    return this;
-  }
-
-  getRange(location) {
-    if (location === "Content") return new FakeRange(this);
-    return new FakeRange();
-  }
-}
-
-const selection = new FakeRange();
-selection.contentControls = {
-  items: [],
-  load() {
-    return this;
-  },
-};
-selection.parentContentControlOrNullObject = {
-  isNullObject: true,
-  load() {
-    return this;
-  },
-};
+const initialParagraph = new FakeParagraph("");
+paragraphs.push(initialParagraph);
+const selection = new FakeRange({ paragraph: initialParagraph });
 
 const fakeDocument = {
   getSelection() {
+    selection.paragraph = selectedPictures[0]?.paragraph ?? selection.paragraph;
     return selection;
+  },
+  body: {
+    inlinePictures: new FakeCollection(() => allPictures),
   },
   contentControls: {
     getByTag(tag) {
-      return {
-        items: controls.filter((control) => control.tag === tag),
-        load() {
-          return this;
-        },
-      };
+      return new FakeCollection(() =>
+        legacyControls.filter((control) => control.tag === tag && !control.deleted),
+      );
     },
   },
 };
@@ -143,12 +192,10 @@ globalThis.Office = {
     requirements: {
       isSetSupported(name, version) {
         if (name === "CustomXmlParts") return false;
-        if (name === "WordApi" && version === "1.3") return false;
-        return true;
+        if (name === "WordApi") return Number(version) <= 1.6;
+        if (name === "WordApiDesktop") return Number(version) <= 1.4;
+        return false;
       },
-    },
-    ui: {
-      openBrowserWindow() {},
     },
   },
 };
@@ -161,6 +208,9 @@ globalThis.Word = {
 
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
+  if (url.endsWith("/api/v1/app/reveal")) {
+    return new Response(null, { status: 204 });
+  }
   if (!url.includes("/api/v1/formulas/")) {
     throw new Error(`Unexpected fetch: ${url}`);
   }
@@ -183,81 +233,132 @@ globalThis.fetch = async (input, init = {}) => {
 const { WordAdapter } = await import("../src/office/adapters/WordAdapter.ts");
 const adapter = new WordAdapter();
 
-const createSession = {
-  id: crypto.randomUUID(),
-  mode: "create",
-  host: "word",
-  formulaId,
-  sourceDocumentId: null,
-  sourceObjectId: null,
-  title: "Word Formula",
-  lines: [{ id: lineId, latex: String.raw`\frac{a}{b}+\text{测试}` }],
-  activeLineId: lineId,
-  codeFormat: "raw",
-  exportWidth: 120,
-  exportHeight: 48,
-  exportResult: {
-    svg: "<svg></svg>",
-    svgBase64: "svg-base64",
-    pngBase64: "png-base64",
-    width: 120,
-    height: 48,
-    baseline: 36,
-  },
-  originalMetadata: null,
-  dirty: true,
-  status: "committing",
-  autoCommitOnClose: true,
-  explicitCancel: false,
-  error: null,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  expiresAt: Date.now() + 1000,
-};
+function createSession(formulaId, lineId, displayMode = "inline") {
+  return {
+    id: crypto.randomUUID(),
+    mode: "create",
+    host: "word",
+    formulaId,
+    sourceDocumentId: null,
+    sourceObjectId: null,
+    title: "Word Formula",
+    lines: [{ id: lineId, latex: String.raw`\frac{a}{b}+\text{测试}` }],
+    activeLineId: lineId,
+    codeFormat: "raw",
+    displayMode,
+    exportWidth: 120,
+    exportHeight: 48,
+    exportResult: {
+      svg: "<svg></svg>",
+      svgBase64: "svg-base64",
+      pngBase64: "png-base64",
+      width: 120,
+      height: 48,
+      baseline: 36,
+    },
+    originalMetadata: null,
+    dirty: true,
+    status: "committing",
+    autoCommitOnClose: true,
+    explicitCancel: false,
+    error: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    expiresAt: Date.now() + 1000,
+  };
+}
 
-await adapter.applySession(createSession);
-assert.equal(controls.length, 1);
-assert.equal(controls[0].picture.base64, "png-base64");
-assert.equal(controls[0].tag, `visualtex:${formulaId}`);
-assert.equal(controls[0].title, "VisualTeX Formula");
-assert.equal(controls[0].picture.altTextTitle, `VisualTeX_${formulaId}`);
-assert.match(controls[0].picture.altTextDescription, /^visualtex:v1:deflate:/);
-assert.equal(cachedMetadata.formulaId, formulaId);
-
-const selectionContext = await adapter.readSelection("edit");
-assert.equal(selectionContext.sourceObjectId, String(controls[0].id));
-assert.equal(selectionContext.sessionSeed.formulaId, formulaId);
+const formulaId = crypto.randomUUID();
+const lineId = crypto.randomUUID();
+const inlineSession = createSession(formulaId, lineId, "inline");
+await adapter.applySession(inlineSession);
+assert.equal(allPictures.length, 1, "inline create must insert one picture");
+assert.equal(legacyControls.length, 0, "new formulas must not create content controls");
+let picture = allPictures[0];
+assert.equal(picture.base64, "png-base64");
+assert.equal(picture.altTextTitle, `VisualTeX_${formulaId}`);
+assert.match(picture.altTextDescription, /^visualtex:v1:deflate:/);
 assert.equal(
-  selectionContext.sessionSeed.lines[0].latex,
-  createSession.lines[0].latex,
+  picture.fontPosition,
+  0,
+  "inline formula must remain centered in its image selection box",
 );
+assert.equal(cachedMetadata.displayMode, "inline");
+
+selectedPictures = [picture];
+const selectionContext = await adapter.readSelection("edit");
+assert.equal(selectionContext.sourceObjectId, formulaId);
+assert.equal(selectionContext.sessionSeed.formulaId, formulaId);
+assert.equal(selectionContext.sessionSeed.displayMode, "inline");
 
 const originalMetadata = createFormulaMetadata({
   formulaId,
-  title: createSession.title,
-  lines: createSession.lines,
-  codeFormat: createSession.codeFormat,
+  title: inlineSession.title,
+  lines: inlineSession.lines,
+  codeFormat: inlineSession.codeFormat,
   displayMode: "inline",
 });
+const legacyControl = new FakeLegacyControl(formulaId);
+legacyControls.push(legacyControl);
+
 const editSession = {
-  ...createSession,
+  ...inlineSession,
   mode: "edit",
-  sourceObjectId: String(controls[0].id),
+  sourceObjectId: formulaId,
   originalMetadata,
   lines: [{ id: lineId, latex: "x=y" }],
   exportResult: {
-    ...createSession.exportResult,
-    svgBase64: "updated-svg-base64",
+    ...inlineSession.exportResult,
+    pngBase64: "updated-png-base64",
   },
 };
-
 await adapter.applySession(editSession);
-assert.equal(controls.length, 1, "editing must not create another content control");
-assert.equal(
-  controls[0].picture.base64,
-  "updated-svg-base64",
-  "editing must replace the original picture",
-);
-assert.equal(controls[0].tag, `visualtex:${formulaId}`);
+assert.equal(allPictures.length, 1, "editing must replace instead of duplicating");
+picture = allPictures[0];
+assert.equal(picture.base64, "updated-png-base64");
+assert.equal(legacyControl.deleted, true, "editing must remove the old bounding box");
 
-console.log("Word adapter smoke test passed");
+selectedPictures = [picture];
+const secondEditContext = await adapter.readSelection("edit");
+assert.equal(secondEditContext.sessionSeed.lines[0].latex, "x=y");
+const secondEditSession = {
+  ...editSession,
+  sourceObjectId: secondEditContext.sourceObjectId,
+  originalMetadata: secondEditContext.sessionSeed.originalMetadata,
+  lines: [{ id: lineId, latex: "x=z" }],
+  exportResult: {
+    ...editSession.exportResult,
+    pngBase64: "second-update-png-base64",
+  },
+};
+await adapter.applySession(secondEditSession);
+assert.equal(allPictures.length, 1);
+assert.equal(allPictures[0].base64, "second-update-png-base64");
+
+const blockFormulaId = crypto.randomUUID();
+const blockLineId = crypto.randomUUID();
+selectedPictures = [];
+selection.paragraph = new FakeParagraph("");
+paragraphs.push(selection.paragraph);
+const blockSession = createSession(blockFormulaId, blockLineId, "block");
+await adapter.applySession(blockSession);
+const blockPicture = allPictures.find(
+  (item) => item.altTextTitle === `VisualTeX_${blockFormulaId}`,
+);
+assert.ok(blockPicture, "display formula must insert a picture");
+assert.equal(blockPicture.paragraph.alignment, "Centered");
+assert.equal(blockPicture.fontPosition, 0, "display formula must not use inline baseline shift");
+
+rejectPngOnce = true;
+const fallbackFormulaId = crypto.randomUUID();
+const fallbackLineId = crypto.randomUUID();
+selectedPictures = [];
+selection.paragraph = new FakeParagraph("");
+paragraphs.push(selection.paragraph);
+await adapter.applySession(createSession(fallbackFormulaId, fallbackLineId, "inline"));
+const fallbackPicture = allPictures.find(
+  (item) => item.altTextTitle === `VisualTeX_${fallbackFormulaId}`,
+);
+assert.equal(fallbackPicture.base64, "svg-base64", "SVG must be used after PNG rejection");
+
+console.log("Word adapter inline, display, migration and repeated-edit tests passed");

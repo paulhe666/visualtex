@@ -10,6 +10,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub const SESSION_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+
+fn default_display_mode() -> String {
+    "inline".to_string()
+}
+
 const SESSION_FILE: &str = "session.json";
 const SESSION_TEMP_FILE: &str = "session.tmp";
 
@@ -114,6 +119,8 @@ pub struct OfficeFormulaSession {
     pub lines: Vec<FormulaLine>,
     pub active_line_id: Option<String>,
     pub code_format: String,
+    #[serde(default = "default_display_mode")]
+    pub display_mode: String,
     pub export_width: f64,
     pub export_height: f64,
     pub export_result: Option<OfficeExportResult>,
@@ -140,6 +147,7 @@ pub struct CreateOfficeSessionInput {
     pub lines: Option<Vec<FormulaLine>>,
     pub active_line_id: Option<String>,
     pub code_format: Option<String>,
+    pub display_mode: Option<String>,
     pub export_width: Option<f64>,
     pub export_height: Option<f64>,
     pub original_metadata: Option<VisualTeXFormulaMetadata>,
@@ -382,6 +390,15 @@ impl SessionStore {
                 ));
             }
         }
+        let display_mode = input.display_mode.unwrap_or_else(|| match input.host {
+            OfficeHost::Word => "inline".to_string(),
+            OfficeHost::Powerpoint => "block".to_string(),
+        });
+        if !matches!(display_mode.as_str(), "inline" | "block") {
+            return Err(SessionError::Invalid(
+                "Office Session displayMode must be inline or block".to_string(),
+            ));
+        }
         let session = OfficeFormulaSession {
             id,
             mode: input.mode,
@@ -393,6 +410,7 @@ impl SessionStore {
             lines,
             active_line_id,
             code_format: input.code_format.unwrap_or_else(|| "raw".to_string()),
+            display_mode,
             export_width: input.export_width.unwrap_or_default(),
             export_height: input.export_height.unwrap_or_default(),
             export_result: None,
@@ -434,6 +452,7 @@ impl SessionStore {
             "lines",
             "activeLineId",
             "codeFormat",
+            "displayMode",
             "exportWidth",
             "exportHeight",
             "exportResult",
@@ -486,7 +505,23 @@ impl SessionStore {
                 SessionError::Invalid(format!("Invalid Office Session patch: {error}"))
             })?;
         validate_lines(&next.lines)?;
+        if !matches!(next.display_mode.as_str(), "inline" | "block") {
+            return Err(SessionError::Invalid(
+                "Office Session displayMode must be inline or block".to_string(),
+            ));
+        }
 
+        if current.status == OfficeSessionStatus::Committing
+            && matches!(
+                next.status,
+                OfficeSessionStatus::Created | OfficeSessionStatus::Editing
+            )
+        {
+            // A delayed autosave may arrive after the explicit commit PATCH.
+            // Ignore that stale request instead of allowing the Session to
+            // regress and strand the PowerPoint dialog in an applying state.
+            return Ok(current);
+        }
         if current.status == OfficeSessionStatus::Cancelled
             && next.status != OfficeSessionStatus::Cancelled
         {
@@ -635,6 +670,7 @@ mod tests {
             lines: None,
             active_line_id: None,
             code_format: None,
+            display_mode: None,
             export_width: None,
             export_height: None,
             original_metadata: None,
@@ -663,6 +699,33 @@ mod tests {
         assert_ne!(first.formula_id, second.formula_id);
         assert!(valid_uuid(&first.id));
         assert!(valid_uuid(&first.formula_id));
+    }
+
+    #[test]
+    fn host_defaults_choose_word_inline_and_powerpoint_block() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let word = store.create(create_input()).unwrap();
+        assert_eq!(word.display_mode, "inline");
+
+        let mut powerpoint_input = create_input();
+        powerpoint_input.host = OfficeHost::Powerpoint;
+        let powerpoint = store.create(powerpoint_input).unwrap();
+        assert_eq!(powerpoint.display_mode, "block");
+    }
+
+    #[test]
+    fn invalid_display_mode_is_rejected() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let session = store.create(create_input()).unwrap();
+        let error = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "displayMode": "floating" }),
+            )
+            .unwrap_err();
+        assert!(matches!(error, SessionError::Invalid(_)));
     }
 
     #[test]
@@ -735,6 +798,46 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(error, SessionError::Conflict(_)));
+    }
+
+    #[test]
+    fn delayed_autosave_cannot_regress_a_committing_session() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let session = store.create(create_input()).unwrap();
+        let line_id = session.lines[0].id.clone();
+
+        let committing = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "status": "committing",
+                    "dirty": true,
+                    "lines": [{ "id": line_id, "latex": "a=b" }],
+                    "exportResult": export_result(),
+                    "exportWidth": 10.0,
+                    "exportHeight": 10.0
+                }),
+            )
+            .unwrap();
+        assert_eq!(committing.status, OfficeSessionStatus::Committing);
+
+        let after_stale_autosave = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "status": "editing",
+                    "lines": [{ "id": line_id, "latex": "stale" }],
+                    "exportResult": null,
+                    "exportWidth": 0.0,
+                    "exportHeight": 0.0
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(after_stale_autosave.status, OfficeSessionStatus::Committing);
+        assert_eq!(after_stale_autosave.lines[0].latex, "a=b");
+        assert!(after_stale_autosave.export_result.is_some());
     }
 
     #[test]

@@ -3,13 +3,55 @@ import {
   decodePowerPointObjectReference,
   formulaIdFromPowerPointShapeName,
 } from "../src/office/metadata/powerpointMetadata.ts";
+import { officeErrorMessage } from "../src/office/errors.ts";
+
+const apiLevel = process.env.POWERPOINT_API_LEVEL ?? "1.10";
+const failTagWrites = process.env.POWERPOINT_FAIL_TAGS === "1";
+const inPlaceEdit = process.env.POWERPOINT_IN_PLACE_EDIT === "1";
+
+function apiAtLeast(required) {
+  const [major, minor] = apiLevel.split(".").map(Number);
+  const [requiredMajor, requiredMinor] = required.split(".").map(Number);
+  return major > requiredMajor || (major === requiredMajor && minor >= requiredMinor);
+}
 
 const formulaId = crypto.randomUUID();
 const lineId = crypto.randomUUID();
 let cachedMetadata = null;
-let rejectSvgOnce = true;
+const rejectPngOnce = process.env.POWERPOINT_REJECT_PNG === "1";
+let pngRejected = false;
 let nextShapeId = 1;
 let currentSelection = [];
+const insertionCalls = [];
+let revealRequestCount = 0;
+
+class FakeTagCollection {
+  constructor() {
+    this.items = [];
+  }
+
+  add(key, value) {
+    if (failTagWrites) {
+      throw {
+        name: "RichApi.Error",
+        code: "GeneralException",
+        message: "Simulated PowerPoint tag failure",
+        debugInfo: { errorLocation: "Shape.tags.add" },
+      };
+    }
+    const normalized = key.toUpperCase();
+    const existing = this.items.find((item) => item.key === normalized);
+    if (existing) {
+      existing.value = value;
+    } else {
+      this.items.push({ key: normalized, value });
+    }
+  }
+
+  load() {
+    return this;
+  }
+}
 
 class FakeShape {
   constructor(slide, base64, geometry = {}) {
@@ -26,6 +68,7 @@ class FakeShape {
     this.height = geometry.imageHeight ?? 40;
     this.rotation = 0;
     this.type = "Image";
+    this.tags = new FakeTagCollection();
     this.isNullObject = false;
     this.deleted = false;
   }
@@ -52,14 +95,6 @@ class FakeShape {
     if (operation === "BringForward" && index < items.length - 1) {
       [items[index], items[index + 1]] = [items[index + 1], items[index]];
     }
-    if (operation === "SendToBack") {
-      items.splice(index, 1);
-      items.unshift(this);
-    }
-    if (operation === "BringToFront") {
-      items.splice(index, 1);
-      items.push(this);
-    }
   }
 
   delete() {
@@ -74,6 +109,16 @@ class FakeShapeCollection {
   constructor(slide) {
     this.slide = slide;
     this.items = [];
+  }
+
+  load() {
+    return this;
+  }
+
+  getItem(id) {
+    const shape = this.items.find((item) => item.id === id);
+    if (!shape) throw new Error(`Shape not found: ${id}`);
+    return shape;
   }
 
   getItemOrNullObject(id) {
@@ -120,6 +165,17 @@ const slides = {
   },
 };
 
+function scopedCollection(itemsProvider) {
+  return {
+    get items() {
+      return itemsProvider();
+    },
+    load() {
+      return this;
+    },
+  };
+}
+
 const presentation = {
   id: "presentation-1",
   slides,
@@ -127,14 +183,10 @@ const presentation = {
     return this;
   },
   getSelectedShapes() {
-    return {
-      get items() {
-        return currentSelection;
-      },
-      load() {
-        return this;
-      },
-    };
+    return scopedCollection(() => currentSelection);
+  },
+  getSelectedSlides() {
+    return scopedCollection(() => [activeSlide]);
   },
 };
 
@@ -146,6 +198,7 @@ const context = {
 globalThis.window = {
   __VISUALTEX_INSTALL_TOKEN__: "test-install-token",
   location: { href: "" },
+  setTimeout,
 };
 globalThis.document = {
   querySelector() {
@@ -159,29 +212,52 @@ globalThis.document = {
 globalThis.Office = {
   HostType: { Word: "Word", PowerPoint: "PowerPoint" },
   AsyncResultStatus: { Succeeded: "succeeded", Failed: "failed" },
-  CoercionType: { Image: "image" },
+  CoercionType: { Image: "image", XmlSvg: "xmlSvg" },
   context: {
     document: {
       url: "file:///tmp/powerpoint-adapter-smoke.pptx",
       setSelectedDataAsync(base64, options, callback) {
-        assert.equal(options.coercionType, "image");
-        if (rejectSvgOnce && base64 === "svg-base64") {
-          rejectSvgOnce = false;
+        insertionCalls.push({ base64, options: { ...options } });
+        if (
+          rejectPngOnce &&
+          !pngRejected &&
+          options.coercionType === "image"
+        ) {
+          pngRejected = true;
           callback({
             status: "failed",
-            error: { message: "SVG unsupported by simulated PowerPoint host" },
+            error: {
+              code: "UnsupportedDataObject",
+              message: "PNG unsupported by simulated PowerPoint host",
+            },
           });
           return;
         }
-        const shape = new FakeShape(activeSlide, base64, options);
-        activeSlide.shapes.items.push(shape);
-        currentSelection = [shape];
+        if (
+          inPlaceEdit &&
+          currentSelection.length === 1 &&
+          formulaIdFromPowerPointShapeName(currentSelection[0].name)
+        ) {
+          const shape = currentSelection[0];
+          shape.base64 = base64;
+          shape.left = options.imageLeft ?? shape.left;
+          shape.top = options.imageTop ?? shape.top;
+          shape.width = options.imageWidth ?? shape.width;
+          shape.height = options.imageHeight ?? shape.height;
+        } else {
+          const shape = new FakeShape(activeSlide, base64, options);
+          activeSlide.shapes.items.push(shape);
+          // PowerPoint for Mac does not reliably leave the inserted image selected.
+          currentSelection = [];
+        }
         callback({ status: "succeeded", value: undefined });
       },
     },
     requirements: {
       isSetSupported(name, version) {
-        return name === "PowerPointApi" && version === "1.10";
+        if (name === "PowerPointApi") return apiAtLeast(version);
+        if (name === "ImageCoercion") return Number(version) <= 1.2;
+        return false;
       },
     },
     ui: {
@@ -198,6 +274,141 @@ globalThis.PowerPoint = {
 
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
+  if (url.endsWith("/api/v1/app/reveal")) {
+    assert.equal(init.method, "POST");
+    assert.equal(init.headers["X-VisualTeX-Install-Token"], "test-install-token");
+    revealRequestCount += 1;
+    return new Response(null, { status: 204 });
+  }
+  if (url.endsWith("/api/v1/powerpoint/slide/snapshot")) {
+    return new Response(
+      JSON.stringify({
+        slideIndex: 1,
+        shapeCount: activeSlide.shapes.items.length,
+        shapeNames: activeSlide.shapes.items.map((shape) => shape.name),
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (url.endsWith("/api/v1/powerpoint/selection")) {
+    if (currentSelection.length !== 1) {
+      return new Response(JSON.stringify({ error: "Select exactly one shape" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const shape = currentSelection[0];
+    return new Response(
+      JSON.stringify({
+        shapeName: shape.name,
+        slideIndex: 1,
+        left: shape.left,
+        top: shape.top,
+        width: shape.width,
+        height: shape.height,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (url.endsWith("/api/v1/powerpoint/selection/mark")) {
+    const { formulaId } = JSON.parse(init.body);
+    if (currentSelection.length !== 1) {
+      return new Response(JSON.stringify({ error: "Select exactly one shape" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    currentSelection[0].name = `VisualTeX_${formulaId}`;
+    const shape = currentSelection[0];
+    return new Response(
+      JSON.stringify({
+        shapeName: shape.name,
+        slideIndex: 1,
+        left: shape.left,
+        top: shape.top,
+        width: shape.width,
+        height: shape.height,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (url.endsWith("/api/v1/powerpoint/shape/mark-last")) {
+    const { formulaId, previousShapeNames } = JSON.parse(init.body);
+    const inserted = activeSlide.shapes.items.filter(
+      (shape) => !previousShapeNames.includes(shape.name),
+    );
+    const shape = inserted.length === 1 ? inserted[0] : currentSelection[0];
+    if (!shape) {
+      return new Response(JSON.stringify({ error: "No inserted shape" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    shape.name = `VisualTeX_${formulaId}`;
+    return new Response(
+      JSON.stringify({
+        shapeName: shape.name,
+        slideIndex: 1,
+        left: shape.left,
+        top: shape.top,
+        width: shape.width,
+        height: shape.height,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (url.endsWith("/api/v1/powerpoint/shape/replace-last")) {
+    const {
+      formulaId,
+      previousShapeNames,
+      originalShapeName,
+      left,
+      top,
+      width,
+      height,
+    } = JSON.parse(init.body);
+    const original = activeSlide.shapes.items.find(
+      (shape) => shape.name === originalShapeName,
+    );
+    if (!original) {
+      return new Response(JSON.stringify({ error: "Original shape missing" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const inserted = activeSlide.shapes.items.filter(
+      (shape) => !previousShapeNames.includes(shape.name),
+    );
+    const shape = inserted.length === 1 ? inserted[0] : original;
+    if (shape !== original) {
+      original.name = `VisualTeXOld_${formulaId}`;
+      shape.name = `VisualTeX_${formulaId}`;
+      original.delete();
+    } else {
+      shape.name = `VisualTeX_${formulaId}`;
+    }
+    shape.left = left;
+    shape.top = top;
+    shape.width = width;
+    shape.height = height;
+    return new Response(
+      JSON.stringify({
+        shapeName: shape.name,
+        slideIndex: 1,
+        left: shape.left,
+        top: shape.top,
+        width: shape.width,
+        height: shape.height,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (url.endsWith("/api/v1/powerpoint/events?cursor=0")) {
+    return new Response("[]", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (!url.includes("/api/v1/formulas/")) {
     throw new Error(`Unexpected fetch: ${url}`);
   }
@@ -217,6 +428,19 @@ globalThis.fetch = async (input, init = {}) => {
   return new Response("", { status: 404 });
 };
 
+assert.equal(
+  officeErrorMessage(
+    {
+      name: "RichApi.Error",
+      code: "GeneralException",
+      message: "PowerPoint operation failed",
+      debugInfo: { errorLocation: "Shape.tags.add" },
+    },
+    "fallback",
+  ),
+  "PowerPoint operation failed (code=GeneralException, location=Shape.tags.add)",
+);
+
 const { PowerPointAdapter } = await import(
   "../src/office/adapters/PowerPointAdapter.ts"
 );
@@ -233,6 +457,7 @@ const createSession = {
   lines: [{ id: lineId, latex: String.raw`\sum_{i=1}^{n}i^2` }],
   activeLineId: lineId,
   codeFormat: "raw",
+  displayMode: "block",
   exportWidth: 160,
   exportHeight: 64,
   exportResult: {
@@ -254,32 +479,65 @@ const createSession = {
   expiresAt: Date.now() + 1000,
 };
 
+const shapeCountBeforeCreate = activeSlide.shapes.items.length;
 await adapter.applySession(createSession);
-const createdShape = currentSelection[0];
-assert.equal(createdShape.base64, "png-base64");
-assert.equal(createdShape.name, `VisualTeX_${formulaId}`);
-assert.equal(createdShape.altTextTitle, "VisualTeX Formula");
-assert.match(createdShape.altTextDescription, /^visualtex:v1:deflate:/);
-assert.equal(formulaIdFromPowerPointShapeName(createdShape.name), formulaId);
-assert.equal(cachedMetadata.formulaId, formulaId);
-
-const createGeometry = {
-  width: createdShape.width,
-  height: createdShape.height,
-};
-assert.ok(createGeometry.width > 0 && createGeometry.height > 0);
-
-const editContext = await adapter.readSelection("edit");
-const reference = decodePowerPointObjectReference(editContext.sourceObjectId);
-assert.deepEqual(reference, {
-  slideId: activeSlide.id,
-  shapeId: createdShape.id,
-});
-assert.equal(editContext.sessionSeed.formulaId, formulaId);
-assert.equal(
-  editContext.sessionSeed.lines[0].latex,
-  createSession.lines[0].latex,
+const expectedCreateImage = rejectPngOnce ? "<svg></svg>" : "png-base64";
+const createdShape = activeSlide.shapes.items.find(
+  (shape) => shape.base64 === expectedCreateImage,
 );
+assert.ok(createdShape, "formula insertion must leave a visible image on the slide");
+assert.equal(
+  activeSlide.shapes.items.length,
+  shapeCountBeforeCreate + 1,
+  "create must add exactly one image",
+);
+assert.equal(cachedMetadata.formulaId, formulaId);
+assert.equal(insertionCalls[0].options.coercionType, "image");
+if (rejectPngOnce) {
+  assert.equal(insertionCalls[1].options.coercionType, "xmlSvg");
+  assert.equal(
+    insertionCalls[1].base64,
+    "<svg></svg>",
+    "XmlSvg must receive raw SVG XML instead of Base64",
+  );
+}
+for (const call of insertionCalls.slice(0, rejectPngOnce ? 2 : 1)) {
+  assert.equal(
+    Object.hasOwn(call.options, "imageLeft"),
+    false,
+    "new formula insertion must omit undefined imageLeft",
+  );
+  assert.equal(
+    Object.hasOwn(call.options, "imageTop"),
+    false,
+    "new formula insertion must omit undefined imageTop",
+  );
+}
+
+assert.equal(createdShape.name, `VisualTeX_${formulaId}`);
+assert.equal(formulaIdFromPowerPointShapeName(createdShape.name), formulaId);
+if (apiAtLeast("1.5") && !failTagWrites) {
+  assert.ok(
+    createdShape.tags.items.some(
+      (tag) => tag.key === "VISUALTEX_FORMULA_ID" && tag.value === formulaId,
+    ),
+  );
+} else {
+  assert.equal(
+    createdShape.tags.items.length,
+    0,
+    apiAtLeast("1.5")
+      ? "optional tag failure must not roll back the inserted image"
+      : "native fallback does not require Office.js shape tags",
+  );
+}
+if (apiAtLeast("1.10")) {
+  assert.equal(createdShape.altTextTitle, "VisualTeX Formula");
+  assert.match(createdShape.altTextDescription, /^visualtex:v1:deflate:/);
+} else {
+  assert.equal(createdShape.altTextTitle, "");
+  assert.equal(createdShape.altTextDescription, "");
+}
 
 createdShape.left = 100;
 createdShape.top = 120;
@@ -292,6 +550,26 @@ activeSlide.shapes.items.splice(
 );
 activeSlide.shapes.items.splice(1, 0, createdShape);
 currentSelection = [createdShape];
+
+const editContext = await adapter.readSelection("edit");
+const reference = decodePowerPointObjectReference(editContext.sourceObjectId);
+if (apiAtLeast("1.5")) {
+  assert.deepEqual(reference, {
+    slideId: activeSlide.id,
+    shapeId: createdShape.id,
+  });
+} else {
+  assert.equal(reference.slideId, "native:1");
+  assert.equal(reference.shapeId, createdShape.name);
+  assert.equal(reference.native.slideIndex, 1);
+  assert.equal(reference.native.shapeName, createdShape.name);
+}
+assert.equal(editContext.sessionSeed.formulaId, formulaId);
+assert.equal(
+  editContext.sessionSeed.lines[0].latex,
+  createSession.lines[0].latex,
+);
+
 const originalZ = createdShape.zOrderPosition;
 const originalGeometry = {
   left: createdShape.left,
@@ -309,29 +587,75 @@ const editSession = {
   lines: [{ id: lineId, latex: "x=y" }],
   exportResult: {
     ...createSession.exportResult,
+    pngBase64: "updated-png-base64",
+    svg: "<svg id=\"updated\"></svg>",
     svgBase64: "updated-svg-base64",
   },
 };
 
+const editCallStart = insertionCalls.length;
 await adapter.applySession(editSession);
 const visualShapes = activeSlide.shapes.items.filter(
   (shape) => formulaIdFromPowerPointShapeName(shape.name) === formulaId,
 );
 assert.equal(visualShapes.length, 1, "editing must leave exactly one VisualTeX shape");
 const updatedShape = visualShapes[0];
-assert.equal(updatedShape.base64, "updated-svg-base64");
+assert.equal(updatedShape.base64, "updated-png-base64");
+assert.equal(insertionCalls[editCallStart].options.coercionType, "image");
+assert.equal(insertionCalls[editCallStart].options.imageLeft, originalGeometry.left);
+assert.equal(insertionCalls[editCallStart].options.imageTop, originalGeometry.top);
 assert.deepEqual(
   {
     left: updatedShape.left,
     top: updatedShape.top,
     width: updatedShape.width,
     height: updatedShape.height,
-    rotation: updatedShape.rotation,
   },
-  originalGeometry,
+  {
+    left: originalGeometry.left,
+    top: originalGeometry.top,
+    width: originalGeometry.width,
+    height: originalGeometry.height,
+  },
 );
-assert.equal(updatedShape.zOrderPosition, originalZ);
-assert.equal(createdShape.deleted, true, "original shape must be deleted after success");
+if (apiAtLeast("1.10") || inPlaceEdit) {
+  assert.equal(updatedShape.rotation, originalGeometry.rotation);
+} else {
+  assert.equal(updatedShape.rotation, 0);
+}
+if (apiAtLeast("1.8")) {
+  assert.equal(updatedShape.zOrderPosition, originalZ);
+}
+assert.equal(
+  createdShape.deleted,
+  !inPlaceEdit,
+  inPlaceEdit
+    ? "in-place replacement must keep the original shape object"
+    : "new-shape replacement must delete the original shape",
+);
+if (apiAtLeast("1.5") && !inPlaceEdit) {
+  assert.equal(currentSelection[0], updatedShape, "updated formula should be selected");
+}
+
+currentSelection = [updatedShape];
+const secondEditContext = await adapter.readSelection("edit");
+assert.equal(secondEditContext.sessionSeed.lines[0].latex, "x=y");
+const secondEditSession = {
+  ...editSession,
+  sourceObjectId: secondEditContext.sourceObjectId,
+  originalMetadata: secondEditContext.sessionSeed.originalMetadata,
+  lines: [{ id: lineId, latex: "x=z" }],
+  exportResult: {
+    ...editSession.exportResult,
+    pngBase64: "second-updated-png-base64",
+  },
+};
+await adapter.applySession(secondEditSession);
+const secondVisualShapes = activeSlide.shapes.items.filter(
+  (shape) => formulaIdFromPowerPointShapeName(shape.name) === formulaId,
+);
+assert.equal(secondVisualShapes.length, 1, "a second edit must remain editable");
+assert.equal(secondVisualShapes[0].base64, "second-updated-png-base64");
 
 const ordinary = new FakeShape(activeSlide, "ordinary");
 ordinary.name = "Ordinary Picture";
@@ -340,7 +664,14 @@ activeSlide.shapes.items.push(ordinary);
 currentSelection = [ordinary];
 await assert.rejects(
   () => adapter.readSelection("edit"),
-  /不是 VisualTeX 公式/,
+  /没有 VisualTeX 标记|不是 VisualTeX 公式/,
 );
 
-console.log("PowerPoint adapter smoke test passed");
+await adapter.openDesktopApp();
+assert.equal(revealRequestCount, 1, "Open VisualTeX must call the local reveal API");
+
+console.log(
+  `PowerPoint ${apiLevel} adapter compatibility passed${
+    failTagWrites ? " with optional tag failure" : ""
+  }`,
+);

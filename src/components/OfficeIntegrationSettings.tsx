@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
   Download,
@@ -39,10 +40,20 @@ interface OfficeCompanionStatus {
   lastError: string | null;
 }
 
+interface OfficeBackgroundStatus {
+  installed: boolean;
+  loaded: boolean;
+  runningInBackgroundMode: boolean;
+  plistPath: string;
+  executablePath: string;
+  lastError: string | null;
+}
+
 interface OfficeIntegrationStatus {
   word: OfficeHostInstallStatus;
   powerpoint: OfficeHostInstallStatus;
   certificate: CertificateInstallStatus;
+  background: OfficeBackgroundStatus;
   companion: OfficeCompanionStatus;
   officeUiVersion: string;
 }
@@ -54,6 +65,9 @@ interface OcrRuntimeStatus {
   paddleVersion?: string | null;
   paddleocrVersion?: string | null;
   runtimePath?: string | null;
+  offlineBundleAvailable?: boolean;
+  installedModels?: string[];
+  defaultModel?: string;
   message?: string | null;
 }
 
@@ -65,10 +79,12 @@ type OfficeAction =
   | "start"
   | "stop"
   | "ocr"
+  | "ocr-model-install"
+  | "ocr-model-remove"
   | "word"
   | "powerpoint";
 
-const EXPECTED_MANIFEST_VERSION = "1.0.6.0";
+const EXPECTED_MANIFEST_VERSION = "1.0.16.0";
 
 function isDesktopRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -167,6 +183,80 @@ export function OfficeIntegrationSettings() {
     [isEn, refresh],
   );
 
+  const installOptionalModel = useCallback(async () => {
+    setBusy("ocr-model-install");
+    setMessage("");
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: "VisualTeX OCR Model Pack",
+            extensions: ["vtxocrmodel"],
+          },
+        ],
+      });
+      const packagePath =
+        typeof selected === "string"
+          ? selected
+          : Array.isArray(selected)
+            ? selected[0]
+            : null;
+      if (!packagePath) return;
+      const next = await invoke<OcrRuntimeStatus>("install_optional_ocr_model", {
+        packagePath,
+      });
+      setOcrStatus(next);
+      setMessage(
+        isEn
+          ? "Optional OCR model installed and verified."
+          : "可选 OCR 模型已完成校验并安装。",
+      );
+    } catch (error) {
+      setMessage(
+        operationErrorMessage(
+          error,
+          isEn ? "Unable to install OCR model pack" : "无法安装 OCR 模型包",
+        ),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [isEn]);
+
+  const removeOptionalModel = useCallback(
+    async (model: string) => {
+      const confirmed = window.confirm(
+        isEn
+          ? `Remove the optional offline model ${model}?`
+          : `确定卸载可选离线模型 ${model} 吗？`,
+      );
+      if (!confirmed) return;
+      setBusy("ocr-model-remove");
+      setMessage("");
+      try {
+        const next = await invoke<OcrRuntimeStatus>("remove_optional_ocr_model", {
+          model,
+        });
+        setOcrStatus(next);
+        setMessage(
+          isEn ? "Optional OCR model removed." : "可选 OCR 模型已卸载。",
+        );
+      } catch (error) {
+        setMessage(
+          operationErrorMessage(
+            error,
+            isEn ? "Unable to remove OCR model" : "无法卸载 OCR 模型",
+          ),
+        );
+      } finally {
+        setBusy(null);
+      }
+    },
+    [isEn],
+  );
+
   const manifestMismatch = useMemo(
     () =>
       Boolean(
@@ -188,8 +278,8 @@ export function OfficeIntegrationSettings() {
           <strong>{isEn ? "Office integration" : "Office 集成"}</strong>
           <p>
             {isEn
-              ? "Install the local Word and PowerPoint bridge, certificate and companion service."
-              : "安装本地 Word/PowerPoint 桥接插件、证书和伴侣服务。"}
+              ? "Install the local Word and PowerPoint bridge, certificate and companion service. In PowerPoint, double-click a VisualTeX formula to edit it."
+              : "安装本地 Word/PowerPoint 桥接插件、证书和伴侣服务；在 PowerPoint 中双击 VisualTeX 公式即可重新编辑。"}
           </p>
         </div>
         <button
@@ -299,6 +389,70 @@ export function OfficeIntegrationSettings() {
 
           <article className="office-status-card">
             <header>
+              <strong>{isEn ? "Login background service" : "登录后台服务"}</strong>
+              <StateMark ok={status.background.installed} />
+            </header>
+            <p>
+              {status.background.runningInBackgroundMode
+                ? isEn
+                  ? "This process was started by the Office background LaunchAgent."
+                  : "当前进程由 Office 后台 LaunchAgent 启动。"
+                : status.background.installed
+                  ? isEn
+                    ? "The current app is serving Office now; a hidden instance takes over after quit and starts at login."
+                    : "当前应用正在提供 Office 服务；退出后由隐藏实例接管，并在登录时自动启动。"
+                  : isEn
+                    ? "Not configured"
+                    : "尚未配置"}
+            </p>
+            <dl>
+              <div>
+                <dt>LaunchAgent</dt>
+                <dd>
+                  {status.background.installed
+                    ? isEn
+                      ? "Installed"
+                      : "已安装"
+                    : isEn
+                      ? "Missing"
+                      : "缺失"}
+                </dd>
+              </div>
+              <div>
+                <dt>{isEn ? "Current login session" : "当前登录会话"}</dt>
+                <dd>
+                  {status.background.loaded
+                    ? isEn
+                      ? "Loaded"
+                      : "已加载"
+                    : status.background.installed
+                      ? isEn
+                        ? "Handoff on quit"
+                        : "退出后接管"
+                      : isEn
+                        ? "Not loaded"
+                        : "未加载"}
+                </dd>
+              </div>
+              <div>
+                <dt>{isEn ? "Configuration" : "配置文件"}</dt>
+                <dd title={status.background.plistPath}>
+                  {status.background.plistPath || "—"}
+                </dd>
+              </div>
+              {status.background.lastError && (
+                <div>
+                  <dt>{isEn ? "Error" : "错误"}</dt>
+                  <dd title={status.background.lastError}>
+                    {status.background.lastError}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </article>
+
+          <article className="office-status-card">
+            <header>
               <strong>{isEn ? "Certificate" : "本地 HTTPS 证书"}</strong>
               {status.certificate.trusted ? (
                 <ShieldCheck className="office-state-ok" size={15} />
@@ -335,26 +489,85 @@ export function OfficeIntegrationSettings() {
             <p>
               {ocrStatus?.installed
                 ? isEn
-                  ? "OCR runtime is installed. The default M model is checked by the offline package installer."
-                  : "OCR runtime 已安装；默认 M 模型由离线资源安装器进一步校验。"
-                : isEn
-                  ? "OCR runtime is not installed"
-                  : "OCR runtime 尚未安装"}
+                  ? "The self-contained Python, PaddleOCR and installed formula models are ready without a network connection."
+                  : "自包含 Python、PaddleOCR 与已安装公式模型均已就绪，断网也可使用。"
+                : ocrStatus?.offlineBundleAvailable
+                  ? isEn
+                    ? "The complete offline package is bundled with VisualTeX and is ready to install locally."
+                    : "完整离线包已随 VisualTeX 内置，可直接在本机安装。"
+                  : isEn
+                    ? "The offline OCR package is missing from this application build."
+                    : "当前应用包缺少离线 OCR 资源。"}
             </p>
             <dl>
               <div>
-                <dt>runtime</dt>
-                <dd>{ocrStatus?.installed ? (isEn ? "Available" : "可用") : (isEn ? "Missing" : "缺失")}</dd>
+                <dt>{isEn ? "Offline package" : "离线资源包"}</dt>
+                <dd>
+                  {ocrStatus?.offlineBundleAvailable
+                    ? isEn
+                      ? "Bundled"
+                      : "已内置"
+                    : isEn
+                      ? "Missing"
+                      : "缺失"}
+                </dd>
               </div>
               <div>
-                <dt>PP-FormulaNet plus-M</dt>
-                <dd>{isEn ? "Pending offline package check" : "等待离线资源包校验"}</dd>
+                <dt>{ocrStatus?.defaultModel ?? "PP-FormulaNet_plus-M"}</dt>
+                <dd>
+                  {ocrStatus?.installedModels?.includes(
+                    ocrStatus?.defaultModel ?? "PP-FormulaNet_plus-M",
+                  )
+                    ? isEn
+                      ? "Installed"
+                      : "已安装"
+                    : isEn
+                      ? "Ready in package"
+                      : "已包含在资源包中"}
+                </dd>
               </div>
               <div>
-                <dt>{isEn ? "Python" : "Python"}</dt>
+                <dt>{isEn ? "Installed models" : "已安装模型"}</dt>
+                <dd>
+                  {ocrStatus?.installedModels?.length
+                    ? ocrStatus.installedModels.join(", ")
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>Python</dt>
                 <dd>{ocrStatus?.pythonVersion ?? "—"}</dd>
               </div>
             </dl>
+            <div className="office-model-pack-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busy !== null}
+                onClick={() => void installOptionalModel()}
+              >
+                <Download size={14} />
+                {isEn ? "Import S/L model pack" : "导入 S/L 模型包"}
+              </button>
+              {ocrStatus?.installedModels
+                ?.filter(
+                  (model) =>
+                    model !==
+                    (ocrStatus.defaultModel ?? "PP-FormulaNet_plus-M"),
+                )
+                .map((model) => (
+                  <button
+                    type="button"
+                    className="secondary-button danger-subtle"
+                    disabled={busy !== null}
+                    onClick={() => void removeOptionalModel(model)}
+                    key={model}
+                  >
+                    <Trash2 size={14} />
+                    {isEn ? `Remove ${model}` : `卸载 ${model}`}
+                  </button>
+                ))}
+            </div>
           </article>
         </div>
       )}
@@ -364,8 +577,8 @@ export function OfficeIntegrationSettings() {
           <ShieldAlert size={15} />
           <span>
             {isEn
-              ? "The installed manifest does not match VisualTeX 1.0.6. Use Repair Office Integration."
-              : "已安装 manifest 与 VisualTeX 1.0.6 不匹配，请执行“修复 Office 集成”。"}
+              ? "The installed manifest does not match VisualTeX 1.0.16. Use Repair Office Integration."
+              : "已安装 manifest 与 VisualTeX 1.0.16 不匹配，请执行“修复 Office 集成”。"}
           </span>
         </div>
       )}
@@ -435,7 +648,7 @@ export function OfficeIntegrationSettings() {
         <button
           type="button"
           className="secondary-button"
-          disabled={busy !== null}
+          disabled={busy !== null || ocrStatus?.offlineBundleAvailable === false}
           onClick={() => void run("ocr", "install_ocr_runtime")}
         >
           <Download size={15} />

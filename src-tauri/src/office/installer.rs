@@ -1,3 +1,4 @@
+use crate::office::background::OfficeBackgroundStatus;
 use crate::office::manifest::{render_manifest, ManifestHost};
 use crate::office::state::{OfficeCompanionStatus, OfficePaths, OFFICE_UI_VERSION};
 use serde::Serialize;
@@ -34,6 +35,7 @@ pub struct OfficeIntegrationStatus {
     pub word: OfficeHostInstallStatus,
     pub powerpoint: OfficeHostInstallStatus,
     pub certificate: CertificateInstallStatus,
+    pub background: OfficeBackgroundStatus,
     pub companion: OfficeCompanionStatus,
     pub office_ui_version: String,
 }
@@ -315,6 +317,7 @@ fn host_status(home: &Path, host: ManifestHost) -> OfficeHostInstallStatus {
 
 pub fn integration_status(
     paths: &OfficePaths,
+    background: OfficeBackgroundStatus,
     companion: OfficeCompanionStatus,
 ) -> Result<OfficeIntegrationStatus, String> {
     let home = user_home()?;
@@ -330,6 +333,7 @@ pub fn integration_status(
             keychain_path: keychain.display().to_string(),
             last_error: trust.err(),
         },
+        background,
         companion,
         office_ui_version: OFFICE_UI_VERSION.to_string(),
     })
@@ -371,9 +375,10 @@ mod tests {
         let installed = install_manifest_at(home, ManifestHost::Word).unwrap();
         assert_eq!(installed.file_name().unwrap(), WORD_MANIFEST_FILE);
         assert!(installed.is_file());
+        let expected_version = format!("{}.0", env!("CARGO_PKG_VERSION"));
         assert_eq!(
             read_manifest_version(&installed).as_deref(),
-            Some("1.0.6.0")
+            Some(expected_version.as_str())
         );
 
         uninstall_manifest_at(home, ManifestHost::Word).unwrap();

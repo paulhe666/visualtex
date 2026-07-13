@@ -1,4 +1,8 @@
-use crate::office::sessions::{CreateOfficeSessionInput, SessionError, VisualTeXFormulaMetadata};
+use crate::office::powerpoint_native::{self, PowerPointInteractionEvent};
+use crate::office::sessions::{
+    CreateOfficeSessionInput, MetadataLine, OfficeFormulaSession, OfficeHost, OfficeSessionMode,
+    OfficeSessionStatus, SessionError, VisualTeXFormulaMetadata,
+};
 use crate::office::state::{
     OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
@@ -11,13 +15,17 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::net::TcpListener;
 use std::path::Path;
+use std::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
+use uuid::Uuid;
 
 const INSTALL_TOKEN_HEADER: &str = "x-visualtex-install-token";
 const OFFICE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://*.office.com https://*.officeapps.live.com";
+static POWERPOINT_COMMIT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone)]
 struct ServerContext {
@@ -113,6 +121,27 @@ async fn api_status(
     State(context): State<ServerContext>,
 ) -> Json<crate::office::state::OfficeCompanionStatus> {
     Json(context.companion.snapshot())
+}
+
+async fn reveal_desktop_app(State(context): State<ServerContext>) -> Response {
+    let Some(app) = context.companion.app.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "The VisualTeX desktop window is unavailable in this runtime"
+            })),
+        )
+            .into_response();
+    };
+
+    match crate::office::background::reveal_main_window(&app) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": error })),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -309,6 +338,297 @@ async fn get_ocr_events(
     .into_response()
 }
 
+async fn run_native_operation<T>(
+    operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("PowerPoint native task failed: {error}"))?
+}
+
+fn native_error_response(error: String) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": error })),
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkPowerPointFormulaRequest {
+    formula_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeletePowerPointShapeRequest {
+    slide_index: u32,
+    shape_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkLastPowerPointFormulaRequest {
+    formula_id: String,
+    previous_shape_names: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaceLastPowerPointFormulaRequest {
+    formula_id: String,
+    previous_shape_names: Vec<String>,
+    original_shape_name: String,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PowerPointEventsQuery {
+    cursor: Option<u64>,
+}
+
+async fn get_powerpoint_native_selection() -> Response {
+    match run_native_operation(powerpoint_native::selected_shape).await {
+        Ok(selection) => Json(selection).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn mark_powerpoint_native_selection(
+    Json(request): Json<MarkPowerPointFormulaRequest>,
+) -> Response {
+    match run_native_operation(move || {
+        powerpoint_native::mark_selected_formula(&request.formula_id)
+    })
+    .await
+    {
+        Ok(selection) => Json(selection).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn get_powerpoint_native_slide_snapshot() -> Response {
+    match run_native_operation(powerpoint_native::active_slide_snapshot).await {
+        Ok(snapshot) => Json(snapshot).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn mark_last_powerpoint_native_formula(
+    Json(request): Json<MarkLastPowerPointFormulaRequest>,
+) -> Response {
+    match run_native_operation(move || {
+        powerpoint_native::mark_last_inserted_formula(
+            &request.formula_id,
+            &request.previous_shape_names,
+        )
+    })
+    .await
+    {
+        Ok(selection) => Json(selection).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn replace_last_powerpoint_native_formula(
+    Json(request): Json<ReplaceLastPowerPointFormulaRequest>,
+) -> Response {
+    match run_native_operation(move || {
+        powerpoint_native::replace_last_inserted_formula(
+            &request.formula_id,
+            &request.previous_shape_names,
+            &request.original_shape_name,
+            request.left,
+            request.top,
+            request.width,
+            request.height,
+        )
+    })
+    .await
+    {
+        Ok(selection) => Json(selection).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn delete_powerpoint_native_shape(
+    Json(request): Json<DeletePowerPointShapeRequest>,
+) -> Response {
+    match run_native_operation(move || {
+        powerpoint_native::delete_shape(request.slide_index, &request.shape_name)
+    })
+    .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMetadata {
+    let timestamp = format!("unix-ms:{}", session.updated_at);
+    let original = session.original_metadata.as_ref();
+    VisualTeXFormulaMetadata {
+        schema: "visualtex-formula".to_string(),
+        schema_version: 1,
+        formula_id: session.formula_id.clone(),
+        title: session.title.clone(),
+        latex: session
+            .lines
+            .iter()
+            .map(|line| line.latex.as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        lines: session
+            .lines
+            .iter()
+            .map(|line| MetadataLine {
+                id: line.id.clone(),
+                latex: line.latex.clone(),
+            })
+            .collect(),
+        code_format: session.code_format.clone(),
+        display_mode: session.display_mode.clone(),
+        created_with_version: original
+            .map(|value| value.created_with_version.clone())
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+        updated_with_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: original
+            .map(|value| value.created_at.clone())
+            .unwrap_or_else(|| timestamp.clone()),
+        updated_at: timestamp,
+    }
+}
+
+fn commit_powerpoint_session_blocking(
+    companion: OfficeCompanionState,
+    session_id: String,
+    patch: serde_json::Value,
+) -> Result<OfficeFormulaSession, String> {
+    let _commit_guard = POWERPOINT_COMMIT_LOCK
+        .lock()
+        .map_err(|_| "PowerPoint commit lock is unavailable".to_string())?;
+    let session = if patch.as_object().is_some_and(|value| !value.is_empty()) {
+        companion
+            .session_store
+            .patch(&session_id, patch)
+            .map_err(|error| error.to_string())?
+    } else {
+        companion
+            .session_store
+            .get(&session_id)
+            .map_err(|error| error.to_string())?
+    };
+    if session.status == OfficeSessionStatus::Completed {
+        return Ok(session);
+    }
+    if session.host != OfficeHost::Powerpoint || session.status != OfficeSessionStatus::Committing {
+        return Err("PowerPoint Session is not ready to commit".to_string());
+    }
+    let export = session
+        .export_result
+        .as_ref()
+        .ok_or_else(|| "PowerPoint Session has no exported formula image".to_string())?;
+    if export.svg.trim().is_empty() {
+        return Err("PowerPoint Session contains an empty SVG export".to_string());
+    }
+    let temporary = std::env::temp_dir().join(format!(
+        "visualtex-powerpoint-{}-{}.svg",
+        session.formula_id,
+        Uuid::new_v4()
+    ));
+    fs::write(&temporary, export.svg.as_bytes())
+        .map_err(|error| format!("Unable to create temporary PowerPoint formula image: {error}"))?;
+    let natural_width = (export.width * 0.75).max(12.0);
+    let natural_height = (export.height * 0.75).max(12.0);
+    let scale = f64::min(1.0, f64::min(600.0 / natural_width, 400.0 / natural_height));
+    let target_slide_reference = session.source_object_id.as_deref().and_then(|value| {
+        let reference = value.strip_prefix("visualtex-ppt-native-slide:")?;
+        let mut fields = reference.split(':');
+        let first = fields.next()?.parse::<u32>().ok()?;
+        match fields.next() {
+            Some(index) => Some((
+                Some(first),
+                index.parse::<u32>().ok().filter(|value| *value > 0),
+            )),
+            None => Some((None, (first > 0).then_some(first))),
+        }
+    });
+    let expected_presentation_identity = session
+        .source_document_id
+        .as_deref()
+        .and_then(|value| value.strip_prefix("visualtex-ppt-native-presentation:"));
+    let insertion = powerpoint_native::upsert_formula_picture_from_clipboard(
+        &session.formula_id,
+        &temporary.to_string_lossy(),
+        natural_width * scale,
+        natural_height * scale,
+        session.mode == OfficeSessionMode::Edit,
+        expected_presentation_identity,
+        target_slide_reference.and_then(|value| value.0),
+        target_slide_reference.and_then(|value| value.1),
+    );
+    let _ = fs::remove_file(&temporary);
+    insertion?;
+    companion
+        .formula_cache
+        .put(&session.formula_id, metadata_from_session(&session))
+        .map_err(|error| format!("Formula metadata could not be saved: {error}"))?;
+    companion
+        .session_store
+        .patch(
+            &session_id,
+            serde_json::json!({ "status": "completed", "error": null }),
+        )
+        .map_err(|error| error.to_string())
+}
+
+async fn commit_powerpoint_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+    Json(patch): Json<serde_json::Value>,
+) -> Response {
+    let companion = context.companion.clone();
+    let failure_store = context.companion.session_store.clone();
+    let failure_id = session_id.clone();
+    match run_native_operation(move || {
+        commit_powerpoint_session_blocking(companion, session_id, patch)
+    })
+    .await
+    {
+        Ok(session) => Json(session).into_response(),
+        Err(error) => {
+            let response_error = error.clone();
+            let _ = run_session_operation(move || {
+                failure_store.patch(
+                    &failure_id,
+                    serde_json::json!({ "status": "failed", "error": error }),
+                )
+            })
+            .await;
+            native_error_response(response_error)
+        }
+    }
+}
+
+async fn get_powerpoint_events(
+    State(context): State<ServerContext>,
+    Query(query): Query<PowerPointEventsQuery>,
+) -> Json<Vec<PowerPointInteractionEvent>> {
+    Json(
+        context
+            .companion
+            .powerpoint_interactions
+            .after(query.cursor.unwrap_or_default()),
+    )
+}
+
 async fn run_session_operation<T>(
     operation: impl FnOnce() -> Result<T, SessionError> + Send + 'static,
 ) -> Result<T, SessionError>
@@ -482,6 +802,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
     let ui_root = companion.paths.ui_root.clone();
     let api = Router::new()
         .route("/status", get(api_status))
+        .route("/app/reveal", post(reveal_desktop_app))
         .route("/sessions", post(create_session))
         .route(
             "/sessions/{session_id}",
@@ -491,6 +812,35 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             "/formulas/{formula_id}/metadata",
             get(get_formula_metadata).put(put_formula_metadata),
         )
+        .route(
+            "/powerpoint/selection",
+            get(get_powerpoint_native_selection),
+        )
+        .route(
+            "/powerpoint/selection/mark",
+            post(mark_powerpoint_native_selection),
+        )
+        .route(
+            "/powerpoint/slide/snapshot",
+            get(get_powerpoint_native_slide_snapshot),
+        )
+        .route(
+            "/powerpoint/shape/mark-last",
+            post(mark_last_powerpoint_native_formula),
+        )
+        .route(
+            "/powerpoint/shape/replace-last",
+            post(replace_last_powerpoint_native_formula),
+        )
+        .route(
+            "/powerpoint/shape/delete",
+            post(delete_powerpoint_native_shape),
+        )
+        .route(
+            "/powerpoint/sessions/{session_id}/commit",
+            post(commit_powerpoint_session),
+        )
+        .route("/powerpoint/events", get(get_powerpoint_events))
         .route("/ocr/status", get(get_ocr_status))
         .route("/ocr/install", post(install_ocr))
         .route("/ocr/recognize", post(recognize_ocr))

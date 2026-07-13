@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "VisualTeX",
-  "version": "1.0.6",
+  "version": "1.0.16",
   "identifier": "com.visualtex.studio",
   "build": {
     "beforeDevCommand": "npm run build:office && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build:all",
+    "beforeBuildCommand": "npm run build:bundle",
     "frontendDist": "../dist"
   },
   "app": {
@@ -18,7 +18,8 @@
         "minWidth": 640,
         "minHeight": 480,
         "resizable": true,
-        "center": true
+        "center": true,
+        "visible": false
       }
     ],
     "security": {
@@ -40,7 +41,8 @@
     ],
     "resources": {
       "ocr/worker.py": "ocr/worker.py",
-      "../dist-office/": "office/"
+      "../dist-office/": "office/",
+      "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
     },
     "macOS": {
       "signingIdentity": "-"

@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod ocr_offline;
 mod office;
 
 const PADDLE_VERSION: &str = "3.3.1";
@@ -89,7 +89,6 @@ impl OcrEventBus {
 #[derive(Clone)]
 struct RuntimePaths {
     root: PathBuf,
-    venv: PathBuf,
     python: PathBuf,
     input: PathBuf,
     processed: PathBuf,
@@ -119,10 +118,19 @@ impl Default for OcrState {
     }
 }
 
+fn is_final_ocr_state_owner(worker: &Arc<Mutex<Option<OcrWorker>>>) -> bool {
+    Arc::strong_count(worker) == 1
+}
+
 impl Drop for OcrState {
     fn drop(&mut self) {
-        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
-        let _ = terminate_worker_process(&self.worker_pid);
+        // OcrState is cloned into Tauri state and the Office companion server.
+        // Destroying any temporary clone must not kill the shared OCR worker.
+        // Only the final owner is allowed to terminate the process.
+        if is_final_ocr_state_owner(&self.worker) {
+            self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+            let _ = terminate_worker_process(&self.worker_pid);
+        }
     }
 }
 
@@ -221,6 +229,48 @@ impl OcrState {
         })
         .await
         .map_err(|error| format!("OCR reset task failed: {error}"))?
+    }
+
+    pub(crate) async fn install_optional_model(
+        &self,
+        app: AppHandle,
+        package_path: PathBuf,
+    ) -> Result<OcrRuntimeStatus, String> {
+        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            stop_worker(&worker, &worker_pid)?;
+            let paths = runtime_paths(&app)?;
+            ocr_offline::install_optional_model_pack(&package_path, &paths.root)?;
+            let status = get_runtime_status_inner(&app)?;
+            write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+            Ok(status)
+        })
+        .await
+        .map_err(|error| format!("OCR model pack installation task failed: {error}"))?
+    }
+
+    pub(crate) async fn remove_optional_model(
+        &self,
+        app: AppHandle,
+        model: String,
+    ) -> Result<OcrRuntimeStatus, String> {
+        self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            stop_worker(&worker, &worker_pid)?;
+            let paths = runtime_paths(&app)?;
+            ocr_offline::remove_optional_model(&paths.root, &model)?;
+            let status = get_runtime_status_inner(&app)?;
+            write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
+            Ok(status)
+        })
+        .await
+        .map_err(|error| format!("OCR model removal task failed: {error}"))?
     }
 
     pub(crate) fn poll_events(&self, cursor: u64, event: Option<&str>) -> OcrEventEnvelope {
@@ -366,6 +416,9 @@ pub(crate) struct OcrRuntimeStatus {
     paddle_version: Option<String>,
     paddleocr_version: Option<String>,
     runtime_path: String,
+    offline_bundle_available: bool,
+    installed_models: Vec<String>,
+    default_model: String,
     message: String,
 }
 
@@ -415,30 +468,29 @@ struct RuntimeProbe {
     paddleocr_version: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct PythonProbe {
-    version: String,
-    major: u8,
-    minor: u8,
-    machine: String,
-    executable: String,
-}
-
 fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
     let root = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("Unable to resolve application data directory: {error}"))?
         .join("ocr-runtime");
-    let venv = root.join("venv");
-    let python = if cfg!(windows) {
-        venv.join("Scripts").join("python.exe")
+    let offline_python = if cfg!(windows) {
+        root.join("python").join("python.exe")
     } else {
-        venv.join("bin").join("python")
+        root.join("python").join("bin").join("python3")
+    };
+    let legacy_python = if cfg!(windows) {
+        root.join("venv").join("Scripts").join("python.exe")
+    } else {
+        root.join("venv").join("bin").join("python")
+    };
+    let python = if offline_python.exists() || !legacy_python.exists() {
+        offline_python
+    } else {
+        legacy_python
     };
     Ok(RuntimePaths {
         root: root.clone(),
-        venv,
         python,
         input: root.join("input"),
         processed: root.join("processed"),
@@ -455,11 +507,14 @@ fn worker_script_path(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let development_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("ocr")
-        .join("worker.py");
-    if development_path.exists() {
-        return Ok(development_path);
+    #[cfg(debug_assertions)]
+    {
+        let development_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("ocr")
+            .join("worker.py");
+        if development_path.exists() {
+            return Ok(development_path);
+        }
     }
 
     Err("Unable to locate bundled OCR worker.py".to_string())
@@ -511,133 +566,30 @@ fn command_output(command: &mut Command, label: &str) -> Result<String, String> 
     ))
 }
 
-fn probe_python(
-    program: &Path,
-    prefix_args: &[String],
-    label: &str,
-) -> Result<PythonProbe, String> {
-    let script = r#"import json, platform, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'machine': platform.machine(), 'executable': sys.executable}))"#;
-    let mut command = Command::new(program);
-    command
-        .args(prefix_args)
-        .arg("-c")
-        .arg(script)
-        .env("PYTHONUTF8", "1")
-        .env("PYTHONIOENCODING", "utf-8");
-    let output = command_output(&mut command, &format!("Python version check ({label})"))?;
-    serde_json::from_str(&output)
-        .map_err(|error| format!("Python returned an invalid version response: {error}"))
-}
-
-fn find_system_python() -> Result<(PathBuf, PythonProbe), String> {
-    let mut candidates: Vec<(String, PathBuf, Vec<String>)> = Vec::new();
-
-    if let Ok(explicit) = env::var("VISUALTEX_PYTHON") {
-        let explicit = explicit.trim().trim_matches('"');
-        if !explicit.is_empty() {
-            candidates.push((
-                "VISUALTEX_PYTHON".to_string(),
-                PathBuf::from(explicit),
-                Vec::new(),
-            ));
-        }
-    }
-
-    if cfg!(windows) {
-        // The Windows Python launcher usually exposes installed runtimes via
-        // selectors rather than python3.13.exe-style command names. Probe each
-        // supported version explicitly so a default Python 3.14 installation
-        // cannot hide an installed 3.9–3.13 runtime.
-        for minor in (9..=13).rev() {
-            for launcher in ["py.exe", "py"] {
-                for selector in [format!("-V:3.{minor}"), format!("-3.{minor}")] {
-                    candidates.push((
-                        format!("{launcher} {selector}"),
-                        PathBuf::from(launcher),
-                        vec![selector],
-                    ));
-                }
-            }
-        }
-    }
-
-    for name in [
-        "python3.13",
-        "python3.12",
-        "python3.11",
-        "python3.10",
-        "python3.9",
-        "python3",
-    ] {
-        candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
-    }
-
-    if cfg!(windows) {
-        for name in ["python.exe", "python", "py.exe", "py"] {
-            candidates.push((name.to_string(), PathBuf::from(name), Vec::new()));
-        }
-    }
-    if cfg!(target_os = "macos") {
-        for path in [
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-            "/usr/bin/python3",
-        ] {
-            candidates.push((path.to_string(), PathBuf::from(path), Vec::new()));
-        }
-    }
-
-    let mut failures = Vec::new();
-    for (label, program, prefix_args) in candidates {
-        match probe_python(&program, &prefix_args, &label) {
-            Ok(probe) => {
-                let version_ok = probe.major == 3 && (9..=13).contains(&probe.minor);
-                let machine = probe.machine.to_ascii_lowercase();
-                let architecture_ok = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-                    machine == "arm64" || machine == "aarch64"
-                } else if cfg!(any(target_os = "windows", target_os = "linux")) {
-                    matches!(machine.as_str(), "x86_64" | "amd64" | "x64")
-                } else {
-                    true
-                };
-                if version_ok && architecture_ok {
-                    let executable = PathBuf::from(&probe.executable);
-                    if executable.as_os_str().is_empty() {
-                        failures.push(format!("{label}: Python did not report sys.executable"));
-                        continue;
-                    }
-                    return Ok((executable, probe));
-                }
-                failures.push(format!(
-                    "{label}: Python {}, architecture {}",
-                    probe.version, probe.machine
-                ));
-            }
-            Err(error) => failures.push(format!("{label}: {error}")),
-        }
-    }
-
-    Err(format!(
-        "未检测到可用于 OCR 的 64 位 Python 3.9–3.13。请安装 x64 Python 3.13，并启用 Python Launcher，然后完全重启 VisualTeX。Python 3.14 当前不兼容 PaddleOCR。\n\nNo compatible 64-bit Python 3.9–3.13 interpreter was found. Install x64 Python 3.13 with the Python Launcher enabled, then restart VisualTeX. Python 3.14 is not currently supported by PaddleOCR.\n\nChecked:\n{}",
-        failures.join("\n")
-    ))
-}
-
 fn probe_runtime(paths: &RuntimePaths) -> Result<RuntimeProbe, String> {
     if !paths.python.exists() {
-        return Err("OCR virtual environment is not installed".to_string());
+        return Err("OCR offline runtime is not installed".to_string());
     }
     let script = r#"import json, platform; import paddle; import paddleocr; import tokenizers, imagesize, ftfy, wand; from importlib.metadata import version; from paddleocr import FormulaRecognition; print(json.dumps({'python_version': platform.python_version(), 'paddle_version': paddle.__version__, 'paddleocr_version': version('paddleocr')}))"#;
     let output = command_output(
         Command::new(&paths.python).arg("-c").arg(script),
         "OCR runtime verification",
     )?;
-    serde_json::from_str(&output)
-        .map_err(|error| format!("OCR runtime returned invalid version information: {error}"))
+    let probe: RuntimeProbe = serde_json::from_str(&output)
+        .map_err(|error| format!("OCR runtime returned invalid version information: {error}"))?;
+    if probe.paddle_version != PADDLE_VERSION || probe.paddleocr_version != PADDLEOCR_VERSION {
+        return Err(format!(
+            "OCR runtime version mismatch: PaddlePaddle {}, PaddleOCR {}; expected {} and {}",
+            probe.paddle_version, probe.paddleocr_version, PADDLE_VERSION, PADDLEOCR_VERSION
+        ));
+    }
+    Ok(probe)
 }
 
 fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String> {
     let paths = runtime_paths(app)?;
+    let offline_bundle_available = ocr_offline::bundle_available(app);
+    let installed_models = ocr_offline::installed_models(&paths.root);
     match probe_runtime(&paths) {
         Ok(probe) => Ok(OcrRuntimeStatus {
             installed: true,
@@ -646,7 +598,10 @@ fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String>
             paddle_version: Some(probe.paddle_version),
             paddleocr_version: Some(probe.paddleocr_version),
             runtime_path: paths.root.display().to_string(),
-            message: "PaddleOCR formula runtime is ready".to_string(),
+            offline_bundle_available,
+            installed_models,
+            default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
+            message: "PaddleOCR formula runtime is ready for offline recognition".to_string(),
         }),
         Err(error) => Ok(OcrRuntimeStatus {
             installed: false,
@@ -658,7 +613,14 @@ fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String>
             paddle_version: None,
             paddleocr_version: None,
             runtime_path: paths.root.display().to_string(),
-            message: error,
+            offline_bundle_available,
+            installed_models,
+            default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
+            message: if offline_bundle_available {
+                format!("Offline OCR package is ready to install. Current runtime: {error}")
+            } else {
+                error
+            },
         }),
     }
 }
@@ -745,121 +707,28 @@ fn install_runtime_inner(
 ) -> Result<OcrRuntimeStatus, String> {
     stop_worker(worker, worker_pid)?;
     let paths = runtime_paths(app)?;
-    fs::create_dir_all(&paths.root)
-        .map_err(|error| format!("Unable to create OCR runtime directory: {error}"))?;
-    fs::create_dir_all(&paths.input)
-        .map_err(|error| format!("Unable to create OCR input directory: {error}"))?;
-    fs::create_dir_all(&paths.processed)
-        .map_err(|error| format!("Unable to create OCR processed directory: {error}"))?;
-    fs::create_dir_all(&paths.logs)
-        .map_err(|error| format!("Unable to create OCR log directory: {error}"))?;
-    fs::create_dir_all(&paths.cache)
-        .map_err(|error| format!("Unable to create OCR cache directory: {error}"))?;
-    cleanup_worker_temp(&paths)?;
+    ocr_offline::install_bundle(app, &paths.root, |stage, percent, message, detail| {
+        emit_progress(app, stage, percent, message, detail);
+    })?;
 
-    emit_progress(app, "python", 5, "正在查找兼容的 Python", None);
-    let (system_python, probe) = find_system_python()?;
-    emit_progress(
-        app,
-        "python",
-        12,
-        format!("使用 Python {}", probe.version),
-        Some(system_python.display().to_string()),
-    );
-
-    emit_progress(app, "venv", 18, "正在创建独立 OCR 环境", None);
-    command_output(
-        Command::new(&system_python)
-            .arg("-m")
-            .arg("venv")
-            .arg("--clear")
-            .arg(&paths.venv),
-        "Python virtual environment creation",
-    )?;
-
-    emit_progress(app, "pip", 28, "正在更新安装工具", None);
-    command_output(
-        Command::new(&paths.python)
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--disable-pip-version-check")
-            .arg("--no-input")
-            .arg("--upgrade")
-            .arg("pip")
-            .arg("setuptools")
-            .arg("wheel"),
-        "pip bootstrap",
-    )?;
-
-    emit_progress(
-        app,
-        "paddle",
-        42,
-        format!("正在安装 PaddlePaddle {PADDLE_VERSION}"),
-        Some("首次安装需要下载约 100 MB 的框架文件".to_string()),
-    );
-    command_output(
-        Command::new(&paths.python)
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--disable-pip-version-check")
-            .arg("--no-input")
-            .arg(format!("paddlepaddle=={PADDLE_VERSION}")),
-        "PaddlePaddle installation",
-    )?;
-
-    emit_progress(
-        app,
-        "paddleocr",
-        68,
-        format!("正在安装 PaddleOCR {PADDLEOCR_VERSION}"),
-        None,
-    );
-    command_output(
-        Command::new(&paths.python)
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--disable-pip-version-check")
-            .arg("--no-input")
-            .arg(format!("paddleocr=={PADDLEOCR_VERSION}")),
-        "PaddleOCR installation",
-    )?;
-
-    emit_progress(
-        app,
-        "formula-deps",
-        84,
-        "正在安装 PP-FormulaNet 公式解码依赖",
-        Some("安装 tokenizers、ftfy、imagesize 和 Wand".to_string()),
-    );
-    command_output(
-        Command::new(&paths.python)
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--disable-pip-version-check")
-            .arg("--no-input")
-            .arg("tokenizers==0.19.1")
-            .arg("imagesize")
-            .arg("ftfy")
-            .arg("Wand"),
-        "PP-FormulaNet dependency installation",
-    )?;
-
-    emit_progress(app, "verify", 92, "正在验证 PP-FormulaNet 接口", None);
+    emit_progress(app, "verify", 97, "正在验证离线 PP-FormulaNet 接口", None);
     let status = get_runtime_status_inner(app)?;
     if !status.installed {
         return Err(status.message);
+    }
+    if !status
+        .installed_models
+        .iter()
+        .any(|model| model == ocr_offline::OFFLINE_DEFAULT_MODEL)
+    {
+        return Err("The bundled PP-FormulaNet M model was not installed".to_string());
     }
     emit_progress(
         app,
         "complete",
         100,
-        "OCR 运行环境安装完成",
-        Some("模型权重会在第一次识别时自动下载".to_string()),
+        "OCR 离线运行环境安装完成",
+        Some("Python、PaddleOCR 与默认 M 模型均已内置，无需联网".to_string()),
     );
     Ok(status)
 }
@@ -901,6 +770,10 @@ fn spawn_worker(
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("VISUALTEX_PARENT_PID", std::process::id().to_string())
+        .env("VISUALTEX_OFFLINE_OCR", "1")
+        .env("HF_HUB_OFFLINE", "1")
+        .env("TRANSFORMERS_OFFLINE", "1")
+        .env("MODELSCOPE_OFFLINE", "1")
         .env("PADDLE_PDX_MODEL_SOURCE", "BOS")
         .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         .env("PADDLE_PDX_CACHE_HOME", paths.cache.join("paddlex"))
@@ -1158,18 +1031,70 @@ async fn reset_ocr_runtime(
     state.reset_runtime(app).await
 }
 
+#[tauri::command]
+async fn install_optional_ocr_model(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    package_path: String,
+) -> Result<OcrRuntimeStatus, String> {
+    let package_path = package_path.trim();
+    if package_path.is_empty() {
+        return Err("No OCR model package was selected".to_string());
+    }
+    state
+        .install_optional_model(app, PathBuf::from(package_path))
+        .await
+}
+
+#[tauri::command]
+async fn remove_optional_ocr_model(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    model: String,
+) -> Result<OcrRuntimeStatus, String> {
+    state.remove_optional_model(app, model).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let background_mode = office::background::is_background_mode();
     let ocr_state = OcrState::default();
     let office_ocr_state = ocr_state.clone();
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(
+            |app, arguments, _cwd| {
+                if arguments
+                    .iter()
+                    .any(|argument| argument == office::background::BACKGROUND_ARGUMENT)
+                {
+                    return;
+                }
+                let _ = office::background::reveal_main_window(app);
+            },
+        ))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(ocr_state)
         .setup(move |app| {
             let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                 .map_err(std::io::Error::other)?;
+            if let Err(error) = office::powerpoint_native::start_double_click_monitor(
+                office_state.powerpoint_interactions.clone(),
+            ) {
+                eprintln!("Unable to start PowerPoint double-click monitor: {error}");
+            }
             app.manage(office_state.clone());
             office::start(office_state);
+            if background_mode {
+                office::background::hide_main_window(app.handle())
+                    .map_err(std::io::Error::other)?;
+            } else {
+                if let Err(error) = office::background::resume_installed_launch_agent() {
+                    eprintln!("Unable to resume VisualTeX Office background service: {error}");
+                }
+                office::background::reveal_main_window(app.handle())
+                    .map_err(std::io::Error::other)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1179,6 +1104,8 @@ pub fn run() {
             cancel_ocr_recognition,
             restart_ocr_worker,
             reset_ocr_runtime,
+            install_optional_ocr_model,
+            remove_optional_ocr_model,
             office::lifecycle::get_office_companion_status,
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
@@ -1190,8 +1117,31 @@ pub fn run() {
             office::lifecycle::open_word,
             office::lifecycle::open_powerpoint
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running VisualTeX");
+        .build(tauri::generate_context!())
+        .expect("error while building VisualTeX");
+
+    app.run(move |app, event| match event {
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            ..
+        } if label == "main" => {
+            api.prevent_close();
+            let _ = office::background::hide_main_window(app);
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => {
+            let _ = office::background::reveal_main_window(app);
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::ExitRequested { .. } => {
+            if let Err(error) = office::background::pause_launch_agent_for_quit() {
+                eprintln!("Unable to pause VisualTeX Office background service: {error}");
+            }
+        }
+        _ => {}
+    });
 }
 
 #[cfg(test)]
@@ -1259,6 +1209,15 @@ mod protocol_tests {
     }
 
     #[test]
+    fn temporary_ocr_state_clone_cannot_terminate_shared_worker() {
+        let state = OcrState::default();
+        let temporary = state.clone();
+        assert!(!is_final_ocr_state_owner(&state.worker));
+        drop(temporary);
+        assert!(is_final_ocr_state_owner(&state.worker));
+    }
+
+    #[test]
     fn runtime_status_cache_round_trips_and_clears() {
         let cache = Arc::new(Mutex::new(None));
         let expected = OcrRuntimeStatus {
@@ -1268,6 +1227,9 @@ mod protocol_tests {
             paddle_version: Some(PADDLE_VERSION.to_string()),
             paddleocr_version: Some(PADDLEOCR_VERSION.to_string()),
             runtime_path: "/tmp/visualtex-ocr".to_string(),
+            offline_bundle_available: true,
+            installed_models: vec![ocr_offline::OFFLINE_DEFAULT_MODEL.to_string()],
+            default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
             message: "ready".to_string(),
         };
 

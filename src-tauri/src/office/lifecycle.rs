@@ -1,3 +1,4 @@
+use crate::office::background;
 use crate::office::certificate::{ensure_office_install, regenerate_certificate};
 use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::installer::{self, OfficeIntegrationStatus};
@@ -11,6 +12,7 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tokio::time::{sleep, Duration};
 
+#[cfg(debug_assertions)]
 fn development_ui_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -25,11 +27,14 @@ fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
             return Ok(resource);
         }
     }
-    let development = development_ui_root();
-    if development.join("bridge").join("index.html").is_file()
-        && development.join("dialog").join("index.html").is_file()
+    #[cfg(debug_assertions)]
     {
-        return Ok(development);
+        let development = development_ui_root();
+        if development.join("bridge").join("index.html").is_file()
+            && development.join("dialog").join("index.html").is_file()
+        {
+            return Ok(development);
+        }
     }
     Err(
         "Office UI resources are missing. Run `npm run build:office` before starting VisualTeX."
@@ -38,14 +43,21 @@ fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn ocr_worker_available(app: &AppHandle) -> bool {
-    app.path()
+    let bundled = app
+        .path()
         .resolve("ocr/worker.py", BaseDirectory::Resource)
         .map(|path| path.is_file())
-        .unwrap_or(false)
-        || PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("ocr")
-            .join("worker.py")
-            .is_file()
+        .unwrap_or(false);
+    #[cfg(debug_assertions)]
+    {
+        bundled
+            || PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("ocr")
+                .join("worker.py")
+                .is_file()
+    }
+    #[cfg(not(debug_assertions))]
+    bundled
 }
 
 pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState, String> {
@@ -158,7 +170,8 @@ async fn wait_for_trusted_health() -> Result<(), String> {
 async fn status_for(state: &OfficeCompanionState) -> Result<OfficeIntegrationStatus, String> {
     let paths = (*state.paths).clone();
     let companion = state.snapshot();
-    run_blocking(move || installer::integration_status(&paths, companion)).await
+    run_blocking(move || installer::integration_status(&paths, background::status(), companion))
+        .await
 }
 
 #[tauri::command]
@@ -178,6 +191,7 @@ pub async fn install_office_integration(
     start(companion.clone());
     wait_for_trusted_health().await?;
     run_blocking(installer::install_available_manifests).await?;
+    run_blocking(background::install_launch_agent).await?;
     status_for(&companion).await
 }
 
@@ -194,6 +208,7 @@ pub async fn uninstall_office_integration(
 ) -> Result<OfficeIntegrationStatus, String> {
     let companion = state.inner().clone();
     run_blocking(installer::uninstall_manifests).await?;
+    run_blocking(background::uninstall_launch_agent).await?;
     status_for(&companion).await
 }
 

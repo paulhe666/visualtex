@@ -5475,6 +5475,40 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   gap: 8px;
 }
 
+.office-dialog-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.office-display-mode-setting {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.office-display-mode-setting button {
+  min-width: 48px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.office-display-mode-setting button.is-active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
 .office-auto-commit-setting {
   display: flex;
   align-items: center;
@@ -5531,8 +5565,13 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
     flex-wrap: wrap;
   }
 
-  .office-auto-commit-setting {
+  .office-dialog-options {
     order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .office-auto-commit-setting {
     width: 100%;
   }
 }
@@ -5662,6 +5701,19 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   color: var(--warning);
 }
 
+.office-model-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.office-model-pack-actions .secondary-button {
+  min-height: 29px;
+  padding: 5px 9px;
+  font-size: 9px;
+}
+
 .office-settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5684,6 +5736,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
     grid-column: auto;
   }
 
+  .office-model-pack-actions > button,
   .office-settings-actions > button {
     flex: 1 1 180px;
   }

@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 
 interface Props {
   open: boolean;
@@ -232,6 +233,8 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
               </button>
             </div>
           </div>
+
+          <OfficeIntegrationSettings />
 
           <div className="settings-section">
             <div className="settings-section-title">

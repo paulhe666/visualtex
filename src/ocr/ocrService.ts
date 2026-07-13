@@ -44,8 +44,8 @@ export const OCR_MODELS = [
     id: "PP-FormulaNet_plus-S",
     labelZh: "高速版 S",
     labelEn: "Fast S",
-    hintZh: "下载约 259.6 MB，模型约 248 MB；速度最快，主要适合英文公式",
-    hintEn: "About 259.6 MB to download and 248 MB on disk; fastest for English formulas",
+    hintZh: "可选离线模型包，安装后约 248 MB；速度最快，主要适合英文公式",
+    hintEn: "Optional offline model pack, about 248 MB installed; fastest for English formulas",
     downloadMb: 259.6,
     storageMb: 248,
     cpuBenchmarkMs: 260.99,
@@ -54,8 +54,8 @@ export const OCR_MODELS = [
     id: "PP-FormulaNet_plus-M",
     labelZh: "均衡版 M（推荐）",
     labelEn: "Balanced M (recommended)",
-    hintZh: "下载约 620.5 MB，模型约 592 MB；兼顾中文、复杂公式与速度",
-    hintEn: "About 620.5 MB to download and 592 MB on disk; balanced for Chinese and complex formulas",
+    hintZh: "随 VisualTeX 离线资源内置；兼顾中文、复杂公式与速度",
+    hintEn: "Included in the VisualTeX offline bundle; balanced for Chinese and complex formulas",
     downloadMb: 620.5,
     storageMb: 592,
     cpuBenchmarkMs: 1615.8,
@@ -64,8 +64,8 @@ export const OCR_MODELS = [
     id: "PP-FormulaNet_plus-L",
     labelZh: "高精度版 L",
     labelEn: "High accuracy L",
-    hintZh: "下载约 731.5 MB，模型约 698 MB；首次解压和加载较久，并会占用数 GB 内存",
-    hintEn: "About 731.5 MB to download and 698 MB on disk; first load is slow and may use several GB of memory",
+    hintZh: "可选离线模型包，安装后约 698 MB；首次加载较久，并会占用数 GB 内存",
+    hintEn: "Optional offline model pack, about 698 MB installed; first load is slow and may use several GB of memory",
     downloadMb: 731.5,
     storageMb: 698,
     cpuBenchmarkMs: 3125.58,
@@ -81,6 +81,9 @@ export interface OcrRuntimeStatus {
   paddleVersion: string | null;
   paddleocrVersion: string | null;
   runtimePath: string;
+  offlineBundleAvailable: boolean;
+  installedModels: string[];
+  defaultModel: string;
   message: string;
 }
 
@@ -196,6 +199,12 @@ function requireOcrEnvironment() {
   }
 }
 
+function requireDesktopOcrEnvironment() {
+  if (!isTauriEnvironment()) {
+    throw new Error("可选 OCR 模型包只能在 VisualTeX 桌面应用中管理。");
+  }
+}
+
 export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {
@@ -228,6 +237,22 @@ export async function restartOcrWorker(): Promise<void> {
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
   return invoke<OcrRuntimeStatus>("reset_ocr_runtime");
+}
+
+export async function installOptionalOcrModel(
+  packagePath: string,
+): Promise<OcrRuntimeStatus> {
+  requireDesktopOcrEnvironment();
+  return invoke<OcrRuntimeStatus>("install_optional_ocr_model", {
+    packagePath,
+  });
+}
+
+export async function removeOptionalOcrModel(
+  model: OcrModelName,
+): Promise<OcrRuntimeStatus> {
+  requireDesktopOcrEnvironment();
+  return invoke<OcrRuntimeStatus>("remove_optional_ocr_model", { model });
 }
 
 export async function listenOcrRecognitionProgress(

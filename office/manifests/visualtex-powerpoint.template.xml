@@ -29,7 +29,8 @@
     xsi:type="VersionOverridesV1_0">
     <Requirements>
       <bt:Sets DefaultMinVersion="1.1">
-        <bt:Set Name="PowerPointApi" MinVersion="1.5" />
+        <bt:Set Name="PowerPointApi" MinVersion="1.1" />
+        <bt:Set Name="ImageCoercion" MinVersion="1.1" />
       </bt:Sets>
     </Requirements>
     <Hosts>
@@ -64,7 +65,7 @@
                   <Label resid="VisualTeX.EditFormula.Label" />
                   <Supertip>
                     <Title resid="VisualTeX.EditFormula.Label" />
-                    <Description resid="VisualTeX.EditFormula.Description" />
+                    <Description resid="VTX.EditFormula.Desc" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16" />
@@ -79,7 +80,7 @@
                   <Label resid="VisualTeX.OpenDesktop.Label" />
                   <Supertip>
                     <Title resid="VisualTeX.OpenDesktop.Label" />
-                    <Description resid="VisualTeX.OpenDesktop.Description" />
+                    <Description resid="VTX.OpenDesktop.Desc" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16" />
@@ -113,8 +114,8 @@
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="VisualTeX.NewFormula.Description" DefaultValue="弹出完整 VisualTeX 编辑器并在当前幻灯片插入公式。" />
-        <bt:String id="VisualTeX.EditFormula.Description" DefaultValue="重新编辑当前选中的 VisualTeX 公式。" />
-        <bt:String id="VisualTeX.OpenDesktop.Description" DefaultValue="打开 VisualTeX 桌面应用。" />
+        <bt:String id="VTX.EditFormula.Desc" DefaultValue="重新编辑当前选中的 VisualTeX 公式。" />
+        <bt:String id="VTX.OpenDesktop.Desc" DefaultValue="打开 VisualTeX 桌面应用。" />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

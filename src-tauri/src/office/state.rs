@@ -1,4 +1,5 @@
 use crate::office::formula_cache::FormulaMetadataCache;
+use crate::office::powerpoint_native::PowerPointInteractionBus;
 use crate::office::sessions::SessionStore;
 use crate::OcrState;
 use axum_server::Handle;
@@ -63,6 +64,7 @@ pub struct OfficeCompanionState {
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
     pub session_store: SessionStore,
     pub formula_cache: FormulaMetadataCache,
+    pub powerpoint_interactions: PowerPointInteractionBus,
     pub ocr_available: bool,
 }
 
@@ -86,6 +88,7 @@ impl OfficeCompanionState {
             server_handle: Arc::new(Mutex::new(None)),
             session_store,
             formula_cache,
+            powerpoint_interactions: PowerPointInteractionBus::default(),
             ocr_available,
         }
     }

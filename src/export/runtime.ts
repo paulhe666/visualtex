@@ -110,10 +110,10 @@ export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
 }
 
-export async function latexToSvg(
+export function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
-): Promise<SvgExportResult> {
+): SvgExportResult {
   const source = prepareLatex(latex);
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);

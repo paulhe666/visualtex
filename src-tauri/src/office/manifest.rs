@@ -121,11 +121,12 @@ mod tests {
 
     #[test]
     fn rendered_manifests_use_fixed_local_origin_and_four_part_version() {
+        let expected_version = format!("<Version>{}.0</Version>", env!("CARGO_PKG_VERSION"));
         for host in [ManifestHost::Word, ManifestHost::PowerPoint] {
             let manifest = render_manifest(host).expect("render manifest");
             assert!(manifest.contains("https://127.0.0.1:43127/bridge/index.html"));
             assert!(manifest.contains("https://127.0.0.1:43127/icons/icon-32.png"));
-            assert!(manifest.contains("<Version>1.0.6.0</Version>"));
+            assert!(manifest.contains(&expected_version));
             assert!(!manifest.contains("localhost"));
             assert!(!manifest.contains("{{"));
         }

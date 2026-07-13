@@ -38,7 +38,7 @@ export const VISUALTEX_FORMULA_SCHEMA = "visualtex-formula" as const;
 export const VISUALTEX_FORMULA_SCHEMA_VERSION = 1 as const;
 export const VISUALTEX_FORMULA_XML_NAMESPACE = "urn:visualtex:formula:1";
 export const VISUALTEX_METADATA_PREFIX = "visualtex:v1:deflate:";
-export const CURRENT_VISUALTEX_VERSION = "1.0.6";
+export const CURRENT_VISUALTEX_VERSION = "1.0.16";
 
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = "";

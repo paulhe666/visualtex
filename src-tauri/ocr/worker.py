@@ -315,6 +315,12 @@ def _preprocess_image(
 def _load_model(model_name: str, device: str) -> Any:
     global _CURRENT_MODEL, _CURRENT_MODEL_NAME, _CURRENT_DEVICE
 
+    if os.environ.get("VISUALTEX_OFFLINE_OCR") == "1" and not _model_is_cached(model_name):
+        raise RuntimeError(
+            f"The offline model pack for {model_name} is not installed. "
+            "The bundled M model works without a network connection; install the optional S or L pack before selecting it."
+        )
+
     if (
         _CURRENT_MODEL is not None
         and _CURRENT_MODEL_NAME == model_name
@@ -370,6 +376,8 @@ def _recognize(request: Dict[str, Any]) -> Dict[str, Any]:
         model_message = "正在复用已加载的模型"
     elif _model_is_cached(model_name):
         model_message = f"正在从本地缓存加载 {model_name}"
+    elif os.environ.get("VISUALTEX_OFFLINE_OCR") == "1":
+        model_message = f"正在检查 {model_name} 离线模型包"
     elif download_mb is not None:
         model_message = (
             f"正在下载并加载 {model_name}；下载量约 {download_mb:.1f} MB"

@@ -28,7 +28,13 @@ import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
-import type { OfficeExportResult } from "../api/sessionClient";
+import { latexToSvg } from "../../export/latexToSvg";
+import {
+  commitNativePowerPointSession,
+  commitNativePowerPointSessionKeepalive,
+  saveOfficeSessionKeepalive,
+  type OfficeExportResult,
+} from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
 import {
@@ -58,28 +64,36 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const USE_NATIVE_POWERPOINT_COMMIT = /Macintosh|Mac OS X/i.test(
+  navigator.userAgent,
+);
 
 function documentFingerprint(
   title: string,
   lines: Array<{ id: string; latex: string }>,
   codeFormat: string,
+  displayMode: "inline" | "block",
 ) {
   return JSON.stringify({
     title,
     lines: lines.map((line) => line.latex),
     codeFormat,
+    displayMode,
   });
 }
 
 export function OfficeDialogApp() {
   const editorRef = useRef<MathEditorHandle>(null);
   const loadedSessionIdRef = useRef("");
+  const skipAutosaveForSessionRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
+  const finalizingRef = useRef(false);
   const exportRunIdRef = useRef(0);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
+  const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
   const [toast, setToast] = useState("");
   const [ocrOpen, setOcrOpen] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
@@ -117,18 +131,20 @@ export function OfficeDialogApp() {
       session.originalMetadata?.title ?? session.title,
       session.originalMetadata?.lines ?? session.lines,
       session.originalMetadata?.codeFormat ?? session.codeFormat,
+      session.originalMetadata?.displayMode ?? session.displayMode,
     );
   }, [session?.id]);
 
   const currentFingerprint = useMemo(
-    () => documentFingerprint(title, lines, latexCodeFormat),
-    [title, lines, latexCodeFormat],
+    () => documentFingerprint(title, lines, latexCodeFormat, displayMode),
+    [title, lines, latexCodeFormat, displayMode],
   );
   const dirty = Boolean(session) && currentFingerprint !== originalFingerprint;
 
   useEffect(() => {
     if (!session || loadedSessionIdRef.current === session.id) return;
     loadedSessionIdRef.current = session.id;
+    skipAutosaveForSessionRef.current = session.id;
     const nextLines = session.lines.length
       ? session.lines
       : [{ id: crypto.randomUUID(), latex: "" }];
@@ -148,10 +164,12 @@ export function OfficeDialogApp() {
         .setLatexCodeFormat(session.codeFormat as LatexCodeFormat);
     }
     setAutoCommitOnClose(session.autoCommitOnClose);
+    setDisplayMode(session.displayMode);
     lastSavedFingerprintRef.current = documentFingerprint(
       session.title,
       nextLines,
       session.codeFormat,
+      session.displayMode,
     );
   }, [session?.id, isEn]);
 
@@ -212,67 +230,80 @@ export function OfficeDialogApp() {
     return () => historyManager.configure(null);
   }, [captureSnapshot]);
 
-  const generateExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
+  const generateSvgExportResult = useCallback((): OfficeExportResult | null => {
     if (!latex.trim()) return null;
-    const [{ latexToSvg }, { svgToPng }] = await Promise.all([
-      import("../../export/latexToSvg"),
-      import("../../export/svgToPng"),
-    ]);
-    const svg = await latexToSvg(latex, {
-      displayMode: true,
+    const svg = latexToSvg(latex, {
+      displayMode: displayMode === "block",
       fontSizePt: 14,
-      paddingPx: 10,
+      paddingPx: displayMode === "inline" ? 1 : 10,
       background: "transparent",
     });
-    let pngBase64: string | undefined;
-    try {
-      pngBase64 = (
-        await svgToPng(svg, {
-          scale: 2,
-          background: "transparent",
-        })
-      ).base64;
-    } catch {
-      // SVG is the primary Office representation. PNG remains an optional
-      // runtime fallback when a browser canvas is available.
-    }
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
-      pngBase64,
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,
     };
-  }, [latex]);
+  }, [latex, displayMode]);
+
+  const generateExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
+    const base = generateSvgExportResult();
+    if (!base) return null;
+    let pngBase64: string | undefined;
+    try {
+      const { svgToPng } = await import("../../export/svgToPng");
+      pngBase64 = (
+        await svgToPng(
+          {
+            svg: base.svg,
+            base64: base.svgBase64,
+            width: base.width,
+            height: base.height,
+            baseline: base.baseline,
+          },
+          { scale: 2, background: "transparent" },
+        )
+      ).base64;
+    } catch {
+      // SVG remains a complete Office fallback when PNG rasterization fails.
+    }
+    return { ...base, pngBase64 };
+  }, [generateSvgExportResult]);
 
   useEffect(() => {
-    if (!session || !sessionId) return;
+    if (!session || !sessionId || finalizingRef.current) return;
+    if (skipAutosaveForSessionRef.current === sessionId) {
+      skipAutosaveForSessionRef.current = "";
+      return;
+    }
+    if (
+      lastSavedFingerprintRef.current === currentFingerprint &&
+      session.autoCommitOnClose === autoCommitOnClose
+    ) {
+      return;
+    }
+
     const runId = ++exportRunIdRef.current;
-    const timer = window.setTimeout(() => {
-      if (
-        lastSavedFingerprintRef.current === currentFingerprint &&
-        session.autoCommitOnClose === autoCommitOnClose
-      ) {
-        return;
-      }
-      void generateExportResult()
-        .then((exportResult) => {
-          if (runId !== exportRunIdRef.current) return null;
-          return save({
-            title,
-            lines,
-            activeLineId,
-            codeFormat: latexCodeFormat,
-            dirty,
-            status: "editing",
-            autoCommitOnClose,
-            exportResult,
-            exportWidth: exportResult?.width ?? 0,
-            exportHeight: exportResult?.height ?? 0,
-            error: null,
-          });
-        })
+    try {
+      // MathJax SVG generation is synchronous. Persist it immediately instead
+      // of waiting for PNG rasterization, so closing the Office dialog cannot
+      // lose the final keystrokes.
+      const exportResult = generateSvgExportResult();
+      void save({
+        title,
+        lines,
+        activeLineId,
+        codeFormat: latexCodeFormat,
+        displayMode,
+        dirty,
+        status: "editing",
+        autoCommitOnClose,
+        exportResult,
+        exportWidth: exportResult?.width ?? 0,
+        exportHeight: exportResult?.height ?? 0,
+        error: null,
+      })
         .then((saved) => {
           if (saved && runId === exportRunIdRef.current) {
             lastSavedFingerprintRef.current = currentFingerprint;
@@ -283,25 +314,19 @@ export function OfficeDialogApp() {
             reason instanceof Error
               ? reason.message
               : isEn
-                ? "Unable to export the Office formula"
-                : "无法导出 Office 公式";
-          void save({
-            title,
-            lines,
-            activeLineId,
-            codeFormat: latexCodeFormat,
-            dirty,
-            status: "failed",
-            autoCommitOnClose,
-            exportResult: null,
-            exportWidth: 0,
-            exportHeight: 0,
-            error: message,
-          }).catch(() => undefined);
+                ? "Unable to save the Office formula"
+                : "无法保存 Office 公式";
           setToast(message);
         });
-    }, 250);
-    return () => window.clearTimeout(timer);
+    } catch (reason) {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : isEn
+            ? "Unable to export the Office formula"
+            : "无法导出 Office 公式";
+      setToast(message);
+    }
   }, [
     sessionId,
     session?.id,
@@ -311,11 +336,88 @@ export function OfficeDialogApp() {
     lines,
     activeLineId,
     latexCodeFormat,
+    displayMode,
     dirty,
     autoCommitOnClose,
     save,
     isEn,
-    generateExportResult,
+    generateSvgExportResult,
+  ]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const finalDraftUpdate = (status: "editing" | "committing") => {
+      const exportResult = generateSvgExportResult();
+      return {
+        title,
+        lines,
+        activeLineId,
+        codeFormat: latexCodeFormat,
+        displayMode,
+        dirty,
+        status,
+        autoCommitOnClose,
+        exportResult,
+        exportWidth: exportResult?.width ?? 0,
+        exportHeight: exportResult?.height ?? 0,
+        error: null,
+      } as const;
+    };
+    const persistFinalDraft = () => {
+      if (finalizingRef.current) return;
+      try {
+        void saveOfficeSessionKeepalive(
+          sessionId,
+          finalDraftUpdate("editing"),
+        ).catch(() => undefined);
+      } catch {
+        // The regular save path reports export errors while the page is open.
+      }
+    };
+    const commitFinalPowerPointDraft = () => {
+      if (
+        finalizingRef.current ||
+        session?.host !== "powerpoint" ||
+        !USE_NATIVE_POWERPOINT_COMMIT ||
+        !autoCommitOnClose ||
+        !latex.trim()
+      ) {
+        persistFinalDraft();
+        return;
+      }
+      try {
+        finalizingRef.current = true;
+        void commitNativePowerPointSessionKeepalive(
+          sessionId,
+          finalDraftUpdate("committing"),
+        ).catch(() => undefined);
+      } catch {
+        // Closing a dialog is best-effort; the explicit insert button reports errors.
+      }
+    };
+    const persistWhenHidden = () => {
+      if (document.visibilityState === "hidden") persistFinalDraft();
+    };
+    window.addEventListener("pagehide", commitFinalPowerPointDraft);
+    window.addEventListener("beforeunload", commitFinalPowerPointDraft);
+    document.addEventListener("visibilitychange", persistWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", commitFinalPowerPointDraft);
+      window.removeEventListener("beforeunload", commitFinalPowerPointDraft);
+      document.removeEventListener("visibilitychange", persistWhenHidden);
+    };
+  }, [
+    sessionId,
+    session?.host,
+    title,
+    lines,
+    activeLineId,
+    latexCodeFormat,
+    displayMode,
+    dirty,
+    autoCommitOnClose,
+    generateSvgExportResult,
+    latex,
   ]);
 
   useEffect(() => {
@@ -543,6 +645,7 @@ export function OfficeDialogApp() {
         lines,
         activeLineId,
         codeFormat: latexCodeFormat,
+        displayMode,
         dirty,
         status,
         autoCommitOnClose,
@@ -561,6 +664,7 @@ export function OfficeDialogApp() {
       lines,
       activeLineId,
       latexCodeFormat,
+      displayMode,
       dirty,
       autoCommitOnClose,
       currentFingerprint,
@@ -575,13 +679,41 @@ export function OfficeDialogApp() {
       setToast(isEn ? "Enter a formula before inserting" : "请输入公式后再插入");
       return;
     }
-    const next = await saveCurrentSession("committing");
-    messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
+    finalizingRef.current = true;
+    try {
+      const next = await saveCurrentSession("committing");
+
+      if (next.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT) {
+        await commitNativePowerPointSession(next.id);
+        window.close();
+        return;
+      }
+      messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
+    } catch (error) {
+      finalizingRef.current = false;
+      const message =
+        error instanceof Error
+          ? error.message
+          : isEn
+            ? "Unable to insert the PowerPoint formula"
+            : "无法插入 PowerPoint 公式";
+      setToast(message);
+    }
   };
 
   const handleCancel = async () => {
-    const next = await saveCurrentSession("cancelled");
-    messageOfficeParent({ type: "visualtex-cancel", sessionId: next.id });
+    finalizingRef.current = true;
+    try {
+      const next = await saveCurrentSession("cancelled");
+      if (next.host === "powerpoint") {
+        window.close();
+        return;
+      }
+      messageOfficeParent({ type: "visualtex-cancel", sessionId: next.id });
+    } catch (error) {
+      finalizingRef.current = false;
+      throw error;
+    }
   };
 
   const handleCopy = async () => {
@@ -618,16 +750,42 @@ export function OfficeDialogApp() {
             {session.host === "word" ? "Microsoft Word" : "Microsoft PowerPoint"}
           </span>
         </div>
-        <label className="office-auto-commit-setting">
-          <input
-            type="checkbox"
-            checked={autoCommitOnClose}
-            onChange={(event) => setAutoCommitOnClose(event.target.checked)}
-          />
-          <span>
-            {isEn ? "Apply when the window closes" : "关闭窗口时自动应用"}
-          </span>
-        </label>
+        <div className="office-dialog-options">
+          {session.host === "word" ? (
+            <div
+              className="office-display-mode-setting"
+              role="group"
+              aria-label={isEn ? "Word formula layout" : "Word 公式排版"}
+            >
+              <button
+                type="button"
+                className={displayMode === "inline" ? "is-active" : ""}
+                onClick={() => setDisplayMode("inline")}
+                disabled={session.mode === "edit"}
+              >
+                {isEn ? "Inline" : "行内"}
+              </button>
+              <button
+                type="button"
+                className={displayMode === "block" ? "is-active" : ""}
+                onClick={() => setDisplayMode("block")}
+                disabled={session.mode === "edit"}
+              >
+                {isEn ? "Display" : "行间"}
+              </button>
+            </div>
+          ) : null}
+          <label className="office-auto-commit-setting">
+            <input
+              type="checkbox"
+              checked={autoCommitOnClose}
+              onChange={(event) => setAutoCommitOnClose(event.target.checked)}
+            />
+            <span>
+              {isEn ? "Apply when the window closes" : "关闭窗口时自动应用"}
+            </span>
+          </label>
+        </div>
         <div className="office-history-actions" aria-label={isEn ? "History actions" : "历史操作"}>
           <button
             type="button"

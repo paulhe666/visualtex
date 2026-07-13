@@ -39,6 +39,7 @@ export interface OfficeFormulaSession {
 
   activeLineId: string | null;
   codeFormat: string;
+  displayMode: "inline" | "block";
 
   exportWidth: number;
   exportHeight: number;
@@ -68,6 +69,7 @@ export interface CreateOfficeSessionInput {
   lines?: OfficeFormulaSession["lines"];
   activeLineId?: string | null;
   codeFormat?: string;
+  displayMode?: "inline" | "block";
   exportWidth?: number;
   exportHeight?: number;
   originalMetadata?: VisualTeXFormulaMetadata | null;
@@ -151,9 +153,59 @@ export function updateOfficeSession(
   );
 }
 
+export function commitNativePowerPointSession(sessionId: string) {
+  return requestJson<OfficeFormulaSession>(
+    `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/commit`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function commitNativePowerPointSessionKeepalive(
+  sessionId: string,
+  update: UpdateOfficeSessionInput,
+) {
+  const headers = new Headers({
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  });
+  const token = installToken();
+  if (token) headers.set("X-VisualTeX-Install-Token", token);
+  return fetch(
+    `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/commit`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      keepalive: true,
+      headers,
+      body: JSON.stringify(update),
+    },
+  );
+}
+
 export function deleteOfficeSession(sessionId: string) {
   return requestJson<void>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     { method: "DELETE" },
   );
+}
+
+export function saveOfficeSessionKeepalive(
+  sessionId: string,
+  update: UpdateOfficeSessionInput,
+) {
+  const headers = new Headers({
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  });
+  const token = installToken();
+  if (token) headers.set("X-VisualTeX-Install-Token", token);
+  return fetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    cache: "no-store",
+    keepalive: true,
+    headers,
+    body: JSON.stringify(update),
+  });
 }
