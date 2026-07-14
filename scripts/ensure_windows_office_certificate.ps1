@@ -55,31 +55,63 @@ $previousThumbprint = $null
 if (Test-Path $modeKey) {
     $previousThumbprint = (Get-ItemProperty $modeKey -Name CertificateThumbprint -ErrorAction SilentlyContinue).CertificateThumbprint
 }
-if (-not [string]::IsNullOrWhiteSpace($previousThumbprint) -and
-    $previousThumbprint -ne $certificate.Thumbprint) {
-    foreach ($location in @("Cert:\CurrentUser\Root", "Cert:\CurrentUser\TrustedPeople")) {
-        Get-ChildItem $location -ErrorAction SilentlyContinue |
-            Where-Object { $_.Thumbprint -eq $previousThumbprint } |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+function Remove-CertificateFromCurrentUserStore {
+    param(
+        [Security.Cryptography.X509Certificates.StoreName]$StoreName,
+        [string]$Thumbprint
+    )
+    if ([string]::IsNullOrWhiteSpace($Thumbprint)) { return }
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+        $StoreName,
+        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    )
+    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    try {
+        foreach ($existing in @($store.Certificates | Where-Object { $_.Thumbprint -eq $Thumbprint })) {
+            $store.Remove($existing)
+        }
+    } finally {
+        $store.Close()
     }
 }
 
-$alreadyTrusted = @(
-    Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue |
-        Where-Object { $_.Thumbprint -eq $certificate.Thumbprint }
-).Count -gt 0
+function Test-CertificateInCurrentUserStore {
+    param(
+        [Security.Cryptography.X509Certificates.StoreName]$StoreName,
+        [string]$Thumbprint
+    )
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+        $StoreName,
+        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    )
+    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+    try {
+        return @($store.Certificates | Where-Object { $_.Thumbprint -eq $Thumbprint }).Count -gt 0
+    } finally {
+        $store.Close()
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($previousThumbprint) -and
+    $previousThumbprint -ne $certificate.Thumbprint) {
+    Remove-CertificateFromCurrentUserStore Root $previousThumbprint
+    Remove-CertificateFromCurrentUserStore TrustedPeople $previousThumbprint
+}
+
+$alreadyTrusted = Test-CertificateInCurrentUserStore Root $certificate.Thumbprint
 if (-not $alreadyTrusted) {
-    $imported = Import-Certificate -FilePath $certificatePath -CertStoreLocation Cert:\CurrentUser\Root
-    if ($null -eq $imported -or $imported.Thumbprint -ne $certificate.Thumbprint) {
-        throw "VisualTeX Office HTTPS certificate import did not return the expected certificate."
+    & certutil.exe -user -f -addstore Root $certificatePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "certutil.exe failed to add the VisualTeX Office HTTPS certificate to the current-user Root store (exit code $LASTEXITCODE)."
+    }
+    if (-not (Test-CertificateInCurrentUserStore Root $certificate.Thumbprint)) {
+        throw "VisualTeX Office HTTPS certificate was not added to the current-user Root store."
     }
 }
 
 # Remove an earlier test/install copy from TrustedPeople. The leaf certificate
 # is trusted through the current-user Root store so Schannel and Office agree.
-Get-ChildItem Cert:\CurrentUser\TrustedPeople -ErrorAction SilentlyContinue |
-    Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
-    Remove-Item -Force -ErrorAction SilentlyContinue
+Remove-CertificateFromCurrentUserStore TrustedPeople $certificate.Thumbprint
 
 if (-not (Test-Path $modeKey)) { New-Item $modeKey -Force | Out-Null }
 New-ItemProperty $modeKey -Name "CertificateThumbprint" -PropertyType String -Value $certificate.Thumbprint -Force | Out-Null

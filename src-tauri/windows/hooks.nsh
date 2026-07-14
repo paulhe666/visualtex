@@ -94,23 +94,26 @@ visualtex_python_check_done:
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
   ${If} $VisualTeXOfficeChoice == "ole"
+    MessageBox MB_ICONINFORMATION|MB_OK "接下来安装程序会自动打开 Word 和 PowerPoint 的 Office 加载项窗口，用于添加 VisualTeX。$\r$\n$\r$\n请不要关闭、切换或操作这些窗口；安装程序完成配置后会自动将它们关闭。整个过程通常需要约 1 分钟。$\r$\n$\r$\nVisualTeX will temporarily open the Office Add-ins dialogs in Word and PowerPoint. Do not close or interact with them; setup will close them automatically."
+    DetailPrint "Automatically configuring Word and PowerPoint. Keep the Office Add-ins windows open until setup closes them."
     ; Best-effort removal of legacy VisualTeX VSTO MSI instances. The OLE
     ; installer also forces any surviving add-in LoadBehavior values to zero.
     IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 +3
-    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
     Pop $0
     IfFileExists "$INSTDIR\scripts\install_windows_ole.ps1" 0 visualtex_office_missing
-    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_ole.ps1"`
+    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_ole.ps1"`
     Pop $0
     StrCmp $0 "0" visualtex_office_done
-    MessageBox MB_ICONEXCLAMATION "VisualTeX 已安装，但 OLE Office 集成安装失败。可在设置中点击修复。"
+    SetDetailsView show
+    MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但 Office 集成配置未完成。$\r$\n$\r$\n如果你关闭了刚才自动打开的 Word 或 PowerPoint 加载项窗口，配置会被中断。请关闭所有 Office 窗口，然后在 VisualTeX 设置中点击修复；修复期间不要关闭或操作自动打开的 Office 窗口。$\r$\n$\r$\n详细错误已显示在安装日志区域。"
     Goto visualtex_office_done
   ${Else}
     IfFileExists "$INSTDIR\scripts\uninstall_windows_ole.ps1" 0 +3
-    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
+    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
     Pop $0
     IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_office_done
-    nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
     Pop $0
     Goto visualtex_office_done
   ${EndIf}
@@ -124,13 +127,13 @@ visualtex_office_done:
 
 !macro NSIS_HOOK_PREUNINSTALL
   IfFileExists "$INSTDIR\scripts\uninstall_windows_ole.ps1" 0 +3
-  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_ole.ps1"`
   Pop $0
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 +3
-  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
   Pop $0
   IfFileExists "$INSTDIR\scripts\remove_windows_office_certificate.ps1" 0 visualtex_preuninstall_done
-  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\remove_windows_office_certificate.ps1"`
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\remove_windows_office_certificate.ps1"`
   Pop $0
 visualtex_preuninstall_done:
 !macroend

@@ -75,6 +75,9 @@ assert.ok(powerpoint.includes("EnsureSourceDocument"));
 assert.ok(powerpoint.includes('VisualTeX_{formulaId}'));
 assert.ok(powerpoint.includes("AlternativeText"));
 assert.ok(powerpoint.includes("Tags"));
+assert.ok(powerpoint.includes("CalculateReplacementSize"));
+assert.ok(powerpoint.includes("originalMetadata?.RenderHeightPx"));
+assert.ok(!powerpoint.includes("FitImage(session.ImagePath, width, height)"));
 assert.ok(powerpoint.indexOf("ConfigureShape(newShape") < powerpoint.indexOf("original.Delete()"));
 assert.ok(word.indexOf("ConfigureShape(\n                    candidate") < word.indexOf("original.Delete()"));
 
@@ -150,8 +153,13 @@ assert.ok(!installerHooks.includes("VisualTeXOfficeVstoRadio"));
 assert.ok(!installerHooks.includes('VisualTeXOfficeChoice == "vsto"'));
 
 const windowsEntry = await source("src/office/windows-ole/main.ts");
+const windowsAdapter = await source("src/office/windows-ole/WindowsOleAdapter.ts");
 assert.ok(!windowsEntry.includes("../macos"));
 assert.ok(windowsEntry.includes("lastDoubleClickAt"));
+assert.ok(windowsEntry.includes("bridge.prepareInteractionTarget"));
+assert.ok(windowsEntry.includes("payload.metadata"));
+assert.ok(windowsAdapter.includes("pendingInteractionTarget"));
+assert.ok(windowsAdapter.includes("capturedTarget.metadata"));
 assert.ok(windowsEntry.includes('bridge.run("create", () => event?.completed?.())'));
 assert.ok(windowsEntry.includes('bridge.run("edit", () => event?.completed?.())'));
 assert.ok(!windowsEntry.includes('bridge.run("create").finally'));
@@ -168,6 +176,10 @@ assert.ok(windowsBridgeProgram.includes("catch (ObjectDisposedException)"));
 assert.ok(doubleClickHook.includes("WmLButtonDown"));
 assert.ok(doubleClickHook.includes("GetDoubleClickTime"));
 assert.ok(doubleClickHook.includes("SmCxDoubleClk"));
+assert.ok(doubleClickHook.includes("GetOfficeForegroundHost"));
+assert.ok(backend.includes("CaptureDoubleClickTargetAsync"));
+assert.ok(backend.includes('string.Equals(host, "word"'));
+assert.ok(backend.includes("metadata = selection.Metadata"));
 
 const acceptance = await source("scripts/run_windows_office_acceptance.ps1");
 for (const requirement of [
@@ -198,6 +210,7 @@ const tests = (
     source("src-windows/VisualTeX.WindowsOffice.Tests/ReplacementTransactionTests.cs"),
     source("src-windows/VisualTeX.WindowsOffice.Tests/MetadataAndTempPathTests.cs"),
     source("src-windows/VisualTeX.WindowsOffice.Tests/ComReleaseAndDoubleClickTests.cs"),
+    source("src-windows/VisualTeX.WindowsOffice.Tests/PowerPointOleSizingTests.cs"),
   ])
 ).join("\n");
 for (const requirement of [
@@ -207,6 +220,8 @@ for (const requirement of [
   "FormulaMetadataRoundTripsWithPersistentUuid",
   "FinalReleaseInvalidatesARealComObject",
   "FormulaDoubleClickDeduplicatesOnlyTheSamePersistentTarget",
+  "LongerReplacementKeepsTheExistingVisualScale",
+  "LegacyFormulaUsesItsPhysicalHeightAsTheFontSizeReference",
 ]) {
   assert.ok(tests.includes(requirement), `Windows test coverage is missing ${requirement}`);
 }

@@ -33,6 +33,12 @@ public sealed class FormulaMetadata
     [JsonPropertyName("numbered")]
     public bool Numbered { get; set; }
 
+    [JsonPropertyName("renderWidthPx")]
+    public double? RenderWidthPx { get; set; }
+
+    [JsonPropertyName("renderHeightPx")]
+    public double? RenderHeightPx { get; set; }
+
     [JsonPropertyName("createdWithVersion")]
     public string CreatedWithVersion { get; set; } = string.Empty;
 
@@ -55,6 +61,10 @@ public sealed class FormulaMetadata
             throw new InvalidOperationException("VisualTeX formula metadata requires at least one line.");
         if (Numbered && !string.Equals(DisplayMode, "block", StringComparison.Ordinal))
             throw new InvalidOperationException("Only display formulas can use equation numbering.");
+        if (RenderWidthPx is <= 0 || double.IsNaN(RenderWidthPx ?? 1) || double.IsInfinity(RenderWidthPx ?? 1))
+            throw new InvalidOperationException("VisualTeX renderWidthPx must be a positive finite number.");
+        if (RenderHeightPx is <= 0 || double.IsNaN(RenderHeightPx ?? 1) || double.IsInfinity(RenderHeightPx ?? 1))
+            throw new InvalidOperationException("VisualTeX renderHeightPx must be a positive finite number.");
     }
 }
 

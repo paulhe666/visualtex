@@ -10,7 +10,7 @@ internal sealed class OfficeDoubleClickHook : IDisposable
     private const int WmQuit = 0x0012;
     private const int SmCxDoubleClk = 36;
     private const int SmCyDoubleClk = 37;
-    private readonly Action _onDoubleClick;
+    private readonly Action<string> _onDoubleClick;
     private readonly FileLogger _logger;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new(false);
@@ -22,7 +22,7 @@ internal sealed class OfficeDoubleClickHook : IDisposable
     private Point _lastButtonDownPoint;
     private bool _started;
 
-    public OfficeDoubleClickHook(Action onDoubleClick, FileLogger logger)
+    public OfficeDoubleClickHook(Action<string> onDoubleClick, FileLogger logger)
     {
         _onDoubleClick = onDoubleClick;
         _logger = logger;
@@ -75,7 +75,8 @@ internal sealed class OfficeDoubleClickHook : IDisposable
             var withinDoubleClickRectangle =
                 Math.Abs(point.X - _lastButtonDownPoint.X) <= Math.Max(1, GetSystemMetrics(SmCxDoubleClk) / 2) &&
                 Math.Abs(point.Y - _lastButtonDownPoint.Y) <= Math.Max(1, GetSystemMetrics(SmCyDoubleClk) / 2);
-            if (IsOfficeForeground() &&
+            var foregroundHost = GetOfficeForegroundHost();
+            if (foregroundHost is not null &&
                 elapsedMilliseconds <= GetDoubleClickTime() &&
                 withinDoubleClickRectangle)
             {
@@ -85,7 +86,7 @@ internal sealed class OfficeDoubleClickHook : IDisposable
                 if (sinceLastRaise >= 0.75)
                 {
                     Interlocked.Exchange(ref _lastRaisedTicks, now);
-                    try { _onDoubleClick(); } catch (Exception error) { _logger.Error("Double-click handler failed.", error); }
+                    try { _onDoubleClick(foregroundHost); } catch (Exception error) { _logger.Error("Double-click handler failed.", error); }
                 }
             }
             else
@@ -97,19 +98,22 @@ internal sealed class OfficeDoubleClickHook : IDisposable
         return CallNextHookEx(_hook, code, wParam, lParam);
     }
 
-    private static bool IsOfficeForeground()
+    private static string? GetOfficeForegroundHost()
     {
         var window = GetForegroundWindow();
-        if (window == IntPtr.Zero) return false;
+        if (window == IntPtr.Zero) return null;
         GetWindowThreadProcessId(window, out var processId);
-        if (processId == 0) return false;
+        if (processId == 0) return null;
         try
         {
             var name = Process.GetProcessById((int)processId).ProcessName;
-            return string.Equals(name, "WINWORD", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "POWERPNT", StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(name, "WINWORD", StringComparison.OrdinalIgnoreCase))
+                return "word";
+            if (string.Equals(name, "POWERPNT", StringComparison.OrdinalIgnoreCase))
+                return "powerpoint";
+            return null;
         }
-        catch { return false; }
+        catch { return null; }
     }
 
     public void Dispose()

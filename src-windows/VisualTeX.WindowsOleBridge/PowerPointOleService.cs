@@ -158,7 +158,13 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
             var height = Convert.ToSingle(original.Height);
             var rotation = Convert.ToSingle(original.Rotation);
             var zOrder = Convert.ToInt32(original.ZOrderPosition);
-            var size = FitImage(session.ImagePath, width, height);
+            var originalMetadata = ReadMetadata(oldShape);
+            var size = ReplacementSize(
+                session.ImagePath,
+                width,
+                height,
+                originalMetadata,
+                session.Metadata);
             var replacementLeft = left + (width - size.Width) / 2f;
             var replacementTop = top + (height - size.Height) / 2f;
 
@@ -385,6 +391,69 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
         }
         return new SizeF(width, height);
     }
+
+    private static SizeF ReplacementSize(
+        string path,
+        float oldWidth,
+        float oldHeight,
+        FormulaMetadata? originalMetadata,
+        FormulaMetadata replacementMetadata)
+    {
+        using var image = Image.FromFile(path);
+        return CalculateReplacementSize(
+            image.Width,
+            image.Height,
+            oldWidth,
+            oldHeight,
+            originalMetadata?.RenderWidthPx,
+            originalMetadata?.RenderHeightPx,
+            replacementMetadata.RenderWidthPx,
+            replacementMetadata.RenderHeightPx);
+    }
+
+    internal static SizeF CalculateReplacementSize(
+        int replacementPixelWidth,
+        int replacementPixelHeight,
+        float oldWidth,
+        float oldHeight,
+        double? originalRenderWidthPx,
+        double? originalRenderHeightPx,
+        double? replacementRenderWidthPx,
+        double? replacementRenderHeightPx)
+    {
+        var replacementRatio = replacementPixelWidth /
+            (float)Math.Max(1, replacementPixelHeight);
+        var scale = PositiveFinite(originalRenderHeightPx)
+            && PositiveFinite(replacementRenderWidthPx)
+            && PositiveFinite(replacementRenderHeightPx)
+            && oldHeight > 0
+                ? oldHeight / (float)originalRenderHeightPx!.Value
+                : PositiveFinite(originalRenderWidthPx)
+                    && PositiveFinite(replacementRenderWidthPx)
+                    && PositiveFinite(replacementRenderHeightPx)
+                    && oldWidth > 0
+                        ? oldWidth / (float)originalRenderWidthPx!.Value
+                        : 0f;
+
+        if (scale > 0 && float.IsFinite(scale))
+        {
+            return new SizeF(
+                Math.Max(12f, (float)replacementRenderWidthPx!.Value * scale),
+                Math.Max(1f, (float)replacementRenderHeightPx!.Value * scale));
+        }
+
+        // Formulas created by older VisualTeX builds do not have natural render
+        // bounds in their metadata. Keep the existing physical height as the
+        // font-size reference and let the replacement grow horizontally instead
+        // of forcing it back into the old bounding box.
+        var fallbackHeight = Math.Max(1f, oldHeight);
+        return new SizeF(
+            Math.Max(12f, fallbackHeight * replacementRatio),
+            fallbackHeight);
+    }
+
+    private static bool PositiveFinite(double? value) =>
+        value is > 0 && double.IsFinite(value.Value);
 
     private static void MoveToZOrder(object shape, int target)
     {

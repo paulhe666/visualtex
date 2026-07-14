@@ -2,6 +2,8 @@ use crate::office::background::OfficeBackgroundStatus;
 use crate::office::manifest::ManifestHost;
 use crate::office::state::{OfficeCompanionStatus, OfficePaths, OFFICE_UI_VERSION};
 use serde::Serialize;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,8 +94,10 @@ pub fn open_office_application(host: ManifestHost) -> Result<(), String> {
             ManifestHost::Word => "winword.exe",
             ManifestHost::PowerPoint => "powerpnt.exe",
         };
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         return std::process::Command::new("cmd.exe")
-            .args(["/C", "start", "", executable])
+            .args(["/D", "/C", "start", "", executable])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map(|_| ())
             .map_err(|error| format!("Unable to launch {executable}: {error}"));

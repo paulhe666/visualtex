@@ -10,8 +10,17 @@ import {
   type OfficeSessionMode,
 } from "../shared/sessionClient";
 import type { OfficeSelectionResult } from "../shared/protocol";
+import type { VisualTeXFormulaMetadata } from "../shared/formulaMetadata";
 import { OfficeIntegrationError } from "../shared/errors";
 import { callWindowsOle } from "./WindowsOleClient";
+
+export interface WindowsOleInteractionTarget {
+  host: OfficeHost;
+  formulaId: string;
+  documentId: string | null;
+  objectId: string | null;
+  metadata: VisualTeXFormulaMetadata;
+}
 
 function selectionMethod(host: OfficeHost) {
   return host === "word"
@@ -21,10 +30,34 @@ function selectionMethod(host: OfficeHost) {
 
 export class WindowsOleAdapter implements OfficeHostAdapter {
   readonly requiredExportFormat = "png" as const;
+  private pendingInteractionTarget: WindowsOleInteractionTarget | null = null;
 
   constructor(readonly host: OfficeHost) {}
 
+  prepareWindowsInteractionTarget(target: WindowsOleInteractionTarget) {
+    this.pendingInteractionTarget = target.host === this.host ? target : null;
+  }
+
   async readSelection(mode: OfficeSessionMode): Promise<OfficeSelectionContext> {
+    const capturedTarget = mode === "edit" ? this.pendingInteractionTarget : null;
+    this.pendingInteractionTarget = null;
+    if (capturedTarget) {
+      return {
+        sourceDocumentId: capturedTarget.documentId,
+        sourceObjectId: capturedTarget.objectId,
+        sessionSeed: {
+          formulaId: capturedTarget.metadata.formulaId,
+          title: capturedTarget.metadata.title,
+          lines: capturedTarget.metadata.lines,
+          activeLineId: capturedTarget.metadata.lines[0]?.id ?? null,
+          codeFormat: capturedTarget.metadata.codeFormat,
+          displayMode: capturedTarget.metadata.displayMode,
+          numbered: capturedTarget.metadata.numbered ?? false,
+          originalMetadata: capturedTarget.metadata,
+        },
+      };
+    }
+
     const selection = await callWindowsOle<OfficeSelectionResult>(
       selectionMethod(this.host),
       { mode },

@@ -160,31 +160,43 @@ internal sealed class WindowsOfficeBackend : IWindowsOfficeBackend, IDisposable
         return new { opened = true };
     }
 
-    private void OnOfficeDoubleClick()
+    private void OnOfficeDoubleClick(string host)
     {
         if (_disposed) return;
-        _ = _dispatcher.InvokeAsync(
-            () =>
-            {
-                try
+        _ = CaptureDoubleClickTargetAsync(host);
+    }
+
+    private async Task CaptureDoubleClickTargetAsync(string host)
+    {
+        try
+        {
+            // The low-level mouse hook fires on the second button-down, before
+            // Word has finished moving its COM selection onto the InlineShape.
+            // Waiting for the host to process the click prevents the subsequent
+            // editor command from seeing the caret beside the formula instead.
+            await Task.Delay(
+                string.Equals(host, "word", StringComparison.Ordinal) ? 120 : 40
+            ).ConfigureAwait(false);
+            if (_disposed) return;
+            await _dispatcher.InvokeAsync(
+                () =>
                 {
-                    var powerPoint = _powerPoint.GetSelection();
-                    if (powerPoint.Metadata is not null)
-                    {
-                        AddDoubleClickEvent(powerPoint);
-                        return true;
-                    }
-                }
-                catch { }
-                try
-                {
-                    var word = _word.GetSelection();
-                    if (word.Metadata is not null) AddDoubleClickEvent(word);
-                }
-                catch { }
-                return true;
-            },
-            CancellationToken.None);
+                    OfficeSelection selection = string.Equals(
+                        host,
+                        "word",
+                        StringComparison.Ordinal)
+                            ? _word.GetSelection()
+                            : _powerPoint.GetSelection();
+                    if (selection.Metadata is not null)
+                        AddDoubleClickEvent(selection);
+                    return true;
+                },
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            _logger.Error($"Unable to capture the {host} formula double-click target.", error);
+        }
     }
 
     private void AddDoubleClickEvent(OfficeSelection selection)
@@ -207,6 +219,7 @@ internal sealed class WindowsOfficeBackend : IWindowsOfficeBackend, IDisposable
                 formulaId = selection.FormulaId,
                 documentId = selection.DocumentId,
                 objectId = selection.ObjectId,
+                metadata = selection.Metadata,
             },
         });
         while (_events.Count > 200 && _events.TryDequeue(out _)) { }

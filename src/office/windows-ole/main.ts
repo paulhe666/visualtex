@@ -2,6 +2,10 @@ import "../../styles.css";
 import { WindowsOleBridge } from "./WindowsOleBridge";
 import { getWindowsOleEvents } from "./WindowsOleClient";
 import { windowsOfficeHostFromReadyInfo } from "./WindowsOleAdapter";
+import {
+  isVisualTeXFormulaMetadata,
+  type VisualTeXFormulaMetadata,
+} from "../shared/formulaMetadata";
 
 interface OfficeCommandEvent {
   completed?: () => void;
@@ -77,6 +81,7 @@ void Office.onReady().then((info) => {
               formulaId?: string;
               documentId?: string;
               objectId?: string;
+              metadata?: VisualTeXFormulaMetadata;
             };
             if (payload.host !== host) continue;
             const key = `${payload.documentId ?? ""}:${payload.objectId ?? ""}:${payload.formulaId ?? ""}`;
@@ -86,6 +91,20 @@ void Office.onReady().then((info) => {
             }
             lastDoubleClickKey = key;
             lastDoubleClickAt = now;
+            if (
+              payload.formulaId &&
+              payload.metadata &&
+              isVisualTeXFormulaMetadata(payload.metadata) &&
+              payload.metadata.formulaId === payload.formulaId
+            ) {
+              bridge.prepareInteractionTarget({
+                host,
+                formulaId: payload.formulaId,
+                documentId: payload.documentId ?? null,
+                objectId: payload.objectId ?? payload.formulaId,
+                metadata: payload.metadata,
+              });
+            }
             await bridge.run("edit");
           }
         })

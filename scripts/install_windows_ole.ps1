@@ -5,6 +5,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function ConvertFrom-VisualTeXExtendedPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    if ($Path.StartsWith("\\?\UNC\", [StringComparison]::OrdinalIgnoreCase)) {
+        return "\\" + $Path.Substring(8)
+    }
+    if ($Path.StartsWith("\\?\", [StringComparison]::OrdinalIgnoreCase)) {
+        return $Path.Substring(4)
+    }
+    return $Path
+}
+
+$scriptRoot = ConvertFrom-VisualTeXExtendedPath $PSScriptRoot
+
 function Test-VisualTeXOnlyRibbonCache(
     [IO.FileInfo]$File,
     [string[]]$ManifestIds
@@ -89,8 +102,11 @@ function Clear-VisualTeXCustomUiCache([string[]]$ManifestIds) {
 }
 
 function Read-AndValidateManifest([string]$Path, [string]$ExpectedHost, [string]$ExpectedId) {
-    try { [xml]$manifest = Get-Content $Path -Raw -ErrorAction Stop }
-    catch { throw "Office.js manifest is not valid XML: $Path. $($_.Exception.Message)" }
+    try {
+        $utf8 = [Text.UTF8Encoding]::new($false, $true)
+        [xml]$manifest = [IO.File]::ReadAllText($Path, $utf8)
+    }
+    catch { throw "Office.js manifest is not valid UTF-8 XML: $Path. $($_.Exception.Message)" }
     $manager = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
     $manager.AddNamespace("o", "http://schemas.microsoft.com/office/appforoffice/1.1")
     $id = $manifest.SelectSingleNode("/o:OfficeApp/o:Id", $manager).InnerText
@@ -191,6 +207,7 @@ public static class VisualTeXOfficeInput {
 
     $application = $null
     $document = $null
+    $startedProcessId = $null
     try {
         if ($OfficeHost -eq "Word") {
             $application = New-Object -ComObject Word.Application
@@ -205,6 +222,7 @@ public static class VisualTeXOfficeInput {
         }
         Start-Sleep -Seconds 5
         $process = Get-Process $processName | Sort-Object StartTime -Descending | Select-Object -First 1
+        $startedProcessId = $process.Id
         $shell = New-Object -ComObject WScript.Shell
         $shell.AppActivate([int]$process.Id) | Out-Null
         Start-Sleep -Seconds 1
@@ -279,9 +297,42 @@ public static class VisualTeXOfficeInput {
         try { if ($application) { $application.Quit() } } catch { }
         if ($document) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($document) | Out-Null }
         if ($application) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($application) | Out-Null }
+        [GC]::Collect()
+        [GC]::WaitForPendingFinalizers()
+        if ($startedProcessId) {
+            Start-Sleep -Seconds 2
+            Get-Process -Id $startedProcessId -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+        }
     }
 }
-$root = Split-Path -Parent $PSScriptRoot
+
+function Install-TrustedCatalogAddinWithRetry(
+    [ValidateSet("Word", "PowerPoint")][string]$OfficeHost,
+    [string]$ManifestId
+) {
+    $processName = if ($OfficeHost -eq "Word") { "WINWORD" } else { "POWERPNT" }
+    $errors = [Collections.Generic.List[string]]::new()
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        try {
+            Write-Host "Configuring the VisualTeX $OfficeHost add-in (attempt $attempt of 2)."
+            Install-TrustedCatalogAddin $OfficeHost $ManifestId
+            return
+        } catch {
+            $errors.Add($_.Exception.Message)
+            Write-Warning "VisualTeX $OfficeHost add-in setup attempt $attempt failed: $($_.Exception.Message)"
+            Get-Process $processName -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+    }
+    throw "VisualTeX $OfficeHost add-in setup was interrupted or could not complete after two attempts. Do not close the Office Add-ins window while setup is running. $($errors -join ' | ')"
+}
+
+$root = Split-Path -Parent $scriptRoot
+if ([string]::IsNullOrWhiteSpace($root)) {
+    throw "Unable to determine the VisualTeX installation root from script path: $PSScriptRoot"
+}
 $manifestRoot = Join-Path $root "office\windows\ole\manifests"
 if (-not (Test-Path $manifestRoot)) {
     $manifestRoot = Join-Path $root "office-manifests\windows-ole"
@@ -296,7 +347,7 @@ $catalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\$catalog
 $legacyCatalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\VisualTeX"
 $developerKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\Developer"
 $modeKey = "HKCU:\Software\VisualTeX\OfficeIntegration"
-$certificateScript = Join-Path $PSScriptRoot "ensure_windows_office_certificate.ps1"
+$certificateScript = Join-Path $scriptRoot "ensure_windows_office_certificate.ps1"
 if (-not (Test-Path $certificateScript)) {
     throw "VisualTeX Windows Office certificate helper is missing: $certificateScript"
 }
@@ -326,9 +377,8 @@ New-ItemProperty $catalogKey -Name "Id" -PropertyType String -Value $catalogId -
 New-ItemProperty $catalogKey -Name "Url" -PropertyType String -Value $catalogUnc -Force | Out-Null
 New-ItemProperty $catalogKey -Name "Flags" -PropertyType DWord -Value 1 -Force | Out-Null
 
-# Developer mappings are document-scoped sideload registrations. Keeping them
-# beside a trusted-catalog installation creates a second source for the same
-# manifest and can produce duplicate or stale commands.
+# Trusted-catalog installation is the persistent, document-independent Office
+# registration. Remove developer sideload mappings to avoid duplicate ribbons.
 New-Item $developerKey -Force | Out-Null
 Remove-ItemProperty $developerKey -Name $wordManifestId -ErrorAction SilentlyContinue
 Remove-ItemProperty $developerKey -Name $powerPointManifestId -ErrorAction SilentlyContinue
@@ -390,8 +440,8 @@ foreach ($resource in @("/health", "/bridge/index.html", "/icons/icon-16.png", "
     Assert-HttpsResource $resource
 }
 
-Install-TrustedCatalogAddin Word $wordManifestId
-Install-TrustedCatalogAddin PowerPoint $powerPointManifestId
+Install-TrustedCatalogAddinWithRetry Word $wordManifestId
+Install-TrustedCatalogAddinWithRetry PowerPoint $powerPointManifestId
 if (-not (Test-TrustedCatalogCommandCache $wordManifestId) -or
     -not (Test-TrustedCatalogCommandCache $powerPointManifestId)) {
     throw "VisualTeX OLE Ribbon commands were not persisted for both Word and PowerPoint."

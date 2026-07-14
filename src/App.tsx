@@ -92,6 +92,7 @@ import {
 } from "./update/updateService";
 import {
   detectDesktopPlatform,
+  onboardingStorageKey,
   shouldOpenOnboardingInitially,
   shouldShowMacOfficeFirstRun,
 } from "./platform";
@@ -107,9 +108,12 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
 const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.first-run.v1.completed";
 const DESKTOP_PLATFORM = detectDesktopPlatform();
+const ONBOARDING_STORAGE_KEY = onboardingStorageKey(
+  DESKTOP_PLATFORM,
+  isTauriEnvironment(),
+);
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);

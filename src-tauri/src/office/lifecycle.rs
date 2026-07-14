@@ -12,6 +12,8 @@ use crate::OcrState;
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
@@ -308,6 +310,28 @@ pub fn set_office_integration_mode(
 }
 
 #[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(target_os = "windows")]
+fn hidden_windows_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn powershell_compatible_path(path: &std::path::Path) -> PathBuf {
+    let raw = path.as_os_str().to_string_lossy();
+    if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
+}
+
+#[cfg(target_os = "windows")]
 fn run_windows_script(app: &AppHandle, script_name: &str, arguments: &[&str]) -> Result<(), String> {
     let script = app
         .path()
@@ -322,9 +346,18 @@ fn run_windows_script(app: &AppHandle, script_name: &str, arguments: &[&str]) ->
             script.display()
         ));
     }
-    let status = Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(&script)
+    let powershell_script = powershell_compatible_path(&script);
+    let status = hidden_windows_command("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
+        .arg(&powershell_script)
         .args(arguments)
         .status()
         .map_err(|error| format!("Unable to start Windows Office script: {error}"))?;
@@ -399,8 +432,8 @@ pub fn repair_windows_office_integration(
 pub fn open_word() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        return Command::new("cmd.exe")
-            .args(["/C", "start", "", "winword.exe"])
+        return hidden_windows_command("cmd.exe")
+            .args(["/D", "/C", "start", "", "winword.exe"])
             .spawn()
             .map(|_| ())
             .map_err(|error| format!("Unable to launch Microsoft Word: {error}"));
@@ -413,8 +446,8 @@ pub fn open_word() -> Result<(), String> {
 pub fn open_powerpoint() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        return Command::new("cmd.exe")
-            .args(["/C", "start", "", "powerpnt.exe"])
+        return hidden_windows_command("cmd.exe")
+            .args(["/D", "/C", "start", "", "powerpnt.exe"])
             .spawn()
             .map(|_| ())
             .map_err(|error| format!("Unable to launch Microsoft PowerPoint: {error}"));

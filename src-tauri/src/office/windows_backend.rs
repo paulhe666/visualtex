@@ -5,6 +5,7 @@ use crate::office::state::OfficePaths;
 use crate::office::windows_pipe::{locate_sidecar, WindowsPipeClient};
 use serde_json::Value;
 use std::fs;
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
@@ -18,6 +19,13 @@ const OLE_CATALOG_KEY: &str =
     r"HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\VisualTeX";
 const WINDOWS_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_RUN_VALUE: &str = "VisualTeXOffice";
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn hidden_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
 
 pub struct WindowsOfficeBackend {
     paths: OfficePaths,
@@ -250,7 +258,7 @@ fn remove_ole_catalog() -> Result<(), String> {
     if !registry_key_exists(OLE_CATALOG_KEY) {
         return Ok(());
     }
-    let output = Command::new("reg.exe")
+    let output = hidden_command("reg.exe")
         .args(["delete", OLE_CATALOG_KEY, "/f"])
         .output()
         .map_err(|error| format!("Unable to remove the Windows Office trusted catalog: {error}"))?;
@@ -289,7 +297,7 @@ fn registry_delete_value(key: &str, name: &str) -> Result<(), String> {
     if !registry_value_exists(key, name) {
         return Ok(());
     }
-    let output = Command::new("reg.exe")
+    let output = hidden_command("reg.exe")
         .args(["delete", key, "/v", name, "/f"])
         .output()
         .map_err(|error| format!("Unable to update Windows startup state: {error}"))?;
@@ -304,7 +312,7 @@ fn registry_delete_value(key: &str, name: &str) -> Result<(), String> {
 }
 
 fn registry_add(key: &str, name: &str, value_type: &str, value: &str) -> Result<(), String> {
-    let output = Command::new("reg.exe")
+    let output = hidden_command("reg.exe")
         .args(["add", key, "/v", name, "/t", value_type, "/d", value, "/f"])
         .output()
         .map_err(|error| format!("Unable to update Windows Office registry state: {error}"))?;
@@ -346,7 +354,7 @@ fn windows_certificate_trusted(paths: &OfficePaths) -> bool {
     ) else {
         return false;
     };
-    Command::new("certutil.exe")
+    hidden_command("certutil.exe")
         .args(["-user", "-store", "Root", &thumbprint])
         .output()
         .map(|output| {
@@ -360,7 +368,7 @@ fn windows_certificate_trusted(paths: &OfficePaths) -> bool {
 }
 
 fn registry_string_value(key: &str, value: &str) -> Option<String> {
-    let output = Command::new("reg.exe")
+    let output = hidden_command("reg.exe")
         .args(["query", key, "/v", value])
         .output()
         .ok()?;
@@ -382,7 +390,7 @@ fn registry_string_value(key: &str, value: &str) -> Option<String> {
 }
 
 fn registry_key_exists(key: &str) -> bool {
-    Command::new("reg.exe")
+    hidden_command("reg.exe")
         .args(["query", key])
         .output()
         .map(|output| output.status.success())
@@ -390,7 +398,7 @@ fn registry_key_exists(key: &str) -> bool {
 }
 
 fn registry_value_exists(key: &str, value: &str) -> bool {
-    Command::new("reg.exe")
+    hidden_command("reg.exe")
         .args(["query", key, "/v", value])
         .output()
         .map(|output| output.status.success())
@@ -398,7 +406,7 @@ fn registry_value_exists(key: &str, value: &str) -> bool {
 }
 
 fn registry_dword_equals(key: &str, value: &str, expected: u32) -> bool {
-    let output = match Command::new("reg.exe")
+    let output = match hidden_command("reg.exe")
         .args(["query", key, "/v", value])
         .output()
     {
