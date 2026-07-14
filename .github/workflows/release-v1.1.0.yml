@@ -141,6 +141,10 @@ jobs:
       - name: Build desktop frontend
         run: npm run build
 
+      - name: Prepare macOS offline OCR resources
+        if: runner.os == 'macOS'
+        run: npm run prepare:ocr-offline
+
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 

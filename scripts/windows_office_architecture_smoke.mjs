@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 async function source(path) {
-  return readFile(path, "utf8");
+  return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
 }
 
 const solution = await source("src-windows/VisualTeX.WindowsOffice.sln");
