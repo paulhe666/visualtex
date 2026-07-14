@@ -141,13 +141,6 @@ jobs:
       - name: Build desktop frontend
         run: npm run build
 
-      - name: Prepare macOS offline OCR resources
-        if: runner.os == 'macOS'
-        run: npm run prepare:ocr-offline
-
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
       - name: Smoke-test OCR worker lifecycle
         run: python scripts/smoke_ocr_worker.py
 
@@ -213,6 +206,9 @@ jobs:
       - name: Build Linux packages
         if: runner.os == 'Linux'
         run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Run Rust tests after platform resources are prepared
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Verify macOS DMG and app bundle
         if: runner.os == 'macOS'
