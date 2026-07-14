@@ -5,54 +5,149 @@ import {
   Check,
   Code2,
   Download,
+  FileText,
   Keyboard,
   Menu,
   PanelLeft,
+  Power,
+  Presentation,
+  Puzzle,
   RefreshCw,
   ScanLine,
+  Settings2,
+  ToggleLeft,
+  Trash2,
   X,
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { VisualTeXLogo } from "./VisualTeXLogo";
 import type { Language } from "../stores/editorStore";
+import type { DesktopPlatform } from "../platform";
 
 interface Props {
   open: boolean;
   language: Language;
+  platform: DesktopPlatform;
   onFinish: () => void;
 }
 
-interface StepCopy {
+type StepId =
+  | "welcome"
+  | "library"
+  | "keyboard"
+  | "code-format"
+  | "ocr-setup"
+  | "paste-image"
+  | "mac-office-enable"
+  | "mac-office-manage"
+  | "windows-office-manage"
+  | "updates";
+
+interface TutorialStep {
+  id: StepId;
   title: string;
   description: string;
 }
 
-const copy: Record<Language, StepCopy[]> = {
-  cn: [
-    { title: "欢迎使用 VisualTeX", description: "用熟悉的方式输入公式，需要时随时查看源码。" },
-    { title: "从公式库开始", description: "选择结构或符号，它会直接插入当前光标。" },
-    { title: "保持双手在键盘上", description: "几个按键就能完成换行、跳转和删除。" },
-    { title: "切换 LaTeX 代码格式", description: "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。" },
-    { title: "第一次使用 OCR", description: "完整 macOS 包已内置 Python、PaddleOCR 与默认 M 模型；首次安装只在本机校验并解压，不需要联网。" },
-    { title: "之后直接粘贴图片", description: "环境准备好后，把光标放进公式框即可粘贴图片识别；高速 S 与高精度 L 可在设置中导入独立离线模型包。" },
-    { title: "随时检查更新", description: "打开左上角菜单，选择“检查更新”；也可以在设置中执行同一操作。" },
-  ],
-  en: [
-    { title: "Welcome to VisualTeX", description: "Write formulas naturally and inspect the source whenever you need it." },
-    { title: "Start from the formula library", description: "Choose a structure or symbol to insert it at the cursor." },
-    { title: "Keep your hands on the keyboard", description: "A few keys cover line creation, navigation, and deletion." },
-    { title: "Switch the LaTeX code format", description: "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately." },
-    { title: "First-time OCR setup", description: "The complete macOS package includes Python, PaddleOCR, and the default M model. First-time setup only verifies and extracts local archives; no network is required." },
-    { title: "Paste images directly afterward", description: "Once ready, paste an image into a formula field. Optional offline S and L model packs can be imported from Settings." },
-    { title: "Check for updates anytime", description: "Open the top-left menu and choose “Check for updates”. The same action is also available in Settings." },
-  ],
-};
+export function tutorialSteps(language: Language, platform: DesktopPlatform): TutorialStep[] {
+  const isEn = language === "en";
+  const steps: TutorialStep[] = [
+    {
+      id: "welcome",
+      title: isEn ? "Welcome to VisualTeX" : "欢迎使用 VisualTeX",
+      description: isEn
+        ? "Write formulas naturally and inspect the source whenever you need it."
+        : "用熟悉的方式输入公式，需要时随时查看源码。",
+    },
+    {
+      id: "library",
+      title: isEn ? "Start from the formula library" : "从公式库开始",
+      description: isEn
+        ? "Choose a structure or symbol to insert it at the cursor."
+        : "选择结构或符号，它会直接插入当前光标。",
+    },
+    {
+      id: "keyboard",
+      title: isEn ? "Keep your hands on the keyboard" : "保持双手在键盘上",
+      description: isEn
+        ? "A few keys cover line creation, navigation, and deletion."
+        : "几个按键就能完成换行、跳转和删除。",
+    },
+    {
+      id: "code-format",
+      title: isEn ? "Switch the LaTeX code format" : "切换 LaTeX 代码格式",
+      description: isEn
+        ? "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately."
+        : "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。",
+    },
+    {
+      id: "ocr-setup",
+      title: isEn ? "First-time OCR setup" : "第一次使用 OCR",
+      description:
+        platform === "macos"
+          ? isEn
+            ? "The complete macOS package includes Python, PaddleOCR, and the default M model. Setup verifies and extracts the local archives."
+            : "完整 macOS 包已内置 Python、PaddleOCR 与默认 M 模型；首次安装只在本机校验并解压。"
+          : platform === "windows"
+            ? isEn
+              ? "The Windows installer checks for a compatible 64-bit Python 3.9–3.13 runtime. OCR setup is available after that prerequisite is present."
+              : "Windows 安装程序会检测兼容的 64 位 Python 3.9–3.13；具备该环境后即可安装 OCR。"
+            : isEn
+              ? "Open Formula image OCR from the app menu and follow the local runtime setup."
+              : "从应用菜单打开“图片公式识别”，并按提示准备本地运行环境。",
+    },
+    {
+      id: "paste-image",
+      title: isEn ? "Paste images directly afterward" : "之后直接粘贴图片",
+      description: isEn
+        ? "Once OCR is ready, paste an image into a formula field and the result returns to the saved cursor."
+        : "OCR 准备好后，把光标放进公式框即可粘贴图片识别，结果会插回原光标位置。",
+    },
+  ];
 
-export function OnboardingTour({ open, language, onFinish }: Props) {
+  if (platform === "macos") {
+    steps.push(
+      {
+        id: "mac-office-enable",
+        title: isEn ? "Enable VisualTeX in Office" : "在 Office 中添加 VisualTeX",
+        description: isEn
+          ? "In Word or PowerPoint, open Home → Add-ins → My Add-ins or Developer Add-ins, then choose VisualTeX. Repeat this after a restart if Office hides the sideloaded tab."
+          : "在 Word 或 PowerPoint 中打开“开始 → 加载项 → 我的加载项/开发人员加载项”，再选择 VisualTeX。若重启后标签页消失，可按同一路径再次添加。",
+      },
+      {
+        id: "mac-office-manage",
+        title: isEn ? "Manage the macOS integration" : "管理或卸载 macOS 集成",
+        description: isEn
+          ? "Open Settings → macOS Office integration. Disable startup without removing the add-in, stop the current companion, or choose Uninstall Office integration to remove it."
+          : "打开“设置 → macOS Office 集成”。可单独关闭开机启动、停止当前伴侣服务，或点击“卸载 Office 集成”完整移除。",
+      },
+    );
+  } else if (platform === "windows") {
+    steps.push({
+      id: "windows-office-manage",
+      title: isEn ? "Manage the Windows OLE service" : "管理 Windows OLE 服务",
+      description: isEn
+        ? "When OLE is selected in the installer, setup completes the certificate, catalog, Ribbon cache, and background registration automatically. In Settings → Windows Office integration, stop the current companion, disable startup, or remove the OLE manifest."
+        : "安装程序勾选 OLE 后，会自动完成证书、可信目录、Ribbon 缓存和后台注册，不需要额外配置。可在“设置 → Windows Office 集成”中停止当前伴侣服务、关闭开机启动，或移除 OLE manifest。",
+    });
+  }
+
+  steps.push({
+    id: "updates",
+    title: isEn ? "Check for updates anytime" : "随时检查更新",
+    description: isEn
+      ? "Open the top-left menu and choose Check for updates. The same action is also available in Settings."
+      : "打开左上角菜单，选择“检查更新”；也可以在设置中执行同一操作。",
+  });
+  return steps;
+}
+
+export function OnboardingTour({ open, language, platform, onFinish }: Props) {
   const [step, setStep] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
   const isEn = language === "en";
-  const steps = copy[language];
+  const steps = tutorialSteps(language, platform);
+  const current = steps[Math.min(step, steps.length - 1)];
   const lastStep = step === steps.length - 1;
 
   useEffect(() => {
@@ -91,7 +186,19 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
     };
   }, [open, onFinish]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (step >= steps.length) setStep(Math.max(steps.length - 1, 0));
+  }, [step, steps.length]);
+
+  if (!open || !current) return null;
+
+  const pasteShortcut = platform === "windows" ? "Ctrl+V" : "⌘V";
+  const platformLabel =
+    platform === "windows"
+      ? isEn ? "Formula workspace for Windows" : "Windows 公式工作台"
+      : platform === "macos"
+        ? isEn ? "Formula workspace for macOS" : "macOS 公式工作台"
+        : isEn ? "Visual formula workspace" : "可视化公式工作台";
 
   return (
     <div className="onboarding-backdrop">
@@ -120,22 +227,22 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
         <div className="onboarding-content" aria-live="polite">
           <div className="onboarding-copy">
             <span>{String(step + 1).padStart(2, "0")}</span>
-            <h2 id="onboarding-title">{steps[step].title}</h2>
-            <p>{steps[step].description}</p>
+            <h2 id="onboarding-title">{current.title}</h2>
+            <p>{current.description}</p>
           </div>
 
-          <div className={`onboarding-stage step-${step}`}>
-            {step === 0 && (
+          <div className={`onboarding-stage step-${current.id}`}>
+            {current.id === "welcome" && (
               <div className="onboarding-welcome-mark">
                 <span><VisualTeXLogo className="onboarding-welcome-logo" /></span>
                 <div>
                   <strong>VisualTeX</strong>
-                  <small>{isEn ? "Formula workspace for macOS" : "macOS 公式工作台"}</small>
+                  <small>{platformLabel}</small>
                 </div>
               </div>
             )}
 
-            {step === 1 && (
+            {current.id === "library" && (
               <div className="onboarding-library-demo">
                 <div className="onboarding-library-rail">
                   <PanelLeft size={15} />
@@ -149,7 +256,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 2 && (
+            {current.id === "keyboard" && (
               <div className="onboarding-editor-demo">
                 <div className="onboarding-formula-line">
                   <MathPreview latex="\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}" />
@@ -162,7 +269,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 3 && (
+            {current.id === "code-format" && (
               <div className="onboarding-code-format-demo">
                 <div className="onboarding-code-format-toolbar">
                   <Code2 size={16} />
@@ -185,7 +292,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 4 && (
+            {current.id === "ocr-setup" && (
               <div className="onboarding-ocr-setup-demo">
                 <span>
                   <ScanLine size={20} />
@@ -195,19 +302,19 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
                 <i><ArrowRight size={15} /></i>
                 <span>
                   <Download size={20} />
-                  <strong>{isEn ? "Install runtime" : "安装 OCR 环境"}</strong>
-                  <small>{isEn ? "One-time setup" : "只需安装一次"}</small>
+                  <strong>{isEn ? "Prepare runtime" : "准备 OCR 环境"}</strong>
+                  <small>{platform === "windows" ? "Python 3.9–3.13 x64" : isEn ? "One-time setup" : "只需安装一次"}</small>
                 </span>
                 <i><ArrowRight size={15} /></i>
                 <span>
-                  <Download size={20} />
-                  <strong>{isEn ? "Download model" : "首次下载模型"}</strong>
-                  <small>{isEn ? "On first recognition" : "第一次识别时进行"}</small>
+                  <Check size={20} />
+                  <strong>{isEn ? "Verify locally" : "完成本地校验"}</strong>
+                  <small>{isEn ? "Ready for recognition" : "随后即可识别"}</small>
                 </span>
               </div>
             )}
 
-            {step === 5 && (
+            {current.id === "paste-image" && (
               <div className="onboarding-paste-demo">
                 <div className="onboarding-paste-field">
                   <span className="onboarding-paste-caret" />
@@ -216,7 +323,7 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
                 <span className="onboarding-paste-shortcut">
                   <ScanLine size={20} />
                   <strong>{isEn ? "Paste formula image" : "粘贴公式图片"}</strong>
-                  <kbd>⌘V</kbd>
+                  <kbd>{pasteShortcut}</kbd>
                 </span>
                 <i><ArrowRight size={15} /></i>
                 <span className="onboarding-paste-result">
@@ -227,7 +334,60 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {step === 6 && (
+            {current.id === "mac-office-enable" && (
+              <div className="onboarding-workflow-demo onboarding-office-demo">
+                <span>
+                  <FileText size={20} />
+                  <Presentation size={20} />
+                  <strong>Word / PowerPoint</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span>
+                  <Puzzle size={22} />
+                  <strong>{isEn ? "Home → Add-ins" : "开始 → 加载项"}</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span className="is-selected">
+                  <Check size={22} />
+                  <strong>VisualTeX</strong>
+                </span>
+              </div>
+            )}
+
+            {current.id === "mac-office-manage" && (
+              <div className="onboarding-workflow-demo onboarding-office-demo">
+                <span>
+                  <Settings2 size={22} />
+                  <strong>{isEn ? "Settings" : "设置"}</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span>
+                  <ToggleLeft size={22} />
+                  <strong>{isEn ? "Disable startup" : "关闭开机启动"}</strong>
+                </span>
+                <i><ArrowRight size={15} /></i>
+                <span className="is-danger">
+                  <Trash2 size={22} />
+                  <strong>{isEn ? "Uninstall integration" : "卸载 Office 集成"}</strong>
+                </span>
+              </div>
+            )}
+
+            {current.id === "windows-office-manage" && (
+              <div className="onboarding-windows-office-demo">
+                <span>
+                  <Settings2 size={21} />
+                  <strong>{isEn ? "Windows Office integration" : "Windows Office 集成"}</strong>
+                </span>
+                <div>
+                  <span><Power size={19} /><strong>{isEn ? "Stop companion now" : "停止当前伴侣服务"}</strong></span>
+                  <span><ToggleLeft size={19} /><strong>{isEn ? "Disable startup" : "关闭开机启动"}</strong></span>
+                  <span><Trash2 size={19} /><strong>{isEn ? "Remove OLE manifest" : "移除 OLE manifest"}</strong></span>
+                </div>
+              </div>
+            )}
+
+            {current.id === "updates" && (
               <div className="onboarding-update-demo">
                 <span>
                   <Menu size={20} />
@@ -253,8 +413,8 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
             {isEn ? "Skip" : "跳过"}
           </button>
           <div className="onboarding-progress" aria-label={isEn ? "Tutorial progress" : "教程进度"}>
-            {steps.map((_, index) => (
-              <span key={index} className={index === step ? "is-active" : index < step ? "is-complete" : ""} />
+            {steps.map((item, index) => (
+              <span key={item.id} className={index === step ? "is-active" : index < step ? "is-complete" : ""} />
             ))}
           </div>
           <div className="onboarding-actions">

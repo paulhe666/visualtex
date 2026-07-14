@@ -39,6 +39,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
+import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
@@ -89,6 +90,11 @@ import {
   openReleasePage,
   type UpdateCheckResult,
 } from "./update/updateService";
+import {
+  detectDesktopPlatform,
+  shouldOpenOnboardingInitially,
+  shouldShowMacOfficeFirstRun,
+} from "./platform";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -102,6 +108,8 @@ interface InlineOcrState {
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
+const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.first-run.v1.completed";
+const DESKTOP_PLATFORM = detectDesktopPlatform();
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -114,8 +122,22 @@ function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
-  const [onboardingOpen, setOnboardingOpen] = useState(
-    () => window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true",
+  const [macOfficeFirstRunOpen, setMacOfficeFirstRunOpen] = useState(() =>
+    shouldShowMacOfficeFirstRun(
+      DESKTOP_PLATFORM,
+      isTauriEnvironment(),
+      window.localStorage.getItem(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+    ),
+  );
+  const [onboardingOpen, setOnboardingOpen] = useState(() =>
+    shouldOpenOnboardingInitially(
+      window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === "true",
+      shouldShowMacOfficeFirstRun(
+        DESKTOP_PLATFORM,
+        isTauriEnvironment(),
+        window.localStorage.getItem(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+      ),
+    ),
   );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -647,6 +669,19 @@ function App() {
     action();
   };
 
+  const finishMacOfficeFirstRun = useCallback((installed: boolean) => {
+    window.localStorage.setItem(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
+    setMacOfficeFirstRunOpen(false);
+    if (window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true") {
+      setOnboardingOpen(true);
+    }
+    setToast(
+      installed
+        ? isEn ? "Office integration installed" : "Office 集成已安装"
+        : isEn ? "You can install Office integration later in Settings" : "之后可在设置中安装 Office 集成",
+    );
+  }, [isEn]);
+
   const finishOnboarding = useCallback(() => {
     window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
     setOnboardingOpen(false);
@@ -689,6 +724,7 @@ function App() {
   useEffect(() => {
     if (
       !checkUpdatesOnStartup ||
+      macOfficeFirstRunOpen ||
       onboardingOpen ||
       automaticUpdateCheckRef.current
     ) {
@@ -714,7 +750,7 @@ function App() {
       window.clearTimeout(timer);
       window.removeEventListener("online", runWhenOnline);
     };
-  }, [checkUpdatesOnStartup, onboardingOpen, runUpdateCheck]);
+  }, [checkUpdatesOnStartup, macOfficeFirstRunOpen, onboardingOpen, runUpdateCheck]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -724,7 +760,7 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) {
+      if (settingsOpen || ocrOpen || historyOpen || macOfficeFirstRunOpen || onboardingOpen || updateOpen) {
         return;
       }
 
@@ -773,7 +809,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, macOfficeFirstRunOpen, onboardingOpen, updateOpen]);
 
   return (
     <div className="app-shell">
@@ -1231,9 +1267,15 @@ function App() {
         onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
       />
+      <MacOfficeFirstRunPrompt
+        open={macOfficeFirstRunOpen}
+        language={language}
+        onComplete={finishMacOfficeFirstRun}
+      />
       <OnboardingTour
         open={onboardingOpen}
         language={language}
+        platform={DESKTOP_PLATFORM}
         onFinish={finishOnboarding}
       />
       <UpdateDialog

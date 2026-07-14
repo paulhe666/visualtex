@@ -279,6 +279,27 @@ pub fn get_office_platform_status(
 }
 
 #[tauri::command]
+pub fn set_office_background_start(enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if enabled {
+            background::install_launch_agent().map(|_| ())
+        } else {
+            background::uninstall_launch_agent().map(|_| ())
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::office::windows_backend::set_background_start_enabled(enabled)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = enabled;
+        Err("Office background startup is supported only on macOS and Windows".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn set_office_integration_mode(
     mode: OfficeIntegrationMode,
     state: tauri::State<'_, OfficeCompanionState>,

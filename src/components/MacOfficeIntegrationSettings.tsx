@@ -9,6 +9,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Square,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -51,21 +53,11 @@ interface OfficeBackgroundStatus {
 interface OfficeIntegrationStatus {
   word: OfficeHostInstallStatus;
   powerpoint: OfficeHostInstallStatus;
+  expectedManifestVersion: string;
   certificate: CertificateInstallStatus;
   background: OfficeBackgroundStatus;
   companion: OfficeCompanionStatus;
   officeUiVersion: string;
-}
-
-function expectedManifestVersion(appVersion: string) {
-  const parts = appVersion
-    .split(".")
-    .map((part) => part.match(/^\d+/)?.[0])
-    .filter((part): part is string => Boolean(part))
-    .slice(0, 4);
-  while (parts.length < 4) parts.push("0");
-  parts[3] = "2";
-  return parts.join(".");
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -151,11 +143,11 @@ export function MacOfficeIntegrationSettings() {
   }, [refresh]);
 
   const run = useCallback(
-    async (name: string, command: string) => {
+    async (name: string, command: string, args?: Record<string, unknown>) => {
       setBusy(name);
       setMessage("");
       try {
-        await invoke(command);
+        await invoke(command, args);
         if (command !== "open_word" && command !== "open_powerpoint") {
           await refresh();
         }
@@ -180,8 +172,8 @@ export function MacOfficeIntegrationSettings() {
           <strong>{isEn ? "macOS Office integration" : "macOS Office 集成"}</strong>
           <p>
             {isEn
-              ? "Installs a persistent standalone VisualTeX ribbon tab in Word and PowerPoint, backed by the macOS Office.js, AppleScript, login Keychain, and LaunchAgent integration."
-              : "在 Word 与 PowerPoint 中安装可长期保留的独立 VisualTeX 功能区标签页，并由 macOS Office.js、AppleScript、登录 Keychain 与 LaunchAgent 提供支持。"}
+              ? "Installs the local Word and PowerPoint add-in resources, HTTPS certificate, and background companion. Activate VisualTeX from Office Add-ins when needed."
+              : "安装 Word 与 PowerPoint 本地加载项资源、HTTPS 证书和后台伴侣服务；需要时可从 Office 的“加载项”中启用 VisualTeX。"}
           </p>
         </div>
         <button
@@ -206,13 +198,13 @@ export function MacOfficeIntegrationSettings() {
             name="Microsoft Word"
             host={status.word}
             isEn={isEn}
-            expectedVersion={expectedManifestVersion(status.officeUiVersion)}
+            expectedVersion={status.expectedManifestVersion}
           />
           <HostCard
             name="Microsoft PowerPoint"
             host={status.powerpoint}
             isEn={isEn}
-            expectedVersion={expectedManifestVersion(status.officeUiVersion)}
+            expectedVersion={status.expectedManifestVersion}
           />
 
           <article className="office-status-card">
@@ -285,6 +277,21 @@ export function MacOfficeIntegrationSettings() {
         </button>
         <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void run("repair", "repair_office_integration")}>
           <Wrench size={15} />{isEn ? "Repair" : "修复 Office 集成"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy !== null}
+          onClick={() => void run(
+            "background-start",
+            "set_office_background_start",
+            { enabled: !status?.background.installed },
+          )}
+        >
+          {status?.background.installed ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+          {status?.background.installed
+            ? isEn ? "Disable startup" : "关闭开机启动"
+            : isEn ? "Enable startup" : "启用开机启动"}
         </button>
         <button type="button" className="secondary-button danger-subtle" disabled={busy !== null} onClick={() => void run("uninstall", "uninstall_office_integration")}>
           <Trash2 size={15} />{isEn ? "Uninstall" : "卸载 Office 集成"}

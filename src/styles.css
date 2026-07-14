@@ -3220,7 +3220,150 @@ button:disabled {
   }
 }
 
-/* First-run tour ------------------------------------------------------------ */
+/* First-run Office setup and tour ------------------------------------------ */
+
+.office-first-run-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 230;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 14, 20, 0.62);
+  backdrop-filter: blur(9px);
+  animation: fade-in 160ms ease-out;
+}
+
+.office-first-run-dialog {
+  width: min(620px, calc(100vw - 48px));
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: onboarding-in 190ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.office-first-run-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+.office-first-run-dialog > header > span {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.office-first-run-dialog > header div {
+  min-width: 0;
+}
+
+.office-first-run-dialog > header strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.office-first-run-dialog > header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.office-first-run-hosts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.office-first-run-hosts article {
+  min-width: 0;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+}
+
+.office-first-run-hosts article.is-detected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+  color: var(--accent);
+}
+
+.office-first-run-hosts article div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.office-first-run-hosts strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-first-run-hosts small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.office-first-run-note {
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+}
+
+.office-first-run-note p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.office-first-run-note p + p {
+  margin-top: 8px;
+}
+
+.office-first-run-note .is-warning {
+  color: var(--warning-text, #a85d00);
+}
+
+.office-first-run-note .is-success {
+  color: var(--success, #238636);
+}
+
+.office-first-run-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.office-first-run-dialog > footer .primary-button,
+.office-first-run-dialog > footer .secondary-button {
+  margin: 0;
+}
 
 .onboarding-backdrop {
   position: fixed;
@@ -3503,6 +3646,67 @@ button:disabled {
   color: var(--text-faint);
 }
 
+.onboarding-workflow-demo > span.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.onboarding-workflow-demo > span.is-danger {
+  color: var(--danger, #c43d3d);
+}
+
+.onboarding-windows-office-demo {
+  width: calc(100% - 36px);
+  display: grid;
+  gap: 10px;
+}
+
+.onboarding-windows-office-demo > span {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.onboarding-windows-office-demo > span strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.onboarding-windows-office-demo > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.onboarding-windows-office-demo > div span {
+  min-width: 0;
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--accent);
+  text-align: center;
+}
+
+.onboarding-windows-office-demo > div strong {
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .onboarding-footer {
   position: relative;
   border-top: 1px solid var(--border);
@@ -3572,6 +3776,17 @@ button:disabled {
 }
 
 @media (max-width: 720px), (max-height: 560px) {
+  .office-first-run-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    padding: 18px;
+  }
+
+  .office-first-run-hosts {
+    grid-template-columns: 1fr;
+  }
+
   .onboarding-dialog {
     height: calc(100vh - 24px);
     min-height: 0;

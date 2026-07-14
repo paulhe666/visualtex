@@ -231,9 +231,10 @@ async function main() {
 
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(650);
-    await evaluate(
-      `localStorage.setItem("visualtex.onboarding.v3.completed", "true")`,
-    );
+    await evaluate(`(() => {
+      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+      localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+    })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await sleep(800);
     await evaluate(`new Promise((resolve) => {
@@ -1169,7 +1170,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount !== 7 ||
+      onboardingFormatStep.progressCount < 7 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")

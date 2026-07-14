@@ -1111,6 +1111,7 @@ pub fn run() {
             office::lifecycle::stop_office_companion,
             office::lifecycle::get_office_integration_status,
             office::lifecycle::get_office_platform_status,
+            office::lifecycle::set_office_background_start,
             office::lifecycle::set_office_integration_mode,
             office::lifecycle::install_windows_ole_integration,
             office::lifecycle::uninstall_windows_ole_integration,

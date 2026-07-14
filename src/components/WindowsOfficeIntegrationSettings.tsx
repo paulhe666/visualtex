@@ -8,6 +8,8 @@ import {
   RefreshCw,
   ShieldAlert,
   Square,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -213,6 +215,21 @@ export function WindowsOfficeIntegrationSettings() {
         >
           <Wrench size={15} />
           {isEn ? "Repair OLE integration" : "修复 OLE 集成"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy !== null}
+          onClick={() => void run(
+            "background-start",
+            "set_office_background_start",
+            { enabled: !status?.backgroundStartEnabled },
+          )}
+        >
+          {status?.backgroundStartEnabled ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+          {status?.backgroundStartEnabled
+            ? isEn ? "Disable startup" : "关闭开机启动"
+            : isEn ? "Enable startup" : "启用开机启动"}
         </button>
         <button
           type="button"

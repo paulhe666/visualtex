@@ -1,6 +1,7 @@
 use crate::office::background::OfficeBackgroundStatus;
 use crate::office::manifest::{
-    render_manifest, ManifestHost, LEGACY_POWERPOINT_MANIFEST_FILE, LEGACY_WORD_MANIFEST_FILE,
+    manifest_version, render_manifest, ManifestHost, LEGACY_POWERPOINT_MANIFEST_FILE,
+    LEGACY_WORD_MANIFEST_FILE,
 };
 use crate::office::state::{OfficeCompanionStatus, OfficePaths, OFFICE_UI_VERSION};
 use serde::Serialize;
@@ -36,6 +37,7 @@ pub struct CertificateInstallStatus {
 pub struct OfficeIntegrationStatus {
     pub word: OfficeHostInstallStatus,
     pub powerpoint: OfficeHostInstallStatus,
+    pub expected_manifest_version: String,
     pub certificate: CertificateInstallStatus,
     pub background: OfficeBackgroundStatus,
     pub companion: OfficeCompanionStatus,
@@ -361,6 +363,7 @@ pub fn integration_status(
     Ok(OfficeIntegrationStatus {
         word: host_status(&home, ManifestHost::Word),
         powerpoint: host_status(&home, ManifestHost::PowerPoint),
+        expected_manifest_version: manifest_version(),
         certificate: CertificateInstallStatus {
             certificate_exists: paths.certificate.is_file(),
             private_key_exists: paths.private_key.is_file(),

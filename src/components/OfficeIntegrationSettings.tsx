@@ -1,15 +1,9 @@
 import { MacOfficeIntegrationSettings } from "./MacOfficeIntegrationSettings";
 import { WindowsOfficeIntegrationSettings } from "./WindowsOfficeIntegrationSettings";
-
-function isWindowsOfficePlatform() {
-  if (typeof navigator === "undefined") return false;
-  const platform = navigator.platform || "";
-  const userAgent = navigator.userAgent || "";
-  return /Win/i.test(platform) || /Windows/i.test(userAgent);
-}
+import { detectDesktopPlatform } from "../platform";
 
 export function OfficeIntegrationSettings() {
-  return isWindowsOfficePlatform() ? (
+  return detectDesktopPlatform() === "windows" ? (
     <WindowsOfficeIntegrationSettings />
   ) : (
     <MacOfficeIntegrationSettings />

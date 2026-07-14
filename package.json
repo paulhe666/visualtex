@@ -41,6 +41,7 @@
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
     "verify:office-manifest": "npm run prepare:office:macos && npm run prepare:office:windows-ole && node scripts/verify_office_manifests.mjs",
     "test:office-platform-boundaries": "node scripts/office_platform_boundary_smoke.mjs",
+    "test:platform-onboarding": "tsx scripts/platform_onboarding_smoke.mjs",
     "test:windows-office-architecture": "node scripts/windows_office_architecture_smoke.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
   },

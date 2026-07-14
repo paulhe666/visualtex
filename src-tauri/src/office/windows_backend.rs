@@ -16,6 +16,8 @@ const POWERPOINT_VSTO_KEY: &str =
     r"HKCU\Software\Microsoft\Office\PowerPoint\Addins\VisualTeX.PowerPointVsto";
 const OLE_CATALOG_KEY: &str =
     r"HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\VisualTeX";
+const WINDOWS_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const WINDOWS_RUN_VALUE: &str = "VisualTeXOffice";
 
 pub struct WindowsOfficeBackend {
     paths: OfficePaths,
@@ -73,10 +75,7 @@ impl WindowsOfficeBackend {
                 r"HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\VisualTeX",
             ),
             current_user_certificate_trusted: windows_certificate_trusted(&self.paths),
-            background_start_enabled: registry_value_exists(
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "VisualTeXOffice",
-            ),
+            background_start_enabled: registry_value_exists(WINDOWS_RUN_KEY, WINDOWS_RUN_VALUE),
             last_error: self.pipe_error.clone().or_else(|| {
                 if mode == OfficeIntegrationMode::Vsto && !(vsto_word && vsto_powerpoint) {
                     Some("VSTO mode is selected but one or both VSTO add-ins are unavailable".to_string())
@@ -123,6 +122,25 @@ impl WindowsOfficeBackend {
     pub fn shutdown(&self) -> Result<(), String> {
         self.pipe.as_ref().map(WindowsPipeClient::shutdown).unwrap_or(Ok(()))
     }
+}
+
+pub fn set_background_start_enabled(enabled: bool) -> Result<(), String> {
+    if !enabled {
+        return registry_delete_value(WINDOWS_RUN_KEY, WINDOWS_RUN_VALUE);
+    }
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Unable to resolve the VisualTeX executable: {error}"))?;
+    let executable = executable
+        .to_str()
+        .ok_or_else(|| "The VisualTeX executable path is not valid UTF-8".to_string())?;
+    if executable.contains('"') {
+        return Err("The VisualTeX executable path contains an unsupported quote".to_string());
+    }
+    registry_set_string(
+        WINDOWS_RUN_KEY,
+        WINDOWS_RUN_VALUE,
+        &format!("\"{executable}\" --office-background"),
+    )
 }
 
 fn mode_path(paths: &OfficePaths) -> PathBuf {
@@ -265,6 +283,24 @@ fn registry_set_string(key: &str, name: &str, value: &str) -> Result<(), String>
 
 fn registry_set_dword(key: &str, name: &str, value: u32) -> Result<(), String> {
     registry_add(key, name, "REG_DWORD", &value.to_string())
+}
+
+fn registry_delete_value(key: &str, name: &str) -> Result<(), String> {
+    if !registry_value_exists(key, name) {
+        return Ok(());
+    }
+    let output = Command::new("reg.exe")
+        .args(["delete", key, "/v", name, "/f"])
+        .output()
+        .map_err(|error| format!("Unable to update Windows startup state: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unable to update Windows startup state: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
 }
 
 fn registry_add(key: &str, name: &str, value_type: &str, value: &str) -> Result<(), String> {

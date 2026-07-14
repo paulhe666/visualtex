@@ -370,8 +370,10 @@ pub fn pause_launch_agent_for_quit() -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        let home = user_home()?;
-        remove_background_marker(&home)?;
+        // Stop the current login-session service so an explicit Quit remains a
+        // real quit, but keep the marker and plist. launchd will load the same
+        // enabled startup item again on the user's next login.
+        let _home = user_home()?;
         if launch_agent_loaded()? && launch_agent_pid()? != Some(std::process::id()) {
             bootout_launch_agent()?;
         }
@@ -514,6 +516,16 @@ mod tests {
 
         assert!(!marker.exists());
         assert!(plist.exists());
+    }
+
+    #[test]
+    fn startup_marker_is_persistent_configuration_not_a_process_lifetime_file() {
+        let source = include_str!("background.rs");
+        let pause_start = source.find("pub fn pause_launch_agent_for_quit").unwrap();
+        let resume_start = source.find("pub fn resume_installed_launch_agent").unwrap();
+        let pause = &source[pause_start..resume_start];
+        assert!(!pause.contains("remove_background_marker"));
+        assert!(pause.contains("bootout_launch_agent"));
     }
 
     #[test]
