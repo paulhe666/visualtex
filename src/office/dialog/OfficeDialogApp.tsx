@@ -30,10 +30,10 @@ import type {
 } from "../../editor/MathEditor";
 import { latexToSvg } from "../../export/latexToSvg";
 import {
-  commitNativePowerPointSession,
-  commitNativePowerPointSessionKeepalive,
+  getOfficeSession,
   saveOfficeSessionKeepalive,
   type OfficeExportResult,
+  type OfficeHost,
 } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
@@ -71,6 +71,32 @@ const USE_NATIVE_POWERPOINT_COMMIT =
       'meta[name="visualtex-native-powerpoint-commit"]',
     )
     ?.content.toLowerCase() === "true";
+
+const OFFICE_COMMIT_RESULT_TIMEOUT_MS = 45_000;
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function waitForOfficeCommitResult(
+  sessionId: string,
+  host: OfficeHost,
+) {
+  const hostLabel = host === "word" ? "Word" : "PowerPoint";
+  const deadline = Date.now() + OFFICE_COMMIT_RESULT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const current = await getOfficeSession(sessionId);
+    if (current.status === "completed") return;
+    if (current.status === "failed") {
+      throw new Error(current.error || `${hostLabel} 公式写入失败。`);
+    }
+    if (current.status === "cancelled" || current.explicitCancel) {
+      throw new Error(`${hostLabel} 公式写入已取消。`);
+    }
+    await delay(100);
+  }
+  throw new Error(`等待 ${hostLabel} 确认写入超时，请重试。`);
+}
 
 function documentFingerprint(
   title: string,
@@ -341,7 +367,10 @@ export function OfficeDialogApp() {
       // Windows OLE inserts a PNG file. Keep rasterization off the critical
       // keystroke-save path, but persist the full export as soon as it is
       // ready so the title-bar close button has a committable final draft.
-      if (exportResult) {
+      if (
+        exportResult &&
+        !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+      ) {
         void generateExportResult()
           .then((completeExport) => {
             if (
@@ -438,12 +467,15 @@ export function OfficeDialogApp() {
     };
     const commitFinalDraft = () => {
       const cached = latestCompleteExportRef.current;
+      const nativePowerPoint =
+        session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT;
       if (
         finalizingRef.current ||
         !autoCommitOnClose ||
         !latex.trim() ||
-        cached?.fingerprint !== currentFingerprint ||
-        !cached.exportResult.pngBase64
+        (!nativePowerPoint &&
+          (cached?.fingerprint !== currentFingerprint ||
+            !cached.exportResult.pngBase64))
       ) {
         persistFinalDraft();
         return;
@@ -451,19 +483,14 @@ export function OfficeDialogApp() {
       try {
         finalizingRef.current = true;
         const update = finalDraftUpdate("committing");
-        if (session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT) {
-          void commitNativePowerPointSessionKeepalive(sessionId, update).catch(
-            () => undefined,
-          );
-        } else {
-          // Marking the complete draft as committing in one keepalive PATCH
-          // prevents a delayed SVG-only autosave from overwriting its PNG.
-          // The parent Office bridge observes the state and performs the host
-          // insertion after the dialog has closed.
-          void saveOfficeSessionKeepalive(sessionId, update).catch(
-            () => undefined,
-          );
-        }
+        // The hidden Office command page owns every host mutation. The dialog
+        // only persists a complete committing Session, including for native
+        // PowerPoint. Directly mutating PowerPoint from this child window used
+        // to bypass the adapter's durable name/tag decoration and produced
+        // uneditable generic `Graphic N` shapes.
+        void saveOfficeSessionKeepalive(sessionId, update).catch(
+          () => undefined,
+        );
       } catch {
         // Closing a dialog is best-effort; the explicit insert button reports errors.
       }
@@ -717,7 +744,11 @@ export function OfficeDialogApp() {
     async (status: "editing" | "committing" | "cancelled") => {
       if (!session) throw new Error("Office Session 尚未加载。");
       const exportResult =
-        status === "cancelled" ? session.exportResult : await generateExportResult();
+        status === "cancelled"
+          ? session.exportResult
+          : session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT
+            ? generateSvgExportResult()
+            : await generateExportResult();
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
       }
@@ -751,12 +782,17 @@ export function OfficeDialogApp() {
       dirty,
       autoCommitOnClose,
       currentFingerprint,
+      generateSvgExportResult,
       generateExportResult,
       isEn,
     ],
   );
 
   const handleCommit = async () => {
+    // React state updates do not disable the button until the next render.
+    // Keep a synchronous guard as well so a rapid double-click cannot enqueue
+    // two commits for the same Office Session.
+    if (finalizingRef.current) return;
     historyManager.commitPendingTransaction();
     if (!latex.trim()) {
       setToast(isEn ? "Enter a formula before inserting" : "请输入公式后再插入");
@@ -766,12 +802,13 @@ export function OfficeDialogApp() {
     try {
       const next = await saveCurrentSession("committing");
 
-      if (next.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT) {
-        await commitNativePowerPointSession(next.id);
-        window.close();
-        return;
-      }
       messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
+      // The parent bridge owns both Word and PowerPoint mutations. Keep the
+      // action busy until the host confirms the durable final state; a failed
+      // PowerPoint decoration therefore leaves this editor open with a useful
+      // error instead of closing after creating an anonymous Graphic shape.
+      await waitForOfficeCommitResult(next.id, next.host);
+      window.close();
     } catch (error) {
       finalizingRef.current = false;
       const message =

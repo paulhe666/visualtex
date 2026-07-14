@@ -20,6 +20,22 @@ export interface OfficeExportResult {
   baseline?: number;
 }
 
+export interface NativePowerPointCommitSelection {
+  shapeName: string;
+  slideIndex: number;
+  slideId?: number;
+  presentationIdentity?: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface PreparedPowerPointCommit {
+  session: OfficeFormulaSession;
+  selection: NativePowerPointCommitSelection;
+}
+
 export interface OfficeFormulaSession {
   id: string;
   mode: OfficeSessionMode;
@@ -135,8 +151,15 @@ export function updateOfficeSession(
 }
 
 export function commitNativePowerPointSession(sessionId: string) {
-  return requestJson<OfficeFormulaSession>(
+  return requestJson<PreparedPowerPointCommit>(
     `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/commit`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function confirmNativePowerPointSession(sessionId: string) {
+  return requestJson<OfficeFormulaSession>(
+    `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/confirm`,
     { method: "POST", body: "{}" },
   );
 }

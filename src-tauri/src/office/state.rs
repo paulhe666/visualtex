@@ -1,10 +1,13 @@
 use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::platform::{self, OfficePlatformBackend};
-use crate::office::powerpoint_native::PowerPointInteractionBus;
+use crate::office::powerpoint_native::{
+    PowerPointInteractionBus, PowerPointNativeSelection,
+};
 use crate::office::sessions::SessionStore;
 use crate::OcrState;
 use axum_server::Handle;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -67,6 +70,11 @@ pub struct OfficeCompanionState {
     pub formula_cache: FormulaMetadataCache,
     pub platform_backend: Arc<dyn OfficePlatformBackend>,
     pub powerpoint_interactions: PowerPointInteractionBus,
+    /// Native PowerPoint insertion is prepared before the Office.js command
+    /// page writes durable tags and accessibility metadata. Keep the immutable
+    /// prepared selection by Session id so retries never paste a second image.
+    pub prepared_powerpoint_commits:
+        Arc<Mutex<HashMap<String, PowerPointNativeSelection>>>,
     pub ocr_available: bool,
 }
 
@@ -93,6 +101,7 @@ impl OfficeCompanionState {
             formula_cache,
             platform_backend,
             powerpoint_interactions: PowerPointInteractionBus::default(),
+            prepared_powerpoint_commits: Arc::new(Mutex::new(HashMap::new())),
             ocr_available,
         }
     }

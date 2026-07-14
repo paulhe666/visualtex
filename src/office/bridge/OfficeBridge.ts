@@ -6,7 +6,10 @@ import {
   type OfficeFormulaSession,
   type OfficeSessionMode,
 } from "../shared/sessionClient";
-import type { OfficeHostAdapter } from "../adapters/OfficeHostAdapter";
+import type {
+  OfficeHostAdapter,
+  OfficeInteractionTarget,
+} from "../adapters/OfficeHostAdapter";
 import { officeErrorMessage } from "../errors";
 import { DialogController } from "./DialogController";
 import type { VisualTeXDialogMessage } from "./bridgeMessages";
@@ -65,11 +68,20 @@ export class OfficeBridge {
     private readonly commitWithPlatform: OfficeSessionCommitter = defaultCommitter,
   ) {}
 
-  async run(mode: OfficeSessionMode, onCommandCompleted?: () => void) {
+  async run(
+    mode: OfficeSessionMode,
+    onCommandCompleted?: () => void,
+    interactionTarget?: OfficeInteractionTarget,
+    options: { silentFailure?: boolean } = {},
+  ) {
     if (this.commandRunning || this.dialog.isOpen) {
       this.adapter.showMessage("VisualTeX 编辑窗口已经打开。");
       onCommandCompleted?.();
       return;
+    }
+
+    if (interactionTarget) {
+      this.adapter.prepareInteractionTarget?.(interactionTarget);
     }
 
     this.commandRunning = true;
@@ -92,15 +104,23 @@ export class OfficeBridge {
         onMessage: (message) => this.handleDialogMessage(message),
         onClosed: () => this.handleDialogClosed(session.id),
       });
-      if (this.commandCompleted) this.startSessionWatch(session.id);
+      this.startSessionWatch(session.id);
+      // ExecuteFunction events are short-lived Office commands, not ownership
+      // tokens for the entire editor Session. PowerPoint for Mac serializes
+      // later ribbon commands while the event is pending, which made the edit
+      // button appear dead after one invocation. Release it once the dialog is
+      // open; the Session watcher and dialog handlers continue independently.
+      this.completeOfficeCommand();
       this.adapter.showMessage("VisualTeX 编辑器已打开。");
     } catch (error) {
-      showCommandError(
-        this.adapter,
-        officeErrorMessage(error, "无法启动 VisualTeX Office 编辑器。"),
-      );
+      if (!options.silentFailure) {
+        showCommandError(
+          this.adapter,
+          officeErrorMessage(error, "无法启动 VisualTeX Office 编辑器。"),
+        );
+      }
       this.activeSessionId = null;
-      this.finishCommand();
+      this.finishSession();
     } finally {
       this.commandRunning = false;
     }
@@ -117,8 +137,7 @@ export class OfficeBridge {
     }
   }
 
-  private finishCommand() {
-    this.stopSessionWatch();
+  private completeOfficeCommand() {
     const completed = this.commandCompleted;
     this.commandCompleted = null;
     try {
@@ -126,6 +145,11 @@ export class OfficeBridge {
     } catch {
       // Office can invalidate the command event after the host closes.
     }
+  }
+
+  private finishSession() {
+    this.stopSessionWatch();
+    this.completeOfficeCommand();
   }
 
   private stopSessionWatch() {
@@ -160,14 +184,14 @@ export class OfficeBridge {
       this.dialog.close();
       this.activeSessionId = null;
       this.adapter.showMessage("已取消，Office 文档未修改。");
-      this.finishCommand();
+      this.finishSession();
       return;
     }
 
     if (session.status === "completed") {
       this.dialog.close();
       this.activeSessionId = null;
-      this.finishCommand();
+      this.finishSession();
     }
   }
 
@@ -187,7 +211,7 @@ export class OfficeBridge {
       this.dialog.close();
       this.activeSessionId = null;
       this.adapter.showMessage("已取消，Office 文档未修改。");
-      this.finishCommand();
+      this.finishSession();
       return;
     }
 
@@ -268,7 +292,7 @@ export class OfficeBridge {
       );
     } finally {
       this.activeSessionId = null;
-      this.finishCommand();
+      this.finishSession();
     }
   }
 
@@ -280,7 +304,7 @@ export class OfficeBridge {
       if (session.status === "cancelled" || session.explicitCancel) {
         if (closeAfterSuccess) this.dialog.close();
         this.activeSessionId = null;
-        this.finishCommand();
+        this.finishSession();
         return;
       }
       if (!sessionHasFormula(session.lines)) {
@@ -288,7 +312,7 @@ export class OfficeBridge {
         this.adapter.showMessage("空公式没有插入 Office 文档。");
         if (closeAfterSuccess) this.dialog.close();
         this.activeSessionId = null;
-        this.finishCommand();
+        this.finishSession();
         return;
       }
       if (!session.exportResult) {
@@ -299,7 +323,7 @@ export class OfficeBridge {
         this.activeSessionId = null;
         if (closeAfterSuccess) this.dialog.close();
         this.adapter.showMessage("公式内容未变化，无需更新。");
-        this.finishCommand();
+        this.finishSession();
         return;
       }
 
@@ -311,7 +335,7 @@ export class OfficeBridge {
       this.adapter.showMessage(
         session.mode === "edit" ? "VisualTeX 公式已更新。" : "VisualTeX 公式已插入。",
       );
-      this.finishCommand();
+      this.finishSession();
     } catch (error) {
       const message = officeErrorMessage(error, "Office 公式写入失败。");
       await updateOfficeSession(sessionId, {

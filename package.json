@@ -32,6 +32,7 @@
     "test:svg-export": "node --experimental-strip-types scripts/svg_export_smoke.mjs",
     "test:office-metadata": "node --experimental-strip-types scripts/office_metadata_smoke.mjs",
     "test:word-adapter": "tsx scripts/word_adapter_smoke.mjs",
+    "test:word-baseline": "tsx scripts/word_baseline_regression.mjs",
     "test:powerpoint-adapter": "node scripts/run_powerpoint_adapter_smoke.mjs",
     "test:office-bridge": "tsx scripts/office_bridge_lifecycle_smoke.mjs",
     "test:office-ocr": "tsx scripts/office_ocr_transport_smoke.mjs",

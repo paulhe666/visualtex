@@ -8,6 +8,8 @@ use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
 use crate::OcrState;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
@@ -97,6 +99,23 @@ pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState
         root,
     };
     let install_token = ensure_office_install(&paths)?;
+    // An installed (or temporarily paused) LaunchAgent means the user
+    // explicitly installed Office integration. Reassert only VisualTeX's
+    // GUID-prefixed manifests when the companion starts so a removed host
+    // container is repaired before Office is opened again. Never clear or
+    // rewrite the rest of Office's Wef cache.
+    #[cfg(target_os = "macos")]
+    {
+        let background_status = background::status();
+        let integration_configured = background_status.installed
+            || (!background_status.plist_path.is_empty()
+                && Path::new(&background_status.plist_path).is_file());
+        if integration_configured {
+            if let Err(error) = installer::install_available_manifests() {
+                eprintln!("Unable to restore VisualTeX Office manifests: {error}");
+            }
+        }
+    }
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     let formula_cache = FormulaMetadataCache::new(&paths).map_err(|error| error.to_string())?;
     Ok(OfficeCompanionState::new(

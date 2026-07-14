@@ -11,6 +11,10 @@ export interface VisualTeXFormulaMetadata {
   displayMode: "inline" | "block";
   /** Whether a Word display formula participates in document equation numbering. */
   numbered?: boolean;
+  /** Natural MathJax export bounds used to preserve PowerPoint's visual scale
+   * when a formula is replaced with a longer or taller expression. */
+  renderWidthPx?: number;
+  renderHeightPx?: number;
   createdWithVersion: string;
   updatedWithVersion: string;
   createdAt: string;
@@ -24,6 +28,8 @@ export interface CreateFormulaMetadataInput {
   codeFormat: string;
   displayMode?: "inline" | "block";
   numbered?: boolean;
+  renderWidthPx?: number;
+  renderHeightPx?: number;
   appVersion?: string;
   original?: VisualTeXFormulaMetadata | null;
 }
@@ -98,6 +104,14 @@ export function isVisualTeXFormulaMetadata(
     typeof candidate.codeFormat === "string" &&
     (candidate.displayMode === "inline" || candidate.displayMode === "block") &&
     (candidate.numbered === undefined || typeof candidate.numbered === "boolean") &&
+    (candidate.renderWidthPx === undefined ||
+      (typeof candidate.renderWidthPx === "number" &&
+        Number.isFinite(candidate.renderWidthPx) &&
+        candidate.renderWidthPx > 0)) &&
+    (candidate.renderHeightPx === undefined ||
+      (typeof candidate.renderHeightPx === "number" &&
+        Number.isFinite(candidate.renderHeightPx) &&
+        candidate.renderHeightPx > 0)) &&
     typeof candidate.createdWithVersion === "string" &&
     typeof candidate.updatedWithVersion === "string" &&
     typeof candidate.createdAt === "string" &&
@@ -112,6 +126,8 @@ export function createFormulaMetadata({
   codeFormat,
   displayMode = "block",
   numbered = false,
+  renderWidthPx,
+  renderHeightPx,
   appVersion = CURRENT_VISUALTEX_VERSION,
   original = null,
 }: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
@@ -122,6 +138,14 @@ export function createFormulaMetadata({
     throw new Error("VisualTeX formula metadata requires at least one line.");
   }
   const now = new Date().toISOString();
+  const resolvedRenderWidth =
+    renderWidthPx && Number.isFinite(renderWidthPx) && renderWidthPx > 0
+      ? renderWidthPx
+      : original?.renderWidthPx;
+  const resolvedRenderHeight =
+    renderHeightPx && Number.isFinite(renderHeightPx) && renderHeightPx > 0
+      ? renderHeightPx
+      : original?.renderHeightPx;
   return {
     schema: VISUALTEX_FORMULA_SCHEMA,
     schemaVersion: VISUALTEX_FORMULA_SCHEMA_VERSION,
@@ -132,6 +156,8 @@ export function createFormulaMetadata({
     codeFormat,
     displayMode,
     numbered,
+    ...(resolvedRenderWidth ? { renderWidthPx: resolvedRenderWidth } : {}),
+    ...(resolvedRenderHeight ? { renderHeightPx: resolvedRenderHeight } : {}),
     createdWithVersion: original?.createdWithVersion ?? appVersion,
     updatedWithVersion: appVersion,
     createdAt: original?.createdAt ?? now,

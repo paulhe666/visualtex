@@ -230,6 +230,8 @@ mod tests {
             code_format: "raw".to_string(),
             display_mode: "inline".to_string(),
             numbered: false,
+            render_width_px: Some(80.0),
+            render_height_px: Some(20.0),
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

@@ -102,6 +102,10 @@ pub struct VisualTeXFormulaMetadata {
     pub display_mode: String,
     #[serde(default)]
     pub numbered: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_width_px: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_height_px: Option<f64>,
     pub created_with_version: String,
     pub updated_with_version: String,
     pub created_at: String,
@@ -807,6 +811,8 @@ mod tests {
             code_format: "raw".to_string(),
             display_mode: "block".to_string(),
             numbered: false,
+            render_width_px: None,
+            render_height_px: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

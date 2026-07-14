@@ -8,8 +8,13 @@ let dialogClosedHandler = null;
 let dialogCloseCount = 0;
 let applyCount = 0;
 let nativeCommitCount = 0;
+let nativeConfirmCount = 0;
+let nativeFinalizeCount = 0;
+const nativeWordBaselinePositions = [];
+const nativeWordBaselineMarkers = [];
 const appliedLatex = [];
 const statusMessages = [];
+const preparedInteractionTargets = [];
 
 function createSession() {
   return {
@@ -147,12 +152,54 @@ globalThis.fetch = async (input, init = {}) => {
     init.method === "POST"
   ) {
     nativeCommitCount += 1;
-    session.status = "completed";
-    session.updatedAt = Date.now();
+    return new Response(
+      JSON.stringify({
+        session,
+        selection: {
+          shapeName: `VisualTeX_${currentFormulaId}`,
+          slideIndex: 1,
+          slideId: 256,
+          presentationIdentity: "Deck.pptx",
+          left: 10,
+          top: 20,
+          width: 80,
+          height: 32,
+        },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+
+  if (
+    url === `/api/v1/powerpoint/sessions/${currentSessionId}/confirm` &&
+    init.method === "POST"
+  ) {
+    nativeConfirmCount += 1;
     return new Response(JSON.stringify(session), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  if (url === "/api/v1/word/inline-baseline" && init.method === "POST") {
+    const { position, formulaMarker } = JSON.parse(init.body);
+    nativeWordBaselinePositions.push(position);
+    nativeWordBaselineMarkers.push(formulaMarker);
+    return new Response(
+      JSON.stringify({
+        appliedPosition: position,
+        width: 80,
+        height: 32,
+        matchedShapeIndex: 1,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   throw new Error(`Unexpected request: ${url}`);
@@ -161,6 +208,9 @@ globalThis.fetch = async (input, init = {}) => {
 const adapter = {
   host: "powerpoint",
   requiredExportFormat: "png",
+  prepareInteractionTarget(target) {
+    preparedInteractionTargets.push(target);
+  },
   async readSelection() {
     return {
       sourceDocumentId: "presentation-1",
@@ -192,7 +242,11 @@ await bridge.run("create", () => {
   commandCompletedCount += 1;
 });
 
-assert.equal(commandCompletedCount, 0, "PowerPoint command must stay alive while the dialog is open");
+assert.equal(
+  commandCompletedCount,
+  1,
+  "PowerPoint ribbon command must complete immediately after the editor opens",
+);
 assert.ok(dialogMessageHandler, "dialog message handler must be registered");
 assert.ok(dialogClosedHandler, "dialog close handler must be registered");
 
@@ -202,7 +256,11 @@ await new Promise((resolve) => setTimeout(resolve, 500));
 assert.equal(applyCount, 1, "session polling must apply a committing formula exactly once");
 assert.equal(session.status, "completed");
 assert.equal(dialogCloseCount, 1, "successful insertion must close the editor dialog");
-assert.equal(commandCompletedCount, 1, "event.completed() must run only after insertion finishes");
+assert.equal(
+  commandCompletedCount,
+  1,
+  "formula completion must not complete the already released command twice",
+);
 assert.ok(statusMessages.includes("VisualTeX 公式已插入。"));
 
 await new Promise((resolve) => setTimeout(resolve, 250));
@@ -220,7 +278,11 @@ const closeBridge = new OfficeBridge(adapter);
 await closeBridge.run("create", () => {
   closeCompletedCount += 1;
 });
-assert.equal(closeCompletedCount, 0, "manual-close command must remain alive before the dialog closes");
+assert.equal(
+  closeCompletedCount,
+  1,
+  "manual-close Session must not keep the ribbon command pending",
+);
 
 setFormulaDraft("editing", String.raw`\sum_{i=1}^{n}x_i`, false);
 dialogClosedHandler?.({ error: 12006 });
@@ -240,7 +302,11 @@ assert.equal(
   "closing the dialog must wait for and auto-commit the persisted PNG draft",
 );
 assert.equal(session.status, "completed");
-assert.equal(closeCompletedCount, 1, "manual close must complete the Office command after auto-commit");
+assert.equal(
+  closeCompletedCount,
+  1,
+  "manual close must not complete the same Office command twice",
+);
 assert.deepEqual(appliedLatex, [String.raw`\alpha+x`, String.raw`\sum_{i=1}^{n}x_i`]);
 
 // Scenario 3: direct close must also apply a dirty edit Session, not only a
@@ -272,12 +338,106 @@ const nativeAdapter = {
       sessionSeed: { displayMode: "block" },
     };
   },
+  async finalizeNativePowerPointCommit(value, selection) {
+    nativeFinalizeCount += 1;
+    assert.equal(value.id, currentSessionId);
+    assert.equal(selection.shapeName, `VisualTeX_${currentFormulaId}`);
+  },
 };
 const nativeBridge = new MacOfficeBridge(nativeAdapter);
+const nativeDialogCloseBefore = dialogCloseCount;
 await nativeBridge.run("create", () => undefined);
 setFormulaDraft("committing", String.raw`\beta+y`);
 await new Promise((resolve) => setTimeout(resolve, 500));
-assert.equal(nativeCommitCount, 1, "native PowerPoint Session must commit natively");
-assert.equal(applyCount, 3, "native commit must not call the Office.js adapter");
+assert.equal(nativeCommitCount, 1, "native PowerPoint Session must prepare natively");
+assert.equal(
+  nativeFinalizeCount,
+  1,
+  "Office.js must persist and verify the prepared PowerPoint shape metadata",
+);
+assert.equal(nativeConfirmCount, 1, "prepared PowerPoint commit must be confirmed once");
+assert.equal(applyCount, 3, "native commit must not call the legacy adapter insertion path");
+assert.equal(
+  dialogCloseCount,
+  nativeDialogCloseBefore + 1,
+  "successful PowerPoint insertion must automatically close the editor window",
+);
 
-console.log("PowerPoint Office command lifecycle, commit polling and close auto-commit passed");
+// Scenario 5: the macOS Word ribbon command delegates to the Word adapter and
+// reports the number of refreshed equation labels.
+const wordNumberingAdapter = {
+  ...adapter,
+  host: "word",
+  async updateEquationNumbers() {
+    return 3;
+  },
+};
+const wordBridge = new MacOfficeBridge(wordNumberingAdapter);
+assert.equal(await wordBridge.updateEquationNumbers(), 3);
+assert.ok(statusMessages.includes("VisualTeX 已刷新 3 个公式编号。"));
+
+// Scenario 6: Mac Word commits reapply the same mathematical descent through
+// the native Font.Position API after the Office.js picture becomes durable.
+currentSessionId = crypto.randomUUID();
+currentFormulaId = crypto.randomUUID();
+currentLineId = crypto.randomUUID();
+session = createSession();
+let wordApplyCount = 0;
+const nativeWordAdapter = {
+  ...adapter,
+  host: "word",
+  async readSelection() {
+    return {
+      sourceDocumentId: "document-1",
+      sourceObjectId: null,
+      sessionSeed: { displayMode: "inline" },
+    };
+  },
+  async applySession() {
+    wordApplyCount += 1;
+  },
+  getNativeWordFormulaMarker(sessionId) {
+    assert.equal(sessionId, currentSessionId);
+    return "visualtex:v1:deflate:test-marker";
+  },
+};
+const nativeWordBridge = new MacOfficeBridge(nativeWordAdapter);
+await nativeWordBridge.run("create", () => undefined);
+assert.equal(session.host, "word");
+setFormulaDraft("committing", String.raw`\frac{x}{y}`);
+await new Promise((resolve) => setTimeout(resolve, 650));
+assert.equal(wordApplyCount, 1);
+assert.equal(
+  nativeWordBaselinePositions.at(-1),
+  -6,
+  "native Word fallback must lower by h * (H - B) / H",
+);
+assert.equal(
+  nativeWordBaselineMarkers.at(-1),
+  "visualtex:v1:deflate:test-marker",
+  "native Word fallback must target the durable formula marker, not the caret",
+);
+
+// Scenario 7: a double-click target must be prepared before selection is read,
+// so PowerPoint's native format UI cannot steal the mutable selection.
+currentSessionId = crypto.randomUUID();
+currentFormulaId = crypto.randomUUID();
+currentLineId = crypto.randomUUID();
+session = createSession();
+const interactionTarget = {
+  host: "powerpoint",
+  formulaId: currentFormulaId,
+  shapeName: `VisualTeX_${currentFormulaId}`,
+  slideIndex: 1,
+  left: 10,
+  top: 20,
+  width: 80,
+  height: 32,
+};
+const targetedBridge = new OfficeBridge(adapter);
+await targetedBridge.run("edit", () => undefined, interactionTarget);
+assert.deepEqual(preparedInteractionTargets.at(-1), interactionTarget);
+session.status = "cancelled";
+await new Promise((resolve) => setTimeout(resolve, 250));
+
+console.log("Office command lifecycle, native commit and Word numbering command passed");

@@ -11,7 +11,7 @@ interface OfficeCommandEvent {
 }
 
 function command(
-  run: (bridge: MacOfficeBridge) => Promise<void>,
+  run: (bridge: MacOfficeBridge) => Promise<unknown>,
   bridgeProvider: () => MacOfficeBridge,
 ) {
   return (event?: OfficeCommandEvent) => {
@@ -36,7 +36,8 @@ function setBridgeStatus(message: string) {
 void Office.onReady().then((info) => {
   try {
     const host = macOfficeHostFromReadyInfo(info.host);
-    const bridge = new MacOfficeBridge(createMacOfficeHostAdapter(host));
+    const adapter = createMacOfficeHostAdapter(host);
+    const bridge = new MacOfficeBridge(adapter);
     const getBridge = () => bridge;
 
     Office.actions.associate("VisualTeX.NewFormula", dialogCommand("create", getBridge));
@@ -48,6 +49,26 @@ void Office.onReady().then((info) => {
       "VisualTeX.OpenDesktopApp",
       command((value) => value.openDesktopApp(), getBridge),
     );
+    if (host === "word") {
+      Office.actions.associate(
+        "VisualTeX.UpdateEquationNumbers",
+        (event?: OfficeCommandEvent) => {
+          void bridge
+            .updateEquationNumbers()
+            .catch((error) => {
+              const message =
+                error instanceof Error ? error.message : "公式编号刷新失败。";
+              setBridgeStatus(message);
+              try {
+                window.alert(`VisualTeX\n\n${message}`);
+              } catch {
+                // Some Office command runtimes suppress modal alerts.
+              }
+            })
+            .finally(() => event?.completed?.());
+        },
+      );
+    }
 
     setBridgeStatus(
       host === "word"
@@ -55,34 +76,41 @@ void Office.onReady().then((info) => {
         : "VisualTeX macOS PowerPoint Bridge 已就绪。",
     );
 
+    // The native macOS monitor emits immutable edit targets for both hosts.
+    // Word was previously never polled here, so its double-click events were
+    // queued by the companion but could not open the VisualTeX editor.
     let interactionCursor = 0;
     let pollRunning = false;
-    void getPowerPointInteractionEvents(0)
-      .then((events) => {
-        interactionCursor = events.reduce(
-          (latest, event) => Math.max(latest, event.cursor),
-          0,
-        );
-      })
-      .catch(() => undefined);
-
-    window.setInterval(() => {
+    const pollInteractions = async () => {
       if (pollRunning) return;
       pollRunning = true;
-      void getPowerPointInteractionEvents(interactionCursor)
-        .then(async (events) => {
-          for (const event of events) {
-            interactionCursor = Math.max(interactionCursor, event.cursor);
-            if (event.host === host && event.kind === "edit-selected") {
-              await bridge.run("edit");
-            }
+      try {
+        const events = await getPowerPointInteractionEvents(
+          interactionCursor,
+          host,
+        );
+        for (const event of events) {
+          interactionCursor = Math.max(interactionCursor, event.cursor);
+          if (event.host !== host) continue;
+          if (event.kind === "edit-selected") {
+            await bridge.run("edit", undefined, event);
+          } else if (event.kind === "edit-requested") {
+            // PowerPoint may rename a pasted SVG to `Graphic N` after the
+            // native double-click monitor fires. Let Office.js inspect durable
+            // VisualTeX tags; ordinary pictures are ignored without an alert.
+            await bridge.run("edit", undefined, undefined, {
+              silentFailure: true,
+            });
           }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          pollRunning = false;
-        });
-    }, 150);
+        }
+      } catch {
+        // A temporary companion restart must not disable later double-clicks.
+      } finally {
+        pollRunning = false;
+      }
+    };
+    void pollInteractions();
+    window.setInterval(() => void pollInteractions(), 150);
   } catch (error) {
     setBridgeStatus(
       error instanceof Error

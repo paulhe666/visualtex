@@ -59,25 +59,30 @@ void Office.onReady().then((info) => {
     );
 
     let interactionCursor = 0;
-    let pollRunning = false;
-    void getPowerPointInteractionEvents(0)
-      .then((events) => {
-        interactionCursor = events.reduce(
-          (latest, event) => Math.max(latest, event.cursor),
-          0,
-        );
+    let pollRunning = true;
+    void getPowerPointInteractionEvents(0, host)
+      .then(async (events) => {
+        for (const event of events) {
+          interactionCursor = Math.max(interactionCursor, event.cursor);
+          if (event.host === host && event.kind === "edit-selected") {
+            await bridge.run("edit", undefined, event);
+          }
+        }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        pollRunning = false;
+      });
 
     window.setInterval(() => {
       if (pollRunning) return;
       pollRunning = true;
-      void getPowerPointInteractionEvents(interactionCursor)
+      void getPowerPointInteractionEvents(interactionCursor, host)
         .then(async (events) => {
           for (const event of events) {
             interactionCursor = Math.max(interactionCursor, event.cursor);
             if (event.host === host && event.kind === "edit-selected") {
-              await bridge.run("edit");
+              await bridge.run("edit", undefined, event);
             }
           }
         })

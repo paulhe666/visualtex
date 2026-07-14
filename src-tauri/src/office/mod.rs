@@ -33,6 +33,12 @@ pub mod server;
 pub mod sessions;
 pub mod state;
 
+#[cfg(target_os = "macos")]
+pub mod word_native;
+#[cfg(not(target_os = "macos"))]
+#[path = "platform/non_macos_word_native.rs"]
+pub mod word_native;
+
 #[cfg(target_os = "windows")]
 pub mod windows_backend;
 #[cfg(target_os = "windows")]

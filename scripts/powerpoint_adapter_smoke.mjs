@@ -8,6 +8,14 @@ import { officeErrorMessage } from "../src/office/errors.ts";
 const apiLevel = process.env.POWERPOINT_API_LEVEL ?? "1.10";
 const failTagWrites = process.env.POWERPOINT_FAIL_TAGS === "1";
 const inPlaceEdit = process.env.POWERPOINT_IN_PLACE_EDIT === "1";
+const macosNativeFirst = process.env.POWERPOINT_MACOS_NATIVE_FIRST === "1";
+
+if (macosNativeFirst) {
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)" },
+  });
+}
 
 function apiAtLeast(required) {
   const [major, minor] = apiLevel.split(".").map(Number);
@@ -24,6 +32,9 @@ let nextShapeId = 1;
 let currentSelection = [];
 const insertionCalls = [];
 let revealRequestCount = 0;
+let powerPointRunCount = 0;
+let nativeSelectionRequestCount = 0;
+let nativeSlideSnapshotRequestCount = 0;
 
 class FakeTagCollection {
   constructor() {
@@ -163,6 +174,10 @@ const slides = {
     assert.equal(id, activeSlide.id);
     return activeSlide;
   },
+  getItemAt(index) {
+    assert.equal(index, 0);
+    return activeSlide;
+  },
 };
 
 function scopedCollection(itemsProvider) {
@@ -268,6 +283,7 @@ globalThis.Office = {
 
 globalThis.PowerPoint = {
   async run(callback) {
+    powerPointRunCount += 1;
     return callback(context);
   },
 };
@@ -281,9 +297,12 @@ globalThis.fetch = async (input, init = {}) => {
     return new Response(null, { status: 204 });
   }
   if (url.endsWith("/api/v1/powerpoint/slide/snapshot")) {
+    nativeSlideSnapshotRequestCount += 1;
     return new Response(
       JSON.stringify({
+        presentationIdentity: "/tmp/powerpoint-adapter-smoke.pptx",
         slideIndex: 1,
+        slideId: 256,
         shapeCount: activeSlide.shapes.items.length,
         shapeNames: activeSlide.shapes.items.map((shape) => shape.name),
       }),
@@ -291,6 +310,7 @@ globalThis.fetch = async (input, init = {}) => {
     );
   }
   if (url.endsWith("/api/v1/powerpoint/selection")) {
+    nativeSelectionRequestCount += 1;
     if (currentSelection.length !== 1) {
       return new Response(JSON.stringify({ error: "Select exactly one shape" }), {
         status: 400,
@@ -302,6 +322,8 @@ globalThis.fetch = async (input, init = {}) => {
       JSON.stringify({
         shapeName: shape.name,
         slideIndex: 1,
+        slideId: 256,
+        presentationIdentity: "/tmp/powerpoint-adapter-smoke.pptx",
         left: shape.left,
         top: shape.top,
         width: shape.width,
@@ -551,7 +573,110 @@ activeSlide.shapes.items.splice(
 activeSlide.shapes.items.splice(1, 0, createdShape);
 currentSelection = [createdShape];
 
+const powerPointRunsBeforeEditRead = powerPointRunCount;
+const nativeReadsBeforeEditRead = nativeSelectionRequestCount;
+const nativeSnapshotsBeforeEditRead = nativeSlideSnapshotRequestCount;
+if (macosNativeFirst) {
+  adapter.prepareInteractionTarget({
+    host: "powerpoint",
+    formulaId,
+    shapeName: createdShape.name,
+    slideIndex: 1,
+    slideId: 256,
+    presentationIdentity: "/tmp/powerpoint-adapter-smoke.pptx",
+    left: createdShape.left,
+    top: createdShape.top,
+    width: createdShape.width,
+    height: createdShape.height,
+  });
+  currentSelection = [];
+  const targetedEditContext = await adapter.readSelection("edit");
+  assert.match(
+    targetedEditContext.sourceObjectId,
+    /^visualtex-ppt-native-edit:1:/,
+    "double-click editing must preserve the captured native target",
+  );
+  assert.equal(
+    nativeSelectionRequestCount,
+    nativeReadsBeforeEditRead,
+    "double-click editing must not re-read PowerPoint's mutable selection",
+  );
+  assert.equal(targetedEditContext.sessionSeed.formulaId, formulaId);
+  currentSelection = [createdShape];
+}
 const editContext = await adapter.readSelection("edit");
+if (macosNativeFirst) {
+  assert.match(
+    editContext.sourceObjectId,
+    /^visualtex-ppt-native-edit:1:/,
+    "macOS edits must preserve an exact native shape target",
+  );
+  assert.equal(
+    nativeSelectionRequestCount,
+    nativeReadsBeforeEditRead + 1,
+    "macOS edit selection should require one native shape read",
+  );
+  assert.equal(
+    powerPointRunCount,
+    powerPointRunsBeforeEditRead,
+    "macOS named formulas must bypass the slower Office.js selection path",
+  );
+  assert.equal(
+    nativeSlideSnapshotRequestCount,
+    nativeSnapshotsBeforeEditRead,
+    "the native selection payload must avoid a second serialized slide query",
+  );
+  assert.equal(
+    editContext.sourceDocumentId,
+    "visualtex-ppt-native-presentation:/tmp/powerpoint-adapter-smoke.pptx",
+  );
+
+  // Native PowerPoint can move the UI selection immediately after paste. The
+  // finalizer must locate the durable shape by the immutable slide/name/geometry
+  // returned by the native transaction, not by whatever is currently selected.
+  const nativeFinalizeFormulaId = crypto.randomUUID();
+  const nativeFinalizeLineId = crypto.randomUUID();
+  const nativeFinalizeShape = new FakeShape(activeSlide, "native-svg", {
+    imageLeft: 240,
+    imageTop: 96,
+    imageWidth: 180,
+    imageHeight: 54,
+  });
+  nativeFinalizeShape.name = `VisualTeX_${nativeFinalizeFormulaId}`;
+  activeSlide.shapes.items.push(nativeFinalizeShape);
+  currentSelection = [];
+  await adapter.finalizeNativePowerPointCommit(
+    {
+      ...createSession,
+      id: crypto.randomUUID(),
+      formulaId: nativeFinalizeFormulaId,
+      lines: [{ id: nativeFinalizeLineId, latex: String.raw`\\int_0^1 x^2\\,dx` }],
+      activeLineId: nativeFinalizeLineId,
+    },
+    {
+      shapeName: nativeFinalizeShape.name,
+      slideIndex: 1,
+      slideId: 256,
+      presentationIdentity: "/tmp/powerpoint-adapter-smoke.pptx",
+      left: nativeFinalizeShape.left,
+      top: nativeFinalizeShape.top,
+      width: nativeFinalizeShape.width,
+      height: nativeFinalizeShape.height,
+    },
+  );
+  assert.equal(currentSelection.length, 0, "native finalization must not require UI selection");
+  assert.ok(
+    nativeFinalizeShape.tags.items.some(
+      (tag) =>
+        tag.key === "VISUALTEX_FORMULA_ID" &&
+        tag.value === nativeFinalizeFormulaId,
+    ),
+    "native finalization must persist editable metadata on the exact returned shape",
+  );
+  assert.equal(cachedMetadata.formulaId, nativeFinalizeFormulaId);
+  console.log("PowerPoint macOS native-first edit and unselected-finalize checks passed");
+  process.exit(0);
+}
 const reference = decodePowerPointObjectReference(editContext.sourceObjectId);
 if (apiAtLeast("1.5")) {
   assert.deepEqual(reference, {

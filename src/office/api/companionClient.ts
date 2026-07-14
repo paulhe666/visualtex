@@ -11,6 +11,8 @@ export interface CompanionHealth {
 export interface NativePowerPointSelection {
   shapeName: string;
   slideIndex: number;
+  slideId?: number;
+  presentationIdentity?: string;
   left: number;
   top: number;
   width: number;
@@ -20,9 +22,16 @@ export interface NativePowerPointSelection {
 export interface PowerPointInteractionEvent {
   cursor: number;
   host: "word" | "powerpoint";
-  kind: "edit-selected";
+  kind: "edit-selected" | "edit-requested";
   formulaId: string;
   shapeName: string;
+  slideIndex?: number;
+  slideId?: number;
+  presentationIdentity?: string;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
   createdAt: number;
 }
 
@@ -32,6 +41,13 @@ export interface NativePowerPointSlideSnapshot {
   slideId: number;
   shapeCount: number;
   shapeNames: string[];
+}
+
+export interface NativeWordInlineBaselineResult {
+  appliedPosition: number;
+  width: number;
+  height: number;
+  matchedShapeIndex: number;
 }
 
 export async function getCompanionHealth(): Promise<CompanionHealth> {
@@ -101,7 +117,7 @@ export async function putCachedFormulaMetadata(
   return (await response.json()) as VisualTeXFormulaMetadata;
 }
 
-async function nativePowerPointRequest<T>(
+async function nativeOfficeRequest<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
@@ -121,7 +137,7 @@ async function nativePowerPointRequest<T>(
       | { error?: string }
       | null;
     throw new Error(
-      payload?.error ?? `PowerPoint native integration failed (${response.status})`,
+      payload?.error ?? `Office native integration failed (${response.status})`,
     );
   }
   if (response.status === 204) return undefined as T;
@@ -129,13 +145,13 @@ async function nativePowerPointRequest<T>(
 }
 
 export function getNativePowerPointSelection() {
-  return nativePowerPointRequest<NativePowerPointSelection>(
+  return nativeOfficeRequest<NativePowerPointSelection>(
     "/api/v1/powerpoint/selection",
   );
 }
 
 export function markNativePowerPointSelection(formulaId: string) {
-  return nativePowerPointRequest<NativePowerPointSelection>(
+  return nativeOfficeRequest<NativePowerPointSelection>(
     "/api/v1/powerpoint/selection/mark",
     {
       method: "POST",
@@ -145,7 +161,7 @@ export function markNativePowerPointSelection(formulaId: string) {
 }
 
 export function getNativePowerPointSlideSnapshot() {
-  return nativePowerPointRequest<NativePowerPointSlideSnapshot>(
+  return nativeOfficeRequest<NativePowerPointSlideSnapshot>(
     "/api/v1/powerpoint/slide/snapshot",
   );
 }
@@ -154,7 +170,7 @@ export function markLastNativePowerPointFormula(
   formulaId: string,
   previousShapeNames: string[],
 ) {
-  return nativePowerPointRequest<NativePowerPointSelection>(
+  return nativeOfficeRequest<NativePowerPointSelection>(
     "/api/v1/powerpoint/shape/mark-last",
     {
       method: "POST",
@@ -169,7 +185,7 @@ export function replaceLastNativePowerPointFormula(
   originalShapeName: string,
   geometry: { left: number; top: number; width: number; height: number },
 ) {
-  return nativePowerPointRequest<NativePowerPointSelection>(
+  return nativeOfficeRequest<NativePowerPointSelection>(
     "/api/v1/powerpoint/shape/replace-last",
     {
       method: "POST",
@@ -187,15 +203,36 @@ export function deleteNativePowerPointShape(
   slideIndex: number,
   shapeName: string,
 ) {
-  return nativePowerPointRequest<void>("/api/v1/powerpoint/shape/delete", {
+  return nativeOfficeRequest<void>("/api/v1/powerpoint/shape/delete", {
     method: "POST",
     body: JSON.stringify({ slideIndex, shapeName }),
   });
 }
 
-export function getPowerPointInteractionEvents(cursor: number) {
-  return nativePowerPointRequest<PowerPointInteractionEvent[]>(
-    `/api/v1/powerpoint/events?cursor=${encodeURIComponent(String(cursor))}`,
+/** Reapply and verify the inline-picture run offset through Word's native Mac
+ * scripting interface. Office.js can accept Range.font.position without
+ * persisting it in the document on some Word for Mac builds. */
+export function applyNativeWordInlineBaseline(
+  position: number,
+  formulaMarker: string,
+) {
+  return nativeOfficeRequest<NativeWordInlineBaselineResult>(
+    "/api/v1/word/inline-baseline",
+    {
+      method: "POST",
+      body: JSON.stringify({ position, formulaMarker }),
+    },
+  );
+}
+
+export function getPowerPointInteractionEvents(
+  cursor: number,
+  host: "word" | "powerpoint" = "powerpoint",
+) {
+  return nativeOfficeRequest<PowerPointInteractionEvent[]>(
+    `/api/v1/powerpoint/events?cursor=${encodeURIComponent(
+      String(cursor),
+    )}&host=${encodeURIComponent(host)}`,
   );
 }
 

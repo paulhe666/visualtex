@@ -9,6 +9,17 @@ const officeAppNamespace = "http://schemas.microsoft.com/office/appforoffice/1.1
 const basicTypesNamespace = "http://schemas.microsoft.com/office/officeappbasictypes/1.0";
 const versionOverridesNamespace = "http://schemas.microsoft.com/office/taskpaneappversionoverrides";
 const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+const macManifestSource = await readFile(
+  resolve(root, "src-tauri/src/office/manifest.rs"),
+  "utf8",
+);
+const macManifestRevision =
+  macManifestSource.match(/const MAC_MANIFEST_REVISION: &str = "(\d+)";/)?.[1];
+assert.ok(macManifestRevision, "MAC_MANIFEST_REVISION must be declared in manifest.rs");
+const macManifestVersion = `${packageJson.version
+  .split(".")
+  .slice(0, 3)
+  .join(".")}.${macManifestRevision}`;
 const manifests = [
   {
     platform: "macos",
@@ -18,10 +29,25 @@ const manifests = [
     baseHost: "Document",
     overrideHost: "Document",
     apiSet: "WordApi",
-    version: `${packageJson.version}.0`,
+    version: macManifestVersion,
+    groups: [
+      {
+        id: "VisualTeX.Formulas",
+        commands: [
+          "VisualTeX.NewFormula",
+          "VisualTeX.EditSelectedFormula",
+          "VisualTeX.OpenDesktopApp",
+        ],
+      },
+      {
+        id: "VisualTeX.Numbering",
+        commands: ["VisualTeX.UpdateEquationNumbers"],
+      },
+    ],
     commands: [
       "VisualTeX.NewFormula",
       "VisualTeX.EditSelectedFormula",
+      "VisualTeX.UpdateEquationNumbers",
       "VisualTeX.OpenDesktopApp",
     ],
   },
@@ -33,7 +59,17 @@ const manifests = [
     baseHost: "Presentation",
     overrideHost: "Presentation",
     apiSet: "PowerPointApi",
-    version: `${packageJson.version}.0`,
+    version: macManifestVersion,
+    groups: [
+      {
+        id: "VisualTeX.Formulas",
+        commands: [
+          "VisualTeX.NewFormula",
+          "VisualTeX.EditSelectedFormula",
+          "VisualTeX.OpenDesktopApp",
+        ],
+      },
+    ],
     commands: [
       "VisualTeX.NewFormula",
       "VisualTeX.EditSelectedFormula",
@@ -167,6 +203,24 @@ for (const manifest of manifests) {
   if (manifest.platform === "macos" && manifest.host === "powerpoint") {
     assert.match(xml, /<bt:Set Name="ImageCoercion" MinVersion="1\.1"\s*\/>/);
   }
+  if (manifest.platform === "macos") {
+    assert.match(xml, /<bt:Set Name="AddinCommands" MinVersion="1\.1"\s*\/>/);
+    assert.match(xml, /<CustomTab id="VisualTeX\.Tab">/);
+    assert.match(xml, /<Label resid="Tab\.Label"\s*\/>\s*<\/CustomTab>/);
+    assert.doesNotMatch(xml, /<OfficeTab id="TabHome">/);
+    const groups = Array.from(
+      document.getElementsByTagNameNS(versionOverridesNamespace, "Group"),
+    );
+    assert.equal(groups.length, manifest.groups.length, `${manifest.path} ribbon group count`);
+    for (const [index, expectedGroup] of manifest.groups.entries()) {
+      const group = groups[index];
+      assert.equal(group.getAttribute("id"), expectedGroup.id, `${manifest.path} group ${index}`);
+      const groupCommands = Array.from(
+        group.getElementsByTagNameNS(versionOverridesNamespace, "FunctionName"),
+      ).map((item) => item.textContent);
+      assert.deepEqual(groupCommands, expectedGroup.commands);
+    }
+  }
   if (manifest.platform === "windows-ole") {
     assert.equal(extract(xml, "DefaultLocale"), "en-US");
     assert.match(xml, /<CustomTab id="VisualTeX\.WindowsOle\.Tab">/);
@@ -234,6 +288,10 @@ for (const manifest of manifests) {
     assert.match(xml, /<Control xsi:type="Button" id="VisualTeX\.Ole\.UpdateNumbers">/);
     assert.match(xml, /<Label resid="Numbering\.Label"\s*\/>/);
     assert.match(xml, /<Description resid="Numbering\.Desc"\s*\/>/);
+  }
+  if (manifest.platform === "macos" && manifest.host === "word") {
+    assert.match(xml, /<Control xsi:type="Button" id="VisualTeX\.UpdateNumbers">/);
+    assert.match(xml, /<FunctionName>VisualTeX\.UpdateEquationNumbers<\/FunctionName>/);
   }
   for (const command of manifest.commands) {
     assert.ok(xml.includes(`<FunctionName>${command}</FunctionName>`));

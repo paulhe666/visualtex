@@ -11,6 +11,10 @@ const MAX_EVENTS: usize = 64;
 pub struct PowerPointNativeSelection {
     pub shape_name: String,
     pub slide_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slide_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_identity: Option<String>,
     pub left: f64,
     pub top: f64,
     pub width: f64,
@@ -41,7 +45,8 @@ pub struct PowerPointInteractionEvent {
 #[derive(Debug, Default)]
 struct InteractionState {
     next_cursor: u64,
-    delivered_cursor: u64,
+    delivered_powerpoint_cursor: u64,
+    delivered_word_cursor: u64,
     events: VecDeque<PowerPointInteractionEvent>,
 }
 
@@ -73,19 +78,28 @@ impl PowerPointInteractionBus {
         }
     }
 
-    pub fn take_after(&self, cursor: u64) -> Vec<PowerPointInteractionEvent> {
+    pub fn take_after(&self, host: &'static str, cursor: u64) -> Vec<PowerPointInteractionEvent> {
         self.inner
             .lock()
             .map(|mut state| {
-                let threshold = cursor.max(state.delivered_cursor);
+                let delivered_cursor = match host {
+                    "powerpoint" => state.delivered_powerpoint_cursor,
+                    "word" => state.delivered_word_cursor,
+                    _ => return Vec::new(),
+                };
+                let threshold = cursor.max(delivered_cursor);
                 let events = state
                     .events
                     .iter()
-                    .filter(|event| event.cursor > threshold)
+                    .filter(|event| event.host == host && event.cursor > threshold)
                     .cloned()
                     .collect::<Vec<_>>();
                 if let Some(last) = events.last() {
-                    state.delivered_cursor = last.cursor;
+                    match host {
+                        "powerpoint" => state.delivered_powerpoint_cursor = last.cursor,
+                        "word" => state.delivered_word_cursor = last.cursor,
+                        _ => {}
+                    }
                 }
                 events
             })
@@ -111,6 +125,8 @@ pub fn upsert_formula_picture_from_clipboard(
     _svg_path: &str,
     _width: f64,
     _height: f64,
+    _render_height_px: f64,
+    _previous_render_height_px: Option<f64>,
     _replace_existing: bool,
     _original_slide_index: Option<u32>,
     _original_shape_name: Option<&str>,

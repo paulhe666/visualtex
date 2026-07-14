@@ -1,4 +1,6 @@
-use crate::office::powerpoint_native::{self, PowerPointInteractionEvent};
+use crate::office::powerpoint_native::{
+    self, PowerPointInteractionEvent, PowerPointNativeSelection,
+};
 use crate::office::sessions::{
     CreateOfficeSessionInput, MetadataLine, OfficeFormulaSession, OfficeHost, OfficeSessionMode,
     OfficeSessionStatus, SessionError, VisualTeXFormulaMetadata,
@@ -6,6 +8,7 @@ use crate::office::sessions::{
 use crate::office::state::{
     OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
+use crate::office::word_native;
 use axum::body::Bytes;
 use axum::extract::{Path as AxumPath, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -44,6 +47,13 @@ struct HealthResponse {
     ocr_available: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreparedPowerPointCommit {
+    session: OfficeFormulaSession,
+    selection: PowerPointNativeSelection,
+}
+
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;
@@ -61,6 +71,26 @@ fn valid_session_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+/// Convert the MathJax SVG pixel bounds to PowerPoint points without ever
+/// changing their aspect ratio.  Width and height used to be clamped to 12pt
+/// independently; a short formula would therefore acquire an artificial
+/// height while retaining its natural width, and PowerPoint compressed the
+/// glyphs into that distorted box on every replacement.
+fn scale_powerpoint_formula_size(width_px: f64, height_px: f64) -> Result<(f64, f64), String> {
+    if !width_px.is_finite() || !height_px.is_finite() || width_px <= 0.0 || height_px <= 0.0 {
+        return Err("PowerPoint formula export has invalid dimensions".to_string());
+    }
+
+    let natural_width = width_px * 0.75;
+    let natural_height = height_px * 0.75;
+    let maximum_scale = f64::min(600.0 / natural_width, 400.0 / natural_height);
+    let preferred_scale = f64::min(1.0, maximum_scale);
+    let minimum_scale = f64::max(12.0 / natural_width, 12.0 / natural_height);
+    let scale = f64::min(maximum_scale, f64::max(preferred_scale, minimum_scale));
+
+    Ok((natural_width * scale, natural_height * scale))
+}
+
 fn inject_install_token(html: &str, token: &str) -> Result<String, StatusCode> {
     let marker = "</head>";
     let index = html.find(marker).ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -73,6 +103,57 @@ fn inject_install_token(html: &str, token: &str) -> Result<String, StatusCode> {
         "<meta name=\"visualtex-install-token\" content=\"{token}\" />\n<meta name=\"visualtex-native-powerpoint-commit\" content=\"{native_powerpoint_commit}\" />\n"
     );
     Ok(format!("{}{}{}", &html[..index], meta, &html[index..]))
+}
+
+fn extract_local_asset_urls(html: &str, attribute: &str) -> Vec<String> {
+    let marker = format!("{attribute}=\"");
+    let mut remaining = html;
+    let mut assets = Vec::new();
+    while let Some(start) = remaining.find(&marker) {
+        remaining = &remaining[start + marker.len()..];
+        let Some(end) = remaining.find('"') else {
+            break;
+        };
+        let value = &remaining[..end];
+        if value.starts_with("/assets/")
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/_-.".contains(&byte))
+            && !assets.iter().any(|asset| asset == value)
+        {
+            assets.push(value.to_string());
+        }
+        remaining = &remaining[end + 1..];
+    }
+    assets
+}
+
+fn inject_dialog_preloads(bridge_html: &str, dialog_html: &str) -> Result<String, StatusCode> {
+    let marker = "</head>";
+    let index = bridge_html
+        .find(marker)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut preloads = String::new();
+    for script in extract_local_asset_urls(dialog_html, "src") {
+        if script.ends_with(".js") {
+            preloads.push_str(&format!(
+                "<link rel=\"modulepreload\" crossorigin href=\"{script}\" />\n"
+            ));
+        }
+    }
+    for stylesheet in extract_local_asset_urls(dialog_html, "href") {
+        if stylesheet.ends_with(".css") && !bridge_html.contains(&stylesheet) {
+            preloads.push_str(&format!(
+                "<link rel=\"preload\" as=\"style\" href=\"{stylesheet}\" />\n"
+            ));
+        }
+    }
+    Ok(format!(
+        "{}{}{}",
+        &bridge_html[..index],
+        preloads,
+        &bridge_html[index..]
+    ))
 }
 
 async fn read_office_html(
@@ -98,12 +179,15 @@ async fn health(State(context): State<ServerContext>) -> Json<HealthResponse> {
 }
 
 async fn bridge(State(context): State<ServerContext>) -> Result<Html<String>, StatusCode> {
-    read_office_html(
-        &context.companion.paths.ui_root,
-        "bridge/index.html",
-        &context.companion.install_token,
+    let bridge_path = context.companion.paths.ui_root.join("bridge/index.html");
+    let dialog_path = context.companion.paths.ui_root.join("dialog/index.html");
+    let (bridge_html, dialog_html) = tokio::try_join!(
+        tokio::fs::read_to_string(bridge_path),
+        tokio::fs::read_to_string(dialog_path),
     )
-    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+    let html = inject_dialog_preloads(&bridge_html, &dialog_html)?;
+    inject_install_token(&html, &context.companion.install_token).map(Html)
 }
 
 async fn dialog(
@@ -374,6 +458,13 @@ struct MarkPowerPointFormulaRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ApplyWordInlineBaselineRequest {
+    position: i32,
+    formula_marker: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DeletePowerPointShapeRequest {
     slide_index: u32,
     shape_name: String,
@@ -401,11 +492,25 @@ struct ReplaceLastPowerPointFormulaRequest {
 #[derive(Debug, Default, Deserialize)]
 struct PowerPointEventsQuery {
     cursor: Option<u64>,
+    host: Option<String>,
 }
 
 async fn get_powerpoint_native_selection() -> Response {
     match run_native_operation(powerpoint_native::selected_shape).await {
         Ok(selection) => Json(selection).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
+async fn apply_word_inline_baseline(
+    Json(request): Json<ApplyWordInlineBaselineRequest>,
+) -> Response {
+    match run_native_operation(move || {
+        word_native::apply_inline_baseline(request.position, &request.formula_marker)
+    })
+    .await
+    {
+        Ok(result) => Json(result).into_response(),
         Err(error) => native_error_response(error),
     }
 }
@@ -505,6 +610,16 @@ fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMeta
         code_format: session.code_format.clone(),
         display_mode: session.display_mode.clone(),
         numbered: session.numbered,
+        render_width_px: session
+            .export_result
+            .as_ref()
+            .map(|value| value.width)
+            .filter(|value| value.is_finite() && *value > 0.0),
+        render_height_px: session
+            .export_result
+            .as_ref()
+            .map(|value| value.height)
+            .filter(|value| value.is_finite() && *value > 0.0),
         created_with_version: original
             .map(|value| value.created_with_version.clone())
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
@@ -533,11 +648,11 @@ fn decode_powerpoint_native_edit_reference(value: &str) -> Option<(u32, String)>
         .then_some((slide_index, shape_name))
 }
 
-fn commit_powerpoint_session_blocking(
+fn prepare_powerpoint_session_blocking(
     companion: OfficeCompanionState,
     session_id: String,
     patch: serde_json::Value,
-) -> Result<OfficeFormulaSession, String> {
+) -> Result<PreparedPowerPointCommit, String> {
     let _commit_guard = POWERPOINT_COMMIT_LOCK
         .lock()
         .map_err(|_| "PowerPoint commit lock is unavailable".to_string())?;
@@ -552,12 +667,23 @@ fn commit_powerpoint_session_blocking(
             .get(&session_id)
             .map_err(|error| error.to_string())?
     };
-    if session.status == OfficeSessionStatus::Completed {
-        return Ok(session);
-    }
     if session.host != OfficeHost::Powerpoint || session.status != OfficeSessionStatus::Committing {
-        return Err("PowerPoint Session is not ready to commit".to_string());
+        return Err("PowerPoint Session is not ready to prepare".to_string());
     }
+
+    // A command-page retry must decorate the already inserted shape, never
+    // paste a second formula. The prepared selection remains immutable until
+    // Office.js confirms that name, tags and accessibility metadata survived.
+    if let Some(selection) = companion
+        .prepared_powerpoint_commits
+        .lock()
+        .map_err(|_| "PowerPoint prepared-commit state is unavailable".to_string())?
+        .get(&session_id)
+        .cloned()
+    {
+        return Ok(PreparedPowerPointCommit { session, selection });
+    }
+
     let export = session
         .export_result
         .as_ref()
@@ -572,9 +698,7 @@ fn commit_powerpoint_session_blocking(
     ));
     fs::write(&temporary, export.svg.as_bytes())
         .map_err(|error| format!("Unable to create temporary PowerPoint formula image: {error}"))?;
-    let natural_width = (export.width * 0.75).max(12.0);
-    let natural_height = (export.height * 0.75).max(12.0);
-    let scale = f64::min(1.0, f64::min(600.0 / natural_width, 400.0 / natural_height));
+    let (target_width, target_height) = scale_powerpoint_formula_size(export.width, export.height)?;
     let target_slide_reference = session.source_object_id.as_deref().and_then(|value| {
         let reference = value.strip_prefix("visualtex-ppt-native-slide:")?;
         let mut fields = reference.split(':');
@@ -598,8 +722,13 @@ fn commit_powerpoint_session_blocking(
     let insertion = powerpoint_native::upsert_formula_picture_from_clipboard(
         &session.formula_id,
         &temporary.to_string_lossy(),
-        natural_width * scale,
-        natural_height * scale,
+        target_width,
+        target_height,
+        export.height,
+        session
+            .original_metadata
+            .as_ref()
+            .and_then(|value| value.render_height_px),
         session.mode == OfficeSessionMode::Edit,
         edit_target.as_ref().map(|value| value.0),
         edit_target.as_ref().map(|value| value.1.as_str()),
@@ -608,18 +737,47 @@ fn commit_powerpoint_session_blocking(
         target_slide_reference.and_then(|value| value.1),
     );
     let _ = fs::remove_file(&temporary);
-    insertion?;
+    let selection = insertion?;
+    companion
+        .prepared_powerpoint_commits
+        .lock()
+        .map_err(|_| "PowerPoint prepared-commit state is unavailable".to_string())?
+        .insert(session_id, selection.clone());
+    Ok(PreparedPowerPointCommit { session, selection })
+}
+
+fn confirm_powerpoint_session_blocking(
+    companion: OfficeCompanionState,
+    session_id: String,
+) -> Result<OfficeFormulaSession, String> {
+    let _commit_guard = POWERPOINT_COMMIT_LOCK
+        .lock()
+        .map_err(|_| "PowerPoint commit lock is unavailable".to_string())?;
+    let session = companion
+        .session_store
+        .get(&session_id)
+        .map_err(|error| error.to_string())?;
+    if session.host != OfficeHost::Powerpoint || session.status != OfficeSessionStatus::Committing {
+        return Err("PowerPoint Session is not ready to confirm".to_string());
+    }
+    let has_prepared_shape = companion
+        .prepared_powerpoint_commits
+        .lock()
+        .map_err(|_| "PowerPoint prepared-commit state is unavailable".to_string())?
+        .contains_key(&session_id);
+    if !has_prepared_shape {
+        return Err("PowerPoint Session has no prepared formula shape".to_string());
+    }
     companion
         .formula_cache
         .put(&session.formula_id, metadata_from_session(&session))
         .map_err(|error| format!("Formula metadata could not be saved: {error}"))?;
     companion
-        .session_store
-        .patch(
-            &session_id,
-            serde_json::json!({ "status": "completed", "error": null }),
-        )
-        .map_err(|error| error.to_string())
+        .prepared_powerpoint_commits
+        .lock()
+        .map_err(|_| "PowerPoint prepared-commit state is unavailable".to_string())?
+        .remove(&session_id);
+    Ok(session)
 }
 
 async fn commit_powerpoint_session(
@@ -631,11 +789,11 @@ async fn commit_powerpoint_session(
     let failure_store = context.companion.session_store.clone();
     let failure_id = session_id.clone();
     match run_native_operation(move || {
-        commit_powerpoint_session_blocking(companion, session_id, patch)
+        prepare_powerpoint_session_blocking(companion, session_id, patch)
     })
     .await
     {
-        Ok(session) => Json(session).into_response(),
+        Ok(prepared) => Json(prepared).into_response(),
         Err(error) => {
             let response_error = error.clone();
             let _ = run_session_operation(move || {
@@ -650,15 +808,35 @@ async fn commit_powerpoint_session(
     }
 }
 
+async fn confirm_powerpoint_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    let companion = context.companion.clone();
+    match run_native_operation(move || {
+        confirm_powerpoint_session_blocking(companion, session_id)
+    })
+    .await
+    {
+        Ok(session) => Json(session).into_response(),
+        Err(error) => native_error_response(error),
+    }
+}
+
 async fn get_powerpoint_events(
     State(context): State<ServerContext>,
     Query(query): Query<PowerPointEventsQuery>,
 ) -> Json<Vec<PowerPointInteractionEvent>> {
+    let host = match query.host.as_deref() {
+        Some("word") => "word",
+        Some("powerpoint") | None => "powerpoint",
+        Some(_) => return Json(Vec::new()),
+    };
     Json(
         context
             .companion
             .powerpoint_interactions
-            .take_after(query.cursor.unwrap_or_default()),
+            .take_after(host, query.cursor.unwrap_or_default()),
     )
 }
 
@@ -1048,6 +1226,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             "/formulas/{formula_id}/metadata",
             get(get_formula_metadata).put(put_formula_metadata),
         )
+        .route("/word/inline-baseline", post(apply_word_inline_baseline))
         .route(
             "/powerpoint/selection",
             get(get_powerpoint_native_selection),
@@ -1075,6 +1254,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route(
             "/powerpoint/sessions/{session_id}/commit",
             post(commit_powerpoint_session),
+        )
+        .route(
+            "/powerpoint/sessions/{session_id}/confirm",
+            post(confirm_powerpoint_session),
         )
         .route("/powerpoint/events", get(get_powerpoint_events))
         .route("/windows/bridge", post(windows_bridge_request))
@@ -1201,7 +1384,12 @@ mod tests {
         .unwrap();
         fs::write(
             ui_root.join("dialog").join("index.html"),
-            "<html><head></head><body>dialog</body></html>",
+            concat!(
+                "<html><head>",
+                "<script type=\"module\" src=\"/assets/dialog-entry.js\"></script>",
+                "<link rel=\"stylesheet\" href=\"/assets/dialog.css\">",
+                "</head><body>dialog</body></html>"
+            ),
         )
         .unwrap();
         fs::write(ui_root.join("assets").join("test.js"), "ok").unwrap();
@@ -1236,6 +1424,27 @@ mod tests {
         assert!(!valid_session_id("../../etc/passwd"));
         assert!(!valid_session_id("short"));
         assert!(!valid_session_id("session%2Fescape"));
+    }
+
+    #[test]
+    fn powerpoint_formula_minimum_size_preserves_svg_aspect_ratio() {
+        let (width, height) = scale_powerpoint_formula_size(200.0, 10.0).expect("valid SVG bounds");
+        assert!((height - 12.0).abs() < 0.000_001);
+        assert!((width / height - 20.0).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn powerpoint_formula_maximum_size_preserves_svg_aspect_ratio() {
+        let (width, height) =
+            scale_powerpoint_formula_size(1600.0, 80.0).expect("valid SVG bounds");
+        assert!((width - 600.0).abs() < 0.000_001);
+        assert!((width / height - 20.0).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn powerpoint_formula_size_rejects_invalid_exports() {
+        assert!(scale_powerpoint_formula_size(0.0, 10.0).is_err());
+        assert!(scale_powerpoint_formula_size(f64::NAN, 10.0).is_err());
     }
 
     #[test]
@@ -1325,6 +1534,12 @@ mod tests {
         assert!(bridge_html.contains("visualtex-install-token"));
         assert!(bridge_html.contains("visualtex-native-powerpoint-commit"));
         assert!(bridge_html.contains(state.install_token.as_str()));
+        assert!(bridge_html.contains(
+            "<link rel=\"modulepreload\" crossorigin href=\"/assets/dialog-entry.js\" />"
+        ));
+        assert!(bridge_html.contains(
+            "<link rel=\"preload\" as=\"style\" href=\"/assets/dialog.css\" />"
+        ));
 
         let invalid_dialog = router
             .clone()

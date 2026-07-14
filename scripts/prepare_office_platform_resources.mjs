@@ -18,7 +18,9 @@ const configs = {
       "es6-promise.js",
     ],
     scope: "macOS Word and PowerPoint Office.js integration",
-    manifestRevision: 0,
+    // Read from src-tauri/src/office/manifest.rs below so the packaged XML and
+    // the native installer can never publish different macOS revisions.
+    manifestRevision: null,
   },
   "windows-ole": {
     publicRoot: join(root, "office", "windows", "ole"),
@@ -43,6 +45,21 @@ const configs = {
 const config = configs[platform];
 if (!config) {
   throw new Error("Usage: node prepare_office_platform_resources.mjs <macos|windows-ole>");
+}
+
+const manifestRevision =
+  platform === "macos"
+    ? Number(
+        (
+          await readFile(
+            join(root, "src-tauri", "src", "office", "manifest.rs"),
+            "utf8",
+          )
+        ).match(/const MAC_MANIFEST_REVISION: &str = "(\d+)";/)?.[1],
+      )
+    : config.manifestRevision;
+if (!Number.isInteger(manifestRevision) || manifestRevision < 0) {
+  throw new Error(`${platform} Office manifest revision is invalid`);
 }
 
 const packageRoot = join(root, "node_modules", "@microsoft", "office-js");
@@ -71,7 +88,7 @@ function renderManifest(template, appVersion) {
     .replaceAll("{{POWERPOINT_ADDIN_ID}}", config.powerpointId)
     .replaceAll(
       "{{MANIFEST_VERSION}}",
-      fourPartVersion(appVersion, config.manifestRevision),
+      fourPartVersion(appVersion, manifestRevision),
     )
     .replaceAll("{{COMPANION_ORIGIN}}", companionOrigin);
   if (rendered.includes("{{") || rendered.includes("}}")) {

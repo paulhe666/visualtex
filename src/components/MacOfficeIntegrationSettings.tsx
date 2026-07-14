@@ -57,7 +57,16 @@ interface OfficeIntegrationStatus {
   officeUiVersion: string;
 }
 
-const EXPECTED_MANIFEST_VERSION = "1.0.18.0";
+function expectedManifestVersion(appVersion: string) {
+  const parts = appVersion
+    .split(".")
+    .map((part) => part.match(/^\d+/)?.[0])
+    .filter((part): part is string => Boolean(part))
+    .slice(0, 4);
+  while (parts.length < 4) parts.push("0");
+  parts[3] = "2";
+  return parts.join(".");
+}
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
@@ -82,15 +91,17 @@ function HostCard({
   name,
   host,
   isEn,
+  expectedVersion,
 }: {
   name: string;
   host: OfficeHostInstallStatus;
   isEn: boolean;
+  expectedVersion: string;
 }) {
   const ready =
     host.applicationInstalled &&
     host.manifestInstalled &&
-    host.manifestVersion === EXPECTED_MANIFEST_VERSION;
+    host.manifestVersion === expectedVersion;
   return (
     <article className="office-status-card">
       <header>
@@ -169,8 +180,8 @@ export function MacOfficeIntegrationSettings() {
           <strong>{isEn ? "macOS Office integration" : "macOS Office 集成"}</strong>
           <p>
             {isEn
-              ? "The existing Office.js, AppleScript, login Keychain and LaunchAgent integration remains independent from Windows Office components."
-              : "现有 Office.js、AppleScript、登录 Keychain 与 LaunchAgent 集成保持不变，并与 Windows Office 组件完全独立。"}
+              ? "Installs a persistent standalone VisualTeX ribbon tab in Word and PowerPoint, backed by the macOS Office.js, AppleScript, login Keychain, and LaunchAgent integration."
+              : "在 Word 与 PowerPoint 中安装可长期保留的独立 VisualTeX 功能区标签页，并由 macOS Office.js、AppleScript、登录 Keychain 与 LaunchAgent 提供支持。"}
           </p>
         </div>
         <button
@@ -191,8 +202,18 @@ export function MacOfficeIntegrationSettings() {
         </div>
       ) : (
         <div className="office-status-grid">
-          <HostCard name="Microsoft Word" host={status.word} isEn={isEn} />
-          <HostCard name="Microsoft PowerPoint" host={status.powerpoint} isEn={isEn} />
+          <HostCard
+            name="Microsoft Word"
+            host={status.word}
+            isEn={isEn}
+            expectedVersion={expectedManifestVersion(status.officeUiVersion)}
+          />
+          <HostCard
+            name="Microsoft PowerPoint"
+            host={status.powerpoint}
+            isEn={isEn}
+            expectedVersion={expectedManifestVersion(status.officeUiVersion)}
+          />
 
           <article className="office-status-card">
             <header>

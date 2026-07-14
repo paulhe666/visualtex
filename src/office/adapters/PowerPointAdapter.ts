@@ -9,6 +9,7 @@ import {
   revealDesktopApp,
 } from "../api/companionClient";
 import type {
+  NativePowerPointCommitSelection,
   OfficeFormulaSession,
   OfficeSessionMode,
 } from "../api/sessionClient";
@@ -28,6 +29,7 @@ import {
 } from "../metadata/powerpointMetadata";
 import type {
   OfficeHostAdapter,
+  OfficeInteractionTarget,
   OfficeSelectionContext,
 } from "./OfficeHostAdapter";
 
@@ -48,6 +50,8 @@ const POWERPOINT_ASYNC_TIMEOUT_MS = 20_000;
 interface PowerPointShapeSnapshot extends PowerPointObjectReference {
   formulaId: string;
   encodedMetadata: string | null;
+  nativePresentationIdentity?: string;
+  nativeSlideId?: number;
   left: number;
   top: number;
   width: number;
@@ -187,13 +191,24 @@ function calculatePowerPointGeometry(
   widthPx: number,
   heightPx: number,
 ): PowerPointGeometry {
-  const naturalWidth = Math.max(MIN_POWERPOINT_SIZE_PT, widthPx * 0.75);
-  const naturalHeight = Math.max(MIN_POWERPOINT_SIZE_PT, heightPx * 0.75);
-  const scale = Math.min(
-    1,
+  const naturalWidth = widthPx * 0.75;
+  const naturalHeight = heightPx * 0.75;
+  const maximumScale = Math.min(
     MAX_POWERPOINT_WIDTH_PT / naturalWidth,
     MAX_POWERPOINT_HEIGHT_PT / naturalHeight,
   );
+  const preferredScale = Math.min(
+    1,
+    maximumScale,
+  );
+  // Apply minimum bounds with the same scale on both axes. Independent
+  // width/height clamps distort the SVG aspect ratio, making longer edits look
+  // progressively squeezed inside the previous formula box.
+  const minimumScale = Math.max(
+    MIN_POWERPOINT_SIZE_PT / naturalWidth,
+    MIN_POWERPOINT_SIZE_PT / naturalHeight,
+  );
+  const scale = Math.min(maximumScale, Math.max(preferredScale, minimumScale));
   return {
     width: naturalWidth * scale,
     height: naturalHeight * scale,
@@ -484,6 +499,8 @@ async function readNativeSelectedPowerPointShape(): Promise<PowerPointShapeSnaps
     },
     formulaId,
     encodedMetadata: null,
+    nativePresentationIdentity: native.presentationIdentity,
+    nativeSlideId: native.slideId,
     left: native.left,
     top: native.top,
     width: native.width,
@@ -664,6 +681,19 @@ function logOptionalDecorationFailure(stage: string, error: unknown) {
   );
 }
 
+function metadataFromPowerPointSession(session: OfficeFormulaSession) {
+  return createFormulaMetadata({
+    formulaId: session.formulaId,
+    title: session.title,
+    lines: session.lines,
+    codeFormat: session.codeFormat,
+    displayMode: session.displayMode,
+    renderWidthPx: session.exportResult?.width ?? session.exportWidth,
+    renderHeightPx: session.exportResult?.height ?? session.exportHeight,
+    original: session.originalMetadata,
+  });
+}
+
 function createSessionSeed(metadata: VisualTeXFormulaMetadata) {
   return {
     formulaId: metadata.formulaId,
@@ -684,17 +714,210 @@ function encodeNativePowerPointEditTarget(slideIndex: number, shapeName: string)
   return `visualtex-ppt-native-edit:${slideIndex}:${encodedName}`;
 }
 
-export class PowerPointAdapter implements OfficeHostAdapter {
-  readonly host = "powerpoint" as const;
+function snapshotFromInteractionTarget(
+  target: OfficeInteractionTarget,
+): PowerPointShapeSnapshot | null {
+  const formulaId = formulaIdFromPowerPointShapeName(target.shapeName);
+  if (
+    target.host !== "powerpoint" ||
+    !formulaId ||
+    formulaId !== target.formulaId ||
+    !Number.isInteger(target.slideIndex) ||
+    (target.slideIndex ?? 0) < 1 ||
+    !Number.isFinite(target.left) ||
+    !Number.isFinite(target.top) ||
+    !Number.isFinite(target.width) ||
+    !Number.isFinite(target.height) ||
+    (target.width ?? 0) <= 0 ||
+    (target.height ?? 0) <= 0
+  ) {
+    return null;
+  }
+  const slideIndex = target.slideIndex as number;
+  const left = target.left as number;
+  const top = target.top as number;
+  const width = target.width as number;
+  const height = target.height as number;
+  return {
+    slideId: `native:${slideIndex}`,
+    shapeId: target.shapeName,
+    native: {
+      slideIndex,
+      shapeName: target.shapeName,
+      left,
+      top,
+      width,
+      height,
+    },
+    formulaId,
+    encodedMetadata: null,
+    nativePresentationIdentity: target.presentationIdentity,
+    nativeSlideId: target.slideId,
+    left,
+    top,
+    width,
+    height,
+  };
+}
 
-  async readSelection(mode: OfficeSessionMode): Promise<OfficeSelectionContext> {
-    const nativeSlide = await getNativePowerPointSlideSnapshot().catch(
+function geometryMatchesNativeCommit(
+  shape: PowerPointSelectedShapeCore,
+  selection: NativePowerPointCommitSelection,
+) {
+  const tolerance = 2;
+  return (
+    Math.abs(shape.left - selection.left) <= tolerance &&
+    Math.abs(shape.top - selection.top) <= tolerance &&
+    Math.abs(shape.width - selection.width) <= tolerance &&
+    Math.abs(shape.height - selection.height) <= tolerance
+  );
+}
+
+async function locateNativeCommitShapeByIdentity(
+  selection: NativePowerPointCommitSelection,
+): Promise<PowerPointSelectedShapeCore | null> {
+  if (!Number.isInteger(selection.slideIndex) || selection.slideIndex < 1) {
+    return null;
+  }
+  return PowerPoint.run(async (context) => {
+    const slide = context.presentation.slides.getItemAt(selection.slideIndex - 1);
+    slide.load("id");
+    const shapes = slide.shapes;
+    shapes.load("items/id,items/name,items/left,items/top,items/width,items/height");
+    await context.sync();
+
+    const exactName = shapes.items.find(
+      (shape) => shape.name === selection.shapeName,
+    );
+    const geometryMatches = shapes.items.filter((shape) =>
+      geometryMatchesNativeCommit(
+        {
+          slideId: slide.id,
+          shapeId: shape.id,
+          name: shape.name,
+          left: shape.left,
+          top: shape.top,
+          width: shape.width,
+          height: shape.height,
+        },
+        selection,
+      ),
+    );
+    const resolved = exactName ??
+      (geometryMatches.length === 1 ? geometryMatches[0] : null);
+    if (!resolved) return null;
+    return {
+      slideId: slide.id,
+      shapeId: resolved.id,
+      name: resolved.name,
+      left: resolved.left,
+      top: resolved.top,
+      width: resolved.width,
+      height: resolved.height,
+    };
+  });
+}
+
+async function selectedNativeCommitShape(
+  selection: NativePowerPointCommitSelection,
+) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    // The native transaction already returns the durable slide index, shape
+    // name and geometry. Resolve that immutable identity first; PowerPoint can
+    // legitimately move the UI selection before Office.js starts finalizing.
+    const located = await locateNativeCommitShapeByIdentity(selection).catch(
       () => null,
     );
-    const sourceDocumentId = nativeSlide
-      ? `visualtex-ppt-native-presentation:${nativeSlide.presentationIdentity}`
-      : await getPresentationId();
+    if (located) return located;
+
+    // Compatibility fallback for older PowerPoint builds where the shape
+    // collection is briefly stale but the newly pasted picture remains selected.
+    const selected = await readSelectedPowerPointShapeCore().catch(() => null);
+    if (selected && geometryMatchesNativeCommit(selected, selection)) return selected;
+    await new Promise((resolve) => window.setTimeout(resolve, 60));
+  }
+  throw new Error(
+    "PowerPoint 已粘贴公式，但无法按返回的 Shape 名称、幻灯片和几何位置重新定位对象。未写入可编辑标记。",
+  );
+}
+
+async function verifyNativePowerPointDecoration(
+  reference: PowerPointObjectReference,
+  formulaId: string,
+) {
+  return PowerPoint.run(async (context) => {
+    const shape = context.presentation.slides
+      .getItem(reference.slideId)
+      .shapes.getItemOrNullObject(reference.shapeId);
+    shape.load("isNullObject,name");
+    shape.tags.load("items/key,items/value");
+    await context.sync();
+    if (shape.isNullObject) return false;
+    const tags = new Map(
+      shape.tags.items.map((tag) => [tag.key.toUpperCase(), tag.value]),
+    );
+    return (
+      shape.name === powerpointShapeName(formulaId) &&
+      tags.get(POWERPOINT_FORMULA_ID_TAG) === formulaId &&
+      Number(tags.get(POWERPOINT_METADATA_COUNT_TAG) ?? "0") > 0
+    );
+  });
+}
+
+async function finalizeSelectedNativePowerPointShape(
+  session: OfficeFormulaSession,
+  selection: NativePowerPointCommitSelection,
+) {
+  const metadata = metadataFromPowerPointSession(session);
+  const selected = await selectedNativeCommitShape(selection);
+  const reference: PowerPointObjectReference = {
+    slideId: selected.slideId,
+    shapeId: selected.shapeId,
+  };
+  const geometry: PowerPointGeometry = {
+    left: selection.left,
+    top: selection.top,
+    width: selection.width,
+    height: selection.height,
+    rotation: selected.rotation,
+    zOrderPosition: selected.zOrderPosition,
+  };
+
+  // PowerPoint normalizes a pasted SVG asynchronously and can overwrite the
+  // first name assignment. Reapply the complete identity after two host settle
+  // points, and require both the shape name and chunked metadata tags to read
+  // back before the native Session can be confirmed.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await applyInsertedShapeCore(reference, metadata, geometry);
+    await writeInsertedShapeTags(reference, metadata);
+    await writeInsertedShapeAccessibility(reference, metadata, geometry);
+    if (await verifyNativePowerPointDecoration(reference, metadata.formulaId)) {
+      await putCachedFormulaMetadata(metadata);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 120));
+  }
+  throw new Error(
+    "PowerPoint 未能持久保存 VisualTeX 公式标记；为避免生成无法再次编辑的图片，本次更新未确认完成。",
+  );
+}
+
+export class PowerPointAdapter implements OfficeHostAdapter {
+  readonly host = "powerpoint" as const;
+  private pendingInteractionTarget: OfficeInteractionTarget | null = null;
+
+  prepareInteractionTarget(target: OfficeInteractionTarget) {
+    this.pendingInteractionTarget = target;
+  }
+
+  async readSelection(mode: OfficeSessionMode): Promise<OfficeSelectionContext> {
     if (mode === "create") {
+      const nativeSlide = await getNativePowerPointSlideSnapshot().catch(
+        () => null,
+      );
+      const sourceDocumentId = nativeSlide
+        ? `visualtex-ppt-native-presentation:${nativeSlide.presentationIdentity}`
+        : await getPresentationId();
       return {
         sourceDocumentId,
         sourceObjectId: nativeSlide
@@ -704,32 +927,57 @@ export class PowerPointAdapter implements OfficeHostAdapter {
       };
     }
 
-    let selected: PowerPointShapeSnapshot | null = null;
+    const interactionTarget = this.pendingInteractionTarget;
+    this.pendingInteractionTarget = null;
+    let selected = interactionTarget
+      ? snapshotFromInteractionTarget(interactionTarget)
+      : null;
     let officeSelectionError: unknown = null;
-    if (supportsPowerPointApi("1.5")) {
+    let nativeSelectionError: unknown = null;
+    let nativeSelectionAttempted = false;
+
+    // The macOS native commit path always names the inserted shape and stores
+    // its metadata in the companion cache. Read that inexpensive source first
+    // instead of waiting for several PowerPoint.run/context.sync round trips.
+    // Office.js remains the compatibility fallback for legacy tagged shapes.
+    if (!selected && USE_NATIVE_POWERPOINT_EDIT_TARGET) {
+      nativeSelectionAttempted = true;
+      try {
+        selected = await readNativeSelectedPowerPointShape();
+      } catch (error) {
+        nativeSelectionError = error;
+      }
+    }
+
+    if (!selected && supportsPowerPointApi("1.5")) {
       try {
         selected = await readSelectedPowerPointShape();
       } catch (error) {
         officeSelectionError = error;
       }
     }
-    if (!selected) {
+
+    if (!selected && !nativeSelectionAttempted) {
       try {
         selected = await readNativeSelectedPowerPointShape();
-      } catch (nativeError) {
-        if (officeSelectionError) {
-          throw new Error(
-            `PowerPoint 无法读取所选公式：${officeErrorMessage(
-              officeSelectionError,
-              "Office.js 选择读取失败",
-            )}；${officeErrorMessage(
-              nativeError,
-              "macOS 原生选择读取失败",
-            )}`,
-          );
-        }
-        throw nativeError;
+      } catch (error) {
+        nativeSelectionError = error;
       }
+    }
+
+    if (!selected && nativeSelectionError) {
+      if (officeSelectionError) {
+        throw new Error(
+          `PowerPoint 无法读取所选公式：${officeErrorMessage(
+            officeSelectionError,
+            "Office.js 选择读取失败",
+          )}；${officeErrorMessage(
+            nativeSelectionError,
+            "macOS 原生选择读取失败",
+          )}`,
+        );
+      }
+      throw nativeSelectionError;
     }
     if (!selected) {
       throw new Error(
@@ -748,6 +996,15 @@ export class PowerPointAdapter implements OfficeHostAdapter {
         "所选 VisualTeX Shape 的原始 LaTeX metadata 已损坏或缺失，无法安全编辑。",
       );
     }
+
+    const nativeSlide = selected.nativePresentationIdentity
+      ? null
+      : await getNativePowerPointSlideSnapshot().catch(() => null);
+    const sourceDocumentId = selected.nativePresentationIdentity
+      ? `visualtex-ppt-native-presentation:${selected.nativePresentationIdentity}`
+      : nativeSlide
+        ? `visualtex-ppt-native-presentation:${nativeSlide.presentationIdentity}`
+        : await getPresentationId();
 
     const nativeEditTarget = USE_NATIVE_POWERPOINT_EDIT_TARGET
       ? selected.native
@@ -774,15 +1031,15 @@ export class PowerPointAdapter implements OfficeHostAdapter {
     };
   }
 
+  async finalizeNativePowerPointCommit(
+    session: OfficeFormulaSession,
+    selection: NativePowerPointCommitSelection,
+  ): Promise<void> {
+    await finalizeSelectedNativePowerPointShape(session, selection);
+  }
+
   async applySession(session: OfficeFormulaSession): Promise<void> {
-    const metadata = createFormulaMetadata({
-      formulaId: session.formulaId,
-      title: session.title,
-      lines: session.lines,
-      codeFormat: session.codeFormat,
-      displayMode: session.displayMode,
-      original: session.originalMetadata,
-    });
+    const metadata = metadataFromPowerPointSession(session);
     await putCachedFormulaMetadata(metadata);
 
     const supportsEditing = supportsPowerPointApi("1.5");

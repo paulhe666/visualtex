@@ -1,5 +1,7 @@
 use crate::office::background::OfficeBackgroundStatus;
-use crate::office::manifest::{render_manifest, ManifestHost};
+use crate::office::manifest::{
+    render_manifest, ManifestHost, LEGACY_POWERPOINT_MANIFEST_FILE, LEGACY_WORD_MANIFEST_FILE,
+};
 use crate::office::state::{OfficeCompanionStatus, OfficePaths, OFFICE_UI_VERSION};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
@@ -75,6 +77,14 @@ pub(crate) fn manifest_directory(home: &Path, host: ManifestHost) -> PathBuf {
 
 pub(crate) fn manifest_path(home: &Path, host: ManifestHost) -> PathBuf {
     manifest_directory(home, host).join(host.file_name())
+}
+
+fn legacy_manifest_path(home: &Path, host: ManifestHost) -> PathBuf {
+    let file_name = match host {
+        ManifestHost::Word => LEGACY_WORD_MANIFEST_FILE,
+        ManifestHost::PowerPoint => LEGACY_POWERPOINT_MANIFEST_FILE,
+    };
+    manifest_directory(home, host).join(file_name)
 }
 
 fn login_keychain(home: &Path) -> PathBuf {
@@ -177,17 +187,36 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub(crate) fn install_manifest_at(home: &Path, host: ManifestHost) -> Result<PathBuf, String> {
     let manifest = render_manifest(host)?;
     let path = manifest_path(home, host);
-    atomic_write(&path, manifest.as_bytes())?;
+    // Office's own macOS registrar prefixes sideloaded manifests with their
+    // add-in GUID. Preserve the registered file when its bytes are unchanged:
+    // replacing the inode on every repair needlessly invalidates Office's Wef
+    // registration and command cache.
+    let current = fs::read(&path).ok();
+    if current.as_deref() != Some(manifest.as_bytes()) {
+        atomic_write(&path, manifest.as_bytes())?;
+    }
+
+    // Migrate installations created before GUID-prefixed registration. Keep a
+    // single VisualTeX manifest for each permanent <Id> in the host catalog.
+    let legacy = legacy_manifest_path(home, host);
+    if legacy != path && legacy.exists() {
+        fs::remove_file(&legacy)
+            .map_err(|error| format!("Unable to remove {}: {error}", legacy.display()))?;
+        if let Some(directory) = legacy.parent() {
+            sync_directory(directory)?;
+        }
+    }
     Ok(path)
 }
 
 pub(crate) fn uninstall_manifest_at(home: &Path, host: ManifestHost) -> Result<(), String> {
-    let path = manifest_path(home, host);
-    if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|error| format!("Unable to remove {}: {error}", path.display()))?;
-        if let Some(directory) = path.parent() {
-            sync_directory(directory)?;
+    for path in [manifest_path(home, host), legacy_manifest_path(home, host)] {
+        if path.exists() {
+            fs::remove_file(&path)
+                .map_err(|error| format!("Unable to remove {}: {error}", path.display()))?;
+            if let Some(directory) = path.parent() {
+                sync_directory(directory)?;
+            }
         }
     }
     Ok(())
@@ -366,7 +395,9 @@ pub fn open_office_application(host: ManifestHost) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::office::manifest::{POWERPOINT_MANIFEST_FILE, WORD_MANIFEST_FILE};
+    use crate::office::manifest::{
+        manifest_version, POWERPOINT_MANIFEST_FILE, WORD_MANIFEST_FILE,
+    };
     use tempfile::TempDir;
 
     #[test]
@@ -381,7 +412,7 @@ mod tests {
         let installed = install_manifest_at(home, ManifestHost::Word).unwrap();
         assert_eq!(installed.file_name().unwrap(), WORD_MANIFEST_FILE);
         assert!(installed.is_file());
-        let expected_version = format!("{}.0", env!("CARGO_PKG_VERSION"));
+        let expected_version = manifest_version();
         assert_eq!(
             read_manifest_version(&installed).as_deref(),
             Some(expected_version.as_str())
@@ -408,5 +439,26 @@ mod tests {
         assert!(powerpoint
             .to_string_lossy()
             .contains("com.microsoft.Powerpoint/Data/Documents/wef"));
+    }
+
+    #[test]
+    fn install_migrates_legacy_unprefixed_manifest_and_preserves_registration_inode() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path();
+        let legacy = legacy_manifest_path(home, ManifestHost::Word);
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, "<OfficeApp>legacy</OfficeApp>").unwrap();
+
+        let installed = install_manifest_at(home, ManifestHost::Word).unwrap();
+        assert!(!legacy.exists());
+        let first = fs::metadata(&installed).unwrap();
+        install_manifest_at(home, ManifestHost::Word).unwrap();
+        let second = fs::metadata(&installed).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(first.ino(), second.ino());
+        }
     }
 }

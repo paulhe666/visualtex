@@ -10,6 +10,7 @@ const variableNames = [
   "POWERPOINT_FAIL_TAGS",
   "POWERPOINT_REJECT_PNG",
   "POWERPOINT_IN_PLACE_EDIT",
+  "POWERPOINT_MACOS_NATIVE_FIRST",
 ];
 const baseEnvironment = { ...process.env };
 for (const name of variableNames) delete baseEnvironment[name];
@@ -22,6 +23,7 @@ const scenarios = [
   { POWERPOINT_API_LEVEL: "1.5", POWERPOINT_FAIL_TAGS: "1" },
   { POWERPOINT_API_LEVEL: "1.5", POWERPOINT_REJECT_PNG: "1" },
   { POWERPOINT_API_LEVEL: "1.1", POWERPOINT_IN_PLACE_EDIT: "1" },
+  { POWERPOINT_API_LEVEL: "1.10", POWERPOINT_MACOS_NATIVE_FIRST: "1" },
 ];
 
 for (const scenario of scenarios) {

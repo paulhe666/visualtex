@@ -14,21 +14,27 @@
   <DefaultSettings><SourceLocation DefaultValue="{{COMPANION_ORIGIN}}/bridge/index.html" /></DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
-    <Requirements><bt:Sets DefaultMinVersion="1.1"><bt:Set Name="WordApi" MinVersion="1.1" /></bt:Sets></Requirements>
+    <Requirements><bt:Sets DefaultMinVersion="1.1"><bt:Set Name="AddinCommands" MinVersion="1.1" /><bt:Set Name="WordApi" MinVersion="1.1" /></bt:Sets></Requirements>
     <Hosts>
       <Host xsi:type="Document">
         <DesktopFormFactor>
           <FunctionFile resid="Commands.Url" />
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
-            <OfficeTab id="TabHome">
-              <Group id="VisualTeX.Group">
+            <CustomTab id="VisualTeX.Tab">
+              <Group id="VisualTeX.Formulas">
                 <Label resid="Group.Label" />
                 <Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon>
                 <Control xsi:type="Button" id="VisualTeX.New"><Label resid="New.Label" /><Supertip><Title resid="New.Label" /><Description resid="New.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.NewFormula</FunctionName></Action></Control>
                 <Control xsi:type="Button" id="VisualTeX.Edit"><Label resid="Edit.Label" /><Supertip><Title resid="Edit.Label" /><Description resid="Edit.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.EditSelectedFormula</FunctionName></Action></Control>
                 <Control xsi:type="Button" id="VisualTeX.Open"><Label resid="Open.Label" /><Supertip><Title resid="Open.Label" /><Description resid="Open.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.OpenDesktopApp</FunctionName></Action></Control>
               </Group>
-            </OfficeTab>
+              <Group id="VisualTeX.Numbering">
+                <Label resid="NumberingGroup.Label" />
+                <Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon>
+                <Control xsi:type="Button" id="VisualTeX.UpdateNumbers"><Label resid="Numbering.Label" /><Supertip><Title resid="Numbering.Label" /><Description resid="Numbering.Desc" /></Supertip><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon><Action xsi:type="ExecuteFunction"><FunctionName>VisualTeX.UpdateEquationNumbers</FunctionName></Action></Control>
+              </Group>
+              <Label resid="Tab.Label" />
+            </CustomTab>
           </ExtensionPoint>
         </DesktopFormFactor>
       </Host>
@@ -36,8 +42,8 @@
     <Resources>
       <bt:Images><bt:Image id="Icon.16" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-16.png" /><bt:Image id="Icon.32" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-32.png" /><bt:Image id="Icon.80" DefaultValue="{{COMPANION_ORIGIN}}/icons/icon-80.png" /></bt:Images>
       <bt:Urls><bt:Url id="Commands.Url" DefaultValue="{{COMPANION_ORIGIN}}/bridge/index.html" /></bt:Urls>
-      <bt:ShortStrings><bt:String id="Group.Label" DefaultValue="VisualTeX" /><bt:String id="New.Label" DefaultValue="新建公式" /><bt:String id="Edit.Label" DefaultValue="编辑所选公式" /><bt:String id="Open.Label" DefaultValue="打开 VisualTeX" /></bt:ShortStrings>
-      <bt:LongStrings><bt:String id="New.Desc" DefaultValue="在 Word 中插入 VisualTeX 公式。" /><bt:String id="Edit.Desc" DefaultValue="编辑当前选中的 VisualTeX 公式。" /><bt:String id="Open.Desc" DefaultValue="打开 VisualTeX 桌面应用。" /></bt:LongStrings>
+      <bt:ShortStrings><bt:String id="Tab.Label" DefaultValue="VisualTeX" /><bt:String id="Group.Label" DefaultValue="公式" /><bt:String id="NumberingGroup.Label" DefaultValue="公式编号" /><bt:String id="New.Label" DefaultValue="新建公式" /><bt:String id="Edit.Label" DefaultValue="编辑所选公式" /><bt:String id="Numbering.Label" DefaultValue="刷新公式编号" /><bt:String id="Open.Label" DefaultValue="打开 VisualTeX" /></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="New.Desc" DefaultValue="在 Word 中插入 VisualTeX 公式。" /><bt:String id="Edit.Desc" DefaultValue="编辑当前选中的 VisualTeX 公式。" /><bt:String id="Numbering.Desc" DefaultValue="按文档顺序刷新所有已编号的 VisualTeX 行间公式。" /><bt:String id="Open.Desc" DefaultValue="打开 VisualTeX 桌面应用。" /></bt:LongStrings>
     </Resources>
   </VersionOverrides>
 </OfficeApp>
