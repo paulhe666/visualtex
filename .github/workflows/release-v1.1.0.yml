@@ -1,0 +1,334 @@
+name: Release VisualTeX 1.1.0
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visualtex-release-1.1.0
+  cancel-in-progress: false
+
+env:
+  VISUALTEX_VERSION: 1.1.0
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            label: macOS Apple Silicon
+            rust_target: aarch64-apple-darwin
+            build_args: --target aarch64-apple-darwin --bundles dmg
+            artifact_name: VisualTeX-1.1.0-macOS-Apple-Silicon
+            artifact_paths: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - platform: windows-latest
+            label: Windows x64
+            rust_target: ""
+            build_args: --bundles nsis
+            artifact_name: VisualTeX-1.1.0-Windows-x64
+            artifact_paths: |
+              src-tauri/target/release/bundle/nsis/VisualTeX_1.1.0_x64-setup.exe
+          - platform: ubuntu-22.04
+            label: Linux x64
+            rust_target: ""
+            build_args: --bundles deb,appimage
+            artifact_name: VisualTeX-1.1.0-Linux-x64
+            artifact_paths: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up .NET 8
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS Apple Silicon target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Cache Rust build output
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Verify release and Office versions
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const pkg = require('./package.json');
+          const lock = require('./package-lock.json');
+          const tauri = require('./src-tauri/tauri.conf.json');
+          if (pkg.version !== process.env.VISUALTEX_VERSION ||
+              lock.version !== process.env.VISUALTEX_VERSION ||
+              lock.packages[''].version !== process.env.VISUALTEX_VERSION ||
+              tauri.version !== process.env.VISUALTEX_VERSION) {
+            throw new Error('VisualTeX release versions are not synchronized');
+          }
+          NODE
+          grep -q "^version = \"${VISUALTEX_VERSION}\"$" src-tauri/Cargo.toml
+          grep -q 'CURRENT_VISUALTEX_VERSION = "1.1.0"' src/office/shared/formulaMetadata.ts
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run shared frontend tests
+        run: |
+          npm run test:latex-format
+          npm run test:history
+          npm run test:update-notes
+          npm run test:platform-onboarding
+          npm run test:office-platform-boundaries
+
+      - name: Verify Office manifests and architecture
+        run: |
+          npm run verify:office-manifest
+          npm run test:office-metadata
+          npm run test:office-bridge
+
+      - name: Run Office adapter tests
+        run: |
+          npm run test:word-adapter
+          npm run test:word-baseline
+          npm run test:powerpoint-adapter
+
+      - name: Verify Windows Office architecture
+        if: runner.os == 'Windows'
+        run: npm run test:windows-office-architecture
+
+      - name: Build desktop frontend
+        run: npm run build
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Smoke-test OCR worker lifecycle
+        run: python scripts/smoke_ocr_worker.py
+
+      - name: Detect complete Apple signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -n "$APPLE_CERTIFICATE" && -n "$APPLE_CERTIFICATE_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$APPLE_TEAM_ID" && -n "$KEYCHAIN_PASSWORD" ]]; then
+            echo "MAC_SIGNING_READY=true" >> "$GITHUB_ENV"
+          else
+            echo "MAC_SIGNING_READY=false" >> "$GITHUB_ENV"
+            echo "Apple credentials are incomplete; the fallback ad-hoc signature will be used."
+          fi
+
+      - name: Import Apple Developer ID certificate
+        if: runner.os == 'macOS' && env.MAC_SIGNING_READY == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/visualtex-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/visualtex-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          CERT_ID="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'\"' '/Developer ID Application/{print $2; exit}')"
+          test -n "$CERT_ID"
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+
+      - name: Build Windows NSIS installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item "src-tauri/target/release/bundle/nsis" -Recurse -Force -ErrorAction SilentlyContinue
+          npm run tauri:build -- ${{ matrix.build_args }}
+
+      - name: Build signed and notarized macOS DMG
+        if: runner.os == 'macOS' && env.MAC_SIGNING_READY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Build fallback macOS DMG
+        if: runner.os == 'macOS' && env.MAC_SIGNING_READY != 'true'
+        run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Build Linux packages
+        if: runner.os == 'Linux'
+        run: npm run tauri -- build ${{ matrix.build_args }}
+
+      - name: Verify macOS DMG and app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          EXPECTED_VERSION: 1.1.0
+        run: |
+          dmg="$(find src-tauri/target -type f -path '*/release/bundle/dmg/*.dmg' -print -quit)"
+          if [[ "$MAC_SIGNING_READY" == "true" ]]; then
+            REQUIRE_NOTARIZATION=1 bash scripts/verify_macos_dmg.sh "$dmg"
+          else
+            bash scripts/verify_macos_dmg.sh "$dmg"
+          fi
+
+      - name: Verify Windows NSIS installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
+          $installer = $installers[0]
+          if ($installer.Name -ne "VisualTeX_1.1.0_x64-setup.exe" -or $installer.Length -lt 1MB) {
+            throw "Unexpected NSIS installer: $($installer.Name)"
+          }
+          & 7z t $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installer archive verification failed" }
+          Get-FileHash $installer.FullName -Algorithm SHA256 | Format-List
+
+      - name: Verify Linux DEB and AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          deb="$(find src-tauri/target/release/bundle/deb -type f -name '*.deb' -print -quit)"
+          appimage="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' -print -quit)"
+          test -s "$deb"
+          test -s "$appimage"
+          dpkg-deb --info "$deb" >/dev/null
+          dpkg-deb --contents "$deb" >/dev/null
+          file "$appimage" | grep -q 'ELF'
+          chmod +x "$appimage"
+          extract_dir="$(mktemp -d)"
+          (
+            cd "$extract_dir"
+            "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null
+            test -x squashfs-root/AppRun
+          )
+          rm -rf "$extract_dir"
+
+      - name: Upload verified installer packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+
+      - name: Download all verified installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: VisualTeX-1.1.0-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Flatten installer files
+        shell: bash
+        run: |
+          mkdir release-flat
+          copy_single_asset() {
+            local pattern="$1"
+            mapfile -d '' matches < <(find release-assets -type f -name "$pattern" -print0)
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "Expected exactly one asset matching $pattern, found ${#matches[@]}" >&2
+              exit 1
+            fi
+            cp "${matches[0]}" release-flat/
+          }
+          copy_single_asset '*.dmg'
+          copy_single_asset '*.exe'
+          copy_single_asset '*.deb'
+          copy_single_asset '*.AppImage'
+          rm -rf release-assets
+          mv release-flat release-assets
+
+      - name: Verify artifact set and write checksums
+        shell: bash
+        run: |
+          test "$(find release-assets -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
+          (
+            cd release-assets
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS.txt
+            test "$(wc -l < SHA256SUMS.txt)" -eq 4
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Publish VisualTeX v1.1.0
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v1.1.0
+          name: VisualTeX v1.1.0
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          body_path: .github/release-notes/v1.1.0.md
+          files: |
+            release-assets/*.dmg
+            release-assets/*.exe
+            release-assets/*.deb
+            release-assets/*.AppImage
+            release-assets/SHA256SUMS.txt
