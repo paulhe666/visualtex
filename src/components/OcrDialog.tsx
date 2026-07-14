@@ -36,10 +36,12 @@ import {
   fileToOcrRequest,
   getOcrRuntimeStatus,
   installOcrRuntime,
+  isOfficeCompanionEnvironment,
   isTauriEnvironment,
   listenOcrInstallProgress,
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
+  resolveAvailableOcrModel,
   resetOcrRuntime,
   restartOcrWorker,
   validateOcrImage,
@@ -120,6 +122,10 @@ export function OcrDialog({
     () => OCR_MODELS.find((item) => item.id === model) ?? OCR_MODELS[1],
     [model],
   );
+  const defaultModel = runtime?.defaultModel ?? "PP-FormulaNet_plus-M";
+  const installedModels = runtime?.installedModels ?? [];
+  const selectedModelInstalled = installedModels.includes(model);
+  const optionalModelMissing = model !== defaultModel && !selectedModelInstalled;
 
   const clearObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -129,7 +135,7 @@ export function OcrDialog({
   }, []);
 
   const refreshRuntime = useCallback(async (forceRefresh = false) => {
-    if (!isTauriEnvironment()) {
+    if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
       setRuntime({
         installed: false,
         pythonPath: null,
@@ -137,6 +143,9 @@ export function OcrDialog({
         paddleVersion: null,
         paddleocrVersion: null,
         runtimePath: "",
+        offlineBundleAvailable: false,
+        installedModels: [],
+        defaultModel: "PP-FormulaNet_plus-M",
         message: isEn
           ? "OCR is available in the VisualTeX desktop app, not in the browser preview."
           : "OCR 只能在 VisualTeX 桌面应用中运行，浏览器预览无法调用本地模型。",
@@ -153,6 +162,12 @@ export function OcrDialog({
       setCheckingRuntime(false);
     }
   }, [isEn]);
+
+  useEffect(() => {
+    if (!runtime?.installed) return;
+    const availableModel = resolveAvailableOcrModel(runtime, model);
+    if (availableModel !== model) onModelChange(availableModel);
+  }, [defaultModel, model, onModelChange, runtime]);
 
   useEffect(() => {
     if (!open) return;
@@ -578,22 +593,35 @@ export function OcrDialog({
                   onModelChange(event.target.value as OcrModelName)
                 }
               >
-                {OCR_MODELS.map((item) => (
-                  <option value={item.id} key={item.id}>
-                    {isEn ? item.labelEn : item.labelZh}
-                  </option>
-                ))}
+                {OCR_MODELS.map((item) => {
+                  const available =
+                    installedModels.includes(item.id);
+                  return (
+                    <option value={item.id} key={item.id} disabled={!available}>
+                      {isEn ? item.labelEn : item.labelZh}
+                      {!available
+                        ? isEn
+                          ? " · optional offline pack required"
+                          : " · 需要可选离线模型包"
+                        : ""}
+                    </option>
+                  );
+                })}
               </select>
               <small>{isEn ? selectedModel.hintEn : selectedModel.hintZh}</small>
             </label>
 
-            {model === "PP-FormulaNet_plus-L" && (
+            {(model === "PP-FormulaNet_plus-L" || optionalModelMissing) && (
               <div className="ocr-model-warning" role="note">
                 <AlertCircle size={15} />
                 <span>
-                  {isEn
-                    ? "L downloads about 731.5 MB and occupies about 698 MB after extraction. The first run also needs extra temporary disk space and several GB of memory. Use M unless L accuracy is necessary."
-                    : "L 模型需要下载约 731.5 MB，解压后约 698 MB。首次运行还需要额外临时磁盘空间，并可能占用数 GB 内存；没有明确精度需求时建议使用 M。"}
+                  {optionalModelMissing
+                    ? isEn
+                      ? `${selectedModel.labelEn} is not installed. Import the matching VisualTeX offline model pack before selecting it.`
+                      : `${selectedModel.labelZh}尚未安装，请先导入对应的 VisualTeX 离线模型包。`
+                    : isEn
+                      ? "The L model occupies about 698 MB and can use several GB of memory. Use the bundled M model unless L accuracy is necessary."
+                      : "L 模型约占 698 MB，并可能占用数 GB 内存；没有明确精度需求时建议使用内置 M 模型。"}
                 </span>
               </div>
             )}
@@ -665,14 +693,18 @@ export function OcrDialog({
                     <>
                       <p>
                         {isEn
-                          ? "VisualTeX will create an isolated Python environment and install PaddlePaddle 3.3.1 plus PaddleOCR 3.7.0."
-                          : "VisualTeX 会创建独立 Python 环境，并安装 PaddlePaddle 3.3.1 与 PaddleOCR 3.7.0。"}
+                          ? "VisualTeX will verify and extract the bundled Python 3.10, PaddlePaddle 3.3.1, PaddleOCR 3.7.0, and the default M model entirely on this Mac. No network or pip installation is used."
+                          : "VisualTeX 会在本机校验并解压应用内置的 Python 3.10、PaddlePaddle 3.3.1、PaddleOCR 3.7.0 与默认 M 模型；全程不联网，也不会运行 pip 安装。"}
                       </p>
                       <button
                         type="button"
                         className="primary-button"
                         onClick={handleInstall}
-                        disabled={!isTauriEnvironment() || checkingRuntime}
+                        disabled={
+                          (!isTauriEnvironment() &&
+                            !isOfficeCompanionEnvironment()) ||
+                          checkingRuntime
+                        }
                       >
                         <Download size={15} />
                         {isEn ? "Install OCR runtime" : "安装 OCR 运行环境"}

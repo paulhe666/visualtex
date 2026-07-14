@@ -2,8 +2,9 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 
-const previewPort = 4173;
-const debugPort = 9223;
+const portOffset = process.pid % 1000;
+const previewPort = 5300 + portOffset;
+const debugPort = 10300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -64,7 +65,15 @@ class CdpClient {
 async function main() {
   const preview = spawn(
     process.execPath,
-    ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(previewPort)],
+    [
+      "node_modules/vite/bin/vite.js",
+      "preview",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(previewPort),
+      "--strictPort",
+    ],
     { cwd: process.cwd(), stdio: "ignore" },
   );
   let chrome;
@@ -598,6 +607,150 @@ async function main() {
       };
     })()`, "ArrowDown switches to next formula line");
 
+    const multiLineAlignment = await evaluate(`(() => {
+      const fields = [...document.querySelectorAll(".formula-line math-field")];
+      const leftEdges = fields.map((field) => field.getBoundingClientRect().left);
+      const textAlignments = fields.map((field) => getComputedStyle(field).textAlign);
+      return {
+        count: fields.length,
+        leftEdges,
+        textAlignments,
+        aligned:
+          fields.length === 2 &&
+          Math.abs(leftEdges[0] - leftEdges[1]) <= 1 &&
+          textAlignments.every((value) => value !== "right"),
+      };
+    })()`);
+    if (!multiLineAlignment.aligned) {
+      throw new Error(
+        `Multi-line formulas are not left-aligned: ${JSON.stringify(multiLineAlignment)}`,
+      );
+    }
+
+    for (const operatorCase of [
+      { latex: "\\sum_{i=0}^{n} a_i", command: "\\sum", label: "sum" },
+      { latex: "\\prod_{k=1}^{m} b_k", command: "\\prod", label: "product" },
+      { latex: "\\int_{0}^{1} f(x)\\,\\mathrm{d}x", command: "\\int", label: "integral" },
+    ]) {
+      await resetEditorDocument([operatorCase.latex]);
+      const navigationStart = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const command = ${JSON.stringify(operatorCase.command)};
+        let operatorOffset = -1;
+        for (let offset = 0; offset <= field.lastOffset; offset += 1) {
+          const latex = field.getElementInfo(offset)?.latex?.trim() ?? "";
+          if (latex === command || latex.startsWith(command) || latex.includes(command)) {
+            operatorOffset = offset;
+            break;
+          }
+        }
+        if (operatorOffset < 0) {
+          throw new Error("Structured operator offset was not found: " + command);
+        }
+        field.position = operatorOffset;
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        const beforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        field.addEventListener("input", () => {
+          window.__visualtexNavigationInputEvents += 1;
+        });
+        const moved = field.executeCommand("moveToSubscript");
+        return { moved, operatorOffset, beforeLatex, position: field.position };
+      })()`);
+      if (!navigationStart.moved) {
+        throw new Error(
+          `${operatorCase.label} lower-limit navigation could not start: ${JSON.stringify(navigationStart)}`,
+        );
+      }
+      const lowerStart = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return { ready: region === "lower", region, value: field.value };
+        })()`,
+        `${operatorCase.label} caret starts in lower limit`,
+      );
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        window.__visualtexNavigationBeforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        return field.value;
+      })()`);
+      await key("ArrowUp", "ArrowUp", 38);
+      const upperState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "upper" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowUp enters upper limit without changing LaTeX`,
+      );
+      await key("ArrowDown", "ArrowDown", 40);
+      const lowerState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "lower" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowDown returns to lower limit without changing LaTeX`,
+      );
+      if (
+        upperState.value !== lowerStart.value ||
+        lowerState.value !== lowerStart.value ||
+        upperState.inputEvents !== 0 ||
+        lowerState.inputEvents !== 0
+      ) {
+        throw new Error(
+          `${operatorCase.label} navigation unexpectedly changed LaTeX`,
+        );
+      }
+    }
+
     await resetEditorDocument(["\\alpha"]);
     await setField("\\alpha");
     const simpleMetrics = await waitForEvaluation(`(() => {
@@ -775,9 +928,23 @@ async function main() {
     }
 
     const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
-      const button = document.querySelector('button[aria-label="图片公式识别"]');
+      const button = document.querySelector(
+        'button[aria-label="图片公式识别"], button[aria-label="Recognize formula image"]',
+      );
       if (!button) {
-        reject(new Error("OCR toolbar button was not found"));
+        const labels = Array.from(document.querySelectorAll("button")).map((item) => ({
+          ariaLabel: item.getAttribute("aria-label"),
+          text: item.textContent?.trim().slice(0, 80) ?? "",
+          className: item.className,
+        }));
+        reject(new Error(
+          "OCR toolbar button was not found; viewport=" +
+            window.innerWidth +
+            "x" +
+            window.innerHeight +
+            "; buttons=" +
+            JSON.stringify(labels),
+        ));
         return;
       }
       const startedAt = performance.now();
@@ -812,19 +979,35 @@ async function main() {
     ) {
       throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
     }
-    await sleep(220);
-    const ocrCenterMetrics = await evaluate(`(() => {
-      const dialog = document.querySelector(".ocr-dialog");
-      const rect = dialog.getBoundingClientRect();
-      return {
-        dialogCenterX: (rect.left + rect.right) / 2,
-        dialogCenterY: (rect.top + rect.bottom) / 2,
-        viewportCenterX: window.innerWidth / 2,
-        viewportCenterY: window.innerHeight / 2,
-        horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
-        verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+    const ocrCenterMetrics = await evaluate(`new Promise((resolve) => {
+      const startedAt = performance.now();
+      const sample = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const rect = dialog.getBoundingClientRect();
+        const metrics = {
+          dialogCenterX: (rect.left + rect.right) / 2,
+          dialogCenterY: (rect.top + rect.bottom) / 2,
+          viewportCenterX: window.innerWidth / 2,
+          viewportCenterY: window.innerHeight / 2,
+          horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+          verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+          elapsedMs: performance.now() - startedAt,
+          animations: dialog.getAnimations().map((animation) => ({
+            currentTime: animation.currentTime,
+            playState: animation.playState,
+          })),
+        };
+        if (
+          (metrics.horizontalDelta <= 2 && metrics.verticalDelta <= 2) ||
+          metrics.elapsedMs >= 800
+        ) {
+          resolve(metrics);
+          return;
+        }
+        requestAnimationFrame(sample);
       };
-    })()`);
+      requestAnimationFrame(sample);
+    })`);
     if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
       throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
     }

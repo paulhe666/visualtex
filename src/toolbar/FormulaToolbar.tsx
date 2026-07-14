@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { PanelLeftClose, Star } from "lucide-react";
+import { Brackets, PanelLeftClose, Star } from "lucide-react";
 import type { LatexCommand } from "../types/command";
 import {
   categoryLabels,
@@ -102,6 +102,12 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
   const [matrixDelimiter, setMatrixDelimiter] =
     useState<MatrixDelimiter>("bmatrix");
   const language = useEditorStore((state) => state.language);
+  const autoPairDelimiters = useEditorStore(
+    (state) => state.autoPairDelimiters,
+  );
+  const setAutoPairDelimiters = useEditorStore(
+    (state) => state.setAutoPairDelimiters,
+  );
   const isEn = language === "en";
 
   const visibleCommands = useMemo(() => {
@@ -131,15 +137,34 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
     >
       <header className="formula-toolbar-header">
         <strong>{isEn ? "Formula tools" : "公式工具"}</strong>
-        <button
-          type="button"
-          className="icon-button compact"
-          onClick={onClose}
-          aria-label={isEn ? "Hide formula tools" : "隐藏公式工具"}
-          title={isEn ? "Hide formula tools" : "隐藏公式工具"}
-        >
-          <PanelLeftClose size={16} />
-        </button>
+        <div className="formula-toolbar-actions">
+          <button
+            type="button"
+            className={
+              "icon-button compact" +
+              (autoPairDelimiters ? " is-active" : "")
+            }
+            aria-pressed={autoPairDelimiters}
+            onClick={() => setAutoPairDelimiters(!autoPairDelimiters)}
+            aria-label={isEn ? "Auto-pair delimiters" : "自动补全成对符号"}
+            title={
+              isEn
+                ? "Auto-pair brackets, braces and vertical bars"
+                : "自动补全括号、花括号和竖线"
+            }
+          >
+            <Brackets size={16} />
+          </button>
+          <button
+            type="button"
+            className="icon-button compact"
+            onClick={onClose}
+            aria-label={isEn ? "Hide formula tools" : "隐藏公式工具"}
+            title={isEn ? "Hide formula tools" : "隐藏公式工具"}
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
       </header>
 
       <nav className="toolbar-tabs" aria-label={isEn ? "Formula categories" : "公式分类"}>

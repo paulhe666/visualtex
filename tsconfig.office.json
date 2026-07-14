@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["office-js", "vite/client"],
+    "noEmit": true
+  },
+  "include": [
+    "src/office/**/*.ts",
+    "src/office/**/*.tsx",
+    "src/workspace/**/*.ts",
+    "src/workspace/**/*.tsx"
+  ],
+  "references": []
+}

@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 
 interface Props {
   open: boolean;
@@ -26,6 +27,12 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
+  const autoPairDelimiters = useEditorStore(
+    (state) => state.autoPairDelimiters,
+  );
+  const setAutoPairDelimiters = useEditorStore(
+    (state) => state.setAutoPairDelimiters,
+  );
   const personalize = useEditorStore((state) => state.personalize);
   const setPersonalize = useEditorStore((state) => state.setPersonalize);
   const suggestionCount = useEditorStore((state) => state.suggestionCount);
@@ -189,6 +196,26 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
                 <Moon size={16} /> {isEn ? "Dark" : "深色"}
               </button>
             </div>
+            <label className="switch-row">
+              <span>
+                <strong>
+                  {isEn ? "Auto-pair delimiters" : "自动补全成对符号"}
+                </strong>
+                <small>
+                  {isEn
+                    ? "Automatically add the matching bracket, brace or vertical bar"
+                    : "输入括号、花括号或竖线时自动添加匹配符号"}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                checked={autoPairDelimiters}
+                onChange={(event) =>
+                  setAutoPairDelimiters(event.target.checked)
+                }
+              />
+              <span className="switch-control" />
+            </label>
             <label className="range-setting">
               <span>
                 <strong>{isEn ? "Formula zoom" : "公式显示缩放"}</strong>
@@ -232,6 +259,8 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
               </button>
             </div>
           </div>
+
+          <OfficeIntegrationSettings />
 
           <div className="settings-section">
             <div className="settings-section-title">

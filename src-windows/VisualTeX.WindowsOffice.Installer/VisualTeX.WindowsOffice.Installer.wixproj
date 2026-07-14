@@ -1,0 +1,16 @@
+<Project Sdk="WixToolset.Sdk/4.0.5">
+  <PropertyGroup>
+    <OutputName>VisualTeX-WindowsOffice-VSTO</OutputName>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <DefineConstants>
+      WordOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WordVsto\bin\x64\Release\net48;
+      PowerPointOutput=$(MSBuildThisFileDirectory)..\VisualTeX.PowerPointVsto\bin\x64\Release\net48;
+      ContractsOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WindowsOffice.Contracts\bin\x64\Release\netstandard2.0
+    </DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj" />
+    <ProjectReference Include="..\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj" />
+  </ItemGroup>
+</Project>
