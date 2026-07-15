@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Braces,
@@ -100,6 +100,12 @@ interface InlineOcrState {
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
+const LANDING_PREVIEW_LINES = [
+  String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
+  String.raw`R_{\mu\nu}-\frac{1}{2}Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\frac{8\pi G}{c^4}T_{\mu\nu}`,
+  String.raw`\mathrm{d}s^2=-\left(1-\frac{2GMr}{c^2\Sigma}\right)c^2\mathrm{d}t^2-\frac{4GMar\sin^2\theta}{c^2\Sigma}c\mathrm{d}t\mathrm{d}\phi+\frac{\Sigma}{\Delta}\mathrm{d}r^2+\Sigma\mathrm{d}\theta^2+\left(r^2+a^2+\frac{2GMa^2r\sin^2\theta}{c^2\Sigma}\right)\sin^2\theta\mathrm{d}\phi^2`,
+  String.raw`\mathcal{L}_{\mathrm{SM}}=-\frac{1}{4}F^a_{\mu\nu}F^{a\mu\nu}+i\bar{\psi}\gamma^\mu D_\mu\psi+(D_\mu\Phi)^\dagger(D^\mu\Phi)-V(\Phi)-\left(y_{ij}\bar{\psi}_{Li}\Phi\psi_{Rj}+\mathrm{h.c.}\right)`,
+] as const;
 
 function App() {
   const landingPreview = new URLSearchParams(window.location.search).has("landing-preview");
@@ -157,6 +163,7 @@ function App() {
   );
   const addHistory = useEditorStore((state) => state.addHistory);
   const loadDocument = useEditorStore((state) => state.loadDocument);
+  const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
   const toDocument = useEditorStore((state) => state.toDocument);
   const checkUpdatesOnStartup = useEditorStore(
     (state) => state.checkUpdatesOnStartup,
@@ -194,6 +201,21 @@ function App() {
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
+
+  useLayoutEffect(() => {
+    if (!landingPreview) return;
+    replaceDocumentState({
+      title: "示例公式",
+      lines: LANDING_PREVIEW_LINES.map((latex, index) => ({
+        id: `landing-preview-${index + 1}`,
+        latex,
+      })),
+      activeLineId: "landing-preview-1",
+      selectionByLineId: {},
+    });
+    setZoom(0.8);
+    setSourceOpen(false);
+  }, [landingPreview, replaceDocumentState, setSourceOpen, setZoom]);
 
   const captureDocumentSnapshot = (): DocumentSnapshot =>
     getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});

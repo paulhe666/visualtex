@@ -314,7 +314,9 @@ export const useEditorStore = create<EditorState>()(
       },
     }),
     {
-      name: "visualtex-editor",
+      name: window.location.search.includes("landing-preview")
+        ? "visualtex-editor-landing-preview"
+        : "visualtex-editor",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         title: state.title,
