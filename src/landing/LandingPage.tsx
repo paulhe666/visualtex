@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -21,7 +22,20 @@ const VERSION = "1.1.0";
 const RELEASE_BASE = `https://github.com/paulhe666/visualtex/releases/download/v${VERSION}`;
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
 
-const downloads = [
+type PlatformId = "mac" | "windows" | "linux";
+
+type DownloadOption = {
+  id: PlatformId;
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+  href: string;
+  action: string;
+  secondaryHref?: string;
+  secondaryAction?: string;
+};
+
+const downloads: readonly DownloadOption[] = [
   {
     id: "mac",
     icon: Laptop,
@@ -48,7 +62,7 @@ const downloads = [
     secondaryHref: `${RELEASE_BASE}/VisualTeX_${VERSION}_amd64.deb`,
     secondaryAction: "下载 DEB",
   },
-] as const;
+];
 
 const features = [
   {
@@ -83,7 +97,7 @@ const features = [
   },
 ] as const;
 
-function detectPlatform() {
+function detectPlatform(): PlatformId | "" {
   const userAgent = navigator.userAgent.toLowerCase();
   if (userAgent.includes("mac")) return "mac";
   if (userAgent.includes("win")) return "windows";
@@ -105,23 +119,20 @@ function EditorPreview() {
             <span />
           </div>
           <div className="landing-preview-title">未命名公式</div>
-          <div className="landing-preview-status">
-            <span />
-            已保存
-          </div>
+          <div className="landing-preview-status"><span />已保存</div>
         </div>
 
-        <div className="landing-preview-toolbar">
-          <button type="button">x²</button>
-          <button type="button">√</button>
-          <button type="button">∑</button>
-          <button type="button">∫</button>
-          <button type="button">α</button>
-          <button type="button">矩阵</button>
+        <div className="landing-preview-toolbar" aria-hidden="true">
+          <button type="button" tabIndex={-1}>x²</button>
+          <button type="button" tabIndex={-1}>√</button>
+          <button type="button" tabIndex={-1}>∑</button>
+          <button type="button" tabIndex={-1}>∫</button>
+          <button type="button" tabIndex={-1}>α</button>
+          <button type="button" tabIndex={-1}>矩阵</button>
         </div>
 
         <div className="landing-preview-body">
-          <aside className="landing-preview-sidebar">
+          <aside className="landing-preview-sidebar" aria-hidden="true">
             <span className="is-active">常用</span>
             <span>结构</span>
             <span>符号</span>
@@ -135,6 +146,7 @@ function EditorPreview() {
                 x = <span className="landing-fraction"><span>−b ± √(b² − 4ac)</span><span>2a</span></span>
               </div>
             </div>
+
             <div className="landing-formula-card is-secondary">
               <span className="landing-formula-index">02</span>
               <div className="landing-formula-expression">
@@ -142,11 +154,9 @@ function EditorPreview() {
                 e<sup>−x²</sup> dx = √π
               </div>
             </div>
+
             <div className="landing-source-panel">
-              <div className="landing-source-heading">
-                <span>LaTeX 源码</span>
-                <span>实时同步</span>
-              </div>
+              <div className="landing-source-heading"><span>LaTeX 源码</span><span>实时同步</span></div>
               <code>{String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}`}</code>
             </div>
           </div>
@@ -155,18 +165,12 @@ function EditorPreview() {
 
       <div className="landing-float-card landing-float-card-top">
         <Sparkles size={17} />
-        <div>
-          <strong>直观编辑</strong>
-          <span>点击即可插入结构</span>
-        </div>
+        <div><strong>直观编辑</strong><span>点击即可插入结构</span></div>
       </div>
 
       <div className="landing-float-card landing-float-card-bottom">
         <Code2 size={17} />
-        <div>
-          <strong>双向同步</strong>
-          <span>公式与源码始终一致</span>
-        </div>
+        <div><strong>双向同步</strong><span>公式与源码始终一致</span></div>
       </div>
     </div>
   );
@@ -180,21 +184,13 @@ export function LandingPage() {
       <header className="landing-header">
         <div className="landing-header-inner">
           <a className="landing-brand" href="/" aria-label="VisualTeX 首页">
-            <span className="landing-brand-mark">
-              <VisualTeXLogo />
-            </span>
+            <span className="landing-brand-mark"><VisualTeXLogo /></span>
             <span>VisualTeX</span>
           </a>
 
           <nav className="landing-nav" aria-label="主要导航">
-            <a className="landing-nav-download" href="#download">
-              <Download size={17} />
-              <span>下载应用端</span>
-            </a>
-            <a className="landing-nav-editor" href="/editor">
-              <span>网页端使用</span>
-              <ArrowRight size={17} />
-            </a>
+            <a className="landing-nav-download" href="#download"><Download size={17} /><span>下载应用端</span></a>
+            <a className="landing-nav-editor" href="/editor"><span>网页端使用</span><ArrowRight size={17} /></a>
           </nav>
         </div>
       </header>
@@ -206,34 +202,18 @@ export function LandingPage() {
 
           <div className="landing-hero-inner">
             <div className="landing-hero-copy">
-              <div className="landing-eyebrow">
-                <span className="landing-eyebrow-dot" />
-                可视化 LaTeX 公式编辑器
-              </div>
-
-              <h1>
-                让复杂公式编辑，
-                <span>回归直觉。</span>
-              </h1>
-
-              <p>
-                VisualTeX 将结构化公式编辑、LaTeX 源码、本地公式 OCR 与 Office 工作流放在同一个界面中，让数学与科研写作更自然、更高效。
-              </p>
+              <div className="landing-eyebrow"><span className="landing-eyebrow-dot" />可视化 LaTeX 公式编辑器</div>
+              <h1>让复杂公式编辑，<span>回归直觉。</span></h1>
+              <p>VisualTeX 将结构化公式编辑、LaTeX 源码、本地公式 OCR 与 Office 工作流放在同一个界面中，让数学与科研写作更自然、更高效。</p>
 
               <div className="landing-hero-actions">
-                <a className="landing-primary-action" href="/editor">
-                  立即使用网页端
-                  <ArrowRight size={19} />
-                </a>
-                <a className="landing-secondary-action" href="#download">
-                  <Download size={18} />
-                  下载桌面端
-                </a>
+                <a className="landing-primary-action" href="/editor">立即使用网页端<ArrowRight size={19} /></a>
+                <a className="landing-secondary-action" href="#download"><Download size={18} />下载桌面端</a>
               </div>
 
               <div className="landing-hero-meta">
-                <span><Check size={15} /> 网页端无需安装</span>
-                <span><Check size={15} /> 桌面端支持 Office 与本地 OCR</span>
+                <span><Check size={15} />网页端无需安装</span>
+                <span><Check size={15} />桌面端支持 Office 与本地 OCR</span>
               </div>
             </div>
 
@@ -243,16 +223,7 @@ export function LandingPage() {
 
         <section className="landing-proof-strip" aria-label="VisualTeX 适用场景">
           <div className="landing-proof-inner">
-            <span>适用于</span>
-            <strong>数学</strong>
-            <i />
-            <strong>物理</strong>
-            <i />
-            <strong>工程</strong>
-            <i />
-            <strong>教学</strong>
-            <i />
-            <strong>科研写作</strong>
+            <span>适用于</span><strong>数学</strong><i /><strong>物理</strong><i /><strong>工程</strong><i /><strong>教学</strong><i /><strong>科研写作</strong>
           </div>
         </section>
 
@@ -283,10 +254,7 @@ export function LandingPage() {
               <span>从输入到使用</span>
               <h2>公式不只需要写出来，还应该顺畅地进入你的文档。</h2>
               <p>在网页中快速完成公式，在桌面端接入 Word 与 PowerPoint。VisualTeX 把编辑、导出与再次修改连接成连续工作流。</p>
-              <a href="/editor">
-                打开网页编辑器
-                <ArrowRight size={18} />
-              </a>
+              <a href="/editor">打开网页编辑器<ArrowRight size={18} /></a>
             </div>
 
             <div className="landing-workflow-steps">
@@ -305,22 +273,18 @@ export function LandingPage() {
           </div>
 
           <div className="landing-download-grid">
-            {downloads.map(({ id, icon: Icon, title, detail, href, action, secondaryHref, secondaryAction }) => {
-              const recommended = id === detectedPlatform;
+            {downloads.map((download) => {
+              const Icon = download.icon;
+              const recommended = download.id === detectedPlatform;
               return (
-                <article className={`landing-download-card${recommended ? " is-recommended" : ""}`} key={id}>
+                <article className={`landing-download-card${recommended ? " is-recommended" : ""}`} key={download.id}>
                   {recommended && <span className="landing-recommended-badge">为此设备推荐</span>}
                   <span className="landing-download-icon"><Icon size={25} /></span>
-                  <h3>{title}</h3>
-                  <p>{detail}</p>
-                  <a className="landing-download-primary" href={href}>
-                    <Download size={17} />
-                    {action}
-                  </a>
-                  {secondaryHref && secondaryAction && (
-                    <a className="landing-download-secondary" href={secondaryHref}>
-                      {secondaryAction}
-                    </a>
+                  <h3>{download.title}</h3>
+                  <p>{download.detail}</p>
+                  <a className="landing-download-primary" href={download.href}><Download size={17} />{download.action}</a>
+                  {download.secondaryHref && download.secondaryAction && (
+                    <a className="landing-download-secondary" href={download.secondaryHref}>{download.secondaryAction}</a>
                   )}
                 </article>
               );
@@ -330,37 +294,22 @@ export function LandingPage() {
           <div className="landing-release-link">
             <Github size={18} />
             <span>需要旧版本、校验文件或安装说明？</span>
-            <a href={RELEASES_URL} target="_blank" rel="noreferrer">
-              查看 GitHub 全部发布
-              <ArrowUpRight size={16} />
-            </a>
+            <a href={RELEASES_URL} target="_blank" rel="noreferrer">查看 GitHub 全部发布<ArrowUpRight size={16} /></a>
           </div>
         </section>
 
         <section className="landing-final-cta">
           <div className="landing-final-cta-mark"><VisualTeXLogo /></div>
-          <div>
-            <span>无需安装</span>
-            <h2>现在就在浏览器中创建你的第一个公式。</h2>
-          </div>
-          <a href="/editor">
-            进入网页端
-            <ArrowRight size={19} />
-          </a>
+          <div><span>无需安装</span><h2>现在就在浏览器中创建你的第一个公式。</h2></div>
+          <a href="/editor">进入网页端<ArrowRight size={19} /></a>
         </section>
       </main>
 
       <footer className="landing-footer">
         <div className="landing-footer-inner">
-          <a className="landing-brand" href="/">
-            <span className="landing-brand-mark"><VisualTeXLogo /></span>
-            <span>VisualTeX</span>
-          </a>
+          <a className="landing-brand" href="/"><span className="landing-brand-mark"><VisualTeXLogo /></span><span>VisualTeX</span></a>
           <p>Visual LaTeX Formula Editor</p>
-          <a href="https://github.com/paulhe666/visualtex" target="_blank" rel="noreferrer">
-            GitHub
-            <ArrowUpRight size={15} />
-          </a>
+          <a href="https://github.com/paulhe666/visualtex" target="_blank" rel="noreferrer">GitHub<ArrowUpRight size={15} /></a>
         </div>
       </footer>
     </div>
