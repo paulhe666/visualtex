@@ -1,0 +1,36 @@
+name: Landing page check
+
+on:
+  pull_request:
+    branches:
+      - web
+    paths:
+      - "src/landing/**"
+      - "src/main.tsx"
+      - "index.html"
+      - "package.json"
+      - "scripts/landing_page_smoke.mjs"
+      - ".github/workflows/landing-page-check.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run landing source checks
+        run: npm run test:landing
+
+      - name: Build web app
+        run: npm run build:web
