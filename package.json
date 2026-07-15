@@ -10,6 +10,7 @@
     "build:web": "npm run build",
     "preview": "vite preview",
     "deploy:web": "npx wrangler deploy",
+    "test:landing": "node scripts/landing_page_smoke.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
