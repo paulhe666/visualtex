@@ -149,6 +149,18 @@ export function OfficeDialogApp() {
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const { sessionId, session, loading, error, save } = useOfficeSession();
 
+  useEffect(() => {
+    if (loading) {
+      document.title = "VisualTeX Office Formula — 正在加载";
+      return;
+    }
+    if (error || !session) {
+      document.title = `VisualTeX Office Formula — 加载失败${error ? `：${error.slice(0, 80)}` : ""}`;
+      return;
+    }
+    document.title = `VisualTeX Office Formula — ${session.host === "word" ? "Word" : "PowerPoint"} 已就绪`;
+  }, [loading, error, session?.id, session?.host]);
+
   const title = useEditorStore((state) => state.title);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
@@ -526,7 +538,13 @@ export function OfficeDialogApp() {
   ]);
 
   useEffect(() => {
-    if (!session || readyMessageSentRef.current) return;
+    if (
+      !session ||
+      readyMessageSentRef.current ||
+      isMacosOfflineTauriTransport()
+    ) {
+      return;
+    }
     readyMessageSentRef.current = true;
     messageOfficeParent({ type: "visualtex-ready", sessionId: session.id });
   }, [session?.id]);

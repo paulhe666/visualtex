@@ -2,33 +2,55 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  registerMacosDevUrlHandler,
-  unregisterMacosDevUrlHandler,
-} from "./register_macos_dev_url_handler.mjs";
+import { registerMacosDevUrlHandler } from "./register_macos_dev_url_handler.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const debugExecutable = join(repositoryRoot, "src-tauri", "target", "debug", "visualtex");
 const tauri = process.platform === "win32" ? "tauri.cmd" : "tauri";
 
-function prepareMacosForegroundDevelopment() {
+function pauseMacosOfficeBackground() {
   if (process.platform !== "darwin") return;
   const userId = typeof process.getuid === "function" ? process.getuid() : null;
   if (userId !== null) {
     try {
-      execFileSync("/bin/launchctl", [
-        "bootout",
-        `gui/${userId}/com.visualtex.studio.office`,
-      ], { stdio: "ignore" });
+      execFileSync(
+        "/bin/launchctl",
+        ["bootout", `gui/${userId}/com.visualtex.studio.office`],
+        { stdio: "ignore" },
+      );
     } catch {
       // The background LaunchAgent may not currently be loaded.
     }
   }
   try {
-    execFileSync("/usr/bin/pkill", ["-f", debugExecutable], { stdio: "ignore" });
+    execFileSync(
+      "/usr/bin/pkill",
+      ["-f", `${debugExecutable} --office-background`],
+      { stdio: "ignore" },
+    );
   } catch {
-    // No stale development process is a valid starting state.
+    // No competing background development process is a valid state.
   }
+}
+
+function stopStaleDevelopmentProcesses() {
+  if (process.platform !== "darwin") return;
+  for (const pattern of [
+    debugExecutable,
+    join(repositoryRoot, "node_modules", ".bin", "vite"),
+  ]) {
+    try {
+      execFileSync("/usr/bin/pkill", ["-f", pattern], { stdio: "ignore" });
+    } catch {
+      // No stale process matching this project path is a valid state.
+    }
+  }
+}
+
+function prepareMacosForegroundDevelopment() {
+  if (process.platform !== "darwin") return;
+  pauseMacosOfficeBackground();
+  stopStaleDevelopmentProcesses();
 }
 
 prepareMacosForegroundDevelopment();
@@ -42,6 +64,10 @@ const child = spawn(tauri, ["dev", ...process.argv.slice(2)], {
 
 let registered = false;
 let shuttingDown = false;
+const backgroundGuardTimer =
+  process.platform === "darwin"
+    ? setInterval(pauseMacosOfficeBackground, 400)
+    : null;
 const registrationTimer =
   process.platform === "darwin"
     ? setInterval(() => {
@@ -61,8 +87,12 @@ const registrationTimer =
     : null;
 
 function cleanup() {
+  if (backgroundGuardTimer) clearInterval(backgroundGuardTimer);
   if (registrationTimer) clearInterval(registrationTimer);
-  if (registered) unregisterMacosDevUrlHandler();
+  stopStaleDevelopmentProcesses();
+  // Keep the development URL handler registered. When Vite is not running,
+  // the handler shows a precise diagnostic instead of leaving Word with
+  // kLSApplicationNotFoundErr and a generic formula-creation failure.
 }
 
 function forwardSignal(signal) {

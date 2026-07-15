@@ -1106,6 +1106,13 @@ pub fn run() {
                 office::background::hide_main_window(app.handle())
                     .map_err(std::io::Error::other)?;
             } else {
+                // A development rebuild briefly stops the foreground process.
+                // Resuming the installed LaunchAgent here lets an
+                // --office-background process acquire the single-instance lock
+                // during that gap, which shuts down Vite/Tauri and breaks Word
+                // formula creation. Production builds still restore the
+                // background companion normally.
+                #[cfg(not(debug_assertions))]
                 if let Err(error) = office::background::resume_installed_launch_agent() {
                     eprintln!("Unable to resume VisualTeX Office background service: {error}");
                 }

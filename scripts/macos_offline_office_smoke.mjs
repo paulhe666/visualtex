@@ -73,6 +73,9 @@ const installer = read("src-tauri/src/office/macos_offline_installer.rs");
 const packager = read("scripts/package_macos_offline_addins.mjs");
 const nativeHtml = read("office-native-dialog.html");
 const nativeMain = read("src/office/native-dialog-main.tsx");
+const dialogApp = read("src/office/dialog/OfficeDialogApp.tsx");
+const dialogMessages = read("src/office/dialog/dialogMessages.ts");
+const capabilities = read("src-tauri/capabilities/default.json");
 const infoPlist = read("src-tauri/Info.macos.plist");
 
 for (const callback of [
@@ -143,6 +146,11 @@ expectIncludes(protocol, "Office for Mac can return an empty Dir$ result", "VBA 
 expectIncludes(protocol, "On Error Resume Next\n    MkDir directoryPath\n    On Error GoTo 0", "VBA directory creation must tolerate sandbox-authorized existing directories");
 expectIncludes(protocol, 'VTPathFileExists = (Dir$(value) <> "")', "VBA file existence checks must use the Office for Mac-compatible Dir$ form");
 expectIncludes(protocol, "Public Function VTProtocolSelfTest() As Boolean", "VBA protocol must expose an actual host-runtime UUID/UTF-8 self-test");
+expectIncludes(protocol, "Public Function VTParseInvariantDouble", "VBA protocol must parse dot-decimal dispatch values without depending on an Office host locale API");
+expectIncludes(wordAdapter, "VTParseInvariantDouble", "Word must use the shared invariant number parser");
+expectIncludes(powerpointAdapter, "VTParseInvariantDouble", "PowerPoint must use the shared invariant number parser");
+expect(!wordAdapter.includes("Application.DecimalSeparator"), "Word VBA must not reference the Excel-only Application.DecimalSeparator property");
+expect(!powerpointAdapter.includes("Application.DecimalSeparator"), "PowerPoint VBA must not reference the Excel-only Application.DecimalSeparator property");
 expectIncludes(launcher, "AppleScriptTask", "VBA launcher must use AppleScriptTask");
 expectIncludes(wordScript, "/usr/bin/open ", "Word AppleScriptTask must launch only the fixed open tool");
 expectIncludes(powerpointScript, "/usr/bin/open ", "PowerPoint AppleScriptTask must launch only the fixed open tool");
@@ -173,9 +181,15 @@ expectIncludes(rustRuntime, "deny_unknown_fields", "Offline request JSON must re
 expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return results through the VBA callback");
 expectIncludes(rustRuntime, "hide_main_window(app)?", "Office formula requests must hide the main VisualTeX workspace");
 expectIncludes(rustRuntime, "open_editor_window(app, &session_id)", "Office formula requests must open the dedicated formula editor");
+expectIncludes(rustRuntime, "index.html?view=office-formula", "The native Office editor must reuse the stable desktop entry instead of a blank secondary WebView entry");
+expectIncludes(read("src/desktop/main.tsx"), 'view === "office-formula"', "The desktop entry must select the dedicated Office formula view from the window query");
+expectIncludes(read("src/desktop/main.tsx"), "<OfficeDialogApp />", "The dedicated desktop window must render the Office formula editor");
 expectIncludes(rustRuntime, "window.show()", "The dedicated Office formula editor must be explicitly shown");
 expectIncludes(rustRuntime, "window.set_focus()", "The dedicated Office formula editor must receive focus");
 expectIncludes(rustRuntime, "focus_open_office_editor", "macOS reopen handling must be able to refocus an existing Office editor");
+expectIncludes(capabilities, '"office-native-*"', "Dedicated native Office windows must receive Tauri core permissions");
+expectIncludes(dialogApp, "isMacosOfflineTauriTransport()", "Native Office formula editors must avoid Office.js parent messaging");
+expectIncludes(dialogMessages, 'typeof ui.messageParent !== "function"', "Office parent messaging must tolerate native Tauri windows without Office.js");
 expectIncludes(appRuntime, "initial_office_url", "Cold Office URL launches must be recognized before the main workspace is revealed");
 expectIncludes(appRuntime, "if !office::macos_offline::focus_open_office_editor(app)", "macOS reopen must prefer an Office formula editor over the main workspace");
 expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
@@ -223,8 +237,23 @@ expectIncludes(
 );
 expectIncludes(
   read("scripts/tauri_dev.mjs"),
-  'execFileSync("/usr/bin/pkill", ["-f", debugExecutable]',
+  "stopStaleDevelopmentProcesses",
   "Tauri development startup must remove stale debug instances before acquiring the single-instance lock",
+);
+expectIncludes(
+  read("scripts/tauri_dev.mjs"),
+  'join(repositoryRoot, "node_modules", ".bin", "vite")',
+  "Tauri development startup must remove stale Vite servers that occupy the fixed development port",
+);
+expectIncludes(
+  read("scripts/tauri_dev.mjs"),
+  "setInterval(pauseMacosOfficeBackground, 400)",
+  "Tauri development mode must continuously prevent the Office background process from stealing the single-instance lock during hot reload",
+);
+expectIncludes(
+  appRuntime,
+  "#[cfg(not(debug_assertions))]",
+  "Debug builds must not resume the installed Office LaunchAgent",
 );
 expectIncludes(rustRuntime, "cleanup_session_files_at", "Completed and cancelled Sessions must remove known local request artifacts");
 expectIncludes(rustRuntime, "DirectoryNotEmpty", "Session cleanup must preserve unknown files instead of deleting an entire directory recursively");

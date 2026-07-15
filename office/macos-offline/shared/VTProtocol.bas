@@ -168,6 +168,47 @@ Public Function VTJsonNumber(ByVal value As Double) As String
     VTJsonNumber = Replace$(Trim$(Str$(value)), ",", ".")
 End Function
 
+Public Function VTParseInvariantDouble(ByVal value As String) As Double
+    Dim text As String
+    Dim index As Long
+    Dim current As String
+    Dim digitCount As Long
+    Dim fractionDigitCount As Long
+    Dim decimalSeen As Boolean
+
+    text = Trim$(value)
+    If Len(text) = 0 Or Len(text) > 64 Then GoTo InvalidNumber
+
+    index = 1
+    If Left$(text, 1) = "-" Then index = 2
+    If index > Len(text) Then GoTo InvalidNumber
+
+    For index = index To Len(text)
+        current = Mid$(text, index, 1)
+        If InStr(1, "0123456789", current, vbBinaryCompare) > 0 Then
+            digitCount = digitCount + 1
+            If decimalSeen Then fractionDigitCount = fractionDigitCount + 1
+        ElseIf current = "." And Not decimalSeen Then
+            decimalSeen = True
+        Else
+            GoTo InvalidNumber
+        End If
+    Next index
+
+    If digitCount = 0 Then GoTo InvalidNumber
+    If decimalSeen And fractionDigitCount = 0 Then GoTo InvalidNumber
+
+    On Error GoTo InvalidNumber
+    VTParseInvariantDouble = Val(text)
+    If VTParseInvariantDouble <> VTParseInvariantDouble Or _
+       Abs(VTParseInvariantDouble) > 10000000# Then GoTo InvalidNumber
+    Exit Function
+
+InvalidNumber:
+    On Error GoTo 0
+    Err.Raise vbObjectError + 7123, "VisualTeX", "VisualTeX dispatch contains an invalid invariant number."
+End Function
+
 Private Function VTUtf8ByteLength(ByVal value As String) As Long
     Dim bytes() As Byte
     If Len(value) = 0 Then Exit Function
@@ -526,6 +567,7 @@ Public Function VTProtocolSelfTest() As Boolean
     Dim index As Long
     Dim testPath As String
     Dim sample As String
+    Dim parsedNumber As Double
 
     For index = 1 To 1000
         identifier = VTNewUuidV4()
@@ -546,6 +588,20 @@ Public Function VTProtocolSelfTest() As Boolean
     On Error Resume Next
     Kill testPath
     On Error GoTo 0
+
+    parsedNumber = VTParseInvariantDouble("-1234.500000")
+    If Abs(parsedNumber + 1234.5) > 0.0000001 Then
+        Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX invariant-number self-test failed."
+    End If
+    On Error Resume Next
+    parsedNumber = VTParseInvariantDouble("12.5invalid")
+    If Err.Number = 0 Then
+        On Error GoTo 0
+        Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX invariant-number rejection self-test failed."
+    End If
+    Err.Clear
+    On Error GoTo 0
+
     VTProtocolSelfTest = True
 End Function
 

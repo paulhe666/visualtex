@@ -517,7 +517,7 @@ End Function
 
 Private Function VTDispatchDoublePpt(ByVal dispatch As Object, ByVal key As String) As Double
     VTRequireDispatchValue dispatch, key
-    VTDispatchDoublePpt = CDbl(Replace$(CStr(dispatch(key)), ".", Application.DecimalSeparator))
+    VTDispatchDoublePpt = VTParseInvariantDouble(CStr(dispatch(key)))
     If Abs(VTDispatchDoublePpt) > 10000000# Then
         Err.Raise vbObjectError + 7521, "VisualTeX", "VisualTeX dispatch contains invalid " & key & "."
     End If

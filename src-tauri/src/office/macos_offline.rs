@@ -463,7 +463,7 @@ fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
         return Ok(());
     }
     let path = format!(
-        "office-native-dialog.html?sessionId={session_id}&transport=tauri"
+        "index.html?view=office-formula&sessionId={session_id}&transport=tauri"
     );
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
         .title("VisualTeX Office Formula")

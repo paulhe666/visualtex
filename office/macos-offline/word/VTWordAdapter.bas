@@ -458,7 +458,7 @@ End Function
 
 Private Function VTDispatchPositiveDouble(ByVal dispatch As Object, ByVal key As String) As Double
     VTRequireDispatchValue dispatch, key
-    VTDispatchPositiveDouble = CDbl(Replace$(CStr(dispatch(key)), ".", Application.DecimalSeparator))
+    VTDispatchPositiveDouble = VTParseInvariantDouble(CStr(dispatch(key)))
     If VTDispatchPositiveDouble <= 0# Or VTDispatchPositiveDouble > 100000# Then
         Err.Raise vbObjectError + 7414, "VisualTeX", "VisualTeX dispatch contains invalid " & key & "."
     End If
@@ -468,7 +468,7 @@ Private Function VTDispatchOptionalDouble(ByVal dispatch As Object, ByVal key As
     If Not VTCollectionHasKey(dispatch, key) Or Len(CStr(dispatch(key))) = 0 Then
         VTDispatchOptionalDouble = fallback
     Else
-        VTDispatchOptionalDouble = CDbl(Replace$(CStr(dispatch(key)), ".", Application.DecimalSeparator))
+        VTDispatchOptionalDouble = VTParseInvariantDouble(CStr(dispatch(key)))
     End If
 End Function
 
