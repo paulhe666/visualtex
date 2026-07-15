@@ -681,6 +681,7 @@ function App() {
 
   useEffect(() => {
     if (
+      !desktopRuntime ||
       !checkUpdatesOnStartup ||
       onboardingOpen ||
       automaticUpdateCheckRef.current
@@ -707,7 +708,7 @@ function App() {
       window.clearTimeout(timer);
       window.removeEventListener("online", runWhenOnline);
     };
-  }, [checkUpdatesOnStartup, onboardingOpen, runUpdateCheck]);
+  }, [checkUpdatesOnStartup, desktopRuntime, onboardingOpen, runUpdateCheck]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -879,14 +880,16 @@ function App() {
                 <CircleHelp size={16} />
                 <span>{isEn ? "Quick tour" : "新手教程"}</span>
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runMenuAction(() => void runUpdateCheck(true))}
-              >
-                <RefreshCw size={16} />
-                <span>{isEn ? "Check for updates" : "检查更新"}</span>
-              </button>
+              {desktopRuntime && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => runMenuAction(() => void runUpdateCheck(true))}
+                >
+                  <RefreshCw size={16} />
+                  <span>{isEn ? "Check for updates" : "检查更新"}</span>
+                </button>
+              )}
               <div className="app-menu-divider" />
               <div className="app-menu-language">
                 <span>
@@ -1320,6 +1323,7 @@ function App() {
 
       <SettingsDialog
         open={settingsOpen}
+        showApplicationUpdates={desktopRuntime}
         onClose={() => setSettingsOpen(false)}
         onCheckForUpdates={() => {
           setSettingsOpen(false);
@@ -1371,30 +1375,32 @@ function App() {
         language={language}
         onFinish={finishOnboarding}
       />
-      <UpdateDialog
-        open={updateOpen}
-        language={language}
-        checking={updateChecking}
-        error={updateError}
-        result={updateResult}
-        checkOnStartup={checkUpdatesOnStartup}
-        automaticPrompt={automaticUpdatePrompt}
-        onCheckOnStartupChange={setCheckUpdatesOnStartup}
-        onRetry={() => void runUpdateCheck(true)}
-        onOpenRelease={() => {
-          if (!updateResult) return;
-          void openReleasePage(updateResult.releaseUrl).catch((error) => {
-            setUpdateError(
-              error instanceof Error
-                ? error.message
-                : isEn
-                  ? "Unable to open the download page"
-                  : "无法打开下载页面",
-            );
-          });
-        }}
-        onClose={() => setUpdateOpen(false)}
-      />
+      {desktopRuntime && (
+        <UpdateDialog
+          open={updateOpen}
+          language={language}
+          checking={updateChecking}
+          error={updateError}
+          result={updateResult}
+          checkOnStartup={checkUpdatesOnStartup}
+          automaticPrompt={automaticUpdatePrompt}
+          onCheckOnStartupChange={setCheckUpdatesOnStartup}
+          onRetry={() => void runUpdateCheck(true)}
+          onOpenRelease={() => {
+            if (!updateResult) return;
+            void openReleasePage(updateResult.releaseUrl).catch((error) => {
+              setUpdateError(
+                error instanceof Error
+                  ? error.message
+                  : isEn
+                    ? "Unable to open the download page"
+                    : "无法打开下载页面",
+              );
+            });
+          }}
+          onClose={() => setUpdateOpen(false)}
+        />
+      )}
 
       {historyOpen && (
         <div className="panel-backdrop" onClick={() => setHistoryOpen(false)} />

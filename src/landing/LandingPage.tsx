@@ -128,11 +128,36 @@ function EditorPreview() {
       <div className="landing-orbit landing-orbit-one" />
       <div className="landing-orbit landing-orbit-two" />
       <figure className="landing-preview-window">
-        <img
-          className="landing-preview-image"
-          src="/landing-editor-preview.svg"
-          alt="VisualTeX 网页公式编辑器实际界面，展示公式工具区、可视化编辑区和 LaTeX 源码区"
-        />
+        <figcaption className="landing-preview-titlebar">
+          <span className="landing-preview-brand"><VisualTeXLogo />VisualTeX</span>
+          <span className="landing-preview-title">未命名公式 <Check size={11} /></span>
+          <span className="landing-preview-actions"><i>＋</i><i>⌁</i><i>□</i><b>LaTeX 代码格式</b></span>
+        </figcaption>
+        <div className="landing-preview-body">
+          <aside className="landing-preview-sidebar" aria-hidden="true">
+            <strong>公式工具</strong>
+            <div className="landing-preview-categories"><span className="is-active">☆ 常用</span><span>结构</span><span>微积分</span><span>矩阵</span></div>
+            <div className="landing-preview-symbols">
+              <span><b><i>1</i><i>x</i></b><small>分式</small></span>
+              <span><b>√x</b><small>平方根</small></span>
+              <span><b>x<sup>n</sup></b><small>上标</small></span>
+              <span><b>x<sub>i</sub></b><small>下标</small></span>
+              <span><b>∫f(x)</b><small>定积分</small></span>
+              <span><b>Σa<sub>i</sub></b><small>求和</small></span>
+            </div>
+          </aside>
+          <div className="landing-preview-workspace">
+            <div className="landing-preview-workspace-head"><strong><Braces size={13} />可视化编辑</strong><span>−　100%　＋</span></div>
+            <div className="landing-preview-canvas">
+              <div className="landing-formula-card">
+                <span className="landing-formula-index">01</span>
+                <div className="landing-formula-expression">f(x) = <span className="landing-fraction"><span>1</span><span>σ√2π</span></span> e<sup>−(x−μ)²/2σ²</sup></div>
+              </div>
+              <button className="landing-add-row" aria-label="添加公式行">＋</button>
+            </div>
+            <div className="landing-source-panel"><Code2 size={12} /><span>展开 LaTeX 源码</span><i /></div>
+          </div>
+        </div>
       </figure>
     </div>
   );
@@ -187,12 +212,6 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="landing-proof-strip" aria-label="VisualTeX 适用场景">
-          <div className="landing-proof-inner">
-            <span>适用于</span><strong>数学</strong><i /><strong>物理</strong><i /><strong>工程</strong><i /><strong>教学</strong><i /><strong>科研写作</strong>
-          </div>
-        </section>
-
         <section className="landing-section landing-features-section">
           <div className="landing-section-heading">
             <span>核心能力</span>
@@ -211,23 +230,6 @@ export function LandingPage() {
                 <p>{description}</p>
               </article>
             ))}
-          </div>
-        </section>
-
-        <section className="landing-workflow-section">
-          <div className="landing-workflow-inner">
-            <div className="landing-workflow-copy">
-              <span>从输入到使用</span>
-              <h2>公式不只需要写出来，还应该顺畅地进入你的文档。</h2>
-              <p>在网页中快速完成公式，在桌面端接入 Word 与 PowerPoint。VisualTeX 把编辑、导出与再次修改连接成连续工作流。</p>
-              <a href="/editor">打开网页编辑器<ArrowRight size={18} /></a>
-            </div>
-
-            <div className="landing-workflow-steps">
-              <div><span>01</span><strong>可视化输入</strong><p>直接选择结构与符号，不必从空白源码开始。</p></div>
-              <div><span>02</span><strong>同步检查</strong><p>公式和 LaTeX 源码始终可见，修改结果立即反馈。</p></div>
-              <div><span>03</span><strong>插入文档</strong><p>桌面端连接 Word 与 PowerPoint，并保留再次编辑能力。</p></div>
-            </div>
           </div>
         </section>
 
@@ -276,11 +278,6 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="landing-final-cta">
-          <div className="landing-final-cta-mark"><VisualTeXLogo /></div>
-          <div><span>无需安装</span><h2>现在就在浏览器中创建你的第一个公式。</h2></div>
-          <a href="/editor">进入网页端<ArrowRight size={19} /></a>
-        </section>
       </main>
 
       <footer className="landing-footer">

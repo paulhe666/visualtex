@@ -15,9 +15,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCheckForUpdates: () => void;
+  showApplicationUpdates?: boolean;
 }
 
-export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
+export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicationUpdates = false }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
@@ -259,7 +260,7 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
             </div>
           </div>
 
-          <div className="settings-section">
+          {showApplicationUpdates && <div className="settings-section">
             <div className="settings-section-title">
               <RefreshCw size={18} />
               <div>
@@ -297,7 +298,7 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
               <RefreshCw size={15} />
               {isEn ? "Check now" : "立即检查"}
             </button>
-          </div>
+          </div>}
         </div>
 
         <footer className="dialog-footer">

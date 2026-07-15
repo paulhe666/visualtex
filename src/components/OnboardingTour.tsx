@@ -6,9 +6,7 @@ import {
   Code2,
   Copy,
   Keyboard,
-  Menu,
   PanelLeft,
-  RefreshCw,
   Save,
   X,
 } from "lucide-react";
@@ -47,11 +45,6 @@ const copy: Record<Language, StepCopy[]> = {
         "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。",
     },
     {
-      title: "自动检查新版本",
-      description:
-        "联网后会自动检查正式版本；也可以在菜单或设置中手动检查，并按当前语言查看更新内容。",
-    },
-    {
       title: "复制、保存与继续编辑",
       description:
         "复制所需的 LaTeX 格式，或把完整文档保存到本地浏览器设备中。",
@@ -76,11 +69,6 @@ const copy: Record<Language, StepCopy[]> = {
       title: "Switch the LaTeX code format",
       description:
         "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately.",
-    },
-    {
-      title: "Check for new versions automatically",
-      description:
-        "VisualTeX checks stable releases when a connection is available. You can also check manually and read notes in the current language.",
     },
     {
       title: "Copy, save, and keep editing",
@@ -257,31 +245,6 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
             )}
 
             {step === 4 && (
-              <div className="onboarding-update-demo">
-                <span>
-                  <Menu size={20} />
-                  <strong>{isEn ? "Open app menu" : "打开左上角菜单"}</strong>
-                </span>
-                <i>
-                  <ArrowRight size={15} />
-                </i>
-                <span className="onboarding-update-menu-item">
-                  <RefreshCw size={20} />
-                  <strong>{isEn ? "Check for updates" : "检查更新"}</strong>
-                </span>
-                <i>
-                  <ArrowRight size={15} />
-                </i>
-                <span>
-                  <Check size={20} />
-                  <strong>
-                    {isEn ? "Read localized notes" : "查看双语更新内容"}
-                  </strong>
-                </span>
-              </div>
-            )}
-
-            {step === 5 && (
               <div className="onboarding-workflow-demo">
                 <span>
                   <Code2 size={20} />
