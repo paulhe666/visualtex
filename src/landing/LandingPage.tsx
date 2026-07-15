@@ -14,7 +14,6 @@ import {
   Package,
   ScanLine,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
@@ -97,87 +96,54 @@ const features = [
   },
 ] as const;
 
-function detectPlatform(): PlatformId | "" {
+type PlatformDetection = {
+  platform: PlatformId | "";
+  isMobileDevice: boolean;
+};
+
+function detectPlatform(): PlatformDetection {
   const userAgent = navigator.userAgent.toLowerCase();
-  if (userAgent.includes("mac")) return "mac";
-  if (userAgent.includes("win")) return "windows";
-  if (userAgent.includes("linux")) return "linux";
-  return "";
+  const platform = navigator.platform.toLowerCase();
+  const isIPadDesktopMode = platform.includes("mac") && navigator.maxTouchPoints > 1;
+  const isMobileDevice = /android|iphone|ipad|ipod|mobile/.test(userAgent) || isIPadDesktopMode;
+
+  if (isMobileDevice || userAgent.includes("cros")) {
+    return { platform: "", isMobileDevice };
+  }
+  if (userAgent.includes("windows") || platform.startsWith("win")) {
+    return { platform: "windows", isMobileDevice: false };
+  }
+  if (userAgent.includes("macintosh") || platform.startsWith("mac")) {
+    return { platform: "mac", isMobileDevice: false };
+  }
+  if (userAgent.includes("linux") || platform.includes("linux")) {
+    return { platform: "linux", isMobileDevice: false };
+  }
+  return { platform: "", isMobileDevice: false };
 }
 
 function EditorPreview() {
   return (
-    <div className="landing-preview-wrap" aria-label="VisualTeX 编辑器界面预览">
+    <div className="landing-preview-wrap">
       <div className="landing-orbit landing-orbit-one" />
       <div className="landing-orbit landing-orbit-two" />
-
-      <div className="landing-preview-window">
-        <div className="landing-preview-titlebar">
-          <div className="landing-window-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="landing-preview-title">未命名公式</div>
-          <div className="landing-preview-status"><span />已保存</div>
-        </div>
-
-        <div className="landing-preview-toolbar" aria-hidden="true">
-          <button type="button" tabIndex={-1}>x²</button>
-          <button type="button" tabIndex={-1}>√</button>
-          <button type="button" tabIndex={-1}>∑</button>
-          <button type="button" tabIndex={-1}>∫</button>
-          <button type="button" tabIndex={-1}>α</button>
-          <button type="button" tabIndex={-1}>矩阵</button>
-        </div>
-
-        <div className="landing-preview-body">
-          <aside className="landing-preview-sidebar" aria-hidden="true">
-            <span className="is-active">常用</span>
-            <span>结构</span>
-            <span>符号</span>
-            <span>矩阵</span>
-          </aside>
-
-          <div className="landing-preview-canvas">
-            <div className="landing-formula-card">
-              <span className="landing-formula-index">01</span>
-              <div className="landing-formula-expression">
-                x = <span className="landing-fraction"><span>−b ± √(b² − 4ac)</span><span>2a</span></span>
-              </div>
-            </div>
-
-            <div className="landing-formula-card is-secondary">
-              <span className="landing-formula-index">02</span>
-              <div className="landing-formula-expression">
-                ∫<span className="landing-integral-limits"><sup>∞</sup><sub>−∞</sub></span>
-                e<sup>−x²</sup> dx = √π
-              </div>
-            </div>
-
-            <div className="landing-source-panel">
-              <div className="landing-source-heading"><span>LaTeX 源码</span><span>实时同步</span></div>
-              <code>{String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}`}</code>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="landing-float-card landing-float-card-top">
-        <Sparkles size={17} />
-        <div><strong>直观编辑</strong><span>点击即可插入结构</span></div>
-      </div>
-
-      <div className="landing-float-card landing-float-card-bottom">
-        <Code2 size={17} />
-        <div><strong>双向同步</strong><span>公式与源码始终一致</span></div>
-      </div>
+      <figure className="landing-preview-window">
+        <img
+          className="landing-preview-image"
+          src="/landing-editor-preview.svg"
+          alt="VisualTeX 网页公式编辑器实际界面，展示公式工具区、可视化编辑区和 LaTeX 源码区"
+        />
+      </figure>
     </div>
   );
 }
 
 export function LandingPage() {
-  const detectedPlatform = detectPlatform();
+  const { platform: detectedPlatform, isMobileDevice } = detectPlatform();
+  const detectedPlatformName = downloads.find((download) => download.id === detectedPlatform)?.title;
+  const orderedDownloads = [...downloads].sort(
+    (left, right) => Number(right.id === detectedPlatform) - Number(left.id === detectedPlatform),
+  );
 
   return (
     <div className="landing-page">
@@ -189,8 +155,8 @@ export function LandingPage() {
           </a>
 
           <nav className="landing-nav" aria-label="主要导航">
-            <a className="landing-nav-download" href="#download"><Download size={17} /><span>下载应用端</span></a>
-            <a className="landing-nav-editor" href="/editor"><span>网页端使用</span><ArrowRight size={17} /></a>
+            <a className="landing-nav-download" href="#download"><Download size={17} /><span>下载桌面端</span></a>
+            <a className="landing-nav-editor" href="/editor"><span>打开网页端</span><ArrowRight size={17} /></a>
           </nav>
         </div>
       </header>
@@ -272,12 +238,24 @@ export function LandingPage() {
             <p>当前版本 v{VERSION}。安装包来自 VisualTeX 官方 GitHub Release。</p>
           </div>
 
+          <p className="landing-device-note" role="status">
+            {detectedPlatformName
+              ? `已识别当前设备为 ${detectedPlatformName}，对应安装包已优先展示。`
+              : isMobileDevice
+                ? "移动设备可直接使用网页端；桌面安装包请在对应电脑上下载。"
+                : "未能自动识别当前系统，请手动选择对应安装包。"}
+          </p>
+
           <div className="landing-download-grid">
-            {downloads.map((download) => {
+            {orderedDownloads.map((download) => {
               const Icon = download.icon;
               const recommended = download.id === detectedPlatform;
               return (
-                <article className={`landing-download-card${recommended ? " is-recommended" : ""}`} key={download.id}>
+                <article
+                  className={`landing-download-card${recommended ? " is-recommended" : ""}`}
+                  key={download.id}
+                  aria-label={recommended ? `${download.title}，当前设备推荐` : download.title}
+                >
                   {recommended && <span className="landing-recommended-badge">为此设备推荐</span>}
                   <span className="landing-download-icon"><Icon size={25} /></span>
                   <h3>{download.title}</h3>

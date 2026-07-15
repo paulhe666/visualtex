@@ -350,6 +350,7 @@ html[data-page="landing"] body {
 
 .landing-preview-window {
   position: relative;
+  margin: 0;
   z-index: 2;
   overflow: hidden;
   border: 1px solid rgba(17, 24, 39, 0.13);
@@ -368,6 +369,13 @@ html[data-page="landing"] body {
   box-shadow:
     0 42px 92px rgba(8, 30, 65, 0.31),
     0 8px 22px rgba(8, 30, 65, 0.13);
+}
+
+.landing-preview-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #f5f7fa;
 }
 
 .landing-preview-titlebar {
@@ -880,7 +888,21 @@ html[data-page="landing"] body {
 }
 
 .landing-download-heading {
-  margin-bottom: 44px;
+  margin-bottom: 28px;
+}
+
+.landing-device-note {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 30px;
+  padding: 9px 13px;
+  border: 1px solid rgba(33, 102, 209, 0.12);
+  border-radius: 999px;
+  color: #4d617d;
+  background: rgba(237, 245, 255, 0.76);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .landing-download-grid {
@@ -1308,6 +1330,11 @@ html[data-page="landing"] body {
 
   .landing-download-section {
     padding: 82px 0 88px;
+  }
+
+  .landing-device-note {
+    width: 100%;
+    border-radius: 13px;
   }
 
   .landing-download-card:last-child {

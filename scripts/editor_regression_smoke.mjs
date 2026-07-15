@@ -2,10 +2,12 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 
-const previewPort = 4173;
-const debugPort = 9223;
+const portOffset = process.pid % 1000;
+const previewPort = 5200 + portOffset;
+const debugPort = 10200 + portOffset;
 const externalBaseUrl = process.env.VISUALTEX_TEST_URL?.replace(/\/$/, "");
-const baseUrl = externalBaseUrl || `http://127.0.0.1:${previewPort}`;
+const baseOrigin = externalBaseUrl || `http://127.0.0.1:${previewPort}`;
+const baseUrl = baseOrigin.endsWith("/editor") ? baseOrigin : `${baseOrigin}/editor`;
 const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -872,7 +874,10 @@ async function main() {
 
     await setField("a=b");
     await key("Enter", "Enter", 13);
-    await sleep(180);
+    await waitForEvaluation(`(() => ({
+      ready: document.querySelectorAll("math-field").length >= 2,
+      fieldCount: document.querySelectorAll("math-field").length,
+    }))()`, "Enter creates a second formula line");
     await setFieldAt(1, "c=d");
     await evaluate(`document.querySelector(".code-format-primary").click()`);
     await sleep(120);

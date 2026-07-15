@@ -5,7 +5,7 @@ import process from "node:process";
 const portOffset = process.pid % 1000;
 const previewPort = 4300 + portOffset;
 const debugPort = 9300 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}`;
+const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
 const chromeProfile = `/tmp/visualtex-history-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

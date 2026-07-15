@@ -2665,6 +2665,18 @@ button:disabled {
   gap: 2px;
 }
 
+.formula-toolbar-header > .formula-toolbar-actions {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.formula-toolbar-actions .icon-button.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .formula-toolbar-header strong,
 .pane-title-copy h1,
 .pane-title-group strong {

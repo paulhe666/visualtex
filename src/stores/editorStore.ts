@@ -116,6 +116,7 @@ interface EditorState {
   zoom: number;
   sourceOpen: boolean;
   latexCodeFormat: LatexCodeFormat;
+  autoPairDelimiters: boolean;
   personalize: boolean;
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
@@ -132,6 +133,7 @@ interface EditorState {
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
+  setAutoPairDelimiters: (enabled: boolean) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
@@ -157,6 +159,7 @@ export const useEditorStore = create<EditorState>()(
       zoom: 1,
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
+      autoPairDelimiters: true,
       personalize: true,
       suggestionCount: DEFAULT_SUGGESTION_COUNT,
       checkUpdatesOnStartup: true,
@@ -216,6 +219,8 @@ export const useEditorStore = create<EditorState>()(
             ? latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
         }),
+      setAutoPairDelimiters: (autoPairDelimiters) =>
+        set({ autoPairDelimiters }),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: normalizeSuggestionCount(suggestionCount) }),
@@ -320,6 +325,7 @@ export const useEditorStore = create<EditorState>()(
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
         latexCodeFormat: state.latexCodeFormat,
+        autoPairDelimiters: state.autoPairDelimiters,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
@@ -341,6 +347,10 @@ export const useEditorStore = create<EditorState>()(
           latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
             ? persisted.latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
+          autoPairDelimiters:
+            typeof persisted.autoPairDelimiters === "boolean"
+              ? persisted.autoPairDelimiters
+              : true,
           personalize:
             typeof persisted.personalize === "boolean"
               ? persisted.personalize
