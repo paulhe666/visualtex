@@ -7,6 +7,7 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
 1. Open Microsoft Word for Mac and create a blank macro-enabled template.
 2. Open the Visual Basic Editor and import these modules without changing their module names:
    - `shared/VTProtocol.bas`
+   - `shared/VTOfficePaths.bas`
    - `shared/VTMetadata.bas`
    - `shared/VTLauncher.bas`
    - `shared/VTErrorHandling.bas`
@@ -20,6 +21,7 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
 1. Open Microsoft PowerPoint for Mac and create a blank macro-enabled presentation.
 2. Import these modules without changing their module names:
    - `shared/VTProtocol.bas`
+   - `shared/VTOfficePaths.bas`
    - `shared/VTMetadata.bas`
    - `shared/VTLauncher.bas`
    - `shared/VTErrorHandling.bas`

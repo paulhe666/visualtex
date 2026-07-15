@@ -7,10 +7,10 @@ This document defines the native, completely offline macOS Word and PowerPoint i
 ## Non-negotiable boundaries
 
 - Word loads `VisualTeX.dotm` as a global template from Word's actual Startup path.
-- PowerPoint loads the fixed file `~/Library/Application Support/VisualTeX/OfficeAddins/VisualTeX.ppam` after a one-time manual registration in PowerPoint.
+- PowerPoint loads the fixed file `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeAddins/VisualTeX.ppam` after a one-time manual registration in PowerPoint.
 - Ribbon callbacks are VBA. They call `AppleScriptTask`, which receives only a UUID session id.
 - The AppleScriptTask scripts accept no shell command, file path, LaTeX, image data, or arbitrary URL. They validate the UUID and open the fixed URL `visualtex://office/open?session=<uuid>` with `/usr/bin/open` and `quoted form of`.
-- Formula request and result payloads are local files under `~/Library/Application Support/VisualTeX/OfficeSessions/<session-id>/`.
+- Formula request and result payloads are local files under the Office application-group container at `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/<session-id>/`, which is accessible to both sandboxed Office hosts and the desktop app.
 - The Tauri application imports the request into the existing `SessionStore`; formula editing and export reuse the existing Office editor and metadata schema.
 - macOS continues to store formulas as PNG/SVG-backed `InlineShape`/`Shape` objects. It never registers or pretends to provide the Windows `VisualTeX.Formula.1` COM/OLE class.
 - No Office.js, HTTPS, manifest, certificate, WebView add-in, network access, menu-language matching, coordinate clicking, mouse simulation, or keyboard simulation is part of this route.
@@ -38,7 +38,7 @@ VBA creates a centered pending shape for create, or captures one selected formul
 ## Persistent files
 
 ```text
-~/Library/Application Support/VisualTeX/
+~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/
   OfficeAddins/
     VisualTeX.ppam
     resources/placeholder.png

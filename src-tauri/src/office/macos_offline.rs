@@ -25,6 +25,7 @@ const DISPATCH_FILE: &str = "dispatch.txt";
 const RESULT_IMAGE_FILE: &str = "formula.png";
 const WORD_POINTER_FILE: &str = "word-active-session.txt";
 const POWERPOINT_POINTER_FILE: &str = "powerpoint-active-session.txt";
+const OFFICE_GROUP_CONTAINER: &str = "Library/Group Containers/UBF8T346G9.Office";
 const METADATA_PREFIX: &str = "visualtex:v1:deflate:";
 const PENDING_PREFIX: &str = "visualtex:pending:v1:";
 const MAX_REQUEST_BYTES: u64 = 256 * 1024;
@@ -85,7 +86,7 @@ fn user_home() -> Result<PathBuf, String> {
 }
 
 pub(crate) fn offline_root() -> Result<PathBuf, String> {
-    Ok(user_home()?.join("Library/Application Support/VisualTeX"))
+    Ok(user_home()?.join(OFFICE_GROUP_CONTAINER).join("VisualTeX"))
 }
 
 fn sessions_root() -> Result<PathBuf, String> {
@@ -1011,6 +1012,13 @@ pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_root_uses_the_office_application_group() {
+        let root = offline_root().expect("offline Office root should resolve");
+        assert!(root.ends_with("Library/Group Containers/UBF8T346G9.Office/VisualTeX"));
+        assert!(!root.to_string_lossy().contains("Library/Application Support/VisualTeX"));
+    }
 
     #[test]
     fn completed_session_cleanup_removes_only_known_ephemeral_files() {

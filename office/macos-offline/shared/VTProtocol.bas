@@ -12,15 +12,6 @@ Private Const VT_MAX_METADATA_CHARS As Long = 131072
 Private VT_RANDOM_READY As Boolean
 Private VT_UUID_COUNTER As Long
 
-Public Function VTApplicationSupportRoot() As String
-    Dim homePath As String
-    homePath = Environ$("HOME")
-    If Len(homePath) = 0 Or Left$(homePath, 1) <> "/" Then
-        Err.Raise vbObjectError + 7100, "VisualTeX", "Unable to resolve the macOS home directory."
-    End If
-    VTApplicationSupportRoot = homePath & "/Library/Application Support/VisualTeX"
-End Function
-
 Public Function VTSessionRoot() As String
     VTSessionRoot = VTApplicationSupportRoot() & "/OfficeSessions"
 End Function

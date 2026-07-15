@@ -75,6 +75,7 @@ function validateMacroContainer(path, kind) {
   const vbaProject = run("/usr/bin/unzip", ["-p", path, vbaEntry], { encoding: "buffer" });
   const expectedModules = [
     "VTProtocol",
+    "VTOfficePaths",
     "VTMetadata",
     "VTLauncher",
     "VTErrorHandling",

@@ -15,7 +15,7 @@ There must be exactly one `session` query parameter. Fragments, user information
 Location:
 
 ```text
-~/Library/Application Support/VisualTeX/OfficeSessions/<sessionId>/request.json
+~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/<sessionId>/request.json
 ```
 
 Maximum encoded size: 256 KiB.
@@ -62,7 +62,7 @@ Rules:
 Location:
 
 ```text
-~/Library/Application Support/VisualTeX/OfficeSessions/<sessionId>/dispatch.txt
+~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/<sessionId>/dispatch.txt
 ```
 
 This file is written atomically by VisualTeX and read by a fixed VBA callback. It is line-oriented so Office VBA does not need a JSON parser. Keys are unique and values may not contain CR or LF.
@@ -88,8 +88,8 @@ zOrder=<positive integer>
 The app writes a separate host pointer file immediately before invoking the fixed macro:
 
 ```text
-~/Library/Application Support/VisualTeX/OfficeSessions/word-active-session.txt
-~/Library/Application Support/VisualTeX/OfficeSessions/powerpoint-active-session.txt
+~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/word-active-session.txt
+~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/powerpoint-active-session.txt
 ```
 
 Each pointer contains only one canonical UUID and is removed after the callback. A per-host process mutex prevents two dispatches from using the same pointer concurrently.

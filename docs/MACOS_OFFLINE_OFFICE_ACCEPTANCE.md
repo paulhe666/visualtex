@@ -16,7 +16,7 @@ Expected: all commands pass; the smoke log reports successful AppleScript compil
 
 1. Install the native offline add-ins from VisualTeX Settings.
 2. Confirm `VisualTeX.dotm` is in every discovered Word Startup/Word directory.
-3. Start Word manually. Installation is healthy only after `~/Library/Application Support/VisualTeX/OfficePluginStatus/word.json` reports `loaded: true` and the expected plugin version.
+3. Start Word manually. Installation is healthy only after `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficePluginStatus/word.json` reports `loaded: true` and the expected plugin version.
 4. Restart Word ten times. The VisualTeX Ribbon must appear every time without opening an add-in store or requesting a network connection.
 5. Disconnect all network interfaces. Create and edit an inline formula in a document whose filename contains Chinese characters; verify baseline alignment, UTF-8 Session import, and that cancelling removes only the pending placeholder.
 6. Create and edit a display formula. Toggle numbering in the editor, update equation numbers, save, close, and reopen the document.
@@ -27,7 +27,7 @@ Expected: all commands pass; the smoke log reports successful AppleScript compil
 
 ## PowerPoint: VisualTeX.ppam
 
-1. Confirm the installed path is exactly `~/Library/Application Support/VisualTeX/OfficeAddins/VisualTeX.ppam`.
+1. Confirm the installed path is exactly `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeAddins/VisualTeX.ppam`.
 2. Use VisualTeX Settings to reveal the file and follow the tutorial to register it once through **Tools → PowerPoint Add-Ins**. Do not use UI automation.
 3. Restart PowerPoint ten times. The Ribbon must appear every time after the one manual registration.
 4. Disconnect all network interfaces. Create, edit, and delete formulas in a presentation whose filename contains Chinese characters.

@@ -28,6 +28,7 @@ const requiredFiles = [
   "office/macos-offline/POWERPOINT_INSTALL.md",
   "office/macos-offline/resources/README.md",
   "office/macos-offline/shared/VTProtocol.bas",
+  "office/macos-offline/shared/VTOfficePaths.bas",
   "office/macos-offline/shared/VTMetadata.bas",
   "office/macos-offline/shared/VTLauncher.bas",
   "office/macos-offline/shared/VTErrorHandling.bas",
@@ -43,6 +44,8 @@ const requiredFiles = [
   "src-tauri/src/office/macos_offline_installer.rs",
   "src-tauri/Info.macos.plist",
   "scripts/package_macos_offline_addins.mjs",
+  "scripts/register_macos_dev_url_handler.mjs",
+  "scripts/tauri_dev.mjs",
   "office-native-dialog.html",
   "src/office/native-dialog-main.tsx",
 ];
@@ -60,6 +63,7 @@ const powerpointRibbon = read("office/macos-offline/powerpoint/customUI14.xml");
 const wordAdapter = read("office/macos-offline/word/VTWordAdapter.bas");
 const powerpointAdapter = read("office/macos-offline/powerpoint/VTPowerPointAdapter.bas");
 const protocol = read("office/macos-offline/shared/VTProtocol.bas");
+const officePaths = read("office/macos-offline/shared/VTOfficePaths.bas");
 const launcher = read("office/macos-offline/shared/VTLauncher.bas");
 const wordScript = read("office/macos-offline/word/VisualTeXWord.scpt");
 const powerpointScript = read("office/macos-offline/powerpoint/VisualTeXPowerPoint.scpt");
@@ -94,6 +98,8 @@ expectIncludes(wordAdapter, "InlineShapes.AddPicture", "Word formula insertion m
 expectIncludes(wordAdapter, "target.Delete", "Word replacement must delete the old object only after candidate setup");
 expectIncludes(wordAdapter, "Word did not persist the VisualTeX formula properties", "Word must verify the candidate before deleting the old formula");
 expectIncludes(wordAdapter, "transactionErrorNumber = Err.Number", "Word rollback must preserve the original transaction error");
+expectIncludes(wordAdapter, "errorNumber = Err.Number", "Word creation cleanup must preserve the original error number");
+expectIncludes(wordAdapter, "VTShowError \"Word formula creation\", errorNumber, errorDescription", "Word creation errors must survive placeholder cleanup");
 expectIncludes(wordAdapter, "If Not insertedNumber Is Nothing Then insertedNumber.Delete", "Word rollback must remove a partially inserted equation number");
 expectIncludes(wordAdapter, "VTFindCommittedInlineShape", "Word retries must recognize an already committed Session result");
 expectIncludes(wordAdapter, "sourceDocumentId <> VTWordDocumentIdentity()", "Word callback must reject document switching");
@@ -111,6 +117,8 @@ expectIncludes(powerpointAdapter, "VTRestoreZOrder candidate, targetZOrder + 1",
 expect(!wordAdapter.includes('Format$(Now, "yyyy-mm-dd\\Thh:nn:ss") & "Z"'), "Word health must not label local time as UTC");
 expect(!powerpointAdapter.includes('Format$(Now, "yyyy-mm-dd\\Thh:nn:ss") & "Z"'), "PowerPoint health must not label local time as UTC");
 
+expectIncludes(officePaths, "UBF8T346G9.Office/VisualTeX", "VBA paths must use the Office application-group container");
+expect(!officePaths.includes("Library/Application Support/VisualTeX"), "VBA paths must not use a sandbox-inaccessible user Application Support root");
 expectIncludes(protocol, "New Collection", "VBA protocol must use the Mac-compatible Collection type");
 expect(!protocol.includes("Scripting.Dictionary"), "VBA protocol must not depend on Windows Scripting Runtime");
 expectIncludes(protocol, "If Not VT_RANDOM_READY Then", "UUID generation must seed VBA randomness only once per host process");
@@ -138,6 +146,7 @@ const offlineRuntimeSources = [
   wordAdapter,
   powerpointAdapter,
   protocol,
+  officePaths,
   launcher,
   wordScript,
   powerpointScript,
@@ -169,7 +178,9 @@ expectIncludes(installer, "Library/Application Scripts/com.microsoft.Powerpoint"
 expectIncludes(installer, "addins.json", "Installer must require the compiled add-in checksum manifest");
 expectIncludes(installer, "word/vbaProject.bin", "Installer must validate the Word VBA project entry");
 expectIncludes(installer, "ppt/vbaProject.bin", "Installer must validate the PowerPoint VBA project entry");
+expectIncludes(installer, 'validate_vba_module(path, expected_vba_entry, "VTOfficePaths")', "Installer must reject stale add-ins that predate the Office shared-container path module");
 expectIncludes(packager, "expectedModules", "Packager must verify the reviewed VBA module names");
+expectIncludes(packager, '"VTOfficePaths"', "Packager must require the Office shared-container path module");
 expectIncludes(packager, "customUI/customUI14.xml", "Packager must inject and verify Ribbon XML");
 expect(!installer.includes("Microsoft Word.app\").arg"), "Offline installer must not launch Word as an installation success path");
 expect(!installer.includes("Microsoft PowerPoint.app\").arg"), "Offline installer must not launch PowerPoint as an installation success path");

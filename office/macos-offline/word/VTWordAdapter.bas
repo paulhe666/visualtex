@@ -135,6 +135,8 @@ Private Sub VTWordCreate(ByVal displayMode As String, ByVal numbered As Boolean)
     Dim placeholder As InlineShape
     Dim insertionRange As Range
     Dim requestJson As String
+    Dim errorNumber As Long
+    Dim errorDescription As String
 
     VTRequireWritableWordDocument
     If Not VTPathFileExists(VTPlaceholderImagePath()) Then
@@ -174,11 +176,13 @@ Private Sub VTWordCreate(ByVal displayMode As String, ByVal numbered As Boolean)
     Exit Sub
 
 Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
     On Error Resume Next
     If Not placeholder Is Nothing Then placeholder.Delete
     If Len(sessionId) > 0 Then VTDeleteSessionFiles sessionId
     On Error GoTo 0
-    VTShowError "Word formula creation", Err.Number, Err.Description
+    VTShowError "Word formula creation", errorNumber, errorDescription
 End Sub
 
 Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Object)

@@ -344,6 +344,31 @@ fn validate_zip_entries(_path: &Path, _required_entries: &[&str]) -> Result<(), 
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn validate_vba_module(path: &Path, vba_entry: &str, module_name: &str) -> Result<(), String> {
+    let output = Command::new("/usr/bin/unzip")
+        .args(["-p"])
+        .arg(path)
+        .arg(vba_entry)
+        .output()
+        .map_err(|error| format!("Unable to inspect VBA modules in {}: {error}", path.display()))?;
+    if !output.status.success() {
+        return Err(format!("Unable to read {vba_entry} from {}", path.display()));
+    }
+    if !bytes_contain(&output.stdout, module_name.as_bytes()) {
+        return Err(format!(
+            "Compiled add-in {} is missing required VBA module {module_name}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn validate_vba_module(_path: &Path, _vba_entry: &str, _module_name: &str) -> Result<(), String> {
+    Ok(())
+}
+
 fn validate_compiled_addin(
     path: &Path,
     expected_name: &str,
@@ -376,6 +401,7 @@ fn validate_compiled_addin(
         }
     }
     validate_zip_entries(path, &required_entries)?;
+    validate_vba_module(path, expected_vba_entry, "VTOfficePaths")?;
     Ok(bytes)
 }
 
