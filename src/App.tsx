@@ -102,6 +102,7 @@ const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
 
 function App() {
+  const landingPreview = new URLSearchParams(window.location.search).has("landing-preview");
   const editorRef = useRef<MathEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -113,7 +114,7 @@ function App() {
   const [ocrOpen, setOcrOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [onboardingOpen, setOnboardingOpen] = useState(
-    () => window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true",
+    () => !landingPreview && window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true",
   );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

@@ -128,36 +128,13 @@ function EditorPreview() {
       <div className="landing-orbit landing-orbit-one" />
       <div className="landing-orbit landing-orbit-two" />
       <figure className="landing-preview-window">
-        <figcaption className="landing-preview-titlebar">
-          <span className="landing-preview-brand"><VisualTeXLogo />VisualTeX</span>
-          <span className="landing-preview-title">未命名公式 <Check size={11} /></span>
-          <span className="landing-preview-actions"><i>＋</i><i>⌁</i><i>□</i><b>LaTeX 代码格式</b></span>
-        </figcaption>
-        <div className="landing-preview-body">
-          <aside className="landing-preview-sidebar" aria-hidden="true">
-            <strong>公式工具</strong>
-            <div className="landing-preview-categories"><span className="is-active">☆ 常用</span><span>结构</span><span>微积分</span><span>矩阵</span></div>
-            <div className="landing-preview-symbols">
-              <span><b><i>1</i><i>x</i></b><small>分式</small></span>
-              <span><b>√x</b><small>平方根</small></span>
-              <span><b>x<sup>n</sup></b><small>上标</small></span>
-              <span><b>x<sub>i</sub></b><small>下标</small></span>
-              <span><b>∫f(x)</b><small>定积分</small></span>
-              <span><b>Σa<sub>i</sub></b><small>求和</small></span>
-            </div>
-          </aside>
-          <div className="landing-preview-workspace">
-            <div className="landing-preview-workspace-head"><strong><Braces size={13} />可视化编辑</strong><span>−　100%　＋</span></div>
-            <div className="landing-preview-canvas">
-              <div className="landing-formula-card">
-                <span className="landing-formula-index">01</span>
-                <div className="landing-formula-expression">f(x) = <span className="landing-fraction"><span>1</span><span>σ√2π</span></span> e<sup>−(x−μ)²/2σ²</sup></div>
-              </div>
-              <button className="landing-add-row" aria-label="添加公式行">＋</button>
-            </div>
-            <div className="landing-source-panel"><Code2 size={12} /><span>展开 LaTeX 源码</span><i /></div>
-          </div>
-        </div>
+        <iframe
+          className="landing-preview-frame"
+          src="/editor?landing-preview=1"
+          title="VisualTeX 真实网页公式编辑器界面"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
       </figure>
     </div>
   );

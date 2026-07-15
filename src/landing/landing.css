@@ -24,9 +24,10 @@ html[data-page="landing"] body {
   --landing-ink-soft: #445064;
   --landing-muted: #69758a;
   --landing-line: rgba(17, 24, 39, 0.1);
-  --landing-blue: #1463ff;
-  --landing-blue-dark: #074bc7;
-  --landing-blue-soft: #eaf2ff;
+  --landing-blue: #1f638e;
+  --landing-blue-dark: #174f73;
+  --landing-blue-soft: #e5f0f6;
+  --landing-blue-border: #a8c8d9;
   --landing-surface: rgba(255, 255, 255, 0.86);
   min-height: 100vh;
   overflow: clip;
@@ -159,12 +160,12 @@ html[data-page="landing"] body {
   padding: 0 18px;
   color: #ffffff;
   background: var(--landing-blue);
-  box-shadow: 0 10px 26px rgba(20, 99, 255, 0.24);
+  box-shadow: 0 10px 26px rgba(31, 99, 142, 0.2);
 }
 
 .landing-nav-editor:hover {
   background: var(--landing-blue-dark);
-  box-shadow: 0 14px 34px rgba(20, 99, 255, 0.3);
+  box-shadow: 0 14px 34px rgba(31, 99, 142, 0.25);
 }
 
 .landing-hero {
@@ -228,8 +229,8 @@ html[data-page="landing"] body {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #2c73dc;
-  box-shadow: 0 0 0 5px rgba(44, 115, 220, 0.1);
+  background: var(--landing-blue);
+  box-shadow: 0 0 0 5px rgba(31, 99, 142, 0.1);
 }
 
 .landing-hero h1 {
@@ -244,7 +245,7 @@ html[data-page="landing"] body {
 .landing-hero h1 span {
   display: inline-block;
   color: transparent;
-  background: linear-gradient(105deg, #153f7e 0%, #276ed6 55%, #4c94ef 100%);
+  background: linear-gradient(105deg, #174f73 0%, #1f638e 58%, #5086a6 100%);
   background-clip: text;
   -webkit-background-clip: text;
 }
@@ -273,12 +274,12 @@ html[data-page="landing"] body {
 .landing-primary-action {
   color: #ffffff;
   background: var(--landing-blue);
-  box-shadow: 0 15px 38px rgba(20, 99, 255, 0.24);
+  box-shadow: 0 15px 38px rgba(31, 99, 142, 0.21);
 }
 
 .landing-primary-action:hover {
   background: var(--landing-blue-dark);
-  box-shadow: 0 20px 42px rgba(20, 99, 255, 0.3);
+  box-shadow: 0 20px 42px rgba(31, 99, 142, 0.27);
 }
 
 .landing-secondary-action {
@@ -325,7 +326,7 @@ html[data-page="landing"] body {
   z-index: -2;
   border-radius: 46% 54% 60% 40% / 47% 39% 61% 53%;
   background:
-    linear-gradient(145deg, rgba(42, 113, 222, 0.96), rgba(25, 78, 163, 0.98));
+    linear-gradient(145deg, rgba(229, 240, 246, 0.98), rgba(168, 200, 217, 0.88));
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.28);
   transform: rotate(-4deg);
 }
@@ -333,7 +334,7 @@ html[data-page="landing"] body {
 .landing-orbit {
   position: absolute;
   z-index: -1;
-  border: 1px solid rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(31, 99, 142, 0.16);
   border-radius: 999px;
   pointer-events: none;
 }
@@ -362,6 +363,16 @@ html[data-page="landing"] body {
     inset 0 1px rgba(255, 255, 255, 0.9);
   transform: perspective(1200px) rotateY(-1.2deg) rotateX(.5deg);
   transition: transform 420ms cubic-bezier(0.2, 0.75, 0.2, 1), box-shadow 420ms ease;
+  aspect-ratio: 1.36 / 1;
+}
+
+.landing-preview-frame {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  background: #f2f4f6;
+  pointer-events: none;
 }
 
 .landing-preview-wrap:hover .landing-preview-window {
@@ -445,7 +456,7 @@ html[data-page="landing"] body {
   border-radius: 7px;
   color: #fff;
   background: var(--landing-blue);
-  box-shadow: 0 5px 13px rgba(20, 99, 255, .2);
+  box-shadow: 0 5px 13px rgba(31, 99, 142, .18);
   font-size: 9px;
 }
 
@@ -513,8 +524,8 @@ html[data-page="landing"] body {
 }
 
 .landing-preview-categories .is-active {
-  color: #0757d8;
-  background: #eaf3ff;
+  color: var(--landing-blue);
+  background: var(--landing-blue-soft);
   font-weight: 700;
 }
 
@@ -542,7 +553,7 @@ html[data-page="landing"] body {
 .landing-preview-window:hover .landing-preview-symbols > span:nth-child(2) {
   transform: translateY(-2px);
   background: #eef6ff;
-  box-shadow: 0 5px 12px rgba(20, 99, 255, .09);
+  box-shadow: 0 5px 12px rgba(31, 99, 142, .09);
 }
 
 .landing-preview-symbols b { font-family: "Times New Roman", serif; font-size: 14px; font-weight: 400; }
@@ -576,7 +587,7 @@ html[data-page="landing"] body {
   border: 1px solid #d5e2f2;
   border-radius: 9px;
   background: #fff;
-  box-shadow: inset 0 0 0 1px rgba(20, 99, 255, .025), 0 7px 22px rgba(40, 80, 135, .06);
+  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, .025), 0 7px 22px rgba(31, 99, 142, .06);
 }
 
 .landing-formula-card {
@@ -665,7 +676,7 @@ html[data-page="landing"] body {
   border-radius: 7px;
   color: #527096;
   background: #f2f7ff;
-  box-shadow: 0 4px 12px rgba(20, 99, 255, .06);
+  box-shadow: 0 4px 12px rgba(31, 99, 142, .06);
   font-size: 8px;
 }
 
@@ -681,7 +692,7 @@ html[data-page="landing"] body {
   border-radius: 7px;
   color: var(--landing-blue);
   background: #fff;
-  box-shadow: 0 4px 10px rgba(20, 99, 255, .08);
+  box-shadow: 0 4px 10px rgba(31, 99, 142, .08);
 }
 
 .landing-float-card {
@@ -703,7 +714,7 @@ html[data-page="landing"] body {
 
 .landing-float-card svg {
   flex: 0 0 auto;
-  color: #276ed6;
+  color: var(--landing-blue);
 }
 
 .landing-float-card div {
@@ -841,7 +852,7 @@ html[data-page="landing"] body {
   place-items: center;
   border: 1px solid #d9e7fb;
   border-radius: 13px;
-  color: #2468ca;
+  color: var(--landing-blue);
   background: #edf5ff;
 }
 
@@ -1027,7 +1038,7 @@ html[data-page="landing"] body {
   place-items: center;
   border: 1px solid #dbe7f7;
   border-radius: 14px;
-  color: #266acb;
+  color: var(--landing-blue);
   background: #eff6ff;
 }
 
@@ -1049,12 +1060,12 @@ html[data-page="landing"] body {
   padding: 0 18px;
   color: #ffffff;
   background: var(--landing-blue);
-  box-shadow: 0 10px 25px rgba(20, 99, 255, 0.2);
+  box-shadow: 0 10px 25px rgba(31, 99, 142, 0.18);
 }
 
 .landing-download-primary:hover {
   background: var(--landing-blue-dark);
-  box-shadow: 0 15px 32px rgba(20, 99, 255, 0.26);
+  box-shadow: 0 15px 32px rgba(31, 99, 142, 0.24);
 }
 
 .landing-download-secondary {
