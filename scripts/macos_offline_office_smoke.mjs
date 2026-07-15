@@ -119,6 +119,10 @@ expect(!protocol.includes("LenB(StrConv(json, vbFromUnicode))"), "Request sizing
 expectIncludes(protocol, "Open temporary For Binary Access Write", "VBA request writes must be binary UTF-8 writes");
 expectIncludes(protocol, "VTUtf8Encode", "VBA protocol must provide strict UTF-8 encoding");
 expectIncludes(protocol, "VTUtf8Decode", "VBA protocol must provide strict UTF-8 decoding");
+expectIncludes(protocol, 'If Dir$(sourcePath) = "" Then', "VBA file reads must use the Office for Mac-compatible Dir$ form");
+expectIncludes(protocol, "Office for Mac can return an empty Dir$ result", "VBA directory creation must document the Office sandbox behavior");
+expectIncludes(protocol, "On Error Resume Next\n    MkDir directoryPath\n    On Error GoTo 0", "VBA directory creation must tolerate sandbox-authorized existing directories");
+expectIncludes(protocol, 'VTPathFileExists = (Dir$(value) <> "")', "VBA file existence checks must use the Office for Mac-compatible Dir$ form");
 expectIncludes(protocol, "Public Function VTProtocolSelfTest() As Boolean", "VBA protocol must expose an actual host-runtime UUID/UTF-8 self-test");
 expectIncludes(launcher, "AppleScriptTask", "VBA launcher must use AppleScriptTask");
 expectIncludes(wordScript, "/usr/bin/open ", "Word AppleScriptTask must launch only the fixed open tool");

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "pluginVersion": "1.1.0",
+  "files": {
+    "VisualTeX.dotm": {
+      "sha256": "c86eb9bbc52138ee9ac2e4606fddf9c07fc6fc42f57324e59f9643b689b90dc2"
+    },
+    "VisualTeX.ppam": {
+      "sha256": "d6ff85f67b868705d82a79aab6d3b64d9432710cb995f51b69a8e84d0fbb16d6"
+    }
+  }
+}

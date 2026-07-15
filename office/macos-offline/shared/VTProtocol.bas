@@ -390,7 +390,7 @@ Public Function VTReadText(ByVal sourcePath As String, Optional ByVal maximumCha
 
     On Error GoTo ReadFailed
     VTValidateAbsoluteVisualTeXPath sourcePath
-    If Dir$(sourcePath, vbNormal Or vbHidden Or vbSystem Or vbReadOnly) = "" Then
+    If Dir$(sourcePath) = "" Then
         Err.Raise vbObjectError + 7110, "VisualTeX", "VisualTeX local file was not found."
     End If
 
@@ -500,7 +500,12 @@ Public Sub VTEnsureDirectory(ByVal directoryPath As String)
     If Dir$(directoryPath, vbDirectory) <> "" Then Exit Sub
     parent = VTParentDirectory(directoryPath)
     If Len(parent) > 1 And Dir$(parent, vbDirectory) = "" Then VTEnsureDirectory parent
+    ' Office for Mac can return an empty Dir$ result for a sandbox-authorized
+    ' POSIX directory that already exists. Let the following file operation
+    ' report genuine access failures instead of failing on a duplicate MkDir.
+    On Error Resume Next
     MkDir directoryPath
+    On Error GoTo 0
 End Sub
 
 Public Function VTParentDirectory(ByVal value As String) As String
@@ -520,7 +525,7 @@ Public Function VTPathFileExists(ByVal value As String) As Boolean
         Err.Clear
         Exit Function
     End If
-    VTPathFileExists = (Dir$(value, vbNormal Or vbHidden Or vbSystem Or vbReadOnly) <> "")
+    VTPathFileExists = (Dir$(value) <> "")
     On Error GoTo 0
 End Function
 
