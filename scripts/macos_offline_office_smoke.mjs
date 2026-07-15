@@ -91,6 +91,14 @@ for (const callback of [
 ]) {
   expectIncludes(powerpointRibbon, `onAction=\"${callback}\"`, `PowerPoint Ribbon is missing ${callback}`);
 }
+expectIncludes(wordRibbon, 'id="VisualTeX.Mac.Word.Tab"', "Word must expose a dedicated VisualTeX Ribbon tab");
+expectIncludes(wordRibbon, 'label="VisualTeX"', "Word dedicated Ribbon tab must be labelled VisualTeX");
+expectIncludes(wordRibbon, 'insertAfterMso="TabInsert"', "Word VisualTeX tab must be placed after Insert");
+expect(!wordRibbon.includes('idMso="TabHome"'), "Word VisualTeX controls must not be injected into Home");
+expectIncludes(powerpointRibbon, 'id="VisualTeX.Mac.PowerPoint.Tab"', "PowerPoint must expose a dedicated VisualTeX Ribbon tab");
+expectIncludes(powerpointRibbon, 'label="VisualTeX"', "PowerPoint dedicated Ribbon tab must be labelled VisualTeX");
+expectIncludes(powerpointRibbon, 'insertAfterMso="TabInsert"', "PowerPoint VisualTeX tab must be placed after Insert");
+expect(!powerpointRibbon.includes('idMso="TabHome"'), "PowerPoint VisualTeX controls must not be injected into Home");
 
 expectIncludes(wordAdapter, "Public Sub AutoExec()", "Word template must publish AutoExec health");
 expectIncludes(wordAdapter, "VisualTeX_ApplyPendingResult", "Word template must expose the native result callback");
@@ -162,6 +170,9 @@ expectIncludes(rustRuntime, "visualtex://office/open?session=", "Tauri runtime m
 expectIncludes(rustRuntime, "create_external", "Tauri runtime must import the VBA-selected Session id");
 expectIncludes(rustRuntime, "deny_unknown_fields", "Offline request JSON must reject unknown fields");
 expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return results through the VBA callback");
+expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
+expectIncludes(rustRuntime, 'macro name "AutoExec"', "Word health refresh must call only the fixed AutoExec macro");
+expectIncludes(rustRuntime, 'macro name "Auto_Open"', "PowerPoint health refresh must call only the fixed Auto_Open macro");
 expectIncludes(rustRuntime, "cleanup_session_files_at", "Completed and cancelled Sessions must remove known local request artifacts");
 expectIncludes(rustRuntime, "DirectoryNotEmpty", "Session cleanup must preserve unknown files instead of deleting an entire directory recursively");
 expectIncludes(installer, "VisualTeX.dotm", "Installer must preserve the fixed Word filename");

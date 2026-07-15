@@ -967,6 +967,35 @@ pub async fn cancel_macos_offline_office_session(
         .map_err(|error| format!("Offline Office cancel task failed: {error}"))?
 }
 
+#[cfg(target_os = "macos")]
+fn refresh_health_signal(host: &str) {
+    let (process_name, script) = match host {
+        "word" => (
+            "Microsoft Word",
+            r#"tell application "Microsoft Word" to run VB macro macro name "AutoExec""#,
+        ),
+        "powerpoint" => (
+            "Microsoft PowerPoint",
+            r#"tell application "Microsoft PowerPoint" to run VB macro macro name "Auto_Open" list of parameters {}"#,
+        ),
+        _ => return,
+    };
+    let running = Command::new("/usr/bin/pgrep")
+        .args(["-x", process_name])
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !running {
+        return;
+    }
+    let _ = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .output();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn refresh_health_signal(_host: &str) {}
+
 fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
     let path = offline_root()?
         .join("OfficePluginStatus")
@@ -1006,6 +1035,8 @@ fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
 
 #[tauri::command]
 pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, String> {
+    refresh_health_signal("word");
+    refresh_health_signal("powerpoint");
     Ok(vec![read_health("word")?, read_health("powerpoint")?])
 }
 

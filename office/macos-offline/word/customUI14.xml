@@ -2,8 +2,10 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
   <ribbon>
     <tabs>
-      <tab idMso="TabHome">
-        <group id="VisualTeX.Mac.Word.Group" label="VisualTeX">
+      <tab id="VisualTeX.Mac.Word.Tab"
+           label="VisualTeX"
+           insertAfterMso="TabInsert">
+        <group id="VisualTeX.Mac.Word.Group" label="公式工具">
           <button id="VisualTeX.Mac.Word.Inline"
                   label="新建行内公式"
                   size="large"
