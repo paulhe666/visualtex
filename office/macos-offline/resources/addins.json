@@ -3,10 +3,10 @@
   "pluginVersion": "1.1.0",
   "files": {
     "VisualTeX.dotm": {
-      "sha256": "c86eb9bbc52138ee9ac2e4606fddf9c07fc6fc42f57324e59f9643b689b90dc2"
+      "sha256": "a888abb851e41b804705d19b580339bda0462defae28082fa9063c8de9cc39fe"
     },
     "VisualTeX.ppam": {
-      "sha256": "d6ff85f67b868705d82a79aab6d3b64d9432710cb995f51b69a8e84d0fbb16d6"
+      "sha256": "621b7ea6bafea71b559522cb0470cd092574f079df7c66628a0ca3e0426e5cfa"
     }
   }
 }

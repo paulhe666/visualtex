@@ -5,7 +5,13 @@ Private Const VT_OFFICE_GROUP_CONTAINER As String = "/Library/Group Containers/U
 
 Public Function VTApplicationSupportRoot() As String
     Dim homePath As String
+    Dim sandboxMarker As Long
+
     homePath = Environ$("HOME")
+    sandboxMarker = InStr(1, homePath, "/Library/Containers/", vbTextCompare)
+    If sandboxMarker > 1 Then
+        homePath = Left$(homePath, sandboxMarker - 1)
+    End If
     If Len(homePath) = 0 Or Left$(homePath, 1) <> "/" Then
         Err.Raise vbObjectError + 7100, "VisualTeX", "Unable to resolve the macOS home directory."
     End If

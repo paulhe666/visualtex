@@ -118,6 +118,8 @@ expect(!wordAdapter.includes('Format$(Now, "yyyy-mm-dd\\Thh:nn:ss") & "Z"'), "Wo
 expect(!powerpointAdapter.includes('Format$(Now, "yyyy-mm-dd\\Thh:nn:ss") & "Z"'), "PowerPoint health must not label local time as UTC");
 
 expectIncludes(officePaths, "UBF8T346G9.Office/VisualTeX", "VBA paths must use the Office application-group container");
+expectIncludes(officePaths, 'InStr(1, homePath, "/Library/Containers/", vbTextCompare)', "VBA paths must detect an Office sandbox HOME value");
+expectIncludes(officePaths, "homePath = Left$(homePath, sandboxMarker - 1)", "VBA paths must recover the real user home from an Office sandbox HOME value");
 expect(!officePaths.includes("Library/Application Support/VisualTeX"), "VBA paths must not use a sandbox-inaccessible user Application Support root");
 expectIncludes(protocol, "New Collection", "VBA protocol must use the Mac-compatible Collection type");
 expect(!protocol.includes("Scripting.Dictionary"), "VBA protocol must not depend on Windows Scripting Runtime");
