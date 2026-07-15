@@ -10,8 +10,8 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
-const WORD_APP_PATH: &str = "/Applications/Microsoft Word.app";
-const POWERPOINT_APP_PATH: &str = "/Applications/Microsoft PowerPoint.app";
+const WORD_APP_NAME: &str = "Microsoft Word.app";
+const POWERPOINT_APP_NAME: &str = "Microsoft PowerPoint.app";
 const OFFICE_GROUP_CONTAINER: &str = "Library/Group Containers/UBF8T346G9.Office";
 const WORD_ADDIN_NAME: &str = "VisualTeX.dotm";
 const POWERPOINT_ADDIN_NAME: &str = "VisualTeX.ppam";
@@ -49,8 +49,8 @@ pub struct MacOfflineOfficeInstallStatus {
     tutorial_path: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PluginHealthFile {
     loaded: bool,
     plugin_version: Option<String>,
@@ -72,11 +72,34 @@ struct AddinManifestFile {
     sha256: String,
 }
 
+#[derive(Debug)]
+struct FileBackup {
+    path: PathBuf,
+    bytes: Option<Vec<u8>>,
+}
+
 fn user_home() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|value| value.is_absolute())
         .ok_or_else(|| "Unable to resolve the current user's home directory".to_string())
+}
+
+fn application_paths(home: &Path, app_name: &str) -> [PathBuf; 2] {
+    [
+        PathBuf::from("/Applications").join(app_name),
+        home.join("Applications").join(app_name),
+    ]
+}
+
+fn application_installed(app_name: &str) -> bool {
+    user_home()
+        .map(|home| {
+            application_paths(&home, app_name)
+                .into_iter()
+                .any(|path| path.is_dir())
+        })
+        .unwrap_or(false)
 }
 
 fn resource_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -222,6 +245,51 @@ fn copy_atomic(source: &Path, destination: &Path, mode: u32) -> Result<(), Strin
     let bytes = fs::read(source)
         .map_err(|error| format!("Unable to read {}: {error}", source.display()))?;
     atomic_write(destination, &bytes, mode)
+}
+
+fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
+    let source_bytes = fs::read(source)
+        .map_err(|error| format!("Unable to verify {}: {error}", source.display()))?;
+    let destination_bytes = fs::read(destination)
+        .map_err(|error| format!("Unable to verify {}: {error}", destination.display()))?;
+    if source_bytes == destination_bytes {
+        Ok(())
+    } else {
+        Err(format!(
+            "Installed file {} does not match its VisualTeX source",
+            destination.display()
+        ))
+    }
+}
+
+fn capture_backup(path: &Path) -> Result<FileBackup, String> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("Unable to back up {}: {error}", path.display())),
+    };
+    Ok(FileBackup {
+        path: path.to_path_buf(),
+        bytes,
+    })
+}
+
+fn restore_backups(backups: &[FileBackup]) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for backup in backups.iter().rev() {
+        let result = match backup.bytes.as_deref() {
+            Some(bytes) => atomic_write(&backup.path, bytes, 0o600),
+            None => remove_if_exists(&backup.path),
+        };
+        if let Err(error) = result {
+            failures.push(error);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }
 
 fn bytes_contain(haystack: &[u8], needle: &[u8]) -> bool {
@@ -380,6 +448,15 @@ fn compile_applescript(source: &Path, destination: &Path) -> Result<(), String> 
     set_mode(destination, 0o600)
 }
 
+fn health_is_current(host: &str, health: &PluginHealthFile) -> bool {
+    let host_matches = health.host.as_deref() == Some(host);
+    let version_matches = health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"));
+    let has_timestamp = health.timestamp.as_deref().is_some_and(|value| {
+        !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
+    });
+    health.loaded && host_matches && version_matches && has_timestamp
+}
+
 fn read_health(host: &str) -> Result<(bool, Option<String>), String> {
     let path = health_path(host)?;
     let bytes = match fs::read(&path) {
@@ -389,9 +466,8 @@ fn read_health(host: &str) -> Result<(bool, Option<String>), String> {
     };
     let health: PluginHealthFile = serde_json::from_slice(&bytes)
         .map_err(|error| format!("{} contains invalid JSON: {error}", path.display()))?;
-    let host_matches = health.host.as_deref().is_none_or(|value| value == host);
-    let has_timestamp = health.timestamp.as_deref().is_some_and(|value| !value.is_empty());
-    Ok((health.loaded && host_matches && has_timestamp, health.plugin_version))
+    let loaded = health_is_current(host, &health);
+    Ok((loaded, health.plugin_version))
 }
 
 fn source_artifacts(root: &Path) -> (PathBuf, PathBuf) {
@@ -407,13 +483,16 @@ fn compiled_artifacts_available(root: &Path) -> bool {
 
 fn host_status(
     host: &str,
-    app_path: &str,
+    app_name: &str,
     install_paths: Vec<PathBuf>,
 ) -> Result<MacOfflineHostInstallStatus, String> {
-    let (loaded, plugin_version) = read_health(host)?;
+    let (loaded, plugin_version, last_error) = match read_health(host) {
+        Ok((loaded, plugin_version)) => (loaded, plugin_version, None),
+        Err(error) => (false, None, Some(error)),
+    };
     let files_installed = !install_paths.is_empty() && install_paths.iter().all(|path| path.is_file());
     Ok(MacOfflineHostInstallStatus {
-        application_installed: Path::new(app_path).is_dir(),
+        application_installed: application_installed(app_name),
         files_installed,
         loaded,
         plugin_version,
@@ -422,29 +501,37 @@ fn host_status(
             .map(|path| path.display().to_string())
             .collect(),
         health_path: health_path(host)?.display().to_string(),
-        last_error: None,
+        last_error,
     })
 }
 
 pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
     let root = resource_root(app)?;
-    let word_paths = discover_word_startup_paths()?
+    let mut word_paths = discover_word_startup_paths()?
         .into_iter()
         .map(|path| path.join(WORD_ADDIN_NAME))
         .collect::<Vec<_>>();
     let powerpoint_path = powerpoint_addin_path()?;
+    let word_script = word_script_path()?;
+    let powerpoint_script = powerpoint_script_path()?;
+    let placeholder = placeholder_path()?;
+    word_paths.extend([word_script.clone(), placeholder.clone()]);
     Ok(MacOfflineOfficeInstallStatus {
-        word: host_status("word", WORD_APP_PATH, word_paths)?,
+        word: host_status("word", WORD_APP_NAME, word_paths)?,
         powerpoint: host_status(
             "powerpoint",
-            POWERPOINT_APP_PATH,
-            vec![powerpoint_path.clone()],
+            POWERPOINT_APP_NAME,
+            vec![
+                powerpoint_path.clone(),
+                powerpoint_script.clone(),
+                placeholder.clone(),
+            ],
         )?,
         compiled_artifacts_available: compiled_artifacts_available(&root),
         resource_root: root.display().to_string(),
         powerpoint_addin_path: powerpoint_path.display().to_string(),
-        word_script_path: word_script_path()?.display().to_string(),
-        powerpoint_script_path: powerpoint_script_path()?.display().to_string(),
+        word_script_path: word_script.display().to_string(),
+        powerpoint_script_path: powerpoint_script.display().to_string(),
         tutorial_path: root
             .join("POWERPOINT_INSTALL.md")
             .display()
@@ -466,26 +553,87 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
                 .to_string(),
         );
     }
-    for startup in &word_startup_paths {
-        fs::create_dir_all(startup)
-            .map_err(|error| format!("Unable to create {}: {error}", startup.display()))?;
-        copy_atomic(&word_source, &startup.join(WORD_ADDIN_NAME), 0o600)?;
+    let word_destinations = word_startup_paths
+        .iter()
+        .map(|startup| startup.join(WORD_ADDIN_NAME))
+        .collect::<Vec<_>>();
+    let powerpoint_destination = powerpoint_addin_path()?;
+    let placeholder_destination = placeholder_path()?;
+    let word_script_destination = word_script_path()?;
+    let powerpoint_script_destination = powerpoint_script_path()?;
+    let word_health = health_path("word")?;
+    let powerpoint_health = health_path("powerpoint")?;
+
+    let mut mutation_paths = word_destinations.clone();
+    mutation_paths.extend([
+        powerpoint_destination.clone(),
+        placeholder_destination.clone(),
+        word_script_destination.clone(),
+        powerpoint_script_destination.clone(),
+        word_health.clone(),
+        powerpoint_health.clone(),
+    ]);
+    mutation_paths.sort();
+    mutation_paths.dedup();
+    let backups = mutation_paths
+        .iter()
+        .map(|path| capture_backup(path))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let install_result = (|| -> Result<(), String> {
+        for (startup, destination) in word_startup_paths.iter().zip(&word_destinations) {
+            fs::create_dir_all(startup)
+                .map_err(|error| format!("Unable to create {}: {error}", startup.display()))?;
+            copy_atomic(&word_source, destination, 0o600)?;
+            verify_copy(&word_source, destination)?;
+        }
+        copy_atomic(&powerpoint_source, &powerpoint_destination, 0o600)?;
+        verify_copy(&powerpoint_source, &powerpoint_destination)?;
+
+        let placeholder = BASE64_STANDARD
+            .decode(PLACEHOLDER_PNG_BASE64)
+            .map_err(|error| format!("Unable to decode the VisualTeX placeholder: {error}"))?;
+        atomic_write(&placeholder_destination, &placeholder, 0o600)?;
+        if fs::read(&placeholder_destination)
+            .map_err(|error| format!("Unable to verify the VisualTeX placeholder: {error}"))?
+            != placeholder
+        {
+            return Err("Installed VisualTeX placeholder does not match its source".to_string());
+        }
+
+        compile_applescript(
+            &root.join("word/VisualTeXWord.scpt"),
+            &word_script_destination,
+        )?;
+        compile_applescript(
+            &root.join("powerpoint/VisualTeXPowerPoint.scpt"),
+            &powerpoint_script_destination,
+        )?;
+        if fs::metadata(&word_script_destination)
+            .map(|value| value.len() == 0)
+            .unwrap_or(true)
+            || fs::metadata(&powerpoint_script_destination)
+                .map(|value| value.len() == 0)
+                .unwrap_or(true)
+        {
+            return Err("Compiled VisualTeX AppleScriptTask file is empty".to_string());
+        }
+
+        // Old health records must never make a freshly updated file look loaded.
+        // Word/PowerPoint recreate these only after the new VBA project executes.
+        remove_if_exists(&word_health)?;
+        remove_if_exists(&powerpoint_health)?;
+        Ok(())
+    })();
+
+    if let Err(error) = install_result {
+        return match restore_backups(&backups) {
+            Ok(()) => Err(format!("{error}. The previous VisualTeX add-ins were restored.")),
+            Err(rollback_error) => Err(format!(
+                "{error}. VisualTeX could not fully restore the previous files: {rollback_error}"
+            )),
+        };
     }
-    copy_atomic(&powerpoint_source, &powerpoint_addin_path()?, 0o600)?;
-
-    let placeholder = BASE64_STANDARD
-        .decode(PLACEHOLDER_PNG_BASE64)
-        .map_err(|error| format!("Unable to decode the VisualTeX placeholder: {error}"))?;
-    atomic_write(&placeholder_path()?, &placeholder, 0o600)?;
-
-    compile_applescript(
-        &root.join("word/VisualTeXWord.scpt"),
-        &word_script_path()?,
-    )?;
-    compile_applescript(
-        &root.join("powerpoint/VisualTeXPowerPoint.scpt"),
-        &powerpoint_script_path()?,
-    )?;
     status(app)
 }
 
@@ -500,6 +648,8 @@ pub fn uninstall(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, Strin
     remove_if_exists(&word_script_path()?)?;
     remove_if_exists(&powerpoint_script_path()?)?;
     remove_if_exists(&placeholder_path()?)?;
+    remove_if_exists(&health_path("word")?)?;
+    remove_if_exists(&health_path("powerpoint")?)?;
     status(app)
 }
 
@@ -586,6 +736,63 @@ pub fn open_macos_powerpoint_addin_tutorial(app: AppHandle) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_requires_exact_host_current_version_and_timestamp() {
+        let current = PluginHealthFile {
+            loaded: true,
+            plugin_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            host: Some("word".to_string()),
+            timestamp: Some("2026-07-15T12:34:56".to_string()),
+        };
+        assert!(health_is_current("word", &current));
+
+        let mut stale = current.clone();
+        stale.plugin_version = Some("0.0.0".to_string());
+        assert!(!health_is_current("word", &stale));
+
+        let mut wrong_host = current.clone();
+        wrong_host.host = Some("powerpoint".to_string());
+        assert!(!health_is_current("word", &wrong_host));
+
+        let mut missing_timestamp = current.clone();
+        missing_timestamp.timestamp = Some(String::new());
+        assert!(!health_is_current("word", &missing_timestamp));
+
+        let mut malformed_timestamp = current;
+        malformed_timestamp.timestamp = Some("bad\ntimestamp".to_string());
+        assert!(!health_is_current("word", &malformed_timestamp));
+    }
+
+    #[test]
+    fn application_detection_checks_system_and_user_application_directories() {
+        let home = Path::new("/Users/tester");
+        let paths = application_paths(home, WORD_APP_NAME);
+        assert_eq!(paths[0], PathBuf::from("/Applications/Microsoft Word.app"));
+        assert_eq!(
+            paths[1],
+            PathBuf::from("/Users/tester/Applications/Microsoft Word.app")
+        );
+    }
+
+    #[test]
+    fn file_backups_restore_previous_content_and_remove_new_files() {
+        let root = std::env::temp_dir().join(format!("visualtex-rollback-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("temp directory should be created");
+        let existing = root.join("existing.bin");
+        let newly_created = root.join("new.bin");
+        fs::write(&existing, b"old").expect("old file should be written");
+        let backups = vec![
+            capture_backup(&existing).expect("existing backup"),
+            capture_backup(&newly_created).expect("missing backup"),
+        ];
+        atomic_write(&existing, b"new", 0o600).expect("existing file should change");
+        atomic_write(&newly_created, b"created", 0o600).expect("new file should be created");
+        restore_backups(&backups).expect("rollback should succeed");
+        assert_eq!(fs::read(&existing).unwrap(), b"old");
+        assert!(!newly_created.exists());
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn localized_startup_names_are_matched_without_locale_assumptions() {

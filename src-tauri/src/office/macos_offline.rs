@@ -1,7 +1,7 @@
 use crate::office::server::metadata_from_session;
 use crate::office::sessions::{
     valid_uuid, CreateOfficeSessionInput, FormulaLine, OfficeFormulaSession, OfficeHost,
-    OfficeSessionMode, OfficeSessionStatus, VisualTeXFormulaMetadata,
+    OfficeSessionMode, OfficeSessionStatus, SessionError, VisualTeXFormulaMetadata,
 };
 use crate::office::state::OfficeCompanionState;
 use base64::{
@@ -107,6 +107,30 @@ fn dispatch_path(session_id: &str) -> Result<PathBuf, String> {
 
 fn result_image_path(session_id: &str) -> Result<PathBuf, String> {
     Ok(session_directory(session_id)?.join(RESULT_IMAGE_FILE))
+}
+
+fn cleanup_session_files_at(directory: &Path) -> Result<(), String> {
+    for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+        let path = directory.join(name);
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Unable to remove {}: {error}", path.display())),
+        }
+    }
+    match fs::remove_dir(directory) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+        Err(error) => Err(format!(
+            "Unable to remove offline Office Session directory {}: {error}",
+            directory.display()
+        )),
+    }
+}
+
+fn cleanup_session_files(session_id: &str) -> Result<(), String> {
+    cleanup_session_files_at(&session_directory(session_id)?)
 }
 
 fn pointer_path(host: OfficeHost) -> Result<PathBuf, String> {
@@ -300,8 +324,10 @@ fn import_request(
     state: &OfficeCompanionState,
     request: MacOfflineSessionRequest,
 ) -> Result<OfficeFormulaSession, String> {
-    if let Ok(existing) = state.session_store.get(&request.session_id) {
-        return Ok(existing);
+    match state.session_store.get(&request.session_id) {
+        Ok(existing) => return Ok(existing),
+        Err(SessionError::NotFound) => {}
+        Err(error) => return Err(error.to_string()),
     }
 
     let original_metadata = request
@@ -383,10 +409,11 @@ fn import_request(
         .map(|metadata| metadata.code_format.clone())
         .unwrap_or_else(|| "latex".to_string());
 
-    state
+    let session_id = request.session_id.clone();
+    match state
         .session_store
         .create_external(
-            request.session_id,
+            session_id.clone(),
             CreateOfficeSessionInput {
                 mode,
                 host,
@@ -405,7 +432,14 @@ fn import_request(
                 auto_commit_on_close: Some(true),
             },
         )
-        .map_err(|error| error.to_string())
+    {
+        Ok(session) => Ok(session),
+        Err(SessionError::Conflict(_)) => state
+            .session_store
+            .get(&session_id)
+            .map_err(|error| error.to_string()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub(crate) fn parse_office_url(value: &str) -> Result<String, String> {
@@ -820,13 +854,16 @@ fn commit_session_blocking(
         .get(&session_id)
         .map_err(|error| error.to_string())?;
     if session.status == OfficeSessionStatus::Completed {
+        let _ = cleanup_session_files(&session_id);
         return Ok(session);
     }
     if session.status != OfficeSessionStatus::Committing {
         return Err("Offline Office Session is not ready to commit".to_string());
     }
     if session.mode == OfficeSessionMode::Edit && !session.dirty {
-        return complete_session(&state, &session_id);
+        let completed = complete_session(&state, &session_id)?;
+        let _ = cleanup_session_files(&session_id);
+        return Ok(completed);
     }
     let request = read_request(&session_id)?;
     let metadata = metadata_from_session(&session);
@@ -839,7 +876,9 @@ fn commit_session_blocking(
         fail_session(&state, &session_id, &error);
         return Err(error);
     }
-    complete_session(&state, &session_id)
+    let completed = complete_session(&state, &session_id)?;
+    let _ = cleanup_session_files(&session_id);
+    Ok(completed)
 }
 
 fn cancel_session_blocking(
@@ -852,7 +891,7 @@ fn cancel_session_blocking(
         fail_session(&state, &session_id, &error);
         return Err(error);
     }
-    state
+    let cancelled = state
         .session_store
         .patch(
             &session_id,
@@ -862,7 +901,9 @@ fn cancel_session_blocking(
                 "error": null
             }),
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    let _ = cleanup_session_files(&session_id);
+    Ok(cancelled)
 }
 
 #[tauri::command]
@@ -899,7 +940,8 @@ pub fn delete_macos_offline_office_session(
     state
         .session_store
         .delete(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    cleanup_session_files(&session_id)
 }
 
 #[tauri::command]
@@ -971,6 +1013,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn completed_session_cleanup_removes_only_known_ephemeral_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "visualtex-offline-cleanup-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&directory).expect("test Session directory should be created");
+        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+            fs::write(directory.join(name), b"temporary").expect("temporary file should exist");
+        }
+        fs::write(directory.join("keep.txt"), b"keep").expect("unknown file should exist");
+
+        cleanup_session_files_at(&directory).expect("known files should be cleaned");
+        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+            assert!(!directory.join(name).exists());
+        }
+        assert!(directory.join("keep.txt").is_file());
+        assert!(directory.is_dir());
+
+        fs::remove_file(directory.join("keep.txt")).unwrap();
+        cleanup_session_files_at(&directory).expect("empty Session directory should be removed");
+        assert!(!directory.exists());
+    }
+
+    #[test]
     fn office_url_accepts_only_the_exact_canonical_form() {
         let id = "12345678-1234-4234-9234-123456789abc";
         assert_eq!(
@@ -980,6 +1046,36 @@ mod tests {
         assert!(parse_office_url(&format!("https://office/open?session={id}")).is_err());
         assert!(parse_office_url(&format!("visualtex://office/open?session={id}&x=1")).is_err());
         assert!(parse_office_url("visualtex://office/open?session=not-a-uuid").is_err());
+    }
+
+    #[test]
+    fn offline_request_json_accepts_utf8_office_identities() {
+        let session_id = "32345678-1234-4234-9234-123456789abc".to_string();
+        let request = MacOfflineSessionRequest {
+            protocol_version: OFFLINE_PROTOCOL_VERSION,
+            session_id: session_id.clone(),
+            host: "word".to_string(),
+            mode: "create".to_string(),
+            formula_id: Some("12345678-1234-4234-9234-123456789abc".to_string()),
+            display_mode: "inline".to_string(),
+            numbered: false,
+            source_document_id: Some("/Users/测试/公式😀.docx".to_string()),
+            source_object_id: Some("书签-公式".to_string()),
+            encoded_metadata: None,
+            pending_marker: Some(
+                "visualtex:pending:v1:32345678-1234-4234-9234-123456789abc:12345678-1234-4234-9234-123456789abc"
+                    .to_string(),
+            ),
+            power_point: None,
+        };
+        let json = serde_json::to_vec(&request).expect("UTF-8 request should encode");
+        let decoded: MacOfflineSessionRequest =
+            serde_json::from_slice(&json).expect("UTF-8 request should decode");
+        validate_request(&decoded, &session_id).expect("UTF-8 request should validate");
+        assert_eq!(
+            decoded.source_document_id.as_deref(),
+            Some("/Users/测试/公式😀.docx")
+        );
     }
 
     #[test]

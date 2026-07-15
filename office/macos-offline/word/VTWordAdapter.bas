@@ -192,11 +192,14 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     Dim sourceMarker As String
     Dim sourceDocumentId As String
     Dim target As InlineShape
+    Dim committed As InlineShape
     Dim candidate As InlineShape
     Dim insertionRange As Range
     Dim widthPoints As Double
     Dim heightPoints As Double
     Dim baselinePoints As Double
+    Dim formulaReference As String
+    Dim insertedNumber As Range
 
     VTRequireWritableWordDocument
     VTRequireDispatchValue dispatch, "mode"
@@ -225,17 +228,30 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     If Not VTIsCanonicalUuid(formulaId) Or Not VTIsEncodedMetadata(metadata) Then
         Err.Raise vbObjectError + 7405, "VisualTeX", "VisualTeX Word result metadata is invalid."
     End If
+    formulaReference = VTFormulaReference(formulaId, displayMode, numbered)
     VTValidateAbsoluteVisualTeXPath imagePath
     If Not VTPathFileExists(imagePath) Then
         Err.Raise vbObjectError + 7406, "VisualTeX", "VisualTeX Word result image is missing."
     End If
 
+    On Error Resume Next
     If mode = "create" Then
         Set target = VTFindUniqueInlineShape(pendingMarker)
     ElseIf mode = "edit" Then
         Set target = VTFindUniqueInlineShape(sourceMarker)
     Else
+        On Error GoTo 0
         Err.Raise vbObjectError + 7407, "VisualTeX", "VisualTeX Word result mode is invalid."
+    End If
+    Err.Clear
+    On Error GoTo RollbackCandidate
+    If target Is Nothing Then
+        Set committed = VTFindCommittedInlineShape(metadata, formulaReference)
+        If Not committed Is Nothing Then
+            VTDeletePendingBookmark sessionId
+            Exit Sub
+        End If
+        Err.Raise vbObjectError + 7426, "VisualTeX", "The original Word formula is missing and no committed VisualTeX result was found."
     End If
 
     Set insertionRange = target.Range.Duplicate
@@ -251,7 +267,7 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     candidate.Height = CSng(heightPoints)
     candidate.LockAspectRatio = msoTrue
     candidate.AlternativeText = metadata
-    candidate.Title = VTFormulaReference(formulaId, displayMode, numbered)
+    candidate.Title = formulaReference
     If displayMode = "inline" Then
         If baselinePoints > 0# Or baselinePoints < -256# Then
             Err.Raise vbObjectError + 7408, "VisualTeX", "VisualTeX Word baseline is outside the allowed range."
@@ -261,8 +277,20 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
         candidate.Range.ParagraphFormat.Alignment = wdAlignParagraphCenter
     End If
 
+    If Abs(candidate.Width - widthPoints) > 0.1 Or Abs(candidate.Height - heightPoints) > 0.1 Or _
+       candidate.AlternativeText <> metadata Or candidate.Title <> formulaReference Then
+        Err.Raise vbObjectError + 7422, "VisualTeX", "Word did not persist the VisualTeX formula properties."
+    End If
+    If displayMode = "inline" Then
+        If candidate.Range.Font.Position <> CLng(baselinePoints) Then
+            Err.Raise vbObjectError + 7423, "VisualTeX", "Word did not persist the VisualTeX inline baseline."
+        End If
+    ElseIf candidate.Range.ParagraphFormat.Alignment <> wdAlignParagraphCenter Then
+        Err.Raise vbObjectError + 7424, "VisualTeX", "Word did not persist the VisualTeX display alignment."
+    End If
+
     If mode = "create" And displayMode = "block" And numbered Then
-        VTInsertEquationNumber candidate.Range
+        Set insertedNumber = VTInsertEquationNumber(candidate.Range)
     End If
 
     target.Delete
@@ -270,10 +298,15 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     Exit Sub
 
 RollbackCandidate:
+    Dim transactionErrorNumber As Long
+    Dim transactionErrorDescription As String
+    transactionErrorNumber = Err.Number
+    transactionErrorDescription = Err.Description
     On Error Resume Next
+    If Not insertedNumber Is Nothing Then insertedNumber.Delete
     If Not candidate Is Nothing Then candidate.Delete
     On Error GoTo 0
-    Err.Raise Err.Number, "VisualTeX Word transaction", Err.Description
+    Err.Raise transactionErrorNumber, "VisualTeX Word transaction", transactionErrorDescription
 End Sub
 
 Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Object)
@@ -313,11 +346,30 @@ Private Function VTFindUniqueInlineShape(ByVal marker As String) As InlineShape
     Set VTFindUniqueInlineShape = match
 End Function
 
-Private Sub VTInsertEquationNumber(ByVal formulaRange As Range)
+Private Function VTFindCommittedInlineShape(ByVal metadata As String, ByVal formulaReference As String) As InlineShape
+    Dim item As InlineShape
+    Dim match As InlineShape
+    Dim count As Long
+
+    For Each item In ActiveDocument.InlineShapes
+        If item.AlternativeText = metadata And item.Title = formulaReference Then
+            count = count + 1
+            Set match = item
+        End If
+    Next item
+    If count > 1 Then
+        Err.Raise vbObjectError + 7427, "VisualTeX", "Word contains multiple committed copies of the same VisualTeX Session result."
+    End If
+    If count = 1 Then Set VTFindCommittedInlineShape = match
+End Function
+
+Private Function VTInsertEquationNumber(ByVal formulaRange As Range) As Range
     Dim paragraphRange As Range
     Dim numberRange As Range
     Dim sequenceField As Field
+    Dim numberStart As Long
 
+    numberStart = formulaRange.End
     Set paragraphRange = formulaRange.Paragraphs(1).Range
     paragraphRange.ParagraphFormat.Alignment = wdAlignParagraphCenter
     paragraphRange.ParagraphFormat.TabStops.ClearAll
@@ -338,7 +390,13 @@ Private Sub VTInsertEquationNumber(ByVal formulaRange As Range)
     Set numberRange = sequenceField.Result.Duplicate
     numberRange.Collapse wdCollapseEnd
     numberRange.InsertAfter ")"
-End Sub
+    If numberRange.End <= numberStart Then
+        Err.Raise vbObjectError + 7425, "VisualTeX", "Word did not create the VisualTeX equation number."
+    End If
+    Set VTInsertEquationNumber = formulaRange.Document.Range( _
+        Start:=numberStart, _
+        End:=numberRange.End)
+End Function
 
 Private Sub VTRequireWritableWordDocument()
     If Documents.Count = 0 Then
@@ -365,7 +423,7 @@ End Function
 
 Private Sub VTAddPendingBookmark(ByVal targetRange As Range, ByVal sessionId As String)
     Dim name As String
-    name = VT_WORD_BOOKMARK_PREFIX & Replace$(Left$(sessionId, 24), "-", "")
+    name = VTWordBookmarkName(sessionId)
     On Error Resume Next
     If ActiveDocument.Bookmarks.Exists(name) Then ActiveDocument.Bookmarks(name).Delete
     On Error GoTo 0
@@ -374,11 +432,21 @@ End Sub
 
 Private Sub VTDeletePendingBookmark(ByVal sessionId As String)
     Dim name As String
-    name = VT_WORD_BOOKMARK_PREFIX & Replace$(Left$(sessionId, 24), "-", "")
+    name = VTWordBookmarkName(sessionId)
     On Error Resume Next
     If ActiveDocument.Bookmarks.Exists(name) Then ActiveDocument.Bookmarks(name).Delete
     On Error GoTo 0
 End Sub
+
+Private Function VTWordBookmarkName(ByVal sessionId As String) As String
+    If Not VTIsCanonicalUuid(sessionId) Then
+        Err.Raise vbObjectError + 7420, "VisualTeX", "VisualTeX cannot create a Bookmark for an invalid Session id."
+    End If
+    VTWordBookmarkName = VT_WORD_BOOKMARK_PREFIX & Replace$(Left$(sessionId, 24), "-", "")
+    If Len(VTWordBookmarkName) > 40 Then
+        Err.Raise vbObjectError + 7421, "VisualTeX", "VisualTeX generated a Word Bookmark name longer than 40 characters."
+    End If
+End Function
 
 Private Function VTDispatchOptional(ByVal dispatch As Object, ByVal key As String) As String
     If VTCollectionHasKey(dispatch, key) Then VTDispatchOptional = CStr(dispatch(key))
@@ -408,7 +476,7 @@ Private Sub VTWriteWordHealth()
         """loaded"":true," & _
         """pluginVersion"":" & VTJsonString(VT_PLUGIN_VERSION) & "," & _
         """host"":""word""," & _
-        """timestamp"":" & VTJsonString(Format$(Now, "yyyy-mm-dd\Thh:nn:ss") & "Z") & _
+        """timestamp"":" & VTJsonString(Format$(Now, "yyyy-mm-dd\Thh:nn:ss")) & _
         "}"
     VTWriteTextAtomic statusPath, payload
 End Sub

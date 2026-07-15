@@ -918,6 +918,7 @@ export function OfficeDialogApp() {
                 type="checkbox"
                 checked={numbered}
                 onChange={(event) => setNumbered(event.target.checked)}
+                disabled={session.mode === "edit"}
               />
               <span>{isEn ? "Add equation number" : "添加公式编号"}</span>
             </label>

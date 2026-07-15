@@ -9,6 +9,8 @@ Public Const VT_FORMULA_REF_PREFIX As String = "visualtex:formula-ref:v1:"
 
 Private Const VT_MAX_REQUEST_BYTES As Long = 262144
 Private Const VT_MAX_METADATA_CHARS As Long = 131072
+Private VT_RANDOM_READY As Boolean
+Private VT_UUID_COUNTER As Long
 
 Public Function VTApplicationSupportRoot() As String
     Dim homePath As String
@@ -56,14 +58,21 @@ End Function
 Public Function VTNewUuidV4() As String
     Dim bytes(0 To 15) As Integer
     Dim index As Long
-    Dim seed As Double
 
-    Randomize Timer
-    seed = Timer + CDbl(Date) * 86400#
+    If Not VT_RANDOM_READY Then
+        Randomize CDbl(Date) + CDbl(Timer) / 86400#
+        VT_RANDOM_READY = True
+    End If
+    If VT_UUID_COUNTER = 2147483647 Then
+        VT_UUID_COUNTER = 1
+    Else
+        VT_UUID_COUNTER = VT_UUID_COUNTER + 1
+    End If
+
     For index = 0 To 15
         bytes(index) = Int(Rnd * 256#)
-        seed = seed + bytes(index) + index
     Next index
+    bytes(15) = bytes(15) Xor (VT_UUID_COUNTER And &HFF)
 
     bytes(6) = (bytes(6) And &HF) Or &H40
     bytes(8) = (bytes(8) And &H3F) Or &H80
@@ -168,12 +177,168 @@ Public Function VTJsonNumber(ByVal value As Double) As String
     VTJsonNumber = Replace$(Trim$(Str$(value)), ",", ".")
 End Function
 
+Private Function VTUtf8ByteLength(ByVal value As String) As Long
+    Dim bytes() As Byte
+    If Len(value) = 0 Then Exit Function
+    bytes = VTUtf8Encode(value)
+    VTUtf8ByteLength = UBound(bytes) - LBound(bytes) + 1
+End Function
+
+Private Function VTUtf8Encode(ByVal value As String) As Byte()
+    Dim output() As Byte
+    Dim byteCount As Long
+    Dim index As Long
+    Dim codeUnit As Long
+    Dim lowSurrogate As Long
+    Dim codePoint As Long
+
+    If Len(value) = 0 Then
+        ReDim output(0 To 0)
+        VTUtf8Encode = output
+        Exit Function
+    End If
+
+    ReDim output(0 To Len(value) * 4 - 1)
+    index = 1
+    Do While index <= Len(value)
+        codeUnit = AscW(Mid$(value, index, 1))
+        If codeUnit < 0 Then codeUnit = codeUnit + 65536
+
+        If codeUnit >= 55296 And codeUnit <= 56319 Then
+            If index = Len(value) Then
+                Err.Raise vbObjectError + 7118, "VisualTeX", "VisualTeX text contains an incomplete Unicode surrogate pair."
+            End If
+            lowSurrogate = AscW(Mid$(value, index + 1, 1))
+            If lowSurrogate < 0 Then lowSurrogate = lowSurrogate + 65536
+            If lowSurrogate < 56320 Or lowSurrogate > 57343 Then
+                Err.Raise vbObjectError + 7118, "VisualTeX", "VisualTeX text contains an invalid Unicode surrogate pair."
+            End If
+            codePoint = 65536 + (codeUnit - 55296) * 1024 + (lowSurrogate - 56320)
+            index = index + 1
+        ElseIf codeUnit >= 56320 And codeUnit <= 57343 Then
+            Err.Raise vbObjectError + 7118, "VisualTeX", "VisualTeX text contains an unexpected low surrogate."
+        Else
+            codePoint = codeUnit
+        End If
+
+        If codePoint <= 127 Then
+            VTAppendUtf8Byte output, byteCount, codePoint
+        ElseIf codePoint <= 2047 Then
+            VTAppendUtf8Byte output, byteCount, 192 Or (codePoint \ 64)
+            VTAppendUtf8Byte output, byteCount, 128 Or (codePoint And 63)
+        ElseIf codePoint <= 65535 Then
+            VTAppendUtf8Byte output, byteCount, 224 Or (codePoint \ 4096)
+            VTAppendUtf8Byte output, byteCount, 128 Or ((codePoint \ 64) And 63)
+            VTAppendUtf8Byte output, byteCount, 128 Or (codePoint And 63)
+        ElseIf codePoint <= 1114111 Then
+            VTAppendUtf8Byte output, byteCount, 240 Or (codePoint \ 262144)
+            VTAppendUtf8Byte output, byteCount, 128 Or ((codePoint \ 4096) And 63)
+            VTAppendUtf8Byte output, byteCount, 128 Or ((codePoint \ 64) And 63)
+            VTAppendUtf8Byte output, byteCount, 128 Or (codePoint And 63)
+        Else
+            Err.Raise vbObjectError + 7118, "VisualTeX", "VisualTeX text contains an invalid Unicode code point."
+        End If
+        index = index + 1
+    Loop
+
+    ReDim Preserve output(0 To byteCount - 1)
+    VTUtf8Encode = output
+End Function
+
+Private Sub VTAppendUtf8Byte(ByRef output() As Byte, ByRef byteCount As Long, ByVal value As Long)
+    output(byteCount) = CByte(value And 255)
+    byteCount = byteCount + 1
+End Sub
+
+Private Function VTUtf8Decode(ByRef bytes() As Byte) As String
+    Dim index As Long
+    Dim lastIndex As Long
+    Dim firstByte As Long
+    Dim secondByte As Long
+    Dim thirdByte As Long
+    Dim fourthByte As Long
+    Dim codePoint As Long
+    Dim result As String
+
+    index = LBound(bytes)
+    lastIndex = UBound(bytes)
+    Do While index <= lastIndex
+        firstByte = CLng(bytes(index))
+        If firstByte <= 127 Then
+            codePoint = firstByte
+        ElseIf firstByte >= 194 And firstByte <= 223 Then
+            If index + 1 > lastIndex Then GoTo InvalidUtf8
+            secondByte = CLng(bytes(index + 1))
+            If secondByte < 128 Or secondByte > 191 Then GoTo InvalidUtf8
+            codePoint = (firstByte And 31) * 64 + (secondByte And 63)
+            index = index + 1
+        ElseIf firstByte >= 224 And firstByte <= 239 Then
+            If index + 2 > lastIndex Then GoTo InvalidUtf8
+            secondByte = CLng(bytes(index + 1))
+            thirdByte = CLng(bytes(index + 2))
+            If thirdByte < 128 Or thirdByte > 191 Then GoTo InvalidUtf8
+            If firstByte = 224 Then
+                If secondByte < 160 Or secondByte > 191 Then GoTo InvalidUtf8
+            ElseIf firstByte = 237 Then
+                If secondByte < 128 Or secondByte > 159 Then GoTo InvalidUtf8
+            ElseIf secondByte < 128 Or secondByte > 191 Then
+                GoTo InvalidUtf8
+            End If
+            codePoint = (firstByte And 15) * 4096 + (secondByte And 63) * 64 + (thirdByte And 63)
+            index = index + 2
+        ElseIf firstByte >= 240 And firstByte <= 244 Then
+            If index + 3 > lastIndex Then GoTo InvalidUtf8
+            secondByte = CLng(bytes(index + 1))
+            thirdByte = CLng(bytes(index + 2))
+            fourthByte = CLng(bytes(index + 3))
+            If thirdByte < 128 Or thirdByte > 191 Or fourthByte < 128 Or fourthByte > 191 Then GoTo InvalidUtf8
+            If firstByte = 240 Then
+                If secondByte < 144 Or secondByte > 191 Then GoTo InvalidUtf8
+            ElseIf firstByte = 244 Then
+                If secondByte < 128 Or secondByte > 143 Then GoTo InvalidUtf8
+            ElseIf secondByte < 128 Or secondByte > 191 Then
+                GoTo InvalidUtf8
+            End If
+            codePoint = (firstByte And 7) * 262144 + (secondByte And 63) * 4096 + _
+                        (thirdByte And 63) * 64 + (fourthByte And 63)
+            index = index + 3
+        Else
+            GoTo InvalidUtf8
+        End If
+
+        If codePoint <= 65535 Then
+            result = result & VTUnicodeCodeUnit(codePoint)
+        Else
+            codePoint = codePoint - 65536
+            result = result & VTUnicodeCodeUnit(55296 + (codePoint \ 1024)) & _
+                              VTUnicodeCodeUnit(56320 + (codePoint And 1023))
+        End If
+        index = index + 1
+    Loop
+    VTUtf8Decode = result
+    Exit Function
+
+InvalidUtf8:
+    Err.Raise vbObjectError + 7119, "VisualTeX", "VisualTeX local file is not valid UTF-8."
+End Function
+
+Private Function VTUnicodeCodeUnit(ByVal value As Long) As String
+    If value < 0 Or value > 65535 Then
+        Err.Raise vbObjectError + 7120, "VisualTeX", "VisualTeX decoded an invalid Unicode code unit."
+    End If
+    If value > 32767 Then
+        VTUnicodeCodeUnit = ChrW(value - 65536)
+    Else
+        VTUnicodeCodeUnit = ChrW(value)
+    End If
+End Function
+
 Public Sub VTWriteRequest(ByVal sessionId As String, ByVal json As String)
     Dim requestPath As String
     If Not VTIsCanonicalUuid(sessionId) Then
         Err.Raise vbObjectError + 7107, "VisualTeX", "Invalid VisualTeX session id."
     End If
-    If LenB(StrConv(json, vbFromUnicode)) > VT_MAX_REQUEST_BYTES Then
+    If VTUtf8ByteLength(json) > VT_MAX_REQUEST_BYTES Then
         Err.Raise vbObjectError + 7108, "VisualTeX", "VisualTeX request exceeds 256 KiB."
     End If
     VTEnsureDirectory VTSessionDirectory(sessionId)
@@ -184,6 +349,7 @@ End Sub
 Public Sub VTWriteTextAtomic(ByVal destination As String, ByVal contents As String)
     Dim temporary As String
     Dim handle As Integer
+    Dim bytes() As Byte
 
     VTValidateAbsoluteVisualTeXPath destination
     VTEnsureDirectory VTParentDirectory(destination)
@@ -193,8 +359,11 @@ Public Sub VTWriteTextAtomic(ByVal destination As String, ByVal contents As Stri
     On Error GoTo WriteFailed
 
     handle = FreeFile
-    Open temporary For Output As #handle
-    Print #handle, contents;
+    Open temporary For Binary Access Write As #handle
+    If Len(contents) > 0 Then
+        bytes = VTUtf8Encode(contents)
+        Put #handle, , bytes
+    End If
     Close #handle
     handle = 0
 
@@ -215,8 +384,11 @@ End Sub
 Public Function VTReadText(ByVal sourcePath As String, Optional ByVal maximumCharacters As Long = 262144) As String
     Dim handle As Integer
     Dim length As Long
-    Dim value As String
+    Dim bytes() As Byte
+    Dim errorNumber As Long
+    Dim errorDescription As String
 
+    On Error GoTo ReadFailed
     VTValidateAbsoluteVisualTeXPath sourcePath
     If Dir$(sourcePath, vbNormal Or vbHidden Or vbSystem Or vbReadOnly) = "" Then
         Err.Raise vbObjectError + 7110, "VisualTeX", "VisualTeX local file was not found."
@@ -229,11 +401,23 @@ Public Function VTReadText(ByVal sourcePath As String, Optional ByVal maximumCha
     handle = FreeFile
     Open sourcePath For Binary Access Read As #handle
     If length > 0 Then
-        value = Space$(length)
-        Get #handle, , value
+        ReDim bytes(0 To length - 1)
+        Get #handle, , bytes
+        VTReadText = VTUtf8Decode(bytes)
+    Else
+        VTReadText = ""
     End If
     Close #handle
-    VTReadText = value
+    handle = 0
+    Exit Function
+
+ReadFailed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    If handle <> 0 Then Close #handle
+    On Error GoTo 0
+    Err.Raise errorNumber, "VisualTeX", errorDescription
 End Function
 
 Public Function VTReadActiveSessionId(ByVal hostName As String) As String
@@ -338,6 +522,35 @@ Public Function VTPathFileExists(ByVal value As String) As Boolean
     End If
     VTPathFileExists = (Dir$(value, vbNormal Or vbHidden Or vbSystem Or vbReadOnly) <> "")
     On Error GoTo 0
+End Function
+
+Public Function VTProtocolSelfTest() As Boolean
+    Dim identifiers As New Collection
+    Dim identifier As String
+    Dim index As Long
+    Dim testPath As String
+    Dim sample As String
+
+    For index = 1 To 1000
+        identifier = VTNewUuidV4()
+        If Not VTIsCanonicalUuid(identifier) Or VTCollectionHasKey(identifiers, identifier) Then
+            Err.Raise vbObjectError + 7121, "VisualTeX", "VisualTeX UUID self-test failed."
+        End If
+        identifiers.Add True, identifier
+    Next index
+
+    sample = "VisualTeX " & VTUnicodeCodeUnit(20013) & VTUnicodeCodeUnit(25991) & _
+             " " & VTUnicodeCodeUnit(960) & " " & VTUnicodeCodeUnit(55357) & VTUnicodeCodeUnit(56832)
+    VTEnsureDirectory VTSessionRoot()
+    testPath = VTSessionRoot() & "/protocol-self-test.txt"
+    VTWriteTextAtomic testPath, sample
+    If VTReadText(testPath, 1024) <> sample Then
+        Err.Raise vbObjectError + 7122, "VisualTeX", "VisualTeX UTF-8 self-test failed."
+    End If
+    On Error Resume Next
+    Kill testPath
+    On Error GoTo 0
+    VTProtocolSelfTest = True
 End Function
 
 Public Sub VTDeleteSessionFiles(ByVal sessionId As String)

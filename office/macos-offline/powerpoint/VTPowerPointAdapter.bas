@@ -192,11 +192,13 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     Dim targetHeight As Double
     Dim targetRotation As Double
     Dim currentSlide As Slide
+    Dim committed As Shape
     Dim original As Shape
     Dim candidate As Shape
     Dim originalTemporaryName As String
     Dim candidateTemporaryName As String
     Dim originalRenamed As Boolean
+    Dim formulaReference As String
 
     VTRequireWritablePowerPointPresentation
     VTRequireDispatchValue dispatch, "formulaId"
@@ -232,6 +234,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     If Not VTIsCanonicalUuid(formulaId) Or shapeName <> VT_SHAPE_PREFIX & formulaId Or Not VTIsEncodedMetadata(metadata) Then
         Err.Raise vbObjectError + 7504, "VisualTeX", "VisualTeX PowerPoint result metadata is invalid."
     End If
+    formulaReference = VTFormulaReference(formulaId, "block", False)
     If expectedPresentation <> VTPresentationIdentity() Then
         Err.Raise vbObjectError + 7515, "VisualTeX", "The active PowerPoint presentation changed while VisualTeX was open."
     End If
@@ -247,6 +250,18 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     If currentSlide.SlideID <> slideId Then
         Err.Raise vbObjectError + 7518, "VisualTeX", "The original PowerPoint slide no longer exists."
     End If
+    On Error Resume Next
+    Set committed = currentSlide.Shapes(shapeName)
+    On Error GoTo TransactionFailed
+    If Not committed Is Nothing Then
+        If VTIsCommittedPowerPointShape( _
+            committed, shapeName, formulaReference, metadata, formulaId, sessionId, _
+            targetLeft, targetTop, targetWidth, targetHeight, targetRotation, targetZOrder) Then
+            Exit Sub
+        End If
+    End If
+    Set committed = Nothing
+
     On Error Resume Next
     Set original = currentSlide.Shapes(sourceShapeName)
     On Error GoTo TransactionFailed
@@ -273,7 +288,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     candidate.LockAspectRatio = msoTrue
     candidate.Rotation = CSng(targetRotation)
     candidate.AlternativeText = metadata
-    candidate.Title = VTFormulaReference(formulaId, "block", False)
+    candidate.Title = formulaReference
     VTSetShapeTag candidate, "VisualTeXFormulaId", formulaId
     VTSetShapeTag candidate, "VisualTeXSessionId", sessionId
     VTSetShapeTag candidate, "VisualTeXPending", "0"
@@ -290,9 +305,14 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     originalRenamed = True
     candidate.Name = shapeName
 
-    If Abs(candidate.Left - targetLeft) > 0.1 Or Abs(candidate.Top - targetTop) > 0.1 Or _
+    If candidate.Name <> shapeName Or _
+       Abs(candidate.Left - targetLeft) > 0.1 Or Abs(candidate.Top - targetTop) > 0.1 Or _
        Abs(candidate.Width - targetWidth) > 0.1 Or Abs(candidate.Height - targetHeight) > 0.1 Or _
-       candidate.AlternativeText <> metadata Or candidate.Tags("VisualTeXFormulaId") <> formulaId Then
+       Abs(candidate.Rotation - targetRotation) > 0.1 Or candidate.ZOrderPosition <> targetZOrder + 1 Or _
+       candidate.AlternativeText <> metadata Or candidate.Title <> formulaReference Or _
+       candidate.Tags("VisualTeXFormulaId") <> formulaId Or _
+       candidate.Tags("VisualTeXSessionId") <> sessionId Or _
+       candidate.Tags("VisualTeXPending") <> "0" Then
         Err.Raise vbObjectError + 7520, "VisualTeX", "PowerPoint did not persist the VisualTeX formula properties."
     End If
 
@@ -310,6 +330,41 @@ TransactionFailed:
     On Error GoTo 0
     Err.Raise transactionErrorNumber, "VisualTeX PowerPoint transaction", transactionErrorDescription
 End Sub
+
+Private Function VTIsCommittedPowerPointShape( _
+    ByVal target As Shape, _
+    ByVal expectedName As String, _
+    ByVal formulaReference As String, _
+    ByVal metadata As String, _
+    ByVal formulaId As String, _
+    ByVal sessionId As String, _
+    ByVal targetLeft As Double, _
+    ByVal targetTop As Double, _
+    ByVal targetWidth As Double, _
+    ByVal targetHeight As Double, _
+    ByVal targetRotation As Double, _
+    ByVal targetZOrder As Long) As Boolean
+
+    On Error GoTo NotCommitted
+    VTIsCommittedPowerPointShape = _
+        target.Name = expectedName And _
+        Abs(target.Left - targetLeft) <= 0.1 And _
+        Abs(target.Top - targetTop) <= 0.1 And _
+        Abs(target.Width - targetWidth) <= 0.1 And _
+        Abs(target.Height - targetHeight) <= 0.1 And _
+        Abs(target.Rotation - targetRotation) <= 0.1 And _
+        target.ZOrderPosition = targetZOrder And _
+        target.AlternativeText = metadata And _
+        target.Title = formulaReference And _
+        target.Tags("VisualTeXFormulaId") = formulaId And _
+        target.Tags("VisualTeXSessionId") = sessionId And _
+        target.Tags("VisualTeXPending") = "0"
+    Exit Function
+
+NotCommitted:
+    Err.Clear
+    VTIsCommittedPowerPointShape = False
+End Function
 
 Private Sub VTCancelPowerPointDispatch(ByVal sessionId As String, ByVal dispatch As Object)
     Dim pendingMarker As String
@@ -483,7 +538,7 @@ Private Sub VTWritePowerPointHealth()
         """loaded"":true," & _
         """pluginVersion"":" & VTJsonString(VT_PLUGIN_VERSION) & "," & _
         """host"":""powerpoint""," & _
-        """timestamp"":" & VTJsonString(Format$(Now, "yyyy-mm-dd\Thh:nn:ss") & "Z") & _
+        """timestamp"":" & VTJsonString(Format$(Now, "yyyy-mm-dd\Thh:nn:ss")) & _
         "}"
     VTWriteTextAtomic statusPath, payload
 End Sub
