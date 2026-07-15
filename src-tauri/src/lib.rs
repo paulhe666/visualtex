@@ -1058,6 +1058,8 @@ async fn remove_optional_ocr_model(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let background_mode = office::background::is_background_mode();
+    let initial_office_url = std::env::args()
+        .find(|argument| argument.starts_with("visualtex://office/open?session="));
     let ocr_state = OcrState::default();
     let office_ocr_state = ocr_state.clone();
     let app = tauri::Builder::default()
@@ -1095,7 +1097,12 @@ pub fn run() {
             }
             app.manage(office_state.clone());
             office::start(office_state);
-            if background_mode {
+            if let Some(url) = initial_office_url.as_deref() {
+                office::background::hide_main_window(app.handle())
+                    .map_err(std::io::Error::other)?;
+                office::macos_offline::handle_open_url(app.handle(), url)
+                    .map_err(std::io::Error::other)?;
+            } else if background_mode {
                 office::background::hide_main_window(app.handle())
                     .map_err(std::io::Error::other)?;
             } else {
@@ -1172,7 +1179,9 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => {
-            let _ = office::background::reveal_main_window(app);
+            if !office::macos_offline::focus_open_office_editor(app) {
+                let _ = office::background::reveal_main_window(app);
+            }
         }
         tauri::RunEvent::ExitRequested { .. } => {
             #[cfg(target_os = "macos")]

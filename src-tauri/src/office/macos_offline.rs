@@ -465,14 +465,27 @@ fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
     let path = format!(
         "office-native-dialog.html?sessionId={session_id}&transport=tauri"
     );
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
         .title("VisualTeX Office Formula")
         .inner_size(1180.0, 820.0)
         .min_inner_size(720.0, 560.0)
         .center()
         .build()
         .map_err(|error| format!("Unable to open the VisualTeX Office editor: {error}"))?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("office-native-") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String> {

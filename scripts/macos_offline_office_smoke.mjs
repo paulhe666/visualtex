@@ -68,6 +68,7 @@ const launcher = read("office/macos-offline/shared/VTLauncher.bas");
 const wordScript = read("office/macos-offline/word/VisualTeXWord.scpt");
 const powerpointScript = read("office/macos-offline/powerpoint/VisualTeXPowerPoint.scpt");
 const rustRuntime = read("src-tauri/src/office/macos_offline.rs");
+const appRuntime = read("src-tauri/src/lib.rs");
 const installer = read("src-tauri/src/office/macos_offline_installer.rs");
 const packager = read("scripts/package_macos_offline_addins.mjs");
 const nativeHtml = read("office-native-dialog.html");
@@ -172,13 +173,38 @@ expectIncludes(rustRuntime, "deny_unknown_fields", "Offline request JSON must re
 expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return results through the VBA callback");
 expectIncludes(rustRuntime, "hide_main_window(app)?", "Office formula requests must hide the main VisualTeX workspace");
 expectIncludes(rustRuntime, "open_editor_window(app, &session_id)", "Office formula requests must open the dedicated formula editor");
+expectIncludes(rustRuntime, "window.show()", "The dedicated Office formula editor must be explicitly shown");
+expectIncludes(rustRuntime, "window.set_focus()", "The dedicated Office formula editor must receive focus");
+expectIncludes(rustRuntime, "focus_open_office_editor", "macOS reopen handling must be able to refocus an existing Office editor");
+expectIncludes(appRuntime, "initial_office_url", "Cold Office URL launches must be recognized before the main workspace is revealed");
+expectIncludes(appRuntime, "if !office::macos_offline::focus_open_office_editor(app)", "macOS reopen must prefer an Office formula editor over the main workspace");
 expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
 expectIncludes(rustRuntime, 'macro name "AutoExec"', "Word health refresh must call only the fixed AutoExec macro");
 expectIncludes(rustRuntime, 'macro name "Auto_Open"', "PowerPoint health refresh must call only the fixed Auto_Open macro");
 expectIncludes(
   read("scripts/register_macos_dev_url_handler.mjs"),
-  "dev_server='http://localhost:1420/'",
+  'property devServer : "http://localhost:1420/"',
   "The macOS development URL launcher must target the configured Vite server instead of opening a blank window",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "on open location visualTeXURL",
+  "The macOS development URL launcher must receive URL AppleEvents instead of relying on shell arguments",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  'CFBundleIdentifier", "-string", "com.visualtex.studio.dev-url-handler"',
+  "The macOS development URL launcher must use a distinct bundle identifier from the Tauri application",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "LSSetDefaultHandlerForURLScheme",
+  "The macOS development URL launcher must become the default visualtex URL handler instead of leaving a stale app association",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "legacyDevApp",
+  "The macOS development URL launcher must remove the legacy shell-based handler registration",
 );
 expectIncludes(
   read("scripts/register_macos_dev_url_handler.mjs"),

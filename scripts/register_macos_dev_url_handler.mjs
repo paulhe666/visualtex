@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   rmSync,
@@ -11,49 +10,88 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const debugExecutable = join(repositoryRoot, "src-tauri", "target", "debug", "visualtex");
-const devApp = join(
+const devBundleRoot = join(
   repositoryRoot,
   "src-tauri",
   "target",
   "debug",
   "bundle",
   "macos",
-  "VisualTeX Dev.app",
 );
-const appExecutable = join(devApp, "Contents", "MacOS", "visualtex");
+const devApp = join(devBundleRoot, "VisualTeX Dev URL Handler.app");
+const legacyDevApp = join(devBundleRoot, "VisualTeX Dev.app");
+const launcherSource = join(devBundleRoot, "VisualTeXDevURLHandler.applescript");
 const infoPlist = join(devApp, "Contents", "Info.plist");
 const launchServices =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
-function xmlEscape(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+function appleScriptString(value) {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-function shellQuote(value) {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
+function launcherAppleScript() {
+  const executable = appleScriptString(debugExecutable);
+  return `property debugExecutable : "${executable}"
+property devServer : "http://localhost:1420/"
+property officeURLPrefix : "visualtex://office/open?session="
+
+on run
+    my launchVisualTeX("")
+end run
+
+on open location visualTeXURL
+    my launchVisualTeX(visualTeXURL as text)
+end open location
+
+on launchVisualTeX(visualTeXURL)
+    try
+        do shell script "/usr/bin/curl --silent --fail --max-time 1 " & quoted form of devServer & " >/dev/null 2>&1"
+    on error
+        display alert "VisualTeX 开发服务未运行" message "请先在项目目录执行 npm run tauri:dev，并保持终端窗口运行。" as critical
+        return
+    end try
+
+    if visualTeXURL is not "" then
+        if visualTeXURL does not start with officeURLPrefix then
+            display alert "VisualTeX Office 链接无效" message "开发启动器只接受固定的 VisualTeX Office Session 链接。" as critical
+            return
+        end if
+    end if
+
+    set commandText to quoted form of debugExecutable
+    if visualTeXURL is not "" then
+        set commandText to commandText & " " & quoted form of visualTeXURL
+    end if
+    do shell script commandText & " >/tmp/visualtex-dev-url.log 2>&1 &"
+end launchVisualTeX
+`;
 }
 
-function ensureExecutableLauncher() {
-  mkdirSync(dirname(appExecutable), { recursive: true });
-  rmSync(appExecutable, { force: true });
-  writeFileSync(
-    appExecutable,
-    `#!/bin/sh\n` +
-      `dev_server='http://localhost:1420/'\n` +
-      `debug_executable=${shellQuote(debugExecutable)}\n` +
-      `if ! /usr/bin/curl --silent --fail --max-time 1 "$dev_server" >/dev/null 2>&1; then\n` +
-      `  /usr/bin/osascript -e 'display alert "VisualTeX 开发服务未运行" message "请先在项目目录执行 npm run tauri:dev，并保持终端窗口运行。" as critical' >/dev/null 2>&1 || true\n` +
-      `  exit 78\n` +
-      `fi\n` +
-      `exec "$debug_executable" "$@"\n`,
-    "utf8",
+function updateInfoPlist() {
+  const urlTypes = JSON.stringify([
+    {
+      CFBundleTypeRole: "Editor",
+      CFBundleURLName: "VisualTeX Offline Office Session",
+      CFBundleURLSchemes: ["visualtex"],
+    },
+  ]);
+  for (const [key, type, value] of [
+    ["CFBundleIdentifier", "-string", "com.visualtex.studio.dev-url-handler"],
+    ["CFBundleDisplayName", "-string", "VisualTeX Dev URL Handler"],
+    ["CFBundleName", "-string", "VisualTeX Dev URL Handler"],
+    ["CFBundleShortVersionString", "-string", "1.1.0-dev"],
+    ["CFBundleVersion", "-string", "1"],
+    ["LSUIElement", "-bool", "YES"],
+  ]) {
+    execFileSync("/usr/bin/plutil", ["-replace", key, type, value, infoPlist], {
+      stdio: "pipe",
+    });
+  }
+  execFileSync(
+    "/usr/bin/plutil",
+    ["-replace", "CFBundleURLTypes", "-json", urlTypes, infoPlist],
+    { stdio: "pipe" },
   );
-  chmodSync(appExecutable, 0o755);
 }
 
 export function registerMacosDevUrlHandler() {
@@ -64,33 +102,36 @@ export function registerMacosDevUrlHandler() {
     );
   }
 
-  ensureExecutableLauncher();
-  writeFileSync(
-    infoPlist,
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-      `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
-      `<plist version="1.0">\n<dict>\n` +
-      `  <key>CFBundleDevelopmentRegion</key><string>English</string>\n` +
-      `  <key>CFBundleDisplayName</key><string>VisualTeX Dev</string>\n` +
-      `  <key>CFBundleExecutable</key><string>visualtex</string>\n` +
-      `  <key>CFBundleIdentifier</key><string>com.visualtex.studio</string>\n` +
-      `  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>\n` +
-      `  <key>CFBundleName</key><string>VisualTeX Dev</string>\n` +
-      `  <key>CFBundlePackageType</key><string>APPL</string>\n` +
-      `  <key>CFBundleShortVersionString</key><string>1.1.0-dev</string>\n` +
-      `  <key>CFBundleVersion</key><string>1</string>\n` +
-      `  <key>CFBundleURLTypes</key>\n` +
-      `  <array><dict>\n` +
-      `    <key>CFBundleTypeRole</key><string>Editor</string>\n` +
-      `    <key>CFBundleURLName</key><string>${xmlEscape("VisualTeX Offline Office Session")}</string>\n` +
-      `    <key>CFBundleURLSchemes</key><array><string>visualtex</string></array>\n` +
-      `  </dict></array>\n` +
-      `</dict>\n</plist>\n`,
-    "utf8",
-  );
-
+  mkdirSync(devBundleRoot, { recursive: true });
+  if (existsSync(legacyDevApp)) {
+    try {
+      execFileSync(launchServices, ["-u", legacyDevApp], { stdio: "pipe" });
+    } catch {
+      // The legacy shell-based handler may already be absent from LaunchServices.
+    }
+    rmSync(legacyDevApp, { recursive: true, force: true });
+  }
+  rmSync(devApp, { recursive: true, force: true });
+  writeFileSync(launcherSource, launcherAppleScript(), "utf8");
+  execFileSync("/usr/bin/osacompile", ["-o", devApp, launcherSource], {
+    stdio: "pipe",
+  });
+  updateInfoPlist();
   execFileSync("/usr/bin/plutil", ["-lint", infoPlist], { stdio: "pipe" });
+  execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", devApp], {
+    stdio: "pipe",
+  });
   execFileSync(launchServices, ["-f", devApp], { stdio: "pipe" });
+  execFileSync(
+    "/usr/bin/osascript",
+    [
+      "-l",
+      "JavaScript",
+      "-e",
+      'ObjC.import("CoreServices"); $.LSSetDefaultHandlerForURLScheme($("visualtex"), $("com.visualtex.studio.dev-url-handler"));',
+    ],
+    { stdio: "pipe" },
+  );
   return devApp;
 }
 
