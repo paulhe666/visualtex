@@ -1069,6 +1069,16 @@ pub fn run() {
                 {
                     return;
                 }
+                #[cfg(target_os = "macos")]
+                if let Some(url) = arguments
+                    .iter()
+                    .find(|argument| argument.starts_with("visualtex://office/open?session="))
+                {
+                    if let Err(error) = office::macos_offline::handle_open_url(app, url) {
+                        eprintln!("Unable to open VisualTeX offline Office Session: {error}");
+                    }
+                    return;
+                }
                 let _ = office::background::reveal_main_window(app);
             },
         ))
@@ -1121,7 +1131,19 @@ pub fn run() {
             office::lifecycle::uninstall_office_integration,
             office::lifecycle::regenerate_office_certificate,
             office::lifecycle::open_word,
-            office::lifecycle::open_powerpoint
+            office::lifecycle::open_powerpoint,
+            office::macos_offline::get_macos_offline_office_session,
+            office::macos_offline::update_macos_offline_office_session,
+            office::macos_offline::delete_macos_offline_office_session,
+            office::macos_offline::commit_macos_offline_office_session,
+            office::macos_offline::cancel_macos_offline_office_session,
+            office::macos_offline::get_macos_offline_plugin_health,
+            office::macos_offline_installer::get_macos_offline_office_install_status,
+            office::macos_offline_installer::install_macos_offline_office_addins,
+            office::macos_offline_installer::repair_macos_offline_office_addins,
+            office::macos_offline_installer::uninstall_macos_offline_office_addins,
+            office::macos_offline_installer::reveal_macos_powerpoint_addin,
+            office::macos_offline_installer::open_macos_powerpoint_addin_tutorial
         ])
         .build(tauri::generate_context!())
         .expect("error while building VisualTeX");
@@ -1135,6 +1157,18 @@ pub fn run() {
         } if label == "main" => {
             api.prevent_close();
             let _ = office::background::hide_main_window(app);
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Opened { urls } => {
+            for url in urls {
+                if url.scheme() == "visualtex" {
+                    if let Err(error) =
+                        office::macos_offline::handle_open_url(app, url.as_str())
+                    {
+                        eprintln!("Unable to open VisualTeX offline Office Session: {error}");
+                    }
+                }
+            }
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => {

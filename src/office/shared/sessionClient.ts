@@ -91,6 +91,17 @@ declare global {
   }
 }
 
+export function isMacosOfflineTauriTransport() {
+  if (typeof window === "undefined") return false;
+  const transport = new URLSearchParams(window.location.search).get("transport");
+  return transport === "tauri" && "__TAURI_INTERNALS__" in window;
+}
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(command, args);
+}
+
 function installToken() {
   if (typeof window === "undefined") return "";
   return (
@@ -135,6 +146,12 @@ export function createOfficeSession(input: CreateOfficeSessionInput) {
 }
 
 export function getOfficeSession(sessionId: string) {
+  if (isMacosOfflineTauriTransport()) {
+    return invokeTauri<OfficeFormulaSession>(
+      "get_macos_offline_office_session",
+      { sessionId },
+    );
+  }
   return requestJson<OfficeFormulaSession>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
   );
@@ -144,6 +161,12 @@ export function updateOfficeSession(
   sessionId: string,
   update: UpdateOfficeSessionInput,
 ) {
+  if (isMacosOfflineTauriTransport()) {
+    return invokeTauri<OfficeFormulaSession>(
+      "update_macos_offline_office_session",
+      { sessionId, patch: update },
+    );
+  }
   return requestJson<OfficeFormulaSession>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     { method: "PATCH", body: JSON.stringify(update) },
@@ -195,9 +218,28 @@ export function commitNativePowerPointSessionKeepalive(
 }
 
 export function deleteOfficeSession(sessionId: string) {
+  if (isMacosOfflineTauriTransport()) {
+    return invokeTauri<void>("delete_macos_offline_office_session", {
+      sessionId,
+    });
+  }
   return requestJson<void>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     { method: "DELETE" },
+  );
+}
+
+export function commitMacosOfflineOfficeSession(sessionId: string) {
+  return invokeTauri<OfficeFormulaSession>(
+    "commit_macos_offline_office_session",
+    { sessionId },
+  );
+}
+
+export function cancelMacosOfflineOfficeSession(sessionId: string) {
+  return invokeTauri<OfficeFormulaSession>(
+    "cancel_macos_offline_office_session",
+    { sessionId },
   );
 }
 
@@ -205,6 +247,12 @@ export function saveOfficeSessionKeepalive(
   sessionId: string,
   update: UpdateOfficeSessionInput,
 ) {
+  if (isMacosOfflineTauriTransport()) {
+    return invokeTauri<OfficeFormulaSession>(
+      "update_macos_offline_office_session",
+      { sessionId, patch: update },
+    ).then(() => new Response(null, { status: 204 }));
+  }
   const headers = new Headers({
     Accept: "application/json",
     "Content-Type": "application/json",

@@ -1,7 +1,11 @@
 {
   "bundle": {
+    "macOS": {
+      "infoPlist": "Info.macos.plist"
+    },
     "resources": {
       "../dist-office-macos/": "office/",
+      "../office/macos-offline/": "office/macos-offline/",
       "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
     }
   }

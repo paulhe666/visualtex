@@ -367,12 +367,37 @@ impl SessionStore {
         &self,
         input: CreateOfficeSessionInput,
     ) -> Result<OfficeFormulaSession, SessionError> {
+        self.create_with_id(Uuid::new_v4().to_string(), input)
+    }
+
+    pub(crate) fn create_external(
+        &self,
+        id: String,
+        input: CreateOfficeSessionInput,
+    ) -> Result<OfficeFormulaSession, SessionError> {
+        if !valid_uuid(&id) {
+            return Err(SessionError::Invalid(
+                "External Office Session id must be a canonical UUID".to_string(),
+            ));
+        }
+        self.create_with_id(id, input)
+    }
+
+    fn create_with_id(
+        &self,
+        id: String,
+        input: CreateOfficeSessionInput,
+    ) -> Result<OfficeFormulaSession, SessionError> {
         let _guard = self
             .lock
             .lock()
             .map_err(|_| SessionError::Io("Session store lock is unavailable".to_string()))?;
+        if self.session_path(&id)?.exists() {
+            return Err(SessionError::Conflict(
+                "Office Session already exists".to_string(),
+            ));
+        }
         let created_at = now_ms();
-        let id = Uuid::new_v4().to_string();
         let formula_id = match input.formula_id {
             Some(value) if valid_uuid(&value) => value,
             Some(_) => {
@@ -728,6 +753,33 @@ mod tests {
         assert_ne!(first.formula_id, second.formula_id);
         assert!(valid_uuid(&first.id));
         assert!(valid_uuid(&first.formula_id));
+    }
+
+    #[test]
+    fn external_session_ids_are_preserved_and_cannot_be_reused() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let external_id = Uuid::new_v4().to_string();
+        let session = store
+            .create_external(external_id.clone(), create_input())
+            .unwrap();
+        assert_eq!(session.id, external_id);
+        assert_eq!(store.get(&external_id).unwrap().id, external_id);
+
+        let duplicate = store
+            .create_external(external_id, create_input())
+            .unwrap_err();
+        assert!(matches!(duplicate, SessionError::Conflict(_)));
+    }
+
+    #[test]
+    fn external_session_ids_must_be_canonical_uuids() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let error = store
+            .create_external("../not-a-session".to_string(), create_input())
+            .unwrap_err();
+        assert!(matches!(error, SessionError::Invalid(_)));
     }
 
     #[test]

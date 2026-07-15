@@ -60,6 +60,27 @@ interface OfficeIntegrationStatus {
   officeUiVersion: string;
 }
 
+interface MacOfflineHostStatus {
+  applicationInstalled: boolean;
+  filesInstalled: boolean;
+  loaded: boolean;
+  pluginVersion: string | null;
+  installPaths: string[];
+  healthPath: string;
+  lastError: string | null;
+}
+
+interface MacOfflineOfficeStatus {
+  word: MacOfflineHostStatus;
+  powerpoint: MacOfflineHostStatus;
+  compiledArtifactsAvailable: boolean;
+  resourceRoot: string;
+  powerpointAddinPath: string;
+  wordScriptPath: string;
+  powerpointScriptPath: string;
+  tutorialPath: string;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.trim()) return error;
@@ -118,13 +139,19 @@ function HostCard({
 export function MacOfficeIntegrationSettings() {
   const isEn = useEditorStore((state) => state.language) === "en";
   const [status, setStatus] = useState<OfficeIntegrationStatus | null>(null);
+  const [offlineStatus, setOfflineStatus] = useState<MacOfflineOfficeStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
     setBusy((value) => value ?? "refresh");
     try {
-      setStatus(await invoke<OfficeIntegrationStatus>("get_office_integration_status"));
+      const [compatibility, offline] = await Promise.all([
+        invoke<OfficeIntegrationStatus>("get_office_integration_status"),
+        invoke<MacOfflineOfficeStatus>("get_macos_offline_office_install_status"),
+      ]);
+      setStatus(compatibility);
+      setOfflineStatus(offline);
       setMessage("");
     } catch (error) {
       setMessage(
@@ -262,11 +289,74 @@ export function MacOfficeIntegrationSettings() {
         </div>
       )}
 
-      {(message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError) && (
+      <div className="settings-section-heading office-settings-heading">
+        <div>
+          <strong>{isEn ? "Native offline add-ins (staged)" : "原生离线加载项（分阶段启用）"}</strong>
+          <p>
+            {isEn
+              ? "Word uses a global DOTM template and PowerPoint uses a fixed PPAM file. This route has no HTTPS, certificate, manifest, network, or Office.js dependency. The compatibility route above remains installed until native acceptance is complete."
+              : "Word 使用全局 DOTM 模板，PowerPoint 使用固定路径 PPAM；该路线不依赖 HTTPS、证书、Manifest、网络或 Office.js。在原生验收全部完成前，上方兼容路线仍会保留。"}
+          </p>
+        </div>
+      </div>
+
+      {offlineStatus && (
+        <div className="office-status-grid">
+          <article className="office-status-card">
+            <header><strong>Word · VisualTeX.dotm</strong></header>
+            <StatusLine ok={offlineStatus.word.filesInstalled}>
+              {offlineStatus.word.filesInstalled ? (isEn ? "Files installed" : "文件已安装") : (isEn ? "Files missing" : "文件缺失")}
+            </StatusLine>
+            <StatusLine ok={offlineStatus.word.loaded}>
+              {offlineStatus.word.loaded ? (isEn ? "Loaded by Word" : "Word 已加载") : (isEn ? "Waiting for Word health signal" : "等待 Word 健康状态")}
+            </StatusLine>
+            <p title={offlineStatus.word.installPaths.join("\n")}>{offlineStatus.word.installPaths[0] ?? "—"}</p>
+          </article>
+          <article className="office-status-card">
+            <header><strong>PowerPoint · VisualTeX.ppam</strong></header>
+            <StatusLine ok={offlineStatus.powerpoint.filesInstalled}>
+              {offlineStatus.powerpoint.filesInstalled ? (isEn ? "Files installed" : "文件已安装") : (isEn ? "Files missing" : "文件缺失")}
+            </StatusLine>
+            <StatusLine ok={offlineStatus.powerpoint.loaded}>
+              {offlineStatus.powerpoint.loaded ? (isEn ? "Loaded by PowerPoint" : "PowerPoint 已加载") : (isEn ? "Manual registration or health signal required" : "需要手动登记或等待健康状态")}
+            </StatusLine>
+            <p title={offlineStatus.powerpointAddinPath}>{offlineStatus.powerpointAddinPath}</p>
+          </article>
+          <article className="office-status-card">
+            <header><strong>{isEn ? "Compiled add-in package" : "已编译加载项包"}</strong></header>
+            <StatusLine ok={offlineStatus.compiledArtifactsAvailable}>
+              {offlineStatus.compiledArtifactsAvailable
+                ? (isEn ? "DOTM and PPAM are available" : "DOTM 与 PPAM 已就绪")
+                : (isEn ? "Reviewed VBA sources exist; compiled Office binaries are not packaged yet" : "VBA 源码已生成，但尚未打包真实 Office 编译产物")}
+            </StatusLine>
+            <p title={offlineStatus.resourceRoot}>{offlineStatus.resourceRoot}</p>
+          </article>
+        </div>
+      )}
+
+      <div className="office-settings-actions">
+        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.compiledArtifactsAvailable} onClick={() => void run("offline-install", "install_macos_offline_office_addins")}>
+          <Download size={15} />{isEn ? "Install native offline add-ins" : "安装原生离线加载项"}
+        </button>
+        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.compiledArtifactsAvailable} onClick={() => void run("offline-repair", "repair_macos_offline_office_addins")}>
+          <Wrench size={15} />{isEn ? "Repair native add-ins" : "修复原生加载项"}
+        </button>
+        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.powerpoint.filesInstalled} onClick={() => void run("offline-reveal", "reveal_macos_powerpoint_addin")}>
+          <ExternalLink size={15} />{isEn ? "Show PPAM in Finder" : "在 Finder 中显示 PPAM"}
+        </button>
+        <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void run("offline-tutorial", "open_macos_powerpoint_addin_tutorial")}>
+          <ExternalLink size={15} />{isEn ? "Open PPAM tutorial" : "打开 PPAM 安装教程"}
+        </button>
+        <button type="button" className="secondary-button danger-subtle" disabled={busy !== null} onClick={() => void run("offline-uninstall", "uninstall_macos_offline_office_addins")}>
+          <Trash2 size={15} />{isEn ? "Uninstall native add-ins" : "卸载原生加载项"}
+        </button>
+      </div>
+
+      {(message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError || offlineStatus?.word.lastError || offlineStatus?.powerpoint.lastError) && (
         <div className="office-settings-warning" role="alert">
           <ShieldAlert size={15} />
           <span>
-            {message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError}
+            {message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError || offlineStatus?.word.lastError || offlineStatus?.powerpoint.lastError}
           </span>
         </div>
       )}

@@ -14,6 +14,8 @@ pub mod installer;
 pub mod installer;
 
 pub mod lifecycle;
+pub mod macos_offline;
+pub mod macos_offline_installer;
 
 #[cfg(target_os = "macos")]
 pub mod manifest;

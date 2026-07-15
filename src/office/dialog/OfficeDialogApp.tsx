@@ -30,7 +30,10 @@ import type {
 } from "../../editor/MathEditor";
 import { latexToSvg } from "../../export/latexToSvg";
 import {
+  cancelMacosOfflineOfficeSession,
+  commitMacosOfflineOfficeSession,
   getOfficeSession,
+  isMacosOfflineTauriTransport,
   saveOfficeSessionKeepalive,
   type OfficeExportResult,
   type OfficeHost,
@@ -802,6 +805,12 @@ export function OfficeDialogApp() {
     try {
       const next = await saveCurrentSession("committing");
 
+      if (isMacosOfflineTauriTransport()) {
+        await commitMacosOfflineOfficeSession(next.id);
+        window.close();
+        return;
+      }
+
       messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
       // The parent bridge owns both Word and PowerPoint mutations. Keep the
       // action busy until the host confirms the durable final state; a failed
@@ -825,6 +834,11 @@ export function OfficeDialogApp() {
     finalizingRef.current = true;
     try {
       const next = await saveCurrentSession("cancelled");
+      if (isMacosOfflineTauriTransport()) {
+        await cancelMacosOfflineOfficeSession(next.id);
+        window.close();
+        return;
+      }
       if (next.host === "powerpoint") {
         window.close();
         return;

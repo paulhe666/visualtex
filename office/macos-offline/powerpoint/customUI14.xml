@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab idMso="TabHome">
+        <group id="VisualTeX.Mac.PowerPoint.Group" label="VisualTeX">
+          <button id="VisualTeX.Mac.PowerPoint.New"
+                  label="新建公式"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTPowerPointRibbonNew"/>
+          <button id="VisualTeX.Mac.PowerPoint.Edit"
+                  label="编辑所选公式"
+                  size="large"
+                  imageMso="ObjectEdit"
+                  onAction="VTPowerPointRibbonEdit"/>
+          <button id="VisualTeX.Mac.PowerPoint.Delete"
+                  label="删除所选公式"
+                  size="normal"
+                  imageMso="Delete"
+                  onAction="VTPowerPointRibbonDelete"/>
+          <button id="VisualTeX.Mac.PowerPoint.Open"
+                  label="打开 VisualTeX"
+                  size="normal"
+                  imageMso="FileOpen"
+                  onAction="VTPowerPointRibbonOpen"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

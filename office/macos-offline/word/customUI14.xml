@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab idMso="TabHome">
+        <group id="VisualTeX.Mac.Word.Group" label="VisualTeX">
+          <button id="VisualTeX.Mac.Word.Inline"
+                  label="新建行内公式"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTWordRibbonInline"/>
+          <button id="VisualTeX.Mac.Word.Display"
+                  label="新建行间公式"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTWordRibbonDisplay"/>
+          <button id="VisualTeX.Mac.Word.Edit"
+                  label="编辑所选公式"
+                  size="large"
+                  imageMso="ObjectEdit"
+                  onAction="VTWordRibbonEdit"/>
+          <button id="VisualTeX.Mac.Word.Numbering"
+                  label="更新公式编号"
+                  size="normal"
+                  imageMso="RefreshAll"
+                  onAction="VTWordRibbonNumbering"/>
+          <button id="VisualTeX.Mac.Word.Open"
+                  label="打开 VisualTeX"
+                  size="normal"
+                  imageMso="FileOpen"
+                  onAction="VTWordRibbonOpen"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

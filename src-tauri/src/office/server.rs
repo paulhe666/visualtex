@@ -585,7 +585,7 @@ async fn delete_powerpoint_native_shape(
     }
 }
 
-fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMetadata {
+pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMetadata {
     let timestamp = format!("unix-ms:{}", session.updated_at);
     let original = session.original_metadata.as_ref();
     VisualTeXFormulaMetadata {
