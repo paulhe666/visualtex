@@ -1,14 +1,12 @@
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
-  lstatSync,
   mkdirSync,
-  readlinkSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,25 +34,26 @@ function xmlEscape(value) {
     .replaceAll("'", "&apos;");
 }
 
-function ensureExecutableLink() {
-  mkdirSync(dirname(appExecutable), { recursive: true });
-  if (existsSync(appExecutable) || lstatExists(appExecutable)) {
-    const currentTarget = lstatSync(appExecutable).isSymbolicLink()
-      ? resolve(dirname(appExecutable), readlinkSync(appExecutable))
-      : null;
-    if (currentTarget === debugExecutable) return;
-    rmSync(appExecutable, { force: true });
-  }
-  symlinkSync(relative(dirname(appExecutable), debugExecutable), appExecutable);
+function shellQuote(value) {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function lstatExists(path) {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
+function ensureExecutableLauncher() {
+  mkdirSync(dirname(appExecutable), { recursive: true });
+  rmSync(appExecutable, { force: true });
+  writeFileSync(
+    appExecutable,
+    `#!/bin/sh\n` +
+      `dev_server='http://localhost:1420/'\n` +
+      `debug_executable=${shellQuote(debugExecutable)}\n` +
+      `if ! /usr/bin/curl --silent --fail --max-time 1 "$dev_server" >/dev/null 2>&1; then\n` +
+      `  /usr/bin/osascript -e 'display alert "VisualTeX 开发服务未运行" message "请先在项目目录执行 npm run tauri:dev，并保持终端窗口运行。" as critical' >/dev/null 2>&1 || true\n` +
+      `  exit 78\n` +
+      `fi\n` +
+      `exec "$debug_executable" "$@"\n`,
+    "utf8",
+  );
+  chmodSync(appExecutable, 0o755);
 }
 
 export function registerMacosDevUrlHandler() {
@@ -65,7 +64,7 @@ export function registerMacosDevUrlHandler() {
     );
   }
 
-  ensureExecutableLink();
+  ensureExecutableLauncher();
   writeFileSync(
     infoPlist,
     `<?xml version="1.0" encoding="UTF-8"?>\n` +

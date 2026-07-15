@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,29 @@ import {
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const debugExecutable = join(repositoryRoot, "src-tauri", "target", "debug", "visualtex");
 const tauri = process.platform === "win32" ? "tauri.cmd" : "tauri";
+
+function prepareMacosForegroundDevelopment() {
+  if (process.platform !== "darwin") return;
+  const userId = typeof process.getuid === "function" ? process.getuid() : null;
+  if (userId !== null) {
+    try {
+      execFileSync("/bin/launchctl", [
+        "bootout",
+        `gui/${userId}/com.visualtex.studio.office`,
+      ], { stdio: "ignore" });
+    } catch {
+      // The background LaunchAgent may not currently be loaded.
+    }
+  }
+  try {
+    execFileSync("/usr/bin/pkill", ["-f", debugExecutable], { stdio: "ignore" });
+  } catch {
+    // No stale development process is a valid starting state.
+  }
+}
+
+prepareMacosForegroundDevelopment();
+
 const child = spawn(tauri, ["dev", ...process.argv.slice(2)], {
   cwd: repositoryRoot,
   env: process.env,

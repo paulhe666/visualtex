@@ -173,6 +173,31 @@ expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return resul
 expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
 expectIncludes(rustRuntime, 'macro name "AutoExec"', "Word health refresh must call only the fixed AutoExec macro");
 expectIncludes(rustRuntime, 'macro name "Auto_Open"', "PowerPoint health refresh must call only the fixed Auto_Open macro");
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "dev_server='http://localhost:1420/'",
+  "The macOS development URL launcher must target the configured Vite server instead of opening a blank window",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "/usr/bin/curl --silent --fail --max-time 1",
+  "The macOS development URL launcher must reject a missing Vite server",
+);
+expectIncludes(
+  read("scripts/register_macos_dev_url_handler.mjs"),
+  "VisualTeX 开发服务未运行",
+  "The macOS development URL launcher must show a clear missing-server diagnostic",
+);
+expectIncludes(
+  read("scripts/tauri_dev.mjs"),
+  "com.visualtex.studio.office",
+  "Tauri development startup must pause the existing Office background LaunchAgent",
+);
+expectIncludes(
+  read("scripts/tauri_dev.mjs"),
+  'execFileSync("/usr/bin/pkill", ["-f", debugExecutable]',
+  "Tauri development startup must remove stale debug instances before acquiring the single-instance lock",
+);
 expectIncludes(rustRuntime, "cleanup_session_files_at", "Completed and cancelled Sessions must remove known local request artifacts");
 expectIncludes(rustRuntime, "DirectoryNotEmpty", "Session cleanup must preserve unknown files instead of deleting an entire directory recursively");
 expectIncludes(installer, "VisualTeX.dotm", "Installer must preserve the fixed Word filename");
