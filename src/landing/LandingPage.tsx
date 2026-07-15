@@ -239,10 +239,12 @@ export function LandingPage() {
                   <span className="landing-download-icon"><Icon size={25} /></span>
                   <h3>{download.title}</h3>
                   <p>{download.detail}</p>
-                  <a className="landing-download-primary" href={download.href}><Download size={17} />{download.action}</a>
-                  {download.secondaryHref && download.secondaryAction && (
-                    <a className="landing-download-secondary" href={download.secondaryHref}>{download.secondaryAction}</a>
-                  )}
+                  <div className={`landing-download-actions${download.secondaryHref ? " has-two" : ""}`}>
+                    <a className="landing-download-primary" href={download.href}><Download size={17} />{download.action}</a>
+                    {download.secondaryHref && download.secondaryAction && (
+                      <a className="landing-download-primary" href={download.secondaryHref}><Download size={17} />{download.secondaryAction}</a>
+                    )}
+                  </div>
                 </article>
               );
             })}

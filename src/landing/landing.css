@@ -1056,13 +1056,29 @@ html[data-page="landing"] body {
   font-size: 14px;
 }
 
+.landing-download-actions {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.landing-download-actions.has-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .landing-download-primary {
   min-height: 47px;
-  margin-top: auto;
   padding: 0 18px;
   color: #ffffff;
   background: var(--landing-blue);
   box-shadow: 0 10px 25px rgba(31, 99, 142, 0.18);
+}
+
+.landing-download-actions.has-two .landing-download-primary {
+  min-width: 0;
+  padding-inline: 12px;
+  white-space: nowrap;
 }
 
 .landing-download-primary:hover {
