@@ -170,6 +170,8 @@ expectIncludes(rustRuntime, "visualtex://office/open?session=", "Tauri runtime m
 expectIncludes(rustRuntime, "create_external", "Tauri runtime must import the VBA-selected Session id");
 expectIncludes(rustRuntime, "deny_unknown_fields", "Offline request JSON must reject unknown fields");
 expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return results through the VBA callback");
+expectIncludes(rustRuntime, "hide_main_window(app)?", "Office formula requests must hide the main VisualTeX workspace");
+expectIncludes(rustRuntime, "open_editor_window(app, &session_id)", "Office formula requests must open the dedicated formula editor");
 expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
 expectIncludes(rustRuntime, 'macro name "AutoExec"', "Word health refresh must call only the fixed AutoExec macro");
 expectIncludes(rustRuntime, 'macro name "Auto_Open"', "PowerPoint health refresh must call only the fixed Auto_Open macro");

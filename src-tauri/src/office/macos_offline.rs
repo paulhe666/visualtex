@@ -482,6 +482,12 @@ pub(crate) fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String
         .ok_or_else(|| "VisualTeX Office state is not initialized".to_string())?;
     let request = read_request(&session_id)?;
     import_request(state.inner(), request)?;
+
+    // Office formula requests must open only the dedicated formula editor.
+    // Keeping the main VisualTeX workspace visible makes Word/PowerPoint
+    // insertion look like a jump into the full application instead of a
+    // focused Office editing transaction.
+    crate::office::background::hide_main_window(app)?;
     open_editor_window(app, &session_id)
 }
 
