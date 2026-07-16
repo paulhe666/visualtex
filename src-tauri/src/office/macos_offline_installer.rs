@@ -21,6 +21,14 @@ const ADDIN_MANIFEST_NAME: &str = "addins.json";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
+const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
+const CONTENT_TYPES_ZIP_PATTERN: &str = "\\[Content_Types\\].xml";
+const WORD_MAIN_PART: &str = "/word/document.xml";
+const WORD_MAIN_CONTENT_TYPE: &str =
+    "application/vnd.ms-word.template.macroEnabledTemplate.main+xml";
+const POWERPOINT_MAIN_PART: &str = "/ppt/presentation.xml";
+const POWERPOINT_MAIN_CONTENT_TYPE: &str =
+    "application/vnd.ms-powerpoint.addin.macroEnabled.main+xml";
 // A pending Word formula must not appear as a black square while the native
 // editor is open. Keep a one-pixel transparent InlineShape as the durable
 // transaction target; the VBA adapter moves the caret after it immediately.
@@ -372,6 +380,43 @@ fn validate_vba_module(_path: &Path, _vba_entry: &str, _module_name: &str) -> Re
     Ok(())
 }
 
+fn validate_main_content_type(path: &Path, expected_name: &str) -> Result<(), String> {
+    let (part_name, content_type) = match expected_name {
+        WORD_ADDIN_NAME => (WORD_MAIN_PART, WORD_MAIN_CONTENT_TYPE),
+        POWERPOINT_ADDIN_NAME => (POWERPOINT_MAIN_PART, POWERPOINT_MAIN_CONTENT_TYPE),
+        _ => return Err(format!("Unsupported compiled add-in name {expected_name}")),
+    };
+    let output = Command::new("/usr/bin/unzip")
+        .args(["-p"])
+        .arg(path)
+        .arg(CONTENT_TYPES_ZIP_PATTERN)
+        .output()
+        .map_err(|error| {
+            format!(
+                "Unable to inspect the OOXML main content type in {}: {error}",
+                path.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "Unable to read {CONTENT_TYPES_ENTRY} from {}",
+            path.display()
+        ));
+    }
+    let xml = String::from_utf8_lossy(&output.stdout);
+    let valid = xml.split("<Override").any(|segment| {
+        segment.contains(part_name) && segment.contains(content_type)
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "Compiled add-in {} is not a real Office add-in package: expected {content_type} for {part_name}",
+            path.display()
+        ))
+    }
+}
+
 fn validate_compiled_addin(
     path: &Path,
     expected_name: &str,
@@ -394,7 +439,7 @@ fn validate_compiled_addin(
             path.display()
         ));
     }
-    let required_entries = [expected_vba_entry, CUSTOM_UI_ENTRY];
+    let required_entries = [CONTENT_TYPES_ENTRY, expected_vba_entry, CUSTOM_UI_ENTRY];
     for entry in required_entries {
         if !bytes_contain(&bytes, entry.as_bytes()) {
             return Err(format!(
@@ -404,6 +449,7 @@ fn validate_compiled_addin(
         }
     }
     validate_zip_entries(path, &required_entries)?;
+    validate_main_content_type(path, expected_name)?;
     validate_vba_module(path, expected_vba_entry, "VTOfficePaths")?;
     Ok(bytes)
 }

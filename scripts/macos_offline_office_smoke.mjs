@@ -121,6 +121,8 @@ expectIncludes(wordAdapter, "Selection.SetRange Start:=placeholder.Range.End", "
 expectIncludes(wordAdapter, "Alignment:=wdAlignTabCenter", "Numbered Word display formulas must use a center tab for the formula");
 expectIncludes(wordAdapter, "Alignment:=wdAlignTabRight", "Numbered Word display formulas must use a right tab for the equation number");
 expectIncludes(wordAdapter, "ParagraphFormat.Alignment = wdAlignParagraphLeft", "Numbered Word display formulas must not center the combined formula-number run");
+expectIncludes(wordAdapter, "equationNumberRange.Font.Position", "Word equation numbers must be raised to the visual center of tall display formulas");
+expectIncludes(wordAdapter, "formulaShape.Height - numberFontSize", "Word equation-number positioning must derive from the rendered formula height");
 expectIncludes(wordAdapter, "target.Delete", "Word replacement must delete the old object only after candidate setup");
 expectIncludes(wordAdapter, "Word did not persist the VisualTeX formula properties", "Word must verify the candidate before deleting the old formula");
 expectIncludes(wordAdapter, "transactionErrorNumber = Err.Number", "Word rollback must preserve the original transaction error");
@@ -211,10 +213,13 @@ expectIncludes(nativeInteraction, "native_offline_plugin_loaded", "The compatibi
 expectIncludes(nativeInteraction, 'native_offline_plugin_loaded("word")', "The compatibility Word monitor must yield to VTWordEvents");
 expectIncludes(nativeInteraction, 'native_offline_plugin_loaded("powerpoint")', "The compatibility PowerPoint monitor must yield to VTPowerPointEvents");
 expectIncludes(capabilities, '"office-native-*"', "Dedicated native Office windows must receive Tauri core permissions");
+expectIncludes(capabilities, '"core:window:allow-close"', "Dedicated native Office windows must be allowed to close after a successful commit or cancel");
 expectIncludes(dialogApp, "isMacosOfflineTauriTransport()", "Native Office formula editors must avoid Office.js parent messaging");
 expectIncludes(dialogApp, 'import("@tauri-apps/api/window")', "Native Office formula editors must control the actual Tauri window");
 expectIncludes(dialogApp, "getCurrentWindow().onCloseRequested", "Closing a native formula window must finalize or cancel its Office transaction");
 expectIncludes(dialogApp, "await getCurrentWindow().close()", "A successful native Office transaction must close the real Tauri window");
+expectIncludes(dialogApp, "公式已经插入，但编辑窗口无法自动关闭", "A close failure after a successful native commit must not be reported as an insertion failure");
+expect(!dialogApp.includes("无法插入 PowerPoint 公式"), "The shared Office editor must not mislabel Word failures as PowerPoint insertion failures");
 expectIncludes(dialogApp, "latex.trim() && autoCommitOnClose", "Closing a non-empty native editor must commit when auto-apply is enabled");
 expectIncludes(dialogApp, ": handleCancel()", "Closing an empty native editor must cancel and remove the pending host object");
 expectIncludes(dialogMessages, 'typeof ui.messageParent !== "function"', "Office parent messaging must tolerate native Tauri windows without Office.js");
@@ -304,7 +309,11 @@ expectIncludes(installer, "addins.json", "Installer must require the compiled ad
 expectIncludes(installer, "word/vbaProject.bin", "Installer must validate the Word VBA project entry");
 expectIncludes(installer, "ppt/vbaProject.bin", "Installer must validate the PowerPoint VBA project entry");
 expectIncludes(installer, 'validate_vba_module(path, expected_vba_entry, "VTOfficePaths")', "Installer must reject stale add-ins that predate the Office shared-container path module");
+expectIncludes(installer, "POWERPOINT_MAIN_CONTENT_TYPE", "Installer must reject files named PPAM whose OOXML main type is not a PowerPoint add-in");
+expectIncludes(installer, "validate_main_content_type", "Installer must validate the Word template and PowerPoint add-in main content types");
 expectIncludes(packager, "expectedModules", "Packager must verify the reviewed VBA module names");
+expectIncludes(packager, "application/vnd.ms-powerpoint.addin.macroEnabled.main+xml", "Packager must require a true PowerPoint add-in OOXML main type");
+expectIncludes(packager, 'argument("--powerpoint-shell")', "Packager must support rebuilding a valid PPAM shell around a reviewed VBA project");
 expectIncludes(packager, '"VTOfficePaths"', "Packager must require the Office shared-container path module");
 expectIncludes(packager, "customUI/customUI14.xml", "Packager must inject and verify Ribbon XML");
 expect(!installer.includes("Microsoft Word.app\").arg"), "Offline installer must not launch Word as an installation success path");

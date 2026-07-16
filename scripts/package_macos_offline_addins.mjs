@@ -21,7 +21,7 @@ const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.jso
 
 function usage() {
   process.stderr.write(
-    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm --powerpoint /path/VisualTeX.ppam\n",
+    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm --powerpoint /path/VisualTeX.ppam [--powerpoint-shell /path/known-good-VisualTeX.ppam]\n",
   );
 }
 
@@ -32,6 +32,7 @@ function argument(name) {
 
 const wordInput = argument("--word");
 const powerpointInput = argument("--powerpoint");
+const powerpointShell = argument("--powerpoint-shell");
 if (!wordInput || !powerpointInput) {
   usage();
   process.exit(2);
@@ -63,7 +64,35 @@ function containsModuleName(buffer, moduleName) {
   );
 }
 
-function validateMacroContainer(path, kind) {
+const MAIN_CONTENT_TYPES = {
+  Word: {
+    partName: "/word/document.xml",
+    contentType: "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+  },
+  PowerPoint: {
+    partName: "/ppt/presentation.xml",
+    contentType: "application/vnd.ms-powerpoint.addin.macroEnabled.main+xml",
+  },
+};
+
+function contentTypesXml(path) {
+  return run("/usr/bin/unzip", ["-p", path, "\\[Content_Types\\].xml"]);
+}
+
+function hasExpectedMainContentType(path, kind) {
+  const expected = MAIN_CONTENT_TYPES[kind];
+  const xml = contentTypesXml(path);
+  const escapedPart = expected.partName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedType = expected.contentType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `<Override\\b(?=[^>]*\\bPartName="${escapedPart}")(?=[^>]*\\bContentType="${escapedType}")[^>]*/>`,
+    "i",
+  ).test(xml);
+}
+
+function validateMacroContainer(path, kind, options = {}) {
+  const requireExpectedMainType = options.requireExpectedMainType ?? true;
+  const requireModules = options.requireModules ?? true;
   if (!existsSync(path)) throw new Error(`${kind} add-in does not exist: ${path}`);
   const entries = zipEntries(path);
   const vbaEntry = kind === "Word" ? "word/vbaProject.bin" : "ppt/vbaProject.bin";
@@ -83,10 +112,18 @@ function validateMacroContainer(path, kind) {
     kind === "Word" ? "VTWordAdapter" : "VTPowerPointAdapter",
     kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents",
   ];
-  const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
-  if (missing.length > 0) {
+  if (requireModules) {
+    const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
+    if (missing.length > 0) {
+      throw new Error(
+        `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas and .cls sources before packaging.`,
+      );
+    }
+  }
+  if (requireExpectedMainType && !hasExpectedMainContentType(path, kind)) {
+    const expected = MAIN_CONTENT_TYPES[kind];
     throw new Error(
-      `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas and .cls sources before packaging.`,
+      `${kind} add-in has the wrong OOXML main content type. Expected ${expected.contentType} for ${expected.partName}. Save the file as a real ${kind} add-in instead of renaming another Office format.`,
     );
   }
 }
@@ -114,13 +151,26 @@ function ensureXmlContentType(xml) {
   return xml.replace(closing, '<Default Extension="xml" ContentType="application/xml"/></Types>');
 }
 
-function packageAddin(inputPath, kind, outputName, ribbonSource) {
-  validateMacroContainer(inputPath, kind);
+function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
+  validateMacroContainer(inputPath, kind, {
+    requireExpectedMainType: kind !== "PowerPoint" || !shellPath,
+  });
+  if (shellPath) {
+    validateMacroContainer(shellPath, kind, { requireModules: false });
+  }
   const temporaryRoot = mkdtempSync(join(tmpdir(), "visualtex-addin-package-"));
   try {
     const unpacked = join(temporaryRoot, "unpacked");
     mkdirSync(unpacked, { recursive: true });
-    run("/usr/bin/unzip", ["-qq", inputPath, "-d", unpacked]);
+    const packageSource = shellPath || inputPath;
+    run("/usr/bin/unzip", ["-qq", packageSource, "-d", unpacked]);
+    if (shellPath) {
+      const vbaEntry = kind === "Word" ? "word/vbaProject.bin" : "ppt/vbaProject.bin";
+      const vbaProject = run("/usr/bin/unzip", ["-p", inputPath, vbaEntry], {
+        encoding: "buffer",
+      });
+      writeFileSync(join(unpacked, vbaEntry), vbaProject);
+    }
 
     const customUiDirectory = join(unpacked, "customUI");
     mkdirSync(customUiDirectory, { recursive: true });
@@ -182,6 +232,7 @@ try {
     "PowerPoint",
     "VisualTeX.ppam",
     join(offlineRoot, "powerpoint", "customUI14.xml"),
+    powerpointShell ? resolve(powerpointShell) : undefined,
   );
   const manifest = {
     schemaVersion: 1,

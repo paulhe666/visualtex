@@ -412,6 +412,9 @@ Private Function VTInsertEquationNumber(ByVal formulaShape As InlineShape) As Ra
     Dim layoutStart As Long
     Dim numberStart As Long
     Dim textWidth As Single
+    Dim equationNumberRange As Range
+    Dim numberFontSize As Single
+    Dim numberRaisePoints As Single
 
     Set paragraphRange = formulaShape.Range.Paragraphs(1).Range
     textWidth = ActiveDocument.PageSetup.TextColumns.Width
@@ -456,6 +459,21 @@ Private Function VTInsertEquationNumber(ByVal formulaShape As InlineShape) As Ra
     If numberRange.End <= numberStart Then
         Err.Raise vbObjectError + 7425, "VisualTeX", "Word did not create the VisualTeX equation number."
     End If
+
+    ' Inline pictures sit on the paragraph baseline, so an ordinary text run
+    ' beside a tall display formula appears close to the bottom of the image.
+    ' Raise the complete parenthesized number by half of the difference between
+    ' the formula height and the number font size to align their visual centers.
+    Set equationNumberRange = formulaShape.Range.Document.Range( _
+        Start:=numberStart + 1, _
+        End:=numberRange.End)
+    numberFontSize = equationNumberRange.Font.Size
+    If numberFontSize <= 0! Or numberFontSize > 72! Then numberFontSize = 12!
+    numberRaisePoints = (formulaShape.Height - numberFontSize) / 2!
+    If numberRaisePoints < 0! Then numberRaisePoints = 0!
+    If numberRaisePoints > 48! Then numberRaisePoints = 48!
+    equationNumberRange.Font.Position = CLng(numberRaisePoints)
+
     Set VTInsertEquationNumber = formulaShape.Range.Document.Range( _
         Start:=layoutStart, _
         End:=numberRange.End)

@@ -843,7 +843,18 @@ export function OfficeDialogApp() {
 
       if (isMacosOfflineTauriTransport()) {
         await commitMacosOfflineOfficeSession(next.id);
-        await closeOfficeEditorWindow();
+        try {
+          await closeOfficeEditorWindow();
+        } catch (closeError) {
+          finalizingRef.current = false;
+          const detail =
+            closeError instanceof Error ? closeError.message : String(closeError);
+          setToast(
+            isEn
+              ? `The formula was inserted, but the editor could not close: ${detail}`
+              : `公式已经插入，但编辑窗口无法自动关闭：${detail}`,
+          );
+        }
         return;
       }
 
@@ -860,8 +871,8 @@ export function OfficeDialogApp() {
         error instanceof Error
           ? error.message
           : isEn
-            ? "Unable to insert the PowerPoint formula"
-            : "无法插入 PowerPoint 公式";
+            ? "Unable to insert the Office formula"
+            : "无法插入 Office 公式";
       setToast(message);
     }
   }, [closeOfficeEditorWindow, isEn, latex, saveCurrentSession]);

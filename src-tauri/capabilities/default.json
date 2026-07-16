@@ -5,6 +5,7 @@
   "windows": ["main", "office-native-*"],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
     "dialog:allow-open",
     {
       "identifier": "opener:allow-open-url",
