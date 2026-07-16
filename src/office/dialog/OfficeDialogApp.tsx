@@ -124,6 +124,8 @@ export function OfficeDialogApp() {
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
+  const allowNativeCloseRef = useRef(false);
+  const nativeCloseRequestInFlightRef = useRef(false);
   const exportRunIdRef = useRef(0);
   const latestCompleteExportRef = useRef<{
     fingerprint: string;
@@ -809,7 +811,23 @@ export function OfficeDialogApp() {
     ],
   );
 
-  const handleCommit = async () => {
+  const closeOfficeEditorWindow = useCallback(async () => {
+    if (!isMacosOfflineTauriTransport()) {
+      window.close();
+      return;
+    }
+
+    allowNativeCloseRef.current = true;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+    } catch (error) {
+      allowNativeCloseRef.current = false;
+      throw error;
+    }
+  }, []);
+
+  const handleCommit = useCallback(async () => {
     // React state updates do not disable the button until the next render.
     // Keep a synchronous guard as well so a rapid double-click cannot enqueue
     // two commits for the same Office Session.
@@ -825,7 +843,7 @@ export function OfficeDialogApp() {
 
       if (isMacosOfflineTauriTransport()) {
         await commitMacosOfflineOfficeSession(next.id);
-        window.close();
+        await closeOfficeEditorWindow();
         return;
       }
 
@@ -846,15 +864,16 @@ export function OfficeDialogApp() {
             : "无法插入 PowerPoint 公式";
       setToast(message);
     }
-  };
+  }, [closeOfficeEditorWindow, isEn, latex, saveCurrentSession]);
 
-  const handleCancel = async () => {
+  const handleCancel = useCallback(async () => {
+    if (finalizingRef.current) return;
     finalizingRef.current = true;
     try {
       const next = await saveCurrentSession("cancelled");
       if (isMacosOfflineTauriTransport()) {
         await cancelMacosOfflineOfficeSession(next.id);
-        window.close();
+        await closeOfficeEditorWindow();
         return;
       }
       if (next.host === "powerpoint") {
@@ -864,9 +883,59 @@ export function OfficeDialogApp() {
       messageOfficeParent({ type: "visualtex-cancel", sessionId: next.id });
     } catch (error) {
       finalizingRef.current = false;
-      throw error;
+      const message =
+        error instanceof Error
+          ? error.message
+          : isEn
+            ? "Unable to cancel the Office formula"
+            : "无法取消 Office 公式";
+      setToast(message);
     }
-  };
+  }, [closeOfficeEditorWindow, isEn, saveCurrentSession]);
+
+  useEffect(() => {
+    if (!isMacosOfflineTauriTransport() || !sessionId) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) =>
+        getCurrentWindow().onCloseRequested((event) => {
+          if (allowNativeCloseRef.current || disposed) return;
+          event.preventDefault();
+          if (nativeCloseRequestInFlightRef.current) return;
+          nativeCloseRequestInFlightRef.current = true;
+
+          const finalize = latex.trim() && autoCommitOnClose
+            ? handleCommit()
+            : handleCancel();
+          void finalize.finally(() => {
+            nativeCloseRequestInFlightRef.current = false;
+          });
+        }),
+      )
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
+      })
+      .catch((reason) => {
+        const message =
+          reason instanceof Error ? reason.message : String(reason);
+        setToast(
+          isEn
+            ? `Unable to register window close handling: ${message}`
+            : `无法注册窗口关闭处理：${message}`,
+        );
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [autoCommitOnClose, handleCancel, handleCommit, isEn, latex, sessionId]);
 
   const handleCopy = async () => {
     await copyLatex(latex, latexCodeFormat);

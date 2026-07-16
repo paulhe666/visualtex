@@ -81,11 +81,12 @@ function validateMacroContainer(path, kind) {
     "VTErrorHandling",
     "VTRibbonCallbacks",
     kind === "Word" ? "VTWordAdapter" : "VTPowerPointAdapter",
+    kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents",
   ];
   const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
   if (missing.length > 0) {
     throw new Error(
-      `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas sources before packaging.`,
+      `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas and .cls sources before packaging.`,
     );
   }
 }

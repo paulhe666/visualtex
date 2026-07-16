@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+#[cfg(target_os = "macos")]
+use std::fs;
 use std::io::Read;
+#[cfg(target_os = "macos")]
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -984,6 +988,9 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
         let frontmost = frontmost_bundle_id();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
+            if native_offline_plugin_loaded("powerpoint") {
+                return;
+            }
             std::thread::spawn(move || {
                 let Some((selection, formula_id)) =
                     powerpoint_selection_after_double_click(selected_shape, std::thread::sleep)
@@ -997,6 +1004,9 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
                 }
             });
         } else if frontmost.as_deref() == Some(WORD_BUNDLE_ID) {
+            if native_offline_plugin_loaded("word") {
+                return;
+            }
             std::thread::spawn(move || {
                 let Some(selection) =
                     word_formula_after_double_click(selected_word_formula, std::thread::sleep)
@@ -1025,6 +1035,34 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
 #[cfg(not(target_os = "macos"))]
 pub fn start_double_click_monitor(_bus: PowerPointInteractionBus) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn native_offline_plugin_loaded(host: &str) -> bool {
+    let file_name = match host {
+        "word" => "word.json",
+        "powerpoint" => "powerpoint.json",
+        _ => return false,
+    };
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let Some(home) = home else {
+        return false;
+    };
+    let path = home
+        .join("Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficePluginStatus")
+        .join(file_name);
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    value.get("loaded").and_then(serde_json::Value::as_bool) == Some(true)
+        && value.get("host").and_then(serde_json::Value::as_str) == Some(host)
+        && value
+            .get("pluginVersion")
+            .and_then(serde_json::Value::as_str)
+            == Some(env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(target_os = "macos")]

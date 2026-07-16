@@ -21,8 +21,11 @@ const ADDIN_MANIFEST_NAME: &str = "addins.json";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
+// A pending Word formula must not appear as a black square while the native
+// editor is open. Keep a one-pixel transparent InlineShape as the durable
+// transaction target; the VBA adapter moves the caret after it immediately.
 const PLACEHOLDER_PNG_BASE64: &str =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

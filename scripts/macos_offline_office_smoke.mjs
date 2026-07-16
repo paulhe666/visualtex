@@ -34,10 +34,12 @@ const requiredFiles = [
   "office/macos-offline/shared/VTErrorHandling.bas",
   "office/macos-offline/word/VTRibbonCallbacks.bas",
   "office/macos-offline/word/VTWordAdapter.bas",
+  "office/macos-offline/word/VTWordEvents.cls",
   "office/macos-offline/word/customUI14.xml",
   "office/macos-offline/word/VisualTeXWord.scpt",
   "office/macos-offline/powerpoint/VTRibbonCallbacks.bas",
   "office/macos-offline/powerpoint/VTPowerPointAdapter.bas",
+  "office/macos-offline/powerpoint/VTPowerPointEvents.cls",
   "office/macos-offline/powerpoint/customUI14.xml",
   "office/macos-offline/powerpoint/VisualTeXPowerPoint.scpt",
   "src-tauri/src/office/macos_offline.rs",
@@ -61,13 +63,16 @@ for (const file of requiredFiles) {
 const wordRibbon = read("office/macos-offline/word/customUI14.xml");
 const powerpointRibbon = read("office/macos-offline/powerpoint/customUI14.xml");
 const wordAdapter = read("office/macos-offline/word/VTWordAdapter.bas");
+const wordEvents = read("office/macos-offline/word/VTWordEvents.cls");
 const powerpointAdapter = read("office/macos-offline/powerpoint/VTPowerPointAdapter.bas");
+const powerpointEvents = read("office/macos-offline/powerpoint/VTPowerPointEvents.cls");
 const protocol = read("office/macos-offline/shared/VTProtocol.bas");
 const officePaths = read("office/macos-offline/shared/VTOfficePaths.bas");
 const launcher = read("office/macos-offline/shared/VTLauncher.bas");
 const wordScript = read("office/macos-offline/word/VisualTeXWord.scpt");
 const powerpointScript = read("office/macos-offline/powerpoint/VisualTeXPowerPoint.scpt");
 const rustRuntime = read("src-tauri/src/office/macos_offline.rs");
+const nativeInteraction = read("src-tauri/src/office/powerpoint_native.rs");
 const appRuntime = read("src-tauri/src/lib.rs");
 const installer = read("src-tauri/src/office/macos_offline_installer.rs");
 const packager = read("scripts/package_macos_offline_addins.mjs");
@@ -105,8 +110,17 @@ expectIncludes(powerpointRibbon, 'insertAfterMso="TabInsert"', "PowerPoint Visua
 expect(!powerpointRibbon.includes('idMso="TabHome"'), "PowerPoint VisualTeX controls must not be injected into Home");
 
 expectIncludes(wordAdapter, "Public Sub AutoExec()", "Word template must publish AutoExec health");
+expectIncludes(wordAdapter, "VTInitializeWordEvents", "Word AutoExec must initialize its persistent application event sink");
+expectIncludes(wordEvents, "App_WindowBeforeDoubleClick", "Word must use its native application event for double-click editing");
+expectIncludes(wordEvents, "Cancel = True", "Word must suppress the default double-click action for a VisualTeX formula");
+expectIncludes(wordEvents, "VisualTeX_EditInlineShape", "Word double-click editing must preserve the clicked InlineShape target");
 expectIncludes(wordAdapter, "VisualTeX_ApplyPendingResult", "Word template must expose the native result callback");
 expectIncludes(wordAdapter, "InlineShapes.AddPicture", "Word formula insertion must create an InlineShape");
+expectIncludes(wordAdapter, "placeholder.Width = 1", "Word pending placeholders must remain a one-pixel transaction target");
+expectIncludes(wordAdapter, "Selection.SetRange Start:=placeholder.Range.End", "Word must move the caret after the pending formula target");
+expectIncludes(wordAdapter, "Alignment:=wdAlignTabCenter", "Numbered Word display formulas must use a center tab for the formula");
+expectIncludes(wordAdapter, "Alignment:=wdAlignTabRight", "Numbered Word display formulas must use a right tab for the equation number");
+expectIncludes(wordAdapter, "ParagraphFormat.Alignment = wdAlignParagraphLeft", "Numbered Word display formulas must not center the combined formula-number run");
 expectIncludes(wordAdapter, "target.Delete", "Word replacement must delete the old object only after candidate setup");
 expectIncludes(wordAdapter, "Word did not persist the VisualTeX formula properties", "Word must verify the candidate before deleting the old formula");
 expectIncludes(wordAdapter, "transactionErrorNumber = Err.Number", "Word rollback must preserve the original transaction error");
@@ -118,6 +132,10 @@ expectIncludes(wordAdapter, "sourceDocumentId <> VTWordDocumentIdentity()", "Wor
 expectIncludes(wordAdapter, "Private Function VTWordBookmarkName", "Word pending Bookmarks must use one bounded name generator");
 expectIncludes(wordAdapter, "Len(VTWordBookmarkName) > 40", "Word Bookmark names must be guarded by the host length limit");
 expectIncludes(powerpointAdapter, "Public Sub Auto_Open()", "PowerPoint add-in must publish Auto_Open health");
+expectIncludes(powerpointAdapter, "VTInitializePowerPointEvents", "PowerPoint Auto_Open must initialize its persistent application event sink");
+expectIncludes(powerpointEvents, "App_WindowBeforeDoubleClick", "PowerPoint must use its native application event for double-click editing");
+expectIncludes(powerpointEvents, "Cancel = True", "PowerPoint must suppress the default double-click action for a VisualTeX formula");
+expectIncludes(powerpointEvents, "VisualTeX_EditShape", "PowerPoint double-click editing must preserve the clicked Shape target");
 expectIncludes(powerpointAdapter, "VisualTeXFormulaId", "PowerPoint add-in must persist formulaId tags");
 expectIncludes(powerpointAdapter, "VisualTeXSessionId", "PowerPoint add-in must persist sessionId tags");
 expectIncludes(powerpointAdapter, "VisualTeXPending", "PowerPoint add-in must persist pending tags");
@@ -163,7 +181,9 @@ expect(!powerpointScript.match(/\brm\b|delete file|sh -c/i), "PowerPoint AppleSc
 
 const offlineRuntimeSources = [
   wordAdapter,
+  wordEvents,
   powerpointAdapter,
+  powerpointEvents,
   protocol,
   officePaths,
   launcher,
@@ -187,8 +207,16 @@ expectIncludes(read("src/desktop/main.tsx"), "<OfficeDialogApp />", "The dedicat
 expectIncludes(rustRuntime, "window.show()", "The dedicated Office formula editor must be explicitly shown");
 expectIncludes(rustRuntime, "window.set_focus()", "The dedicated Office formula editor must receive focus");
 expectIncludes(rustRuntime, "focus_open_office_editor", "macOS reopen handling must be able to refocus an existing Office editor");
+expectIncludes(nativeInteraction, "native_offline_plugin_loaded", "The compatibility double-click monitor must detect an active native plug-in");
+expectIncludes(nativeInteraction, 'native_offline_plugin_loaded("word")', "The compatibility Word monitor must yield to VTWordEvents");
+expectIncludes(nativeInteraction, 'native_offline_plugin_loaded("powerpoint")', "The compatibility PowerPoint monitor must yield to VTPowerPointEvents");
 expectIncludes(capabilities, '"office-native-*"', "Dedicated native Office windows must receive Tauri core permissions");
 expectIncludes(dialogApp, "isMacosOfflineTauriTransport()", "Native Office formula editors must avoid Office.js parent messaging");
+expectIncludes(dialogApp, 'import("@tauri-apps/api/window")', "Native Office formula editors must control the actual Tauri window");
+expectIncludes(dialogApp, "getCurrentWindow().onCloseRequested", "Closing a native formula window must finalize or cancel its Office transaction");
+expectIncludes(dialogApp, "await getCurrentWindow().close()", "A successful native Office transaction must close the real Tauri window");
+expectIncludes(dialogApp, "latex.trim() && autoCommitOnClose", "Closing a non-empty native editor must commit when auto-apply is enabled");
+expectIncludes(dialogApp, ": handleCancel()", "Closing an empty native editor must cancel and remove the pending host object");
 expectIncludes(dialogMessages, 'typeof ui.messageParent !== "function"', "Office parent messaging must tolerate native Tauri windows without Office.js");
 expectIncludes(appRuntime, "initial_office_url", "Cold Office URL launches must be recognized before the main workspace is revealed");
 expectIncludes(appRuntime, "if !office::macos_offline::focus_open_office_editor(app)", "macOS reopen must prefer an Office formula editor over the main workspace");
@@ -257,6 +285,8 @@ expectIncludes(
 );
 expectIncludes(rustRuntime, "cleanup_session_files_at", "Completed and cancelled Sessions must remove known local request artifacts");
 expectIncludes(rustRuntime, "DirectoryNotEmpty", "Session cleanup must preserve unknown files instead of deleting an entire directory recursively");
+expectIncludes(packager, 'kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents"', "The add-in packager must reject binaries missing the double-click event class module");
+expectIncludes(installer, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ", "Installer must use a transparent Word placeholder image");
 expectIncludes(installer, "VisualTeX.dotm", "Installer must preserve the fixed Word filename");
 expectIncludes(installer, "VisualTeX.ppam", "Installer must preserve the fixed PowerPoint filename");
 expectIncludes(installer, 'home.join("Applications")', "Installer must detect per-user Office application installs");

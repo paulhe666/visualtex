@@ -13,27 +13,27 @@ This document defines the native, completely offline macOS Word and PowerPoint i
 - Formula request and result payloads are local files under the Office application-group container at `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/<session-id>/`, which is accessible to both sandboxed Office hosts and the desktop app.
 - The Tauri application imports the request into the existing `SessionStore`; formula editing and export reuse the existing Office editor and metadata schema.
 - macOS continues to store formulas as PNG/SVG-backed `InlineShape`/`Shape` objects. It never registers or pretends to provide the Windows `VisualTeX.Formula.1` COM/OLE class.
-- No Office.js, HTTPS, manifest, certificate, WebView add-in, network access, menu-language matching, coordinate clicking, mouse simulation, or keyboard simulation is part of this route.
+- No Office.js, HTTPS, manifest, certificate, WebView add-in, network access, menu-language matching, coordinate clicking, mouse simulation, or keyboard simulation is part of this route. Double-click editing is handled by the host's native `Application.WindowBeforeDoubleClick` VBA event.
 
 ## Runtime sequence
 
 ### Word create
 
 1. VBA creates UUID v4 values for `sessionId` and `formulaId`.
-2. VBA inserts a tiny pending `InlineShape` at the current Range and writes the exact marker `visualtex:pending:v1:<sessionId>:<formulaId>` to `Title` and `AlternativeText`.
+2. VBA inserts a one-pixel transparent pending `InlineShape` at the current Range, writes the exact marker `visualtex:pending:v1:<sessionId>:<formulaId>` to `Title` and `AlternativeText`, and moves the Word caret after that object so pressing Enter cannot relocate the transaction target.
 3. VBA atomically writes `request.json` and calls `AppleScriptTask("VisualTeXWord.scpt", "OpenVisualTeXSession", sessionId)`.
 4. VisualTeX receives the custom URL, validates the UUID, imports the request into `SessionStore`, and opens a local Tauri editor window.
 5. On commit, VisualTeX writes an authenticated-by-location, strictly validated `dispatch.txt`, materializes the PNG locally, and asks Word to run the fixed `VTWordAdapter.VisualTeX_ApplyPendingResult` macro.
 6. The macro locates the pending object by its exact marker, creates and fully configures the replacement, and deletes the old object only after success.
-7. On cancel, the same fixed macro removes only the matching pending object.
+7. On cancel, the same fixed macro removes only the matching pending object. Closing a non-empty native editor performs the same commit transaction; closing an empty editor performs this cancel transaction before the Tauri window closes.
 
 ### Word edit
 
-The selected object must be exactly one `InlineShape`. The VBA envelope validates that its metadata uses the VisualTeX prefix. VisualTeX then inflates and validates the complete schema, `formulaId`, and non-empty `lines` array before creating an edit Session. The original compressed marker is retained as the durable lookup key, so moving the caret while the editor is open cannot redirect the commit.
+The selected object must be exactly one `InlineShape`. The VBA envelope validates that its metadata uses the VisualTeX prefix. VisualTeX then inflates and validates the complete schema, `formulaId`, and non-empty `lines` array before creating an edit Session. The original compressed marker is retained as the durable lookup key, so moving the caret while the editor is open cannot redirect the commit. `VTWordEvents` keeps a `WithEvents Word.Application` reference alive and routes a double-click on a valid formula directly to this same edit path.
 
 ### PowerPoint create/edit
 
-VBA creates a centered pending shape for create, or captures one selected formula shape for edit. The request records the presentation identity, slide id/index, shape name, geometry, rotation, and z-order. The staged offline bridge materializes the existing Session export locally and invokes one fixed VBA transaction: it creates and fully decorates the replacement picture, verifies geometry and metadata, places it immediately above the original z-order, and deletes the original only as the final mutation. This preserves the current native sizing rules without depending on Office.js or clipboard/UI automation. Consolidating this transaction with the older `powerpoint_native` SVG implementation remains a pre-binary acceptance task; the installer therefore stays disabled until validated DOTM/PPAM artifacts and the full manual matrix are available.
+VBA creates a centered pending shape for create, or captures one selected formula shape for edit. The request records the presentation identity, slide id/index, shape name, geometry, rotation, and z-order. The staged offline bridge materializes the existing Session export locally and invokes one fixed VBA transaction: it creates and fully decorates the replacement picture, verifies geometry and metadata, places it immediately above the original z-order, and deletes the original only as the final mutation. `VTPowerPointEvents` keeps a `WithEvents PowerPoint.Application` reference alive and routes a double-click on a valid VisualTeX shape to this same edit transaction. The legacy global double-click monitor yields whenever a current native plug-in health record is present, preventing duplicate edit windows.
 
 ## Persistent files
 

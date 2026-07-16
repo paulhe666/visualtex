@@ -5,11 +5,18 @@ Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_BOOKMARK_PREFIX As String = "VT_Pending_"
 Private Const VT_WORD_SEQUENCE_NAME As String = "VisualTeXEquation"
+Private VT_WORD_EVENT_SINK As VTWordEvents
 
 Public Sub AutoExec()
     On Error Resume Next
+    VTInitializeWordEvents
     VTWriteWordHealth
     On Error GoTo 0
+End Sub
+
+Public Sub VTInitializeWordEvents()
+    Set VT_WORD_EVENT_SINK = New VTWordEvents
+    Set VT_WORD_EVENT_SINK.App = Word.Application
 End Sub
 
 Public Sub VisualTeX_CreateInline()
@@ -27,7 +34,43 @@ End Sub
 Public Sub VisualTeX_EditSelected()
     On Error GoTo Failed
 
-    Dim selectedShape As InlineShape
+    VTRequireWritableWordDocument
+    If Selection.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7400, "VisualTeX", "Select exactly one VisualTeX inline formula."
+    End If
+
+    VTWordEditInlineShape Selection.InlineShapes(1)
+    Exit Sub
+
+Failed:
+    VTShowError "Word edit", Err.Number, Err.Description
+End Sub
+
+Public Sub VisualTeX_EditInlineShape(ByVal selectedShape As InlineShape)
+    On Error GoTo Failed
+    VTRequireWritableWordDocument
+    VTWordEditInlineShape selectedShape
+    Exit Sub
+Failed:
+    VTShowError "Word edit", Err.Number, Err.Description
+End Sub
+
+Public Function VTIsVisualTeXInlineShape(ByVal selectedShape As InlineShape) As Boolean
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+
+    On Error GoTo InvalidShape
+    If selectedShape Is Nothing Then Exit Function
+    If Not VTIsEncodedMetadata(selectedShape.AlternativeText) Then Exit Function
+    If Not VTTryParseFormulaReference(selectedShape.Title, formulaId, displayMode, numbered) Then Exit Function
+    VTIsVisualTeXInlineShape = True
+    Exit Function
+InvalidShape:
+    VTIsVisualTeXInlineShape = False
+End Function
+
+Private Sub VTWordEditInlineShape(ByVal selectedShape As InlineShape)
     Dim encodedMetadata As String
     Dim formulaReference As String
     Dim formulaId As String
@@ -36,12 +79,9 @@ Public Sub VisualTeX_EditSelected()
     Dim sessionId As String
     Dim requestJson As String
 
-    VTRequireWritableWordDocument
-    If Selection.InlineShapes.Count <> 1 Then
+    If selectedShape Is Nothing Then
         Err.Raise vbObjectError + 7400, "VisualTeX", "Select exactly one VisualTeX inline formula."
     End If
-
-    Set selectedShape = Selection.InlineShapes(1)
     encodedMetadata = selectedShape.AlternativeText
     formulaReference = selectedShape.Title
     VTValidateEditEnvelope encodedMetadata, formulaReference, formulaId, displayMode, numbered
@@ -61,10 +101,6 @@ Public Sub VisualTeX_EditSelected()
         "")
     VTWriteRequest sessionId, requestJson
     VTLaunchSession VT_WORD_HOST, sessionId
-    Exit Sub
-
-Failed:
-    VTShowError "Word edit", Err.Number, Err.Description
 End Sub
 
 Public Sub VisualTeX_UpdateEquationNumbers()
@@ -155,9 +191,10 @@ Private Sub VTWordCreate(ByVal displayMode As String, ByVal numbered As Boolean)
         Range:=insertionRange)
     placeholder.AlternativeText = pendingMarker
     placeholder.Title = pendingMarker
-    placeholder.Width = 12
-    placeholder.Height = 12
+    placeholder.Width = 1
+    placeholder.Height = 1
     VTAddPendingBookmark placeholder.Range, sessionId
+    Selection.SetRange Start:=placeholder.Range.End, End:=placeholder.Range.End
 
     requestJson = VTRequestJson( _
         sessionId, _
@@ -294,7 +331,7 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     End If
 
     If mode = "create" And displayMode = "block" And numbered Then
-        Set insertedNumber = VTInsertEquationNumber(candidate.Range)
+        Set insertedNumber = VTInsertEquationNumber(candidate)
     End If
 
     target.Delete
@@ -367,21 +404,43 @@ Private Function VTFindCommittedInlineShape(ByVal metadata As String, ByVal form
     If count = 1 Then Set VTFindCommittedInlineShape = match
 End Function
 
-Private Function VTInsertEquationNumber(ByVal formulaRange As Range) As Range
+Private Function VTInsertEquationNumber(ByVal formulaShape As InlineShape) As Range
     Dim paragraphRange As Range
+    Dim prefixRange As Range
     Dim numberRange As Range
     Dim sequenceField As Field
+    Dim layoutStart As Long
     Dim numberStart As Long
+    Dim textWidth As Single
 
-    numberStart = formulaRange.End
-    Set paragraphRange = formulaRange.Paragraphs(1).Range
-    paragraphRange.ParagraphFormat.Alignment = wdAlignParagraphCenter
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range
+    textWidth = ActiveDocument.PageSetup.TextColumns.Width
+    If textWidth <= 0! Then
+        Err.Raise vbObjectError + 7425, "VisualTeX", "Word returned an invalid text width for equation numbering."
+    End If
+
+    ' A centered paragraph plus one right tab treats the formula and number as
+    ' one centered run, which can push the formula to the far right and wrap
+    ' the number onto the next line. Use the standard three-position layout:
+    ' a center tab before the formula and a right tab before the number.
+    paragraphRange.ParagraphFormat.Alignment = wdAlignParagraphLeft
     paragraphRange.ParagraphFormat.TabStops.ClearAll
     paragraphRange.ParagraphFormat.TabStops.Add _
-        Position:=ActiveDocument.PageSetup.TextColumns.Width, _
+        Position:=textWidth / 2!, _
+        Alignment:=wdAlignTabCenter, _
+        Leader:=wdTabLeaderSpaces
+    paragraphRange.ParagraphFormat.TabStops.Add _
+        Position:=textWidth, _
         Alignment:=wdAlignTabRight, _
         Leader:=wdTabLeaderSpaces
-    Set numberRange = formulaRange.Duplicate
+
+    Set prefixRange = formulaShape.Range.Duplicate
+    prefixRange.Collapse wdCollapseStart
+    layoutStart = prefixRange.Start
+    prefixRange.InsertBefore vbTab
+
+    numberStart = formulaShape.Range.End
+    Set numberRange = formulaShape.Range.Duplicate
     numberRange.Collapse wdCollapseEnd
     numberRange.InsertAfter vbTab & "("
     numberRange.Collapse wdCollapseEnd
@@ -397,8 +456,8 @@ Private Function VTInsertEquationNumber(ByVal formulaRange As Range) As Range
     If numberRange.End <= numberStart Then
         Err.Raise vbObjectError + 7425, "VisualTeX", "Word did not create the VisualTeX equation number."
     End If
-    Set VTInsertEquationNumber = formulaRange.Document.Range( _
-        Start:=numberStart, _
+    Set VTInsertEquationNumber = formulaShape.Range.Document.Range( _
+        Start:=layoutStart, _
         End:=numberRange.End)
 End Function
 

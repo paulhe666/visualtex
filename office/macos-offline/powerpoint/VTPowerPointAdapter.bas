@@ -6,11 +6,18 @@ Private Const VT_POWERPOINT_STATUS_FILE As String = "/OfficePluginStatus/powerpo
 Private Const VT_SHAPE_PREFIX As String = "VisualTeX_"
 Private Const VT_DEFAULT_PLACEHOLDER_WIDTH As Single = 180!
 Private Const VT_DEFAULT_PLACEHOLDER_HEIGHT As Single = 42!
+Private VT_POWERPOINT_EVENT_SINK As VTPowerPointEvents
 
 Public Sub Auto_Open()
     On Error Resume Next
+    VTInitializePowerPointEvents
     VTWritePowerPointHealth
     On Error GoTo 0
+End Sub
+
+Public Sub VTInitializePowerPointEvents()
+    Set VT_POWERPOINT_EVENT_SINK = New VTPowerPointEvents
+    Set VT_POWERPOINT_EVENT_SINK.App = PowerPoint.Application
 End Sub
 
 Public Sub VisualTeX_NewFormula()
@@ -83,7 +90,44 @@ End Sub
 Public Sub VisualTeX_EditSelected()
     On Error GoTo Failed
 
-    Dim selectedShape As Shape
+    VTRequireWritablePowerPointPresentation
+    VTPowerPointEditShape VTSelectedSingleShape()
+    Exit Sub
+
+Failed:
+    VTShowError "PowerPoint edit", Err.Number, Err.Description
+End Sub
+
+Public Sub VisualTeX_EditShape(ByVal selectedShape As Shape)
+    On Error GoTo Failed
+    VTRequireWritablePowerPointPresentation
+    VTPowerPointEditShape selectedShape
+    Exit Sub
+Failed:
+    VTShowError "PowerPoint edit", Err.Number, Err.Description
+End Sub
+
+Public Function VTIsVisualTeXPowerPointShape(ByVal selectedShape As Shape) As Boolean
+    Dim formulaId As String
+    Dim encodedMetadata As String
+    Dim parsedFormulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+
+    On Error GoTo InvalidShape
+    If selectedShape Is Nothing Then Exit Function
+    formulaId = VTShapeFormulaId(selectedShape)
+    encodedMetadata = VTShapeMetadata(selectedShape)
+    If Not VTIsCanonicalUuid(formulaId) Or Not VTIsEncodedMetadata(encodedMetadata) Then Exit Function
+    If Not VTTryParseFormulaReference(selectedShape.Title, parsedFormulaId, displayMode, numbered) Then Exit Function
+    If parsedFormulaId <> formulaId Then Exit Function
+    VTIsVisualTeXPowerPointShape = True
+    Exit Function
+InvalidShape:
+    VTIsVisualTeXPowerPointShape = False
+End Function
+
+Private Sub VTPowerPointEditShape(ByVal selectedShape As Shape)
     Dim formulaId As String
     Dim encodedMetadata As String
     Dim formulaReference As String
@@ -93,8 +137,9 @@ Public Sub VisualTeX_EditSelected()
     Dim requestJson As String
     Dim powerPointJson As String
 
-    VTRequireWritablePowerPointPresentation
-    Set selectedShape = VTSelectedSingleShape()
+    If selectedShape Is Nothing Then
+        Err.Raise vbObjectError + 7500, "VisualTeX", "Select one VisualTeX formula shape."
+    End If
     formulaId = VTShapeFormulaId(selectedShape)
     encodedMetadata = VTShapeMetadata(selectedShape)
     formulaReference = selectedShape.Title
@@ -120,10 +165,6 @@ Public Sub VisualTeX_EditSelected()
         powerPointJson)
     VTWriteRequest sessionId, requestJson
     VTLaunchSession VT_POWERPOINT_HOST, sessionId
-    Exit Sub
-
-Failed:
-    VTShowError "PowerPoint edit", Err.Number, Err.Description
 End Sub
 
 Public Sub VisualTeX_DeleteSelected()

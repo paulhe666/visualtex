@@ -12,9 +12,11 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
    - `shared/VTLauncher.bas`
    - `shared/VTErrorHandling.bas`
    - `word/VTWordAdapter.bas`
+   - `word/VTWordEvents.cls`
    - `word/VTRibbonCallbacks.bas`
-3. Save the template as exactly `VisualTeX.dotm`.
-4. Quit Word before packaging so Office has flushed `vbaProject.bin`.
+3. Run **Debug → Compile VBAProject**. Confirm `VTWordEvents` compiles and `AutoExec` initializes the application event sink.
+4. Save the template as exactly `VisualTeX.dotm`.
+5. Quit Word before packaging so Office has flushed `vbaProject.bin`.
 
 ## PowerPoint: VisualTeX.ppam
 
@@ -26,9 +28,11 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
    - `shared/VTLauncher.bas`
    - `shared/VTErrorHandling.bas`
    - `powerpoint/VTPowerPointAdapter.bas`
+   - `powerpoint/VTPowerPointEvents.cls`
    - `powerpoint/VTRibbonCallbacks.bas`
-3. Save as a PowerPoint Add-In with the exact filename `VisualTeX.ppam`.
-4. Quit PowerPoint before packaging.
+3. Run **Debug → Compile VBAProject**. Confirm `VTPowerPointEvents` compiles and `Auto_Open` initializes the application event sink.
+4. Save as a PowerPoint Add-In with the exact filename `VisualTeX.ppam`.
+5. Quit PowerPoint before packaging.
 
 ## Inject and verify Ribbon XML
 
