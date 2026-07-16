@@ -479,7 +479,7 @@ Private Sub VTRequireWritablePowerPointPresentation()
     If ActivePresentation.ReadOnly = msoTrue Then
         Err.Raise vbObjectError + 7511, "VisualTeX", "The active PowerPoint presentation is read-only."
     End If
-    If ActiveWindow Is Nothing Or ActiveWindow.View.Type = ppViewSlideShow Then
+    If ActiveWindow Is Nothing Then
         Err.Raise vbObjectError + 7512, "VisualTeX", "Switch PowerPoint to a normal editing view."
     End If
 End Sub
