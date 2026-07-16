@@ -21,7 +21,7 @@ const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.jso
 
 function usage() {
   process.stderr.write(
-    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm --powerpoint /path/VisualTeX.ppam [--powerpoint-shell /path/known-good-VisualTeX.ppam]\n",
+    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm (--word-only | --powerpoint /path/VisualTeX.ppam [--powerpoint-shell /path/known-good-VisualTeX.ppam])\n",
   );
 }
 
@@ -33,7 +33,8 @@ function argument(name) {
 const wordInput = argument("--word");
 const powerpointInput = argument("--powerpoint");
 const powerpointShell = argument("--powerpoint-shell");
-if (!wordInput || !powerpointInput) {
+const wordOnly = process.argv.includes("--word-only");
+if (!wordInput || (!wordOnly && !powerpointInput) || (wordOnly && powerpointInput)) {
   usage();
   process.exit(2);
 }
@@ -227,28 +228,38 @@ try {
     "VisualTeX.dotm",
     join(offlineRoot, "word", "customUI14.xml"),
   );
-  const powerpointOutput = packageAddin(
-    resolve(powerpointInput),
-    "PowerPoint",
-    "VisualTeX.ppam",
-    join(offlineRoot, "powerpoint", "customUI14.xml"),
-    powerpointShell ? resolve(powerpointShell) : undefined,
-  );
-  const manifest = {
-    schemaVersion: 1,
-    pluginVersion: packageVersion,
-    files: {
-      "VisualTeX.dotm": { sha256: sha256(wordOutput) },
-      "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
-    },
-  };
+  let manifest;
+  if (wordOnly) {
+    const manifestPath = join(resourcesRoot, "addins.json");
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    manifest.pluginVersion = packageVersion;
+    manifest.files["VisualTeX.dotm"] = { sha256: sha256(wordOutput) };
+  } else {
+    const powerpointOutput = packageAddin(
+      resolve(powerpointInput),
+      "PowerPoint",
+      "VisualTeX.ppam",
+      join(offlineRoot, "powerpoint", "customUI14.xml"),
+      powerpointShell ? resolve(powerpointShell) : undefined,
+    );
+    manifest = {
+      schemaVersion: 1,
+      pluginVersion: packageVersion,
+      files: {
+        "VisualTeX.dotm": { sha256: sha256(wordOutput) },
+        "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
+      },
+    };
+  }
   writeFileSync(
     join(resourcesRoot, "addins.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8",
   );
   process.stdout.write(
-    `Packaged ${basename(wordOutput)} and ${basename(powerpointOutput)} with fixed filenames and reviewed Ribbon XML.\n`,
+    wordOnly
+      ? `Packaged ${basename(wordOutput)} with the reviewed Word Ribbon XML; PowerPoint was not touched.\n`
+      : "Packaged VisualTeX.dotm and VisualTeX.ppam with fixed filenames and reviewed Ribbon XML.\n",
   );
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

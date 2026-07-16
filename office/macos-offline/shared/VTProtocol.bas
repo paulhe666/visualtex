@@ -282,6 +282,82 @@ Private Sub VTAppendUtf8Byte(ByRef output() As Byte, ByRef byteCount As Long, By
     byteCount = byteCount + 1
 End Sub
 
+Public Function VTBase64UrlDecodeUtf8(ByVal value As String) As String
+    Dim output() As Byte
+    Dim outputCount As Long
+    Dim index As Long
+    Dim remaining As Long
+    Dim firstValue As Long
+    Dim secondValue As Long
+    Dim thirdValue As Long
+    Dim fourthValue As Long
+
+    If Len(value) = 0 Or Len(value) > 2097152 Then
+        Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX Word LaTeX payload is empty or too large."
+    End If
+    If Len(value) Mod 4 = 1 Then
+        Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX Word LaTeX payload has invalid base64url length."
+    End If
+
+    ReDim output(0 To ((Len(value) + 3) \ 4) * 3 - 1)
+    index = 1
+    Do While index <= Len(value)
+        remaining = Len(value) - index + 1
+        If remaining < 2 Then GoTo InvalidBase64Url
+        firstValue = VTBase64UrlValue(Mid$(value, index, 1))
+        secondValue = VTBase64UrlValue(Mid$(value, index + 1, 1))
+        If firstValue < 0 Or secondValue < 0 Then GoTo InvalidBase64Url
+
+        output(outputCount) = CByte(firstValue * 4 + secondValue \ 16)
+        outputCount = outputCount + 1
+
+        If remaining >= 3 Then
+            thirdValue = VTBase64UrlValue(Mid$(value, index + 2, 1))
+            If thirdValue < 0 Then GoTo InvalidBase64Url
+            output(outputCount) = CByte((secondValue And 15) * 16 + thirdValue \ 4)
+            outputCount = outputCount + 1
+        ElseIf (secondValue And 15) <> 0 Then
+            GoTo InvalidBase64Url
+        End If
+
+        If remaining >= 4 Then
+            fourthValue = VTBase64UrlValue(Mid$(value, index + 3, 1))
+            If fourthValue < 0 Then GoTo InvalidBase64Url
+            output(outputCount) = CByte((thirdValue And 3) * 64 + fourthValue)
+            outputCount = outputCount + 1
+        ElseIf remaining = 3 And (thirdValue And 3) <> 0 Then
+            GoTo InvalidBase64Url
+        End If
+
+        index = index + 4
+    Loop
+
+    If outputCount = 0 Then GoTo InvalidBase64Url
+    ReDim Preserve output(0 To outputCount - 1)
+    VTBase64UrlDecodeUtf8 = VTUtf8Decode(output)
+    Exit Function
+
+InvalidBase64Url:
+    Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX Word LaTeX payload is not valid unpadded base64url."
+End Function
+
+Private Function VTBase64UrlValue(ByVal value As String) As Long
+    Dim code As Long
+    If Len(value) <> 1 Then
+        VTBase64UrlValue = -1
+        Exit Function
+    End If
+    code = AscW(value)
+    Select Case code
+        Case 65 To 90: VTBase64UrlValue = code - 65
+        Case 97 To 122: VTBase64UrlValue = code - 97 + 26
+        Case 48 To 57: VTBase64UrlValue = code - 48 + 52
+        Case 45: VTBase64UrlValue = 62
+        Case 95: VTBase64UrlValue = 63
+        Case Else: VTBase64UrlValue = -1
+    End Select
+End Function
+
 Private Function VTUtf8Decode(ByRef bytes() As Byte) As String
     Dim index As Long
     Dim lastIndex As Long

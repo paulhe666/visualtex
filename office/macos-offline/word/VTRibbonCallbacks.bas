@@ -13,6 +13,10 @@ Public Sub VTWordRibbonEdit(ByVal control As IRibbonControl)
     VisualTeX_EditSelected
 End Sub
 
+Public Sub VTWordRibbonConvertNative(ByVal control As IRibbonControl)
+    VisualTeX_ConvertSelectedToNativeEquation
+End Sub
+
 Public Sub VTWordRibbonNumbering(ByVal control As IRibbonControl)
     VisualTeX_UpdateEquationNumbers
 End Sub

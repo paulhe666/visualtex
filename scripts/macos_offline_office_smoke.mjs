@@ -87,6 +87,7 @@ for (const callback of [
   "VTWordRibbonInline",
   "VTWordRibbonDisplay",
   "VTWordRibbonEdit",
+  "VTWordRibbonConvertNative",
   "VTWordRibbonNumbering",
   "VTWordRibbonOpen",
 ]) {
@@ -121,9 +122,20 @@ expectIncludes(wordAdapter, "Selection.SetRange Start:=placeholder.Range.End", "
 expectIncludes(wordAdapter, "Alignment:=wdAlignTabCenter", "Numbered Word display formulas must use a center tab for the formula");
 expectIncludes(wordAdapter, "Alignment:=wdAlignTabRight", "Numbered Word display formulas must use a right tab for the equation number");
 expectIncludes(wordAdapter, "ParagraphFormat.Alignment = wdAlignParagraphLeft", "Numbered Word display formulas must not center the combined formula-number run");
+expectIncludes(wordAdapter, "Application.CaptionLabels(wdCaptionEquation)", "Numbered Word formulas must use Word's built-in Equation caption label");
+expectIncludes(wordAdapter, "paragraphRange.Style = wdStyleCaption", "Numbered Word formulas must use the native Caption paragraph style");
+expectIncludes(wordAdapter, "VTEquationSequenceFieldText(equationLabelName)", "Numbered Word formulas must create a native Equation SEQ field");
+expect(!wordAdapter.includes("VisualTeXEquation"), "New Word numbering must not use the legacy VisualTeX-only sequence name");
 expectIncludes(wordAdapter, "equationNumberRange.Font.Position", "Word equation numbers must be raised to the visual center of tall display formulas");
 expectIncludes(wordAdapter, "formulaShape.Height - numberFontSize", "Word equation-number positioning must derive from the rendered formula height");
 expectIncludes(wordAdapter, "target.Delete", "Word replacement must delete the old object only after candidate setup");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_ConvertSelectedToNativeEquation()", "Word must expose a selected-formula native equation conversion command");
+expectIncludes(wordAdapter, "ActiveDocument.OMaths.Add(insertionRange)", "Word native conversion must create an OMath object from a bounded linear range");
+expectIncludes(wordAdapter, "nativeEquation.BuildUp", "Word native conversion must build the equation into professional OMML layout");
+expectIncludes(wordAdapter, "If displayMode = \"inline\" Or numbered Then", "Word native conversion must preserve inline and numbered-display paragraph structure separately");
+expectIncludes(wordAdapter, "VTSetWordLatexPayload ActiveDocument, formulaId, latexBase64", "Word commits must persist a formula-id keyed LaTeX conversion payload");
+expectIncludes(wordAdapter, "documentObject.Variables", "Word conversion payloads must stay inside the owning Word document");
+expectIncludes(wordAdapter, "target.Range.Document.Range", "Word native conversion rollback must be bounded by the original formula target");
 expectIncludes(wordAdapter, "Word did not persist the VisualTeX formula properties", "Word must verify the candidate before deleting the old formula");
 expectIncludes(wordAdapter, "transactionErrorNumber = Err.Number", "Word rollback must preserve the original transaction error");
 expectIncludes(wordAdapter, "errorNumber = Err.Number", "Word creation cleanup must preserve the original error number");
@@ -161,6 +173,7 @@ expect(!protocol.includes("LenB(StrConv(json, vbFromUnicode))"), "Request sizing
 expectIncludes(protocol, "Open temporary For Binary Access Write", "VBA request writes must be binary UTF-8 writes");
 expectIncludes(protocol, "VTUtf8Encode", "VBA protocol must provide strict UTF-8 encoding");
 expectIncludes(protocol, "VTUtf8Decode", "VBA protocol must provide strict UTF-8 decoding");
+expectIncludes(protocol, "Public Function VTBase64UrlDecodeUtf8", "VBA protocol must decode the Word-only LaTeX payload without external dependencies");
 expectIncludes(protocol, 'If Dir$(sourcePath) = "" Then', "VBA file reads must use the Office for Mac-compatible Dir$ form");
 expectIncludes(protocol, "Office for Mac can return an empty Dir$ result", "VBA directory creation must document the Office sandbox behavior");
 expectIncludes(protocol, "On Error Resume Next\n    MkDir directoryPath\n    On Error GoTo 0", "VBA directory creation must tolerate sandbox-authorized existing directories");
@@ -288,6 +301,7 @@ expectIncludes(
   "#[cfg(not(debug_assertions))]",
   "Debug builds must not resume the installed Office LaunchAgent",
 );
+expectIncludes(rustRuntime, '("latexBase64", latex_base64)', "Word dispatches must carry a base64url LaTeX payload without changing PowerPoint metadata envelopes");
 expectIncludes(rustRuntime, "cleanup_session_files_at", "Completed and cancelled Sessions must remove known local request artifacts");
 expectIncludes(rustRuntime, "DirectoryNotEmpty", "Session cleanup must preserve unknown files instead of deleting an entire directory recursively");
 expectIncludes(packager, 'kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents"', "The add-in packager must reject binaries missing the double-click event class module");

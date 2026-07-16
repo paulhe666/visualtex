@@ -21,6 +21,11 @@
                   size="large"
                   imageMso="ObjectEdit"
                   onAction="VTWordRibbonEdit"/>
+          <button id="VisualTeX.Mac.Word.ConvertNative"
+                  label="转换为 Word 原生公式"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTWordRibbonConvertNative"/>
           <button id="VisualTeX.Mac.Word.Numbering"
                   label="更新公式编号"
                   size="normal"

@@ -728,6 +728,16 @@ fn commit_word(
     let (width, height, baseline) = calculate_word_geometry(session)?;
     let source_marker = request.encoded_metadata.clone().unwrap_or_default();
     let pending_marker = request.pending_marker.clone().unwrap_or_default();
+    let latex = session
+        .lines
+        .iter()
+        .map(|line| line.latex.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if latex.is_empty() {
+        return Err("Word native-equation conversion requires non-empty LaTeX".to_string());
+    }
+    let latex_base64 = URL_SAFE_NO_PAD.encode(latex.as_bytes());
     let dispatch = dispatch_text(&[
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
         ("sessionId", session.id.clone()),
@@ -739,6 +749,7 @@ fn commit_word(
         ("numbered", if session.numbered { "1" } else { "0" }.to_string()),
         ("imagePath", image_path.to_string_lossy().to_string()),
         ("metadata", metadata.to_string()),
+        ("latexBase64", latex_base64),
         ("pendingMarker", pending_marker),
         ("sourceMarker", source_marker),
         (

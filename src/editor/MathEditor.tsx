@@ -34,6 +34,7 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import { normalizeChineseLatex } from "./normalizeChineseLatex";
+import { ImeCompositionGuard } from "./imeCompositionGuard";
 
 export interface MathEditorInsertionTarget {
   lineId: string;
@@ -390,7 +391,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     syncFrameSizeRef.current = syncFrameSize;
 
-    let composing = false;
+    const imeGuard = new ImeCompositionGuard();
     const emitEdit = (
       before: ReturnType<typeof captureFieldSnapshot>,
       after: ReturnType<typeof captureFieldSnapshot>,
@@ -415,12 +416,12 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleCompositionStart = () => {
       propsRef.current.onCommitPending();
-      composing = true;
+      imeGuard.compositionStart();
       compositionStartRef.current =
         lastSnapshotRef.current ?? captureFieldSnapshot(field);
     };
-    const handleCompositionEnd = () => {
-      composing = false;
+    const handleCompositionEnd = (event: CompositionEvent) => {
+      imeGuard.compositionEnd(event.timeStamp);
       const before =
         compositionStartRef.current ??
         lastSnapshotRef.current ??
@@ -431,7 +432,7 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSize();
     };
     const handleInput = (event: Event) => {
-      if (composing) return;
+      if (imeGuard.isComposing()) return;
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
       const after = captureFieldSnapshot(field);
       const inputType =
@@ -445,7 +446,7 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSize();
     };
     const handleSelectionChange = () => {
-      if (composing || !lastSnapshotRef.current) return;
+      if (imeGuard.isComposing() || !lastSnapshotRef.current) return;
       lastSnapshotRef.current = {
         ...lastSnapshotRef.current,
         selection: captureSelection(field),
@@ -459,12 +460,17 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onCommitPending();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      // `composing` can remain true after MathLive commits a command without a
-      // matching compositionend event. A new non-composing key proves that the
-      // IME transaction has ended, so release the stale local guard as well.
-      if (event.isComposing) return;
-      if (composing) {
-        composing = false;
+      const imeDecision = imeGuard.keyDown(event, event.timeStamp);
+      if (imeDecision === "composition") return;
+      if (imeDecision === "post-composition-enter") {
+        // macOS WebKit can replay the Enter used to confirm an IME candidate
+        // after compositionend. Consume only that one synthetic follow-up so
+        // VisualTeX does not also create a new formula line.
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (compositionStartRef.current) {
         compositionStartRef.current = null;
         lastSnapshotRef.current = captureFieldSnapshot(field);
       }
