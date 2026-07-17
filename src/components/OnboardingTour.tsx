@@ -9,7 +9,6 @@ import {
   Keyboard,
   Menu,
   PanelLeft,
-  Power,
   Presentation,
   Puzzle,
   RefreshCw,
@@ -125,10 +124,10 @@ export function tutorialSteps(language: Language, platform: DesktopPlatform): Tu
   } else if (platform === "windows") {
     steps.push({
       id: "windows-office-manage",
-      title: isEn ? "Manage the Windows OLE service" : "管理 Windows OLE 服务",
+      title: isEn ? "Use VisualTeX in Word and PowerPoint" : "在 Word 和 PowerPoint 中使用 VisualTeX",
       description: isEn
-        ? "When OLE is selected in the installer, setup completes the certificate, catalog, Ribbon cache, and background registration automatically. In Settings → Windows Office integration, stop the current companion, disable startup, or remove the OLE manifest."
-        : "安装程序勾选 OLE 后，会自动完成证书、可信目录、Ribbon 缓存和后台注册，不需要额外配置。可在“设置 → Windows Office 集成”中停止当前伴侣服务、关闭开机启动，或移除 OLE manifest。",
+        ? "The native Office add-in lets Word insert inline or display formulas as editable OLE or native OMML, convert formats, update equation numbers, and insert references. In PowerPoint, create or edit formulas, convert them to native OLE, or export them as pictures. Formulas stay with the document and can be reopened by double-clicking."
+        : "新版原生 Office 插件支持在 Word 中插入 OLE 或 OMML 行内、行间公式，并可编辑、格式互转、更新公式编号和插入引用；在 PowerPoint 中可新建或编辑公式、转为原生 OLE，或导出为图片。公式会随文档保存，双击即可继续编辑。",
     });
   }
 
@@ -376,13 +375,14 @@ export function OnboardingTour({ open, language, platform, onFinish }: Props) {
             {current.id === "windows-office-manage" && (
               <div className="onboarding-windows-office-demo">
                 <span>
-                  <Settings2 size={21} />
-                  <strong>{isEn ? "Windows Office integration" : "Windows Office 集成"}</strong>
+                  <FileText size={20} />
+                  <Presentation size={20} />
+                  <strong>{isEn ? "VisualTeX native Office add-in" : "VisualTeX 原生 Office 插件"}</strong>
                 </span>
                 <div>
-                  <span><Power size={19} /><strong>{isEn ? "Stop companion now" : "停止当前伴侣服务"}</strong></span>
-                  <span><ToggleLeft size={19} /><strong>{isEn ? "Disable startup" : "关闭开机启动"}</strong></span>
-                  <span><Trash2 size={19} /><strong>{isEn ? "Remove OLE manifest" : "移除 OLE manifest"}</strong></span>
+                  <span><Code2 size={19} /><strong>{isEn ? "OLE / OMML · inline / display" : "OLE / OMML · 行内 / 行间"}</strong></span>
+                  <span><RefreshCw size={19} /><strong>{isEn ? "Edit · convert · number · reference" : "编辑 · 互转 · 编号 · 引用"}</strong></span>
+                  <span><Check size={19} /><strong>{isEn ? "Double-click edit · save · export" : "双击编辑 · 随文档保存 · 导出图片"}</strong></span>
                 </div>
               </div>
             )}

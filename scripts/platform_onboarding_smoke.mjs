@@ -44,8 +44,14 @@ assert(!windowsIds.includes("mac-office-manage"));
 assert(!otherIds.some((id) => id.includes("office")));
 assert(macSteps.find((step) => step.id === "mac-office-enable")?.description.includes("加载项"));
 assert(macSteps.find((step) => step.id === "mac-office-manage")?.description.includes("卸载"));
-assert(windowsSteps.find((step) => step.id === "windows-office-manage")?.description.includes("停止当前伴侣服务"));
-assert(windowsSteps.find((step) => step.id === "windows-office-manage")?.description.includes("不需要额外配置"));
+const windowsOfficeStep = windowsSteps.find((step) => step.id === "windows-office-manage");
+assert(windowsOfficeStep?.title.includes("Word 和 PowerPoint"));
+assert(windowsOfficeStep?.description.includes("OLE 或 OMML"));
+assert(windowsOfficeStep?.description.includes("公式编号和插入引用"));
+assert(windowsOfficeStep?.description.includes("转为原生 OLE"));
+assert(!windowsOfficeStep?.description.includes("可信目录"));
+assert(!windowsOfficeStep?.description.includes("伴侣服务"));
+assert(!windowsOfficeStep?.description.includes("manifest"));
 
 const appSource = await readFile("src/App.tsx", "utf8");
 const firstRunSource = await readFile("src/components/MacOfficeFirstRunPrompt.tsx", "utf8");
