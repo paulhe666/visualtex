@@ -1,0 +1,14 @@
+HKCU
+{
+    NoRemove Software
+    {
+        NoRemove Classes
+        {
+            NoRemove AppID
+            {
+                ForceRemove {3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1} = s 'VisualTeX Formula OLE LocalServer'
+                'VisualTeX.FormulaOleServer.exe' = s '{3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1}'
+            }
+        }
+    }
+}

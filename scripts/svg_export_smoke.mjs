@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { latexToSvg, svgToBase64 } from "../src/export/runtime.ts";
+import {
+  latexToMathMl,
+  latexToSvg,
+  svgToBase64,
+} from "../src/export/runtime.ts";
 
 const matrixRows = Array.from({ length: 10 }, (_, row) =>
   Array.from({ length: 10 }, (_, column) => `a_{${row + 1}${column + 1}}`).join("&"),
@@ -42,6 +46,12 @@ for (const [name, latex] of cases) {
       `${name} transparent PowerPoint hit target`,
     );
   }
+  const mathMl = latexToMathMl(latex, true);
+  assert.match(mathMl, /^<math\b/);
+  assert.match(mathMl, /xmlns="http:\/\/www\.w3\.org\/1998\/Math\/MathML"/);
+  if (name === "fraction") assert.match(mathMl, /<mfrac>/);
+  if (name === "root") assert.match(mathMl, /<mroot>/);
+  if (name === "matrix") assert.match(mathMl, /<mtable(?:\s|>)/);
   assert.equal(result.base64, svgToBase64(result.svg));
   const decoded = new TextDecoder().decode(
     Uint8Array.from(atob(result.base64), (character) => character.charCodeAt(0)),

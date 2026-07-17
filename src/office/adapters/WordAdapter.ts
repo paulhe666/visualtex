@@ -1035,6 +1035,7 @@ export class WordAdapter implements OfficeHostAdapter {
       numbered: session.displayMode === "block" && Boolean(session.numbered),
       renderWidthPx: session.exportResult?.width ?? session.exportWidth,
       renderHeightPx: session.exportResult?.height ?? session.exportHeight,
+      baseline: session.exportResult?.baseline,
       original: session.originalMetadata,
     });
     await putCachedFormulaMetadata(metadata);

@@ -1,5 +1,6 @@
-; VisualTeX Windows installer prerequisite check and per-user OLE choice.
-; VSTO remains a deferred development path and is not shipped by this installer.
+; VisualTeX Windows installer prerequisite check and per-user native Office OLE choice.
+; The production path installs the per-user VSTO add-ins and ATL OLE LocalServer
+; without opening Word/PowerPoint or driving Office UI Automation.
 
 Var VisualTeXOfficeChoice
 Var VisualTeXOfficeOnlyRadio
@@ -20,11 +21,11 @@ Function VisualTeXOfficePageCreate
   ${NSD_CreateRadioButton} 0 38u 100% 16u "仅 VisualTeX（不安装 Office 插件） / VisualTeX only"
   Pop $VisualTeXOfficeOnlyRadio
 
-  ${NSD_CreateRadioButton} 0 62u 100% 16u "VisualTeX + OLE Office 集成（安装简单）"
+  ${NSD_CreateRadioButton} 0 62u 100% 16u "VisualTeX + 原生 Office OLE 集成（推荐）"
   Pop $VisualTeXOfficeOleRadio
   ${NSD_Check} $VisualTeXOfficeOleRadio
 
-  ${NSD_CreateLabel} 0 92u 100% 42u "OLE 使用 Office.js Ribbon 与当前用户命名管道。安装程序会清理或禁用旧版 VisualTeX VSTO 加载项，避免重复按钮。"
+  ${NSD_CreateLabel} 0 92u 100% 42u "原生模式使用 Word/PowerPoint VSTO Ribbon 与 ATL OLE LocalServer。安装过程不会启动或操作 Office，并会清理旧版 Office.js 集成以避免重复按钮。"
   Pop $0
 
   nsDialogs::Show
@@ -33,6 +34,13 @@ FunctionEnd
 Function VisualTeXOfficePageLeave
   ${NSD_GetState} $VisualTeXOfficeOleRadio $0
   ${If} $0 == ${BST_CHECKED}
+    nsExec::ExecToStack `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process WINWORD,POWERPNT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
+    Pop $1
+    Pop $2
+    ${If} $1 != "0"
+      MessageBox MB_ICONEXCLAMATION "请先完全关闭 Microsoft Word 和 PowerPoint，再继续安装 Office 集成。安装器不会自动关闭或重新启动 Office。$\r$\n$\r$\nClose Microsoft Word and PowerPoint before continuing. The installer will not close or restart Office automatically."
+      Abort
+    ${EndIf}
     StrCpy $VisualTeXOfficeChoice "ole"
     Return
   ${EndIf}
@@ -57,6 +65,12 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
+  ; Custom pages are skipped by NSIS /S. Preserve an explicit interactive
+  ; choice, but default unattended installs to the recommended Office mode.
+  ${If} $VisualTeXOfficeChoice == ""
+    StrCpy $VisualTeXOfficeChoice "ole"
+  ${EndIf}
+
   DetailPrint "Checking the Python environment required by VisualTeX OCR..."
 
   ; Probe every supported runtime through both the new Python Install Manager
@@ -94,19 +108,17 @@ visualtex_python_check_done:
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
   ${If} $VisualTeXOfficeChoice == "ole"
-    MessageBox MB_ICONINFORMATION|MB_OK "接下来安装程序会自动打开 Word 和 PowerPoint 的 Office 加载项窗口，用于添加 VisualTeX。$\r$\n$\r$\n请不要关闭、切换或操作这些窗口；安装程序完成配置后会自动将它们关闭。整个过程通常需要约 1 分钟。$\r$\n$\r$\nVisualTeX will temporarily open the Office Add-ins dialogs in Word and PowerPoint. Do not close or interact with them; setup will close them automatically."
-    DetailPrint "Automatically configuring Word and PowerPoint. Keep the Office Add-ins windows open until setup closes them."
-    ; Best-effort removal of legacy VisualTeX VSTO MSI instances. The OLE
-    ; installer also forces any surviving add-in LoadBehavior values to zero.
-    IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 +3
-    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
-    Pop $0
-    IfFileExists "$INSTDIR\scripts\install_windows_ole.ps1" 0 visualtex_office_missing
-    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_ole.ps1"`
+    DetailPrint "Installing the per-user VisualTeX VSTO add-ins and native Formula OLE LocalServer."
+    IfFileExists "$INSTDIR\scripts\install_windows_vsto.ps1" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x64.sha256.json" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.sha256.json" 0 visualtex_office_missing
+    nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -PackageDirectory "$INSTDIR\windows-office"`
     Pop $0
     StrCmp $0 "0" visualtex_office_done
     SetDetailsView show
-    MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但 Office 集成配置未完成。$\r$\n$\r$\n如果你关闭了刚才自动打开的 Word 或 PowerPoint 加载项窗口，配置会被中断。请关闭所有 Office 窗口，然后在 VisualTeX 设置中点击修复；修复期间不要关闭或操作自动打开的 Office 窗口。$\r$\n$\r$\n详细错误已显示在安装日志区域。"
+    MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但原生 Office VSTO + OLE 集成安装失败。安装器不会自动关闭或重新启动 Word/PowerPoint。请查看安装详情，并检查 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-bootstrap 日志。"
     Goto visualtex_office_done
   ${Else}
     IfFileExists "$INSTDIR\scripts\uninstall_windows_ole.ps1" 0 +3
@@ -119,7 +131,7 @@ visualtex_python_check_done:
   ${EndIf}
 
 visualtex_office_missing:
-  MessageBox MB_ICONEXCLAMATION "Windows OLE Office 安装资源缺失。VisualTeX 主程序已正常安装。"
+  MessageBox MB_ICONEXCLAMATION "Windows 原生 Office OLE 安装资源缺失。VisualTeX 主程序已正常安装。"
   Goto visualtex_office_done
 
 visualtex_office_done:

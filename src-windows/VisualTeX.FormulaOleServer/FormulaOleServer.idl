@@ -1,0 +1,43 @@
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+    object,
+    dual,
+    uuid(6C672AF0-7321-4D21-B325-868CB34592C2),
+    oleautomation,
+    pointer_default(unique)
+]
+interface IVisualTeXFormulaObject : IDispatch
+{
+    [id(1)] HRESULT InitializeFromFiles(
+        [in] BSTR metadataJson,
+        [in] BSTR emfPath,
+        [in] BSTR pngPath);
+
+    [id(2)] HRESULT UpdateFromFiles(
+        [in] BSTR metadataJson,
+        [in] BSTR emfPath,
+        [in] BSTR pngPath);
+
+    [id(3)] HRESULT GetFormulaJson([out, retval] BSTR* metadataJson);
+};
+
+[
+    uuid(DF66EC66-3B3A-4675-A7BE-30456A04EB96),
+    version(1.0),
+    helpstring("VisualTeX Formula OLE Type Library")
+]
+library VisualTeXFormulaOleLib
+{
+    importlib("stdole2.tlb");
+
+    [
+        uuid(8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B),
+        helpstring("VisualTeX Formula OLE Object")
+    ]
+    coclass VisualTeXFormula
+    {
+        [default] interface IVisualTeXFormulaObject;
+    };
+};

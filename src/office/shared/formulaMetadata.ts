@@ -15,6 +15,8 @@ export interface VisualTeXFormulaMetadata {
    * when a formula is replaced with a longer or taller expression. */
   renderWidthPx?: number;
   renderHeightPx?: number;
+  /** Mathematical baseline in natural render pixels. */
+  baseline?: number;
   createdWithVersion: string;
   updatedWithVersion: string;
   createdAt: string;
@@ -30,6 +32,7 @@ export interface CreateFormulaMetadataInput {
   numbered?: boolean;
   renderWidthPx?: number;
   renderHeightPx?: number;
+  baseline?: number;
   appVersion?: string;
   original?: VisualTeXFormulaMetadata | null;
 }
@@ -112,6 +115,12 @@ export function isVisualTeXFormulaMetadata(
       (typeof candidate.renderHeightPx === "number" &&
         Number.isFinite(candidate.renderHeightPx) &&
         candidate.renderHeightPx > 0)) &&
+    (candidate.baseline === undefined ||
+      (typeof candidate.baseline === "number" &&
+        Number.isFinite(candidate.baseline) &&
+        candidate.baseline >= 0 &&
+        (candidate.renderHeightPx === undefined ||
+          candidate.baseline <= candidate.renderHeightPx))) &&
     typeof candidate.createdWithVersion === "string" &&
     typeof candidate.updatedWithVersion === "string" &&
     typeof candidate.createdAt === "string" &&
@@ -128,6 +137,7 @@ export function createFormulaMetadata({
   numbered = false,
   renderWidthPx,
   renderHeightPx,
+  baseline,
   appVersion = CURRENT_VISUALTEX_VERSION,
   original = null,
 }: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
@@ -146,6 +156,13 @@ export function createFormulaMetadata({
     renderHeightPx && Number.isFinite(renderHeightPx) && renderHeightPx > 0
       ? renderHeightPx
       : original?.renderHeightPx;
+  const resolvedBaseline =
+    baseline !== undefined &&
+    Number.isFinite(baseline) &&
+    baseline >= 0 &&
+    (resolvedRenderHeight === undefined || baseline <= resolvedRenderHeight)
+      ? baseline
+      : original?.baseline;
   return {
     schema: VISUALTEX_FORMULA_SCHEMA,
     schemaVersion: VISUALTEX_FORMULA_SCHEMA_VERSION,
@@ -158,6 +175,7 @@ export function createFormulaMetadata({
     numbered,
     ...(resolvedRenderWidth ? { renderWidthPx: resolvedRenderWidth } : {}),
     ...(resolvedRenderHeight ? { renderHeightPx: resolvedRenderHeight } : {}),
+    ...(resolvedBaseline !== undefined ? { baseline: resolvedBaseline } : {}),
     createdWithVersion: original?.createdWithVersion ?? appVersion,
     updatedWithVersion: appVersion,
     createdAt: original?.createdAt ?? now,

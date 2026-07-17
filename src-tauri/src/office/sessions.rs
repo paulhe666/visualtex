@@ -15,6 +15,10 @@ fn default_display_mode() -> String {
     "inline".to_string()
 }
 
+fn default_object_mode() -> String {
+    "crossPlatformPicture".to_string()
+}
+
 const SESSION_FILE: &str = "session.json";
 const SESSION_TEMP_FILE: &str = "session.tmp";
 
@@ -76,6 +80,8 @@ pub struct FormulaLine {
 pub struct OfficeExportResult {
     pub svg: String,
     pub svg_base64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub math_ml: Option<String>,
     pub png_base64: Option<String>,
     pub width: f64,
     pub height: f64,
@@ -106,6 +112,8 @@ pub struct VisualTeXFormulaMetadata {
     pub render_width_px: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render_height_px: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<f64>,
     pub created_with_version: String,
     pub updated_with_version: String,
     pub created_at: String,
@@ -127,6 +135,8 @@ pub struct OfficeFormulaSession {
     pub code_format: String,
     #[serde(default = "default_display_mode")]
     pub display_mode: String,
+    #[serde(default = "default_object_mode")]
+    pub object_mode: String,
     #[serde(default)]
     pub numbered: bool,
     pub export_width: f64,
@@ -156,6 +166,7 @@ pub struct CreateOfficeSessionInput {
     pub active_line_id: Option<String>,
     pub code_format: Option<String>,
     pub display_mode: Option<String>,
+    pub object_mode: Option<String>,
     pub numbered: Option<bool>,
     pub export_width: Option<f64>,
     pub export_height: Option<f64>,
@@ -414,6 +425,21 @@ impl SessionStore {
                 "Office Session displayMode must be inline or block".to_string(),
             ));
         }
+        let object_mode = input.object_mode.unwrap_or_else(default_object_mode);
+        if !matches!(
+            object_mode.as_str(),
+            "nativeOle" | "wordOmml" | "crossPlatformPicture"
+        ) {
+            return Err(SessionError::Invalid(
+                "Office Session objectMode must be nativeOle, wordOmml, or crossPlatformPicture"
+                    .to_string(),
+            ));
+        }
+        if object_mode == "wordOmml" && input.host != OfficeHost::Word {
+            return Err(SessionError::Invalid(
+                "wordOmml objectMode is only supported by Word".to_string(),
+            ));
+        }
         let numbered = input.numbered.unwrap_or(false);
         if numbered && (input.host != OfficeHost::Word || display_mode != "block") {
             return Err(SessionError::Invalid(
@@ -432,6 +458,7 @@ impl SessionStore {
             active_line_id,
             code_format: input.code_format.unwrap_or_else(|| "raw".to_string()),
             display_mode,
+            object_mode,
             numbered,
             export_width: input.export_width.unwrap_or_default(),
             export_height: input.export_height.unwrap_or_default(),
@@ -475,6 +502,7 @@ impl SessionStore {
             "activeLineId",
             "codeFormat",
             "displayMode",
+            "objectMode",
             "numbered",
             "exportWidth",
             "exportHeight",
@@ -533,6 +561,20 @@ impl SessionStore {
                 "Office Session displayMode must be inline or block".to_string(),
             ));
         }
+        if !matches!(
+            next.object_mode.as_str(),
+            "nativeOle" | "wordOmml" | "crossPlatformPicture"
+        ) {
+            return Err(SessionError::Invalid(
+                "Office Session objectMode must be nativeOle, wordOmml, or crossPlatformPicture"
+                    .to_string(),
+            ));
+        }
+        if next.object_mode == "wordOmml" && next.host != OfficeHost::Word {
+            return Err(SessionError::Invalid(
+                "wordOmml objectMode is only supported by Word".to_string(),
+            ));
+        }
         if next.numbered && (next.host != OfficeHost::Word || next.display_mode != "block") {
             return Err(SessionError::Invalid(
                 "Only Word display formulas can use equation numbering".to_string(),
@@ -569,13 +611,16 @@ impl SessionStore {
                 "An explicitly cancelled Session must have cancelled status".to_string(),
             ));
         }
+        let unchanged_edit = next.mode == OfficeSessionMode::Edit
+            && !next.dirty
+            && next.original_metadata.is_some();
         if matches!(
             next.status,
             OfficeSessionStatus::Committing | OfficeSessionStatus::Completed
-        ) && (!has_formula(&next) || next.export_result.is_none())
+        ) && (!has_formula(&next) || (!unchanged_edit && next.export_result.is_none()))
         {
             return Err(SessionError::Conflict(
-                "A Session cannot commit without a non-empty formula and export result".to_string(),
+                "A changed or newly created Session cannot commit without a non-empty formula and export result".to_string(),
             ));
         }
         self.write_locked(&next)?;
@@ -699,10 +744,58 @@ mod tests {
             active_line_id: None,
             code_format: None,
             display_mode: None,
+            object_mode: None,
             numbered: None,
             export_width: None,
             export_height: None,
             original_metadata: None,
+            auto_commit_on_close: Some(true),
+        }
+    }
+
+    fn edit_input() -> CreateOfficeSessionInput {
+        let formula_id = Uuid::new_v4().to_string();
+        let line_id = Uuid::new_v4().to_string();
+        let lines = vec![FormulaLine {
+            id: line_id.clone(),
+            latex: "a=b".to_string(),
+        }];
+        CreateOfficeSessionInput {
+            mode: OfficeSessionMode::Edit,
+            host: OfficeHost::Word,
+            formula_id: Some(formula_id.clone()),
+            source_document_id: Some(Uuid::new_v4().to_string()),
+            source_object_id: Some(Uuid::new_v4().to_string()),
+            title: Some("Formula".to_string()),
+            lines: Some(lines),
+            active_line_id: Some(line_id.clone()),
+            code_format: Some("latex".to_string()),
+            display_mode: Some("inline".to_string()),
+            object_mode: Some("nativeOle".to_string()),
+            numbered: Some(false),
+            export_width: Some(100.0),
+            export_height: Some(20.0),
+            original_metadata: Some(VisualTeXFormulaMetadata {
+                schema: "visualtex-formula".to_string(),
+                schema_version: 1,
+                formula_id,
+                title: "Formula".to_string(),
+                latex: "a=b".to_string(),
+                lines: vec![MetadataLine {
+                    id: line_id,
+                    latex: "a=b".to_string(),
+                }],
+                code_format: "latex".to_string(),
+                display_mode: "inline".to_string(),
+                numbered: false,
+                render_width_px: Some(100.0),
+                render_height_px: Some(20.0),
+                baseline: Some(15.0),
+                created_with_version: "1.1.4".to_string(),
+                updated_with_version: "1.1.4".to_string(),
+                created_at: "2026-07-16T00:00:00Z".to_string(),
+                updated_at: "2026-07-16T00:00:00Z".to_string(),
+            }),
             auto_commit_on_close: Some(true),
         }
     }
@@ -736,11 +829,30 @@ mod tests {
         let store = SessionStore::new(&paths(&temp)).unwrap();
         let word = store.create(create_input()).unwrap();
         assert_eq!(word.display_mode, "inline");
+        assert_eq!(word.object_mode, "crossPlatformPicture");
 
         let mut powerpoint_input = create_input();
         powerpoint_input.host = OfficeHost::Powerpoint;
         let powerpoint = store.create(powerpoint_input).unwrap();
         assert_eq!(powerpoint.display_mode, "block");
+    }
+
+    #[test]
+    fn native_ole_mode_round_trips_and_invalid_object_mode_is_rejected() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let mut native = create_input();
+        native.object_mode = Some("nativeOle".to_string());
+        let session = store.create(native).unwrap();
+        assert_eq!(session.object_mode, "nativeOle");
+
+        let error = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "objectMode": "picturePretendingToBeOle" }),
+            )
+            .unwrap_err();
+        assert!(matches!(error, SessionError::Invalid(_)));
     }
 
     #[test]
@@ -813,6 +925,7 @@ mod tests {
             numbered: false,
             render_width_px: None,
             render_height_px: None,
+            baseline: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),
@@ -832,6 +945,53 @@ mod tests {
         assert!(!directory.join(SESSION_TEMP_FILE).exists());
         let loaded = store.get(&session.id).unwrap();
         assert_eq!(loaded.id, session.id);
+    }
+
+    #[test]
+    fn unchanged_edit_can_complete_without_new_export_result() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let session = store.create(edit_input()).unwrap();
+
+        let committing = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "status": "committing",
+                    "dirty": false,
+                    "exportResult": null,
+                    "exportWidth": 0.0,
+                    "exportHeight": 0.0
+                }),
+            )
+            .unwrap();
+        assert_eq!(committing.status, OfficeSessionStatus::Committing);
+        assert!(!committing.dirty);
+        assert!(committing.export_result.is_none());
+
+        let completed = store
+            .patch(&session.id, serde_json::json!({ "status": "completed" }))
+            .unwrap();
+        assert_eq!(completed.status, OfficeSessionStatus::Completed);
+        assert!(completed.export_result.is_none());
+    }
+
+    #[test]
+    fn changed_edit_still_requires_a_new_export_result() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let session = store.create(edit_input()).unwrap();
+        let error = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "status": "committing",
+                    "dirty": true,
+                    "exportResult": null
+                }),
+            )
+            .unwrap_err();
+        assert!(matches!(error, SessionError::Conflict(_)));
     }
 
     #[test]

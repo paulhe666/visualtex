@@ -2,6 +2,10 @@ import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
 
 export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
+export type OfficeObjectMode =
+  | "nativeOle"
+  | "wordOmml"
+  | "crossPlatformPicture";
 
 export type OfficeSessionStatus =
   | "created"
@@ -14,6 +18,7 @@ export type OfficeSessionStatus =
 export interface OfficeExportResult {
   svg: string;
   svgBase64: string;
+  mathMl?: string;
   pngBase64?: string;
   width: number;
   height: number;
@@ -48,6 +53,7 @@ export interface OfficeFormulaSession {
   activeLineId: string | null;
   codeFormat: string;
   displayMode: "inline" | "block";
+  objectMode: OfficeObjectMode;
   numbered: boolean;
   exportWidth: number;
   exportHeight: number;
@@ -74,6 +80,7 @@ export interface CreateOfficeSessionInput {
   activeLineId?: string | null;
   codeFormat?: string;
   displayMode?: "inline" | "block";
+  objectMode?: OfficeObjectMode;
   numbered?: boolean;
   exportWidth?: number;
   exportHeight?: number;
@@ -191,6 +198,13 @@ export function commitNativePowerPointSessionKeepalive(
       headers,
       body: JSON.stringify(update),
     },
+  );
+}
+
+export function closeOfficeSessionWindow(sessionId: string) {
+  return requestJson<void>(
+    `/api/v1/app/sessions/${encodeURIComponent(sessionId)}/close`,
+    { method: "POST", body: "{}" },
   );
 }
 

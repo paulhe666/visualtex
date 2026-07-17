@@ -690,6 +690,7 @@ function metadataFromPowerPointSession(session: OfficeFormulaSession) {
     displayMode: session.displayMode,
     renderWidthPx: session.exportResult?.width ?? session.exportWidth,
     renderHeightPx: session.exportResult?.height ?? session.exportHeight,
+    baseline: session.exportResult?.baseline,
     original: session.originalMetadata,
   });
 }

@@ -148,8 +148,8 @@ export function WindowsOfficeIntegrationSettings() {
             </StatusLine>
           </header>
           <dl>
-            <div><dt>{isEn ? "Selected mode" : "设置模式"}</dt><dd>OLE</dd></div>
-            <div><dt>{isEn ? "Duplicate ribbon guard" : "重复按钮保护"}</dt><dd>{isEn ? "Legacy VSTO disabled" : "旧版 VSTO 已禁用"}</dd></div>
+            <div><dt>{isEn ? "Selected mode" : "设置模式"}</dt><dd>{isEn ? "Native VSTO + OLE" : "原生 VSTO + OLE"}</dd></div>
+            <div><dt>{isEn ? "Duplicate ribbon guard" : "重复按钮保护"}</dt><dd>{isEn ? "Legacy Office.js add-in disabled" : "旧版 Office.js 加载项已禁用"}</dd></div>
           </dl>
         </article>
 
@@ -205,7 +205,7 @@ export function WindowsOfficeIntegrationSettings() {
           onClick={() => void run("install-ole", "install_windows_ole_integration")}
         >
           <Download size={15} />
-          {isEn ? "Install / enable OLE" : "安装/启用 OLE"}
+          {isEn ? "Install native Office integration" : "安装原生 Office 集成"}
         </button>
         <button
           type="button"
@@ -214,7 +214,7 @@ export function WindowsOfficeIntegrationSettings() {
           onClick={() => void run("repair", "repair_windows_office_integration")}
         >
           <Wrench size={15} />
-          {isEn ? "Repair OLE integration" : "修复 OLE 集成"}
+          {isEn ? "Repair native Office integration" : "修复原生 Office 集成"}
         </button>
         <button
           type="button"
@@ -238,7 +238,7 @@ export function WindowsOfficeIntegrationSettings() {
           onClick={() => void run("uninstall-ole", "uninstall_windows_ole_integration")}
         >
           <Trash2 size={15} />
-          {isEn ? "Remove OLE manifest" : "移除 OLE manifest"}
+          {isEn ? "Remove Office integration" : "移除 Office 集成"}
         </button>
         <button
           type="button"

@@ -56,6 +56,8 @@ const lifecycleSource = await readFile("src-tauri/src/office/lifecycle.rs", "utf
 const windowsBackendSource = await readFile("src-tauri/src/office/windows_backend.rs", "utf8");
 const hooksSource = await readFile("src-tauri/windows/hooks.nsh", "utf8");
 const installOleSource = await readFile("scripts/install_windows_ole.ps1", "utf8");
+const installVstoSource = await readFile("scripts/install_windows_vsto.ps1", "utf8");
+const windowsBundleSource = await readFile("src-tauri/tauri.windows.conf.json", "utf8");
 const certificateSource = await readFile("scripts/ensure_windows_office_certificate.ps1", "utf8");
 
 assert(appSource.includes("<MacOfficeFirstRunPrompt"));
@@ -75,6 +77,10 @@ assert(lifecycleSource.includes("hidden_windows_command"));
 assert(lifecycleSource.includes("CREATE_NO_WINDOW"));
 assert(lifecycleSource.includes('"-WindowStyle",'));
 assert(lifecycleSource.includes('"Hidden",'));
+assert(lifecycleSource.includes('run_windows_script(&app, "install_windows_vsto.ps1", &[])'));
+assert(!windowsBundleSource.includes('"../scripts/install_windows_ole.ps1"'));
+assert(installVstoSource.includes("Assert-NoOfficeProcesses"));
+assert(installVstoSource.includes("MSIRESTARTMANAGERCONTROL=Disable"));
 assert(windowsBackendSource.includes("hidden_command"));
 assert(windowsBackendSource.includes("CREATE_NO_WINDOW"));
 

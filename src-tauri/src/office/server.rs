@@ -27,6 +27,9 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use uuid::Uuid;
 
+#[cfg(target_os = "windows")]
+use tauri::{Manager, UserAttentionType, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
 const INSTALL_TOKEN_HEADER: &str = "x-visualtex-install-token";
 const OFFICE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://*.office.com https://*.officeapps.live.com";
 static POWERPOINT_COMMIT_LOCK: Mutex<()> = Mutex::new(());
@@ -160,11 +163,18 @@ async fn read_office_html(
     ui_root: &Path,
     relative: &str,
     token: &str,
+    remove_office_js: bool,
 ) -> Result<Html<String>, StatusCode> {
     let path = ui_root.join(relative);
-    let html = tokio::fs::read_to_string(&path)
+    let mut html = tokio::fs::read_to_string(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
+    if remove_office_js {
+        html = html.replace(
+            "<script src=\"/vendor/office-js/office.js\"></script>",
+            "",
+        );
+    }
     inject_install_token(&html, token).map(Html)
 }
 
@@ -190,8 +200,14 @@ async fn bridge(State(context): State<ServerContext>) -> Result<Html<String>, St
     inject_install_token(&html, &context.companion.install_token).map(Html)
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct DialogRuntimeQuery {
+    runtime: Option<String>,
+}
+
 async fn dialog(
     AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<DialogRuntimeQuery>,
     State(context): State<ServerContext>,
 ) -> Result<Html<String>, StatusCode> {
     if !valid_session_id(&session_id) {
@@ -206,6 +222,7 @@ async fn dialog(
         &context.companion.paths.ui_root,
         "dialog/index.html",
         &context.companion.install_token,
+        query.runtime.as_deref() == Some("vsto-desktop"),
     )
     .await
 }
@@ -234,6 +251,147 @@ async fn reveal_desktop_app(State(context): State<ServerContext>) -> Response {
             Json(serde_json::json!({ "error": error })),
         )
             .into_response(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_session_window_to_front(window: &WebviewWindow) -> Result<(), String> {
+    window
+        .show()
+        .map_err(|error| format!("Unable to show the VisualTeX Session window: {error}"))?;
+    let _ = window.unminimize();
+    // Windows can refuse an ordinary focus request after the user has spent
+    // time in Office. Briefly toggling top-most status makes an already-created
+    // editor visible without leaving it permanently above every application.
+    let _ = window.set_always_on_top(true);
+    let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+    let focus_result = window.set_focus();
+    std::thread::sleep(std::time::Duration::from_millis(90));
+    let _ = window.set_always_on_top(false);
+    let _ = window.request_user_attention(None);
+    focus_result
+        .map_err(|error| format!("Unable to focus the VisualTeX Session window: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn open_desktop_session_window(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let label = format!("office-session-{}", session_id.replace('-', ""));
+    let url = tauri::Url::parse(&format!(
+        "https://127.0.0.1:{}/dialog/{}?runtime=vsto-desktop",
+        crate::office::state::OFFICE_PORT,
+        session_id
+    ))
+    .map_err(|error| format!("Unable to construct the VisualTeX Session URL: {error}"))?;
+
+    if let Some(window) = app.get_webview_window(&label) {
+        window
+            .navigate(url)
+            .map_err(|error| format!("Unable to navigate the VisualTeX Session window: {error}"))?;
+        return bring_session_window_to_front(&window);
+    }
+
+    let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(url))
+        .title("VisualTeX · Office 公式编辑器")
+        .inner_size(1240.0, 820.0)
+        .min_inner_size(640.0, 480.0)
+        .resizable(true)
+        .center()
+        .focused(true)
+        .visible(true)
+        .build()
+        .map_err(|error| format!("Unable to create the VisualTeX Session window: {error}"))?;
+    bring_session_window_to_front(&window)
+}
+
+async fn close_desktop_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    if !valid_session_id(&session_id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let Some(app) = context.companion.app.clone() else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        let label = format!("office-session-{}", session_id.replace('-', ""));
+        tauri::async_runtime::spawn(async move {
+            // Return the HTTP response before closing the WebView that issued
+            // the request; otherwise WebView2 can cancel the fetch and leave a
+            // blank native window behind.
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.close();
+            }
+        });
+        StatusCode::NO_CONTENT.into_response()
+    }
+}
+
+async fn open_desktop_session(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    if !valid_session_id(&session_id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let store = context.companion.session_store.clone();
+    let lookup_id = session_id.clone();
+    if let Err(error) = run_session_operation(move || store.get(&lookup_id)).await {
+        return session_error_response(error);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({
+                "error": "Desktop VSTO Session windows are available only on Windows"
+            })),
+        )
+            .into_response();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let Some(app) = context.companion.app.clone() else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "The VisualTeX desktop application is unavailable"
+                })),
+            )
+                .into_response();
+        };
+        match tokio::task::spawn_blocking(move || {
+            open_desktop_session_window(app, session_id)
+        })
+        .await
+        {
+            Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+            Ok(Err(error)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": error })),
+            )
+                .into_response(),
+            Err(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("VisualTeX Session window task failed: {error}")
+                })),
+            )
+                .into_response(),
+        }
     }
 }
 
@@ -620,6 +778,11 @@ fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeXFormulaMeta
             .as_ref()
             .map(|value| value.height)
             .filter(|value| value.is_finite() && *value > 0.0),
+        baseline: session
+            .export_result
+            .as_ref()
+            .and_then(|value| value.baseline)
+            .filter(|value| value.is_finite() && *value >= 0.0),
         created_with_version: original
             .map(|value| value.created_with_version.clone())
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
@@ -1217,6 +1380,14 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route("/status", get(api_status))
         .route("/platform/status", get(get_office_platform_status))
         .route("/app/reveal", post(reveal_desktop_app))
+        .route(
+            "/app/sessions/{session_id}/open",
+            post(open_desktop_session),
+        )
+        .route(
+            "/app/sessions/{session_id}/close",
+            post(close_desktop_session),
+        )
         .route("/sessions", post(create_session))
         .route(
             "/sessions/{session_id}",
@@ -1386,6 +1557,7 @@ mod tests {
             ui_root.join("dialog").join("index.html"),
             concat!(
                 "<html><head>",
+                "<script src=\"/vendor/office-js/office.js\"></script>",
                 "<script type=\"module\" src=\"/assets/dialog-entry.js\"></script>",
                 "<link rel=\"stylesheet\" href=\"/assets/dialog.css\">",
                 "</head><body>dialog</body></html>"
@@ -1746,6 +1918,32 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(dialog.status(), StatusCode::OK);
+        let dialog_body = dialog.into_body().collect().await.unwrap().to_bytes();
+        let dialog_html = String::from_utf8(dialog_body.to_vec()).unwrap();
+        assert!(dialog_html.contains("/vendor/office-js/office.js"));
+
+        let desktop_dialog = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(format!(
+                        "/dialog/{session_id}?runtime=vsto-desktop"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(desktop_dialog.status(), StatusCode::OK);
+        let desktop_body = desktop_dialog
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let desktop_html = String::from_utf8(desktop_body.to_vec()).unwrap();
+        assert!(!desktop_html.contains("/vendor/office-js/office.js"));
+        assert!(desktop_html.contains("visualtex-install-token"));
 
         let patch = router
             .clone()

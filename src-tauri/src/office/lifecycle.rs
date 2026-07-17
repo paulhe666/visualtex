@@ -378,7 +378,7 @@ pub fn install_windows_ole_integration(
 ) -> Result<OfficePlatformStatus, String> {
     #[cfg(target_os = "windows")]
     {
-        run_windows_script(&app, "install_windows_ole.ps1", &[])?;
+        run_windows_script(&app, "install_windows_vsto.ps1", &[])?;
         return state
             .platform_backend
             .set_mode(OfficeIntegrationMode::Ole);
@@ -397,6 +397,7 @@ pub fn uninstall_windows_ole_integration(
 ) -> Result<OfficePlatformStatus, String> {
     #[cfg(target_os = "windows")]
     {
+        run_windows_script(&app, "uninstall_windows_vsto.ps1", &[])?;
         run_windows_script(&app, "uninstall_windows_ole.ps1", &[])?;
         return state
             .platform_backend
@@ -416,7 +417,7 @@ pub fn repair_windows_office_integration(
 ) -> Result<OfficePlatformStatus, String> {
     #[cfg(target_os = "windows")]
     {
-        run_windows_script(&app, "install_windows_ole.ps1", &[])?;
+        run_windows_script(&app, "install_windows_vsto.ps1", &[])?;
         state
             .platform_backend
             .set_mode(OfficeIntegrationMode::Ole)

@@ -39,6 +39,12 @@ public sealed class FormulaMetadata
     [JsonPropertyName("renderHeightPx")]
     public double? RenderHeightPx { get; set; }
 
+    [JsonPropertyName("baseline")]
+    public double? Baseline { get; set; }
+
+    [JsonPropertyName("nativeOmmlFingerprint")]
+    public string? NativeOmmlFingerprint { get; set; }
+
     [JsonPropertyName("createdWithVersion")]
     public string CreatedWithVersion { get; set; } = string.Empty;
 
@@ -65,6 +71,12 @@ public sealed class FormulaMetadata
             throw new InvalidOperationException("VisualTeX renderWidthPx must be a positive finite number.");
         if (RenderHeightPx is <= 0 || double.IsNaN(RenderHeightPx ?? 1) || double.IsInfinity(RenderHeightPx ?? 1))
             throw new InvalidOperationException("VisualTeX renderHeightPx must be a positive finite number.");
+        if (Baseline.HasValue
+            && (double.IsNaN(Baseline.Value)
+                || double.IsInfinity(Baseline.Value)
+                || Baseline.Value < 0
+                || (RenderHeightPx.HasValue && Baseline.Value > RenderHeightPx.Value)))
+            throw new InvalidOperationException("VisualTeX baseline must be within the rendered formula height.");
     }
 }
 

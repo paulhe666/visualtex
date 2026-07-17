@@ -34,7 +34,10 @@ if (process.platform === "darwin") {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      "scripts/build_windows_ole_bridge.ps1",
+      "scripts/build_windows_office.ps1",
+      "-Configuration",
+      "Release",
+      "-SkipTests",
     ]);
   }
 }

@@ -27,12 +27,16 @@ const metadata = createFormulaMetadata({
   codeFormat: "align-star",
   displayMode: "block",
   numbered: true,
+  renderWidthPx: 320,
+  renderHeightPx: 80,
+  baseline: 62,
   appVersion: "1.0.6",
 });
 
 assert.equal(metadata.latex, lines.map((line) => line.latex).join("\n"));
 assert.ok(isVisualTeXFormulaMetadata(metadata));
 assert.equal(metadata.numbered, true);
+assert.equal(metadata.baseline, 62);
 
 const encoded = encodeFormulaMetadata(metadata);
 assert.match(encoded, /^visualtex:v1:deflate:[A-Za-z0-9_-]+$/);
@@ -74,6 +78,10 @@ assert.throws(() =>
   }),
 );
 assert.equal(isVisualTeXFormulaMetadata({ ...metadata, lines: [] }), false);
+assert.equal(
+  isVisualTeXFormulaMetadata({ ...metadata, baseline: metadata.renderHeightPx + 1 }),
+  false,
+);
 
 const shapeName = powerpointShapeName(formulaId);
 assert.equal(shapeName, `VisualTeX_${formulaId}`);

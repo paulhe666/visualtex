@@ -4,6 +4,9 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
 import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
+import { STATE } from "mathjax-full/js/core/MathItem.js";
+import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
+import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import type {
   PngExportOptions,
   PngExportResult,
@@ -34,6 +37,7 @@ const mathDocument = mathjax.document("", {
   InputJax: texInput,
   OutputJax: svgOutput,
 });
+const serializedMmlVisitor = new SerializedMmlVisitor(mathDocument.mmlFactory);
 
 function positiveFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -111,6 +115,19 @@ function encodeUtf8Base64(value: string) {
 
 export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
+}
+
+export function latexToMathMl(latex: string, displayMode = true) {
+  const source = prepareLatex(latex);
+  const root = mathDocument.convert(source, {
+    display: displayMode,
+    end: STATE.COMPILED,
+  }) as unknown as MmlNode;
+  const mathMl = serializedMmlVisitor.visitTree(root).trim();
+  if (!mathMl.startsWith("<math") || !mathMl.includes("MathML")) {
+    throw new Error("MathJax did not produce valid Presentation MathML.");
+  }
+  return mathMl;
 }
 
 export function latexToSvg(

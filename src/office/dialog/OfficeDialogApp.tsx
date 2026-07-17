@@ -28,8 +28,9 @@ import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
-import { latexToSvg } from "../../export/latexToSvg";
+import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";
 import {
+  closeOfficeSessionWindow,
   getOfficeSession,
   saveOfficeSessionKeepalive,
   type OfficeExportResult,
@@ -73,6 +74,8 @@ const USE_NATIVE_POWERPOINT_COMMIT =
     ?.content.toLowerCase() === "true";
 
 const OFFICE_COMMIT_RESULT_TIMEOUT_MS = 45_000;
+const IS_VSTO_DESKTOP_RUNTIME =
+  new URLSearchParams(window.location.search).get("runtime") === "vsto-desktop";
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -98,6 +101,15 @@ async function waitForOfficeCommitResult(
   throw new Error(`等待 ${hostLabel} 确认写入超时，请重试。`);
 }
 
+function normalizeOfficeCodeFormat(codeFormat: string): LatexCodeFormat {
+  if (isLatexCodeFormat(codeFormat)) return codeFormat;
+  // Older Office metadata used the generic value "latex" for raw formula
+  // source. Treat it as the editor's equivalent raw format instead of
+  // falling back to the persisted desktop preference and marking the
+  // untouched formula as modified immediately after opening.
+  return "raw";
+}
+
 function documentFingerprint(
   title: string,
   lines: Array<{ id: string; latex: string }>,
@@ -118,6 +130,7 @@ export function OfficeDialogApp() {
   const editorRef = useRef<MathEditorHandle>(null);
   const loadedSessionIdRef = useRef("");
   const skipAutosaveForSessionRef = useRef("");
+  const originalFingerprintRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
@@ -162,22 +175,14 @@ export function OfficeDialogApp() {
   const inlineOcrIsBusy =
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
 
-  const originalFingerprint = useMemo(() => {
-    if (!session) return "";
-    return documentFingerprint(
-      session.originalMetadata?.title ?? session.title,
-      session.originalMetadata?.lines ?? session.lines,
-      session.originalMetadata?.codeFormat ?? session.codeFormat,
-      session.originalMetadata?.displayMode ?? session.displayMode,
-      session.originalMetadata?.numbered ?? session.numbered ?? false,
-    );
-  }, [session?.id]);
-
   const currentFingerprint = useMemo(
     () => documentFingerprint(title, lines, latexCodeFormat, displayMode, numbered),
     [title, lines, latexCodeFormat, displayMode, numbered],
   );
-  const dirty = Boolean(session) && currentFingerprint !== originalFingerprint;
+  const dirty =
+    Boolean(session) &&
+    Boolean(originalFingerprintRef.current) &&
+    currentFingerprint !== originalFingerprintRef.current;
 
   useEffect(() => {
     if (!session || loadedSessionIdRef.current === session.id) return;
@@ -196,21 +201,19 @@ export function OfficeDialogApp() {
           : nextLines[0]?.id ?? null,
       selectionByLineId: {},
     });
-    if (isLatexCodeFormat(session.codeFormat)) {
-      useEditorStore
-        .getState()
-        .setLatexCodeFormat(session.codeFormat as LatexCodeFormat);
-    }
+    const loadedCodeFormat = normalizeOfficeCodeFormat(session.codeFormat);
+    useEditorStore.getState().setLatexCodeFormat(loadedCodeFormat);
     setAutoCommitOnClose(session.autoCommitOnClose);
     setDisplayMode(session.displayMode);
     setNumbered(session.displayMode === "block" && Boolean(session.numbered));
     const loadedFingerprint = documentFingerprint(
       session.title,
       nextLines,
-      session.codeFormat,
+      loadedCodeFormat,
       session.displayMode,
       session.displayMode === "block" && Boolean(session.numbered),
     );
+    originalFingerprintRef.current = loadedFingerprint;
     lastSavedFingerprintRef.current = loadedFingerprint;
     latestCompleteExportRef.current = session.exportResult?.pngBase64
       ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
@@ -285,6 +288,7 @@ export function OfficeDialogApp() {
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
+      mathMl: latexToMathMl(latex, displayMode === "block"),
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,
@@ -434,8 +438,12 @@ export function OfficeDialogApp() {
     if (!sessionId) return;
     const finalDraftUpdate = (status: "editing" | "committing") => {
       const cached = latestCompleteExportRef.current;
-      const exportResult =
-        cached?.fingerprint === currentFingerprint
+      const unchangedEdit = session?.mode === "edit" && !dirty;
+      const exportResult = unchangedEdit
+        ? cached?.fingerprint === currentFingerprint
+          ? cached.exportResult
+          : session?.exportResult ?? null
+        : cached?.fingerprint === currentFingerprint
           ? cached.exportResult
           : generateSvgExportResult();
       return {
@@ -469,11 +477,13 @@ export function OfficeDialogApp() {
       const cached = latestCompleteExportRef.current;
       const nativePowerPoint =
         session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT;
+      const unchangedEdit = session?.mode === "edit" && !dirty;
       if (
         finalizingRef.current ||
         !autoCommitOnClose ||
-        !latex.trim() ||
-        (!nativePowerPoint &&
+        (!unchangedEdit && !latex.trim()) ||
+        (!unchangedEdit &&
+          !nativePowerPoint &&
           (cached?.fingerprint !== currentFingerprint ||
             !cached.exportResult.pngBase64))
       ) {
@@ -808,6 +818,10 @@ export function OfficeDialogApp() {
       // PowerPoint decoration therefore leaves this editor open with a useful
       // error instead of closing after creating an anonymous Graphic shape.
       await waitForOfficeCommitResult(next.id, next.host);
+      if (IS_VSTO_DESKTOP_RUNTIME) {
+        await closeOfficeSessionWindow(next.id);
+        return;
+      }
       window.close();
     } catch (error) {
       finalizingRef.current = false;
@@ -825,11 +839,19 @@ export function OfficeDialogApp() {
     finalizingRef.current = true;
     try {
       const next = await saveCurrentSession("cancelled");
+      if (IS_VSTO_DESKTOP_RUNTIME) {
+        await closeOfficeSessionWindow(next.id);
+        return;
+      }
       if (next.host === "powerpoint") {
         window.close();
         return;
       }
-      messageOfficeParent({ type: "visualtex-cancel", sessionId: next.id });
+      const delivered = messageOfficeParent({
+        type: "visualtex-cancel",
+        sessionId: next.id,
+      });
+      if (!delivered) window.close();
     } catch (error) {
       finalizingRef.current = false;
       throw error;

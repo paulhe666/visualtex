@@ -17,6 +17,7 @@ public sealed class OfficeSelection
     public bool ReadOnly { get; set; }
     public string? FormulaId { get; set; }
     public FormulaMetadata? Metadata { get; set; }
+    public string? ObjectMode { get; set; }
 }
 
 public sealed class OfficeObjectResult

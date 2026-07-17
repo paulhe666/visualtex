@@ -62,15 +62,32 @@ public sealed class VisualTeXSessionClient : IDisposable
         return await DeserializeAsync<OfficeSessionDocument>(response).ConfigureAwait(false);
     }
 
-    public void OpenEditor(string sessionId)
+    public async Task OpenEditorAsync(
+        string sessionId,
+        CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(sessionId, out _))
             throw new InvalidOperationException("VisualTeX Session id must be a UUID.");
-        Process.Start(new ProcessStartInfo(
-            new Uri(CompanionOrigin, $"/dialog/{Uri.EscapeDataString(sessionId)}").AbsoluteUri)
-        {
-            UseShellExecute = true,
-        });
+        EnsureAuthorizationHeader();
+        using var response = await _http.PostAsync(
+            $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/open",
+            new StringContent("{}", Encoding.UTF8, "application/json"),
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public async Task CloseEditorAsync(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(sessionId, out _))
+            throw new InvalidOperationException("VisualTeX Session id must be a UUID.");
+        EnsureAuthorizationHeader();
+        using var response = await _http.PostAsync(
+            $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/close",
+            new StringContent("{}", Encoding.UTF8, "application/json"),
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
     public async Task<OfficeSessionDocument> WaitForCommitAsync(
@@ -137,8 +154,48 @@ public sealed class VisualTeXSessionClient : IDisposable
         return await DeserializeAsync<OfficeSessionDocument>(response).ConfigureAwait(false);
     }
 
+    public string MaterializeSvg(OfficeSessionDocument session)
+    {
+        if (!Guid.TryParse(session.Id, out var sessionId))
+            throw new InvalidOperationException("VisualTeX Session id must be a UUID.");
+        var export = session.ExportResult
+            ?? throw new InvalidOperationException("VisualTeX Session has no SVG export.");
+        var svg = export.Svg;
+        if (string.IsNullOrWhiteSpace(svg) && !string.IsNullOrWhiteSpace(export.SvgBase64))
+        {
+            var encoded = export.SvgBase64!;
+            var comma = encoded.IndexOf(',');
+            if (comma >= 0) encoded = encoded.Substring(comma + 1);
+            var bytes = Convert.FromBase64String(encoded);
+            if (bytes.Length == 0 || bytes.Length > 16 * 1024 * 1024)
+                throw new InvalidDataException("VisualTeX Session SVG export size is invalid.");
+            svg = new UTF8Encoding(false, true).GetString(bytes);
+        }
+        if (string.IsNullOrWhiteSpace(svg))
+            throw new InvalidOperationException("VisualTeX Session has no SVG export.");
+        var normalized = svg!.Trim();
+        if (!normalized.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+            || normalized.IndexOf("</svg>", StringComparison.OrdinalIgnoreCase) < 0)
+            throw new InvalidDataException("VisualTeX Session SVG export is invalid.");
+        if (normalized.IndexOf("<foreignObject", StringComparison.OrdinalIgnoreCase) >= 0
+            || normalized.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0
+            || normalized.IndexOf("<script", StringComparison.OrdinalIgnoreCase) >= 0)
+            throw new InvalidDataException("VisualTeX Session SVG export contains forbidden content.");
+        var root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp");
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, $"{sessionId:D}.svg");
+        File.WriteAllText(path, normalized, new UTF8Encoding(false, true));
+        return path;
+    }
+
     public string MaterializePng(OfficeSessionDocument session)
     {
+        if (!Guid.TryParse(session.Id, out var sessionId))
+            throw new InvalidOperationException("VisualTeX Session id must be a UUID.");
         var data = session.ExportResult?.PngBase64
             ?? throw new InvalidOperationException("VisualTeX Session has no PNG export.");
         var comma = data.IndexOf(',');
@@ -156,7 +213,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             "office",
             "temp");
         Directory.CreateDirectory(root);
-        var path = Path.Combine(root, $"{session.Id}.png");
+        var path = Path.Combine(root, $"{sessionId:D}.png");
         File.WriteAllBytes(path, bytes);
         return path;
     }
@@ -195,7 +252,26 @@ public sealed class VisualTeXSessionClient : IDisposable
         _installToken = token;
     }
 
+    public void OpenDesktop()
+    {
+        var executable = FindVisualTeXExecutable();
+        Process.Start(new ProcessStartInfo(executable)
+        {
+            UseShellExecute = true,
+        });
+    }
+
     private static void StartVisualTeXCompanion()
+    {
+        var executable = FindVisualTeXExecutable();
+        Process.Start(new ProcessStartInfo(executable, "--office-background")
+        {
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        });
+    }
+
+    private static string FindVisualTeXExecutable()
     {
         var candidates = new[]
         {
@@ -211,16 +287,10 @@ public sealed class VisualTeXSessionClient : IDisposable
         };
         foreach (var executable in candidates)
         {
-            if (!File.Exists(executable)) continue;
-            Process.Start(new ProcessStartInfo(executable, "--office-background")
-            {
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-            });
-            return;
+            if (File.Exists(executable)) return executable;
         }
         throw new FileNotFoundException(
-            "VisualTeX is not running and its installed executable could not be found.");
+            "The installed VisualTeX desktop executable could not be found.");
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response)
@@ -307,6 +377,9 @@ public sealed class CreateVstoSessionRequest
     [JsonPropertyName("displayMode")]
     public string DisplayMode { get; set; } = "block";
 
+    [JsonPropertyName("objectMode")]
+    public string ObjectMode { get; set; } = "nativeOle";
+
     [JsonPropertyName("numbered")]
     public bool Numbered { get; set; }
 
@@ -349,6 +422,9 @@ public sealed class OfficeSessionDocument
     [JsonPropertyName("displayMode")]
     public string DisplayMode { get; set; } = "block";
 
+    [JsonPropertyName("objectMode")]
+    public string ObjectMode { get; set; } = "crossPlatformPicture";
+
     [JsonPropertyName("numbered")]
     public bool Numbered { get; set; }
 
@@ -382,6 +458,9 @@ public sealed class OfficeSessionDocument
             CodeFormat = CodeFormat,
             DisplayMode = DisplayMode,
             Numbered = Numbered,
+            RenderWidthPx = ExportResult?.Width > 0 ? ExportResult.Width : OriginalMetadata?.RenderWidthPx,
+            RenderHeightPx = ExportResult?.Height > 0 ? ExportResult.Height : OriginalMetadata?.RenderHeightPx,
+            Baseline = ExportResult?.Baseline ?? OriginalMetadata?.Baseline,
             CreatedWithVersion = OriginalMetadata?.CreatedWithVersion ?? "1.0.18",
             UpdatedWithVersion = "1.0.18",
             CreatedAt = OriginalMetadata?.CreatedAt ?? now,
@@ -392,6 +471,15 @@ public sealed class OfficeSessionDocument
 
 public sealed class OfficeExportDocument
 {
+    [JsonPropertyName("svg")]
+    public string? Svg { get; set; }
+
+    [JsonPropertyName("svgBase64")]
+    public string? SvgBase64 { get; set; }
+
+    [JsonPropertyName("mathMl")]
+    public string? MathMl { get; set; }
+
     [JsonPropertyName("pngBase64")]
     public string? PngBase64 { get; set; }
 

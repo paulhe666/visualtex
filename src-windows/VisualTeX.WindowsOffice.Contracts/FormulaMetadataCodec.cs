@@ -19,12 +19,35 @@ public static class FormulaMetadataCodec
         return Prefix + Base64UrlEncode(output.ToArray());
     }
 
+    public static string SerializeJson(FormulaMetadata metadata)
+    {
+        metadata.Validate();
+        return JsonSerializer.Serialize(metadata, JsonOptions.Default);
+    }
+
+    public static FormulaMetadata? DeserializeJson(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var json = value!;
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<FormulaMetadata>(json, JsonOptions.Default);
+            metadata?.Validate();
+            return metadata;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static FormulaMetadata? Decode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        var index = value.IndexOf(Prefix, StringComparison.Ordinal);
+        var encodedValue = value!;
+        var index = encodedValue.IndexOf(Prefix, StringComparison.Ordinal);
         if (index < 0) return null;
-        var encoded = value.Substring(index + Prefix.Length).Trim();
+        var encoded = encodedValue.Substring(index + Prefix.Length).Trim();
         var end = encoded.IndexOfAny(new[] { '\r', '\n', ' ', '\t' });
         if (end >= 0) encoded = encoded.Substring(0, end);
         try

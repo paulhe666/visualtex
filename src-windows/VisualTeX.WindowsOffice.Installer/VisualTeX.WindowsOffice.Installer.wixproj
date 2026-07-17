@@ -1,16 +1,33 @@
 <Project Sdk="WixToolset.Sdk/4.0.5">
   <PropertyGroup>
-    <OutputName>VisualTeX-WindowsOffice-VSTO</OutputName>
+    <Platforms>x86;x64</Platforms>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <OutputName>VisualTeX-WindowsOffice-VSTO-$(Platform)</OutputName>
     <OutputType>Package</OutputType>
-    <Platform>x64</Platform>
+    <OleServerPlatform Condition="'$(Platform)' == 'x86'">Win32</OleServerPlatform>
+    <OleServerPlatform Condition="'$(Platform)' != 'x86'">x64</OleServerPlatform>
+    <InstallerProductCode Condition="'$(Platform)' == 'x86'">5F9C2D18-A743-4B6E-8D01-C2E7A5943B60</InstallerProductCode>
+    <InstallerProductCode Condition="'$(Platform)' != 'x86'">B4E2A791-6C35-4F8D-9A20-7E1C5B3D8642</InstallerProductCode>
+    <VstoFilesComponentGuid Condition="'$(Platform)' == 'x86'">94AE021E-806D-41E2-A1D7-CE120B00A61E</VstoFilesComponentGuid>
+    <VstoFilesComponentGuid Condition="'$(Platform)' != 'x86'">D9AA16B0-E4D8-4C53-AAB6-A14781F0A4C1</VstoFilesComponentGuid>
+    <OleServerFilesComponentGuid Condition="'$(Platform)' == 'x86'">3615ED79-EE73-4E2F-A033-C7AB1E5FB365</OleServerFilesComponentGuid>
+    <OleServerFilesComponentGuid Condition="'$(Platform)' != 'x86'">C44A1D8E-4A34-4E9F-B40E-144C3B6B419B</OleServerFilesComponentGuid>
     <DefineConstants>
-      WordOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WordVsto\bin\x64\Release\net48;
-      PowerPointOutput=$(MSBuildThisFileDirectory)..\VisualTeX.PowerPointVsto\bin\x64\Release\net48;
-      ContractsOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WindowsOffice.Contracts\bin\x64\Release\netstandard2.0
+      InstallerProductCode=$(InstallerProductCode);
+      VstoFilesComponentGuid=$(VstoFilesComponentGuid);
+      OleServerFilesComponentGuid=$(OleServerFilesComponentGuid);
+      WordOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WordVsto\bin\$(Platform)\$(Configuration)\net48;
+      PowerPointOutput=$(MSBuildThisFileDirectory)..\VisualTeX.PowerPointVsto\bin\$(Platform)\$(Configuration)\net48;
+      ContractsOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WindowsOffice.Contracts\bin\$(Platform)\$(Configuration)\netstandard2.0;
+      OleServerOutput=$(MSBuildThisFileDirectory)..\artifacts\formula-ole-server\$(OleServerPlatform)\$(Configuration)
     </DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj" />
     <ProjectReference Include="..\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj" />
+    <ProjectReference Include="..\VisualTeX.FormulaOleServer\VisualTeX.FormulaOleServer.vcxproj">
+      <AdditionalProperties Condition="'$(Platform)' == 'x86'">Platform=Win32</AdditionalProperties>
+      <AdditionalProperties Condition="'$(Platform)' != 'x86'">Platform=x64</AdditionalProperties>
+    </ProjectReference>
   </ItemGroup>
 </Project>
