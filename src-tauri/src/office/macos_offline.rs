@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use uuid::Uuid;
 
 const OFFLINE_PROTOCOL_VERSION: u32 = 1;
@@ -25,11 +25,15 @@ const DISPATCH_FILE: &str = "dispatch.txt";
 const RESULT_IMAGE_FILE: &str = "formula.png";
 const WORD_POINTER_FILE: &str = "word-active-session.txt";
 const POWERPOINT_POINTER_FILE: &str = "powerpoint-active-session.txt";
-const OFFICE_GROUP_CONTAINER: &str = "Library/Group Containers/UBF8T346G9.Office";
+const WORD_RUNTIME_SUFFIX: &str =
+    "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime";
+const POWERPOINT_RUNTIME_SUFFIX: &str =
+    "Library/Application Scripts/com.microsoft.Powerpoint/VisualTeXRuntime";
 const METADATA_PREFIX: &str = "visualtex:v1:deflate:";
 const PENDING_PREFIX: &str = "visualtex:pending:v1:";
 const MAX_REQUEST_BYTES: u64 = 256 * 1024;
 const MAX_METADATA_BYTES: usize = 2 * 1024 * 1024;
+const MAX_OMML_BYTES: usize = 4 * 1024 * 1024;
 const MAX_IDENTITY_CHARS: usize = 2048;
 const MAX_SHAPE_NAME_CHARS: usize = 128;
 const MAX_WORD_WIDTH_PT: f64 = 500.0;
@@ -61,6 +65,8 @@ struct MacOfflineSessionRequest {
     formula_id: Option<String>,
     display_mode: String,
     numbered: bool,
+    #[serde(default)]
+    native_equation: bool,
     source_document_id: Option<String>,
     source_object_id: Option<String>,
     encoded_metadata: Option<String>,
@@ -85,33 +91,64 @@ fn user_home() -> Result<PathBuf, String> {
         .ok_or_else(|| "Unable to resolve the current user's home directory".to_string())
 }
 
-pub(crate) fn offline_root() -> Result<PathBuf, String> {
-    Ok(user_home()?.join(OFFICE_GROUP_CONTAINER).join("VisualTeX"))
+pub(crate) fn runtime_root(host: OfficeHost) -> Result<PathBuf, String> {
+    let suffix = match host {
+        OfficeHost::Word => WORD_RUNTIME_SUFFIX,
+        OfficeHost::Powerpoint => POWERPOINT_RUNTIME_SUFFIX,
+    };
+    Ok(user_home()?.join(suffix))
 }
 
-fn sessions_root() -> Result<PathBuf, String> {
-    Ok(offline_root()?.join("OfficeSessions"))
+fn host_from_request_name(value: &str) -> Result<OfficeHost, String> {
+    match value {
+        "word" => Ok(OfficeHost::Word),
+        "powerpoint" => Ok(OfficeHost::Powerpoint),
+        _ => Err("Offline Office request host must be word or powerpoint".to_string()),
+    }
 }
 
-fn session_directory(session_id: &str) -> Result<PathBuf, String> {
+fn sessions_root(host: OfficeHost) -> Result<PathBuf, String> {
+    Ok(runtime_root(host)?.join("OfficeSessions"))
+}
+
+fn ensure_runtime_root(host: OfficeHost) -> Result<PathBuf, String> {
+    let root = runtime_root(host)?;
+    let sessions = root.join("OfficeSessions");
+    fs::create_dir_all(&sessions)
+        .map_err(|error| format!("Unable to create {}: {error}", sessions.display()))?;
+    set_mode(&root, 0o700)?;
+    set_mode(&sessions, 0o700)?;
+    Ok(root)
+}
+
+fn session_directory(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
     validate_uuid(session_id, "Session id")?;
-    Ok(sessions_root()?.join(session_id))
+    Ok(sessions_root(host)?.join(session_id))
 }
 
-fn request_path(session_id: &str) -> Result<PathBuf, String> {
-    Ok(session_directory(session_id)?.join(REQUEST_FILE))
+fn request_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_directory(host, session_id)?.join(REQUEST_FILE))
 }
 
-fn dispatch_path(session_id: &str) -> Result<PathBuf, String> {
-    Ok(session_directory(session_id)?.join(DISPATCH_FILE))
+fn dispatch_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_directory(host, session_id)?.join(DISPATCH_FILE))
 }
 
-fn result_image_path(session_id: &str) -> Result<PathBuf, String> {
-    Ok(session_directory(session_id)?.join(RESULT_IMAGE_FILE))
+fn result_image_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_directory(host, session_id)?.join(RESULT_IMAGE_FILE))
+}
+
+fn native_word_document_path(formula_id: &str) -> Result<PathBuf, String> {
+    validate_uuid(formula_id, "Formula id")?;
+    let directory = runtime_root(OfficeHost::Word)?.join("NativeDocuments");
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+    set_mode(&directory, 0o700)?;
+    Ok(directory.join(format!("{formula_id}.docx")))
 }
 
 fn cleanup_session_files_at(directory: &Path) -> Result<(), String> {
-    for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+    for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE, "formula.docx"] {
         let path = directory.join(name);
         match fs::remove_file(&path) {
             Ok(()) => {}
@@ -130,12 +167,12 @@ fn cleanup_session_files_at(directory: &Path) -> Result<(), String> {
     }
 }
 
-fn cleanup_session_files(session_id: &str) -> Result<(), String> {
-    cleanup_session_files_at(&session_directory(session_id)?)
+fn cleanup_session_files(host: OfficeHost, session_id: &str) -> Result<(), String> {
+    cleanup_session_files_at(&session_directory(host, session_id)?)
 }
 
 fn pointer_path(host: OfficeHost) -> Result<PathBuf, String> {
-    Ok(sessions_root()?.join(match host {
+    Ok(sessions_root(host)?.join(match host {
         OfficeHost::Word => WORD_POINTER_FILE,
         OfficeHost::Powerpoint => POWERPOINT_POINTER_FILE,
     }))
@@ -183,6 +220,9 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     }
     if request.numbered && (request.host != "word" || request.display_mode != "block") {
         return Err("Only Word display formulas can be numbered".to_string());
+    }
+    if request.native_equation && request.host != "word" {
+        return Err("Native equations are supported only by Word requests".to_string());
     }
     if let Some(formula_id) = request.formula_id.as_deref() {
         validate_uuid(formula_id, "Formula id")?;
@@ -244,10 +284,31 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
 }
 
 fn read_request(session_id: &str) -> Result<MacOfflineSessionRequest, String> {
-    let path = request_path(session_id)?;
-    let metadata = fs::metadata(&path)
-        .map_err(|error| format!("Unable to read offline Office request metadata: {error}"))?;
-    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_REQUEST_BYTES {
+    validate_uuid(session_id, "Session id")?;
+    let mut candidates = Vec::new();
+    for host in [OfficeHost::Word, OfficeHost::Powerpoint] {
+        let path = request_path(host, session_id)?;
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => candidates.push((host, path, metadata)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Unable to inspect offline Office request metadata at {}: {error}",
+                    path.display()
+                ))
+            }
+        }
+    }
+    let (expected_host, path, metadata) = match candidates.len() {
+        1 => candidates.remove(0),
+        0 => return Err("Offline Office request was not found in either host runtime directory".to_string()),
+        _ => return Err("The same Offline Office Session exists in both host runtime directories".to_string()),
+    };
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > MAX_REQUEST_BYTES
+    {
         return Err("Offline Office request has an invalid size".to_string());
     }
     let bytes = fs::read(&path)
@@ -255,6 +316,9 @@ fn read_request(session_id: &str) -> Result<MacOfflineSessionRequest, String> {
     let request: MacOfflineSessionRequest = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Offline Office request contains invalid JSON: {error}"))?;
     validate_request(&request, session_id)?;
+    if host_from_request_name(&request.host)? != expected_host {
+        return Err("Offline Office request host does not match its Application Scripts runtime directory".to_string());
+    }
     Ok(request)
 }
 
@@ -388,7 +452,10 @@ fn import_request(
     let source_object_id = match host {
         OfficeHost::Word => match mode {
             OfficeSessionMode::Create => request.pending_marker.clone(),
-            OfficeSessionMode::Edit => request.encoded_metadata.clone(),
+            OfficeSessionMode::Edit => request
+                .source_object_id
+                .clone()
+                .or_else(|| request.encoded_metadata.clone()),
         },
         OfficeHost::Powerpoint => request.power_point.as_ref().map(|powerpoint| {
             format!(
@@ -455,8 +522,49 @@ pub(crate) fn parse_office_url(value: &str) -> Result<String, String> {
     Ok(session_id.to_string())
 }
 
+fn editor_window_label(session_id: &str) -> String {
+    format!("office-native-{}", session_id.replace('-', ""))
+}
+
+fn editor_window_session_id(window: &WebviewWindow) -> Option<String> {
+    let url = window.url().ok()?;
+    url.query_pairs()
+        .find_map(|(key, value)| (key == "sessionId").then(|| value.into_owned()))
+        .filter(|value| valid_uuid(value))
+}
+
+fn close_other_editor_windows_for_host(
+    app: &AppHandle,
+    state: &OfficeCompanionState,
+    host: OfficeHost,
+    current_session_id: &str,
+) {
+    let current_label = editor_window_label(current_session_id);
+    for (label, window) in app.webview_windows() {
+        if !label.starts_with("office-native-") || label == current_label {
+            continue;
+        }
+        let Some(session_id) = editor_window_session_id(&window) else {
+            continue;
+        };
+        let Ok(session) = state.session_store.get(&session_id) else {
+            continue;
+        };
+        if session.host == host {
+            // A failed Word transaction may deliberately leave its editor open
+            // for inspection. Once Word requests another formula, that stale
+            // window must not receive focus or auto-apply over the new target.
+            let _ = window.destroy();
+        }
+    }
+}
+
 fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
-    let label = format!("office-native-{}", session_id.replace('-', ""));
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Regular)
+        .map_err(|error| format!("Unable to activate the VisualTeX Office editor: {error}"))?;
+
+    let label = editor_window_label(session_id);
     if let Some(window) = app.get_webview_window(&label) {
         window.show().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
@@ -477,6 +585,34 @@ fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn close_macos_offline_office_editor_window(window: WebviewWindow) -> Result<(), String> {
+    if !window.label().starts_with("office-native-") {
+        return Err("Only a VisualTeX Office formula editor can close itself".to_string());
+    }
+    let app = window.app_handle().clone();
+    window
+        .destroy()
+        .map_err(|error| format!("Unable to close the VisualTeX Office editor: {error}"))?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let has_other_editor = app
+            .webview_windows()
+            .keys()
+            .any(|label| label.starts_with("office-native-"));
+        let main_visible = app
+            .get_webview_window("main")
+            .and_then(|main| main.is_visible().ok())
+            .unwrap_or(false);
+        if !has_other_editor && !main_visible {
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory)
+                .map_err(|error| format!("Unable to return VisualTeX to Office background mode: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
     for (label, window) in app.webview_windows() {
         if label.starts_with("office-native-") {
@@ -494,7 +630,10 @@ pub(crate) fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String
         .try_state::<OfficeCompanionState>()
         .ok_or_else(|| "VisualTeX Office state is not initialized".to_string())?;
     let request = read_request(&session_id)?;
+    let host = host_from_request_name(&request.host)?;
+    ensure_runtime_root(host)?;
     import_request(state.inner(), request)?;
+    close_other_editor_windows_for_host(app, state.inner(), host, &session_id);
 
     // Office formula requests must open only the dedicated formula editor.
     // Keeping the main VisualTeX workspace visible makes Word/PowerPoint
@@ -596,19 +735,37 @@ if not (exists active presentation) then error "Microsoft PowerPoint has no acti
 run VB macro macro name "VisualTeX_ApplyPendingResult" list of parameters {}
 end tell"#,
     };
+    run_office_vba_script(script, "Office VBA callback")
+}
+
+pub(crate) fn run_double_click_edit_macro(host: OfficeHost) -> Result<(), String> {
+    let script = match host {
+        OfficeHost::Word => r#"tell application "Microsoft Word"
+if not (exists active document) then error "Microsoft Word has no active document"
+run VB macro macro name "VisualTeX_DoubleClickEditSelected"
+end tell"#,
+        OfficeHost::Powerpoint => r#"tell application "Microsoft PowerPoint"
+if not (exists active presentation) then error "Microsoft PowerPoint has no active presentation"
+run VB macro macro name "VisualTeX_DoubleClickEditSelected" list of parameters {}
+end tell"#,
+    };
+    run_office_vba_script(script, "Office double-click edit macro")
+}
+
+fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
         .output()
-        .map_err(|error| format!("Unable to launch the Office VBA callback: {error}"))?;
+        .map_err(|error| format!("Unable to launch the {label}: {error}"))?;
     if output.status.success() {
         Ok(())
     } else {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(if detail.is_empty() {
-            "The Office VBA callback failed".to_string()
+            format!("The {label} failed")
         } else {
-            format!("The Office VBA callback failed: {detail}")
+            format!("The {label} failed: {detail}")
         })
     }
 }
@@ -713,7 +870,7 @@ fn materialize_result_image(session: &OfficeFormulaSession) -> Result<PathBuf, S
         .as_deref()
         .ok_or_else(|| "Offline Office Session requires a PNG export".to_string())
         .and_then(decode_png)?;
-    let path = result_image_path(&session.id)?;
+    let path = result_image_path(session.host, &session.id)?;
     atomic_write(&path, &png, 0o600)?;
     Ok(path)
 }
@@ -724,9 +881,49 @@ fn commit_word(
     session: &OfficeFormulaSession,
     metadata: &str,
 ) -> Result<(), String> {
+    let export = session
+        .export_result
+        .as_ref()
+        .ok_or_else(|| "Word Session has no formula export".to_string())?;
+    let omml_base64 = export
+        .omml_base64
+        .as_deref()
+        .ok_or_else(|| "Word formula export has no OMML payload".to_string())?;
+    let omml_bytes = URL_SAFE_NO_PAD
+        .decode(omml_base64)
+        .map_err(|_| "Word formula OMML payload is not valid Base64URL".to_string())?;
+    if omml_bytes.is_empty() || omml_bytes.len() > MAX_OMML_BYTES {
+        return Err("Word formula OMML payload is empty or too large".to_string());
+    }
+    let omml = std::str::from_utf8(&omml_bytes)
+        .map_err(|_| "Word formula OMML payload is not UTF-8".to_string())?;
+    if !omml.trim_start().starts_with("<m:oMath")
+        || !omml.contains("http://schemas.openxmlformats.org/officeDocument/2006/math")
+        || omml.contains("<!DOCTYPE")
+        || omml.contains("<!ENTITY")
+    {
+        return Err("Word formula OMML payload is not a safe Office Math fragment".to_string());
+    }
+    let omml_docx_base64 = export
+        .omml_docx_base64
+        .as_deref()
+        .ok_or_else(|| "Word formula export has no native DOCX payload".to_string())?;
+    let omml_docx = URL_SAFE_NO_PAD
+        .decode(omml_docx_base64)
+        .map_err(|_| "Word formula native DOCX payload is not valid Base64URL".to_string())?;
+    if omml_docx.len() < 128 || omml_docx.len() > MAX_OMML_BYTES * 8 || !omml_docx.starts_with(b"PK\x03\x04") {
+        return Err("Word formula native DOCX payload is invalid or too large".to_string());
+    }
+    let native_document_path = native_word_document_path(&session.formula_id)?;
+    atomic_write(&native_document_path, &omml_docx, 0o600)?;
+
     let image_path = materialize_result_image(session)?;
     let (width, height, baseline) = calculate_word_geometry(session)?;
-    let source_marker = request.encoded_metadata.clone().unwrap_or_default();
+    let source_marker = request
+        .source_object_id
+        .clone()
+        .or_else(|| request.encoded_metadata.clone())
+        .unwrap_or_default();
     let pending_marker = request.pending_marker.clone().unwrap_or_default();
     let latex = session
         .lines
@@ -747,9 +944,18 @@ fn commit_word(
         ("formulaId", session.formula_id.clone()),
         ("displayMode", session.display_mode.clone()),
         ("numbered", if session.numbered { "1" } else { "0" }.to_string()),
+        (
+            "nativeEquation",
+            if request.native_equation { "1" } else { "0" }.to_string(),
+        ),
         ("imagePath", image_path.to_string_lossy().to_string()),
         ("metadata", metadata.to_string()),
         ("latexBase64", latex_base64),
+        ("ommlBase64", omml_base64.to_string()),
+        (
+            "nativeDocumentPath",
+            native_document_path.to_string_lossy().to_string(),
+        ),
         ("pendingMarker", pending_marker),
         ("sourceMarker", source_marker),
         (
@@ -760,7 +966,11 @@ fn commit_word(
         ("heightPoints", format!("{height:.6}")),
         ("baseline", baseline.to_string()),
     ])?;
-    atomic_write(&dispatch_path(&session.id)?, dispatch.as_bytes(), 0o600)?;
+    atomic_write(
+        &dispatch_path(OfficeHost::Word, &session.id)?,
+        dispatch.as_bytes(),
+        0o600,
+    )?;
     with_dispatch_pointer(OfficeHost::Word, &session.id, || {
         run_vba_callback(OfficeHost::Word)
     })?;
@@ -811,7 +1021,11 @@ fn commit_powerpoint(
         ("slideIndex", powerpoint.slide_index.to_string()),
         ("slideId", powerpoint.slide_id.to_string()),
     ])?;
-    atomic_write(&dispatch_path(&session.id)?, dispatch.as_bytes(), 0o600)?;
+    atomic_write(
+        &dispatch_path(OfficeHost::Powerpoint, &session.id)?,
+        dispatch.as_bytes(),
+        0o600,
+    )?;
     with_dispatch_pointer(OfficeHost::Powerpoint, &session.id, || {
         run_vba_callback(OfficeHost::Powerpoint)
     })?;
@@ -845,7 +1059,7 @@ fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
     ];
     let dispatch = dispatch_text(&entries)?;
     atomic_write(
-        &dispatch_path(&request.session_id)?,
+        &dispatch_path(host, &request.session_id)?,
         dispatch.as_bytes(),
         0o600,
     )?;
@@ -885,7 +1099,7 @@ fn commit_session_blocking(
         .get(&session_id)
         .map_err(|error| error.to_string())?;
     if session.status == OfficeSessionStatus::Completed {
-        let _ = cleanup_session_files(&session_id);
+        let _ = cleanup_session_files(session.host, &session_id);
         return Ok(session);
     }
     if session.status != OfficeSessionStatus::Committing {
@@ -893,7 +1107,7 @@ fn commit_session_blocking(
     }
     if session.mode == OfficeSessionMode::Edit && !session.dirty {
         let completed = complete_session(&state, &session_id)?;
-        let _ = cleanup_session_files(&session_id);
+        let _ = cleanup_session_files(session.host, &session_id);
         return Ok(completed);
     }
     let request = read_request(&session_id)?;
@@ -908,7 +1122,7 @@ fn commit_session_blocking(
         return Err(error);
     }
     let completed = complete_session(&state, &session_id)?;
-    let _ = cleanup_session_files(&session_id);
+    let _ = cleanup_session_files(session.host, &session_id);
     Ok(completed)
 }
 
@@ -918,6 +1132,7 @@ fn cancel_session_blocking(
 ) -> Result<OfficeFormulaSession, String> {
     validate_uuid(&session_id, "Session id")?;
     let request = read_request(&session_id)?;
+    let host = host_from_request_name(&request.host)?;
     if let Err(error) = cancel_host(&request) {
         fail_session(&state, &session_id, &error);
         return Err(error);
@@ -933,7 +1148,7 @@ fn cancel_session_blocking(
             }),
         )
         .map_err(|error| error.to_string())?;
-    let _ = cleanup_session_files(&session_id);
+    let _ = cleanup_session_files(host, &session_id);
     Ok(cancelled)
 }
 
@@ -968,11 +1183,15 @@ pub fn delete_macos_offline_office_session(
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> Result<(), String> {
     validate_uuid(&session_id, "Session id")?;
+    let session = state
+        .session_store
+        .get(&session_id)
+        .map_err(|error| error.to_string())?;
     state
         .session_store
         .delete(&session_id)
         .map_err(|error| error.to_string())?;
-    cleanup_session_files(&session_id)
+    cleanup_session_files(session.host, &session_id)
 }
 
 #[tauri::command]
@@ -1026,10 +1245,14 @@ fn refresh_health_signal(host: &str) {
 #[cfg(not(target_os = "macos"))]
 fn refresh_health_signal(_host: &str) {}
 
-fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
-    let path = offline_root()?
+pub(crate) fn health_path(host: &str) -> Result<PathBuf, String> {
+    Ok(runtime_root(host_from_request_name(host)?)?
         .join("OfficePluginStatus")
-        .join(format!("{host}.json"));
+        .join(format!("{host}.json")))
+}
+
+fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
+    let path = health_path(host)?;
     let fallback = || MacOfflinePluginHealth {
         loaded: false,
         plugin_version: None,
@@ -1075,10 +1298,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_root_uses_the_office_application_group() {
-        let root = offline_root().expect("offline Office root should resolve");
-        assert!(root.ends_with("Library/Group Containers/UBF8T346G9.Office/VisualTeX"));
-        assert!(!root.to_string_lossy().contains("Library/Application Support/VisualTeX"));
+    fn runtime_roots_use_each_office_hosts_application_scripts_directory() {
+        let word = runtime_root(OfficeHost::Word).expect("Word runtime root should resolve");
+        let powerpoint =
+            runtime_root(OfficeHost::Powerpoint).expect("PowerPoint runtime root should resolve");
+        assert!(word.ends_with(WORD_RUNTIME_SUFFIX));
+        assert!(powerpoint.ends_with(POWERPOINT_RUNTIME_SUFFIX));
+        assert_ne!(word, powerpoint);
+        assert!(!word.to_string_lossy().contains("UBF8T346G9.Office"));
+        assert!(!powerpoint.to_string_lossy().contains("UBF8T346G9.Office"));
+        assert!(!word.starts_with("/private/tmp"));
+        assert!(!powerpoint.starts_with("/private/tmp"));
+    }
+
+    #[test]
+    fn native_word_documents_are_formula_scoped_and_outlive_sessions() {
+        let formula_id = "12345678-1234-4234-9234-123456789abc";
+        let path = native_word_document_path(formula_id)
+            .expect("native Word document path should resolve");
+        let runtime = runtime_root(OfficeHost::Word)
+            .expect("Word runtime root should resolve");
+
+        assert!(path.starts_with(&runtime));
+        assert_eq!(
+            path.parent().and_then(|value| value.file_name()).and_then(|value| value.to_str()),
+            Some("NativeDocuments")
+        );
+        assert_eq!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some("12345678-1234-4234-9234-123456789abc.docx")
+        );
+        assert!(!path.to_string_lossy().contains("OfficeSessions"));
     }
 
     #[test]
@@ -1128,6 +1378,7 @@ mod tests {
             formula_id: Some("12345678-1234-4234-9234-123456789abc".to_string()),
             display_mode: "inline".to_string(),
             numbered: false,
+            native_equation: false,
             source_document_id: Some("/Users/测试/公式😀.docx".to_string()),
             source_object_id: Some("书签-公式".to_string()),
             encoded_metadata: None,
@@ -1218,6 +1469,8 @@ mod tests {
                 svg: "<svg/>".to_string(),
                 svg_base64: String::new(),
                 png_base64: None,
+            omml_base64: None,
+            omml_docx_base64: None,
                 width: 300.0,
                 height: 50.0,
                 baseline: None,

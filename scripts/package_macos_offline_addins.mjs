@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -10,7 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +22,7 @@ const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.jso
 
 function usage() {
   process.stderr.write(
-    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm (--word-only | --powerpoint /path/VisualTeX.ppam [--powerpoint-shell /path/known-good-VisualTeX.ppam])\n",
+    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm (--word-only | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--install-macos]\n",
   );
 }
 
@@ -33,6 +34,9 @@ function argument(name) {
 const wordInput = argument("--word");
 const powerpointInput = argument("--powerpoint");
 const powerpointShell = argument("--powerpoint-shell");
+const artifactsDirectory = argument("--artifacts-dir");
+const rootWordOutput = argument("--root-word-output");
+const installMacos = process.argv.includes("--install-macos");
 const wordOnly = process.argv.includes("--word-only");
 if (!wordInput || (!wordOnly && !powerpointInput) || (wordOnly && powerpointInput)) {
   usage();
@@ -221,6 +225,64 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function atomicCopy(source, destination, mode) {
+  mkdirSync(dirname(destination), { recursive: true });
+  const staged = `${destination}.staged`;
+  copyFileSync(source, staged);
+  if (mode !== undefined) chmodSync(staged, mode);
+  renameSync(staged, destination);
+  if (sha256(source) !== sha256(destination)) {
+    throw new Error(`Installed artifact differs from its packaged source: ${destination}`);
+  }
+  return destination;
+}
+
+function syncArtifact(source, outputDirectory) {
+  mkdirSync(outputDirectory, { recursive: true });
+  const destination = join(outputDirectory, basename(source));
+  return atomicCopy(source, destination);
+}
+
+function installMacosArtifacts(wordOutput, powerpointOutput) {
+  if (process.platform !== "darwin") {
+    throw new Error("--install-macos is available only on macOS");
+  }
+  const officeGroupContainer = join(
+    homedir(),
+    "Library",
+    "Group Containers",
+    "UBF8T346G9.Office",
+  );
+  const installed = [
+    atomicCopy(
+      wordOutput,
+      join(
+        officeGroupContainer,
+        "User Content.localized",
+        "Startup.localized",
+        "Word",
+        "VisualTeX.dotm",
+      ),
+      0o600,
+    ),
+  ];
+  if (powerpointOutput) {
+    installed.push(
+      atomicCopy(
+        powerpointOutput,
+        join(
+          officeGroupContainer,
+          "VisualTeX",
+          "OfficeAddins",
+          "VisualTeX.ppam",
+        ),
+        0o600,
+      ),
+    );
+  }
+  return installed;
+}
+
 try {
   const wordOutput = packageAddin(
     resolve(wordInput),
@@ -229,13 +291,14 @@ try {
     join(offlineRoot, "word", "customUI14.xml"),
   );
   let manifest;
+  let powerpointOutput;
   if (wordOnly) {
     const manifestPath = join(resourcesRoot, "addins.json");
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     manifest.pluginVersion = packageVersion;
     manifest.files["VisualTeX.dotm"] = { sha256: sha256(wordOutput) };
   } else {
-    const powerpointOutput = packageAddin(
+    powerpointOutput = packageAddin(
       resolve(powerpointInput),
       "PowerPoint",
       "VisualTeX.ppam",
@@ -256,6 +319,14 @@ try {
     `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8",
   );
+  if (artifactsDirectory) {
+    syncArtifact(wordOutput, resolve(artifactsDirectory));
+    if (powerpointOutput) syncArtifact(powerpointOutput, resolve(artifactsDirectory));
+  }
+  if (rootWordOutput) {
+    atomicCopy(wordOutput, resolve(rootWordOutput));
+  }
+  if (installMacos) installMacosArtifacts(wordOutput, powerpointOutput);
   process.stdout.write(
     wordOnly
       ? `Packaged ${basename(wordOutput)} with the reviewed Word Ribbon XML; PowerPoint was not touched.\n`
