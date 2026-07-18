@@ -22,7 +22,8 @@ use uuid::Uuid;
 const OFFLINE_PROTOCOL_VERSION: u32 = 1;
 const REQUEST_FILE: &str = "request.json";
 const DISPATCH_FILE: &str = "dispatch.txt";
-const RESULT_IMAGE_FILE: &str = "formula.png";
+const RESULT_PNG_FILE: &str = "formula.png";
+const RESULT_SVG_FILE: &str = "formula.svg";
 const WORD_POINTER_FILE: &str = "word-active-session.txt";
 const POWERPOINT_POINTER_FILE: &str = "powerpoint-active-session.txt";
 const WORD_RUNTIME_SUFFIX: &str =
@@ -134,8 +135,12 @@ fn dispatch_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> 
     Ok(session_directory(host, session_id)?.join(DISPATCH_FILE))
 }
 
-fn result_image_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
-    Ok(session_directory(host, session_id)?.join(RESULT_IMAGE_FILE))
+fn result_png_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_directory(host, session_id)?.join(RESULT_PNG_FILE))
+}
+
+fn result_svg_path(host: OfficeHost, session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_directory(host, session_id)?.join(RESULT_SVG_FILE))
 }
 
 fn native_word_document_path(formula_id: &str) -> Result<PathBuf, String> {
@@ -148,7 +153,13 @@ fn native_word_document_path(formula_id: &str) -> Result<PathBuf, String> {
 }
 
 fn cleanup_session_files_at(directory: &Path) -> Result<(), String> {
-    for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE, "formula.docx"] {
+    for name in [
+        REQUEST_FILE,
+        DISPATCH_FILE,
+        RESULT_PNG_FILE,
+        RESULT_SVG_FILE,
+        "formula.docx",
+    ] {
         let path = directory.join(name);
         match fs::remove_file(&path) {
             Ok(()) => {}
@@ -860,7 +871,7 @@ fn calculate_powerpoint_geometry(
     Ok((left, top, target_width, target_height))
 }
 
-fn materialize_result_image(session: &OfficeFormulaSession) -> Result<PathBuf, String> {
+fn materialize_result_png(session: &OfficeFormulaSession) -> Result<PathBuf, String> {
     let export = session
         .export_result
         .as_ref()
@@ -870,8 +881,54 @@ fn materialize_result_image(session: &OfficeFormulaSession) -> Result<PathBuf, S
         .as_deref()
         .ok_or_else(|| "Offline Office Session requires a PNG export".to_string())
         .and_then(decode_png)?;
-    let path = result_image_path(session.host, &session.id)?;
+    let path = result_png_path(session.host, &session.id)?;
     atomic_write(&path, &png, 0o600)?;
+    Ok(path)
+}
+
+fn decode_svg(value: &str) -> Result<Vec<u8>, String> {
+    let bytes = BASE64_STANDARD
+        .decode(value.trim())
+        .map_err(|error| format!("Unable to decode the Office SVG export: {error}"))?;
+    if bytes.is_empty() || bytes.len() > MAX_METADATA_BYTES * 4 {
+        return Err("Office formula SVG export is empty or too large".to_string());
+    }
+    let svg = std::str::from_utf8(&bytes)
+        .map_err(|_| "Office formula SVG export is not UTF-8".to_string())?;
+    let normalized = svg.trim_start();
+    if !normalized.starts_with("<svg")
+        && !(normalized.starts_with("<?xml") && normalized.contains("<svg"))
+    {
+        return Err("Office formula export is not a valid SVG document".to_string());
+    }
+    let lower = normalized.to_ascii_lowercase();
+    for forbidden in [
+        "<!doctype",
+        "<!entity",
+        "<script",
+        "<foreignobject",
+        "href=\"http:",
+        "href=\"https:",
+        "href=\"//",
+        "xlink:href=\"http:",
+        "xlink:href=\"https:",
+        "xlink:href=\"//",
+    ] {
+        if lower.contains(forbidden) {
+            return Err("Office formula SVG export contains unsafe external content".to_string());
+        }
+    }
+    Ok(bytes)
+}
+
+fn materialize_powerpoint_svg(session: &OfficeFormulaSession) -> Result<PathBuf, String> {
+    let export = session
+        .export_result
+        .as_ref()
+        .ok_or_else(|| "PowerPoint Session has no formula export".to_string())?;
+    let svg = decode_svg(&export.svg_base64)?;
+    let path = result_svg_path(OfficeHost::Powerpoint, &session.id)?;
+    atomic_write(&path, &svg, 0o600)?;
     Ok(path)
 }
 
@@ -917,7 +974,7 @@ fn commit_word(
     let native_document_path = native_word_document_path(&session.formula_id)?;
     atomic_write(&native_document_path, &omml_docx, 0o600)?;
 
-    let image_path = materialize_result_image(session)?;
+    let image_path = materialize_result_png(session)?;
     let (width, height, baseline) = calculate_word_geometry(session)?;
     let source_marker = request
         .source_object_id
@@ -991,7 +1048,8 @@ fn commit_powerpoint(
         .power_point
         .as_ref()
         .ok_or_else(|| "PowerPoint request geometry is missing".to_string())?;
-    let image_path = materialize_result_image(session)?;
+    let image_path = materialize_powerpoint_svg(session)?;
+    let fallback_image_path = materialize_result_png(session).ok();
     let (left, top, width, height) = calculate_powerpoint_geometry(powerpoint, session)?;
     let dispatch = dispatch_text(&[
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
@@ -1003,6 +1061,13 @@ fn commit_powerpoint(
         ("displayMode", "block".to_string()),
         ("numbered", "0".to_string()),
         ("imagePath", image_path.to_string_lossy().to_string()),
+        (
+            "fallbackImagePath",
+            fallback_image_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        ),
         ("metadata", metadata.to_string()),
         (
             "pendingMarker",
@@ -1338,13 +1403,13 @@ mod tests {
             Uuid::new_v4()
         ));
         fs::create_dir_all(&directory).expect("test Session directory should be created");
-        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_PNG_FILE, RESULT_SVG_FILE] {
             fs::write(directory.join(name), b"temporary").expect("temporary file should exist");
         }
         fs::write(directory.join("keep.txt"), b"keep").expect("unknown file should exist");
 
         cleanup_session_files_at(&directory).expect("known files should be cleaned");
-        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_IMAGE_FILE] {
+        for name in [REQUEST_FILE, DISPATCH_FILE, RESULT_PNG_FILE, RESULT_SVG_FILE] {
             assert!(!directory.join(name).exists());
         }
         assert!(directory.join("keep.txt").is_file());
@@ -1353,6 +1418,117 @@ mod tests {
         fs::remove_file(directory.join("keep.txt")).unwrap();
         cleanup_session_files_at(&directory).expect("empty Session directory should be removed");
         assert!(!directory.exists());
+    }
+
+    #[test]
+    fn powerpoint_svg_decoder_accepts_internal_vector_references_only() {
+        let safe = BASE64_STANDARD.encode(
+            br##"<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="g" d="M0 0h1v1z"/></defs><use href="#g"/></svg>"##,
+        );
+        let decoded = decode_svg(&safe).expect("generated SVG should be accepted");
+        assert!(std::str::from_utf8(&decoded).unwrap().contains("<use"));
+
+        let external = BASE64_STANDARD.encode(
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/a.png"/></svg>"#,
+        );
+        assert!(decode_svg(&external).is_err());
+        let scripted = BASE64_STANDARD.encode(
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#,
+        );
+        assert!(decode_svg(&scripted).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires target/source PowerPoint Sessions and explicit environment variables"]
+    fn live_powerpoint_svg_commit_uses_the_real_ppam_transaction() {
+        let session_id = std::env::var("VISUALTEX_LIVE_PPT_SESSION")
+            .expect("set VISUALTEX_LIVE_PPT_SESSION to an open PowerPoint create Session");
+        let request = read_request(&session_id).expect("PowerPoint request should be readable");
+        assert_eq!(request.host, "powerpoint");
+        assert!(request.mode == "create" || request.mode == "edit");
+        let formula_id = request
+            .formula_id
+            .clone()
+            .expect("PowerPoint request should contain a formula id");
+        let source_session_id = std::env::var("VISUALTEX_LIVE_PPT_EXPORT_SESSION")
+            .expect("set VISUALTEX_LIVE_PPT_EXPORT_SESSION to a completed VisualTeX formula Session");
+        validate_uuid(&source_session_id, "Source Session id").unwrap();
+        let home = std::env::var("HOME").expect("HOME should be set on macOS");
+        let source_session_path = PathBuf::from(home)
+            .join("Library/Application Support/com.visualtex.studio/office/sessions")
+            .join(&source_session_id)
+            .join("session.json");
+        let mut session: OfficeFormulaSession = serde_json::from_slice(
+            &fs::read(&source_session_path).expect("source VisualTeX Session should be readable"),
+        )
+        .expect("source VisualTeX Session should decode");
+        assert_eq!(session.host, OfficeHost::Powerpoint);
+        let source_export = session
+            .export_result
+            .as_ref()
+            .expect("source VisualTeX Session must contain a real formula export");
+        decode_svg(&source_export.svg_base64)
+            .expect("source VisualTeX Session must contain a validated SVG export");
+        session.id = session_id.clone();
+        session.mode = if request.mode == "edit" {
+            OfficeSessionMode::Edit
+        } else {
+            OfficeSessionMode::Create
+        };
+        session.formula_id = formula_id;
+        session.source_document_id = request.source_document_id.clone();
+        session.source_object_id = request.source_object_id.clone();
+        session.original_metadata = request
+            .encoded_metadata
+            .as_deref()
+            .map(decode_metadata)
+            .transpose()
+            .expect("target PowerPoint metadata should decode");
+        session.dirty = true;
+        session.status = OfficeSessionStatus::Committing;
+        session.explicit_cancel = false;
+        session.error = None;
+
+        let root = std::env::temp_dir().join(format!(
+            "visualtex-live-powerpoint-svg-{}",
+            Uuid::new_v4()
+        ));
+        let paths = crate::office::state::OfficePaths {
+            certificate: root.join("localhost-cert.pem"),
+            private_key: root.join("localhost-key.pem"),
+            certificate_metadata: root.join("certificate.json"),
+            install: root.join("install.json"),
+            sessions: root.join("sessions"),
+            recovery: root.join("recovery"),
+            formula_cache: root.join("formulas"),
+            ui_root: root.join("ui"),
+            root: root.clone(),
+        };
+        let session_store = crate::office::sessions::SessionStore::new(&paths)
+            .expect("live Session store should initialize");
+        let formula_cache = crate::office::formula_cache::FormulaMetadataCache::new(&paths)
+            .expect("live formula cache should initialize");
+        let state = OfficeCompanionState::new(
+            None,
+            crate::OcrState::default(),
+            paths,
+            "a".repeat(64),
+            session_store,
+            formula_cache,
+            true,
+        );
+        let metadata = encode_metadata(&metadata_from_session(&session))
+            .expect("live metadata should encode");
+        commit_powerpoint(&state, &request, &session, &metadata)
+            .expect("real PowerPoint PPAM SVG transaction should succeed");
+        let svg_path = result_svg_path(OfficeHost::Powerpoint, &session_id)
+            .expect("SVG result path should resolve");
+        assert_eq!(
+            fs::read_to_string(svg_path).unwrap(),
+            session.export_result.as_ref().unwrap().svg
+        );
+        fs::remove_dir_all(root).ok();
     }
 
     #[test]

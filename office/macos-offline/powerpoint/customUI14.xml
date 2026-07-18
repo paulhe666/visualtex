@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui"
+          onLoad="VTPowerPointRibbonOnLoad">
   <ribbon>
     <tabs>
       <tab id="VisualTeX.Mac.PowerPoint.Tab"
@@ -9,12 +10,12 @@
           <button id="VisualTeX.Mac.PowerPoint.New"
                   label="新建公式"
                   size="large"
-                  imageMso="EquationInsertNew"
+                  image="VisualTeXIcon05"
                   onAction="VTPowerPointRibbonNew"/>
           <button id="VisualTeX.Mac.PowerPoint.Edit"
                   label="编辑所选公式"
                   size="large"
-                  imageMso="ObjectEdit"
+                  image="VisualTeXIcon07"
                   onAction="VTPowerPointRibbonEdit"/>
           <button id="VisualTeX.Mac.PowerPoint.Delete"
                   label="删除所选公式"

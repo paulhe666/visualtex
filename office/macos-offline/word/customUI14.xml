@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui"
+          onLoad="VTWordRibbonOnLoad">
   <ribbon>
     <tabs>
       <tab id="VisualTeX.Mac.Word.Tab"
@@ -9,28 +10,42 @@
           <button id="VisualTeX.Mac.Word.Inline"
                   label="新建行内公式"
                   size="large"
-                  imageMso="EquationInsertNew"
+                  image="VisualTeXIcon09"
                   onAction="VTWordRibbonInline"/>
           <button id="VisualTeX.Mac.Word.Display"
                   label="新建行间公式"
                   size="large"
-                  imageMso="EquationInsertNew"
+                  image="VisualTeXIcon08"
                   onAction="VTWordRibbonDisplay"/>
+          <button id="VisualTeX.Mac.Word.NativeInline"
+                  label="插入 OMML 行内公式"
+                  size="large"
+                  image="VisualTeXIcon04"
+                  onAction="VTWordRibbonNativeInline"/>
+          <button id="VisualTeX.Mac.Word.NativeDisplay"
+                  label="插入 OMML 行间公式"
+                  size="large"
+                  image="VisualTeXIcon02"
+                  onAction="VTWordRibbonNativeDisplay"/>
           <button id="VisualTeX.Mac.Word.Edit"
                   label="编辑所选公式"
                   size="large"
-                  imageMso="ObjectEdit"
+                  image="VisualTeXIcon07"
                   onAction="VTWordRibbonEdit"/>
           <button id="VisualTeX.Mac.Word.ConvertNative"
                   label="转换为 Word 原生公式"
                   size="large"
-                  imageMso="EquationInsertNew"
+                  image="VisualTeXIcon02"
                   onAction="VTWordRibbonConvertNative"/>
           <button id="VisualTeX.Mac.Word.Numbering"
                   label="更新公式编号"
                   size="normal"
-                  imageMso="RefreshAll"
+                  image="VisualTeXIcon06"
                   onAction="VTWordRibbonNumbering"/>
+          <button id="VisualTeX.Mac.Word.CrossReference"
+                  label="插入公式引用"
+                  size="normal"
+                  onAction="VTWordRibbonCrossReference"/>
           <button id="VisualTeX.Mac.Word.Open"
                   label="打开 VisualTeX"
                   size="normal"

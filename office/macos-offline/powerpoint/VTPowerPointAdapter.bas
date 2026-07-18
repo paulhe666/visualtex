@@ -98,6 +98,13 @@ Failed:
     VTShowError "PowerPoint edit", Err.Number, Err.Description
 End Sub
 
+Public Sub VisualTeX_DoubleClickEditSelected()
+    ' Invoked by the native macOS double-click monitor. Let VBA errors return
+    ' to the monitor instead of displaying a modal message for ordinary shapes.
+    VTRequireWritablePowerPointPresentation
+    VTPowerPointEditShape VTSelectedSingleShape()
+End Sub
+
 Public Sub VisualTeX_EditShape(ByVal selectedShape As Shape)
     On Error GoTo Failed
     VTRequireWritablePowerPointPresentation
@@ -223,6 +230,9 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     Dim shapeName As String
     Dim sourceShapeName As String
     Dim imagePath As String
+    Dim fallbackImagePath As String
+    Dim vectorInsertErrorNumber As Long
+    Dim vectorInsertErrorDescription As String
     Dim expectedPresentation As String
     Dim slideIndex As Long
     Dim slideId As Long
@@ -262,6 +272,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     shapeName = CStr(dispatch("shapeName"))
     sourceShapeName = CStr(dispatch("sourceShapeName"))
     imagePath = CStr(dispatch("imagePath"))
+    fallbackImagePath = VTDispatchOptionalPpt(dispatch, "fallbackImagePath")
     expectedPresentation = CStr(dispatch("presentationIdentity"))
     slideIndex = CLng(dispatch("slideIndex"))
     slideId = CLng(dispatch("slideId"))
@@ -284,7 +295,11 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     End If
     VTValidateAbsoluteVisualTeXPath imagePath
     If Not VTPathFileExists(imagePath) Then
-        Err.Raise vbObjectError + 7517, "VisualTeX", "VisualTeX PowerPoint result image is missing."
+        Err.Raise vbObjectError + 7517, "VisualTeX", "VisualTeX PowerPoint SVG result is missing."
+    End If
+    If Len(fallbackImagePath) > 0 Then
+        VTValidateAbsoluteVisualTeXPath fallbackImagePath
+        If Not VTPathFileExists(fallbackImagePath) Then fallbackImagePath = ""
     End If
 
     Set currentSlide = ActivePresentation.Slides(slideIndex)
@@ -312,6 +327,10 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
 
     candidateTemporaryName = "VisualTeXPendingResult_" & Replace$(Left$(sessionId, 13), "-", "")
     originalTemporaryName = "VisualTeXOriginal_" & Replace$(Left$(sessionId, 13), "-", "")
+    ' Modern PowerPoint for Mac preserves an imported SVG as vector artwork.
+    ' Prefer SVG so formulas remain sharp at arbitrary zoom. Keep the PNG only
+    ' as a compatibility fallback for Office builds that reject SVG AddPicture.
+    On Error Resume Next
     Set candidate = currentSlide.Shapes.AddPicture( _
         FileName:=imagePath, _
         LinkToFile:=msoFalse, _
@@ -320,6 +339,25 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
         Top:=CSng(targetTop), _
         Width:=CSng(targetWidth), _
         Height:=CSng(targetHeight))
+    vectorInsertErrorNumber = Err.Number
+    vectorInsertErrorDescription = Err.Description
+    Err.Clear
+    On Error GoTo TransactionFailed
+    If candidate Is Nothing Then
+        If Len(fallbackImagePath) = 0 Then
+            Err.Raise vbObjectError + 7521, "VisualTeX", _
+                "PowerPoint could not insert the VisualTeX SVG: " & _
+                CStr(vectorInsertErrorNumber) & " " & vectorInsertErrorDescription
+        End If
+        Set candidate = currentSlide.Shapes.AddPicture( _
+            FileName:=fallbackImagePath, _
+            LinkToFile:=msoFalse, _
+            SaveWithDocument:=msoTrue, _
+            Left:=CSng(targetLeft), _
+            Top:=CSng(targetTop), _
+            Width:=CSng(targetWidth), _
+            Height:=CSng(targetHeight))
+    End If
     candidate.Name = candidateTemporaryName
     candidate.LockAspectRatio = msoFalse
     candidate.Left = CSng(targetLeft)

@@ -22,7 +22,7 @@ const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.jso
 
 function usage() {
   process.stderr.write(
-    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm (--word-only | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--install-macos]\n",
+    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm (--word-only | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--ribbon-icons-archive /path/visualtex-icons.zip] [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--root-powerpoint-output /path/VisualTeX.ppam] [--install-macos]\n",
   );
 }
 
@@ -36,6 +36,8 @@ const powerpointInput = argument("--powerpoint");
 const powerpointShell = argument("--powerpoint-shell");
 const artifactsDirectory = argument("--artifacts-dir");
 const rootWordOutput = argument("--root-word-output");
+const rootPowerPointOutput = argument("--root-powerpoint-output");
+const ribbonIconsArchive = argument("--ribbon-icons-archive");
 const installMacos = process.argv.includes("--install-macos");
 const wordOnly = process.argv.includes("--word-only");
 if (!wordInput || (!wordOnly && !powerpointInput) || (wordOnly && powerpointInput)) {
@@ -149,11 +151,89 @@ function injectRootRelationship(xml) {
   return withoutOld.replace(closing, `${relationship}${closing}`);
 }
 
-function ensureXmlContentType(xml) {
-  if (/\bExtension="xml"\s+ContentType="application\/xml"/i.test(xml)) return xml;
+function ensureDefaultContentType(xml, extension, contentType) {
   const closing = "</Types>";
   if (!xml.includes(closing)) throw new Error("OOXML [Content_Types].xml is invalid");
-  return xml.replace(closing, '<Default Extension="xml" ContentType="application/xml"/></Types>');
+  const escapedType = contentType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const existing = new RegExp(
+    `\\bExtension="${extension}"\\s+ContentType="${escapedType}"`,
+    "i",
+  );
+  if (existing.test(xml)) return xml;
+  return xml.replace(
+    closing,
+    `<Default Extension="${extension}" ContentType="${contentType}"/>${closing}`,
+  );
+}
+
+function ensureRibbonContentTypes(xml, hasPngIcons) {
+  let next = ensureDefaultContentType(xml, "xml", "application/xml");
+  if (hasPngIcons) next = ensureDefaultContentType(next, "png", "image/png");
+  return next;
+}
+
+const RIBBON_ICON_FILES = {
+  Word: {
+    VisualTeXIcon02: "icon_02_same_subject.png",
+    VisualTeXIcon04: "icon_04_same_subject.png",
+    VisualTeXIcon06: "icon_06_same_subject.png",
+    VisualTeXIcon07: "icon_07_same_subject.png",
+    VisualTeXIcon08: "icon_08_same_subject.png",
+    VisualTeXIcon09: "icon_09_same_subject.png",
+  },
+  PowerPoint: {
+    VisualTeXIcon05: "icon_05_same_subject.png",
+    VisualTeXIcon07: "icon_07_same_subject.png",
+  },
+};
+
+function referencedRibbonImages(ribbonXml) {
+  return [...ribbonXml.matchAll(/\bimage="([A-Za-z0-9_.-]+)"/g)].map(
+    (match) => match[1],
+  );
+}
+
+function installRibbonImages(unpacked, kind, ribbonXml) {
+  const referenced = referencedRibbonImages(ribbonXml);
+  if (referenced.length === 0) return [];
+  if (!ribbonIconsArchive || !existsSync(resolve(ribbonIconsArchive))) {
+    throw new Error(
+      `${kind} Ribbon uses custom images, but --ribbon-icons-archive was not provided or does not exist.`,
+    );
+  }
+  const mapping = RIBBON_ICON_FILES[kind];
+  const unique = [...new Set(referenced)];
+  for (const imageId of unique) {
+    if (!mapping[imageId]) {
+      throw new Error(`${kind} Ribbon references an unmapped custom image: ${imageId}`);
+    }
+  }
+  const customUiDirectory = join(unpacked, "customUI");
+  const imagesDirectory = join(customUiDirectory, "images");
+  const relationshipsDirectory = join(customUiDirectory, "_rels");
+  mkdirSync(imagesDirectory, { recursive: true });
+  mkdirSync(relationshipsDirectory, { recursive: true });
+  const relationships = unique.map((imageId) => {
+    const imageBytes = run(
+      "/usr/bin/unzip",
+      ["-p", resolve(ribbonIconsArchive), mapping[imageId]],
+      { encoding: "buffer" },
+    );
+    if (
+      imageBytes.length < 8 ||
+      !imageBytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+    ) {
+      throw new Error(`${mapping[imageId]} is not a valid PNG Ribbon image.`);
+    }
+    writeFileSync(join(imagesDirectory, `${imageId}.png`), imageBytes);
+    return `<Relationship Id="${imageId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="images/${imageId}.png"/>`;
+  });
+  writeFileSync(
+    join(relationshipsDirectory, "customUI14.xml.rels"),
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships.join("")}</Relationships>\n`,
+    "utf8",
+  );
+  return unique;
 }
 
 function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
@@ -180,6 +260,8 @@ function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
     const customUiDirectory = join(unpacked, "customUI");
     mkdirSync(customUiDirectory, { recursive: true });
     copyFileSync(ribbonSource, join(customUiDirectory, "customUI14.xml"));
+    const ribbonXml = readFileSync(ribbonSource, "utf8");
+    const installedRibbonImages = installRibbonImages(unpacked, kind, ribbonXml);
 
     const relationshipsPath = join(unpacked, "_rels", ".rels");
     writeFileSync(
@@ -190,7 +272,10 @@ function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
     const contentTypesPath = join(unpacked, "[Content_Types].xml");
     writeFileSync(
       contentTypesPath,
-      ensureXmlContentType(readFileSync(contentTypesPath, "utf8")),
+      ensureRibbonContentTypes(
+        readFileSync(contentTypesPath, "utf8"),
+        installedRibbonImages.length > 0,
+      ),
       "utf8",
     );
 
@@ -209,6 +294,17 @@ function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
     const expectedRibbon = readFileSync(ribbonSource, "utf8");
     if (installedRibbon.trim() !== expectedRibbon.trim()) {
       throw new Error(`${kind} packaged Ribbon differs from the reviewed source XML`);
+    }
+    for (const imageId of installedRibbonImages) {
+      if (!entries.includes(`customUI/images/${imageId}.png`)) {
+        throw new Error(`${kind} packaged Ribbon is missing ${imageId}.png`);
+      }
+    }
+    if (
+      installedRibbonImages.length > 0 &&
+      !entries.includes("customUI/_rels/customUI14.xml.rels")
+    ) {
+      throw new Error(`${kind} packaged Ribbon image relationships are missing`);
     }
 
     const destination = join(resourcesRoot, outputName);
@@ -325,6 +421,12 @@ try {
   }
   if (rootWordOutput) {
     atomicCopy(wordOutput, resolve(rootWordOutput));
+  }
+  if (rootPowerPointOutput) {
+    if (!powerpointOutput) {
+      throw new Error("--root-powerpoint-output requires a PowerPoint package build.");
+    }
+    atomicCopy(powerpointOutput, resolve(rootPowerPointOutput));
   }
   if (installMacos) installMacosArtifacts(wordOutput, powerpointOutput);
   process.stdout.write(
