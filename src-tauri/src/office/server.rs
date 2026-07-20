@@ -1107,6 +1107,40 @@ fn decode_png_export(value: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+fn decode_svg_export(svg: &str, svg_base64: &str) -> Result<Vec<u8>, String> {
+    let bytes = if !svg.trim().is_empty() {
+        svg.as_bytes().to_vec()
+    } else {
+        let payload = svg_base64
+            .split_once(',')
+            .filter(|(prefix, _)| prefix.starts_with("data:image/svg+xml;base64"))
+            .map(|(_, payload)| payload)
+            .unwrap_or(svg_base64);
+        BASE64_STANDARD
+            .decode(payload.trim())
+            .map_err(|error| format!("Unable to decode Office SVG export: {error}"))?
+    };
+    if bytes.is_empty() || bytes.len() > 16 * 1024 * 1024 {
+        return Err("Office formula SVG export has an invalid size".to_string());
+    }
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| "Office formula SVG export is not valid UTF-8".to_string())?;
+    let normalized = text.trim();
+    if !normalized.starts_with("<svg") || !normalized.contains("</svg>") {
+        return Err("Office formula export is not a valid SVG image".to_string());
+    }
+    let lowered = normalized.to_ascii_lowercase();
+    if lowered.contains("<foreignobject")
+        || lowered.contains("<image")
+        || lowered.contains("<script")
+        || lowered.contains("<iframe")
+        || lowered.contains("javascript:")
+    {
+        return Err("Office formula SVG export contains forbidden content".to_string());
+    }
+    Ok(normalized.as_bytes().to_vec())
+}
+
 fn windows_office_temp_root() -> std::path::PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
@@ -1140,16 +1174,31 @@ fn commit_windows_session_blocking(
         .export_result
         .as_ref()
         .ok_or_else(|| "Windows Office Session has no exported formula image".to_string())?;
-    let png = export
-        .png_base64
-        .as_deref()
-        .ok_or_else(|| "Windows Office Session requires a PNG export".to_string())
-        .and_then(decode_png_export)?;
+    let (image_bytes, extension, target_width, target_height) = match session.host {
+        OfficeHost::Powerpoint => {
+            let svg = decode_svg_export(&export.svg, &export.svg_base64)?;
+            let (width, height) = scale_powerpoint_formula_size(export.width, export.height)?;
+            (svg, "svg", width, height)
+        }
+        OfficeHost::Word => {
+            let png = export
+                .png_base64
+                .as_deref()
+                .ok_or_else(|| "Windows Word Session requires a PNG export".to_string())
+                .and_then(decode_png_export)?;
+            (
+                png,
+                "png",
+                (export.width * 0.75).max(12.0),
+                (export.height * 0.75).max(12.0),
+            )
+        }
+    };
     let temp_root = windows_office_temp_root();
     fs::create_dir_all(&temp_root)
         .map_err(|error| format!("Unable to create Windows Office temp directory: {error}"))?;
-    let temporary = temp_root.join(format!("{session_id}.png"));
-    fs::write(&temporary, png)
+    let temporary = temp_root.join(format!("{session_id}.{extension}"));
+    fs::write(&temporary, image_bytes)
         .map_err(|error| format!("Unable to create Windows Office formula image: {error}"))?;
 
     let method = match (session.host, session.mode, session.display_mode.as_str()) {
@@ -1169,8 +1218,8 @@ fn commit_windows_session_blocking(
             "formulaId": &session.formula_id,
             "imagePath": temporary.to_string_lossy(),
             "metadata": &metadata,
-            "width": (export.width * 0.75).max(12.0),
-            "height": (export.height * 0.75).max(12.0),
+            "width": target_width,
+            "height": target_height,
             "baseline": export.baseline.map(|value| (value * 0.75).max(0.0)),
             "sourceDocumentId": &session.source_document_id,
             "sourceObjectId": &session.source_object_id
@@ -1620,6 +1669,19 @@ mod tests {
         assert!(!valid_session_id("../../etc/passwd"));
         assert!(!valid_session_id("short"));
         assert!(!valid_session_id("session%2Fescape"));
+    }
+
+    #[test]
+    fn windows_powerpoint_svg_export_accepts_vector_markup() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\"/></svg>";
+        let decoded = decode_svg_export(svg, "").expect("valid SVG export");
+        assert_eq!(std::str::from_utf8(&decoded).unwrap(), svg);
+    }
+
+    #[test]
+    fn windows_powerpoint_svg_export_rejects_embedded_raster_content() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><image href=\"data:image/png;base64,AA==\"/></svg>";
+        assert!(decode_svg_export(svg, "").is_err());
     }
 
     #[test]

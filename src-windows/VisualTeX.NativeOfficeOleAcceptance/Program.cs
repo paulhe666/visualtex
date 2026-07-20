@@ -47,6 +47,22 @@ internal static class Program
             }
         }
 
+        if (args.Length >= 1
+            && string.Equals(args[0], "--word-numbering-frame", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                VerifyWordNumberingFrameAndReferenceFont();
+                Console.WriteLine("Word native numbering frame and cross-reference font acceptance passed.");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (args.Length < 1)
         {
             Console.Error.WriteLine(
@@ -198,6 +214,195 @@ internal static class Program
             TryDelete(display.EmfPath);
             TryDelete(display.PngPath);
         }
+    }
+
+    private static void VerifyWordNumberingFrameAndReferenceFont()
+    {
+        const string latex = @"\frac{a}{b}+x^2";
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mfrac><mi>a</mi><mi>b</mi></mfrac><mo>+</mo>"
+            + "<msup><mi>x</mi><mn>2</mn></msup></math>";
+        var formulaId = Guid.NewGuid().ToString();
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Selection? selection = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? captionBookmark = null;
+        Word.Bookmark? numberBookmark = null;
+        Word.Range? captionRange = null;
+        Word.Range? numberRange = null;
+        Word.Frames? frames = null;
+        Word.Frame? frame = null;
+        Word.Font? numberFont = null;
+        Word.Field? referenceField = null;
+        Word.Range? referenceResult = null;
+        Word.Font? referenceFont = null;
+        try
+        {
+            application = new Word.Application
+            {
+                Visible = false,
+                DisplayAlerts = Word.WdAlertLevel.wdAlertsNone,
+            };
+            document = application.Documents.Add();
+            selection = application.Selection;
+            selection.SetRange(0, 0);
+            var service = new WordFormulaService(application);
+            var session = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString(),
+                Mode = "create",
+                Host = "word",
+                FormulaId = formulaId,
+                Title = "Word numbering frame acceptance",
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = Guid.NewGuid().ToString(), Latex = latex },
+                },
+                CodeFormat = "latex",
+                DisplayMode = "block",
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                Numbered = true,
+                Dirty = true,
+                ExportResult = new OfficeExportDocument
+                {
+                    MathMl = mathMl,
+                    Width = 240,
+                    Height = 72,
+                    Baseline = 52,
+                },
+            };
+            service.InsertOmml(session, mathMl);
+            WordEquationNumbering.Reconcile(document);
+
+            bookmarks = document.Bookmarks;
+            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(formulaId);
+            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            Assert(bookmarks.Exists(captionName), "Native caption bookmark was not created.");
+            Assert(bookmarks.Exists(numberName), "Native number bookmark was not created.");
+            captionBookmark = bookmarks[captionName];
+            numberBookmark = bookmarks[numberName];
+            captionRange = captionBookmark.Range;
+            numberRange = numberBookmark.Range;
+            frames = captionRange.Frames;
+            Assert(frames.Count == 1, "Native SEQ caption was not wrapped in exactly one Word Frame.");
+            frame = frames[1];
+            Assert(Math.Abs(frame.Width - 1f) < 0.1f, "Native SEQ frame width is not one point.");
+            Assert(Math.Abs(frame.Height - 1f) < 0.1f, "Native SEQ frame height is not one point.");
+            Assert(
+                frame.HorizontalPosition <= -100f && frame.VerticalPosition <= -100f,
+                "Native SEQ frame was not moved outside the visible page.");
+            numberFont = numberRange.Font;
+            Assert(
+                numberFont.Size > 2f,
+                $"Native SEQ result still uses an invalid tiny font: {numberFont.Size} pt.");
+
+            // Simulate an existing document produced by the previous build,
+            // where the native caption and SEQ result were both one point and
+            // white. The ordinary refresh command must migrate that source
+            // before it updates any visible REF fields.
+            Word.Font? legacyCaptionFont = null;
+            try
+            {
+                legacyCaptionFont = captionRange.Font;
+                legacyCaptionFont.Size = 1f;
+                legacyCaptionFont.Color = Word.WdColor.wdColorWhite;
+                numberFont.Size = 1f;
+                numberFont.Color = Word.WdColor.wdColorWhite;
+            }
+            finally { Release(legacyCaptionFont); }
+            Release(numberFont);
+            numberFont = null;
+            WordEquationNumbering.UpdateNativeCrossReferences(document);
+            numberFont = numberRange.Font;
+            Assert(
+                numberFont.Size > 2f
+                    && numberFont.Color == Word.WdColor.wdColorAutomatic,
+                "Refresh did not migrate the legacy one-point native SEQ caption.");
+
+            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            Assert(targets.Count == 1, "Framed native SEQ was not exposed as a cross-reference target.");
+            Release(selection);
+            selection = application.Selection;
+            selection.SetRange(document.Content.End - 1, document.Content.End - 1);
+            selection.TypeParagraph();
+            selection.Font.Size = 12f;
+            WordEquationNumbering.InsertEquationReference(
+                document,
+                selection,
+                targets[0],
+                EquationReferenceStyle.Parenthesized);
+
+            referenceField = FindLastField(document, Word.WdFieldType.wdFieldRef)
+                ?? throw new InvalidOperationException("Inserted native cross-reference REF field was not found.");
+            referenceResult = referenceField.Result;
+            referenceFont = referenceResult.Font;
+            Assert(
+                referenceFont.Size > 2f,
+                $"Inserted REF result inherited a tiny font: {referenceFont.Size} pt.");
+
+            Release(referenceFont);
+            referenceFont = null;
+            Release(referenceResult);
+            referenceResult = null;
+            WordEquationNumbering.UpdateNativeCrossReferences(document);
+            referenceResult = referenceField.Result;
+            referenceFont = referenceResult.Font;
+            Assert(
+                referenceFont.Size > 2f,
+                $"Refreshed REF result reverted to a tiny font: {referenceFont.Size} pt.");
+        }
+        finally
+        {
+            Release(referenceFont);
+            Release(referenceResult);
+            Release(referenceField);
+            Release(numberFont);
+            Release(frame);
+            Release(frames);
+            Release(numberRange);
+            Release(captionRange);
+            Release(numberBookmark);
+            Release(captionBookmark);
+            Release(bookmarks);
+            Release(selection);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            if (application is not null)
+            {
+                try { application.Quit(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static Word.Field? FindLastField(Word.Document document, Word.WdFieldType type)
+    {
+        Word.Fields? fields = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = fields.Count; index >= 1; index--)
+            {
+                Word.Field? field = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != type) continue;
+                    var found = field;
+                    field = null;
+                    return found;
+                }
+                finally { Release(field); }
+            }
+            return null;
+        }
+        finally { Release(fields); }
     }
 
     private static int RunInstalledRealVisualComparison(

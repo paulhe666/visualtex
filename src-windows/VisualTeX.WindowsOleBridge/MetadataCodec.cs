@@ -71,18 +71,46 @@ internal sealed class TempPathGuard
         _root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
     }
 
-    public string ValidatePng(string path)
+    public string ValidatePng(string path) => Validate(path, ".png", stream =>
+    {
+        Span<byte> signature = stackalloc byte[8];
+        if (stream.Read(signature) != 8
+            || !signature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
+            throw new InvalidDataException("Formula image has an invalid PNG signature.");
+    });
+
+    public string ValidateSvg(string path) => Validate(path, ".svg", stream =>
+    {
+        if (stream.Length <= 0 || stream.Length > 16 * 1024 * 1024)
+            throw new InvalidDataException("Formula SVG has an invalid size.");
+        using var reader = new StreamReader(
+            stream,
+            new UTF8Encoding(false, true),
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 1024,
+            leaveOpen: true);
+        var svg = reader.ReadToEnd().Trim();
+        if (!svg.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+            || svg.IndexOf("</svg>", StringComparison.OrdinalIgnoreCase) < 0)
+            throw new InvalidDataException("Formula image has an invalid SVG document.");
+        if (svg.IndexOf("<foreignObject", StringComparison.OrdinalIgnoreCase) >= 0
+            || svg.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0
+            || svg.IndexOf("<script", StringComparison.OrdinalIgnoreCase) >= 0
+            || svg.IndexOf("<iframe", StringComparison.OrdinalIgnoreCase) >= 0
+            || svg.IndexOf("javascript:", StringComparison.OrdinalIgnoreCase) >= 0)
+            throw new InvalidDataException("Formula SVG contains forbidden content.");
+    });
+
+    private string Validate(string path, string extension, Action<FileStream> validateContent)
     {
         var full = Path.GetFullPath(path);
         if (!full.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("Formula image is outside the VisualTeX Office temp directory.");
-        if (!string.Equals(Path.GetExtension(full), ".png", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Windows Office formula image must be PNG.");
+        if (!string.Equals(Path.GetExtension(full), extension, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Windows Office formula image must be {extension}.");
         if (!File.Exists(full)) throw new FileNotFoundException("Formula image does not exist.", full);
         using var stream = File.OpenRead(full);
-        Span<byte> signature = stackalloc byte[8];
-        if (stream.Read(signature) != 8 || !signature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
-            throw new InvalidDataException("Formula image has an invalid PNG signature.");
+        validateContent(stream);
         return full;
     }
 }

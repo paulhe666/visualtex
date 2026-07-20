@@ -292,6 +292,7 @@ internal sealed class WordFormulaService
         Range? paragraphRange = null;
         InlineShape? shape = null;
         UndoRecord? undoRecord = null;
+        var typingFontSize = 11f;
         try
         {
             undoRecord = BeginUndoRecord(
@@ -303,6 +304,7 @@ internal sealed class WordFormulaService
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
             selection = _application.Selection;
+            typingFontSize = CaptureTypingFontSize(selection);
             insertion = ResolveSourceRange(document, session.SourceObjectId, selection);
             insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
             object link = false;
@@ -341,9 +343,25 @@ internal sealed class WordFormulaService
                 session.ExportResult?.Baseline,
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(shape);
+            }
             else
+            {
                 WordEquationNumbering.TryReconcile(document);
+                Range? displayRange = null;
+                try
+                {
+                    displayRange = shape.Range;
+                    WordEquationNumbering.RestoreTypingAfterDisplayFormula(
+                        document,
+                        displayRange,
+                        metadata.FormulaId,
+                        selection,
+                        typingFontSize);
+                }
+                finally { Release(displayRange); }
+            }
             return Result(session, document);
         }
         catch
@@ -379,6 +397,7 @@ internal sealed class WordFormulaService
         InlineShape? shape = null;
         Table? numberedTable = null;
         UndoRecord? undoRecord = null;
+        var typingFontSize = 11f;
         try
         {
             undoRecord = BeginUndoRecord(
@@ -390,6 +409,7 @@ internal sealed class WordFormulaService
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
             selection = _application.Selection;
+            typingFontSize = CaptureTypingFontSize(selection);
             insertion = ResolveSourceRange(document, session.SourceObjectId, selection);
             insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
             if (session.DisplayMode == "inline")
@@ -429,9 +449,25 @@ internal sealed class WordFormulaService
                 session.ExportResult?.Baseline,
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(shape);
+            }
             else
+            {
                 WordEquationNumbering.TryReconcile(document);
+                Range? displayRange = null;
+                try
+                {
+                    displayRange = shape.Range;
+                    WordEquationNumbering.RestoreTypingAfterDisplayFormula(
+                        document,
+                        displayRange,
+                        metadata.FormulaId,
+                        selection,
+                        typingFontSize);
+                }
+                finally { Release(displayRange); }
+            }
             return Result(session, document);
         }
         catch
@@ -470,6 +506,7 @@ internal sealed class WordFormulaService
         Table? numberedTable = null;
         UndoRecord? undoRecord = null;
         var metadataSaved = false;
+        var typingFontSize = 11f;
         try
         {
             undoRecord = BeginUndoRecord(
@@ -481,6 +518,7 @@ internal sealed class WordFormulaService
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
             selection = _application.Selection;
+            typingFontSize = CaptureTypingFontSize(selection);
             insertion = ResolveSourceRange(document, session.SourceObjectId, selection);
             insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
             if (session.DisplayMode == "inline")
@@ -525,9 +563,25 @@ internal sealed class WordFormulaService
             WordOmmlFormulaStore.Save(document, metadata);
             metadataSaved = true;
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(bookmark);
+            }
             else
+            {
                 WordEquationNumbering.TryReconcile(document);
+                Range? displayRange = null;
+                try
+                {
+                    displayRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                    WordEquationNumbering.RestoreTypingAfterDisplayFormula(
+                        document,
+                        displayRange,
+                        metadata.FormulaId,
+                        selection,
+                        typingFontSize);
+                }
+                finally { Release(displayRange); }
+            }
             return Result(session, document);
         }
         catch
@@ -1123,6 +1177,22 @@ internal sealed class WordFormulaService
             Release(font);
             Release(range);
         }
+    }
+
+    private static float CaptureTypingFontSize(Selection selection)
+    {
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = selection.Font;
+            var size = font.Size;
+            return WordEquationNumbering.IsNormalTextSize(size) ? size : 11f;
+        }
+        catch
+        {
+            return 11f;
+        }
+        finally { Release(font); }
     }
 
     private void RestoreTypingBaselineAfter(InlineShape shape)

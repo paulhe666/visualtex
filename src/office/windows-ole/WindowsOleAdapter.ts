@@ -29,10 +29,14 @@ function selectionMethod(host: OfficeHost) {
 }
 
 export class WindowsOleAdapter implements OfficeHostAdapter {
-  readonly requiredExportFormat = "png" as const;
+  readonly requiredExportFormat: "svg" | "png";
   private pendingInteractionTarget: WindowsOleInteractionTarget | null = null;
 
-  constructor(readonly host: OfficeHost) {}
+  constructor(readonly host: OfficeHost) {
+    // Word keeps the established PNG path for inline-layout compatibility.
+    // PowerPoint can insert SVG natively and should preserve vector output.
+    this.requiredExportFormat = host === "powerpoint" ? "svg" : "png";
+  }
 
   prepareWindowsInteractionTarget(target: WindowsOleInteractionTarget) {
     this.pendingInteractionTarget = target.host === this.host ? target : null;

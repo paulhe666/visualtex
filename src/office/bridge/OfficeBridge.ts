@@ -22,11 +22,15 @@ function sessionHasRequiredExport(
   session: OfficeFormulaSession,
   adapter: OfficeHostAdapter,
 ) {
-  if (!session.exportResult) return false;
-  return (
-    adapter.requiredExportFormat !== "png" ||
-    Boolean(session.exportResult.pngBase64?.trim())
-  );
+  const exportResult = session.exportResult;
+  if (!exportResult) return false;
+  if (adapter.requiredExportFormat === "png") {
+    return Boolean(exportResult.pngBase64?.trim());
+  }
+  if (adapter.requiredExportFormat === "svg") {
+    return Boolean(exportResult.svg?.trim() || exportResult.svgBase64?.trim());
+  }
+  return true;
 }
 
 function delay(milliseconds: number) {

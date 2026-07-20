@@ -138,7 +138,12 @@ internal sealed class WindowsOfficeBackend : IWindowsOfficeBackend, IDisposable
     {
         var session = request.Params.Deserialize<SessionInfo>(JsonOptions.Default)
             ?? throw new InvalidOperationException("Office formula session parameters are missing.");
-        session.ImagePath = _tempPathGuard.ValidatePng(session.ImagePath);
+        session.ImagePath = string.Equals(
+                session.Host,
+                "powerpoint",
+                StringComparison.OrdinalIgnoreCase)
+            ? _tempPathGuard.ValidateSvg(session.ImagePath)
+            : _tempPathGuard.ValidatePng(session.ImagePath);
         if (!Guid.TryParse(session.SessionId, out _))
             throw new InvalidOperationException("Session id must be a UUID.");
         if (!Guid.TryParse(session.FormulaId, out _))

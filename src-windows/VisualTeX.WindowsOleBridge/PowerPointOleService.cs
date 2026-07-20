@@ -89,7 +89,7 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
             window = ppt.ActiveWindow;
             view = ((dynamic)window).View;
             slide = ResolveTargetSlide(deck, session.SourceObjectId, view);
-            var size = FitImage(session.ImagePath, session.Width, session.Height);
+            var size = FitImage(session.Width, session.Height);
             var slideWidth = Convert.ToSingle(deck.PageSetup.SlideWidth);
             var slideHeight = Convert.ToSingle(deck.PageSetup.SlideHeight);
             var left = Math.Max(0, (slideWidth - size.Width) / 2f);
@@ -160,7 +160,6 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
             var zOrder = Convert.ToInt32(original.ZOrderPosition);
             var originalMetadata = ReadMetadata(oldShape);
             var size = ReplacementSize(
-                session.ImagePath,
                 width,
                 height,
                 originalMetadata,
@@ -378,31 +377,30 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
 
     private static string ShapeName(string formulaId) => $"VisualTeX_{formulaId}";
 
-    private static SizeF FitImage(string path, float maxWidth, float maxHeight)
+    private static SizeF FitImage(float requestedWidth, float requestedHeight)
     {
-        using var image = Image.FromFile(path);
-        var ratio = image.Width / (float)Math.Max(1, image.Height);
-        var width = Math.Max(12f, maxWidth);
-        var height = width / ratio;
-        if (maxHeight > 0 && height > maxHeight)
-        {
-            height = maxHeight;
-            width = height * ratio;
-        }
-        return new SizeF(width, height);
+        var width = PositiveFinite(requestedWidth) ? requestedWidth : 180f;
+        var height = PositiveFinite(requestedHeight) ? requestedHeight : 60f;
+        var scale = Math.Min(1f, Math.Min(600f / width, 400f / height));
+        if (!PositiveFinite(scale)) scale = 1f;
+        return new SizeF(Math.Max(1f, width * scale), Math.Max(1f, height * scale));
     }
 
     private static SizeF ReplacementSize(
-        string path,
         float oldWidth,
         float oldHeight,
         FormulaMetadata? originalMetadata,
         FormulaMetadata replacementMetadata)
     {
-        using var image = Image.FromFile(path);
+        var replacementWidth = replacementMetadata.RenderWidthPx is > 0
+            ? (int)Math.Max(1, Math.Round(replacementMetadata.RenderWidthPx.Value))
+            : (int)Math.Max(1, Math.Round(oldWidth / 0.75f));
+        var replacementHeight = replacementMetadata.RenderHeightPx is > 0
+            ? (int)Math.Max(1, Math.Round(replacementMetadata.RenderHeightPx.Value))
+            : (int)Math.Max(1, Math.Round(oldHeight / 0.75f));
         return CalculateReplacementSize(
-            image.Width,
-            image.Height,
+            replacementWidth,
+            replacementHeight,
             oldWidth,
             oldHeight,
             originalMetadata?.RenderWidthPx,

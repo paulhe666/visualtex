@@ -329,9 +329,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                 return;
             }
 
-            imagePath = client.MaterializePng(session);
             if (session.ObjectMode == "nativeOle")
             {
+                imagePath = client.MaterializePng(session);
                 var export = session.ExportResult
                     ?? throw new InvalidOperationException("VisualTeX Session has no vector export result.");
                 svgPath = client.MaterializeSvg(session);
@@ -339,6 +339,13 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     svgPath,
                     export.Width,
                     export.Height);
+            }
+            else
+            {
+                // PowerPoint supports SVG as a native picture format. Insert the
+                // original vector export directly instead of rasterizing it to
+                // PNG, so scaling and PDF export retain sharp formula glyphs.
+                imagePath = client.MaterializeSvg(session);
             }
             var writeResult = await dispatcher.InvokeAsync(() =>
             {

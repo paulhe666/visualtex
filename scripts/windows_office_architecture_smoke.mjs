@@ -185,6 +185,7 @@ assert.ok(dispatcher.includes("Application.Run"));
 assert.ok(!word.includes("Task.Run"));
 assert.ok(!powerpoint.includes("Task.Run"));
 assert.ok(backend.includes("_dispatcher.InvokeAsync"));
+assert.ok(backend.includes("ValidateSvg(session.ImagePath)"));
 assert.ok(word.includes("InlineShapes.AddPicture"));
 assert.ok(word.includes("visualtex-word-ole-range:"));
 assert.ok(word.includes("EnsureSourceDocument"));
@@ -470,6 +471,16 @@ for (const vstoEntry of [wordVsto, powerpointVsto]) {
 }
 assert.ok(wordVsto.includes("FormulaOleContract.NativeOleMode"));
 assert.ok(powerpointVsto.includes('session.ObjectMode == "nativeOle"'));
+assert.ok(powerpointVsto.includes("imagePath = client.MaterializeSvg(session);"));
+assert.ok(powerpointVsto.includes("PowerPoint supports SVG as a native picture format"));
+assert.ok(wordEquationNumbering.includes("\\* CHARFORMAT"));
+assert.ok(wordEquationNumbering.includes("ResolveReferenceFontSize"));
+assert.ok(wordEquationNumbering.includes("RestoreTypingAfterDisplayFormula"));
+assert.equal(
+  (wordVstoService.match(/RestoreTypingAfterDisplayFormula/g) ?? []).length,
+  3,
+  "all three Word display insertion paths must restore normal typing format",
+);
 for (const nativeService of [wordVstoService, powerpointVstoService]) {
   assert.ok(nativeService.includes("AddOLEObject"));
   assert.ok(nativeService.includes("FormulaOleContract.ProgId"));
@@ -503,6 +514,16 @@ assert.ok(wordEquationNumbering.includes("selection.InsertCrossReference"));
 assert.ok(wordEquationNumbering.includes("WdReferenceKind.wdEntireCaption"));
 assert.ok(wordEquationNumbering.includes("EquationBookmarkPrefix"));
 assert.ok(wordEquationNumbering.includes("UpdateNativeCrossReferences"));
+assert.ok(wordEquationNumbering.includes("NormalizeNativeCaptionFrames(document)"));
+assert.ok(wordEquationNumbering.includes("NativeCaptionBookmarkPrefix"));
+assert.ok(wordEquationNumbering.includes("frames.Add(captionRange)"));
+assert.ok(wordEquationNumbering.includes("NativeCaptionFrameSizePoints"));
+assert.ok(wordEquationNumbering.includes("NativeCaptionOffscreenPositionPoints"));
+assert.ok(wordEquationNumbering.includes("ResolveNormalStyleFontSize"));
+assert.ok(wordEquationNumbering.includes("wdRelativeHorizontalPositionPage"));
+assert.ok(wordEquationNumbering.includes("wdRelativeVerticalPositionPage"));
+assert.ok(!wordEquationNumbering.includes("numberFont.Size = 1f"));
+assert.ok(!wordEquationNumbering.includes("numberFont.Color = WdColor.wdColorWhite"));
 assert.ok(!wordEquationNumbering.includes("EquationReferenceBookmarkPrefix"));
 assert.ok(wordEquationNumbering.includes("WdTabAlignmentCenter"));
 assert.ok(wordEquationNumbering.includes("WdTabAlignmentRight"));

@@ -66,6 +66,19 @@ public sealed class WordEquationNumberingVstoTests
     }
 
     [Theory]
+    [InlineData(1f, false)]
+    [InlineData(2f, false)]
+    [InlineData(10.5f, true)]
+    [InlineData(72f, true)]
+    [InlineData(float.NaN, false)]
+    public void VisibleReferenceFontSizeRejectsHiddenCaptionFormatting(
+        float size,
+        bool expected)
+    {
+        Assert.Equal(expected, WordEquationNumbering.IsNormalTextSize(size));
+    }
+
+    [Theory]
     [InlineData(" SEQ Equation \\* ARABIC ", "Equation", true)]
     [InlineData(" SEQ 公式 \\* ARABIC ", "公式", true)]
     [InlineData(" SEQ OtherEquation \\* ARABIC ", "Equation", false)]

@@ -47,6 +47,8 @@ internal static class WordEquationNumbering
     private const string EquationBookmarkPrefix = "VTEq_";
     private const string NativeCaptionBookmarkPrefix = "VTEqCap_";
     private const string NativeNumberBookmarkPrefix = "VTEqNum_";
+    private const float NativeCaptionFrameSizePoints = 1f;
+    private const float NativeCaptionOffscreenPositionPoints = -1000f;
 
     public static void TryReconcile(Document document)
     {
@@ -712,21 +714,32 @@ internal static class WordEquationNumbering
         Microsoft.Office.Interop.Word.Font? numberFont = null;
         ParagraphFormat? paragraph = null;
         ListFormat? listFormat = null;
+        Frames? frames = null;
+        Frame? frame = null;
+        Borders? borders = null;
         try
         {
+            // Keep the native SEQ field at a real body-text size. Word copies
+            // source-field formatting into REF results during several update
+            // paths, so shrinking the SEQ glyph itself to one point makes the
+            // visible cross-reference one point as well.
+            var fontSize = ResolveNormalStyleFontSize(captionRange);
             font = captionRange.Font;
             font.Hidden = 0;
-            font.Size = 1f;
-            font.Color = WdColor.wdColorWhite;
+            font.Size = fontSize;
+            font.Color = WdColor.wdColorAutomatic;
+            font.Position = 0;
             numberFont = numberRange.Font;
             numberFont.Hidden = 0;
-            numberFont.Size = 1f;
-            numberFont.Color = WdColor.wdColorWhite;
+            numberFont.Size = fontSize;
+            numberFont.Color = WdColor.wdColorAutomatic;
+            numberFont.Position = 0;
+
             paragraph = captionRange.ParagraphFormat;
             paragraph.SpaceBefore = 0f;
             paragraph.SpaceAfter = 0f;
             paragraph.LineSpacingRule = WdLineSpacing.wdLineSpaceExactly;
-            paragraph.LineSpacing = 1f;
+            paragraph.LineSpacing = NativeCaptionFrameSizePoints;
             paragraph.KeepTogether = 0;
             paragraph.KeepWithNext = 0;
             paragraph.PageBreakBefore = 0;
@@ -737,13 +750,177 @@ internal static class WordEquationNumbering
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
             catch { }
+
+            // A Word Frame remains in the main document story, so native
+            // caption enumeration and InsertCrossReference can still find the
+            // SEQ field. The one-point frame is moved far outside the page;
+            // only the container is tiny and invisible, not the SEQ formatting.
+            frames = captionRange.Frames;
+            frame = frames.Count > 0 ? frames[1] : frames.Add(captionRange);
+            frame.WidthRule = WdFrameSizeRule.wdFrameExact;
+            frame.HeightRule = WdFrameSizeRule.wdFrameExact;
+            frame.Width = NativeCaptionFrameSizePoints;
+            frame.Height = NativeCaptionFrameSizePoints;
+            frame.RelativeHorizontalPosition =
+                WdRelativeHorizontalPosition.wdRelativeHorizontalPositionPage;
+            frame.RelativeVerticalPosition =
+                WdRelativeVerticalPosition.wdRelativeVerticalPositionPage;
+            frame.HorizontalPosition = NativeCaptionOffscreenPositionPoints;
+            frame.VerticalPosition = NativeCaptionOffscreenPositionPoints;
+            frame.HorizontalDistanceFromText = 0f;
+            frame.VerticalDistanceFromText = 0f;
+            frame.TextWrap = false;
+            frame.LockAnchor = true;
+            borders = frame.Borders;
+            borders.Enable = 0;
         }
         finally
         {
+            Release(borders);
+            Release(frame);
+            Release(frames);
             Release(listFormat);
             Release(paragraph);
             Release(numberFont);
             Release(font);
+        }
+    }
+
+    private static float ResolveNormalStyleFontSize(Range range)
+    {
+        Styles? styles = null;
+        Style? normalStyle = null;
+        Microsoft.Office.Interop.Word.Font? normalFont = null;
+        try
+        {
+            styles = range.Document.Styles;
+            object normalStyleIndex = WdBuiltinStyle.wdStyleNormal;
+            normalStyle = styles[ref normalStyleIndex];
+            normalFont = normalStyle.Font;
+            var size = normalFont.Size;
+            return IsNormalTextSize(size) ? size : 11f;
+        }
+        catch
+        {
+            return 11f;
+        }
+        finally
+        {
+            Release(normalFont);
+            Release(normalStyle);
+            Release(styles);
+        }
+    }
+
+    internal static void RestoreTypingAfterDisplayFormula(
+        Document document,
+        Range formulaRange,
+        string formulaId,
+        Selection selection,
+        float preferredFontSize)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? captionBookmark = null;
+        Table? table = null;
+        Range? anchor = null;
+        Range? documentRange = null;
+        Range? continuation = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Microsoft.Office.Interop.Word.Font? paragraphFont = null;
+        Microsoft.Office.Interop.Word.Font? selectionFont = null;
+        ParagraphFormat? paragraphFormat = null;
+        ParagraphFormat? selectionParagraphFormat = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var captionName = NativeCaptionBookmarkName(formulaId);
+            if (bookmarks.Exists(captionName))
+            {
+                captionBookmark = bookmarks[captionName];
+                anchor = captionBookmark.Range;
+            }
+            else if ((bool)formulaRange.get_Information(WdInformation.wdWithInTable)
+                     && formulaRange.Tables.Count > 0)
+            {
+                table = formulaRange.Tables[1];
+                anchor = table.Range;
+            }
+            else
+            {
+                paragraphs = formulaRange.Paragraphs;
+                paragraph = paragraphs[1];
+                anchor = paragraph.Range;
+            }
+
+            documentRange = document.Content;
+            var continuationStart = Math.Min(anchor.End, documentRange.End);
+            if (continuationStart >= documentRange.End - 1)
+            {
+                var insertionStart = anchor.End;
+                anchor.InsertParagraphAfter();
+                continuationStart = insertionStart;
+            }
+
+            object start = continuationStart;
+            object end = continuationStart;
+            continuation = document.Range(ref start, ref end);
+            Release(paragraphs);
+            paragraphs = continuation.Paragraphs;
+            Release(paragraph);
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            var visibleText = (paragraphRange.Text ?? string.Empty)
+                .Trim('\r', '\a', '\v', '\t', ' ');
+            var fontSize = IsNormalTextSize(preferredFontSize)
+                ? preferredFontSize
+                : 11f;
+
+            if (visibleText.Length == 0)
+            {
+                try
+                {
+                    object normalStyle = WdBuiltinStyle.wdStyleNormal;
+                    paragraphRange.set_Style(ref normalStyle);
+                }
+                catch { }
+                paragraphFormat = paragraphRange.ParagraphFormat;
+                paragraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+                paragraphFont = paragraphRange.Font;
+                paragraphFont.Hidden = 0;
+                paragraphFont.Color = WdColor.wdColorAutomatic;
+                paragraphFont.Size = fontSize;
+                paragraphFont.Position = 0;
+            }
+
+            selection.SetRange(continuationStart, continuationStart);
+            selectionFont = selection.Font;
+            selectionFont.Hidden = 0;
+            selectionFont.Color = WdColor.wdColorAutomatic;
+            selectionFont.Size = fontSize;
+            selectionFont.Position = 0;
+            if (visibleText.Length == 0)
+            {
+                selectionParagraphFormat = selection.ParagraphFormat;
+                selectionParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+            }
+        }
+        finally
+        {
+            Release(selectionParagraphFormat);
+            Release(selectionFont);
+            Release(paragraphFont);
+            Release(paragraphFormat);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(continuation);
+            Release(documentRange);
+            Release(anchor);
+            Release(table);
+            Release(captionBookmark);
+            Release(bookmarks);
         }
     }
 
@@ -1429,6 +1606,12 @@ internal static class WordEquationNumbering
 
     internal static int UpdateNativeCrossReferences(Document document)
     {
+        // Migrate captions created by older builds before updating any REF.
+        // Those captions stored a one-point SEQ directly in the body. Keeping
+        // this migration on the refresh path repairs existing documents even
+        // when the user does not edit or reinsert the original formula.
+        NormalizeNativeCaptionFrames(document);
+
         Fields? fields = null;
         var updated = 0;
         try
@@ -1452,40 +1635,154 @@ internal static class WordEquationNumbering
         return updated;
     }
 
+    private static void NormalizeNativeCaptionFrames(Document document)
+    {
+        var formulaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Bookmark? bookmark = null;
+                try
+                {
+                    bookmark = bookmarks[index];
+                    if (TryFormulaIdFromBookmark(
+                            bookmark.Name,
+                            NativeCaptionBookmarkPrefix,
+                            out var formulaId))
+                        formulaIds.Add(formulaId);
+                }
+                finally { Release(bookmark); }
+            }
+        }
+        finally { Release(bookmarks); }
+
+        if (formulaIds.Count == 0) return;
+        var nativeSequenceName = GetNativeEquationSequenceName(document);
+        foreach (var formulaId in formulaIds)
+        {
+            Range? captionRange = null;
+            Range? numberRange = null;
+            try
+            {
+                if (!TryGetNativeCaptionRanges(
+                        document,
+                        formulaId,
+                        nativeSequenceName,
+                        out captionRange,
+                        out numberRange))
+                    continue;
+                StyleNativeCaption(captionRange, numberRange);
+            }
+            catch
+            {
+                // A damaged or protected caption must not prevent unrelated
+                // cross-references elsewhere in the document from refreshing.
+            }
+            finally
+            {
+                Release(numberRange);
+                Release(captionRange);
+            }
+        }
+    }
+
     private static void NormalizeReferenceResult(Field field)
     {
         Range? code = null;
         Range? result = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
+        Microsoft.Office.Interop.Word.Font? codeFont = null;
+        Microsoft.Office.Interop.Word.Font? resultFont = null;
         try
         {
+            result = field.Result;
+            var size = ResolveReferenceFontSize(result);
             code = field.Code;
             var codeText = code.Text ?? string.Empty;
-            if (codeText.IndexOf("MERGEFORMAT", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                code.Text = codeText.TrimEnd() + " \\* MERGEFORMAT ";
-                field.Update();
-            }
+            if (codeText.IndexOf("CHARFORMAT", StringComparison.OrdinalIgnoreCase) < 0)
+                code.Text = codeText.TrimEnd() + " \\* CHARFORMAT ";
+
+            // CHARFORMAT makes Word reuse the field-code formatting whenever
+            // the REF is refreshed. This prevents the hidden one-point SEQ
+            // caption from leaking back into the visible reference result.
+            codeFont = code.Font;
+            codeFont.Hidden = 0;
+            codeFont.Color = WdColor.wdColorAutomatic;
+            codeFont.Size = size;
+            field.Update();
+
+            Release(result);
             result = field.Result;
-            font = result.Font;
-            var size = 11f;
-            try { size = font.Size; } catch { }
-            if (float.IsNaN(size)
-                || float.IsInfinity(size)
-                || size <= 2f
-                || size > 256f)
-                size = 11f;
-            font.Hidden = 0;
-            font.Color = WdColor.wdColorAutomatic;
-            font.Size = size;
+            resultFont = result.Font;
+            resultFont.Hidden = 0;
+            resultFont.Color = WdColor.wdColorAutomatic;
+            resultFont.Size = size;
+            resultFont.Position = 0;
         }
         finally
         {
-            Release(font);
+            Release(resultFont);
+            Release(codeFont);
             Release(result);
             Release(code);
         }
     }
+
+    private static float ResolveReferenceFontSize(Range result)
+    {
+        Range? neighbor = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            foreach (var bounds in new[]
+            {
+                (Start: Math.Max(0, result.Start - 1), End: result.Start),
+                (Start: result.End, End: result.End + 1),
+            })
+            {
+                if (bounds.End <= bounds.Start) continue;
+                try
+                {
+                    neighbor = result.Duplicate;
+                    neighbor.SetRange(bounds.Start, bounds.End);
+                    var text = neighbor.Text ?? string.Empty;
+                    if (text is "\r" or "\a" or "\v") continue;
+                    font = neighbor.Font;
+                    var neighborSize = font.Size;
+                    if (IsNormalTextSize(neighborSize)) return neighborSize;
+                }
+                catch { }
+                finally
+                {
+                    Release(font);
+                    font = null;
+                    Release(neighbor);
+                    neighbor = null;
+                }
+            }
+
+            font = result.Font;
+            var resultSize = font.Size;
+            return IsNormalTextSize(resultSize) ? resultSize : 11f;
+        }
+        catch
+        {
+            return 11f;
+        }
+        finally
+        {
+            Release(font);
+            Release(neighbor);
+        }
+    }
+
+    internal static bool IsNormalTextSize(float size) =>
+        !float.IsNaN(size)
+        && !float.IsInfinity(size)
+        && size > 2f
+        && size <= 256f;
 
     private static List<int> GetNativeEquationFieldPositions(
         Document document,
