@@ -1,0 +1,19 @@
+VisualTeX Word native final acceptance: PASS
+completedAt=2026-07-18T11:29:45Z
+branch=feat/macos-offline-office-native
+wordArtifactSha256=8fad902940a405be956d2656e081d3aa146916bba5a9ae16367344207d997d5d
+powerPointManifestSha256=db1f32ecc75def4c4f4f20010319b720d5d22e58dad24321eedfb18acc0af7ad
+powerPointTouched=false
+ribbonIconsArchive=/Users/lpj/Downloads/visualtex_9_same_subject.zip
+vbaSourceCompare=MATCH
+finalInstalledHostSelfTest=PASS
+finalInstalledNativeRegression=PASS
+crossReferenceItems=1
+officeSourceSmoke=PASS
+rustRegression=83 passed, 1 ignored, 0 failed
+desktopBuild=PASS
+fullMacosOfflineAcceptance=PASS
+acceptanceStages=8/8
+vbaObjectModelTrust=0
+validationCaffeinate=UNLOADED
+visualTeXOfficeBackground=RUNNING

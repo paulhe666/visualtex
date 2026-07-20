@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/visualtex-windows-office-bridge"
+    ],
+    "resources": {
+      "../dist-office-windows-ole/": "office/",
+      "../office/windows/ole/manifests/": "office-manifests/windows-ole/",
+      "../scripts/ensure_windows_office_certificate.ps1": "scripts/ensure_windows_office_certificate.ps1",
+      "../scripts/remove_windows_office_certificate.ps1": "scripts/remove_windows_office_certificate.ps1",
+      "../scripts/install_windows_ole.ps1": "scripts/install_windows_ole.ps1",
+      "../scripts/uninstall_windows_ole.ps1": "scripts/uninstall_windows_ole.ps1",
+      "../scripts/uninstall_windows_vsto.ps1": "scripts/uninstall_windows_vsto.ps1"
+    }
+  }
+}
