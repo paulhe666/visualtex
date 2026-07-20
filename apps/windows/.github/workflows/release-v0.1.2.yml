@@ -1,0 +1,116 @@
+name: Release VisualTeX 0.1.2
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v0.1.2"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visualtex-release-0.1.2
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            label: macOS Apple Silicon
+            rust_target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
+          - platform: windows-latest
+            label: Windows x64
+            args: --bundles nsis
+          - platform: ubuntu-22.04
+            label: Linux x64
+            args: --bundles deb,appimage
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS Apple Silicon target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Cache Rust build output
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Verify version 0.1.2
+        shell: bash
+        run: |
+          node -e "const p=require('./package.json'); const t=require('./src-tauri/tauri.conf.json'); if(p.version!=='0.1.2'||t.version!=='0.1.2'){throw new Error('package.json and tauri.conf.json must both be 0.1.2')}"
+          grep -q '^version = "0.1.2"$' src-tauri/Cargo.toml
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Smoke-test OCR worker lifecycle
+        run: python scripts/smoke_ocr_worker.py
+
+      - name: Build and attach release installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: VisualTeX v__VERSION__
+          releaseBody: |
+            VisualTeX 0.1.2 fixes an OCR worker interruption specific to Windows.
+
+            Fixes:
+            - Replaces the invalid Windows `os.kill(parent_pid, 0)` parent-process check with a native process handle wait.
+            - Prevents the OCR worker from exiting during the first model load.
+            - Treats only the explicit `OCR_CANCELLED` signal as user cancellation.
+            - Shows the worker exit status and `worker.log` path for real OCR crashes.
+            - Adds a three-platform lifecycle smoke test that waits through the former two-second failure window before sending a worker ping.
+
+            macOS Apple Silicon:
+            - DMG installer
+
+            Windows x64:
+            - NSIS .exe installer with Python prerequisite detection
+
+            Linux x64:
+            - AppImage
+            - Debian .deb package
+
+            This release is unsigned. Windows SmartScreen and some Linux desktop environments may show a warning on first launch.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

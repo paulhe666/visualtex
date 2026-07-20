@@ -1,0 +1,68 @@
+HKCU
+{
+    NoRemove Software
+    {
+        NoRemove Classes
+        {
+            ForceRemove VisualTeX.Formula.1 = s 'VisualTeX Formula'
+            {
+                CLSID = s '{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}'
+            }
+            ForceRemove VisualTeX.Formula = s 'VisualTeX Formula'
+            {
+                CLSID = s '{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}'
+                CurVer = s 'VisualTeX.Formula.1'
+            }
+            NoRemove Interface
+            {
+                ForceRemove {6C672AF0-7321-4D21-B325-868CB34592C2} = s 'IVisualTeXFormulaObject'
+                {
+                    ProxyStubClsid32 = s '{00020424-0000-0000-C000-000000000046}'
+                    TypeLib = s '{DF66EC66-3B3A-4675-A7BE-30456A04EB96}'
+                    Version = s '1.0'
+                }
+            }
+            NoRemove CLSID
+            {
+                ForceRemove {8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B} = s 'VisualTeX Formula'
+                {
+                    val AppID = s '{3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1}'
+                    AuxUserType
+                    {
+                        '2' = s 'Formula'
+                        '3' = s 'VisualTeX'
+                    }
+                    DataFormats
+                    {
+                        GetSet
+                        {
+                            '0' = s '14,1,64,1'
+                            '1' = s '3,1,32,1'
+                            '2' = s 'PNG,1,1,1'
+                        }
+                    }
+                    InprocHandler32 = s 'Ole32.dll'
+                    LocalServer32 = s '%MODULE%'
+                    {
+                        val ServerExecutable = s '%MODULE_RAW%'
+                    }
+                    ProgID = s 'VisualTeX.Formula.1'
+                    TypeLib = s '{DF66EC66-3B3A-4675-A7BE-30456A04EB96}'
+                    Version = s '1.0'
+                    VersionIndependentProgID = s 'VisualTeX.Formula'
+                    Insertable
+                    DefaultIcon = s '%MODULE%,0'
+                    Verb
+                    {
+                        '0' = s '&Edit,0,2'
+                        '1' = s '&Open,0,2'
+                    }
+                    MiscStatus = s '0'
+                    {
+                        '1' = s '147473'
+                    }
+                }
+            }
+        }
+    }
+}

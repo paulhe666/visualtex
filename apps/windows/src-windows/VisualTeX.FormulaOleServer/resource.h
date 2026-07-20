@@ -1,0 +1,4 @@
+#pragma once
+
+#define IDR_FORMULAOLESERVER 101
+#define IDR_FORMULAOLEOBJECT 102
