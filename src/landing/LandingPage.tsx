@@ -11,17 +11,16 @@ import {
   Github,
   Laptop,
   Monitor,
-  Package,
   ScanLine,
   ShieldCheck,
 } from "lucide-react";
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const RELEASE_BASE = `https://github.com/paulhe666/visualtex/releases/download/v${VERSION}`;
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
 
-type PlatformId = "mac" | "windows" | "linux";
+type PlatformId = "mac" | "windows";
 
 type DownloadOption = {
   id: PlatformId;
@@ -50,16 +49,6 @@ const downloads: readonly DownloadOption[] = [
     detail: "Windows 10/11 · x64",
     href: `${RELEASE_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
     action: "下载安装程序",
-  },
-  {
-    id: "linux",
-    icon: Package,
-    title: "Linux",
-    detail: "通用 AppImage · x64",
-    href: `${RELEASE_BASE}/VisualTeX_${VERSION}_amd64.AppImage`,
-    action: "下载 AppImage",
-    secondaryHref: `${RELEASE_BASE}/VisualTeX_${VERSION}_amd64.deb`,
-    secondaryAction: "下载 DEB",
   },
 ];
 
@@ -115,9 +104,6 @@ function detectPlatform(): PlatformDetection {
   }
   if (userAgent.includes("macintosh") || platform.startsWith("mac")) {
     return { platform: "mac", isMobileDevice: false };
-  }
-  if (userAgent.includes("linux") || platform.includes("linux")) {
-    return { platform: "linux", isMobileDevice: false };
   }
   return { platform: "", isMobileDevice: false };
 }
