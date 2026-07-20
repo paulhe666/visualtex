@@ -17,7 +17,7 @@ import {
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
 const VERSION = "1.2.0";
-const RELEASE_BASE = `https://github.com/paulhe666/visualtex/releases/download/v${VERSION}`;
+const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/releases/v${VERSION}`;
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
 
 type PlatformId = "mac" | "windows";
@@ -39,7 +39,7 @@ const downloads: readonly DownloadOption[] = [
     icon: Laptop,
     title: "macOS",
     detail: "Apple Silicon · macOS 11+",
-    href: `${RELEASE_BASE}/VisualTeX_${VERSION}_aarch64.dmg`,
+    href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64.dmg`,
     action: "下载 DMG",
   },
   {
@@ -47,7 +47,7 @@ const downloads: readonly DownloadOption[] = [
     icon: Monitor,
     title: "Windows",
     detail: "Windows 10/11 · x64",
-    href: `${RELEASE_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
+    href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
     action: "下载安装程序",
   },
 ];
@@ -200,7 +200,7 @@ export function LandingPage() {
           <div className="landing-section-heading landing-download-heading">
             <span>桌面应用</span>
             <h2>选择你的系统，直接开始使用</h2>
-            <p>当前版本 v{VERSION}。安装包来自 VisualTeX 官方 GitHub Release。</p>
+            <p>当前版本 v{VERSION}。安装包由 VisualTeX 官方下载服务提供。</p>
           </div>
 
           <p className="landing-device-note" role="status">
