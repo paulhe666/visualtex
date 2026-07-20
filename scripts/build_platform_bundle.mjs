@@ -21,7 +21,9 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 run(npm, ["run", "build:desktop"]);
 
 if (process.platform === "darwin") {
-  run(npm, ["run", "build:office:macos"]);
+  // macOS Word and PowerPoint use the native DOTM/PPAM integration. The
+  // dedicated formula editor is part of the normal desktop build, so no
+  // Office.js bridge or dialog bundle is generated for the DMG.
   run(npm, ["run", "prepare:ocr-offline"]);
 } else if (process.platform === "win32") {
   run(npm, ["run", "build:office:windows-ole"]);

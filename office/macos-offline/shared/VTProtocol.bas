@@ -43,7 +43,7 @@ Public Function VTActiveSessionPointer(ByVal hostName As String) As String
 End Function
 
 Public Function VTPlaceholderImagePath() As String
-    VTPlaceholderImagePath = VTApplicationSupportRoot() & "/OfficeAddins/resources/placeholder.png"
+    VTPlaceholderImagePath = VTWordApplicationScriptsRoot() & "/VisualTeXPlaceholder.png"
 End Function
 
 Public Function VTNewUuidV4() As String
@@ -341,6 +341,43 @@ InvalidBase64Url:
     Err.Raise vbObjectError + 7124, "VisualTeX", "VisualTeX Word LaTeX payload is not valid unpadded base64url."
 End Function
 
+Private Function VTBase64UrlEncodeUtf8(ByVal value As String) As String
+    Dim bytes() As Byte
+    If Len(value) = 0 Then Exit Function
+    bytes = VTUtf8Encode(value)
+    VTBase64UrlEncodeUtf8 = VTBase64UrlEncodeBytes(bytes)
+End Function
+
+Private Function VTBase64UrlEncodeBytes(ByRef bytes() As Byte) As String
+    Dim alphabet As String
+    Dim result As String
+    Dim index As Long
+    Dim remaining As Long
+    Dim firstByte As Long
+    Dim secondByte As Long
+    Dim thirdByte As Long
+
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    index = LBound(bytes)
+    Do While index <= UBound(bytes)
+        remaining = UBound(bytes) - index + 1
+        firstByte = CLng(bytes(index))
+        If remaining >= 2 Then secondByte = CLng(bytes(index + 1)) Else secondByte = 0
+        If remaining >= 3 Then thirdByte = CLng(bytes(index + 2)) Else thirdByte = 0
+
+        result = result & Mid$(alphabet, firstByte \ 4 + 1, 1)
+        result = result & Mid$(alphabet, (firstByte And 3) * 16 + secondByte \ 16 + 1, 1)
+        If remaining >= 2 Then
+            result = result & Mid$(alphabet, (secondByte And 15) * 4 + thirdByte \ 64 + 1, 1)
+        End If
+        If remaining >= 3 Then
+            result = result & Mid$(alphabet, (thirdByte And 63) + 1, 1)
+        End If
+        index = index + 3
+    Loop
+    VTBase64UrlEncodeBytes = result
+End Function
+
 Private Function VTBase64UrlValue(ByVal value As String) As Long
     Dim code As Long
     If Len(value) <> 1 Then
@@ -441,6 +478,64 @@ Private Function VTUnicodeCodeUnit(ByVal value As Long) As String
     End If
 End Function
 
+Private Function VTFileBridgeScriptName() As String
+    Dim hostName As String
+    hostName = LCase$(Application.Name)
+    If InStr(1, hostName, "powerpoint", vbTextCompare) > 0 Then
+        VTFileBridgeScriptName = "VisualTeXPowerPoint.scpt"
+    ElseIf InStr(1, hostName, "word", vbTextCompare) > 0 Then
+        VTFileBridgeScriptName = "VisualTeXWord.scpt"
+    Else
+        Err.Raise vbObjectError + 7125, "VisualTeX", "Unable to identify the Office host for the VisualTeX file bridge."
+    End If
+End Function
+
+Private Function VTFileBridgeCall(ByVal handlerName As String, ByVal parameterValue As String) As String
+    Dim response As String
+    Dim fields() As String
+    Dim detail As String
+
+#If Mac Then
+    response = AppleScriptTask(VTFileBridgeScriptName(), handlerName, parameterValue)
+#Else
+    Err.Raise vbObjectError + 7126, "VisualTeX", "The VisualTeX native Office file bridge is available only on macOS."
+#End If
+
+    If Left$(response, 3) = "ok|" Then
+        VTFileBridgeCall = Mid$(response, 4)
+        Exit Function
+    End If
+
+    detail = "The VisualTeX native file bridge returned an invalid response."
+    If Left$(response, 6) = "error|" Then
+        fields = Split(response, "|")
+        If UBound(fields) >= 2 Then detail = fields(2)
+        If UBound(fields) >= 1 Then detail = detail & " (AppleScript error " & fields(1) & ")"
+    ElseIf Len(response) = 0 Then
+        detail = "The VisualTeX native file bridge returned no response. Check that " & VTFileBridgeScriptName() & " is installed and compiled."
+    End If
+    Err.Raise vbObjectError + 7127, "VisualTeX", detail
+End Function
+
+Private Function VTRuntimeRelativePath(ByVal absolutePath As String) As String
+    Dim root As String
+    Dim prefix As String
+
+    root = VTApplicationSupportRoot()
+    prefix = root & "/"
+    If absolutePath = root Then
+        VTRuntimeRelativePath = "."
+    ElseIf Len(absolutePath) > Len(prefix) And Left$(absolutePath, Len(prefix)) = prefix Then
+        VTRuntimeRelativePath = Mid$(absolutePath, Len(prefix) + 1)
+    Else
+        Err.Raise vbObjectError + 7117, "VisualTeX", "VisualTeX rejected a path outside the host runtime directory."
+    End If
+    If InStr(VTRuntimeRelativePath, "..") > 0 Or InStr(VTRuntimeRelativePath, vbCr) > 0 Or _
+       InStr(VTRuntimeRelativePath, vbLf) > 0 Or InStr(VTRuntimeRelativePath, Chr$(0)) > 0 Then
+        Err.Raise vbObjectError + 7117, "VisualTeX", "VisualTeX rejected an unsafe local path."
+    End If
+End Function
+
 Public Sub VTWriteRequest(ByVal sessionId As String, ByVal json As String)
     Dim requestPath As String
     If Not VTIsCanonicalUuid(sessionId) Then
@@ -449,83 +544,37 @@ Public Sub VTWriteRequest(ByVal sessionId As String, ByVal json As String)
     If VTUtf8ByteLength(json) > VT_MAX_REQUEST_BYTES Then
         Err.Raise vbObjectError + 7108, "VisualTeX", "VisualTeX request exceeds 256 KiB."
     End If
-    VTEnsureDirectory VTSessionDirectory(sessionId)
+    ' WriteVisualTeXFile creates the Session parent directory atomically.
+    ' Avoid a separate AppleScriptTask round trip solely for mkdir.
     requestPath = VTRequestPath(sessionId)
     VTWriteTextAtomic requestPath, json
 End Sub
 
 Public Sub VTWriteTextAtomic(ByVal destination As String, ByVal contents As String)
-    Dim temporary As String
-    Dim handle As Integer
-    Dim bytes() As Byte
+    Dim relativePath As String
+    Dim encodedContents As String
 
     VTValidateAbsoluteVisualTeXPath destination
-    VTEnsureDirectory VTParentDirectory(destination)
-    temporary = destination & ".tmp"
-    On Error Resume Next
-    Kill temporary
-    On Error GoTo WriteFailed
-
-    handle = FreeFile
-    Open temporary For Binary Access Write As #handle
-    If Len(contents) > 0 Then
-        bytes = VTUtf8Encode(contents)
-        Put #handle, , bytes
-    End If
-    Close #handle
-    handle = 0
-
-    On Error Resume Next
-    Kill destination
-    On Error GoTo WriteFailed
-    Name temporary As destination
-    Exit Sub
-
-WriteFailed:
-    If handle <> 0 Then Close #handle
-    On Error Resume Next
-    Kill temporary
-    On Error GoTo 0
-    Err.Raise vbObjectError + 7109, "VisualTeX", "Unable to write the VisualTeX local request file."
+    relativePath = VTRuntimeRelativePath(destination)
+    encodedContents = VTBase64UrlEncodeUtf8(contents)
+    Call VTFileBridgeCall("WriteVisualTeXFile", relativePath & "|" & encodedContents)
 End Sub
 
 Public Function VTReadText(ByVal sourcePath As String, Optional ByVal maximumCharacters As Long = 262144) As String
-    Dim handle As Integer
-    Dim length As Long
-    Dim bytes() As Byte
-    Dim errorNumber As Long
-    Dim errorDescription As String
+    Dim encodedContents As String
+    Dim decodedContents As String
 
-    On Error GoTo ReadFailed
     VTValidateAbsoluteVisualTeXPath sourcePath
-    If Dir$(sourcePath) = "" Then
-        Err.Raise vbObjectError + 7110, "VisualTeX", "VisualTeX local file was not found."
-    End If
-
-    length = FileLen(sourcePath)
-    If length < 0 Or length > maximumCharacters Then
-        Err.Raise vbObjectError + 7111, "VisualTeX", "VisualTeX local file has an invalid size."
-    End If
-    handle = FreeFile
-    Open sourcePath For Binary Access Read As #handle
-    If length > 0 Then
-        ReDim bytes(0 To length - 1)
-        Get #handle, , bytes
-        VTReadText = VTUtf8Decode(bytes)
+    encodedContents = VTFileBridgeCall("ReadVisualTeXFile", VTRuntimeRelativePath(sourcePath))
+    If Len(encodedContents) = 0 Then
+        decodedContents = ""
     Else
-        VTReadText = ""
+        decodedContents = VTBase64UrlDecodeUtf8(encodedContents)
     End If
-    Close #handle
-    handle = 0
-    Exit Function
-
-ReadFailed:
-    errorNumber = Err.Number
-    errorDescription = Err.Description
-    On Error Resume Next
-    If handle <> 0 Then Close #handle
-    On Error GoTo 0
-    Err.Raise errorNumber, "VisualTeX", errorDescription
+    If Len(decodedContents) > maximumCharacters Then
+        Err.Raise vbObjectError + 7111, "VisualTeX", "VisualTeX local file exceeds the allowed size."
+    End If
+    VTReadText = decodedContents
 End Function
 
 Public Function VTReadActiveSessionId(ByVal hostName As String) As String
@@ -603,17 +652,8 @@ Public Sub VTValidateAbsoluteVisualTeXPath(ByVal value As String)
 End Sub
 
 Public Sub VTEnsureDirectory(ByVal directoryPath As String)
-    Dim parent As String
     If Len(directoryPath) = 0 Then Exit Sub
-    If Dir$(directoryPath, vbDirectory) <> "" Then Exit Sub
-    parent = VTParentDirectory(directoryPath)
-    If Len(parent) > 1 And Dir$(parent, vbDirectory) = "" Then VTEnsureDirectory parent
-    ' Office for Mac can return an empty Dir$ result for a sandbox-authorized
-    ' POSIX directory that already exists. Let the following file operation
-    ' report genuine access failures instead of failing on a duplicate MkDir.
-    On Error Resume Next
-    MkDir directoryPath
-    On Error GoTo 0
+    Call VTFileBridgeCall("EnsureVisualTeXDirectory", VTRuntimeRelativePath(directoryPath))
 End Sub
 
 Public Function VTParentDirectory(ByVal value As String) As String
@@ -627,14 +667,30 @@ Public Function VTParentDirectory(ByVal value As String) As String
 End Function
 
 Public Function VTPathFileExists(ByVal value As String) As Boolean
-    On Error Resume Next
-    VTValidateAbsoluteVisualTeXPath value
-    If Err.Number <> 0 Then
-        Err.Clear
+    Dim response As String
+    Dim handle As Integer
+
+    On Error GoTo MissingFile
+    If value = VTPlaceholderImagePath() Then
+        handle = FreeFile
+        Open value For Binary Access Read As #handle
+        Close #handle
+        handle = 0
+        VTPathFileExists = True
         Exit Function
     End If
-    VTPathFileExists = (Dir$(value) <> "")
+
+    VTValidateAbsoluteVisualTeXPath value
+    response = VTFileBridgeCall("VisualTeXFileExists", VTRuntimeRelativePath(value))
+    VTPathFileExists = (response = "1")
+    Exit Function
+
+MissingFile:
+    On Error Resume Next
+    If handle <> 0 Then Close #handle
+    Err.Clear
     On Error GoTo 0
+    VTPathFileExists = False
 End Function
 
 Public Function VTProtocolSelfTest() As Boolean
@@ -662,7 +718,7 @@ Public Function VTProtocolSelfTest() As Boolean
         Err.Raise vbObjectError + 7122, "VisualTeX", "VisualTeX UTF-8 self-test failed."
     End If
     On Error Resume Next
-    Kill testPath
+    Call VTFileBridgeCall("DeleteVisualTeXFile", VTRuntimeRelativePath(testPath))
     On Error GoTo 0
 
     parsedNumber = VTParseInvariantDouble("-1234.500000")
@@ -682,13 +738,12 @@ Public Function VTProtocolSelfTest() As Boolean
 End Function
 
 Public Sub VTDeleteSessionFiles(ByVal sessionId As String)
-    Dim path As String
+    Dim relativeDirectory As String
     If Not VTIsCanonicalUuid(sessionId) Then Exit Sub
-    path = VTSessionDirectory(sessionId)
+    relativeDirectory = "OfficeSessions/" & sessionId
     On Error Resume Next
-    Kill path & "/request.json"
-    Kill path & "/dispatch.txt"
-    Kill path & "/formula.png"
-    RmDir path
+    Call VTFileBridgeCall("DeleteVisualTeXFile", relativeDirectory & "/request.json")
+    Call VTFileBridgeCall("DeleteVisualTeXFile", relativeDirectory & "/dispatch.txt")
+    Call VTFileBridgeCall("DeleteVisualTeXFile", relativeDirectory & "/formula.png")
     On Error GoTo 0
 End Sub

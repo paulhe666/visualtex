@@ -35,15 +35,18 @@ const macIds = macSteps.map((step) => step.id);
 const windowsIds = windowsSteps.map((step) => step.id);
 const otherIds = otherSteps.map((step) => step.id);
 
-assert(macIds.includes("mac-office-enable"));
-assert(macIds.includes("mac-office-manage"));
+assert(macIds.includes("mac-word-plugin"));
+assert(macIds.includes("mac-powerpoint-load"));
+assert(macIds.includes("mac-powerpoint-use"));
 assert(!macIds.includes("windows-office-manage"));
 assert(windowsIds.includes("windows-office-manage"));
-assert(!windowsIds.includes("mac-office-enable"));
-assert(!windowsIds.includes("mac-office-manage"));
-assert(!otherIds.some((id) => id.includes("office")));
-assert(macSteps.find((step) => step.id === "mac-office-enable")?.description.includes("加载项"));
-assert(macSteps.find((step) => step.id === "mac-office-manage")?.description.includes("卸载"));
+assert(!windowsIds.includes("mac-word-plugin"));
+assert(!windowsIds.includes("mac-powerpoint-load"));
+assert(!windowsIds.includes("mac-powerpoint-use"));
+assert(!otherIds.some((id) => id.includes("office") || id.includes("powerpoint") || id.includes("word-plugin")));
+assert(macSteps.find((step) => step.id === "mac-word-plugin")?.description.includes("OMML"));
+assert(macSteps.find((step) => step.id === "mac-powerpoint-load")?.description.includes("PowerPoint 加载项"));
+assert(macSteps.find((step) => step.id === "mac-powerpoint-use")?.description.includes("双击"));
 assert(windowsSteps.find((step) => step.id === "windows-office-manage")?.description.includes("停止当前伴侣服务"));
 assert(windowsSteps.find((step) => step.id === "windows-office-manage")?.description.includes("不需要额外配置"));
 
@@ -61,9 +64,23 @@ const certificateSource = await readFile("scripts/ensure_windows_office_certific
 assert(appSource.includes("<MacOfficeFirstRunPrompt"));
 assert(appSource.includes("onboardingStorageKey("));
 assert(appSource.indexOf("<MacOfficeFirstRunPrompt") < appSource.indexOf("<OnboardingTour"));
-assert(firstRunSource.includes('invoke("install_office_integration")'));
+assert(firstRunSource.includes('"install_macos_offline_office_addins"'));
+assert(firstRunSource.includes("<PowerPointAddinGuide"));
 assert(firstRunSource.includes("onComplete(false)"));
-assert(macSettingsSource.includes('"set_office_background_start"'));
+assert(macSettingsSource.includes('"install_macos_offline_office_addins"'));
+assert(macSettingsSource.includes("<PowerPointAddinGuide"));
+for (const obsolete of [
+  "install_office_integration",
+  "repair_office_integration",
+  "uninstall_office_integration",
+  "regenerate_office_certificate",
+  "start_office_companion",
+  "stop_office_companion",
+  "set_office_background_start",
+]) {
+  assert(!firstRunSource.includes(obsolete));
+  assert(!macSettingsSource.includes(obsolete));
+}
 assert(windowsSettingsSource.includes('"set_office_background_start"'));
 assert(mainSource.includes('#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]'));
 assert(lifecycleSource.includes("pub fn set_office_background_start"));

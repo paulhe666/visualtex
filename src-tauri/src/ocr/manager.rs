@@ -244,9 +244,12 @@ async fn spawn_process(app: &AppHandle) -> Result<OcrProcess, OcrError> {
 }
 
 pub fn resolve_runtime(app: &AppHandle) -> Result<RuntimePaths, OcrError> {
+    #[cfg(debug_assertions)]
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf);
+    #[cfg(not(debug_assertions))]
+    let project_root: Option<PathBuf> = None;
     let resource_dir = app.path().resource_dir().ok();
 
     let mut script_candidates = Vec::new();

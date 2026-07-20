@@ -988,15 +988,21 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
         let frontmost = frontmost_bundle_id();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
-            if native_offline_plugin_loaded("powerpoint") {
-                return;
-            }
+            let native_plugin_loaded = native_offline_plugin_loaded("powerpoint");
             std::thread::spawn(move || {
                 let Some((selection, formula_id)) =
                     powerpoint_selection_after_double_click(selected_shape, std::thread::sleep)
                 else {
                     return;
                 };
+                if native_plugin_loaded {
+                    if formula_id.is_some() {
+                        let _ = crate::office::macos_offline::run_double_click_edit_macro(
+                            crate::office::sessions::OfficeHost::Powerpoint,
+                        );
+                    }
+                    return;
+                }
                 if let Some(formula_id) = formula_id {
                     bus.push_powerpoint_edit_selected(selection, formula_id);
                 } else {
@@ -1004,9 +1010,7 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
                 }
             });
         } else if frontmost.as_deref() == Some(WORD_BUNDLE_ID) {
-            if native_offline_plugin_loaded("word") {
-                return;
-            }
+            let native_plugin_loaded = native_offline_plugin_loaded("word");
             std::thread::spawn(move || {
                 let Some(selection) =
                     word_formula_after_double_click(selected_word_formula, std::thread::sleep)
@@ -1014,6 +1018,12 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
                     return;
                 };
                 if !selection.marker.starts_with(WORD_METADATA_PREFIX) {
+                    return;
+                }
+                if native_plugin_loaded {
+                    let _ = crate::office::macos_offline::run_double_click_edit_macro(
+                        crate::office::sessions::OfficeHost::Word,
+                    );
                     return;
                 }
                 bus.push_word_edit_selected(selection);
@@ -1048,9 +1058,16 @@ fn native_offline_plugin_loaded(host: &str) -> bool {
     let Some(home) = home else {
         return false;
     };
-    let path = home
-        .join("Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficePluginStatus")
-        .join(file_name);
+    let path = match host {
+        "word" => home.join(
+            "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime/OfficePluginStatus",
+        ),
+        "powerpoint" => home.join(
+            "Library/Application Scripts/com.microsoft.Powerpoint/VisualTeXRuntime/OfficePluginStatus",
+        ),
+        _ => return false,
+    }
+    .join(file_name);
     let Ok(bytes) = fs::read(path) else {
         return false;
     };

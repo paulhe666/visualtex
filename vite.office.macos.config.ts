@@ -4,6 +4,32 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+const tauriTransportStub = resolve(
+  root,
+  "src/office/shared/tauriTransport.office.ts",
+);
+
+const replaceTauriTransport = {
+  name: "visualtex-macos-office-replace-tauri-transport",
+  enforce: "pre" as const,
+  resolveId(source: string, importer?: string) {
+    const normalizedImporter = importer?.replaceAll("\\", "/") ?? "";
+    const isSessionClientImport =
+      normalizedImporter.endsWith("/src/office/shared/sessionClient.ts") &&
+      (source === "./tauriTransport" || source === "./tauriTransport.ts");
+    const isDialogImport =
+      normalizedImporter.endsWith("/src/office/dialog/OfficeDialogApp.tsx") &&
+      (source === "../shared/tauriTransport" ||
+        source === "../shared/tauriTransport.ts");
+    if (isSessionClientImport || isDialogImport) return tauriTransportStub;
+    if (source.startsWith("@tauri-apps/")) {
+      throw new Error(
+        `Independent macOS Office bundle cannot import Tauri code: ${source}`,
+      );
+    }
+    return null;
+  },
+};
 
 const rejectWindowsImports = {
   name: "visualtex-macos-office-reject-windows-imports",
@@ -34,7 +60,12 @@ const stripRemoteFallbackMarkers = {
 };
 
 export default defineConfig({
-  plugins: [react(), rejectWindowsImports, stripRemoteFallbackMarkers],
+  plugins: [
+    react(),
+    replaceTauriTransport,
+    rejectWindowsImports,
+    stripRemoteFallbackMarkers,
+  ],
   base: "/",
   publicDir: "office/macos",
   clearScreen: false,

@@ -127,6 +127,10 @@ async function main() {
       String.raw`\sqrt{x}`,
       String.raw`x_i^2`,
       String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`,
+      String.raw`\lim_{x\to0}f(x)`,
+      String.raw`\binom{n}{k}`,
+      String.raw`\begin{cases}x,&x>0\\-x,&x<0\end{cases}`,
+      String.raw`\overline{x}+\hat{y}`,
     ];
     const expression = `
       (async () => {
@@ -151,7 +155,18 @@ async function main() {
     const results = evaluation.result?.value;
     expect(Array.isArray(results) && results.length === formulas.length, "OMML regression did not return every formula.");
 
-    const [fraction, integral, sum, root, scripts, matrix] = results;
+    const [
+      fraction,
+      integral,
+      sum,
+      root,
+      scripts,
+      matrix,
+      limit,
+      binomial,
+      cases,
+      accents,
+    ] = results;
     expectIncludes(fraction, "<m:f>", "Fraction must use a structural OMML fraction node.");
     expectIncludes(fraction, "<m:num>", "Fraction must preserve its numerator.");
     expectIncludes(fraction, "<m:den>", "Fraction must preserve its denominator.");
@@ -170,6 +185,32 @@ async function main() {
     expectIncludes(scripts, "<m:sSubSup>", "Combined scripts must use an OMML subscript/superscript node.");
     expectIncludes(matrix, "<m:m>", "Matrix must use an OMML matrix node.");
     expect((matrix.match(/<m:mr>/g) ?? []).length === 2, "Matrix must preserve both rows.");
+
+    expectIncludes(limit, "<m:limLow>", "Limit notation must use an OMML lower-limit node.");
+    expectIncludes(binomial, '<m:type m:val="noBar"/>', "Binomial coefficients must use a no-bar fraction.");
+    expectIncludes(binomial, "<m:d>", "Binomial coefficients must retain their scalable parentheses.");
+    expectIncludes(cases, '<m:begChr m:val="{"/>', "Cases must retain their opening brace.");
+    expectIncludes(cases, "<m:m>", "Cases must retain their row and column structure.");
+    expectIncludes(accents, "<m:bar>", "Overline must use an OMML bar node.");
+    expectIncludes(accents, "<m:acc>", "Hat accents must use an OMML accent node.");
+
+    const multiLineExpression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        return module.latexLinesToOmml(['a=b', 'c=d'], 'block');
+      })()
+    `;
+    const multiLineEvaluation = await client.send("Runtime.evaluate", {
+      expression: multiLineExpression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (multiLineEvaluation.exceptionDetails) {
+      throw new Error(multiLineEvaluation.exceptionDetails.exception?.description ?? "Multi-line OMML generation failed.");
+    }
+    const multiLine = multiLineEvaluation.result?.value;
+    expectIncludes(multiLine, "<m:eqArr>", "Multiple editor lines must use one OMML equation array.");
+    expect((multiLine.match(/<m:e>/g) ?? []).length >= 2, "Equation arrays must preserve every editor line.");
 
     const docxExpression = `
       (async () => {

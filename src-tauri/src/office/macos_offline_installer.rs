@@ -1,4 +1,3 @@
-use crate::office::macos_offline::offline_root;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -10,14 +9,20 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+pub const MAINTENANCE_INSTALL_ARGUMENT: &str = "--install-macos-office-addins";
+
 const WORD_APP_NAME: &str = "Microsoft Word.app";
 const POWERPOINT_APP_NAME: &str = "Microsoft PowerPoint.app";
+const WORD_PROCESS_NAME: &str = "Microsoft Word";
+const POWERPOINT_PROCESS_NAME: &str = "Microsoft PowerPoint";
 const OFFICE_GROUP_CONTAINER: &str = "Library/Group Containers/UBF8T346G9.Office";
 const WORD_ADDIN_NAME: &str = "VisualTeX.dotm";
 const POWERPOINT_ADDIN_NAME: &str = "VisualTeX.ppam";
 const WORD_SCRIPT_NAME: &str = "VisualTeXWord.scpt";
 const POWERPOINT_SCRIPT_NAME: &str = "VisualTeXPowerPoint.scpt";
 const ADDIN_MANIFEST_NAME: &str = "addins.json";
+const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
+const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
@@ -39,7 +44,9 @@ const PLACEHOLDER_PNG_BASE64: &str =
 #[serde(rename_all = "camelCase")]
 pub struct MacOfflineHostInstallStatus {
     application_installed: bool,
+    application_running: bool,
     files_installed: bool,
+    health_reported: bool,
     loaded: bool,
     plugin_version: Option<String>,
     install_paths: Vec<String>,
@@ -89,11 +96,22 @@ struct FileBackup {
     bytes: Option<Vec<u8>>,
 }
 
+#[derive(Debug)]
+struct PluginHealthStatus {
+    reported: bool,
+    loaded: bool,
+    plugin_version: Option<String>,
+}
+
 fn user_home() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|value| value.is_absolute())
         .ok_or_else(|| "Unable to resolve the current user's home directory".to_string())
+}
+
+fn offline_root() -> Result<PathBuf, String> {
+    Ok(user_home()?.join(OFFICE_GROUP_CONTAINER).join("VisualTeX"))
 }
 
 fn application_paths(home: &Path, app_name: &str) -> [PathBuf; 2] {
@@ -113,6 +131,41 @@ fn application_installed(app_name: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(target_os = "macos")]
+fn application_running(process_name: &str) -> bool {
+    Command::new("/usr/bin/pgrep")
+        .args(["-x", process_name])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn application_running(_process_name: &str) -> bool {
+    false
+}
+
+fn ensure_office_hosts_stopped() -> Result<(), String> {
+    let running = [
+        (WORD_PROCESS_NAME, application_running(WORD_PROCESS_NAME)),
+        (
+            POWERPOINT_PROCESS_NAME,
+            application_running(POWERPOINT_PROCESS_NAME),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(name, is_running)| is_running.then_some(name))
+    .collect::<Vec<_>>();
+    if running.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Fully quit {} with Command-Q before installing or repairing VisualTeX. Office keeps already-loaded VBA code in memory, so replacing files while it is running cannot validate the new add-in.",
+            running.join(" and ")
+        ))
+    }
+}
+
 fn resource_root(app: &AppHandle) -> Result<PathBuf, String> {
     let bundled = app
         .path()
@@ -122,12 +175,15 @@ fn resource_root(app: &AppHandle) -> Result<PathBuf, String> {
     if bundled.join("PROTOCOL.md").is_file() {
         return Ok(bundled);
     }
-    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| "Unable to resolve the VisualTeX source root".to_string())?
-        .join("office/macos-offline");
-    if development.join("PROTOCOL.md").is_file() {
-        return Ok(development);
+    #[cfg(debug_assertions)]
+    {
+        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .ok_or_else(|| "Unable to resolve the VisualTeX source root".to_string())?
+            .join("office/macos-offline");
+        if development.join("PROTOCOL.md").is_file() {
+            return Ok(development);
+        }
     }
     Err("VisualTeX macOS offline add-in resources are missing".to_string())
 }
@@ -136,8 +192,29 @@ fn powerpoint_addin_path() -> Result<PathBuf, String> {
     Ok(offline_root()?.join("OfficeAddins/VisualTeX.ppam"))
 }
 
-fn placeholder_path() -> Result<PathBuf, String> {
+fn legacy_group_placeholder_path() -> Result<PathBuf, String> {
     Ok(offline_root()?.join("OfficeAddins/resources/placeholder.png"))
+}
+
+fn word_runtime_root() -> Result<PathBuf, String> {
+    crate::office::macos_offline::runtime_root(crate::office::sessions::OfficeHost::Word)
+}
+
+fn powerpoint_runtime_root() -> Result<PathBuf, String> {
+    crate::office::macos_offline::runtime_root(crate::office::sessions::OfficeHost::Powerpoint)
+}
+
+fn compatibility_placeholder_path() -> Result<PathBuf, String> {
+    // The currently reviewed DOTM combines the Application Scripts runtime
+    // root with the older OfficeAddins/resources suffix. Keep this exact path
+    // installed until the next manually compiled VTProtocol is promoted.
+    Ok(word_runtime_root()?.join("OfficeAddins/resources/placeholder.png"))
+}
+
+fn canonical_placeholder_path() -> Result<PathBuf, String> {
+    Ok(user_home()?.join(
+        "Library/Application Scripts/com.microsoft.Word/VisualTeXPlaceholder.png",
+    ))
 }
 
 fn word_script_path() -> Result<PathBuf, String> {
@@ -153,9 +230,66 @@ fn powerpoint_script_path() -> Result<PathBuf, String> {
 }
 
 fn health_path(host: &str) -> Result<PathBuf, String> {
-    Ok(offline_root()?
-        .join("OfficePluginStatus")
-        .join(format!("{host}.json")))
+    crate::office::macos_offline::health_path(host)
+}
+
+fn is_legacy_visualtex_wef_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let name = name.to_ascii_lowercase();
+    name.contains(LEGACY_WORD_MANIFEST_ID)
+        || name.contains(LEGACY_POWERPOINT_MANIFEST_ID)
+        || name.starts_with("visualtex.word.xml")
+        || name.starts_with("visualtex.powerpoint.xml")
+}
+
+fn collect_legacy_visualtex_wef_files(
+    directory: &Path,
+    depth: usize,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    if depth > 4 || !directory.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)
+        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
+    {
+        let entry = entry.map_err(|error| {
+            format!("Unable to inspect a legacy Office add-in cache entry: {error}")
+        })?;
+        let file_type = entry.file_type().map_err(|error| {
+            format!("Unable to inspect {}: {error}", entry.path().display())
+        })?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_legacy_visualtex_wef_files(&path, depth + 1, output)?;
+        } else if file_type.is_file() && is_legacy_visualtex_wef_file(&path) {
+            output.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn discover_legacy_visualtex_wef_files() -> Result<Vec<PathBuf>, String> {
+    let home = user_home()?;
+    let mut files = Vec::new();
+    for host_container in ["com.microsoft.Word", "com.microsoft.Powerpoint"] {
+        collect_legacy_visualtex_wef_files(
+            &home
+                .join("Library/Containers")
+                .join(host_container)
+                .join("Data/Documents/wef"),
+            0,
+            &mut files,
+        )?;
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
 }
 
 fn directory_name_matches(value: &Path, expected: &str) -> bool {
@@ -210,6 +344,142 @@ pub(crate) fn discover_word_startup_paths() -> Result<Vec<PathBuf>, String> {
     paths.sort();
     paths.dedup();
     Ok(paths)
+}
+
+fn is_visualtex_word_startup_artifact(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| {
+            let value = value.to_ascii_lowercase();
+            value == "visualtex.dotm" || value.starts_with("visualtex.dotm.")
+        })
+        .unwrap_or(false)
+}
+
+fn discover_word_startup_artifacts() -> Result<Vec<PathBuf>, String> {
+    let mut artifacts = Vec::new();
+    for startup in discover_word_startup_paths()? {
+        if !startup.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(&startup)
+            .map_err(|error| format!("Unable to inspect {}: {error}", startup.display()))?
+        {
+            let entry = entry.map_err(|error| {
+                format!("Unable to inspect a Word Startup entry: {error}")
+            })?;
+            let path = entry.path();
+            if entry
+                .file_type()
+                .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
+                .is_file()
+                && is_visualtex_word_startup_artifact(&path)
+            {
+                artifacts.push(path);
+            }
+        }
+    }
+    artifacts.sort();
+    artifacts.dedup();
+    Ok(artifacts)
+}
+
+fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
+    let directory = offline_root()?.join("OfficeAddins");
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut artifacts = Vec::new();
+    for entry in fs::read_dir(&directory)
+        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
+    {
+        let entry = entry.map_err(|error| {
+            format!("Unable to inspect a VisualTeX PowerPoint add-in entry: {error}")
+        })?;
+        let path = entry.path();
+        let matches = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(|value| {
+                let value = value.to_ascii_lowercase();
+                value == "visualtex.ppam" || value.starts_with("visualtex.ppam.")
+            })
+            .unwrap_or(false);
+        if entry
+            .file_type()
+            .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
+            .is_file()
+            && matches
+        {
+            artifacts.push(path);
+        }
+    }
+    artifacts.sort();
+    artifacts.dedup();
+    Ok(artifacts)
+}
+
+fn remove_dir_if_exists(path: &Path) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("Unable to inspect {}: {error}", path.display())),
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        return remove_if_exists(path);
+    }
+    fs::remove_dir_all(path)
+        .map_err(|error| format!("Unable to remove {}: {error}", path.display()))
+}
+
+fn backup_compiled_artifacts_to_scratch(word: &Path, powerpoint: &Path) -> Result<(), String> {
+    let backup_root = offline_root()?.join("Scratch/InstallBackup");
+    fs::create_dir_all(&backup_root)
+        .map_err(|error| format!("Unable to create {}: {error}", backup_root.display()))?;
+    for (source, name) in [
+        (word, WORD_ADDIN_NAME),
+        (powerpoint, POWERPOINT_ADDIN_NAME),
+    ] {
+        let destination = backup_root.join(name);
+        copy_atomic(source, &destination, 0o600)?;
+        verify_copy(source, &destination)?;
+    }
+    Ok(())
+}
+
+fn clean_visualtex_owned_office_state() -> Result<(), String> {
+    crate::office::background::uninstall_launch_agent()?;
+
+    for artifact in discover_word_startup_artifacts()? {
+        remove_if_exists(&artifact)?;
+    }
+    for artifact in discover_powerpoint_addin_artifacts()? {
+        remove_if_exists(&artifact)?;
+    }
+    for file in [
+        word_script_path()?,
+        powerpoint_script_path()?,
+        canonical_placeholder_path()?,
+        compatibility_placeholder_path()?,
+        legacy_group_placeholder_path()?,
+        health_path("word")?,
+        health_path("powerpoint")?,
+    ] {
+        remove_if_exists(&file)?;
+    }
+    for legacy_file in discover_legacy_visualtex_wef_files()? {
+        remove_if_exists(&legacy_file)?;
+    }
+
+    remove_dir_if_exists(&word_runtime_root()?)?;
+    remove_dir_if_exists(&powerpoint_runtime_root()?)?;
+
+    let root = offline_root()?;
+    for directory in ["OfficeSessions", "OfficePluginStatus", "NativeDocuments"] {
+        remove_dir_if_exists(&root.join(directory))?;
+    }
+    remove_dir_if_exists(&user_home()?.join("Library/Logs/VisualTeX"))?;
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -532,17 +802,27 @@ fn health_is_current(host: &str, health: &PluginHealthFile) -> bool {
     health.loaded && host_matches && version_matches && has_timestamp
 }
 
-fn read_health(host: &str) -> Result<(bool, Option<String>), String> {
+fn read_health(host: &str) -> Result<PluginHealthStatus, String> {
     let path = health_path(host)?;
     let bytes = match fs::read(&path) {
         Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((false, None)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(PluginHealthStatus {
+                reported: false,
+                loaded: false,
+                plugin_version: None,
+            })
+        }
         Err(error) => return Err(format!("Unable to read {}: {error}", path.display())),
     };
     let health: PluginHealthFile = serde_json::from_slice(&bytes)
         .map_err(|error| format!("{} contains invalid JSON: {error}", path.display()))?;
     let loaded = health_is_current(host, &health);
-    Ok((loaded, health.plugin_version))
+    Ok(PluginHealthStatus {
+        reported: true,
+        loaded,
+        plugin_version: health.plugin_version,
+    })
 }
 
 fn source_artifacts(root: &Path) -> (PathBuf, PathBuf) {
@@ -559,16 +839,24 @@ fn compiled_artifacts_available(root: &Path) -> bool {
 fn host_status(
     host: &str,
     app_name: &str,
+    process_name: &str,
     install_paths: Vec<PathBuf>,
 ) -> Result<MacOfflineHostInstallStatus, String> {
-    let (loaded, plugin_version, last_error) = match read_health(host) {
-        Ok((loaded, plugin_version)) => (loaded, plugin_version, None),
-        Err(error) => (false, None, Some(error)),
+    let (health_reported, loaded, plugin_version, last_error) = match read_health(host) {
+        Ok(health) => (
+            health.reported,
+            health.loaded,
+            health.plugin_version,
+            None,
+        ),
+        Err(error) => (false, false, None, Some(error)),
     };
     let files_installed = !install_paths.is_empty() && install_paths.iter().all(|path| path.is_file());
     Ok(MacOfflineHostInstallStatus {
         application_installed: application_installed(app_name),
+        application_running: application_running(process_name),
         files_installed,
+        health_reported,
         loaded,
         plugin_version,
         install_paths: install_paths
@@ -589,18 +877,20 @@ pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> 
     let powerpoint_path = powerpoint_addin_path()?;
     let word_script = word_script_path()?;
     let powerpoint_script = powerpoint_script_path()?;
-    let placeholder = placeholder_path()?;
-    word_paths.extend([word_script.clone(), placeholder.clone()]);
+    let compatibility_placeholder = compatibility_placeholder_path()?;
+    let canonical_placeholder = canonical_placeholder_path()?;
+    word_paths.extend([
+        word_script.clone(),
+        compatibility_placeholder.clone(),
+        canonical_placeholder.clone(),
+    ]);
     Ok(MacOfflineOfficeInstallStatus {
-        word: host_status("word", WORD_APP_NAME, word_paths)?,
+        word: host_status("word", WORD_APP_NAME, WORD_PROCESS_NAME, word_paths)?,
         powerpoint: host_status(
             "powerpoint",
             POWERPOINT_APP_NAME,
-            vec![
-                powerpoint_path.clone(),
-                powerpoint_script.clone(),
-                placeholder.clone(),
-            ],
+            POWERPOINT_PROCESS_NAME,
+            vec![powerpoint_path.clone(), powerpoint_script.clone()],
         )?,
         compiled_artifacts_available: compiled_artifacts_available(&root),
         resource_root: root.display().to_string(),
@@ -620,6 +910,8 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
     }
     let root = resource_root(app)?;
     let (word_source, powerpoint_source) = validate_compiled_artifacts(&root)?;
+    ensure_office_hosts_stopped()?;
+    backup_compiled_artifacts_to_scratch(&word_source, &powerpoint_source)?;
 
     let word_startup_paths = discover_word_startup_paths()?;
     if word_startup_paths.is_empty() {
@@ -633,21 +925,27 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         .map(|startup| startup.join(WORD_ADDIN_NAME))
         .collect::<Vec<_>>();
     let powerpoint_destination = powerpoint_addin_path()?;
-    let placeholder_destination = placeholder_path()?;
+    let compatibility_placeholder_destination = compatibility_placeholder_path()?;
+    let canonical_placeholder_destination = canonical_placeholder_path()?;
+    let legacy_group_placeholder = legacy_group_placeholder_path()?;
     let word_script_destination = word_script_path()?;
     let powerpoint_script_destination = powerpoint_script_path()?;
     let word_health = health_path("word")?;
     let powerpoint_health = health_path("powerpoint")?;
+    let legacy_wef_files = discover_legacy_visualtex_wef_files()?;
 
     let mut mutation_paths = word_destinations.clone();
     mutation_paths.extend([
         powerpoint_destination.clone(),
-        placeholder_destination.clone(),
+        compatibility_placeholder_destination.clone(),
+        canonical_placeholder_destination.clone(),
+        legacy_group_placeholder.clone(),
         word_script_destination.clone(),
         powerpoint_script_destination.clone(),
         word_health.clone(),
         powerpoint_health.clone(),
     ]);
+    mutation_paths.extend(legacy_wef_files.iter().cloned());
     mutation_paths.sort();
     mutation_paths.dedup();
     let backups = mutation_paths
@@ -656,6 +954,8 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         .collect::<Result<Vec<_>, _>>()?;
 
     let install_result = (|| -> Result<(), String> {
+        clean_visualtex_owned_office_state()?;
+
         for (startup, destination) in word_startup_paths.iter().zip(&word_destinations) {
             fs::create_dir_all(startup)
                 .map_err(|error| format!("Unable to create {}: {error}", startup.display()))?;
@@ -668,12 +968,20 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         let placeholder = BASE64_STANDARD
             .decode(PLACEHOLDER_PNG_BASE64)
             .map_err(|error| format!("Unable to decode the VisualTeX placeholder: {error}"))?;
-        atomic_write(&placeholder_destination, &placeholder, 0o600)?;
-        if fs::read(&placeholder_destination)
-            .map_err(|error| format!("Unable to verify the VisualTeX placeholder: {error}"))?
-            != placeholder
-        {
-            return Err("Installed VisualTeX placeholder does not match its source".to_string());
+        for destination in [
+            &compatibility_placeholder_destination,
+            &canonical_placeholder_destination,
+        ] {
+            atomic_write(destination, &placeholder, 0o600)?;
+            if fs::read(destination)
+                .map_err(|error| format!("Unable to verify the VisualTeX placeholder: {error}"))?
+                != placeholder
+            {
+                return Err(format!(
+                    "Installed VisualTeX placeholder does not match its source: {}",
+                    destination.display()
+                ));
+            }
         }
 
         compile_applescript(
@@ -698,6 +1006,13 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         // Word/PowerPoint recreate these only after the new VBA project executes.
         remove_if_exists(&word_health)?;
         remove_if_exists(&powerpoint_health)?;
+
+        // The retired Office.js manifests survive removal of the desktop app in
+        // each Office sandbox. Remove only VisualTeX's two fixed legacy IDs so
+        // the native DOTM/PPAM Ribbon cannot be confused with the old web add-in.
+        for legacy_file in &legacy_wef_files {
+            remove_if_exists(legacy_file)?;
+        }
         Ok(())
     })();
 
@@ -716,15 +1031,8 @@ pub fn uninstall(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, Strin
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
-    for startup in discover_word_startup_paths()? {
-        remove_if_exists(&startup.join(WORD_ADDIN_NAME))?;
-    }
-    remove_if_exists(&powerpoint_addin_path()?)?;
-    remove_if_exists(&word_script_path()?)?;
-    remove_if_exists(&powerpoint_script_path()?)?;
-    remove_if_exists(&placeholder_path()?)?;
-    remove_if_exists(&health_path("word")?)?;
-    remove_if_exists(&health_path("powerpoint")?)?;
+    ensure_office_hosts_stopped()?;
+    clean_visualtex_owned_office_state()?;
     status(app)
 }
 

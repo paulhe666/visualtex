@@ -1,9 +1,11 @@
 Attribute VB_Name = "VTOfficePaths"
 Option Explicit
 
-Private Const VT_OFFICE_GROUP_CONTAINER As String = "/Library/Group Containers/UBF8T346G9.Office/VisualTeX"
+Private Const VT_WORD_APPLICATION_SCRIPTS_SUFFIX As String = "/Library/Application Scripts/com.microsoft.Word"
+Private Const VT_POWERPOINT_APPLICATION_SCRIPTS_SUFFIX As String = "/Library/Application Scripts/com.microsoft.Powerpoint"
+Private Const VT_RUNTIME_DIRECTORY_NAME As String = "/VisualTeXRuntime"
 
-Public Function VTApplicationSupportRoot() As String
+Private Function VTUserHomePath() As String
     Dim homePath As String
     Dim sandboxMarker As Long
 
@@ -15,9 +17,27 @@ Public Function VTApplicationSupportRoot() As String
     If Len(homePath) = 0 Or Left$(homePath, 1) <> "/" Then
         Err.Raise vbObjectError + 7100, "VisualTeX", "Unable to resolve the macOS home directory."
     End If
+    VTUserHomePath = homePath
+End Function
 
-    ' Microsoft Office for Mac is sandboxed. Word and PowerPoint can both
-    ' read and write their signed Office application group, while arbitrary
-    ' user Application Support paths are not available to VBA.
-    VTApplicationSupportRoot = homePath & VT_OFFICE_GROUP_CONTAINER
+Public Function VTApplicationSupportRoot() As String
+    Dim hostName As String
+    Dim hostSuffix As String
+
+    hostName = LCase$(Application.Name)
+    If InStr(1, hostName, "powerpoint", vbTextCompare) > 0 Then
+        hostSuffix = VT_POWERPOINT_APPLICATION_SCRIPTS_SUFFIX
+    ElseIf InStr(1, hostName, "word", vbTextCompare) > 0 Then
+        hostSuffix = VT_WORD_APPLICATION_SCRIPTS_SUFFIX
+    Else
+        Err.Raise vbObjectError + 7100, "VisualTeX", "Unable to identify the current Microsoft Office host."
+    End If
+
+    ' Each Office host writes its own VisualTeX runtime beneath Application
+    ' Scripts. The desktop app can read both host directories as the same user.
+    VTApplicationSupportRoot = VTUserHomePath() & hostSuffix & VT_RUNTIME_DIRECTORY_NAME
+End Function
+
+Public Function VTWordApplicationScriptsRoot() As String
+    VTWordApplicationScriptsRoot = VTUserHomePath() & VT_WORD_APPLICATION_SCRIPTS_SUFFIX
 End Function

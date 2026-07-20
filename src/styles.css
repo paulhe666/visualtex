@@ -3302,10 +3302,16 @@ button:disabled {
   color: var(--text-faint);
 }
 
-.office-first-run-hosts article.is-detected {
+.office-first-run-hosts article.is-loaded {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
   color: var(--accent);
+}
+
+.office-first-run-hosts article.is-files-ready {
+  border-color: color-mix(in srgb, var(--warning-text, #a85d00) 38%, var(--border));
+  background: color-mix(in srgb, var(--warning-text, #a85d00) 7%, var(--surface));
+  color: var(--warning-text, #a85d00);
 }
 
 .office-first-run-hosts article div {
@@ -3354,6 +3360,16 @@ button:disabled {
   color: var(--success, #238636);
 }
 
+.office-first-run-note.is-important {
+  border-color: color-mix(in srgb, var(--warning-text, #a85d00) 38%, var(--border));
+  background: color-mix(in srgb, var(--warning-text, #a85d00) 6%, var(--surface));
+}
+
+.office-first-run-note.is-important p {
+  color: var(--warning-text, #8a5200);
+  font-weight: 600;
+}
+
 .office-first-run-dialog > footer {
   display: flex;
   justify-content: flex-end;
@@ -3363,6 +3379,353 @@ button:disabled {
 .office-first-run-dialog > footer .primary-button,
 .office-first-run-dialog > footer .secondary-button {
   margin: 0;
+}
+
+.office-first-run-dialog.is-native-office {
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.office-first-run-powerpoint-guide,
+.native-powerpoint-settings-guide {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg-elevated);
+}
+
+.native-powerpoint-settings-guide.is-required {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface));
+}
+
+.office-first-run-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.powerpoint-native-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.powerpoint-native-guide.is-compact {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.82fr);
+}
+
+.powerpoint-native-app,
+.powerpoint-addins-dialog-mock {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #c7c7cb;
+  border-radius: 9px;
+  background: #f4f4f6;
+  color: #27272b;
+  box-shadow: 0 10px 28px rgba(20, 20, 24, 0.12);
+}
+
+.powerpoint-native-titlebar {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #d7d7db;
+  background: linear-gradient(#fbfbfc, #ececef);
+  font-size: 11px;
+}
+
+.powerpoint-window-controls {
+  position: absolute;
+  left: 11px;
+  display: flex;
+  gap: 6px;
+}
+
+.powerpoint-window-controls i {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 50%;
+  background: #ff5f57;
+}
+
+.powerpoint-window-controls i:nth-child(2) {
+  background: #febc2e;
+}
+
+.powerpoint-window-controls i:nth-child(3) {
+  background: #28c840;
+}
+
+.powerpoint-native-menubar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 14px;
+  border-bottom: 1px solid #d9d9dd;
+  background: #ffffff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.powerpoint-native-menubar .is-active {
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: #ece7f7;
+  color: #5b2d90;
+  font-weight: 700;
+}
+
+.powerpoint-native-tools-menu {
+  width: min(220px, calc(100% - 28px));
+  margin: 7px 0 46px 126px;
+  display: grid;
+  padding: 5px;
+  border: 1px solid #bebec3;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 28px rgba(24, 24, 28, 0.2);
+  font-size: 10px;
+}
+
+.powerpoint-native-tools-menu span {
+  padding: 6px 9px;
+  border-radius: 4px;
+}
+
+.powerpoint-native-tools-menu .is-highlighted {
+  background: #6950a1;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.powerpoint-addins-dialog-mock {
+  display: grid;
+  grid-template-rows: 36px minmax(112px, 1fr) 42px;
+  background: #eeeeF1;
+}
+
+.powerpoint-addins-dialog-mock > header {
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid #d0d0d4;
+  background: linear-gradient(#fafafa, #e9e9ec);
+  font-size: 11px;
+}
+
+.powerpoint-addins-list {
+  margin: 14px;
+  padding: 6px;
+  border: 1px solid #bdbdc2;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.powerpoint-addins-list > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.powerpoint-addins-list > span.is-selected {
+  background: #dcd4ef;
+}
+
+.powerpoint-addins-list.is-empty {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: #fafafa;
+}
+
+.powerpoint-addins-empty-copy {
+  display: grid !important;
+  justify-items: center;
+  gap: 4px !important;
+  text-align: center;
+  color: #5f5f66;
+}
+
+.powerpoint-addins-empty-copy small {
+  color: #7a4a15;
+  font-size: 9px;
+}
+
+.powerpoint-addins-list i {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #77777c;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #4f277f;
+}
+
+.powerpoint-addins-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-top: 1px solid #d0d0d4;
+}
+
+.powerpoint-addins-controls > span {
+  width: 25px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #b8b8bd;
+  border-radius: 4px;
+  background: linear-gradient(#ffffff, #e6e6e9);
+  color: #303035;
+  pointer-events: none;
+}
+
+.powerpoint-addins-controls > span.is-next-action {
+  border-color: #6d4296;
+  background: #6d4296;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(109, 66, 150, 0.16);
+}
+
+.powerpoint-addins-controls small {
+  margin-left: auto;
+  color: #66666d;
+  font-size: 9px;
+}
+
+.powerpoint-guide-steps {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.powerpoint-guide-steps > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.powerpoint-guide-steps b {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #6d4296;
+  color: #ffffff;
+  font-size: 9px;
+}
+
+.powerpoint-guide-steps .powerpoint-guide-path {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-office-status-grid .office-status-card header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.onboarding-native-ribbon-demo {
+  width: min(580px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #c9c9ce;
+  border-radius: 10px;
+  background: #f7f7f8;
+  color: #29292d;
+  box-shadow: 0 12px 28px rgba(22, 22, 27, 0.1);
+}
+
+.onboarding-native-ribbon-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d6d6da;
+}
+
+.onboarding-native-ribbon-title strong {
+  font-size: 11px;
+}
+
+.onboarding-native-ribbon-title span {
+  margin-left: auto;
+  padding: 5px 11px;
+  border-bottom: 2px solid #65429a;
+  color: #65429a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.onboarding-native-ribbon-tools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.onboarding-native-ribbon-demo.is-powerpoint .onboarding-native-ribbon-tools {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.onboarding-native-ribbon-tools > span {
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #d2d2d6;
+  border-radius: 7px;
+  background: #ffffff;
+  text-align: center;
+}
+
+.onboarding-native-ribbon-tools b,
+.onboarding-native-ribbon-tools svg {
+  color: #65429a;
+  font-size: 10px;
+}
+
+.onboarding-native-ribbon-tools small {
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.onboarding-native-ribbon-demo p {
+  margin: 0;
+  color: #68686f;
+  font-size: 10px;
+  text-align: center;
 }
 
 .onboarding-backdrop {
@@ -3783,8 +4146,22 @@ button:disabled {
     padding: 18px;
   }
 
-  .office-first-run-hosts {
+  .office-first-run-hosts,
+  .powerpoint-native-guide,
+  .powerpoint-native-guide.is-compact {
     grid-template-columns: 1fr;
+  }
+
+  .powerpoint-guide-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .powerpoint-guide-steps .powerpoint-guide-path {
+    grid-column: 1;
+  }
+
+  .powerpoint-native-tools-menu {
+    margin-left: 18px;
   }
 
   .onboarding-dialog {

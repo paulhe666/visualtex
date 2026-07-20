@@ -29,6 +29,11 @@ import type {
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
 import { latexToSvg } from "../../export/latexToSvg";
+import { latexLinesToOmmlArtifacts } from "../omml/latexToOmml";
+import {
+  invokeTauri,
+  onCurrentTauriWindowCloseRequested,
+} from "../shared/tauriTransport";
 import {
   cancelMacosOfflineOfficeSession,
   commitMacosOfflineOfficeSession,
@@ -299,14 +304,27 @@ export function OfficeDialogApp() {
       paddingPx: displayMode === "inline" ? 1 : 10,
       background: "transparent",
     });
+    const wordArtifacts =
+      session?.host === "word"
+        ? latexLinesToOmmlArtifacts(
+            lines.map((line) => line.latex),
+            displayMode,
+          )
+        : null;
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
+      ...(wordArtifacts
+        ? {
+            ommlBase64: wordArtifacts.ommlBase64,
+            ommlDocxBase64: wordArtifacts.ommlDocxBase64,
+          }
+        : {}),
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,
     };
-  }, [latex, displayMode]);
+  }, [latex, displayMode, lines, session?.host]);
 
   const generateExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
     const base = generateSvgExportResult();
@@ -819,8 +837,7 @@ export function OfficeDialogApp() {
 
     allowNativeCloseRef.current = true;
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().close();
+      await invokeTauri<void>("close_macos_offline_office_editor_window");
     } catch (error) {
       allowNativeCloseRef.current = false;
       throw error;
@@ -909,22 +926,19 @@ export function OfficeDialogApp() {
 
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) =>
-        getCurrentWindow().onCloseRequested((event) => {
-          if (allowNativeCloseRef.current || disposed) return;
-          event.preventDefault();
-          if (nativeCloseRequestInFlightRef.current) return;
-          nativeCloseRequestInFlightRef.current = true;
+    void onCurrentTauriWindowCloseRequested((event) => {
+      if (allowNativeCloseRef.current || disposed) return;
+      event.preventDefault();
+      if (nativeCloseRequestInFlightRef.current) return;
+      nativeCloseRequestInFlightRef.current = true;
 
-          const finalize = latex.trim() && autoCommitOnClose
-            ? handleCommit()
-            : handleCancel();
-          void finalize.finally(() => {
-            nativeCloseRequestInFlightRef.current = false;
-          });
-        }),
-      )
+      const finalize = latex.trim() && autoCommitOnClose
+        ? handleCommit()
+        : handleCancel();
+      void finalize.finally(() => {
+        nativeCloseRequestInFlightRef.current = false;
+      });
+    })
       .then((dispose) => {
         if (disposed) {
           dispose();

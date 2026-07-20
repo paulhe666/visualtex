@@ -108,7 +108,7 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.first-run.v1.completed";
+const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.native-first-run.v2.completed";
 const DESKTOP_PLATFORM = detectDesktopPlatform();
 const ONBOARDING_STORAGE_KEY = onboardingStorageKey(
   DESKTOP_PLATFORM,
@@ -681,8 +681,8 @@ function App() {
     }
     setToast(
       installed
-        ? isEn ? "Office integration installed" : "Office 集成已安装"
-        : isEn ? "You can install Office integration later in Settings" : "之后可在设置中安装 Office 集成",
+        ? isEn ? "Native Office add-ins are ready" : "原生 Office 加载项已就绪"
+        : isEn ? "You can finish native Office setup later in Settings" : "之后可在设置中完成原生 Office 插件配置",
     );
   }, [isEn]);
 

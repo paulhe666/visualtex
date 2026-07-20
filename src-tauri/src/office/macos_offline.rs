@@ -571,9 +571,8 @@ fn close_other_editor_windows_for_host(
 }
 
 fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    app.set_activation_policy(tauri::ActivationPolicy::Regular)
-        .map_err(|error| format!("Unable to activate the VisualTeX Office editor: {error}"))?;
+    crate::office::background::activate_foreground_app(app)?;
+    crate::office::background::install_application_icon(app)?;
 
     let label = editor_window_label(session_id);
     if let Some(window) = app.get_webview_window(&label) {
@@ -592,6 +591,7 @@ fn open_editor_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
         .build()
         .map_err(|error| format!("Unable to open the VisualTeX Office editor: {error}"))?;
     window.show().map_err(|error| error.to_string())?;
+    crate::office::background::activate_foreground_app(app)?;
     window.set_focus().map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -616,7 +616,10 @@ pub fn close_macos_offline_office_editor_window(window: WebviewWindow) -> Result
             .get_webview_window("main")
             .and_then(|main| main.is_visible().ok())
             .unwrap_or(false);
-        if !has_other_editor && !main_visible {
+        if !has_other_editor
+            && !main_visible
+            && crate::office::background::is_background_mode()
+        {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory)
                 .map_err(|error| format!("Unable to return VisualTeX to Office background mode: {error}"))?;
         }
@@ -627,7 +630,9 @@ pub fn close_macos_offline_office_editor_window(window: WebviewWindow) -> Result
 pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
     for (label, window) in app.webview_windows() {
         if label.starts_with("office-native-") {
+            let _ = crate::office::background::activate_foreground_app(app);
             let _ = window.show();
+            let _ = crate::office::background::activate_foreground_app(app);
             let _ = window.set_focus();
             return true;
         }

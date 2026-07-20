@@ -4,65 +4,21 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
-  Play,
+  FileText,
+  Presentation,
   RefreshCw,
   ShieldAlert,
-  ShieldCheck,
-  Square,
-  ToggleLeft,
-  ToggleRight,
   Trash2,
   Wrench,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-
-interface OfficeHostInstallStatus {
-  applicationInstalled: boolean;
-  manifestInstalled: boolean;
-  manifestVersion: string | null;
-  manifestPath: string;
-}
-
-interface CertificateInstallStatus {
-  certificateExists: boolean;
-  privateKeyExists: boolean;
-  trusted: boolean;
-  keychainPath: string;
-  lastError: string | null;
-}
-
-interface OfficeCompanionStatus {
-  running: boolean;
-  bindAddress: string;
-  port: number;
-  certificatePath: string;
-  officeUiVersion: string;
-  protocolVersion: number;
-  lastError: string | null;
-}
-
-interface OfficeBackgroundStatus {
-  installed: boolean;
-  loaded: boolean;
-  runningInBackgroundMode: boolean;
-  plistPath: string;
-  executablePath: string;
-  lastError: string | null;
-}
-
-interface OfficeIntegrationStatus {
-  word: OfficeHostInstallStatus;
-  powerpoint: OfficeHostInstallStatus;
-  expectedManifestVersion: string;
-  certificate: CertificateInstallStatus;
-  background: OfficeBackgroundStatus;
-  companion: OfficeCompanionStatus;
-  officeUiVersion: string;
-}
+import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 
 interface MacOfflineHostStatus {
   applicationInstalled: boolean;
+  applicationRunning: boolean;
   filesInstalled: boolean;
+  healthReported: boolean;
   loaded: boolean;
   pluginVersion: string | null;
   installPaths: string[];
@@ -100,64 +56,28 @@ function StatusLine({ ok, children }: { ok: boolean; children: React.ReactNode }
   );
 }
 
-function HostCard({
-  name,
-  host,
-  isEn,
-  expectedVersion,
-}: {
-  name: string;
-  host: OfficeHostInstallStatus;
-  isEn: boolean;
-  expectedVersion: string;
-}) {
-  const ready =
-    host.applicationInstalled &&
-    host.manifestInstalled &&
-    host.manifestVersion === expectedVersion;
-  return (
-    <article className="office-status-card">
-      <header>
-        <strong>{name}</strong>
-        {ready ? (
-          <CheckCircle2 className="office-state-ok" size={15} />
-        ) : (
-          <ShieldAlert className="office-state-warning" size={15} />
-        )}
-      </header>
-      <StatusLine ok={host.applicationInstalled}>
-        {isEn ? "Application" : "应用"}: {host.applicationInstalled ? (isEn ? "installed" : "已安装") : (isEn ? "missing" : "未检测到")}
-      </StatusLine>
-      <StatusLine ok={host.manifestInstalled}>
-        manifest: {host.manifestInstalled ? host.manifestVersion ?? "—" : isEn ? "missing" : "缺失"}
-      </StatusLine>
-      <p title={host.manifestPath}>{host.manifestPath}</p>
-    </article>
-  );
-}
-
 export function MacOfficeIntegrationSettings() {
-  const isEn = useEditorStore((state) => state.language) === "en";
-  const [status, setStatus] = useState<OfficeIntegrationStatus | null>(null);
-  const [offlineStatus, setOfflineStatus] = useState<MacOfflineOfficeStatus | null>(null);
+  const language = useEditorStore((state) => state.language);
+  const isEn = language === "en";
+  const [status, setStatus] = useState<MacOfflineOfficeStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
     setBusy((value) => value ?? "refresh");
     try {
-      const [compatibility, offline] = await Promise.all([
-        invoke<OfficeIntegrationStatus>("get_office_integration_status"),
-        invoke<MacOfflineOfficeStatus>("get_macos_offline_office_install_status"),
-      ]);
-      setStatus(compatibility);
-      setOfflineStatus(offline);
+      const next = await invoke<MacOfflineOfficeStatus>(
+        "get_macos_offline_office_install_status",
+      );
+      setStatus(next);
       setMessage("");
     } catch (error) {
       setMessage(
         errorMessage(
           error,
-          isEn ? "Unable to read macOS Office status." : "无法读取 macOS Office 集成状态。",
+          isEn
+            ? "Unable to read the native Office add-in status."
+            : "无法读取原生 Office 加载项状态。",
         ),
       );
     } finally {
@@ -170,19 +90,19 @@ export function MacOfficeIntegrationSettings() {
   }, [refresh]);
 
   const run = useCallback(
-    async (name: string, command: string, args?: Record<string, unknown>) => {
+    async (name: string, command: string) => {
       setBusy(name);
       setMessage("");
       try {
-        await invoke(command, args);
-        if (command !== "open_word" && command !== "open_powerpoint") {
+        await invoke(command);
+        if (command !== "open_word" && command !== "open_powerpoint" && command !== "reveal_macos_powerpoint_addin") {
           await refresh();
         }
       } catch (error) {
         setMessage(
           errorMessage(
             error,
-            isEn ? "macOS Office operation failed." : "macOS Office 集成操作失败。",
+            isEn ? "The native Office operation failed." : "原生 Office 操作执行失败。",
           ),
         );
       } finally {
@@ -192,15 +112,21 @@ export function MacOfficeIntegrationSettings() {
     [isEn, refresh],
   );
 
+  const powerpointNeedsVerification = Boolean(
+    status?.powerpoint.applicationRunning &&
+      status.powerpoint.filesInstalled &&
+      !status.powerpoint.loaded,
+  );
+
   return (
     <section className="settings-section office-integration-section">
       <div className="settings-section-heading office-settings-heading">
         <div>
-          <strong>{isEn ? "macOS Office integration" : "macOS Office 集成"}</strong>
+          <strong>{isEn ? "Word and PowerPoint native add-ins" : "Word 与 PowerPoint 原生加载项"}</strong>
           <p>
             {isEn
-              ? "Installs the local Word and PowerPoint add-in resources, HTTPS certificate, and background companion. Activate VisualTeX from Office Add-ins when needed."
-              : "安装 Word 与 PowerPoint 本地加载项资源、HTTPS 证书和后台伴侣服务；需要时可从 Office 的“加载项”中启用 VisualTeX。"}
+              ? "Word uses VisualTeX.dotm and PowerPoint uses VisualTeX.ppam. The add-ins communicate with the desktop app through local Office runtime files and the visualtex URL scheme."
+              : "Word 使用 VisualTeX.dotm，PowerPoint 使用 VisualTeX.ppam。加载项通过 Office 本地运行文件和 visualtex URL Scheme 与桌面应用通信。"}
           </p>
         </div>
         <button
@@ -217,191 +143,192 @@ export function MacOfficeIntegrationSettings() {
       {!status ? (
         <div className="office-settings-loading">
           <RefreshCw size={16} className="is-spinning" />
-          <span>{isEn ? "Reading integration status…" : "正在读取集成状态…"}</span>
+          <span>{isEn ? "Reading native add-in status…" : "正在读取原生加载项状态…"}</span>
         </div>
       ) : (
-        <div className="office-status-grid">
-          <HostCard
-            name="Microsoft Word"
-            host={status.word}
-            isEn={isEn}
-            expectedVersion={status.expectedManifestVersion}
-          />
-          <HostCard
-            name="Microsoft PowerPoint"
-            host={status.powerpoint}
-            isEn={isEn}
-            expectedVersion={status.expectedManifestVersion}
-          />
-
+        <div className="office-status-grid native-office-status-grid">
           <article className="office-status-card">
             <header>
-              <strong>{isEn ? "Local companion" : "本地伴侣服务"}</strong>
+              <strong><FileText size={16} /> Word · VisualTeX.dotm</strong>
+              {status.word.loaded && <CheckCircle2 className="office-state-ok" size={15} />}
             </header>
-            <StatusLine ok={status.companion.running}>
-              {status.companion.running
-                ? `${status.companion.bindAddress}:${status.companion.port}`
-                : isEn ? "Stopped" : "已停止"}
+            <StatusLine ok={status.word.applicationInstalled}>
+              {status.word.applicationInstalled
+                ? isEn ? "Microsoft Word detected" : "已检测到 Microsoft Word"
+                : isEn ? "Microsoft Word not detected" : "未检测到 Microsoft Word"}
             </StatusLine>
-            <dl>
-              <div><dt>{isEn ? "Protocol" : "协议"}</dt><dd>{status.companion.protocolVersion}</dd></div>
-              <div><dt>Office UI</dt><dd>{status.officeUiVersion}</dd></div>
-            </dl>
-          </article>
-
-          <article className="office-status-card">
-            <header>
-              <strong>LaunchAgent</strong>
-            </header>
-            <StatusLine ok={status.background.installed}>
-              {status.background.installed
-                ? isEn ? "Installed" : "已安装"
-                : isEn ? "Missing" : "缺失"}
+            <StatusLine ok={status.word.applicationRunning}>
+              {status.word.applicationRunning
+                ? isEn ? "Word is running" : "Word 正在运行"
+                : isEn ? "Word is not running" : "Word 当前未运行"}
             </StatusLine>
-            <StatusLine ok={status.background.loaded}>
-              {status.background.loaded
-                ? isEn ? "Loaded for this login" : "当前登录会话已加载"
-                : isEn ? "Not loaded" : "未加载"}
+            <StatusLine ok={status.word.filesInstalled}>
+              {status.word.filesInstalled
+                ? isEn ? "DOTM and AppleScriptTask installed" : "DOTM 与 AppleScriptTask 已安装"
+                : isEn ? "Native Word files are missing" : "Word 原生文件尚未安装"}
             </StatusLine>
-            <p title={status.background.plistPath}>{status.background.plistPath || "—"}</p>
+            <StatusLine ok={status.word.loaded}>
+              {status.word.loaded
+                ? isEn ? "Word confirmed that VisualTeX is loaded" : "Word 已确认加载 VisualTeX"
+                : !status.word.filesInstalled
+                  ? isEn ? "Waiting for installation" : "等待安装"
+                  : !status.word.applicationRunning
+                    ? isEn ? "Files are installed. Start Word to verify whether the DOTM loads" : "文件仅已安装；请启动 Word 后再验证 DOTM 是否加载"
+                    : !status.word.healthReported
+                      ? isEn ? "Word is running, but no VisualTeX load-confirmation file has been created. This does not mean the DOTM is missing; if formula buttons also fail, repair the native file bridge" : "Word 已启动，但尚未生成 VisualTeX 加载确认文件。这不代表 DOTM 未安装；如果公式按钮也报错，请修复原生文件桥，而不是反复重启 Word"
+                      : isEn ? "Word is running, but the VisualTeX load report is stale or incompatible. Run Repair after quitting Word" : "Word 正在运行，但 VisualTeX 加载报告已过期或版本不匹配。请退出 Word 后执行修复"}
+            </StatusLine>
+            <p title={status.word.installPaths.join("\n")}>{status.word.installPaths[0] ?? "—"}</p>
           </article>
 
           <article className="office-status-card">
             <header>
-              <strong>{isEn ? "Login Keychain certificate" : "登录 Keychain 证书"}</strong>
-              {status.certificate.trusted ? (
-                <ShieldCheck className="office-state-ok" size={15} />
-              ) : (
-                <ShieldAlert className="office-state-warning" size={15} />
-              )}
+              <strong><Presentation size={16} /> PowerPoint · VisualTeX.ppam</strong>
+              {status.powerpoint.loaded && <CheckCircle2 className="office-state-ok" size={15} />}
             </header>
-            <StatusLine ok={status.certificate.certificateExists}>
-              {isEn ? "Certificate file" : "证书文件"}
+            <StatusLine ok={status.powerpoint.applicationInstalled}>
+              {status.powerpoint.applicationInstalled
+                ? isEn ? "Microsoft PowerPoint detected" : "已检测到 Microsoft PowerPoint"
+                : isEn ? "Microsoft PowerPoint not detected" : "未检测到 Microsoft PowerPoint"}
             </StatusLine>
-            <StatusLine ok={status.certificate.privateKeyExists}>
-              {isEn ? "Private key" : "私钥"}
+            <StatusLine ok={status.powerpoint.applicationRunning}>
+              {status.powerpoint.applicationRunning
+                ? isEn ? "PowerPoint is running" : "PowerPoint 正在运行"
+                : isEn ? "PowerPoint is not running" : "PowerPoint 当前未运行"}
             </StatusLine>
-            <StatusLine ok={status.certificate.trusted}>
-              {isEn ? "Trusted by login Keychain" : "已受登录 Keychain 信任"}
+            <StatusLine ok={status.powerpoint.filesInstalled}>
+              {status.powerpoint.filesInstalled
+                ? isEn ? "PPAM and AppleScriptTask installed" : "PPAM 与 AppleScriptTask 已安装"
+                : isEn ? "Native PowerPoint files are missing" : "PowerPoint 原生文件尚未安装"}
             </StatusLine>
-            <p title={status.certificate.keychainPath}>{status.certificate.keychainPath}</p>
+            <StatusLine ok={status.powerpoint.loaded}>
+              {status.powerpoint.loaded
+                ? isEn ? "PowerPoint confirmed that VisualTeX is loaded" : "PowerPoint 已确认加载 VisualTeX"
+                : !status.powerpoint.filesInstalled
+                  ? isEn ? "Waiting for installation" : "等待安装"
+                  : !status.powerpoint.applicationRunning
+                    ? isEn ? "Files are installed. Start PowerPoint to verify the fixed PPAM" : "文件仅已安装；请启动 PowerPoint 后验证固定路径中的 PPAM"
+                    : !status.powerpoint.healthReported
+                      ? isEn ? "PowerPoint is running, but no VisualTeX load-confirmation file has been created. This alone does not mean the PPAM is unregistered; if formula buttons also fail, repair the native file bridge" : "PowerPoint 已启动，但尚未生成 VisualTeX 加载确认文件。这不等于 PPAM 未登记；如果公式按钮也报错，请修复原生文件桥"
+                      : isEn ? "PowerPoint is running, but the VisualTeX load report is stale or incompatible. Quit PowerPoint and run Repair" : "PowerPoint 正在运行，但 VisualTeX 加载报告已过期或版本不匹配。请退出 PowerPoint 后执行修复"}
+            </StatusLine>
+            <p title={status.powerpointAddinPath}>{status.powerpointAddinPath}</p>
           </article>
-        </div>
-      )}
 
-      <div className="settings-section-heading office-settings-heading">
-        <div>
-          <strong>{isEn ? "Native offline add-ins (staged)" : "原生离线加载项（分阶段启用）"}</strong>
-          <p>
-            {isEn
-              ? "Word uses a global DOTM template and PowerPoint uses a fixed PPAM file. This route has no HTTPS, certificate, manifest, network, or Office.js dependency. The compatibility route above remains installed until native acceptance is complete."
-              : "Word 使用全局 DOTM 模板，PowerPoint 使用固定路径 PPAM；该路线不依赖 HTTPS、证书、Manifest、网络或 Office.js。在原生验收全部完成前，上方兼容路线仍会保留。"}
-          </p>
-        </div>
-      </div>
-
-      {offlineStatus && (
-        <div className="office-status-grid">
           <article className="office-status-card">
-            <header><strong>Word · VisualTeX.dotm</strong></header>
-            <StatusLine ok={offlineStatus.word.filesInstalled}>
-              {offlineStatus.word.filesInstalled ? (isEn ? "Files installed" : "文件已安装") : (isEn ? "Files missing" : "文件缺失")}
+            <header><strong>{isEn ? "Packaged native resources" : "随应用打包的原生资源"}</strong></header>
+            <StatusLine ok={status.compiledArtifactsAvailable}>
+              {status.compiledArtifactsAvailable
+                ? isEn ? "Reviewed DOTM and PPAM are available" : "已包含经过验收的 DOTM 与 PPAM"
+                : isEn ? "Compiled Office add-ins are missing from this app" : "当前应用包中缺少已编译 Office 加载项"}
             </StatusLine>
-            <StatusLine ok={offlineStatus.word.loaded}>
-              {offlineStatus.word.loaded ? (isEn ? "Loaded by Word" : "Word 已加载") : (isEn ? "Waiting for Word health signal" : "等待 Word 健康状态")}
-            </StatusLine>
-            <p title={offlineStatus.word.installPaths.join("\n")}>{offlineStatus.word.installPaths[0] ?? "—"}</p>
-          </article>
-          <article className="office-status-card">
-            <header><strong>PowerPoint · VisualTeX.ppam</strong></header>
-            <StatusLine ok={offlineStatus.powerpoint.filesInstalled}>
-              {offlineStatus.powerpoint.filesInstalled ? (isEn ? "Files installed" : "文件已安装") : (isEn ? "Files missing" : "文件缺失")}
-            </StatusLine>
-            <StatusLine ok={offlineStatus.powerpoint.loaded}>
-              {offlineStatus.powerpoint.loaded ? (isEn ? "Loaded by PowerPoint" : "PowerPoint 已加载") : (isEn ? "Manual registration or health signal required" : "需要手动登记或等待健康状态")}
-            </StatusLine>
-            <p title={offlineStatus.powerpointAddinPath}>{offlineStatus.powerpointAddinPath}</p>
-          </article>
-          <article className="office-status-card">
-            <header><strong>{isEn ? "Compiled add-in package" : "已编译加载项包"}</strong></header>
-            <StatusLine ok={offlineStatus.compiledArtifactsAvailable}>
-              {offlineStatus.compiledArtifactsAvailable
-                ? (isEn ? "DOTM and PPAM are available" : "DOTM 与 PPAM 已就绪")
-                : (isEn ? "Reviewed VBA sources exist; compiled Office binaries are not packaged yet" : "VBA 源码已生成，但尚未打包真实 Office 编译产物")}
-            </StatusLine>
-            <p title={offlineStatus.resourceRoot}>{offlineStatus.resourceRoot}</p>
+            <p title={status.resourceRoot}>{status.resourceRoot}</p>
           </article>
         </div>
       )}
 
       <div className="office-settings-actions">
-        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.compiledArtifactsAvailable} onClick={() => void run("offline-install", "install_macos_offline_office_addins")}>
-          <Download size={15} />{isEn ? "Install native offline add-ins" : "安装原生离线加载项"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.compiledArtifactsAvailable} onClick={() => void run("offline-repair", "repair_macos_offline_office_addins")}>
-          <Wrench size={15} />{isEn ? "Repair native add-ins" : "修复原生加载项"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || !offlineStatus?.powerpoint.filesInstalled} onClick={() => void run("offline-reveal", "reveal_macos_powerpoint_addin")}>
-          <ExternalLink size={15} />{isEn ? "Show PPAM in Finder" : "在 Finder 中显示 PPAM"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void run("offline-tutorial", "open_macos_powerpoint_addin_tutorial")}>
-          <ExternalLink size={15} />{isEn ? "Open PPAM tutorial" : "打开 PPAM 安装教程"}
-        </button>
-        <button type="button" className="secondary-button danger-subtle" disabled={busy !== null} onClick={() => void run("offline-uninstall", "uninstall_macos_offline_office_addins")}>
-          <Trash2 size={15} />{isEn ? "Uninstall native add-ins" : "卸载原生加载项"}
-        </button>
-      </div>
-
-      {(message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError || offlineStatus?.word.lastError || offlineStatus?.powerpoint.lastError) && (
-        <div className="office-settings-warning" role="alert">
-          <ShieldAlert size={15} />
-          <span>
-            {message || status?.certificate.lastError || status?.background.lastError || status?.companion.lastError || offlineStatus?.word.lastError || offlineStatus?.powerpoint.lastError}
-          </span>
-        </div>
-      )}
-
-      <div className="office-settings-actions">
-        <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void run("install", "install_office_integration")}>
-          <Download size={15} />{isEn ? "Install Office integration" : "安装 Office 集成"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void run("repair", "repair_office_integration")}>
-          <Wrench size={15} />{isEn ? "Repair" : "修复 Office 集成"}
+        <button
+          type="button"
+          className="primary-button"
+          disabled={busy !== null || !status?.compiledArtifactsAvailable}
+          onClick={() => void run("install", "install_macos_offline_office_addins")}
+        >
+          <Download size={15} />
+          {isEn ? "Install DOTM and PPAM" : "安装 DOTM 和 PPAM"}
         </button>
         <button
           type="button"
           className="secondary-button"
-          disabled={busy !== null}
-          onClick={() => void run(
-            "background-start",
-            "set_office_background_start",
-            { enabled: !status?.background.installed },
-          )}
+          disabled={busy !== null || !status?.compiledArtifactsAvailable}
+          onClick={() => void run("repair", "repair_macos_offline_office_addins")}
         >
-          {status?.background.installed ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
-          {status?.background.installed
-            ? isEn ? "Disable startup" : "关闭开机启动"
-            : isEn ? "Enable startup" : "启用开机启动"}
+          <Wrench size={15} />
+          {isEn ? "Repair native add-ins" : "修复原生加载项"}
         </button>
-        <button type="button" className="secondary-button danger-subtle" disabled={busy !== null} onClick={() => void run("uninstall", "uninstall_office_integration")}>
-          <Trash2 size={15} />{isEn ? "Uninstall" : "卸载 Office 集成"}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy !== null || !status?.word.applicationInstalled}
+          onClick={() => void run("word", "open_word")}
+        >
+          <FileText size={15} />
+          {isEn ? "Open Word" : "打开 Word"}
         </button>
-        <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void run("certificate", "regenerate_office_certificate")}>
-          <ShieldCheck size={15} />{isEn ? "Regenerate certificate" : "重新生成证书"}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy !== null || !status?.powerpoint.applicationInstalled}
+          onClick={() => void run("powerpoint", "open_powerpoint")}
+        >
+          <Presentation size={15} />
+          {isEn ? "Open PowerPoint" : "打开 PowerPoint"}
         </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || Boolean(status?.companion.running)} onClick={() => void run("start", "start_office_companion")}>
-          <Play size={15} />{isEn ? "Start companion" : "启动伴侣服务"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || !status?.companion.running} onClick={() => void run("stop", "stop_office_companion")}>
-          <Square size={14} />{isEn ? "Stop companion" : "停止伴侣服务"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || !status?.word.applicationInstalled} onClick={() => void run("word", "open_word")}>
-          <ExternalLink size={15} />{isEn ? "Open Word" : "打开 Word"}
-        </button>
-        <button type="button" className="secondary-button" disabled={busy !== null || !status?.powerpoint.applicationInstalled} onClick={() => void run("powerpoint", "open_powerpoint")}>
-          <ExternalLink size={15} />{isEn ? "Open PowerPoint" : "打开 PowerPoint"}
+        <button
+          type="button"
+          className="secondary-button danger-subtle"
+          disabled={busy !== null}
+          onClick={() => void run("uninstall", "uninstall_macos_offline_office_addins")}
+        >
+          <Trash2 size={15} />
+          {isEn ? "Uninstall native add-ins" : "卸载原生加载项"}
         </button>
       </div>
+
+      {status?.powerpoint.applicationInstalled && (
+        <div className={`native-powerpoint-settings-guide${powerpointNeedsVerification ? " is-required" : ""}`}>
+          <div className="settings-section-heading">
+            <div>
+              <strong>{isEn ? "Load VisualTeX in PowerPoint" : "在 PowerPoint 中加载 VisualTeX"}</strong>
+              <p>
+                {status.powerpoint.loaded
+                  ? isEn
+                    ? "PowerPoint has confirmed the fixed PPAM. Future updates keep the same path."
+                    : "PowerPoint 已确认加载固定路径中的 PPAM，后续更新会继续使用同一路径。"
+                  : !status.powerpoint.filesInstalled
+                    ? isEn
+                      ? "Install or repair the native add-ins before checking PowerPoint registration."
+                      : "请先安装或修复原生加载项，再检查 PowerPoint 登记状态。"
+                    : !status.powerpoint.applicationRunning
+                      ? isEn
+                        ? "The PPAM file is installed, but PowerPoint is not running. Open PowerPoint and refresh this page before deciding whether manual registration is needed."
+                        : "PPAM 文件已经安装，但 PowerPoint 当前未运行。请先打开 PowerPoint 并刷新本页，再判断是否需要手动登记。"
+                      : isEn
+                        ? "PowerPoint is running, but VisualTeX has not been confirmed. Check the add-in list first; register the fixed VisualTeX.ppam only when it is actually absent."
+                        : "PowerPoint 正在运行，但尚未确认 VisualTeX。请先检查加载项列表；只有列表中确实不存在时，才手动登记固定路径中的 VisualTeX.ppam。"}
+              </p>
+            </div>
+          </div>
+          <PowerPointAddinGuide language={language} loaded={status.powerpoint.loaded} />
+          <div className="office-settings-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy !== null || !status.powerpoint.filesInstalled}
+              onClick={() => void run("reveal", "reveal_macos_powerpoint_addin")}
+            >
+              <ExternalLink size={15} />
+              {isEn ? "Show VisualTeX.ppam in Finder" : "在 Finder 中显示 VisualTeX.ppam"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy !== null}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={15} />
+              {isEn ? "Check whether PowerPoint loaded it" : "检查 PowerPoint 是否已加载"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(message || status?.word.lastError || status?.powerpoint.lastError) && (
+        <div className="office-settings-warning" role="alert">
+          <ShieldAlert size={15} />
+          <span>{message || status?.word.lastError || status?.powerpoint.lastError}</span>
+        </div>
+      )}
     </section>
   );
 }

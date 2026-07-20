@@ -11,7 +11,6 @@ import {
   PanelLeft,
   Power,
   Presentation,
-  Puzzle,
   RefreshCw,
   ScanLine,
   Settings2,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { VisualTeXLogo } from "./VisualTeXLogo";
+import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import type { Language } from "../stores/editorStore";
 import type { DesktopPlatform } from "../platform";
 
@@ -38,8 +38,9 @@ type StepId =
   | "code-format"
   | "ocr-setup"
   | "paste-image"
-  | "mac-office-enable"
-  | "mac-office-manage"
+  | "mac-word-plugin"
+  | "mac-powerpoint-load"
+  | "mac-powerpoint-use"
   | "windows-office-manage"
   | "updates";
 
@@ -108,18 +109,25 @@ export function tutorialSteps(language: Language, platform: DesktopPlatform): Tu
   if (platform === "macos") {
     steps.push(
       {
-        id: "mac-office-enable",
-        title: isEn ? "Enable VisualTeX in Office" : "在 Office 中添加 VisualTeX",
+        id: "mac-word-plugin",
+        title: isEn ? "Use the native VisualTeX tab in Word" : "在 Word 中使用原生 VisualTeX 标签页",
         description: isEn
-          ? "In Word or PowerPoint, open Home → Add-ins → My Add-ins or Developer Add-ins, then choose VisualTeX. Repeat this after a restart if Office hides the sideloaded tab."
-          : "在 Word 或 PowerPoint 中打开“开始 → 加载项 → 我的加载项/开发人员加载项”，再选择 VisualTeX。若重启后标签页消失，可按同一路径再次添加。",
+          ? "After installing the DOTM and restarting Word, open the VisualTeX tab. Insert picture or native OMML formulas, edit the selected formula, convert an image formula to Word math, and manage numbering or cross-references."
+          : "安装 DOTM 并重启 Word 后，打开“VisualTeX”标签页。可以插入图片公式或原生 OMML 公式、编辑所选公式、把图片公式转换成 Word 原生公式，并管理编号与交叉引用。",
       },
       {
-        id: "mac-office-manage",
-        title: isEn ? "Manage the macOS integration" : "管理或卸载 macOS 集成",
+        id: "mac-powerpoint-load",
+        title: isEn ? "Register the PPAM once in PowerPoint" : "在 PowerPoint 中登记一次 PPAM",
         description: isEn
-          ? "Open Settings → macOS Office integration. Disable startup without removing the add-in, stop the current companion, or choose Uninstall Office integration to remove it."
-          : "打开“设置 → macOS Office 集成”。可单独关闭开机启动、停止当前伴侣服务，或点击“卸载 Office 集成”完整移除。",
+          ? "Open Tools → PowerPoint Add-ins, click +, select the fixed VisualTeX.ppam file, keep VisualTeX checked, and restart PowerPoint. Later VisualTeX updates reuse the same registered path."
+          : "打开“工具 → PowerPoint 加载项”，点击＋，选择固定路径下的 VisualTeX.ppam，保持 VisualTeX 勾选并重启 PowerPoint。后续 VisualTeX 更新会继续复用这个登记路径。",
+      },
+      {
+        id: "mac-powerpoint-use",
+        title: isEn ? "Create and edit formulas in PowerPoint" : "在 PowerPoint 中新建与编辑公式",
+        description: isEn
+          ? "Open the VisualTeX tab and choose New formula. Select an existing VisualTeX formula and use Edit selected formula or double-click it to reopen the editor; Delete selected formula removes it cleanly."
+          : "打开“VisualTeX”标签页并点击“新建公式”。选中已有 VisualTeX 公式后，可以点击“编辑所选公式”或直接双击重新打开编辑器；“删除所选公式”会完整删除公式对象。",
       },
     );
   } else if (platform === "windows") {
@@ -334,42 +342,40 @@ export function OnboardingTour({ open, language, platform, onFinish }: Props) {
               </div>
             )}
 
-            {current.id === "mac-office-enable" && (
-              <div className="onboarding-workflow-demo onboarding-office-demo">
-                <span>
-                  <FileText size={20} />
-                  <Presentation size={20} />
-                  <strong>Word / PowerPoint</strong>
-                </span>
-                <i><ArrowRight size={15} /></i>
-                <span>
-                  <Puzzle size={22} />
-                  <strong>{isEn ? "Home → Add-ins" : "开始 → 加载项"}</strong>
-                </span>
-                <i><ArrowRight size={15} /></i>
-                <span className="is-selected">
-                  <Check size={22} />
-                  <strong>VisualTeX</strong>
-                </span>
+            {current.id === "mac-word-plugin" && (
+              <div className="onboarding-native-ribbon-demo is-word">
+                <div className="onboarding-native-ribbon-title">
+                  <FileText size={17} />
+                  <strong>Microsoft Word</strong>
+                  <span>VisualTeX</span>
+                </div>
+                <div className="onboarding-native-ribbon-tools">
+                  <span><b>OMML</b><small>{isEn ? "Inline" : "行内公式"}</small></span>
+                  <span><b>OMML</b><small>{isEn ? "Display" : "行间公式"}</small></span>
+                  <span><Check size={16} /><small>{isEn ? "Edit selected" : "编辑所选公式"}</small></span>
+                  <span><RefreshCw size={16} /><small>{isEn ? "Update numbers" : "更新公式编号"}</small></span>
+                </div>
+                <p>{isEn ? "The DOTM loads automatically after Word restarts." : "重启 Word 后，DOTM 会从 Startup 目录自动加载。"}</p>
               </div>
             )}
 
-            {current.id === "mac-office-manage" && (
-              <div className="onboarding-workflow-demo onboarding-office-demo">
-                <span>
-                  <Settings2 size={22} />
-                  <strong>{isEn ? "Settings" : "设置"}</strong>
-                </span>
-                <i><ArrowRight size={15} /></i>
-                <span>
-                  <ToggleLeft size={22} />
-                  <strong>{isEn ? "Disable startup" : "关闭开机启动"}</strong>
-                </span>
-                <i><ArrowRight size={15} /></i>
-                <span className="is-danger">
-                  <Trash2 size={22} />
-                  <strong>{isEn ? "Uninstall integration" : "卸载 Office 集成"}</strong>
-                </span>
+            {current.id === "mac-powerpoint-load" && (
+              <PowerPointAddinGuide language={language} compact />
+            )}
+
+            {current.id === "mac-powerpoint-use" && (
+              <div className="onboarding-native-ribbon-demo is-powerpoint">
+                <div className="onboarding-native-ribbon-title">
+                  <Presentation size={17} />
+                  <strong>Microsoft PowerPoint</strong>
+                  <span>VisualTeX</span>
+                </div>
+                <div className="onboarding-native-ribbon-tools">
+                  <span><Presentation size={17} /><small>{isEn ? "New formula" : "新建公式"}</small></span>
+                  <span><Check size={16} /><small>{isEn ? "Edit selected" : "编辑所选公式"}</small></span>
+                  <span><Trash2 size={16} /><small>{isEn ? "Delete selected" : "删除所选公式"}</small></span>
+                </div>
+                <p>{isEn ? "Double-click an existing VisualTeX formula to edit it again." : "双击已有 VisualTeX 公式，也可以直接重新打开编辑器。"}</p>
               </div>
             )}
 

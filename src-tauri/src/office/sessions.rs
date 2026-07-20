@@ -77,6 +77,10 @@ pub struct OfficeExportResult {
     pub svg: String,
     pub svg_base64: String,
     pub png_base64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omml_base64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omml_docx_base64: Option<String>,
     pub width: f64,
     pub height: f64,
     pub baseline: Option<f64>,

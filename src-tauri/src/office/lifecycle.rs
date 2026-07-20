@@ -8,8 +8,6 @@ use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
 use crate::OcrState;
-#[cfg(target_os = "macos")]
-use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -18,13 +16,6 @@ use std::process::Command;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tokio::time::{sleep, Duration};
-
-#[cfg(all(debug_assertions, target_os = "macos"))]
-fn development_ui_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("dist-office-macos")
-}
 
 #[cfg(all(debug_assertions, target_os = "windows"))]
 fn development_ui_root() -> PathBuf {
@@ -43,6 +34,16 @@ fn development_ui_root() -> PathBuf {
         .join("dist-office-macos")
 }
 
+#[cfg(target_os = "macos")]
+fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
+    // No Office.js bridge or dialog bundle is required on macOS. Native DOTM
+    // and PPAM sessions open the formula editor from the normal desktop entry.
+    app.path()
+        .resource_dir()
+        .map_err(|error| format!("Unable to resolve VisualTeX resources: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
 fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(resource) = app.path().resolve("office", BaseDirectory::Resource) {
         if resource.join("bridge").join("index.html").is_file()
@@ -100,24 +101,10 @@ pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState
         ui_root: resolve_ui_root(app)?,
         root,
     };
-    let install_token = ensure_office_install(&paths)?;
-    // An installed (or temporarily paused) LaunchAgent means the user
-    // explicitly installed Office integration. Reassert only VisualTeX's
-    // GUID-prefixed manifests when the companion starts so a removed host
-    // container is repaired before Office is opened again. Never clear or
-    // rewrite the rest of Office's Wef cache.
     #[cfg(target_os = "macos")]
-    {
-        let background_status = background::status();
-        let integration_configured = background_status.installed
-            || (!background_status.plist_path.is_empty()
-                && Path::new(&background_status.plist_path).is_file());
-        if integration_configured {
-            if let Err(error) = installer::install_available_manifests() {
-                eprintln!("Unable to restore VisualTeX Office manifests: {error}");
-            }
-        }
-    }
+    let install_token = String::new();
+    #[cfg(not(target_os = "macos"))]
+    let install_token = ensure_office_install(&paths)?;
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     let formula_cache = FormulaMetadataCache::new(&paths).map_err(|error| error.to_string())?;
     Ok(OfficeCompanionState::new(

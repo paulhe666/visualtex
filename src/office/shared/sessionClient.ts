@@ -1,4 +1,8 @@
 import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
+import {
+  invokeTauri,
+  isTauriRuntimeAvailable,
+} from "./tauriTransport";
 
 export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
@@ -15,6 +19,8 @@ export interface OfficeExportResult {
   svg: string;
   svgBase64: string;
   pngBase64?: string;
+  ommlBase64?: string;
+  ommlDocxBase64?: string;
   width: number;
   height: number;
   baseline?: number;
@@ -94,12 +100,7 @@ declare global {
 export function isMacosOfflineTauriTransport() {
   if (typeof window === "undefined") return false;
   const transport = new URLSearchParams(window.location.search).get("transport");
-  return transport === "tauri" && "__TAURI_INTERNALS__" in window;
-}
-
-async function invokeTauri<T>(command: string, args?: Record<string, unknown>) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(command, args);
+  return transport === "tauri" && isTauriRuntimeAvailable();
 }
 
 function installToken() {

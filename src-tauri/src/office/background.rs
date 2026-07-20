@@ -7,10 +7,20 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+#[cfg(target_os = "macos")]
+use objc2::{AnyThread, MainThreadMarker};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationOptions, NSImage, NSRunningApplication,
+};
+#[cfg(target_os = "macos")]
+use objc2_foundation::NSString;
+
 pub const BACKGROUND_ARGUMENT: &str = "--office-background";
 pub const LAUNCH_AGENT_LABEL: &str = "com.visualtex.studio.office";
 const LAUNCH_AGENT_FILE: &str = "com.visualtex.studio.office.plist";
 const BACKGROUND_MARKER_FILE: &str = "office-background.enabled";
+const DOCK_ICON_MIGRATION_MARKER_FILE: &str = "dock-icon-v2.refreshed";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +55,11 @@ fn log_directory(home: &Path) -> PathBuf {
 fn background_marker_path(home: &Path) -> PathBuf {
     home.join("Library/Application Support/com.visualtex.studio")
         .join(BACKGROUND_MARKER_FILE)
+}
+
+fn dock_icon_migration_marker_path(home: &Path) -> PathBuf {
+    home.join("Library/Application Support/com.visualtex.studio")
+        .join(DOCK_ICON_MIGRATION_MARKER_FILE)
 }
 
 fn remove_background_marker(home: &Path) -> Result<(), String> {
@@ -427,10 +442,88 @@ pub fn uninstall_launch_agent() -> Result<OfficeBackgroundStatus, String> {
     }
 }
 
-pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+#[cfg(target_os = "macos")]
+pub(crate) fn activate_foreground_app(app: &AppHandle) -> Result<(), String> {
     app.set_activation_policy(tauri::ActivationPolicy::Regular)
         .map_err(|error| format!("Unable to activate VisualTeX: {error}"))?;
+    let running = NSRunningApplication::currentApplication();
+    if !running.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows) {
+        return Err("macOS did not activate VisualTeX as a foreground application".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn activate_foreground_app(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn install_application_icon(app: &AppHandle) -> Result<(), String> {
+    let icon_path = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("Unable to resolve VisualTeX resources: {error}"))?
+        .join("icon.icns");
+    if !icon_path.is_file() {
+        return Err(format!(
+            "VisualTeX application icon is missing: {}",
+            icon_path.display()
+        ));
+    }
+    let main_thread = MainThreadMarker::new()
+        .ok_or_else(|| "VisualTeX application icon must be installed on the main thread".to_string())?;
+    let path = NSString::from_str(&icon_path.to_string_lossy());
+    let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)
+        .ok_or_else(|| format!("macOS could not decode {}", icon_path.display()))?;
+    let application = NSApplication::sharedApplication(main_thread);
+    unsafe {
+        application.setApplicationIconImage(Some(&image));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn install_application_icon(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn refresh_dock_after_icon_migration() -> Result<(), String> {
+    if is_background_mode() {
+        return Ok(());
+    }
+    let home = user_home()?;
+    let marker = dock_icon_migration_marker_path(&home);
+    if marker.is_file() {
+        return Ok(());
+    }
+
+    // Older same-version builds could leave zero-width Dock items behind after
+    // switching between Accessory and Regular activation policies. The bundled
+    // icon and current activation logic cannot resize those already-cached
+    // ghost items. Restart Dock once after installing the new high-coverage
+    // icon; macOS immediately recreates the tile from the running application.
+    let status = Command::new("/usr/bin/killall")
+        .arg("Dock")
+        .status()
+        .map_err(|error| format!("Unable to refresh the macOS Dock icon cache: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "Unable to refresh the macOS Dock icon cache: killall exited with {status}"
+        ));
+    }
+    write_atomic(&marker, b"refreshed\n")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn refresh_dock_after_icon_migration() -> Result<(), String> {
+    Ok(())
+}
+
+pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+    activate_foreground_app(app)?;
+    install_application_icon(app)?;
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
@@ -440,9 +533,14 @@ pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
     window
         .unminimize()
         .map_err(|error| format!("Unable to restore VisualTeX: {error}"))?;
+    activate_foreground_app(app)?;
     window
         .set_focus()
-        .map_err(|error| format!("Unable to focus VisualTeX: {error}"))
+        .map_err(|error| format!("Unable to focus VisualTeX: {error}"))?;
+    if let Err(error) = refresh_dock_after_icon_migration() {
+        eprintln!("{error}");
+    }
+    Ok(())
 }
 
 pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {
@@ -453,8 +551,10 @@ pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {
         .hide()
         .map_err(|error| format!("Unable to hide VisualTeX: {error}"))?;
     #[cfg(target_os = "macos")]
-    app.set_activation_policy(tauri::ActivationPolicy::Accessory)
-        .map_err(|error| format!("Unable to enter Office background mode: {error}"))?;
+    if is_background_mode() {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory)
+            .map_err(|error| format!("Unable to enter Office background mode: {error}"))?;
+    }
     Ok(())
 }
 

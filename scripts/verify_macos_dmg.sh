@@ -46,11 +46,14 @@ require_directory() {
 hdiutil verify "$DMG_PATH" >/dev/null
 
 MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/visualtex-dmg-verify.XXXXXX")"
+ICON_CHECK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/visualtex-icon-verify.XXXXXX")"
 cleanup() {
-  if mount | grep -F "on $MOUNT_POINT " >/dev/null; then
-    hdiutil detach "$MOUNT_POINT" >/dev/null || hdiutil detach -force "$MOUNT_POINT" >/dev/null
-  fi
-  rmdir "$MOUNT_POINT" 2>/dev/null || true
+  # hdiutil canonicalizes /var to /private/var, so checking the literal mount
+  # string can miss a live image. Always attempt detach by mount point.
+  hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 \
+    || hdiutil detach -force "$MOUNT_POINT" >/dev/null 2>&1 \
+    || true
+  rm -rf "$MOUNT_POINT" "$ICON_CHECK_DIR"
 }
 trap cleanup EXIT
 
@@ -60,7 +63,8 @@ INFO_PLIST="$APP_PATH/Contents/Info.plist"
 CODE_RESOURCES="$APP_PATH/Contents/_CodeSignature/CodeResources"
 EXECUTABLE="$APP_PATH/Contents/MacOS/visualtex"
 RESOURCES="$APP_PATH/Contents/Resources"
-OFFICE_ROOT="$RESOURCES/office"
+APP_ICON="$RESOURCES/icon.icns"
+OFFICE_ROOT="$RESOURCES/office/macos-offline"
 OCR_ROOT="$RESOURCES/ocr/offline/macos-arm64"
 
 require_directory "$APP_PATH" "VisualTeX.app"
@@ -71,6 +75,14 @@ if [[ ! -x "$EXECUTABLE" ]]; then
   exit 1
 fi
 require_directory "$RESOURCES" "Application Resources"
+require_file "$APP_ICON" "macOS application icon"
+ICON_CHECK_PNG="$ICON_CHECK_DIR/icon-32.png"
+sips -s format png -z 32 32 "$APP_ICON" --out "$ICON_CHECK_PNG" >/dev/null
+python3 "$PROJECT_ROOT/scripts/verify_macos_app_icon.py" "$ICON_CHECK_PNG" \
+  --expected-subject-rgb 31,99,142 \
+  --subject-rgb-tolerance 24 \
+  --minimum-subject-pixels 8 \
+  --minimum-white-ratio 0.40
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 SIGNATURE_DETAILS="$(codesign -dvvv "$APP_PATH" 2>&1)"
@@ -92,30 +104,33 @@ if ! grep -Eq '(^|[[:space:]])arm64($|[[:space:]])' <<<"$ARCHITECTURES"; then
   exit 1
 fi
 
-# Office resources must be complete and locally hosted.
+# macOS Office resources must contain only the native DOTM/PPAM integration.
 for relative in \
-  bridge/index.html \
-  dialog/index.html \
-  vendor/office-js/office.js \
-  vendor/office-js/word-mac-16.00.js \
-  vendor/office-js/powerpoint-mac-16.00.js \
-  vendor/office-js/VERSION.json \
-  licenses/OFFICE-JS-LICENSE.md \
-  licenses/MATHJAX-LICENSE.txt \
-  manifests/VisualTeX.Word.xml \
-  manifests/VisualTeX.PowerPoint.xml; do
-  require_file "$OFFICE_ROOT/$relative" "Office resource $relative"
+  PROTOCOL.md \
+  POWERPOINT_INSTALL.md \
+  resources/VisualTeX.dotm \
+  resources/VisualTeX.ppam \
+  resources/addins.json \
+  word/VisualTeXWord.scpt \
+  word/VTWordAdapter.bas \
+  word/customUI14.xml \
+  powerpoint/VisualTeXPowerPoint.scpt \
+  powerpoint/VTPowerPointAdapter.bas \
+  powerpoint/customUI14.xml; do
+  require_file "$OFFICE_ROOT/$relative" "Native Office resource $relative"
 done
 xmllint --noout \
-  "$OFFICE_ROOT/manifests/VisualTeX.Word.xml" \
-  "$OFFICE_ROOT/manifests/VisualTeX.PowerPoint.xml"
+  "$OFFICE_ROOT/word/customUI14.xml" \
+  "$OFFICE_ROOT/powerpoint/customUI14.xml"
 
-if grep -R -I -n -E \
-  '@tauri-apps|__TAURI_INTERNALS__|api\.github\.com/repos/paulhe666/visualtex/releases|jsdelivr\.net|esm\.run|appsforoffice\.microsoft\.com/lib/1/hosted/office\.js' \
-  "$OFFICE_ROOT/assets" "$OFFICE_ROOT/bridge" "$OFFICE_ROOT/dialog" >/tmp/visualtex-office-bundle-scan.txt 2>/dev/null; then
+if [[ -e "$RESOURCES/office/bridge" || -e "$RESOURCES/office/dialog" || -e "$RESOURCES/office/vendor" || -e "$RESOURCES/office/manifests" ]]; then
+  echo "The macOS bundle still contains the obsolete Office.js web integration." >&2
+  exit 1
+fi
+if grep -R -I -n -E 'office\.js|SourceLocation|trusted catalog|localhost:43127' "$OFFICE_ROOT" >/tmp/visualtex-office-bundle-scan.txt 2>/dev/null; then
   cat /tmp/visualtex-office-bundle-scan.txt >&2
   rm -f /tmp/visualtex-office-bundle-scan.txt
-  echo "Office frontend contains a forbidden desktop or remote dependency." >&2
+  echo "Native Office resources contain an obsolete web integration marker." >&2
   exit 1
 fi
 rm -f /tmp/visualtex-office-bundle-scan.txt
@@ -177,6 +192,14 @@ if ! grep -a -Fq 'com.visualtex.studio.office' "$EXECUTABLE"; then
   echo "The release executable has no VisualTeX LaunchAgent label." >&2
   exit 1
 fi
+if ! grep -a -Fq -- '--install-macos-office-addins' "$EXECUTABLE"; then
+  echo "The release executable has no clean-install native Office maintenance entry point." >&2
+  exit 1
+fi
+if ! grep -a -Fq 'dock-icon-v2.refreshed' "$EXECUTABLE"; then
+  echo "The release executable has no one-time Dock icon migration refresh." >&2
+  exit 1
+fi
 
 SIGNATURE_KIND="developer-id"
 if grep -q '^Signature=adhoc$' <<<"$SIGNATURE_DETAILS"; then
@@ -203,6 +226,7 @@ echo "Bundle version: $BUNDLE_VERSION"
 echo "Executable architectures: $ARCHITECTURES"
 echo "Signature: $SIGNATURE_KIND"
 echo "CodeResources: present"
+echo "Dock icon visibility: verified at 32x32"
 echo "Office files: $OFFICE_FILES"
 echo "Resources bytes: $RESOURCE_BYTES"
 echo "Offline OCR bytes: $OCR_BYTES"

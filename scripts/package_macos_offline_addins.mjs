@@ -196,11 +196,6 @@ function referencedRibbonImages(ribbonXml) {
 function installRibbonImages(unpacked, kind, ribbonXml) {
   const referenced = referencedRibbonImages(ribbonXml);
   if (referenced.length === 0) return [];
-  if (!ribbonIconsArchive || !existsSync(resolve(ribbonIconsArchive))) {
-    throw new Error(
-      `${kind} Ribbon uses custom images, but --ribbon-icons-archive was not provided or does not exist.`,
-    );
-  }
   const mapping = RIBBON_ICON_FILES[kind];
   const unique = [...new Set(referenced)];
   for (const imageId of unique) {
@@ -213,19 +208,33 @@ function installRibbonImages(unpacked, kind, ribbonXml) {
   const relationshipsDirectory = join(customUiDirectory, "_rels");
   mkdirSync(imagesDirectory, { recursive: true });
   mkdirSync(relationshipsDirectory, { recursive: true });
+  const archivePath =
+    ribbonIconsArchive && existsSync(resolve(ribbonIconsArchive))
+      ? resolve(ribbonIconsArchive)
+      : undefined;
   const relationships = unique.map((imageId) => {
-    const imageBytes = run(
-      "/usr/bin/unzip",
-      ["-p", resolve(ribbonIconsArchive), mapping[imageId]],
-      { encoding: "buffer" },
-    );
+    const embeddedPath = join(imagesDirectory, `${imageId}.png`);
+    const imageBytes = archivePath
+      ? run(
+          "/usr/bin/unzip",
+          ["-p", archivePath, mapping[imageId]],
+          { encoding: "buffer" },
+        )
+      : existsSync(embeddedPath)
+        ? readFileSync(embeddedPath)
+        : undefined;
     if (
+      !imageBytes ||
       imageBytes.length < 8 ||
       !imageBytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
     ) {
-      throw new Error(`${mapping[imageId]} is not a valid PNG Ribbon image.`);
+      throw new Error(
+        archivePath
+          ? `${mapping[imageId]} is not a valid PNG Ribbon image.`
+          : `${kind} Ribbon image ${imageId} is missing from the reviewed Office container; provide --ribbon-icons-archive to replace it.`,
+      );
     }
-    writeFileSync(join(imagesDirectory, `${imageId}.png`), imageBytes);
+    writeFileSync(embeddedPath, imageBytes);
     return `<Relationship Id="${imageId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="images/${imageId}.png"/>`;
   });
   writeFileSync(

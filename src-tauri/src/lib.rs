@@ -1058,6 +1058,11 @@ async fn remove_optional_ocr_model(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let background_mode = office::background::is_background_mode();
+    let maintenance_install = std::env::args_os().any(|argument| {
+        argument == std::ffi::OsStr::new(
+            office::macos_offline_installer::MAINTENANCE_INSTALL_ARGUMENT,
+        )
+    });
     let initial_office_url = std::env::args()
         .find(|argument| argument.starts_with("visualtex://office/open?session="));
     let ocr_state = OcrState::default();
@@ -1065,10 +1070,11 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
-                if arguments
-                    .iter()
-                    .any(|argument| argument == office::background::BACKGROUND_ARGUMENT)
-                {
+                if arguments.iter().any(|argument| {
+                    argument == office::background::BACKGROUND_ARGUMENT
+                        || argument
+                            == office::macos_offline_installer::MAINTENANCE_INSTALL_ARGUMENT
+                }) {
                     return;
                 }
                 #[cfg(target_os = "macos")]
@@ -1088,6 +1094,23 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(ocr_state)
         .setup(move |app| {
+            if maintenance_install {
+                match office::macos_offline_installer::install(app.handle()) {
+                    Ok(status) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&status)
+                                .unwrap_or_else(|_| "{\"ok\":true}".to_string())
+                        );
+                        std::process::exit(0);
+                    }
+                    Err(error) => {
+                        eprintln!("VisualTeX native Office installation failed: {error}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+
             let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                 .map_err(std::io::Error::other)?;
             if let Err(error) = office::powerpoint_native::start_double_click_monitor(
@@ -1096,6 +1119,7 @@ pub fn run() {
                 eprintln!("Unable to start PowerPoint double-click monitor: {error}");
             }
             app.manage(office_state.clone());
+            #[cfg(not(target_os = "macos"))]
             office::start(office_state);
             if let Some(url) = initial_office_url.as_deref() {
                 office::background::hide_main_window(app.handle())
@@ -1112,7 +1136,7 @@ pub fn run() {
                 // during that gap, which shuts down Vite/Tauri and breaks Word
                 // formula creation. Production builds still restore the
                 // background companion normally.
-                #[cfg(not(debug_assertions))]
+                #[cfg(all(not(debug_assertions), not(target_os = "macos")))]
                 if let Err(error) = office::background::resume_installed_launch_agent() {
                     eprintln!("Unable to resume VisualTeX Office background service: {error}");
                 }
@@ -1151,6 +1175,7 @@ pub fn run() {
             office::macos_offline::delete_macos_offline_office_session,
             office::macos_offline::commit_macos_offline_office_session,
             office::macos_offline::cancel_macos_offline_office_session,
+            office::macos_offline::close_macos_offline_office_editor_window,
             office::macos_offline::get_macos_offline_plugin_health,
             office::macos_offline_installer::get_macos_offline_office_install_status,
             office::macos_offline_installer::install_macos_offline_office_addins,

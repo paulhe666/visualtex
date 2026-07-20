@@ -32,32 +32,43 @@ Public Sub VisualTeX_NewFormula()
     Dim slideHeight As Single
     Dim requestJson As String
     Dim powerPointJson As String
+    Dim failureStage As String
 
+    failureStage = "validate presentation"
     VTRequireWritablePowerPointPresentation
     Set currentSlide = ActiveWindow.View.Slide
+
+    failureStage = "create identifiers"
     sessionId = VTNewUuidV4()
     formulaId = VTNewUuidV4()
     pendingMarker = VTPendingMarker(sessionId, formulaId)
     slideWidth = ActivePresentation.PageSetup.SlideWidth
     slideHeight = ActivePresentation.PageSetup.SlideHeight
 
+    failureStage = "create placeholder shape"
     Set placeholder = currentSlide.Shapes.AddShape( _
         msoShapeRoundedRectangle, _
         (slideWidth - VT_DEFAULT_PLACEHOLDER_WIDTH) / 2!, _
         (slideHeight - VT_DEFAULT_PLACEHOLDER_HEIGHT) / 2!, _
         VT_DEFAULT_PLACEHOLDER_WIDTH, _
         VT_DEFAULT_PLACEHOLDER_HEIGHT)
+
+    failureStage = "format placeholder shape"
     placeholder.Name = VT_SHAPE_PREFIX & formulaId
     placeholder.Fill.Visible = msoFalse
-    placeholder.Line.DashStyle = msoLineDash
-    placeholder.Line.Transparency = 0.35
+    placeholder.Line.Visible = msoTrue
+    placeholder.Line.Weight = 1!
+    placeholder.Line.ForeColor.RGB = RGB(128, 128, 128)
     placeholder.TextFrame.TextRange.Text = "VisualTeX"
     placeholder.TextFrame.TextRange.ParagraphFormat.Alignment = ppAlignCenter
-    placeholder.Tags.Add "VisualTeXFormulaId", formulaId
-    placeholder.Tags.Add "VisualTeXSessionId", sessionId
-    placeholder.Tags.Add "VisualTeXPending", "1"
+
+    failureStage = "attach placeholder metadata"
+    VTSetShapeTag placeholder, "VisualTeXFormulaId", formulaId
+    VTSetShapeTag placeholder, "VisualTeXSessionId", sessionId
+    VTSetShapeTag placeholder, "VisualTeXPending", "1"
     placeholder.AlternativeText = pendingMarker
 
+    failureStage = "build request"
     powerPointJson = VTPowerPointGeometryJson(currentSlide, placeholder)
     requestJson = VTRequestJson( _
         sessionId, _
@@ -71,7 +82,11 @@ Public Sub VisualTeX_NewFormula()
         "", _
         pendingMarker, _
         powerPointJson)
+
+    failureStage = "write request"
     VTWriteRequest sessionId, requestJson
+
+    failureStage = "open VisualTeX editor"
     VTLaunchSession VT_POWERPOINT_HOST, sessionId
     Exit Sub
 
@@ -80,6 +95,9 @@ Failed:
     Dim errorDescription As String
     errorNumber = Err.Number
     errorDescription = Err.Description
+    If Len(failureStage) > 0 Then
+        errorDescription = "Stage: " & failureStage & ". " & errorDescription
+    End If
     On Error Resume Next
     If Not placeholder Is Nothing Then placeholder.Delete
     If Len(sessionId) > 0 Then VTDeleteSessionFiles sessionId

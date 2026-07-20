@@ -21,7 +21,14 @@ const tauri = process.platform === "win32" ? "tauri.cmd" : "tauri";
 
 // Native Office artifacts must exist before Tauri opens externalBin files.
 run(npm, ["run", "build:bundle"]);
-run(tauri, ["build", ...process.argv.slice(2)], {
+const forwardedArgs = process.argv.slice(2);
+const hasExplicitFeatures = forwardedArgs.some(
+  (argument) => argument === "--features" || argument === "-f",
+);
+const releaseFeatures = hasExplicitFeatures
+  ? []
+  : ["--features", "tauri/custom-protocol"];
+run(tauri, ["build", ...releaseFeatures, ...forwardedArgs], {
   ...process.env,
   VISUALTEX_TAURI_NATIVE_PREBUILT: "1",
 });

@@ -119,6 +119,57 @@ function captureFieldSnapshot(field: MathfieldElement) {
   };
 }
 
+type PhysicalBackslashInputKind = "ideographic-comma" | "latin-backslash";
+
+function normalizePhysicalBackslashInput(
+  beforeValue: string,
+  afterValue: string,
+  kind: PhysicalBackslashInputKind,
+) {
+  let prefixLength = 0;
+  while (
+    prefixLength < beforeValue.length &&
+    prefixLength < afterValue.length &&
+    beforeValue[prefixLength] === afterValue[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < beforeValue.length - prefixLength &&
+    suffixLength < afterValue.length - prefixLength &&
+    beforeValue[beforeValue.length - 1 - suffixLength] ===
+      afterValue[afterValue.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const insertedEnd = afterValue.length - suffixLength;
+  const inserted = afterValue.slice(prefixLength, insertedEnd);
+  let normalizedInserted = inserted;
+  if (
+    kind === "ideographic-comma" &&
+    inserted.includes("、") &&
+    inserted.replaceAll("\\", "") === "、"
+  ) {
+    normalizedInserted = "、";
+  } else if (
+    kind === "latin-backslash" &&
+    inserted.length > 1 &&
+    /^\\+$/.test(inserted)
+  ) {
+    normalizedInserted = "\\";
+  }
+
+  if (normalizedInserted === inserted) return afterValue;
+  return (
+    afterValue.slice(0, prefixLength) +
+    normalizedInserted +
+    afterValue.slice(insertedEnd)
+  );
+}
+
 function selectionIsCollapsed(selection: MathSelectionSnapshot) {
   return selection.ranges.every(([start, end]) => start === end);
 }
@@ -392,6 +443,67 @@ function FormulaField(props: FormulaFieldProps) {
     syncFrameSizeRef.current = syncFrameSize;
 
     const imeGuard = new ImeCompositionGuard();
+    let physicalBackslashGuard: {
+      kind: PhysicalBackslashInputKind;
+      beforeValue: string;
+      expiresAt: number;
+    } | null = null;
+    let suppressBackslashReplayUntil = 0;
+    let backslashGuardTimer = 0;
+
+    const armPhysicalBackslashGuard = (
+      kind: PhysicalBackslashInputKind,
+      timeStamp: number,
+    ) => {
+      physicalBackslashGuard = {
+        kind,
+        beforeValue: field.value,
+        expiresAt: timeStamp + 240,
+      };
+      window.clearTimeout(backslashGuardTimer);
+      const expectedGuard = physicalBackslashGuard;
+      backslashGuardTimer = window.setTimeout(() => {
+        if (physicalBackslashGuard === expectedGuard) {
+          physicalBackslashGuard = null;
+        }
+      }, 280);
+    };
+
+    const normalizeGuardedBackslashInput = (timeStamp: number) => {
+      const guard = physicalBackslashGuard;
+      if (!guard || timeStamp > guard.expiresAt) {
+        physicalBackslashGuard = null;
+        return;
+      }
+      const rawValue = field.value;
+      const normalizedValue = normalizePhysicalBackslashInput(
+        guard.beforeValue,
+        rawValue,
+        guard.kind,
+      );
+      if (normalizedValue === rawValue) return;
+
+      const previousPosition = field.position;
+      const removedCharacters = rawValue.length - normalizedValue.length;
+      field.setValue(normalizedValue, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      const correctedPosition = Math.max(
+        0,
+        Math.min(field.lastOffset, previousPosition - removedCharacters),
+      );
+      field.position = correctedPosition;
+      field.selection = {
+        ranges: [[correctedPosition, correctedPosition]],
+        direction: "none",
+      };
+      physicalBackslashGuard = null;
+    };
+
     const emitEdit = (
       before: ReturnType<typeof captureFieldSnapshot>,
       after: ReturnType<typeof captureFieldSnapshot>,
@@ -422,6 +534,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleCompositionEnd = (event: CompositionEvent) => {
       imeGuard.compositionEnd(event.timeStamp);
+      normalizeGuardedBackslashInput(event.timeStamp);
       const before =
         compositionStartRef.current ??
         lastSnapshotRef.current ??
@@ -431,8 +544,18 @@ function FormulaField(props: FormulaFieldProps) {
       emitEdit(before, after, "composition", "keyboard");
       syncFrameSize();
     };
+    const handleBeforeInput = (event: InputEvent) => {
+      if (
+        event.data === "\\" &&
+        event.timeStamp <= suppressBackslashReplayUntil
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     const handleInput = (event: Event) => {
       if (imeGuard.isComposing()) return;
+      normalizeGuardedBackslashInput(event.timeStamp);
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
       const after = captureFieldSnapshot(field);
       const inputType =
@@ -460,6 +583,27 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onCommitPending();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
+      const isUnmodifiedPhysicalBackslash =
+        event.code === "Backslash" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+      if (isUnmodifiedPhysicalBackslash && event.key === "、") {
+        armPhysicalBackslashGuard("ideographic-comma", event.timeStamp);
+        suppressBackslashReplayUntil = event.timeStamp + 180;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (isUnmodifiedPhysicalBackslash && event.key === "\\") {
+        if (event.timeStamp <= suppressBackslashReplayUntil) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        armPhysicalBackslashGuard("latin-backslash", event.timeStamp);
+      }
+
       const imeDecision = imeGuard.keyDown(event, event.timeStamp);
       if (imeDecision === "composition") return;
       if (imeDecision === "post-composition-enter") {
@@ -554,6 +698,7 @@ function FormulaField(props: FormulaFieldProps) {
     propsRef.current.register(lineId, field);
     field.addEventListener("compositionstart", handleCompositionStart);
     field.addEventListener("compositionend", handleCompositionEnd);
+    field.addEventListener("beforeinput", handleBeforeInput);
     field.addEventListener("input", handleInput);
     field.addEventListener("selection-change", handleSelectionChange);
     field.addEventListener("focus", handleFocus);
@@ -569,10 +714,12 @@ function FormulaField(props: FormulaFieldProps) {
     return () => {
       window.cancelAnimationFrame(resizeFrame);
       window.clearTimeout(resizeTimer);
+      window.clearTimeout(backslashGuardTimer);
       resizeObserver?.disconnect();
       syncFrameSizeRef.current = null;
       field.removeEventListener("compositionstart", handleCompositionStart);
       field.removeEventListener("compositionend", handleCompositionEnd);
+      field.removeEventListener("beforeinput", handleBeforeInput);
       field.removeEventListener("input", handleInput);
       field.removeEventListener("selection-change", handleSelectionChange);
       field.removeEventListener("focus", handleFocus);
@@ -1287,21 +1434,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         event.stopPropagation();
         if (requestsRedo) void historyManager.redo();
         else void historyManager.undo();
-        return;
-      }
-
-      const insertsChineseIdeographicComma =
-        event.code === "Backslash" &&
-        event.key === "、" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey;
-      if (insertsChineseIdeographicComma) {
-        // macOS 中文输入法会在这个物理键上先触发 Backslash keydown，
-        // 随后再通过输入法事务提交“、”。这里只阻止 MathLive 根据
-        // 物理键位额外插入反斜杠，顿号本身交给后续 composition/input。
-        event.preventDefault();
-        event.stopPropagation();
         return;
       }
 
