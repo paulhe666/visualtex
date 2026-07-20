@@ -251,7 +251,8 @@ async function main() {
             }
             if (
               command === "cancel_ocr_recognition" ||
-              command === "restart_ocr_worker"
+              command === "restart_ocr_worker" ||
+              command === "warmup_ocr_model"
             ) {
               return null;
             }

@@ -154,6 +154,17 @@ export async function invoke<T>(
           headers: authenticatedHeaders(),
         }),
       );
+    case "warmup_ocr_model":
+      return readJson<T>(
+        await fetch("/api/v1/ocr/warmup", {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: authenticatedHeaders({
+            "X-VisualTeX-Ocr-Model": modelHeader(args),
+          }),
+        }),
+      );
     case "reset_ocr_runtime":
       return readJson<T>(
         await fetch("/api/v1/ocr/reset", {

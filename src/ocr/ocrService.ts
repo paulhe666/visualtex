@@ -73,6 +73,7 @@ export const OCR_MODELS = [
 ] as const;
 
 export type OcrModelName = (typeof OCR_MODELS)[number]["id"];
+export const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 
 export interface OcrRuntimeStatus {
   installed: boolean;
@@ -88,9 +89,17 @@ export interface OcrRuntimeStatus {
 }
 
 export function resolveAvailableOcrModel(
-  runtime: Pick<OcrRuntimeStatus, "installedModels" | "defaultModel">,
+  runtime: Pick<
+    OcrRuntimeStatus,
+    "installed" | "installedModels" | "defaultModel" | "offlineBundleAvailable"
+  >,
   requested: OcrModelName,
 ): OcrModelName {
+  // Windows keeps model downloads online, so an uncached S/M/L selection is
+  // still available and may be prepared by the persistent worker. The macOS
+  // offline bundle must continue to fall back to an actually installed pack.
+  if (runtime.installed && !runtime.offlineBundleAvailable) return requested;
+
   const installed = new Set(runtime.installedModels);
   if (installed.has(requested)) return requested;
   if (installed.has(runtime.defaultModel)) {
@@ -245,6 +254,11 @@ export async function cancelOcrRecognition(): Promise<void> {
 export async function restartOcrWorker(): Promise<void> {
   requireOcrEnvironment();
   return invoke("restart_ocr_worker");
+}
+
+export async function warmupOcrModel(model: OcrModelName): Promise<void> {
+  requireOcrEnvironment();
+  return invoke("warmup_ocr_model", { model });
 }
 
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {

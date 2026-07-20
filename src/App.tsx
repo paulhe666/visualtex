@@ -74,6 +74,7 @@ import {
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import {
+  DEFAULT_OCR_MODEL,
   OCR_MODELS,
   cancelOcrRecognition,
   fileToOcrRequest,
@@ -82,7 +83,7 @@ import {
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
   resolveAvailableOcrModel,
-  restartOcrWorker,
+  warmupOcrModel,
   type OcrModelName,
 } from "./ocr/ocrService";
 import {
@@ -106,7 +107,6 @@ interface InlineOcrState {
   model: OcrModelName;
 }
 
-const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.first-run.v1.completed";
 const DESKTOP_PLATFORM = detectDesktopPlatform();
@@ -160,6 +160,7 @@ function App() {
       : DEFAULT_OCR_MODEL;
   });
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+  const startupOcrModelRef = useRef(ocrModel);
   const inlineOcrBusyRef = useRef(false);
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
@@ -215,7 +216,8 @@ function App() {
     },
   ];
   const selectedOcrModel =
-    OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
+    OCR_MODELS.find((item) => item.id === ocrModel) ??
+    OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!;
   const inlineOcrModel =
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
@@ -324,6 +326,14 @@ function App() {
   }, [toast]);
 
   useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    const timer = window.setTimeout(() => {
+      void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const menu = menuOpen ? appMenuRef.current : copyMenuOpen ? copyMenuRef.current : null;
     const trigger = menuOpen ? menuButtonRef.current : copyMenuButtonRef.current;
     if (!menu || !trigger) return;
@@ -398,11 +408,10 @@ function App() {
 
   const handleOcrModelChange = (nextModel: OcrModelName) => {
     if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+    startupOcrModelRef.current = nextModel;
     setOcrModel(nextModel);
     window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
-    if (isTauriEnvironment()) {
-      void restartOcrWorker().catch(() => undefined);
-    }
+    void warmupOcrModel(nextModel).catch(() => undefined);
   };
 
   const cancelInlineOcr = async () => {

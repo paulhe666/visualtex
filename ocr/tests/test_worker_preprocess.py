@@ -4,6 +4,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image, ImageDraw
 
@@ -58,6 +59,22 @@ class WorkerPreprocessTests(unittest.TestCase):
         self.assertTrue(metadata["background_inverted"])
         self.assertGreater(processed.getpixel((0, 0)), 245)
         self.assertLess(min(processed.getdata()), 20)
+
+    def test_warmup_loads_the_requested_model_without_recognition(self):
+        with mock.patch.object(WORKER, "_load_model", return_value=object()) as load_model:
+            response = WORKER._handle(
+                {
+                    "id": "warmup-test",
+                    "action": "warmup",
+                    "model": "PP-FormulaNet_plus-M",
+                    "device": "cpu",
+                }
+            )
+
+        load_model.assert_called_once_with("PP-FormulaNet_plus-M", "cpu")
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["event"], "warmed")
+        self.assertEqual(response["model"], "PP-FormulaNet_plus-M")
 
 
 if __name__ == "__main__":

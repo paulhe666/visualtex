@@ -558,6 +558,29 @@ async fn restart_ocr(State(context): State<ServerContext>) -> Response {
     }
 }
 
+async fn warmup_ocr(
+    State(context): State<ServerContext>,
+    headers: HeaderMap,
+) -> Response {
+    let model = ocr_header(&headers, "x-visualtex-ocr-model")
+        .unwrap_or_else(|| "PP-FormulaNet_plus-M".to_string());
+    if model.len() > 80 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid OCR model" })),
+        )
+            .into_response();
+    }
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.warmup_model(app, model).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
 async fn reset_ocr(State(context): State<ServerContext>) -> Response {
     let app = match ocr_app(&context) {
         Ok(app) => app,
@@ -1442,6 +1465,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route("/ocr/recognize", post(recognize_ocr))
         .route("/ocr/cancel", post(cancel_ocr))
         .route("/ocr/restart", post(restart_ocr))
+        .route("/ocr/warmup", post(warmup_ocr))
         .route("/ocr/reset", post(reset_ocr))
         .route("/ocr/events", get(get_ocr_events))
         .fallback(api_not_found);

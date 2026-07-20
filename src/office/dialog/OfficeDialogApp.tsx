@@ -39,6 +39,7 @@ import {
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
 import {
+  DEFAULT_OCR_MODEL,
   OCR_MODELS,
   cancelOcrRecognition,
   fileToOcrRequest,
@@ -46,7 +47,7 @@ import {
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
   resolveAvailableOcrModel,
-  restartOcrWorker,
+  warmupOcrModel,
   type OcrModelName,
 } from "../../ocr/ocrService";
 
@@ -64,7 +65,6 @@ interface InlineOcrState {
   model: OcrModelName;
 }
 
-const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const USE_NATIVE_POWERPOINT_COMMIT =
   document
@@ -153,6 +153,7 @@ export function OfficeDialogApp() {
       : DEFAULT_OCR_MODEL;
   });
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+  const startupOcrModelRef = useRef(ocrModel);
   const inlineOcrBusyRef = useRef(false);
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
@@ -169,7 +170,8 @@ export function OfficeDialogApp() {
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
   const selectedOcrModel =
-    OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
+    OCR_MODELS.find((item) => item.id === ocrModel) ??
+    OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!;
   const inlineOcrModel =
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
@@ -545,6 +547,13 @@ export function OfficeDialogApp() {
   }, [toast]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!inlineOcrIsBusy) return;
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
@@ -581,9 +590,10 @@ export function OfficeDialogApp() {
 
   const handleOcrModelChange = (nextModel: OcrModelName) => {
     if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+    startupOcrModelRef.current = nextModel;
     setOcrModel(nextModel);
     window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
-    void restartOcrWorker().catch(() => undefined);
+    void warmupOcrModel(nextModel).catch(() => undefined);
   };
 
   const cancelInlineOcr = async () => {

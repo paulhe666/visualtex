@@ -35,6 +35,10 @@ globalThis.fetch = async (input, init = {}) => {
     );
   }
 
+  if (url === "/api/v1/ocr/warmup") {
+    return new Response(null, { status: 204 });
+  }
+
   if (url === "/api/v1/ocr/recognize") {
     return new Response(
       JSON.stringify({
@@ -124,6 +128,16 @@ assert.equal(
   "jpg",
 );
 assert.deepEqual(Array.from(recognitionCall.init.body), [1, 2, 3]);
+
+await invoke("warmup_ocr_model", {
+  model: "PP-FormulaNet_plus-S",
+});
+const warmupCall = calls.find((call) => call.url === "/api/v1/ocr/warmup");
+assert.ok(warmupCall);
+assert.equal(
+  warmupCall.init.headers["X-VisualTeX-Ocr-Model"],
+  "PP-FormulaNet_plus-S",
+);
 
 const received = [];
 const unlisten = await listen("ocr-recognition-progress", (event) => {

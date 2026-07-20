@@ -26,6 +26,7 @@ import {
 } from "react";
 import { MathPreview } from "./MathPreview";
 import {
+  DEFAULT_OCR_MODEL,
   OCR_MODELS,
   cancelOcrRecognition,
   type OcrInstallProgress,
@@ -44,6 +45,7 @@ import {
   resolveAvailableOcrModel,
   resetOcrRuntime,
   restartOcrWorker,
+  warmupOcrModel,
   validateOcrImage,
 } from "../ocr/ocrService";
 
@@ -119,12 +121,18 @@ export function OcrDialog({
   const [copied, setCopied] = useState(false);
 
   const selectedModel = useMemo(
-    () => OCR_MODELS.find((item) => item.id === model) ?? OCR_MODELS[1],
+    () =>
+      OCR_MODELS.find((item) => item.id === model) ??
+      OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!,
     [model],
   );
   const defaultModel = runtime?.defaultModel ?? "PP-FormulaNet_plus-M";
   const installedModels = runtime?.installedModels ?? [];
-  const selectedModelInstalled = installedModels.includes(model);
+  const onlineModelAccess = Boolean(
+    runtime?.installed && !runtime.offlineBundleAvailable,
+  );
+  const selectedModelInstalled =
+    onlineModelAccess || installedModels.includes(model);
   const optionalModelMissing = model !== defaultModel && !selectedModelInstalled;
 
   const clearObjectUrl = useCallback(() => {
@@ -290,6 +298,7 @@ export function OcrDialog({
       unlisten = await listenOcrInstallProgress(setInstallProgress);
       const nextRuntime = await installOcrRuntime();
       setRuntime(nextRuntime);
+      void warmupOcrModel(model).catch(() => undefined);
       onNotify(isEn ? "OCR runtime installed" : "OCR 运行环境安装完成");
     } catch (installError) {
       setError(readError(installError));
@@ -444,6 +453,9 @@ export function OcrDialog({
   const handleRestartWorker = async () => {
     try {
       await restartOcrWorker();
+      void warmupOcrModel(model).catch((warmupError) => {
+        setError(readError(warmupError));
+      });
       setResult(null);
       setLatex("");
       setError("");
@@ -595,7 +607,7 @@ export function OcrDialog({
               >
                 {OCR_MODELS.map((item) => {
                   const available =
-                    installedModels.includes(item.id);
+                    onlineModelAccess || installedModels.includes(item.id);
                   return (
                     <option value={item.id} key={item.id} disabled={!available}>
                       {isEn ? item.labelEn : item.labelZh}
