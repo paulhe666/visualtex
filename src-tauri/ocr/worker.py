@@ -347,6 +347,36 @@ def _load_model(model_name: str, device: str) -> Any:
     return model
 
 
+def _runtime_versions() -> Dict[str, str]:
+    import platform
+    from importlib.metadata import version
+
+    import paddle
+
+    return {
+        "python_version": platform.python_version(),
+        "paddle_version": paddle.__version__,
+        "paddleocr_version": version("paddleocr"),
+    }
+
+
+def _warmup(request: Dict[str, Any]) -> Dict[str, Any]:
+    started = time.perf_counter()
+    request_id = str(request.get("id", ""))
+    model_name = str(request.get("model") or "PP-FormulaNet_plus-M")
+    device = str(request.get("device") or "cpu")
+    _load_model(model_name, device)
+    return {
+        "id": request_id,
+        "ok": True,
+        "event": "model-ready",
+        "model": model_name,
+        "device": device,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+        **_runtime_versions(),
+    }
+
+
 def _recognize(request: Dict[str, Any]) -> Dict[str, Any]:
     started = time.perf_counter()
     request_id = str(request.get("id", ""))
@@ -422,6 +452,8 @@ def _handle(request: Dict[str, Any]) -> Dict[str, Any]:
         return {"id": request_id, "ok": True, "event": "pong"}
     if action == "shutdown":
         return {"id": request_id, "ok": True, "event": "shutdown"}
+    if action == "warmup":
+        return _warmup(request)
     if action == "recognize":
         return _recognize(request)
     raise ValueError(f"Unsupported action: {action!r}")

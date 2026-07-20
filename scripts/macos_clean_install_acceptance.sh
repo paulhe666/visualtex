@@ -7,7 +7,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DMG_PATH="${1:-$PROJECT_ROOT/src-tauri/target/release/bundle/dmg/VisualTeX_1.1.0_aarch64.dmg}"
+DMG_PATH="${1:-$PROJECT_ROOT/src-tauri/target/release/bundle/dmg/VisualTeX_1.2.0_aarch64.dmg}"
 APP_PATH="/Applications/VisualTeX.app"
 EXECUTABLE="$APP_PATH/Contents/MacOS/visualtex"
 OFFICE_RESOURCES="$APP_PATH/Contents/Resources/office/macos-offline/resources"

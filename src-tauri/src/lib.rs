@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -26,6 +26,9 @@ const ALLOWED_MODELS: &[&str] = &[
     "PP-FormulaNet-L",
 ];
 const MAX_OCR_EVENTS: usize = 256;
+const OCR_RUNTIME_PROBE_CACHE_SCHEMA: u32 = 1;
+const OCR_RUNTIME_PROBE_CACHE_FILE: &str = "runtime-probe-cache.json";
+const OCR_DEFAULT_PREWARM_DELAY: Duration = Duration::from_millis(1200);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,7 +151,7 @@ impl OcrState {
         }
 
         tauri::async_runtime::spawn_blocking(move || {
-            let status = get_runtime_status_inner(&app)?;
+            let status = get_runtime_status_inner(&app, force_refresh)?;
             write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
             Ok(status)
         })
@@ -192,6 +195,17 @@ impl OcrState {
         .map_err(|error| format!("OCR recognition task failed: {error}"))?
     }
 
+    pub(crate) async fn prewarm_default_model(&self, app: AppHandle) -> Result<(), String> {
+        let worker = self.worker.clone();
+        let worker_pid = self.worker_pid.clone();
+        let runtime_status = self.runtime_status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            prewarm_default_model_inner(&app, &worker, &worker_pid, &runtime_status)
+        })
+        .await
+        .map_err(|error| format!("OCR default-model prewarm task failed: {error}"))?
+    }
+
     pub(crate) fn cancel(&self, app: &AppHandle) -> Result<(), String> {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
         terminate_worker_process(&self.worker_pid)?;
@@ -223,7 +237,7 @@ impl OcrState {
                 fs::remove_dir_all(&paths.root)
                     .map_err(|error| format!("Unable to remove OCR runtime: {error}"))?;
             }
-            let status = get_runtime_status_inner(&app)?;
+            let status = get_runtime_status_inner(&app, false)?;
             write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
             Ok(status)
         })
@@ -244,7 +258,7 @@ impl OcrState {
             stop_worker(&worker, &worker_pid)?;
             let paths = runtime_paths(&app)?;
             ocr_offline::install_optional_model_pack(&package_path, &paths.root)?;
-            let status = get_runtime_status_inner(&app)?;
+            let status = get_runtime_status_inner(&app, false)?;
             write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
             Ok(status)
         })
@@ -265,7 +279,7 @@ impl OcrState {
             stop_worker(&worker, &worker_pid)?;
             let paths = runtime_paths(&app)?;
             ocr_offline::remove_optional_model(&paths.root, &model)?;
-            let status = get_runtime_status_inner(&app)?;
+            let status = get_runtime_status_inner(&app, false)?;
             write_cached_runtime_status(&runtime_status, Some(status.clone()))?;
             Ok(status)
         })
@@ -461,11 +475,21 @@ struct WorkerRecognitionResponse {
     details: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct RuntimeProbe {
     python_version: String,
     paddle_version: String,
     paddleocr_version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeProbeCache {
+    schema_version: u32,
+    python_path: String,
+    python_size: u64,
+    python_modified_ms: u64,
+    probe: RuntimeProbe,
 }
 
 fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
@@ -566,6 +590,80 @@ fn command_output(command: &mut Command, label: &str) -> Result<String, String> 
     ))
 }
 
+fn validate_runtime_probe(probe: &RuntimeProbe) -> Result<(), String> {
+    if probe.paddle_version != PADDLE_VERSION || probe.paddleocr_version != PADDLEOCR_VERSION {
+        return Err(format!(
+            "OCR runtime version mismatch: PaddlePaddle {}, PaddleOCR {}; expected {} and {}",
+            probe.paddle_version, probe.paddleocr_version, PADDLE_VERSION, PADDLEOCR_VERSION
+        ));
+    }
+    Ok(())
+}
+
+fn python_runtime_signature(path: &PathBuf) -> Result<(u64, u64), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Unable to inspect OCR Python runtime: {error}"))?;
+    let modified_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+    Ok((metadata.len(), modified_ms))
+}
+
+fn runtime_probe_cache_path(paths: &RuntimePaths) -> PathBuf {
+    paths.root.join(OCR_RUNTIME_PROBE_CACHE_FILE)
+}
+
+fn read_persisted_runtime_probe(paths: &RuntimePaths) -> Option<RuntimeProbe> {
+    let content = fs::read(runtime_probe_cache_path(paths)).ok()?;
+    let cache: RuntimeProbeCache = serde_json::from_slice(&content).ok()?;
+    if cache.schema_version != OCR_RUNTIME_PROBE_CACHE_SCHEMA
+        || cache.python_path != paths.python.display().to_string()
+    {
+        return None;
+    }
+    let (python_size, python_modified_ms) = python_runtime_signature(&paths.python).ok()?;
+    if cache.python_size != python_size || cache.python_modified_ms != python_modified_ms {
+        return None;
+    }
+    validate_runtime_probe(&cache.probe).ok()?;
+    Some(cache.probe)
+}
+
+fn write_persisted_runtime_probe(
+    paths: &RuntimePaths,
+    probe: &RuntimeProbe,
+) -> Result<(), String> {
+    fs::create_dir_all(&paths.root)
+        .map_err(|error| format!("Unable to create OCR runtime directory: {error}"))?;
+    let (python_size, python_modified_ms) = python_runtime_signature(&paths.python)?;
+    let cache = RuntimeProbeCache {
+        schema_version: OCR_RUNTIME_PROBE_CACHE_SCHEMA,
+        python_path: paths.python.display().to_string(),
+        python_size,
+        python_modified_ms,
+        probe: probe.clone(),
+    };
+    let destination = runtime_probe_cache_path(paths);
+    let temporary = paths.root.join(format!(
+        ".{OCR_RUNTIME_PROBE_CACHE_FILE}.{}.tmp",
+        std::process::id()
+    ));
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&cache)
+            .map_err(|error| format!("Unable to encode OCR runtime cache: {error}"))?,
+    )
+    .map_err(|error| format!("Unable to write OCR runtime cache: {error}"))?;
+    if destination.exists() {
+        fs::remove_file(&destination).ok();
+    }
+    fs::rename(&temporary, &destination)
+        .map_err(|error| format!("Unable to activate OCR runtime cache: {error}"))
+}
+
 fn probe_runtime(paths: &RuntimePaths) -> Result<RuntimeProbe, String> {
     if !paths.python.exists() {
         return Err("OCR offline runtime is not installed".to_string());
@@ -577,20 +675,57 @@ fn probe_runtime(paths: &RuntimePaths) -> Result<RuntimeProbe, String> {
     )?;
     let probe: RuntimeProbe = serde_json::from_str(&output)
         .map_err(|error| format!("OCR runtime returned invalid version information: {error}"))?;
-    if probe.paddle_version != PADDLE_VERSION || probe.paddleocr_version != PADDLEOCR_VERSION {
-        return Err(format!(
-            "OCR runtime version mismatch: PaddlePaddle {}, PaddleOCR {}; expected {} and {}",
-            probe.paddle_version, probe.paddleocr_version, PADDLE_VERSION, PADDLEOCR_VERSION
-        ));
+    validate_runtime_probe(&probe)?;
+    if let Err(error) = write_persisted_runtime_probe(paths, &probe) {
+        eprintln!("Unable to persist OCR runtime verification: {error}");
     }
     Ok(probe)
 }
 
-fn get_runtime_status_inner(app: &AppHandle) -> Result<OcrRuntimeStatus, String> {
+fn get_runtime_status_inner(
+    app: &AppHandle,
+    force_refresh: bool,
+) -> Result<OcrRuntimeStatus, String> {
     let paths = runtime_paths(app)?;
     let offline_bundle_available = ocr_offline::bundle_available(app);
     let installed_models = ocr_offline::installed_models(&paths.root);
-    match probe_runtime(&paths) {
+    let default_model_installed = installed_models
+        .iter()
+        .any(|model| model == ocr_offline::OFFLINE_DEFAULT_MODEL);
+    let structural_error = if !paths.python.is_file() {
+        Some("OCR offline runtime is not installed".to_string())
+    } else if !default_model_installed {
+        Some("The bundled PP-FormulaNet M model is not installed".to_string())
+    } else {
+        None
+    };
+
+    if structural_error.is_none() && !force_refresh {
+        let cached_probe = read_persisted_runtime_probe(&paths);
+        return Ok(OcrRuntimeStatus {
+            installed: true,
+            python_path: Some(paths.python.display().to_string()),
+            python_version: cached_probe.as_ref().map(|probe| probe.python_version.clone()),
+            paddle_version: cached_probe.as_ref().map(|probe| probe.paddle_version.clone()),
+            paddleocr_version: cached_probe
+                .as_ref()
+                .map(|probe| probe.paddleocr_version.clone()),
+            runtime_path: paths.root.display().to_string(),
+            offline_bundle_available,
+            installed_models,
+            default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
+            message: if cached_probe.is_some() {
+                "PaddleOCR formula runtime is ready; the default M model can be reused in memory"
+                    .to_string()
+            } else {
+                "OCR runtime files are ready; the default M model will be verified during background preloading"
+                    .to_string()
+            },
+        });
+    }
+
+    let probe_result = structural_error.map_or_else(|| probe_runtime(&paths), Err);
+    match probe_result {
         Ok(probe) => Ok(OcrRuntimeStatus {
             installed: true,
             python_path: Some(paths.python.display().to_string()),
@@ -712,7 +847,7 @@ fn install_runtime_inner(
     })?;
 
     emit_progress(app, "verify", 97, "正在验证离线 PP-FormulaNet 接口", None);
-    let status = get_runtime_status_inner(app)?;
+    let status = get_runtime_status_inner(app, true)?;
     if !status.installed {
         return Err(status.message);
     }
@@ -816,6 +951,101 @@ fn spawn_worker(
         return Err(format!("Unexpected OCR worker ready response: {ready}"));
     }
     Ok(worker)
+}
+
+fn prewarm_default_model_inner(
+    app: &AppHandle,
+    worker_state: &Arc<Mutex<Option<OcrWorker>>>,
+    worker_pid: &Arc<AtomicU32>,
+    runtime_status: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+) -> Result<(), String> {
+    let paths = runtime_paths(app)?;
+    let installed_models = ocr_offline::installed_models(&paths.root);
+    if !paths.python.is_file()
+        || !installed_models
+            .iter()
+            .any(|model| model == ocr_offline::OFFLINE_DEFAULT_MODEL)
+    {
+        return Ok(());
+    }
+
+    let mut guard = worker_state
+        .lock()
+        .map_err(|_| "OCR worker lock is poisoned".to_string())?;
+    match guard
+        .as_ref()
+        .and_then(|worker| worker.loaded_model.as_deref())
+    {
+        Some(model) if model == ocr_offline::OFFLINE_DEFAULT_MODEL => return Ok(()),
+        Some(_) => return Ok(()),
+        None => {}
+    }
+    if guard.is_none() {
+        *guard = Some(spawn_worker(app, &paths, worker_pid.clone())?);
+    }
+
+    let request_id = format!(
+        "prewarm-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default()
+    );
+    let payload = json!({
+        "id": request_id,
+        "action": "warmup",
+        "model": ocr_offline::OFFLINE_DEFAULT_MODEL,
+        "device": "cpu"
+    });
+    let response = match guard
+        .as_mut()
+        .ok_or_else(|| "OCR worker failed to start".to_string())?
+        .send(app, &payload)
+    {
+        Ok(response) => response,
+        Err(error) => {
+            guard.take();
+            return Err(error);
+        }
+    };
+    if response.get("ok").and_then(Value::as_bool) != Some(true) {
+        let error = response
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("Default OCR model preloading failed");
+        guard.take();
+        return Err(error.to_string());
+    }
+
+    let probe: RuntimeProbe = serde_json::from_value(response.clone())
+        .map_err(|error| format!("OCR prewarm returned invalid runtime versions: {error}"))?;
+    validate_runtime_probe(&probe)?;
+    if let Err(error) = write_persisted_runtime_probe(&paths, &probe) {
+        eprintln!("Unable to persist OCR prewarm verification: {error}");
+    }
+    if let Some(worker) = guard.as_mut() {
+        worker.loaded_model = Some(ocr_offline::OFFLINE_DEFAULT_MODEL.to_string());
+    }
+
+    let status = OcrRuntimeStatus {
+        installed: true,
+        python_path: Some(paths.python.display().to_string()),
+        python_version: Some(probe.python_version),
+        paddle_version: Some(probe.paddle_version),
+        paddleocr_version: Some(probe.paddleocr_version),
+        runtime_path: paths.root.display().to_string(),
+        offline_bundle_available: ocr_offline::bundle_available(app),
+        installed_models,
+        default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
+        message: "PaddleOCR formula runtime and the default M model are ready in memory"
+            .to_string(),
+    };
+    write_cached_runtime_status(runtime_status, Some(status))?;
+    if let Some(elapsed_ms) = response.get("elapsed_ms").and_then(Value::as_u64) {
+        eprintln!("VisualTeX OCR default M model preloaded in {elapsed_ms} ms");
+    }
+    Ok(())
 }
 
 fn run_recognition(
@@ -1067,6 +1297,7 @@ pub fn run() {
         .find(|argument| argument.starts_with("visualtex://office/open?session="));
     let ocr_state = OcrState::default();
     let office_ocr_state = ocr_state.clone();
+    let ocr_prewarm_state = ocr_state.clone();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
@@ -1142,6 +1373,17 @@ pub fn run() {
                 }
                 office::background::reveal_main_window(app.handle())
                     .map_err(std::io::Error::other)?;
+            }
+
+            if !background_mode {
+                let prewarm_app = app.handle().clone();
+                let prewarm_state = ocr_prewarm_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(OCR_DEFAULT_PREWARM_DELAY).await;
+                    if let Err(error) = prewarm_state.prewarm_default_model(prewarm_app).await {
+                        eprintln!("Unable to preload the default OCR M model: {error}");
+                    }
+                });
             }
             Ok(())
         })
