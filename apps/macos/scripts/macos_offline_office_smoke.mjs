@@ -613,7 +613,8 @@ for (const obsolete of [
 }
 expect(!macTauriConfig.includes("dist-office-macos"), "The macOS app bundle must not package the obsolete Office.js web bundle");
 expect(!platformBundle.includes('run(npm, ["run", "build:office:macos"])'), "The macOS build must not generate an Office.js web bundle");
-expectIncludes(lifecycle, "No Office.js bridge or dialog bundle is required", "macOS startup must not require Office.js UI resources");
+expect(!lifecycle.includes("resolve_ui_root"), "macOS startup must not resolve an Office.js UI resource directory");
+expectIncludes(lifecycle, "ensure_companion_runtime", "macOS startup must still initialize the private Session/OCR companion runtime");
 expectIncludes(capabilities, '"office-native-*"', "Dedicated native Office windows must receive Tauri core permissions");
 expectIncludes(capabilities, '"core:window:allow-close"', "Dedicated native Office windows must be allowed to close after a successful commit or cancel");
 expectIncludes(dialogApp, "isMacosOfflineTauriTransport()", "Native Office formula editors must avoid Office.js parent messaging");

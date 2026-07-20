@@ -62,7 +62,7 @@ macOS 版本位于 [`apps/macos`](apps/macos)，使用完全离线的原生 Offi
 - Word 支持图片公式和原生 OMML 行内/行间公式；
 - 支持图片公式转换为 Word 原生公式、公式编号、交叉引用、按钮编辑和双击编辑；
 - PowerPoint 支持新建、替换、删除和双击编辑 VisualTeX 公式；
-- 不依赖 Office.js、本地 HTTPS、证书或网络请求。
+- 原生加载项不依赖 Office.js、XML Manifest、系统可信证书或外部网络；本地 companion 仅为 Session/OCR 使用私有回环 TLS。
 
 ## Windows 版本
 
@@ -172,7 +172,7 @@ The macOS application lives in [`apps/macos`](apps/macos) and uses a fully offli
 - Word picture formulas and native OMML inline or display formulas;
 - Picture-to-OMML conversion, equation numbering, cross-references, Ribbon editing, and double-click editing;
 - PowerPoint formula creation, replacement, deletion, and double-click editing;
-- No Office.js, local HTTPS certificate, or network dependency in the native route.
+- The native add-ins require no Office.js, XML manifests, system-trusted certificate, or external network; a private loopback TLS companion is used only for Session/OCR services.
 
 ## Windows application
 

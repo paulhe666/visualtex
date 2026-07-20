@@ -1,8 +1,0 @@
-{
-  "bundle": {
-    "resources": {
-      "../dist-office-macos/": "office/",
-      "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
-    }
-  }
-}

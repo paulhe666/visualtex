@@ -1,6 +1,0 @@
-{
-  "package": "@microsoft/office-js",
-  "version": "1.1.110",
-  "officeJsSha256": "6fe941f269fea6a0c6816d5c302d27d08c71763d626745f82e12cf8c559c2628",
-  "scope": "macOS Word and PowerPoint plus all Office UI locale strings"
-}

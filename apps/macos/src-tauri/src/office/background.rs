@@ -396,26 +396,6 @@ pub fn pause_launch_agent_for_quit() -> Result<(), String> {
     }
 }
 
-pub fn resume_installed_launch_agent() -> Result<(), String> {
-    #[cfg(not(target_os = "macos"))]
-    return Ok(());
-
-    #[cfg(target_os = "macos")]
-    {
-        let home = user_home()?;
-        let path = launch_agent_path(&home);
-        if !path.is_file() {
-            return Ok(());
-        }
-
-        remove_background_marker(&home)?;
-        if launch_agent_loaded()? && launch_agent_pid()? != Some(std::process::id()) {
-            bootout_launch_agent()?;
-        }
-        install_launch_agent().map(|_| ())
-    }
-}
-
 pub fn uninstall_launch_agent() -> Result<OfficeBackgroundStatus, String> {
     #[cfg(not(target_os = "macos"))]
     return Ok(status());
@@ -622,8 +602,8 @@ mod tests {
     fn startup_marker_is_persistent_configuration_not_a_process_lifetime_file() {
         let source = include_str!("background.rs");
         let pause_start = source.find("pub fn pause_launch_agent_for_quit").unwrap();
-        let resume_start = source.find("pub fn resume_installed_launch_agent").unwrap();
-        let pause = &source[pause_start..resume_start];
+        let uninstall_start = source.find("pub fn uninstall_launch_agent").unwrap();
+        let pause = &source[pause_start..uninstall_start];
         assert!(!pause.contains("remove_background_marker"));
         assert!(pause.contains("bootout_launch_agent"));
     }

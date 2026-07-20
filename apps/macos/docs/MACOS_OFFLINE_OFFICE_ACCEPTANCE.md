@@ -10,7 +10,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 npm run build:desktop
 ```
 
-Expected: all commands pass; the smoke log reports successful AppleScript compilation; the desktop build contains `office-native-dialog.html`; existing Office.js and Windows architecture tests remain unchanged. After compiling each real Office artifact, run the VBA function `VTProtocolSelfTest` once in that host and require `True`; this exercises 1,000 UUIDs plus a UTF-8 round trip containing Chinese, Greek, and a supplementary Unicode character. Installation must be transactional: inject a controlled failure after at least one destination is replaced and confirm every previous VisualTeX file is restored. A same-version health record is valid only when the exact host, current plugin version, and a bounded timestamp are present.
+Expected: all commands pass; the smoke log reports successful AppleScript compilation; and the desktop build contains `office-native-dialog.html` without an Office.js bundle. After compiling each real Office artifact, run the VBA function `VTProtocolSelfTest` once in that host and require `True`; this exercises 1,000 UUIDs plus a UTF-8 round trip containing Chinese, Greek, and a supplementary Unicode character. Installation must be transactional: inject a controlled failure after at least one destination is replaced and confirm every previous VisualTeX file is restored. A same-version health record is valid only when the exact host, current plugin version, and a bounded timestamp are present.
 
 ## Word: VisualTeX.dotm
 
@@ -43,8 +43,8 @@ Expected: all commands pass; the smoke log reports successful AppleScript compil
 
 ## Offline and boundary checks
 
-- No Office.js script, HTTPS listener, local certificate, manifest, WebView task pane, Trusted Catalog, mouse simulation, keyboard simulation, language-dependent menu automation, polling loop, or SelectionChange background handler is used by the native Mac plug-ins. Double-click editing uses only the host-provided `Application.WindowBeforeDoubleClick` event in a persistent VBA class module.
+- No Office.js script, XML manifest, trusted-certificate installation, WebView task pane, Trusted Catalog, mouse simulation, keyboard simulation, language-dependent menu automation, polling loop, or SelectionChange background handler is used by the native Mac plug-ins. The private loopback TLS companion is limited to Session/OCR APIs. Double-click editing uses only the host-provided `Application.WindowBeforeDoubleClick` event in a persistent VBA class module.
 - AppleScriptTask accepts only a canonical UUID v4 and launches only the fixed `visualtex://office/open?session=<uuid>` URL through `/usr/bin/open` with `quoted form of`.
 - VisualTeX reuses one running desktop process and opens one editor window per Session. Duplicate or concurrent deliveries of the same URL reuse the imported Session.
 - Completed and cancelled Sessions remove only the known request, dispatch, and rendered-PNG artifacts; unknown files prevent directory removal and are never recursively deleted.
-- Existing Office.js compatibility installation remains available until this checklist passes at equal or higher strength.
+- The retired Office.js compatibility installation is absent from the macOS application; only the native DOTM/PPAM route is supported.

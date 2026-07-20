@@ -20,10 +20,7 @@ function run(command, args) {
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 run(npm, ["run", "build:desktop"]);
 
-if (process.platform === "darwin") {
-  run(npm, ["run", "build:office:macos"]);
-  run(npm, ["run", "prepare:ocr-offline"]);
-} else if (process.platform === "win32") {
+if (process.platform === "win32") {
   run(npm, ["run", "build:office:windows-ole"]);
   // Tauri opens externalBin before running beforeBuildCommand. The top-level
   // tauri_build wrapper prepares native artifacts first, then sets this flag

@@ -2,7 +2,7 @@
 
 Status: staged implementation on `feat/macos-offline-office-native`.
 
-This document defines the native, completely offline macOS Word and PowerPoint integration. The existing Office.js integration remains in the repository as a compatibility route until the native add-ins pass the acceptance matrix in `docs/MACOS_OFFLINE_OFFICE_ACCEPTANCE.md`.
+This document defines the native, completely offline macOS Word and PowerPoint integration. The retired Office.js route has been removed from the macOS application after the native DOTM/PPAM workflow became the supported implementation.
 
 ## Non-negotiable boundaries
 
@@ -13,7 +13,7 @@ This document defines the native, completely offline macOS Word and PowerPoint i
 - Formula request and result payloads are local files under the Office application-group container at `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeSessions/<session-id>/`, which is accessible to both sandboxed Office hosts and the desktop app.
 - The Tauri application imports the request into the existing `SessionStore`; formula editing and export reuse the existing Office editor and metadata schema.
 - macOS continues to store formulas as PNG/SVG-backed `InlineShape`/`Shape` objects. It never registers or pretends to provide the Windows `VisualTeX.Formula.1` COM/OLE class.
-- No Office.js, HTTPS, manifest, certificate, WebView add-in, network access, menu-language matching, coordinate clicking, mouse simulation, or keyboard simulation is part of this route. Double-click editing is handled by the host's native `Application.WindowBeforeDoubleClick` VBA event.
+- No Office.js, XML manifest, trusted-certificate installation, WebView task pane, external network access, menu-language matching, coordinate clicking, mouse simulation, or keyboard simulation is part of this route. A private loopback TLS companion remains for Session/OCR APIs only. Double-click editing is handled by the host's native `Application.WindowBeforeDoubleClick` VBA event.
 
 ## Runtime sequence
 
@@ -82,6 +82,6 @@ office/macos-offline/resources/VisualTeX.ppam
 
 The build and installer fail closed when either compiled artifact is absent or has an unexpected checksum. A blank or renamed OOXML file is never accepted as a native add-in.
 
-## Compatibility route
+## Removed legacy route
 
-The current `office/macos/manifests`, local HTTPS companion, certificate, and Office.js bridge remain unchanged during native development. Native installation has separate commands and status. Only after all native acceptance tests pass may the default macOS installation UI stop offering Office.js first.
+The retired macOS Office.js manifests, trusted-certificate installer, web bridge, and Windows native sources are not part of this application. The supported Office route is the native DOTM/PPAM integration above. The local companion remains only for shared Session/OCR services used by the native workflow; it does not publish an Office.js task pane or install XML manifests.

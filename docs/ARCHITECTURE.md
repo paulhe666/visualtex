@@ -27,11 +27,11 @@ apps/windows  = Windows 编辑器 + Windows Tauri + VSTO/OLE + Windows OCR
 
 #### macOS
 
-macOS 使用 DOTM、PPAM、VBA、AppleScriptTask、Office Group Container 和 Tauri 本地编辑窗口。Word 可插入图片或 OMML 公式；PowerPoint 使用本地图片/矢量公式流程。该实现不注册 Windows COM/OLE 类。
+macOS 使用 DOTM、PPAM、VBA、AppleScriptTask、Office Group Container 和 Tauri 本地编辑窗口。Word 可插入图片或 OMML 公式；PowerPoint 使用本地图片/矢量公式流程。该实现不包含 Office.js、XML Manifest 或 Windows COM/OLE 代码；私有回环 TLS companion 仅用于 Session/OCR API。
 
 #### Windows
 
-Windows 使用 VSTO Ribbon、Office 事件和 ATL COM LocalServer。专业模式保存真实的 `VisualTeX.Formula.1` OLE 对象，同时保留 OMML 与跨平台图片模式。该实现不依赖 macOS DOTM、PPAM 或 AppleScript。
+Windows 使用 VSTO Ribbon、Office 事件和 ATL COM LocalServer。专业模式保存真实的 `VisualTeX.Formula.1` OLE 对象，同时保留 OMML 与跨平台图片模式。仅 `office/windows/ole/` 保留当前仍支持的 Windows Office.js 兼容/清理路径，其静态资源在构建时生成而不提交；该实现不包含 macOS DOTM、PPAM 或 AppleScript。
 
 ### 文档兼容与源码解耦
 
@@ -110,11 +110,11 @@ There is no third application at the repository root. The root only provides doc
 
 #### macOS
 
-macOS uses DOTM, PPAM, VBA, AppleScriptTask, the Office Group Container, and local Tauri editor windows. Word supports picture and OMML formulas; PowerPoint uses the local picture/vector workflow. This application never registers the Windows COM/OLE class.
+macOS uses DOTM, PPAM, VBA, AppleScriptTask, the Office Group Container, and local Tauri editor windows. Word supports picture and OMML formulas; PowerPoint uses the local picture/vector workflow. The application contains no Office.js, XML manifests, or Windows COM/OLE code; its private loopback TLS companion is limited to Session/OCR APIs.
 
 #### Windows
 
-Windows uses VSTO Ribbons, Office events, and an ATL COM LocalServer. Professional mode stores real `VisualTeX.Formula.1` OLE objects while retaining OMML and cross-platform picture modes. This application does not depend on macOS DOTM, PPAM, or AppleScript components.
+Windows uses VSTO Ribbons, Office events, and an ATL COM LocalServer. Professional mode stores real `VisualTeX.Formula.1` OLE objects while retaining OMML and cross-platform picture modes. Only `office/windows/ole/` retains the currently supported Windows Office.js compatibility/cleanup route, with generated assets excluded from Git. The application contains no macOS DOTM, PPAM, or AppleScript components.
 
 ### Document compatibility without source coupling
 

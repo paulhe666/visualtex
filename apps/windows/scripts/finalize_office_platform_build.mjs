@@ -4,23 +4,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const platform = process.argv[2];
-const config = {
-  macos: {
-    dist: "dist-office-macos",
-    bridge: "office-macos-bridge.html",
-  },
-  "windows-ole": {
-    dist: "dist-office-windows-ole",
-    bridge: "office-windows-ole-bridge.html",
-  },
-}[platform];
-if (!config) {
-  throw new Error("Usage: node finalize_office_platform_build.mjs <macos|windows-ole>");
+if (platform !== "windows-ole") {
+  throw new Error("Usage: node finalize_office_platform_build.mjs windows-ole");
 }
 
-const dist = join(root, config.dist);
+const dist = join(root, "dist-office-windows-ole");
 for (const [sourceName, destination] of [
-  [config.bridge, join("bridge", "index.html")],
+  ["office-windows-ole-bridge.html", join("bridge", "index.html")],
   ["office-dialog.html", join("dialog", "index.html")],
 ]) {
   const source = join(dist, sourceName);
@@ -29,4 +19,4 @@ for (const [sourceName, destination] of [
   await copyFile(source, target);
   await rm(source);
 }
-console.log(`Finalized independent ${platform} Office build layout.`);
+console.log("Finalized Windows Office compatibility build layout.");

@@ -59,9 +59,6 @@ fn sync_directory(path: &Path) -> Result<(), String> {
 
 #[cfg(not(unix))]
 fn sync_directory(_path: &Path) -> Result<(), String> {
-    // Windows does not allow opening a directory with std::fs::File solely
-    // to call sync_all(). The temporary file itself has already been flushed
-    // before the atomic rename, so no extra directory sync is available here.
     Ok(())
 }
 
@@ -103,7 +100,7 @@ fn atomic_write(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
 fn new_install_token() -> Result<String, String> {
     let mut bytes = [0_u8; 32];
     random_fill(&mut bytes)
-        .map_err(|error| format!("Unable to generate install token: {error}"))?;
+        .map_err(|error| format!("Unable to generate companion token: {error}"))?;
     Ok(hex::encode(bytes))
 }
 
@@ -129,27 +126,16 @@ fn ensure_install_config(paths: &OfficePaths) -> Result<String, String> {
         created_at: OffsetDateTime::now_utc().unix_timestamp(),
     };
     let json = serde_json::to_vec_pretty(&config)
-        .map_err(|error| format!("Unable to encode install config: {error}"))?;
+        .map_err(|error| format!("Unable to encode companion config: {error}"))?;
     atomic_write(&paths.install, &json, 0o600)?;
     Ok(config.install_token)
-}
-
-fn expected_key_algorithm() -> &'static str {
-    #[cfg(target_os = "windows")]
-    {
-        "rsa-2048-sha256"
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        "ecdsa-p256-sha256"
-    }
 }
 
 fn certificate_metadata_matches_platform(paths: &OfficePaths) -> bool {
     fs::read(&paths.certificate_metadata)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<CertificateMetadata>(&bytes).ok())
-        .is_some_and(|metadata| metadata.key_algorithm == expected_key_algorithm())
+        .is_some_and(|metadata| metadata.key_algorithm == "ecdsa-p256-sha256")
 }
 
 fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
@@ -187,7 +173,7 @@ fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
         .push(DnType::OrganizationName, "VisualTeX");
     params
         .distinguished_name
-        .push(DnType::CommonName, "VisualTeX Local Office Companion");
+        .push(DnType::CommonName, "VisualTeX Local Companion");
     params.subject_alt_names = vec![
         SanType::DnsName(
             "localhost"
@@ -197,26 +183,22 @@ fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
         SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)),
     ];
 
-    #[cfg(target_os = "windows")]
-    let key_pair = KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256)
-        .map_err(|error| format!("Unable to generate Office TLS RSA private key: {error}"))?;
-    #[cfg(not(target_os = "windows"))]
     let key_pair = KeyPair::generate()
-        .map_err(|error| format!("Unable to generate Office TLS private key: {error}"))?;
+        .map_err(|error| format!("Unable to generate companion TLS private key: {error}"))?;
     let certificate = params
         .self_signed(&key_pair)
-        .map_err(|error| format!("Unable to generate Office TLS certificate: {error}"))?;
+        .map_err(|error| format!("Unable to generate companion TLS certificate: {error}"))?;
     let certificate_pem = certificate.pem();
     let private_key_pem = key_pair.serialize_pem();
     let fingerprint = Sha256::digest(certificate.der().as_ref());
     let metadata = CertificateMetadata {
-        common_name: "VisualTeX Local Office Companion".to_string(),
+        common_name: "VisualTeX Local Companion".to_string(),
         dns_names: vec!["localhost".to_string()],
         ip_addresses: vec!["127.0.0.1".to_string()],
         not_before: not_before.unix_timestamp(),
         not_after: not_after.unix_timestamp(),
         sha256_fingerprint: hex::encode(fingerprint),
-        key_algorithm: expected_key_algorithm().to_string(),
+        key_algorithm: "ecdsa-p256-sha256".to_string(),
     };
     let metadata_json = serde_json::to_vec_pretty(&metadata)
         .map_err(|error| format!("Unable to encode certificate metadata: {error}"))?;
@@ -226,43 +208,26 @@ fn ensure_certificate(paths: &OfficePaths) -> Result<(), String> {
     atomic_write(&paths.certificate_metadata, &metadata_json, 0o644)
 }
 
-pub fn ensure_office_install(paths: &OfficePaths) -> Result<String, String> {
+/// Prepare the private local companion runtime. This creates a loopback TLS
+/// certificate and an API token, but does not trust the certificate in the
+/// system keychain and does not install any Office.js manifest.
+pub fn ensure_companion_runtime(paths: &OfficePaths) -> Result<String, String> {
     fs::create_dir_all(&paths.root)
-        .map_err(|error| format!("Unable to create Office data directory: {error}"))?;
+        .map_err(|error| format!("Unable to create companion data directory: {error}"))?;
     set_mode(&paths.root, 0o700)?;
-    fs::create_dir_all(&paths.sessions)
-        .map_err(|error| format!("Unable to create Office session directory: {error}"))?;
-    fs::create_dir_all(&paths.recovery)
-        .map_err(|error| format!("Unable to create Office recovery directory: {error}"))?;
-    set_mode(&paths.sessions, 0o700)?;
-    set_mode(&paths.recovery, 0o700)?;
-
+    for directory in [&paths.sessions, &paths.recovery, &paths.formula_cache] {
+        fs::create_dir_all(directory)
+            .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+        set_mode(directory, 0o700)?;
+    }
     ensure_certificate(paths)?;
     ensure_install_config(paths)
-}
-
-pub fn regenerate_certificate(paths: &OfficePaths) -> Result<(), String> {
-    for path in [
-        &paths.certificate,
-        &paths.private_key,
-        &paths.certificate_metadata,
-    ] {
-        if path.exists() {
-            fs::remove_file(path)
-                .map_err(|error| format!("Unable to remove {}: {error}", path.display()))?;
-        }
-    }
-    ensure_certificate(paths)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use x509_parser::extensions::GeneralName;
-    use x509_parser::pem::parse_x509_pem;
-    use x509_parser::prelude::FromDer;
-    use x509_parser::prelude::X509Certificate;
 
     fn paths(temp: &TempDir) -> OfficePaths {
         let root = temp.path().join("office");
@@ -274,86 +239,20 @@ mod tests {
             sessions: root.join("sessions"),
             recovery: root.join("recovery"),
             formula_cache: root.join("formulas"),
-            ui_root: temp.path().join("ui"),
             root,
         }
     }
 
     #[test]
-    fn generated_certificate_contains_required_sans_and_validity() {
+    fn companion_runtime_generates_persistent_private_credentials() {
         let temp = TempDir::new().expect("temp dir");
         let paths = paths(&temp);
-        ensure_office_install(&paths).expect("office install");
-        let bytes = fs::read(&paths.certificate).expect("certificate pem");
-        let (_, pem) = parse_x509_pem(&bytes).expect("parse pem");
-        let (_, certificate) = X509Certificate::from_der(&pem.contents).expect("parse x509");
-        let san = certificate
-            .subject_alternative_name()
-            .expect("SAN extension")
-            .expect("SAN must exist");
-        let has_localhost = san
-            .value
-            .general_names
-            .iter()
-            .any(|name| matches!(name, GeneralName::DNSName(value) if *value == "localhost"));
-        let has_loopback =
-            san.value.general_names.iter().any(
-                |name| matches!(name, GeneralName::IPAddress(value) if *value == [127, 0, 0, 1]),
-            );
-        assert!(has_localhost);
-        assert!(has_loopback);
-        let validity = certificate.validity();
-        assert!(validity.not_before.timestamp() <= OffsetDateTime::now_utc().unix_timestamp());
-        assert!(
-            validity.not_after.timestamp()
-                > (OffsetDateTime::now_utc() + Duration::days(365)).unix_timestamp()
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn office_private_files_have_restrictive_permissions() {
-        use std::os::unix::fs::PermissionsExt;
-        let temp = TempDir::new().expect("temp dir");
-        let paths = paths(&temp);
-        ensure_office_install(&paths).expect("office install");
-        assert_eq!(
-            fs::metadata(&paths.root).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert_eq!(
-            fs::metadata(&paths.private_key)
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-        assert_eq!(
-            fs::metadata(&paths.install).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert_eq!(
-            fs::metadata(&paths.certificate)
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o644
-        );
-    }
-
-    #[test]
-    fn install_tokens_are_random_and_persisted() {
-        let first_temp = TempDir::new().expect("first temp dir");
-        let second_temp = TempDir::new().expect("second temp dir");
-        let first_paths = paths(&first_temp);
-        let second_paths = paths(&second_temp);
-        let first = ensure_office_install(&first_paths).expect("first install");
-        let repeated = ensure_office_install(&first_paths).expect("repeat install");
-        let second = ensure_office_install(&second_paths).expect("second install");
+        let first = ensure_companion_runtime(&paths).expect("runtime");
+        let repeated = ensure_companion_runtime(&paths).expect("repeat runtime");
         assert_eq!(first.len(), 64);
         assert_eq!(first, repeated);
-        assert_ne!(first, second);
+        assert!(paths.certificate.is_file());
+        assert!(paths.private_key.is_file());
+        assert!(paths.certificate_metadata.is_file());
     }
 }

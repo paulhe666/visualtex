@@ -32,4 +32,6 @@ jobs:
       - run: npm run build:desktop
       - run: npm run test:platform-onboarding
       - run: npm run test:windows-office-architecture
+      - run: npm run verify:office-manifest
+      - run: npm run build:office:windows-ole
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

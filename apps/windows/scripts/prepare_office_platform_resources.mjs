@@ -6,22 +6,6 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const platform = process.argv[2];
 const configs = {
-  macos: {
-    publicRoot: join(root, "office", "macos"),
-    wordId: "d6fcb260-4c37-4f73-a173-cf24674f81f2",
-    powerpointId: "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5",
-    rootFiles: [
-      "office.js",
-      "word-mac-16.00.js",
-      "powerpoint-mac-16.00.js",
-      "o15apptofilemappingtable.js",
-      "es6-promise.js",
-    ],
-    scope: "macOS Word and PowerPoint Office.js integration",
-    // Read from src-tauri/src/office/manifest.rs below so the packaged XML and
-    // the native installer can never publish different macOS revisions.
-    manifestRevision: null,
-  },
   "windows-ole": {
     publicRoot: join(root, "office", "windows", "ole"),
     wordId: "7c7d3b35-56b2-4c40-88d9-c9eb836d6021",
@@ -44,20 +28,10 @@ const configs = {
 
 const config = configs[platform];
 if (!config) {
-  throw new Error("Usage: node prepare_office_platform_resources.mjs <macos|windows-ole>");
+  throw new Error("Usage: node prepare_office_platform_resources.mjs windows-ole");
 }
 
-const manifestRevision =
-  platform === "macos"
-    ? Number(
-        (
-          await readFile(
-            join(root, "src-tauri", "src", "office", "manifest.rs"),
-            "utf8",
-          )
-        ).match(/const MAC_MANIFEST_REVISION: &str = "(\d+)";/)?.[1],
-      )
-    : config.manifestRevision;
+const manifestRevision = config.manifestRevision;
 if (!Number.isInteger(manifestRevision) || manifestRevision < 0) {
   throw new Error(`${platform} Office manifest revision is invalid`);
 }

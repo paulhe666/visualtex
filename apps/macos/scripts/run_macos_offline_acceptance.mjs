@@ -24,29 +24,14 @@ const commands = [
     args: ["run", "build:desktop"],
   },
   {
-    id: "04-platform-boundaries",
+    id: "04-word-omml",
     program: "npm",
-    args: ["run", "test:office-platform-boundaries"],
+    args: ["run", "test:word-omml"],
   },
   {
-    id: "05-windows-architecture",
-    program: "npm",
-    args: ["run", "test:windows-office-architecture"],
-  },
-  {
-    id: "06-office-manifests",
-    program: "npm",
-    args: ["run", "verify:office-manifest"],
-  },
-  {
-    id: "07-platform-onboarding",
+    id: "05-platform-onboarding",
     program: "npm",
     args: ["run", "test:platform-onboarding"],
-  },
-  {
-    id: "08-macos-officejs-build",
-    program: "npm",
-    args: ["run", "build:office:macos"],
   },
 ];
 

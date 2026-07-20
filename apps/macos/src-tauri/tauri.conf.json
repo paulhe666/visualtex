@@ -4,7 +4,7 @@
   "version": "1.2.0",
   "identifier": "com.visualtex.studio",
   "build": {
-    "beforeDevCommand": "node scripts/build_office_for_platform.mjs && npm run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build:bundle",
     "frontendDist": "../dist"

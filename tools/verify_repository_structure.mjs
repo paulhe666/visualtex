@@ -13,7 +13,7 @@ function requirePath(relativePath) {
 
 function forbidPath(relativePath) {
   if (existsSync(resolve(root, relativePath))) {
-    failures.push(`Legacy root path must not exist: ${relativePath}`);
+    failures.push(`Retired path must not exist: ${relativePath}`);
   }
 }
 
@@ -22,19 +22,47 @@ for (const path of [
   "apps/macos/src",
   "apps/macos/src-tauri",
   "apps/macos/office/macos-offline",
+  "apps/macos/office/macos-offline/resources/VisualTeX.dotm",
+  "apps/macos/office/macos-offline/resources/VisualTeX.ppam",
   "apps/windows/package.json",
   "apps/windows/src",
   "apps/windows/src-tauri",
   "apps/windows/src-windows",
+  "apps/windows/office/windows/ole/manifests/visualtex-word.template.xml",
+  "apps/windows/office/windows/ole/manifests/visualtex-powerpoint.template.xml",
   "README.md",
   "docs/ARCHITECTURE.md",
-  "docs/images/visualtex-macos-editor.png",
-  "docs/images/visualtex-windows-editor.png",
+  "docs/images/visualtex-light-mode.png",
+  "docs/images/visualtex-dark-mode.png",
+  "docs/images/visualtex-macos-word-ribbon.png",
+  "docs/images/visualtex-windows-word-ribbon.png",
 ]) {
   requirePath(path);
 }
 
-for (const path of ["src", "src-tauri", "src-windows", "office", "ocr", "scripts"]) {
+for (const path of [
+  "src",
+  "src-tauri",
+  "src-windows",
+  "office",
+  "ocr",
+  "scripts",
+  "apps/macos/src-windows",
+  "apps/macos/office/vendor",
+  "apps/macos/office/manifests",
+  "apps/macos/office/macos",
+  "apps/macos/office/windows",
+  "apps/macos/office-bridge.html",
+  "apps/macos/office-dialog.html",
+  "apps/macos/office-macos-bridge.html",
+  "apps/macos/office-windows-ole-bridge.html",
+  "apps/windows/office/vendor",
+  "apps/windows/office/manifests",
+  "apps/windows/office/macos",
+  "apps/windows/office-bridge.html",
+  "apps/windows/office-macos-bridge.html",
+  "apps/windows/src/office/macos",
+]) {
   forbidPath(path);
 }
 
@@ -56,6 +84,12 @@ if (macPackage.version !== windowsPackage.version) {
     `Platform versions differ: macOS ${macPackage.version}, Windows ${windowsPackage.version}`,
   );
 }
+if (macPackage.dependencies?.["@microsoft/office-js"] || macPackage.devDependencies?.["@types/office-js"]) {
+  failures.push("The macOS application must not depend on Office.js");
+}
+if (!windowsPackage.devDependencies?.["@microsoft/office-js"] || !windowsPackage.devDependencies?.["@types/office-js"]) {
+  failures.push("The Windows compatibility build must retain its explicit Office.js dependencies");
+}
 
 for (const path of ["apps/macos", "apps/windows"]) {
   if (lstatSync(resolve(root, path)).isSymbolicLink()) {
@@ -71,6 +105,12 @@ const trackedFiles = execFileSync("git", ["ls-files", "apps/macos", "apps/window
   .filter(Boolean);
 
 for (const relativePath of trackedFiles) {
+  if (/^apps\/macos\/office\/vendor\/office-js\//.test(relativePath)) {
+    failures.push(`Committed Office.js vendor file remains in macOS: ${relativePath}`);
+  }
+  if (/^apps\/windows\/office\/vendor\/office-js\//.test(relativePath)) {
+    failures.push(`Generic committed Office.js vendor file remains in Windows: ${relativePath}`);
+  }
   if (!/\.(?:ts|tsx|js|mjs|cjs|rs|cs|cpp|c|h|hpp|ps1|sh|json|toml|xml|md)$/.test(relativePath)) {
     continue;
   }
@@ -89,4 +129,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("VisualTeX repository structure is platform-separated and complete.");
+console.log("VisualTeX repository structure and legacy Office cleanup are complete.");

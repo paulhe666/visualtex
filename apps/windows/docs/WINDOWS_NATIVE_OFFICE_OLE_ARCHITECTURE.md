@@ -10,7 +10,7 @@ This document defines the Windows-native Office architecture and its current imp
 - Windows professional mode stores formulas as real OLE objects created with `VisualTeX.Formula.1`.
 - Windows cross-platform mode continues to store PNG/SVG pictures with VisualTeX metadata.
 - macOS never registers the Windows CLSID and never claims that a PNG/SVG Shape is an OLE object.
-- The existing macOS Office.js, AppleScript write-back, Word baseline correction, PowerPoint geometry preservation, and Session Store remain unchanged while the offline `.dotm`/`.ppam` work is developed separately.
+- The macOS implementation is maintained independently under `apps/macos` and is not included in the Windows application. Windows retains only its own explicit Office.js trusted-catalog compatibility/cleanup path alongside the native VSTO + ATL OLE route.
 
 ## 2. Permanent COM identities
 

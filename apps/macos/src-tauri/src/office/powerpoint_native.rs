@@ -95,6 +95,7 @@ pub struct PowerPointInteractionBus {
 }
 
 impl PowerPointInteractionBus {
+    #[cfg(test)]
     pub fn push_edit_selected(&self, host: &'static str, shape_name: String, formula_id: String) {
         self.push_edit_target("edit-selected", host, shape_name, formula_id, None);
     }

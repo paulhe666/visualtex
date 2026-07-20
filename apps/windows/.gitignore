@@ -1,27 +1,16 @@
 node_modules/
 dist/
-dist-office/
-dist-office-macos/
 dist-office-windows-ole/
 dist-ocr/
 .npm-cache/
-.cache/visualtex-ocr/
+.cache/
 .vite/
 
-office/macos/icons/
-office/macos/licenses/
-office/macos/vendor/
-office/macos/manifests/VisualTeX.*.xml
+# Generated Windows Office.js compatibility resources
 office/windows/ole/icons/
 office/windows/ole/licenses/
 office/windows/ole/vendor/
 office/windows/ole/manifests/VisualTeX.*.xml
-.DS_Store
-*.log
-__pycache__/
-*.py[cod]
-ocr/.venv/
-ocr/output/
 
 src-tauri/target/
 src-tauri/gen/
@@ -34,8 +23,12 @@ src-windows/**/obj/
 src-windows/**/TestResults/
 src-windows/artifacts/
 WINDOWS-BUILD-OUTPUT/
-.tmp-*
 
-# Local Codex workspace skills and metadata
-.agents/
-.codex/
+ocr/.venv/
+ocr/output/
+__pycache__/
+*.py[cod]
+
+.DS_Store
+*.log
+.tmp-*

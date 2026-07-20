@@ -21,14 +21,6 @@ export function detectDesktopPlatform(): DesktopPlatform {
   );
 }
 
-export function shouldShowMacOfficeFirstRun(
-  platform: DesktopPlatform,
-  desktopEnvironment: boolean,
-  completed: boolean,
-) {
-  return platform === "macos" && desktopEnvironment && !completed;
-}
-
 export function onboardingStorageKey(
   platform: DesktopPlatform,
   desktopEnvironment: boolean,

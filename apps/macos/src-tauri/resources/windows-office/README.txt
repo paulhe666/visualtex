@@ -1,1 +1,0 @@
-The deferred VSTO acceptance build may place its generated MSI and SHA-256 manifest here. Production Tauri/NSIS builds ship only the Windows OLE integration and never commit or bundle these generated files.

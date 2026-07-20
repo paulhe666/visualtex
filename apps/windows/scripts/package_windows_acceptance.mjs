@@ -76,14 +76,12 @@ rmSync(artifactRoot, { recursive: true, force: true });
 mkdirSync(packageDirectory, { recursive: true });
 
 const entries = [
-  ".github/workflows/windows-office-acceptance.yml",
   "LICENSE",
   "README.md",
-  "docs/WINDOWS_OFFICE_ARCHITECTURE.md",
+  "docs/WINDOWS_NATIVE_OFFICE_OLE_ARCHITECTURE.md",
   "dist-office-windows-ole",
   "index.html",
   "office/windows",
-  "office-bridge.html",
   "office-dialog.html",
   "office-windows-ole-bridge.html",
   "package-lock.json",
@@ -96,7 +94,6 @@ const entries = [
   "tsconfig.node.json",
   "tsconfig.office.json",
   "vite.config.ts",
-  "vite.office.config.ts",
   "vite.office.windows-ole.config.ts",
 ];
 for (const entry of entries) copyEntry(entry);

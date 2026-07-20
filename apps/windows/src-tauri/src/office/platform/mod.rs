@@ -4,9 +4,6 @@ use serde_json::Value;
 use std::sync::Arc;
 use tauri::AppHandle;
 
-#[cfg(target_os = "macos")]
-pub mod macos;
-#[cfg(target_os = "windows")]
 pub mod windows;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -46,63 +43,9 @@ pub trait OfficePlatformBackend: Send + Sync {
     fn shutdown(&self) -> Result<(), String>;
 }
 
-#[cfg(target_os = "macos")]
-pub fn create_backend(
-    _app: Option<&AppHandle>,
-    paths: &OfficePaths,
-) -> Arc<dyn OfficePlatformBackend> {
-    Arc::new(macos::MacOfficePlatformBackend::new(paths.clone()))
-}
-
-#[cfg(target_os = "windows")]
 pub fn create_backend(
     app: Option<&AppHandle>,
     paths: &OfficePaths,
 ) -> Arc<dyn OfficePlatformBackend> {
     Arc::new(windows::WindowsOfficePlatformBackend::new(app, paths.clone()))
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn create_backend(
-    _app: Option<&AppHandle>,
-    _paths: &OfficePaths,
-) -> Arc<dyn OfficePlatformBackend> {
-    Arc::new(UnsupportedOfficePlatformBackend)
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-struct UnsupportedOfficePlatformBackend;
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-impl OfficePlatformBackend for UnsupportedOfficePlatformBackend {
-    fn status(&self) -> OfficePlatformStatus {
-        OfficePlatformStatus {
-            platform: std::env::consts::OS.to_string(),
-            mode: OfficeIntegrationMode::Auto,
-            active_backend: "none".to_string(),
-            ole_bridge_healthy: false,
-            vsto_word_healthy: false,
-            vsto_powerpoint_healthy: false,
-            office_catalog_registered: false,
-            current_user_certificate_trusted: false,
-            background_start_enabled: false,
-            last_error: Some("Office integration is not supported on this platform".to_string()),
-        }
-    }
-
-    fn set_mode(&self, _mode: OfficeIntegrationMode) -> Result<OfficePlatformStatus, String> {
-        Err("Office integration is not supported on this platform".to_string())
-    }
-
-    fn request(&self, _request: Value) -> Result<Value, String> {
-        Err("Office integration is not supported on this platform".to_string())
-    }
-
-    fn events_after(&self, _cursor: u64) -> Vec<Value> {
-        Vec::new()
-    }
-
-    fn shutdown(&self) -> Result<(), String> {
-        Ok(())
-    }
 }

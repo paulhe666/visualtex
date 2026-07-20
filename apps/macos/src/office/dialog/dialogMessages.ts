@@ -1,7 +1,13 @@
 import type { VisualTeXDialogMessage } from "../bridge/bridgeMessages";
 
+interface OptionalOfficeUi {
+  messageParent(message: string, options?: { targetOrigin: string }): void;
+}
+
 export function messageOfficeParent(message: VisualTeXDialogMessage) {
-  const office = globalThis.Office;
+  const office = (globalThis as typeof globalThis & {
+    Office?: { context?: { ui?: OptionalOfficeUi } };
+  }).Office;
   const ui = office?.context?.ui;
   if (!ui || typeof ui.messageParent !== "function") return;
 

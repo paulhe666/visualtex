@@ -1507,7 +1507,6 @@ mod tests {
             sessions: root.join("sessions"),
             recovery: root.join("recovery"),
             formula_cache: root.join("formulas"),
-            ui_root: root.join("ui"),
             root: root.clone(),
         };
         let session_store = crate::office::sessions::SessionStore::new(&paths)

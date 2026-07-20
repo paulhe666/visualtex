@@ -711,7 +711,6 @@ mod tests {
             sessions: root.join("sessions"),
             recovery: root.join("recovery"),
             formula_cache: root.join("formulas"),
-            ui_root: temp.path().join("ui"),
             root,
         }
     }
