@@ -40,4 +40,20 @@ jobs:
       - run: python -m pip install "Pillow>=10.4,<12" "numpy>=1.26,<3"
       - run: python -m unittest ocr.tests.test_worker_preprocess
       - run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows_ole_bridge.ps1
+      - name: Prepare Tauri test-only VSTO resources
+        shell: pwsh
+        run: |
+          $resourceDir = "src-tauri/resources/windows-office"
+          New-Item -ItemType Directory -Force $resourceDir | Out-Null
+          foreach ($platform in @("x64", "x86")) {
+            $msiName = "VisualTeX-WindowsOffice-VSTO-$platform.msi"
+            New-Item -ItemType File -Force (Join-Path $resourceDir $msiName) | Out-Null
+            $metadata = @{
+              fileName = $msiName
+              sha256 = ""
+              size = 0
+              testOnly = $true
+            } | ConvertTo-Json -Compress
+            Set-Content -NoNewline -Path (Join-Path $resourceDir "VisualTeX-WindowsOffice-VSTO-$platform.sha256.json") -Value $metadata
+          }
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
