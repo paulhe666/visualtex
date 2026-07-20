@@ -28,10 +28,16 @@ jobs:
           cache: npm
           cache-dependency-path: apps/windows/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm ci
       - run: npm run build:desktop
       - run: npm run test:platform-onboarding
       - run: npm run test:windows-office-architecture
       - run: npm run verify:office-manifest
       - run: npm run build:office:windows-ole
+      - run: python -m pip install "Pillow>=10.4,<12" "numpy>=1.26,<3"
+      - run: python -m unittest ocr.tests.test_worker_preprocess
+      - run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows_ole_bridge.ps1
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

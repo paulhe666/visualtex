@@ -33,4 +33,5 @@ jobs:
       - run: npm run test:ime-enter
       - run: npm run test:word-omml
       - run: npm run test:platform-onboarding
+      - run: mkdir -p dist-ocr/macos-arm64
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
