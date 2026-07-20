@@ -237,6 +237,11 @@ export async function recognizeFormulaImage(
   return invoke<OcrRecognitionResult>("recognize_formula_image", { request });
 }
 
+export async function prewarmOcrModel(model: OcrModelName): Promise<void> {
+  requireOcrEnvironment();
+  return invoke("prewarm_ocr_model", { model });
+}
+
 export async function cancelOcrRecognition(): Promise<void> {
   requireOcrEnvironment();
   return invoke("cancel_ocr_recognition");

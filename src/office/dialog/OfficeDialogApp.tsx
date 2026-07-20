@@ -53,7 +53,7 @@ import {
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
   resolveAvailableOcrModel,
-  restartOcrWorker,
+  prewarmOcrModel,
   type OcrModelName,
 } from "../../ocr/ocrService";
 
@@ -154,6 +154,7 @@ export function OfficeDialogApp() {
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
+  const ocrPrewarmStartedRef = useRef(false);
   const { sessionId, session, loading, error, save } = useOfficeSession();
 
   useEffect(() => {
@@ -610,11 +611,34 @@ export function OfficeDialogApp() {
     }, delay);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const delay = ocrPrewarmStartedRef.current ? 250 : 500;
+    const timer = window.setTimeout(() => {
+      ocrPrewarmStartedRef.current = true;
+      void getOcrRuntimeStatus()
+        .then((runtime) => {
+          if (cancelled || !runtime.installed) return;
+          const availableModel = resolveAvailableOcrModel(runtime, ocrModel);
+          if (availableModel !== ocrModel) {
+            setOcrModel(availableModel);
+            window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, availableModel);
+          }
+          return prewarmOcrModel(availableModel);
+        })
+        .catch(() => undefined);
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [ocrModel]);
+
   const handleOcrModelChange = (nextModel: OcrModelName) => {
     if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
     setOcrModel(nextModel);
     window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
-    void restartOcrWorker().catch(() => undefined);
   };
 
   const cancelInlineOcr = async () => {

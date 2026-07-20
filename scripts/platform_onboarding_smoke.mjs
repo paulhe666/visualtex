@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   DEFAULT_ONBOARDING_STORAGE_KEY,
+  MACOS_DESKTOP_ONBOARDING_STORAGE_KEY,
   WINDOWS_DESKTOP_ONBOARDING_STORAGE_KEY,
   detectDesktopPlatformFrom,
   onboardingStorageKey,
@@ -23,7 +24,10 @@ assert.equal(
   WINDOWS_DESKTOP_ONBOARDING_STORAGE_KEY,
 );
 assert.equal(onboardingStorageKey("windows", false), DEFAULT_ONBOARDING_STORAGE_KEY);
-assert.equal(onboardingStorageKey("macos", true), DEFAULT_ONBOARDING_STORAGE_KEY);
+assert.equal(
+  onboardingStorageKey("macos", true),
+  MACOS_DESKTOP_ONBOARDING_STORAGE_KEY,
+);
 assert.equal(shouldOpenOnboardingInitially(false, true), false);
 assert.equal(shouldOpenOnboardingInitially(false, false), true);
 assert.equal(shouldOpenOnboardingInitially(true, false), false);

@@ -2,7 +2,7 @@ Attribute VB_Name = "VTProtocol"
 Option Explicit
 
 Public Const VT_PROTOCOL_VERSION As Long = 1
-Public Const VT_PLUGIN_VERSION As String = "1.1.0"
+Public Const VT_PLUGIN_VERSION As String = "1.2.0"
 Public Const VT_METADATA_PREFIX As String = "visualtex:v1:deflate:"
 Public Const VT_PENDING_PREFIX As String = "visualtex:pending:v1:"
 Public Const VT_FORMULA_REF_PREFIX As String = "visualtex:formula-ref:v1:"

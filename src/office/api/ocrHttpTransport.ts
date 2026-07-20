@@ -136,6 +136,17 @@ export async function invoke<T>(
         }),
       );
     }
+    case "prewarm_ocr_model":
+      return readJson<T>(
+        await fetch("/api/v1/ocr/prewarm", {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: authenticatedHeaders({
+            "X-VisualTeX-Ocr-Model": modelHeader(args),
+          }),
+        }),
+      );
     case "cancel_ocr_recognition":
       return readJson<T>(
         await fetch("/api/v1/ocr/cancel", {

@@ -3,6 +3,8 @@ export type DesktopPlatform = "macos" | "windows" | "other";
 export const DEFAULT_ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
 export const WINDOWS_DESKTOP_ONBOARDING_STORAGE_KEY =
   "visualtex.onboarding.windows.desktop.v1.1.0.completed";
+export const MACOS_DESKTOP_ONBOARDING_STORAGE_KEY =
+  "visualtex.onboarding.macos.desktop.v1.2.0.completed";
 
 export function detectDesktopPlatformFrom(
   platform: string,
@@ -33,9 +35,10 @@ export function onboardingStorageKey(
   platform: DesktopPlatform,
   desktopEnvironment: boolean,
 ) {
-  return platform === "windows" && desktopEnvironment
-    ? WINDOWS_DESKTOP_ONBOARDING_STORAGE_KEY
-    : DEFAULT_ONBOARDING_STORAGE_KEY;
+  if (!desktopEnvironment) return DEFAULT_ONBOARDING_STORAGE_KEY;
+  if (platform === "windows") return WINDOWS_DESKTOP_ONBOARDING_STORAGE_KEY;
+  if (platform === "macos") return MACOS_DESKTOP_ONBOARDING_STORAGE_KEY;
+  return DEFAULT_ONBOARDING_STORAGE_KEY;
 }
 
 export function shouldOpenOnboardingInitially(

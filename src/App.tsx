@@ -82,7 +82,7 @@ import {
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
   resolveAvailableOcrModel,
-  restartOcrWorker,
+  prewarmOcrModel,
   type OcrModelName,
 } from "./ocr/ocrService";
 import {
@@ -108,7 +108,8 @@ interface InlineOcrState {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const MAC_OFFICE_FIRST_RUN_STORAGE_KEY = "visualtex.office.macos.native-first-run.v2.completed";
+const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
+  "visualtex.office.macos.native-first-run.v1.2.0.completed";
 const DESKTOP_PLATFORM = detectDesktopPlatform();
 const ONBOARDING_STORAGE_KEY = onboardingStorageKey(
   DESKTOP_PLATFORM,
@@ -165,6 +166,7 @@ function App() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
+  const ocrPrewarmStartedRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
@@ -396,13 +398,36 @@ function App() {
     }, delay);
   };
 
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+
+    let cancelled = false;
+    const delay = ocrPrewarmStartedRef.current ? 250 : 1200;
+    const timer = window.setTimeout(() => {
+      ocrPrewarmStartedRef.current = true;
+      void getOcrRuntimeStatus()
+        .then((runtime) => {
+          if (cancelled || !runtime.installed) return;
+          const availableModel = resolveAvailableOcrModel(runtime, ocrModel);
+          if (availableModel !== ocrModel) {
+            setOcrModel(availableModel);
+            window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, availableModel);
+          }
+          return prewarmOcrModel(availableModel);
+        })
+        .catch(() => undefined);
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [ocrModel]);
+
   const handleOcrModelChange = (nextModel: OcrModelName) => {
     if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
     setOcrModel(nextModel);
     window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
-    if (isTauriEnvironment()) {
-      void restartOcrWorker().catch(() => undefined);
-    }
   };
 
   const cancelInlineOcr = async () => {

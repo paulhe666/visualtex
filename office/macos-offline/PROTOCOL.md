@@ -101,7 +101,7 @@ Word `AutoExec` and PowerPoint `Auto_Open` atomically write:
 ```json
 {
   "loaded": true,
-  "pluginVersion": "1.1.0",
+  "pluginVersion": "1.2.0",
   "host": "word",
   "timestamp": "2026-07-15T00:00:00Z"
 }

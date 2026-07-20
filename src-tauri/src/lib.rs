@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -28,7 +28,6 @@ const ALLOWED_MODELS: &[&str] = &[
 const MAX_OCR_EVENTS: usize = 256;
 const OCR_RUNTIME_PROBE_CACHE_SCHEMA: u32 = 1;
 const OCR_RUNTIME_PROBE_CACHE_FILE: &str = "runtime-probe-cache.json";
-const OCR_DEFAULT_PREWARM_DELAY: Duration = Duration::from_millis(1200);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -195,15 +194,19 @@ impl OcrState {
         .map_err(|error| format!("OCR recognition task failed: {error}"))?
     }
 
-    pub(crate) async fn prewarm_default_model(&self, app: AppHandle) -> Result<(), String> {
+    pub(crate) async fn prewarm_model(
+        &self,
+        app: AppHandle,
+        model: String,
+    ) -> Result<(), String> {
         let worker = self.worker.clone();
         let worker_pid = self.worker_pid.clone();
         let runtime_status = self.runtime_status.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            prewarm_default_model_inner(&app, &worker, &worker_pid, &runtime_status)
+            prewarm_model_inner(&app, &worker, &worker_pid, &runtime_status, &model)
         })
         .await
-        .map_err(|error| format!("OCR default-model prewarm task failed: {error}"))?
+        .map_err(|error| format!("OCR model prewarm task failed: {error}"))?
     }
 
     pub(crate) fn cancel(&self, app: &AppHandle) -> Result<(), String> {
@@ -953,32 +956,40 @@ fn spawn_worker(
     Ok(worker)
 }
 
-fn prewarm_default_model_inner(
+fn prewarm_model_inner(
     app: &AppHandle,
     worker_state: &Arc<Mutex<Option<OcrWorker>>>,
     worker_pid: &Arc<AtomicU32>,
     runtime_status: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
+    model: &str,
 ) -> Result<(), String> {
+    if !ALLOWED_MODELS.contains(&model) {
+        return Err(format!("Unsupported PP-FormulaNet model: {model}"));
+    }
+
     let paths = runtime_paths(app)?;
     let installed_models = ocr_offline::installed_models(&paths.root);
-    if !paths.python.is_file()
-        || !installed_models
-            .iter()
-            .any(|model| model == ocr_offline::OFFLINE_DEFAULT_MODEL)
-    {
-        return Ok(());
+    if !paths.python.is_file() || !installed_models.iter().any(|item| item == model) {
+        return Err(format!("The offline model pack for {model} is not installed"));
     }
 
     let mut guard = worker_state
         .lock()
         .map_err(|_| "OCR worker lock is poisoned".to_string())?;
-    match guard
+    if guard
         .as_ref()
         .and_then(|worker| worker.loaded_model.as_deref())
+        == Some(model)
     {
-        Some(model) if model == ocr_offline::OFFLINE_DEFAULT_MODEL => return Ok(()),
-        Some(_) => return Ok(()),
-        None => {}
+        return Ok(());
+    }
+
+    if guard
+        .as_ref()
+        .and_then(|worker| worker.loaded_model.as_deref())
+        .is_some_and(|loaded| loaded != model)
+    {
+        guard.take();
     }
     if guard.is_none() {
         *guard = Some(spawn_worker(app, &paths, worker_pid.clone())?);
@@ -995,7 +1006,7 @@ fn prewarm_default_model_inner(
     let payload = json!({
         "id": request_id,
         "action": "warmup",
-        "model": ocr_offline::OFFLINE_DEFAULT_MODEL,
+        "model": model,
         "device": "cpu"
     });
     let response = match guard
@@ -1013,7 +1024,7 @@ fn prewarm_default_model_inner(
         let error = response
             .get("error")
             .and_then(Value::as_str)
-            .unwrap_or("Default OCR model preloading failed");
+            .unwrap_or("OCR model preloading failed");
         guard.take();
         return Err(error.to_string());
     }
@@ -1025,7 +1036,7 @@ fn prewarm_default_model_inner(
         eprintln!("Unable to persist OCR prewarm verification: {error}");
     }
     if let Some(worker) = guard.as_mut() {
-        worker.loaded_model = Some(ocr_offline::OFFLINE_DEFAULT_MODEL.to_string());
+        worker.loaded_model = Some(model.to_string());
     }
 
     let status = OcrRuntimeStatus {
@@ -1038,12 +1049,11 @@ fn prewarm_default_model_inner(
         offline_bundle_available: ocr_offline::bundle_available(app),
         installed_models,
         default_model: ocr_offline::OFFLINE_DEFAULT_MODEL.to_string(),
-        message: "PaddleOCR formula runtime and the default M model are ready in memory"
-            .to_string(),
+        message: format!("PaddleOCR formula runtime and {model} are ready in memory"),
     };
     write_cached_runtime_status(runtime_status, Some(status))?;
     if let Some(elapsed_ms) = response.get("elapsed_ms").and_then(Value::as_u64) {
-        eprintln!("VisualTeX OCR default M model preloaded in {elapsed_ms} ms");
+        eprintln!("VisualTeX OCR model {model} preloaded in {elapsed_ms} ms");
     }
     Ok(())
 }
@@ -1244,6 +1254,15 @@ async fn recognize_formula_image(
 }
 
 #[tauri::command]
+async fn prewarm_ocr_model(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    model: String,
+) -> Result<(), String> {
+    state.prewarm_model(app, model).await
+}
+
+#[tauri::command]
 fn cancel_ocr_recognition(app: AppHandle, state: State<'_, OcrState>) -> Result<(), String> {
     state.cancel(&app)
 }
@@ -1297,7 +1316,6 @@ pub fn run() {
         .find(|argument| argument.starts_with("visualtex://office/open?session="));
     let ocr_state = OcrState::default();
     let office_ocr_state = ocr_state.clone();
-    let ocr_prewarm_state = ocr_state.clone();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
@@ -1374,23 +1392,13 @@ pub fn run() {
                 office::background::reveal_main_window(app.handle())
                     .map_err(std::io::Error::other)?;
             }
-
-            if !background_mode {
-                let prewarm_app = app.handle().clone();
-                let prewarm_state = ocr_prewarm_state.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(OCR_DEFAULT_PREWARM_DELAY).await;
-                    if let Err(error) = prewarm_state.prewarm_default_model(prewarm_app).await {
-                        eprintln!("Unable to preload the default OCR M model: {error}");
-                    }
-                });
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,
+            prewarm_ocr_model,
             cancel_ocr_recognition,
             restart_ocr_worker,
             reset_ocr_runtime,
