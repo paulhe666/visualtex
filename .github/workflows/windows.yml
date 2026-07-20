@@ -1,0 +1,35 @@
+name: Windows application
+
+on:
+  push:
+    paths:
+      - "apps/windows/**"
+      - "package.json"
+      - "tools/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "apps/windows/**"
+      - "package.json"
+      - "tools/**"
+      - ".github/workflows/windows.yml"
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/windows/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run build:desktop
+      - run: npm run test:platform-onboarding
+      - run: npm run test:windows-office-architecture
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

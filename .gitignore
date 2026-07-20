@@ -1,41 +1,49 @@
+# JavaScript
 node_modules/
-dist/
-dist-office/
-dist-office-macos/
-dist-office-windows-ole/
-dist-ocr/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/dist-office/
+apps/*/dist-office-macos/
+apps/*/dist-office-windows-ole/
+apps/*/dist-readme/
+apps/*/dist-ocr/
 .npm-cache/
-.cache/visualtex-ocr/
 .vite/
 
-office/macos/icons/
-office/macos/licenses/
-office/macos/vendor/
-office/macos/manifests/VisualTeX.*.xml
-office/windows/ole/icons/
-office/windows/ole/licenses/
-office/windows/ole/vendor/
-office/windows/ole/manifests/VisualTeX.*.xml
-.DS_Store
-*.log
+# Rust / Tauri
+apps/*/src-tauri/target/
+apps/*/src-tauri/gen/
+apps/*/src-tauri/binaries/*.exe
+apps/*/src-tauri/resources/windows-office/*.msi
+apps/*/src-tauri/resources/windows-office/*.sha256.json
+
+# Windows native builds
+apps/windows/src-windows/**/bin/
+apps/windows/src-windows/**/obj/
+apps/windows/src-windows/**/TestResults/
+apps/windows/src-windows/artifacts/
+apps/windows/WINDOWS-BUILD-OUTPUT/
+
+# OCR runtimes and caches
+apps/*/.cache/
+apps/*/ocr/.venv/
+apps/*/ocr/output/
 __pycache__/
 *.py[cod]
-ocr/.venv/
-ocr/output/
 
-src-tauri/target/
-src-tauri/gen/
-src-tauri/binaries/*.exe
-src-tauri/resources/windows-office/*.msi
-src-tauri/resources/windows-office/*.sha256.json
+# Generated Office resources
+apps/*/office/macos/icons/
+apps/*/office/macos/licenses/
+apps/*/office/macos/vendor/
+apps/*/office/macos/manifests/VisualTeX.*.xml
+apps/*/office/windows/ole/icons/
+apps/*/office/windows/ole/licenses/
+apps/*/office/windows/ole/vendor/
+apps/*/office/windows/ole/manifests/VisualTeX.*.xml
 
-src-windows/**/bin/
-src-windows/**/obj/
-src-windows/**/TestResults/
-src-windows/artifacts/
-WINDOWS-BUILD-OUTPUT/
+# Local files
+.DS_Store
+*.log
 .tmp-*
-
-# Local Codex workspace skills and metadata
 .agents/
 .codex/

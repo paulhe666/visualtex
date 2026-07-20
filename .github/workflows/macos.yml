@@ -1,0 +1,36 @@
+name: macOS application
+
+on:
+  push:
+    paths:
+      - "apps/macos/**"
+      - "package.json"
+      - "tools/**"
+      - ".github/workflows/macos.yml"
+  pull_request:
+    paths:
+      - "apps/macos/**"
+      - "package.json"
+      - "tools/**"
+      - ".github/workflows/macos.yml"
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/macos/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run build:desktop
+      - run: npm run test:ime-enter
+      - run: npm run test:word-omml
+      - run: npm run test:platform-onboarding
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
