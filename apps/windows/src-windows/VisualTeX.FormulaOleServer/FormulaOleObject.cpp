@@ -461,7 +461,11 @@ HRESULT CFormulaOleObject::DoVerb(
     {
     case OLEIVERB_PRIMARY:
     case OLEIVERB_OPEN:
-        return LaunchVisualTeX();
+        // Office add-ins create the real edit Session for the selected object.
+        // Launching the generic OLE URI here opens the VisualTeX main page first
+        // and then races the add-in's formula editor. Acknowledge the host verb
+        // without opening the desktop main window.
+        return S_OK;
     case OLEIVERB_SHOW:
     case OLEIVERB_HIDE:
         return S_OK;

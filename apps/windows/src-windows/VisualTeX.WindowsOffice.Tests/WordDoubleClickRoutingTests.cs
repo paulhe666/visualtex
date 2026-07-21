@@ -22,11 +22,11 @@ public sealed class WordDoubleClickRoutingTests
     }
 
     [Fact]
-    public void WordOmmlKeepsWordNativeEditor()
+    public void VisualTeXWordOmmlOpensVisualTeXEditor()
     {
         var selection = FormulaSelection(FormulaOleContract.WordOmmlMode);
 
-        Assert.False(WordDoubleClickRouting.ShouldOpenVisualTeX(selection));
+        Assert.True(WordDoubleClickRouting.ShouldOpenVisualTeX(selection));
     }
 
     [Fact]

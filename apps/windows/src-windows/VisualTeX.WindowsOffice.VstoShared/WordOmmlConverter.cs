@@ -109,6 +109,7 @@ internal static class WordOmmlConverter
         if (string.IsNullOrWhiteSpace(mathMl))
             throw new InvalidDataException("VisualTeX did not provide MathML for the Word OMML formula.");
         mathMl = NormalizeNaryArguments(mathMl);
+        var display = IsBlockMathMl(mathMl);
         var transform = GetTransform();
         var inputSettings = new XmlReaderSettings
         {
@@ -127,7 +128,7 @@ internal static class WordOmmlConverter
         using (var output = XmlWriter.Create(outputText, outputSettings))
             transform.Transform(source, output);
         var transformed = outputText.ToString();
-        return ExtractSingleOMath(transformed);
+        return NormalizeDisplayNaryOmml(ExtractSingleOMath(transformed), display);
     }
 
     internal static string NormalizeNaryArguments(string mathMl)
@@ -155,6 +156,41 @@ internal static class WordOmmlConverter
             mathMlNamespace + "msubsup",
         };
         const string naryCharacters = "∑∏∐∫∬∭∮∯∰⋀⋁⋂⋃";
+        var display = string.Equals(
+            document.Root?.Attribute("display")?.Value,
+            "block",
+            StringComparison.OrdinalIgnoreCase);
+        if (display)
+        {
+            foreach (var op in document
+                         .Descendants(mathMlNamespace + "mo")
+                         .Where(element =>
+                             !string.IsNullOrEmpty(element.Value)
+                             && element.Value.All(character => naryCharacters.IndexOf(character) >= 0)
+                             && (element.Parent is null || !limitNames.Contains(element.Parent.Name)))
+                         .ToList())
+            {
+                var argument = op.ElementsAfterSelf().FirstOrDefault();
+                var syntheticLimit = new XElement(
+                    mathMlNamespace + "msub",
+                    new XElement(op),
+                    new XElement(mathMlNamespace + "mrow"));
+                op.ReplaceWith(syntheticLimit);
+                if (argument is null)
+                {
+                    syntheticLimit.AddAfterSelf(
+                        new XElement(
+                            mathMlNamespace + "mrow",
+                            new XElement(mathMlNamespace + "mspace", new XAttribute("width", "0em"))));
+                }
+                else if (argument.Name != mathMlNamespace + "mrow"
+                         && argument.Name != mathMlNamespace + "mstyle")
+                {
+                    argument.ReplaceWith(new XElement(mathMlNamespace + "mrow", argument));
+                }
+            }
+        }
+
         foreach (var limit in document.Descendants().Where(element => limitNames.Contains(element.Name)).ToList())
         {
             var op = limit.Elements().FirstOrDefault();
@@ -176,6 +212,92 @@ internal static class WordOmmlConverter
             argument.ReplaceWith(new XElement(mathMlNamespace + "mrow", argument));
         }
         return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static bool IsBlockMathMl(string mathMl)
+    {
+        try
+        {
+            using var text = new StringReader(mathMl);
+            using var reader = XmlReader.Create(text, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                IgnoreComments = true,
+                IgnoreWhitespace = true,
+                MaxCharactersInDocument = 4_000_000,
+            });
+            var document = XDocument.Load(reader, LoadOptions.None);
+            return string.Equals(
+                document.Root?.Attribute("display")?.Value,
+                "block",
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static string NormalizeDisplayNaryOmml(string omml, bool display)
+    {
+        if (!display) return omml;
+        var document = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        XNamespace math = MathNamespace;
+        foreach (var nary in document.Descendants(math + "nary"))
+        {
+            var properties = nary.Element(math + "naryPr");
+            if (properties is null)
+            {
+                properties = new XElement(math + "naryPr");
+                nary.AddFirst(properties);
+            }
+            var grow = properties.Element(math + "grow");
+            if (grow is null)
+            {
+                grow = new XElement(math + "grow");
+                properties.Add(grow);
+            }
+            grow.SetAttributeValue(math + "val", "1");
+
+            SetNaryLimitVisibility(
+                properties,
+                math + "subHide",
+                !HasNaryLimitContent(nary.Element(math + "sub")));
+            SetNaryLimitVisibility(
+                properties,
+                math + "supHide",
+                !HasNaryLimitContent(nary.Element(math + "sup")));
+        }
+        return document.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
+    }
+
+    private static bool HasNaryLimitContent(XElement? limit)
+    {
+        if (limit is null) return false;
+        return limit
+            .DescendantsAndSelf()
+            .Where(element => element.Name.LocalName == "t")
+            .Any(element => !string.IsNullOrWhiteSpace(element.Value));
+    }
+
+    private static void SetNaryLimitVisibility(
+        XElement properties,
+        XName propertyName,
+        bool hidden)
+    {
+        var property = properties.Element(propertyName);
+        if (!hidden)
+        {
+            property?.Remove();
+            return;
+        }
+        if (property is null)
+        {
+            property = new XElement(propertyName);
+            properties.Add(property);
+        }
+        property.SetAttributeValue(XName.Get("val", MathNamespace), "1");
     }
 
     internal static string TransformOmmlToMathMl(string wordOpenXml, bool display)

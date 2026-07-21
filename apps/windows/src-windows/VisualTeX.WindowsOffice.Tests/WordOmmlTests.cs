@@ -92,6 +92,44 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
+    public void BareDisplayIntegralUsesGrowingNativeNaryLayoutWithoutPlaceholderLimit()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mo>&#x222B;</mo><mi>a</mi><mi>d</mi><mi>b</mi></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var nary = document.Descendants(math + "nary").SingleOrDefault();
+
+        Assert.True(nary is not null, $"Bare display integral was not converted to m:nary: {omml}");
+        var properties = nary!.Element(math + "naryPr");
+        Assert.Equal("1", properties?.Element(math + "grow")?.Attribute(math + "val")?.Value);
+        Assert.Equal("1", properties?.Element(math + "subHide")?.Attribute(math + "val")?.Value);
+        Assert.Equal("1", properties?.Element(math + "supHide")?.Attribute(math + "val")?.Value);
+        Assert.True(nary.Element(math + "e")?.Elements().Any() == true);
+    }
+
+    [Fact]
+    public void DefiniteIntegralKeepsBothVisibleLimits()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<msubsup><mo>&#x222B;</mo><mn>0</mn><mn>1</mn></msubsup>"
+            + "<mrow><mi>x</mi></mrow><mi>d</mi><mi>x</mi></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var nary = document.Descendants(math + "nary").Single();
+        var properties = nary.Element(math + "naryPr");
+
+        Assert.Null(properties?.Element(math + "subHide"));
+        Assert.Null(properties?.Element(math + "supHide"));
+    }
+
+    [Fact]
     public void OmmlBookmarkNameRoundTripsPersistentFormulaId()
     {
         var formulaId = Guid.NewGuid().ToString();

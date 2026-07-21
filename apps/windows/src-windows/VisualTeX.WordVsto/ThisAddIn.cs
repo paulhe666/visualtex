@@ -161,9 +161,17 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         BeginSession("create", "block", FormulaOleContract.WordOmmlMode);
     public void OnEditSelected(object control) => BeginSession("edit", null, null);
     public void OnConvertSelected(object control) =>
-        BeginSession("edit", null, FormulaOleContract.NativeOleMode);
+        BeginSession(
+            "edit",
+            null,
+            FormulaOleContract.NativeOleMode,
+            conversionOnly: true);
     public void OnConvertSelectedToOmml(object control) =>
-        BeginSession("edit", null, FormulaOleContract.WordOmmlMode);
+        BeginSession(
+            "edit",
+            null,
+            FormulaOleContract.WordOmmlMode,
+            conversionOnly: true);
     public void OnUpdateEquationNumbers(object control) => _ = UpdateEquationNumbersAsync();
     public void OnExportSelectedAsPicture(object control) => _ = ExportSelectedAsPictureAsync();
     public void OnDeleteSelected(object control) => _ = DeleteSelectedAsync();
@@ -256,52 +264,19 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     {
         try
         {
-            // A Word OMath must remain entirely native. Return before reading
-            // VisualTeX metadata because that path may refresh persisted OMML
-            // source and can disturb Word while it is placing the equation caret.
-            if (SelectionContainsOmml(selection))
-            {
-                cancel = false;
-                ClearNativeOleTarget();
-                return;
-            }
-
             var selected = _formulaService?.ReadSelection(selection);
             if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
                 return;
 
-            if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected))
-            {
-                // OMML is a true Word equation. Leave double-click completely
-                // untouched: no Selection reset and no asynchronous callback.
-                cancel = false;
-                return;
-            }
+            if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected)) return;
 
             cancel = true;
+            ClearNativeOleTarget();
             TryBeginDoubleClickSession(selected);
         }
         catch (Exception error)
         {
             SetStatus($"VisualTeX 双击检测失败：{error.Message}");
-        }
-    }
-
-    private static bool SelectionContainsOmml(Selection selection)
-    {
-        OMaths? maths = null;
-        try
-        {
-            maths = selection.OMaths;
-            return maths.Count > 0;
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            ReleaseComObject(maths);
         }
     }
 
@@ -360,7 +335,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             return false;
         _lastDoubleClickFormulaId = formulaId!;
         _lastDoubleClickAt = now;
-        BeginSession("edit", null, null);
+        BeginSession("edit", null, null, capturedSelection: selected);
         return true;
     }
 
@@ -379,17 +354,27 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private void BeginSession(
         string mode,
         string? displayMode,
-        string? requestedObjectMode)
+        string? requestedObjectMode,
+        OfficeSelection? capturedSelection = null,
+        bool conversionOnly = false)
     {
         var lifetime = _lifetime;
         if (lifetime is null || lifetime.IsCancellationRequested) return;
-        _ = RunSessionAsync(mode, displayMode, requestedObjectMode, lifetime.Token);
+        _ = RunSessionAsync(
+            mode,
+            displayMode,
+            requestedObjectMode,
+            capturedSelection,
+            conversionOnly,
+            lifetime.Token);
     }
 
     private async Task RunSessionAsync(
         string mode,
         string? requestedDisplayMode,
         string? requestedObjectMode,
+        OfficeSelection? capturedSelection,
+        bool conversionOnly,
         CancellationToken cancellationToken)
     {
         if (!await _operationGate.WaitAsync(
@@ -429,7 +414,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var client = _sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable.");
             SetStatus("正在连接 VisualTeX 本地服务…");
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
-            var selection = await dispatcher.InvokeAsync(service.ReadSelection).ConfigureAwait(false);
+            var selection = capturedSelection?.Metadata is not null
+                ? capturedSelection
+                : await dispatcher.InvokeAsync(service.ReadSelection).ConfigureAwait(false);
             if (selection.ReadOnly)
                 throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
             if (mode == "edit" && selection.Metadata is null)
@@ -472,8 +459,18 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var session = await client.CreateSessionAsync(request, cancellationToken).ConfigureAwait(false);
             sessionId = session.Id;
             Volatile.Write(ref _activeSessionId, session.Id);
-            await client.OpenEditorAsync(session.Id, cancellationToken).ConfigureAwait(false);
-            SetStatus("VisualTeX 编辑器已打开。");
+            if (conversionOnly)
+            {
+                await client.OpenConverterAsync(session.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                SetStatus("正在直接转换 Word 公式格式…");
+            }
+            else
+            {
+                await client.OpenEditorAsync(session.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                SetStatus("VisualTeX 编辑器已打开。");
+            }
             session = await client.WaitForCommitAsync(
                 session.Id,
                 TimeSpan.FromMinutes(30),

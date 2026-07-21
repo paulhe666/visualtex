@@ -123,7 +123,8 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         RibbonIconProvider.GetImage(control?.Tag);
     public void OnNewFormula(object control) => BeginSession("create", "crossPlatformPicture", null);
     public void OnEditSelected(object control) => BeginSelectedSession(null);
-    public void OnConvertSelected(object control) => BeginSelectedSession("nativeOle");
+    public void OnConvertSelected(object control) =>
+        BeginSelectedSession("nativeOle", conversionOnly: true);
     public void OnExportSelectedAsPicture(object control) => _ = ExportSelectedAsPictureAsync();
     public void OnDeleteSelected(object control) => _ = DeleteSelectedAsync();
     public void OnOpenDesktop(object control)
@@ -189,7 +190,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         });
     }
 
-    private void BeginSelectedSession(string? requestedObjectMode)
+    private void BeginSelectedSession(
+        string? requestedObjectMode,
+        bool conversionOnly = false)
     {
         DiagnosticLastError = string.Empty;
         try
@@ -199,7 +202,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var selection = ResolveFormulaSelection(service);
             if (selection.Metadata is null)
                 throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
-            BeginSession("edit", requestedObjectMode, selection);
+            BeginSession("edit", requestedObjectMode, selection, conversionOnly);
         }
         catch (Exception error)
         {
@@ -210,17 +213,24 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private void BeginSession(
         string mode,
         string? requestedObjectMode,
-        OfficeSelection? capturedSelection)
+        OfficeSelection? capturedSelection,
+        bool conversionOnly = false)
     {
         var lifetime = _lifetime;
         if (lifetime is null || lifetime.IsCancellationRequested) return;
-        _ = RunSessionAsync(mode, requestedObjectMode, capturedSelection, lifetime.Token);
+        _ = RunSessionAsync(
+            mode,
+            requestedObjectMode,
+            capturedSelection,
+            conversionOnly,
+            lifetime.Token);
     }
 
     private async Task RunSessionAsync(
         string mode,
         string? requestedObjectMode,
         OfficeSelection? capturedSelection,
+        bool conversionOnly,
         CancellationToken cancellationToken)
     {
         if (!await _operationGate.WaitAsync(
@@ -305,8 +315,18 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var session = await client.CreateSessionAsync(request, cancellationToken).ConfigureAwait(false);
             sessionId = session.Id;
             Volatile.Write(ref _activeSessionId, session.Id);
-            await client.OpenEditorAsync(session.Id, cancellationToken).ConfigureAwait(false);
-            SetStatus("VisualTeX 编辑器已打开。");
+            if (conversionOnly)
+            {
+                await client.OpenConverterAsync(session.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                SetStatus("正在直接转换 PowerPoint 公式格式…");
+            }
+            else
+            {
+                await client.OpenEditorAsync(session.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                SetStatus("VisualTeX 编辑器已打开。");
+            }
             session = await client.WaitForCommitAsync(
                 session.Id,
                 TimeSpan.FromMinutes(30),

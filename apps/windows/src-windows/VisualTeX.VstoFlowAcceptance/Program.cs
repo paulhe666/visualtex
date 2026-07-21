@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -19,6 +20,28 @@ internal static class Program
     private const float ExportBaseline = 24f;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
+    private delegate bool EnumWindowsCallback(IntPtr windowHandle, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr windowHandle);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLength(IntPtr windowHandle);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(
+        IntPtr windowHandle,
+        StringBuilder text,
+        int maximumCount);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(
+        IntPtr windowHandle,
+        out uint processId);
+
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
 
@@ -135,6 +158,11 @@ internal static class Program
             else if (string.Equals(mode, "word-unchanged", StringComparison.OrdinalIgnoreCase))
             {
                 RunWord(client, artifactRoot, stopAfterUnchanged: true);
+            }
+            else if (string.Equals(mode, "targeted-2364", StringComparison.OrdinalIgnoreCase))
+            {
+                RunTargetedWord2364(client, artifactRoot);
+                RunTargetedPowerPoint46(client, artifactRoot);
             }
             else
             {
@@ -1248,6 +1276,311 @@ internal static class Program
         }
     }
 
+    private static void RunTargetedWord2364(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? range = null;
+        Word.Selection? eventSelection = null;
+        Word.InlineShape? shape = null;
+        COMAddIns? installedAddIns = null;
+        COMAddIn? installedAddIn = null;
+        VisualTeX.WordVsto.ThisAddIn? addIn = null;
+        Array custom = Array.Empty<object>();
+        try
+        {
+            Console.WriteLine("[Targeted Word 1/6] Starting Word from the clean baseline...");
+            application = new Word.Application
+            {
+                Visible = false,
+                DisplayAlerts = Word.WdAlertLevel.wdAlertsNone,
+            };
+            installedAddIns = application.COMAddIns;
+            try
+            {
+                object addInIndex = "VisualTeX.WordVsto";
+                installedAddIn = installedAddIns.Item(ref addInIndex);
+                if (installedAddIn.Connect) installedAddIn.Connect = false;
+            }
+            catch
+            {
+                Release(installedAddIn);
+                installedAddIn = null;
+            }
+            document = application.Documents.Add();
+            addIn = new VisualTeX.WordVsto.ThisAddIn();
+            addIn.OnConnection(application, ext_ConnectMode.ext_cm_AfterStartup, addIn, ref custom);
+
+            Console.WriteLine("[Targeted Word 2/6] Inserting a bare display integral and validating native OMML growth...");
+            var existing = SnapshotSessionIds();
+            addIn.OnInsertDisplayOmml(new object());
+            var bareSessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+            var bareSession = client.GetSessionAsync(bareSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            const string bareIntegralLatex = "\\int f(x)\\,dx";
+            const string bareIntegralMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+                + "<mo>∫</mo><mrow><mi>f</mi><mo>(</mo><mi>x</mi><mo>)</mo>"
+                + "<mspace width=\"0.167em\"/><mi>d</mi><mi>x</mi></mrow></math>";
+            Commit(
+                client,
+                bareSession,
+                "block",
+                FormulaOleContract.WordOmmlMode,
+                bareIntegralLatex,
+                numbered: false,
+                mathMl: bareIntegralMathMl);
+            var final = WaitForTerminal(client, bareSessionId, TimeSpan.FromSeconds(45));
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Bare display integral did not complete.");
+            client.CloseEditorAsync(bareSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+            var bareFormulaId = final.FormulaId
+                ?? throw new InvalidDataException("Bare display integral has no formulaId.");
+
+            maths = document.OMaths;
+            AssertEqual(1, maths.Count, "Bare display integral did not create exactly one OMath.");
+            math = maths[1];
+            AssertEqual(Word.WdOMathType.wdOMathDisplay, math.Type,
+                "Bare integral degraded to inline OMML.");
+            range = math.Range;
+            var bareXml = XDocument.Parse(range.WordOpenXML);
+            XNamespace mathNamespace =
+                "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            var nary = bareXml.Descendants(mathNamespace + "nary").SingleOrDefault()
+                ?? throw new InvalidDataException("Bare display integral did not become native m:nary.");
+            var naryProperties = nary.Element(mathNamespace + "naryPr");
+            AssertEqual(
+                "1",
+                naryProperties?.Element(mathNamespace + "grow")
+                    ?.Attribute(mathNamespace + "val")?.Value ?? string.Empty,
+                "Bare display integral is not configured to grow.");
+            AssertEqual(
+                "1",
+                naryProperties?.Element(mathNamespace + "subHide")
+                    ?.Attribute(mathNamespace + "val")?.Value ?? string.Empty,
+                "Bare display integral exposes an empty lower-limit placeholder.");
+            AssertEqual(
+                "1",
+                naryProperties?.Element(mathNamespace + "supHide")
+                    ?.Attribute(mathNamespace + "val")?.Value ?? string.Empty,
+                "Bare display integral exposes an empty upper-limit placeholder.");
+
+            Console.WriteLine("[Targeted Word 3/6] Verifying VisualTeX OMML double-click editing...");
+            range.Select();
+            existing = SnapshotSessionIds();
+            eventSelection = application.Selection;
+            var doubleClickHandler = typeof(VisualTeX.WordVsto.ThisAddIn).GetMethod(
+                "OnWindowBeforeDoubleClick",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic)
+                ?? throw new MissingMethodException("Word double-click handler is missing.");
+            var doubleClickArguments = new object[] { eventSelection, false };
+            doubleClickHandler.Invoke(addIn, doubleClickArguments);
+            AssertEqual(true, (bool)doubleClickArguments[1],
+                "VisualTeX OMML double-click was not intercepted.");
+            Release(eventSelection);
+            eventSelection = null;
+            var editSessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+            var editSession = WaitForUnchangedEditorReady(
+                client,
+                editSessionId,
+                TimeSpan.FromSeconds(10));
+            AssertEqual("edit", editSession.Mode,
+                "OMML double-click did not create an edit Session.");
+            AssertEqual(FormulaOleContract.WordOmmlMode, editSession.ObjectMode,
+                "OMML double-click changed the object mode.");
+            AssertEqual(bareFormulaId, editSession.FormulaId,
+                "OMML double-click opened the wrong formula.");
+            client.CloseEditorAsync(editSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            final = WaitForTerminal(client, editSessionId, TimeSpan.FromSeconds(30));
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Unchanged OMML double-click Session did not complete.");
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+
+            Console.WriteLine("[Targeted Word 4/6] Verifying direct OMML↔OLE conversion without an editor window...");
+            Release(range);
+            range = null;
+            Release(math);
+            math = null;
+            Release(maths);
+            maths = document.OMaths;
+            math = maths[1];
+            range = math.Range;
+            range.Select();
+            existing = SnapshotSessionIds();
+            final = WaitForDirectConversion(
+                client,
+                existing,
+                "word",
+                FormulaOleContract.NativeOleMode,
+                () => addIn.OnConvertSelected(new object()),
+                TimeSpan.FromSeconds(45),
+                out var ommlToOleElapsed);
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Direct Word OMML-to-OLE conversion did not complete.");
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+            AssertEqual(1, document.InlineShapes.Count,
+                "Direct Word OMML-to-OLE conversion did not create one OLE object.");
+            shape = document.InlineShapes[1];
+            AssertEqual(FormulaOleContract.ProgId, shape.OLEFormat.ProgID,
+                "Direct Word conversion created the wrong OLE class.");
+
+            shape.Range.Select();
+            existing = SnapshotSessionIds();
+            final = WaitForDirectConversion(
+                client,
+                existing,
+                "word",
+                FormulaOleContract.WordOmmlMode,
+                () => addIn.OnConvertSelectedToOmml(new object()),
+                TimeSpan.FromSeconds(45),
+                out var oleToOmmlElapsed);
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Direct Word OLE-to-OMML conversion did not complete.");
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+            AssertEqual(1, document.OMaths.Count,
+                "Direct Word OLE-to-OMML conversion lost or duplicated the equation.");
+            Console.WriteLine(
+                $"  Direct conversions completed in {ommlToOleElapsed.TotalSeconds:F2}s and "
+                + $"{oleToOmmlElapsed.TotalSeconds:F2}s without a visible VisualTeX window.");
+
+            var focusedPath = Path.Combine(artifactRoot, "VisualTeX-Targeted-Word-2364.docx");
+            document.SaveAs2(focusedPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = application.Documents.Add();
+
+            Console.WriteLine("[Targeted Word 5/6] Measuring numbered-formula insertion with existing formulas...");
+            TimeSpan finalInsertionElapsed = TimeSpan.Zero;
+            for (var index = 1; index <= 6; index++)
+            {
+                if (index > 1) application.Selection.TypeParagraph();
+                existing = SnapshotSessionIds();
+                addIn.OnInsertDisplay(new object());
+                var sessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+                var session = client.GetSessionAsync(sessionId, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                var stopwatch = Stopwatch.StartNew();
+                Commit(
+                    client,
+                    session,
+                    "block",
+                    FormulaOleContract.NativeOleMode,
+                    $"x_{{{index}}}={index}",
+                    numbered: true);
+                final = WaitForTerminal(client, sessionId, TimeSpan.FromSeconds(45));
+                stopwatch.Stop();
+                AssertEqual("completed", final.Status,
+                    final.Error ?? $"Numbered formula {index} did not complete.");
+                client.CloseEditorAsync(sessionId, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+                if (index == 6) finalInsertionElapsed = stopwatch.Elapsed;
+            }
+            if (finalInsertionElapsed > TimeSpan.FromSeconds(6))
+                throw new InvalidDataException(
+                    $"The sixth numbered formula took {finalInsertionElapsed.TotalSeconds:F2}s "
+                    + "after commit; insertion still performs excessive full-document work.");
+            var referenceItems = document.GetCrossReferenceItems(
+                Word.WdCaptionLabelID.wdCaptionEquation) as Array;
+            AssertEqual(6, referenceItems?.Length ?? 0,
+                "Optimized insertion changed the native Equation reference inventory.");
+            Console.WriteLine($"  Field inventory after insertion: {document.Fields.Count} fields.");
+            var embedCount = 0;
+            var refResults = new List<string>();
+            var seqResults = new List<string>();
+            for (var fieldIndex = 1; fieldIndex <= document.Fields.Count; fieldIndex++)
+            {
+                Word.Field? inventoryField = null;
+                Word.Range? inventoryCode = null;
+                Word.Range? inventoryResult = null;
+                try
+                {
+                    inventoryField = document.Fields[fieldIndex];
+                    inventoryCode = inventoryField.Code;
+                    inventoryResult = inventoryField.Result;
+                    var codeText = (inventoryCode.Text ?? string.Empty).Trim();
+                    var resultText = (inventoryResult.Text ?? string.Empty).Trim();
+                    if (codeText.StartsWith(
+                            "EMBED VisualTeX.Formula.1",
+                            StringComparison.OrdinalIgnoreCase))
+                        embedCount++;
+                    else if (codeText.StartsWith(
+                                 "REF VTEqNum_",
+                                 StringComparison.OrdinalIgnoreCase))
+                        refResults.Add(resultText);
+                    else if (codeText.IndexOf("SEQ ", StringComparison.OrdinalIgnoreCase) >= 0)
+                        seqResults.Add(resultText);
+                    Console.WriteLine(
+                        $"    [{fieldIndex}] pos={inventoryResult.Start}, "
+                        + $"code='{codeText}', result='{resultText}'");
+                }
+                finally
+                {
+                    Release(inventoryResult);
+                    Release(inventoryCode);
+                    Release(inventoryField);
+                }
+            }
+            AssertEqual(6, embedCount,
+                "Numbered OLE insertion changed the embedded-object field inventory.");
+            AssertEqual("1,2,3,4,5,6", string.Join(",", seqResults),
+                "Native SEQ fields were not numbered in document order.");
+            AssertEqual("1,2,3,4,5,6", string.Join(",", refResults),
+                "Visible REF numbers were stale immediately after insertion.");
+
+            Console.WriteLine("[Targeted Word 6/6] Running the explicit full numbering refresh...");
+            addIn.OnUpdateEquationNumbers(new object());
+            Thread.Sleep(100);
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(15));
+            AssertEqual(18, document.Fields.Count,
+                "Explicit numbering refresh changed the EMBED/SEQ/REF field inventory.");
+            var performancePath = Path.Combine(
+                artifactRoot,
+                "VisualTeX-Targeted-Word-Numbering-Performance.docx");
+            document.SaveAs2(performancePath, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                $"  Sixth numbered insertion commit completed in "
+                + $"{finalInsertionElapsed.TotalSeconds:F2}s; numbering and references remained intact.");
+        }
+        finally
+        {
+            if (addIn is not null)
+            {
+                try { addIn.OnDisconnection(ext_DisconnectMode.ext_dm_UserClosed, ref custom); } catch { }
+            }
+            if (installedAddIn is not null)
+            {
+                try { installedAddIn.Connect = true; } catch { }
+            }
+            Release(installedAddIn);
+            Release(installedAddIns);
+            Release(shape);
+            Release(eventSelection);
+            Release(range);
+            Release(math);
+            Release(maths);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            if (application is not null)
+            {
+                try { application.Quit(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
     private static void RunWord(
         VisualTeXSessionClient client,
         string artifactRoot,
@@ -1661,6 +1994,177 @@ internal static class Program
             if (application is not null)
             {
                 try { application.Quit(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunTargetedPowerPoint46(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        PowerPoint.Application? application = null;
+        PowerPoint.Presentation? presentation = null;
+        PowerPoint.Slide? slide = null;
+        PowerPoint.Shape? shape = null;
+        PowerPoint.OLEFormat? oleFormat = null;
+        COMAddIns? installedAddIns = null;
+        COMAddIn? installedAddIn = null;
+        VisualTeX.PowerPointVsto.ThisAddIn? addIn = null;
+        Array custom = Array.Empty<object>();
+        try
+        {
+            Console.WriteLine("[Targeted PowerPoint 1/4] Starting PowerPoint and creating a picture formula...");
+            application = new PowerPoint.Application { Visible = MsoTriState.msoTrue };
+            installedAddIns = application.COMAddIns;
+            try
+            {
+                object addInIndex = "VisualTeX.PowerPointVsto";
+                installedAddIn = installedAddIns.Item(ref addInIndex);
+                if (installedAddIn.Connect) installedAddIn.Connect = false;
+            }
+            catch
+            {
+                Release(installedAddIn);
+                installedAddIn = null;
+            }
+            presentation = application.Presentations.Add(MsoTriState.msoTrue);
+            slide = presentation.Slides.Add(1, PowerPoint.PpSlideLayout.ppLayoutBlank);
+            application.ActiveWindow.View.GotoSlide(1);
+            addIn = new VisualTeX.PowerPointVsto.ThisAddIn();
+            addIn.OnConnection(application, ext_ConnectMode.ext_cm_AfterStartup, addIn, ref custom);
+
+            var existing = SnapshotSessionIds();
+            addIn.OnNewFormula(new object());
+            var createSessionId = WaitForNewSession(
+                existing,
+                "powerpoint",
+                TimeSpan.FromSeconds(30));
+            var createSession = client.GetSessionAsync(createSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Commit(
+                client,
+                createSession,
+                "block",
+                FormulaOleContract.CrossPlatformPictureMode,
+                "x+y=z");
+            var final = WaitForTerminal(client, createSessionId, TimeSpan.FromSeconds(45));
+            AssertEqual("completed", final.Status,
+                final.Error ?? "PowerPoint picture formula did not complete.");
+            client.CloseEditorAsync(createSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+            var formulaId = final.FormulaId
+                ?? throw new InvalidDataException("PowerPoint picture formula has no formulaId.");
+            AssertEqual(1, slide.Shapes.Count,
+                "PowerPoint targeted fixture did not create one formula shape.");
+            shape = slide.Shapes[1];
+            AssertEqual(MsoShapeType.msoPicture, shape.Type,
+                "PowerPoint targeted fixture did not start as a picture.");
+
+            Console.WriteLine("[Targeted PowerPoint 2/4] Converting picture to OLE without opening the editor...");
+            shape.Select(MsoTriState.msoTrue);
+            existing = SnapshotSessionIds();
+            final = WaitForDirectConversion(
+                client,
+                existing,
+                "powerpoint",
+                FormulaOleContract.NativeOleMode,
+                () => addIn.OnConvertSelected(new object()),
+                TimeSpan.FromSeconds(45),
+                out var conversionElapsed);
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Direct PowerPoint picture-to-OLE conversion did not complete.");
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+
+            var conversionDeadline = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < conversionDeadline)
+            {
+                WinForms.Application.DoEvents();
+                Thread.Sleep(100);
+                Release(shape);
+                shape = slide.Shapes[1];
+                if (shape.Type == MsoShapeType.msoEmbeddedOLEObject) break;
+            }
+            AssertEqual(MsoShapeType.msoEmbeddedOLEObject, shape.Type,
+                "Direct PowerPoint conversion did not create an embedded OLE object.");
+            oleFormat = shape.OLEFormat;
+            AssertEqual(FormulaOleContract.ProgId, oleFormat.ProgID,
+                "Direct PowerPoint conversion created the wrong OLE class.");
+            Console.WriteLine(
+                $"  Direct PowerPoint conversion completed in "
+                + $"{conversionElapsed.TotalSeconds:F2}s without a visible editor.");
+
+            Console.WriteLine("[Targeted PowerPoint 3/4] Verifying the OLE verb does not reveal the VisualTeX main window...");
+            var baselineWindows = VisibleVisualTeXWindowTitles();
+            oleFormat.DoVerb(0);
+            WinForms.Application.DoEvents();
+            Thread.Sleep(1000);
+            AssertNoNewVisibleVisualTeXWindows(
+                baselineWindows,
+                "PowerPoint OLE default verb");
+
+            Console.WriteLine("[Targeted PowerPoint 4/4] Verifying OLE double-click opens only the formula editor Session...");
+            shape.Select(MsoTriState.msoTrue);
+            existing = SnapshotSessionIds();
+            var doubleClickHandler = typeof(VisualTeX.PowerPointVsto.ThisAddIn).GetMethod(
+                "OnNativeDoubleClick",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic)
+                ?? throw new MissingMethodException("PowerPoint double-click callback is missing.");
+            doubleClickHandler.Invoke(addIn, null);
+            var editSessionId = WaitForNewSession(
+                existing,
+                "powerpoint",
+                TimeSpan.FromSeconds(30));
+            var editSession = WaitForUnchangedEditorReady(
+                client,
+                editSessionId,
+                TimeSpan.FromSeconds(10));
+            AssertEqual("edit", editSession.Mode,
+                "PowerPoint OLE double-click did not create an edit Session.");
+            AssertEqual(FormulaOleContract.NativeOleMode, editSession.ObjectMode,
+                "PowerPoint OLE double-click changed the object mode.");
+            AssertEqual(formulaId, editSession.FormulaId,
+                "PowerPoint OLE double-click opened the wrong formula.");
+            client.CloseEditorAsync(editSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            final = WaitForTerminal(client, editSessionId, TimeSpan.FromSeconds(30));
+            AssertEqual("completed", final.Status,
+                final.Error ?? "PowerPoint OLE double-click Session did not complete.");
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+
+            var path = Path.Combine(artifactRoot, "VisualTeX-Targeted-PowerPoint-46.pptx");
+            presentation.SaveAs(
+                path,
+                PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation,
+                MsoTriState.msoFalse);
+            Console.WriteLine($"  Saved {path}; direct conversion and OLE double-click routing passed.");
+        }
+        finally
+        {
+            if (addIn is not null)
+            {
+                try { addIn.OnDisconnection(ext_DisconnectMode.ext_dm_UserClosed, ref custom); } catch { }
+            }
+            if (installedAddIn is not null)
+            {
+                try { installedAddIn.Connect = true; } catch { }
+            }
+            Release(installedAddIn);
+            Release(installedAddIns);
+            Release(oleFormat);
+            Release(shape);
+            Release(slide);
+            if (presentation is not null)
+            {
+                try { presentation.Close(); } catch { }
+            }
+            Release(presentation);
+            if (application is not null)
+            {
+                try { application.Quit(); } catch { }
             }
             Release(application);
             ForceComCleanup();
@@ -2200,6 +2704,97 @@ internal static class Program
         throw new TimeoutException(
             $"Session {sessionId} was not ready for unchanged close; " +
             $"last status was {session?.Status ?? "unknown"}.");
+    }
+
+    private static OfficeSessionDocument WaitForDirectConversion(
+        VisualTeXSessionClient client,
+        HashSet<string> existingSessionIds,
+        string expectedHost,
+        string expectedObjectMode,
+        Action command,
+        TimeSpan timeout,
+        out TimeSpan elapsed)
+    {
+        var baselineWindows = VisibleVisualTeXWindowTitles();
+        var stopwatch = Stopwatch.StartNew();
+        command();
+        var sessionId = WaitForNewSession(
+            existingSessionIds,
+            expectedHost,
+            TimeSpan.FromSeconds(30));
+        var deadline = DateTime.UtcNow + timeout;
+        OfficeSessionDocument? session = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            WinForms.Application.DoEvents();
+            Thread.Sleep(100);
+            AssertNoNewVisibleVisualTeXWindows(
+                baselineWindows,
+                $"{expectedHost} direct format conversion");
+            session = client.GetSessionAsync(sessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            AssertEqual(
+                expectedObjectMode,
+                session.ObjectMode,
+                $"{expectedHost} direct conversion requested the wrong object mode.");
+            if (session.Status is "completed" or "failed" or "cancelled")
+            {
+                stopwatch.Stop();
+                elapsed = stopwatch.Elapsed;
+                return session;
+            }
+        }
+        stopwatch.Stop();
+        elapsed = stopwatch.Elapsed;
+        throw new TimeoutException(
+            $"Direct {expectedHost} conversion Session {sessionId} did not finish; "
+            + $"last status was {session?.Status ?? "unknown"}.");
+    }
+
+    private static HashSet<string> VisibleVisualTeXWindowTitles()
+    {
+        var titles = new HashSet<string>(StringComparer.Ordinal);
+        EnumWindows((windowHandle, _) =>
+        {
+            if (!IsWindowVisible(windowHandle)) return true;
+            GetWindowThreadProcessId(windowHandle, out var processId);
+            if (processId == 0) return true;
+            try
+            {
+                using var process = Process.GetProcessById((int)processId);
+                if (!string.Equals(
+                        process.ProcessName,
+                        "visualtex",
+                        StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch
+            {
+                return true;
+            }
+
+            var length = GetWindowTextLength(windowHandle);
+            if (length <= 0) return true;
+            var text = new StringBuilder(length + 1);
+            GetWindowText(windowHandle, text, text.Capacity);
+            var title = text.ToString().Trim();
+            if (title.Length > 0) titles.Add(title);
+            return true;
+        }, IntPtr.Zero);
+        return titles;
+    }
+
+    private static void AssertNoNewVisibleVisualTeXWindows(
+        HashSet<string> baseline,
+        string stage)
+    {
+        var added = VisibleVisualTeXWindowTitles()
+            .Except(baseline, StringComparer.Ordinal)
+            .ToArray();
+        if (added.Length > 0)
+            throw new InvalidDataException(
+                $"{stage} unexpectedly opened a visible VisualTeX window: "
+                + string.Join(" | ", added));
     }
 
     private static OfficeSessionDocument WaitForTerminal(

@@ -4,7 +4,7 @@
     Name="VisualTeX Windows Office Integration"
     Manufacturer="VisualTeX"
     ProductCode="$(var.InstallerProductCode)"
-    Version="1.0.33.0"
+    Version="1.0.34.0"
     UpgradeCode="A81B4BF7-0E51-45CE-A5AA-5E28F6944F42"
     Scope="perUser"
     Compressed="yes">

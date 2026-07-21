@@ -255,7 +255,7 @@ internal sealed class WordFormulaService
                 metadata.Baseline.HasValue ? (float?)metadata.Baseline.Value : null,
                 metadata.DisplayMode == "inline");
             oldShape.Delete();
-            WordEquationNumbering.TryReconcile(document);
+            TryReconcileShape(document, replacement, metadata);
             return requiredFormulaId;
         }
         catch
@@ -341,9 +341,17 @@ internal sealed class WordFormulaService
                 session.ExportResult?.Baseline,
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(shape);
+            }
             else
-                WordEquationNumbering.TryReconcile(document);
+            {
+                TryReconcileShape(document, shape, metadata);
+                if (session.Numbered)
+                    MoveCaretToNormalTypingParagraphAfterNumberedDisplay(
+                        document,
+                        metadata.FormulaId);
+            }
             return Result(session, document);
         }
         catch
@@ -429,9 +437,17 @@ internal sealed class WordFormulaService
                 session.ExportResult?.Baseline,
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(shape);
+            }
             else
-                WordEquationNumbering.TryReconcile(document);
+            {
+                TryReconcileShape(document, shape, metadata);
+                if (session.Numbered)
+                    MoveCaretToNormalTypingParagraphAfterNumberedDisplay(
+                        document,
+                        metadata.FormulaId);
+            }
             return Result(session, document);
         }
         catch
@@ -525,9 +541,17 @@ internal sealed class WordFormulaService
             WordOmmlFormulaStore.Save(document, metadata);
             metadataSaved = true;
             if (session.DisplayMode == "inline")
+            {
                 RestoreTypingBaselineAfter(bookmark);
+            }
             else
-                WordEquationNumbering.TryReconcile(document);
+            {
+                TryReconcileOmml(document, bookmark!, equationRange, metadata);
+                if (session.Numbered)
+                    MoveCaretToNormalTypingParagraphAfterNumberedDisplay(
+                        document,
+                        metadata.FormulaId);
+            }
             return Result(session, document);
         }
         catch
@@ -628,7 +652,7 @@ internal sealed class WordFormulaService
                 if (session.DisplayMode == "inline")
                     RestoreTypingBaselineAfter(oldShape);
                 else
-                    WordEquationNumbering.TryReconcile(document);
+                    TryReconcileShape(document, oldShape, metadata);
                 return Result(session, document);
             }
 
@@ -673,7 +697,7 @@ internal sealed class WordFormulaService
             if (session.DisplayMode == "inline")
                 RestoreTypingBaselineAfter(replacement);
             else
-                WordEquationNumbering.TryReconcile(document);
+                TryReconcileShape(document, replacement, metadata);
             if (oldShape is null && session.DisplayMode != "inline")
             {
                 try { replacement.Select(); } catch { }
@@ -833,7 +857,7 @@ internal sealed class WordFormulaService
             if (session.DisplayMode == "inline")
                 RestoreTypingBaselineAfter(replacement);
             if (session.DisplayMode == "block")
-                WordEquationNumbering.TryReconcile(document);
+                TryReconcileOmml(document, replacement!, equationRange, metadata);
             return Result(session, document);
         }
         catch
@@ -939,7 +963,7 @@ internal sealed class WordFormulaService
             if (session.DisplayMode == "inline")
                 RestoreTypingBaselineAfter(replacement);
             else
-                WordEquationNumbering.TryReconcile(document);
+                TryReconcileShape(document, replacement, metadata);
             return Result(session, document);
         }
         catch
@@ -1062,6 +1086,58 @@ internal sealed class WordFormulaService
     {
         if (undoRecord is null) return;
         try { undoRecord.EndCustomRecord(); } catch { }
+    }
+
+    private void MoveCaretToNormalTypingParagraphAfterNumberedDisplay(
+        Document document,
+        string formulaId)
+    {
+        Range? caret = null;
+        Selection? selection = null;
+        try
+        {
+            caret = WordEquationNumbering
+                .EnsureNormalTypingParagraphAfterNumberedDisplay(document, formulaId);
+            if (caret is null) return;
+            selection = _application.Selection;
+            selection.SetRange(caret.Start, caret.End);
+        }
+        finally
+        {
+            Release(selection);
+            Release(caret);
+        }
+    }
+
+    private static void TryReconcileShape(
+        Document document,
+        InlineShape shape,
+        FormulaMetadata metadata)
+    {
+        Range? range = null;
+        try
+        {
+            range = shape.Range;
+            WordEquationNumbering.TryReconcileFormula(
+                document,
+                range,
+                shape.Height,
+                metadata);
+        }
+        finally { Release(range); }
+    }
+
+    private static void TryReconcileOmml(
+        Document document,
+        Bookmark bookmark,
+        Range equationRange,
+        FormulaMetadata metadata)
+    {
+        WordEquationNumbering.TryReconcileFormula(
+            document,
+            equationRange,
+            WordOmmlFormulaStore.EstimateHeightPoints(bookmark),
+            metadata);
     }
 
     private static void Configure(

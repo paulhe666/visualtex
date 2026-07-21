@@ -306,6 +306,37 @@ fn open_desktop_session_window(
     bring_session_window_to_front(&window)
 }
 
+#[cfg(target_os = "windows")]
+fn open_desktop_conversion_window(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let label = format!("office-convert-{}", session_id.replace('-', ""));
+    let url = tauri::Url::parse(&format!(
+        "https://127.0.0.1:{}/dialog/{}?runtime=vsto-convert",
+        crate::office::state::OFFICE_PORT,
+        session_id
+    ))
+    .map_err(|error| format!("Unable to construct the VisualTeX conversion URL: {error}"))?;
+
+    if let Some(window) = app.get_webview_window(&label) {
+        window
+            .navigate(url)
+            .map_err(|error| format!("Unable to navigate the VisualTeX conversion window: {error}"))?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::External(url))
+        .title("VisualTeX · Office 格式转换")
+        .inner_size(1240.0, 820.0)
+        .resizable(false)
+        .focused(false)
+        .visible(false)
+        .build()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to create the hidden VisualTeX conversion window: {error}"))
+}
+
 async fn close_desktop_session(
     AxumPath(session_id): AxumPath<String>,
     State(context): State<ServerContext>,
@@ -324,14 +355,20 @@ async fn close_desktop_session(
         let Some(app) = context.companion.app.clone() else {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         };
-        let label = format!("office-session-{}", session_id.replace('-', ""));
+        let suffix = session_id.replace('-', "");
+        let labels = [
+            format!("office-session-{suffix}"),
+            format!("office-convert-{suffix}"),
+        ];
         tauri::async_runtime::spawn(async move {
             // Return the HTTP response before closing the WebView that issued
             // the request; otherwise WebView2 can cancel the fetch and leave a
             // blank native window behind.
             tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-            if let Some(window) = app.get_webview_window(&label) {
-                let _ = window.close();
+            for label in labels {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.close();
+                }
             }
         });
         StatusCode::NO_CONTENT.into_response()
@@ -388,6 +425,63 @@ async fn open_desktop_session(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
                     "error": format!("VisualTeX Session window task failed: {error}")
+                })),
+            )
+                .into_response(),
+        }
+    }
+}
+
+async fn open_desktop_conversion(
+    AxumPath(session_id): AxumPath<String>,
+    State(context): State<ServerContext>,
+) -> Response {
+    if !valid_session_id(&session_id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let store = context.companion.session_store.clone();
+    let lookup_id = session_id.clone();
+    if let Err(error) = run_session_operation(move || store.get(&lookup_id)).await {
+        return session_error_response(error);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({
+                "error": "Headless VSTO conversion is available only on Windows"
+            })),
+        )
+            .into_response();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let Some(app) = context.companion.app.clone() else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "The VisualTeX desktop application is unavailable"
+                })),
+            )
+                .into_response();
+        };
+        match tokio::task::spawn_blocking(move || {
+            open_desktop_conversion_window(app, session_id)
+        })
+        .await
+        {
+            Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+            Ok(Err(error)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": error })),
+            )
+                .into_response(),
+            Err(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("VisualTeX conversion window task failed: {error}")
                 })),
             )
                 .into_response(),
@@ -1406,6 +1500,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route(
             "/app/sessions/{session_id}/open",
             post(open_desktop_session),
+        )
+        .route(
+            "/app/sessions/{session_id}/convert",
+            post(open_desktop_conversion),
         )
         .route(
             "/app/sessions/{session_id}/close",

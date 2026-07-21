@@ -1,7 +1,7 @@
 {
   "name": "visualtex-platform-repository",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "license": "MIT",
   "description": "Platform-separated VisualTeX desktop applications for macOS and Windows.",
   "scripts": {

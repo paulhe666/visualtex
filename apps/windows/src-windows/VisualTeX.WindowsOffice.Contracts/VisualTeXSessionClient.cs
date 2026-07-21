@@ -76,6 +76,20 @@ public sealed class VisualTeXSessionClient : IDisposable
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
+    public async Task OpenConverterAsync(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(sessionId, out _))
+            throw new InvalidOperationException("VisualTeX Session id must be a UUID.");
+        EnsureAuthorizationHeader();
+        using var response = await _http.PostAsync(
+            $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/convert",
+            new StringContent("{}", Encoding.UTF8, "application/json"),
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
     public async Task CloseEditorAsync(
         string sessionId,
         CancellationToken cancellationToken)

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
@@ -55,6 +56,172 @@ internal static class WordEquationNumbering
         {
             // Formula insertion/update is already durable. The user can retry
             // only the numbering command without duplicating or losing it.
+        }
+    }
+
+    public static void TryReconcileFormula(
+        Document document,
+        Range formulaRange,
+        float formulaHeightPoints,
+        FormulaMetadata metadata)
+    {
+        try
+        {
+            ReconcileFormula(document, formulaRange, formulaHeightPoints, metadata);
+        }
+        catch
+        {
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal))
+                throw;
+            // The inserted or edited formula is already durable. The explicit
+            // update-number command still performs a complete reconciliation.
+        }
+    }
+
+    internal static void ReconcileFormula(
+        Document document,
+        Range formulaRange,
+        float formulaHeightPoints,
+        FormulaMetadata metadata)
+    {
+        if (metadata.DisplayMode != "block")
+        {
+            RemoveFormulaNumberingArtifacts(document, metadata.FormulaId);
+            UpdateMainStoryFields(document);
+            UpdateNativeCrossReferences(document);
+            return;
+        }
+
+        if (metadata.Numbered)
+        {
+            ConfigureNumberedDisplayFormula(
+                document,
+                formulaRange,
+                formulaHeightPoints,
+                metadata.FormulaId);
+        }
+        else
+        {
+            ConfigureUnnumberedDisplayFormula(
+                document,
+                formulaRange,
+                metadata.FormulaId);
+        }
+
+        // Insertion and editing already know the exact changed formula, so avoid
+        // walking every VisualTeX object through COM. Word stores the visible
+        // REF before the hidden SEQ caption in document order; a plain
+        // Fields.Update therefore leaves every new visible number one step
+        // behind. Refresh the lightweight native SEQ field inventory first,
+        // then let Word update all REF results in one native pass.
+        if (metadata.Numbered)
+            UpdateNativeEquationSequenceFields(document);
+        UpdateMainStoryFields(document);
+        if (metadata.Numbered)
+        {
+            UpdateEquationNumberFields(
+                document,
+                formulaHeightPoints,
+                metadata.FormulaId);
+        }
+        // Formula-format conversion updates the document field collection. Word
+        // can copy the hidden 1 pt SEQ target appearance back into body REF
+        // results during that update, so always restore visible references at
+        // the end of the same reconciliation transaction.
+        UpdateNativeCrossReferences(document);
+    }
+
+    private static void UpdateMainStoryFields(Document document)
+    {
+        Fields? fields = null;
+        try
+        {
+            fields = document.Fields;
+            if (fields.Count > 0) fields.Update();
+        }
+        finally { Release(fields); }
+    }
+
+    internal static Range? EnsureNormalTypingParagraphAfterNumberedDisplay(
+        Document document,
+        string formulaId)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? captionBookmark = null;
+        Range? captionRange = null;
+        Range? content = null;
+        Paragraphs? captionParagraphs = null;
+        Paragraph? captionParagraph = null;
+        Range? captionParagraphRange = null;
+        Paragraphs? documentParagraphs = null;
+        Paragraph? typingParagraph = null;
+        Range? typingRange = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        ParagraphFormat? format = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var captionName = NativeCaptionBookmarkName(formulaId);
+            if (!bookmarks.Exists(captionName)) return null;
+
+            captionBookmark = bookmarks[captionName];
+            captionRange = captionBookmark.Range;
+            content = document.Content;
+            if (captionRange.End < Math.Max(content.Start, content.End - 1))
+                return null;
+
+            captionParagraphs = captionRange.Paragraphs;
+            captionParagraph = captionParagraphs[1];
+            captionParagraphRange = captionParagraph.Range;
+            captionParagraphRange.InsertParagraphAfter();
+
+            documentParagraphs = document.Paragraphs;
+            typingParagraph = documentParagraphs[documentParagraphs.Count];
+            typingRange = typingParagraph.Range.Duplicate;
+            try
+            {
+                object normalStyle = WdBuiltinStyle.wdStyleNormal;
+                typingRange.set_Style(ref normalStyle);
+            }
+            catch
+            {
+                // Documents with locked/custom style collections can reject the
+                // built-in Normal style. Direct-format reset below still removes
+                // the hidden caption's one-point formatting.
+            }
+
+            font = typingRange.Font;
+            font.Reset();
+            font.Hidden = 0;
+            font.Position = 0;
+            font.Color = WdColor.wdColorAutomatic;
+            format = typingRange.ParagraphFormat;
+            format.Reset();
+            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+            format.SpaceBefore = 0f;
+            format.SpaceAfter = 0f;
+            typingRange.Collapse(WdCollapseDirection.wdCollapseStart);
+            var result = typingRange;
+            typingRange = null;
+            return result;
+        }
+        finally
+        {
+            Release(format);
+            Release(font);
+            Release(typingRange);
+            Release(typingParagraph);
+            Release(documentParagraphs);
+            Release(captionParagraphRange);
+            Release(captionParagraph);
+            Release(captionParagraphs);
+            Release(content);
+            Release(captionRange);
+            Release(captionBookmark);
+            Release(bookmarks);
         }
     }
 
@@ -712,21 +879,34 @@ internal static class WordEquationNumbering
         Microsoft.Office.Interop.Word.Font? numberFont = null;
         ParagraphFormat? paragraph = null;
         ListFormat? listFormat = null;
+        Frames? frames = null;
+        Frame? frame = null;
+        Sections? sections = null;
+        Section? section = null;
+        PageSetup? pageSetup = null;
+        Borders? borders = null;
         try
         {
+            // Keep the native SEQ target in ordinary visible formatting. Word's
+            // own InsertCrossReference creates a plain REF ... \\h field, which
+            // inherits the target formatting on every F9 update. Hiding this
+            // paragraph with white 1 pt text therefore made native references
+            // white and one point as well.
             font = captionRange.Font;
             font.Hidden = 0;
-            font.Size = 1f;
-            font.Color = WdColor.wdColorWhite;
+            font.Size = 11f;
+            font.Color = WdColor.wdColorAutomatic;
+            font.Position = 0;
             numberFont = numberRange.Font;
             numberFont.Hidden = 0;
-            numberFont.Size = 1f;
-            numberFont.Color = WdColor.wdColorWhite;
+            numberFont.Size = 11f;
+            numberFont.Color = WdColor.wdColorAutomatic;
+            numberFont.Position = 0;
+
             paragraph = captionRange.ParagraphFormat;
             paragraph.SpaceBefore = 0f;
             paragraph.SpaceAfter = 0f;
-            paragraph.LineSpacingRule = WdLineSpacing.wdLineSpaceExactly;
-            paragraph.LineSpacing = 1f;
+            paragraph.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             paragraph.KeepTogether = 0;
             paragraph.KeepWithNext = 0;
             paragraph.PageBreakBefore = 0;
@@ -737,14 +917,93 @@ internal static class WordEquationNumbering
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
             catch { }
+
+            // A legacy Word Frame remains in the main document story, so Word's
+            // native Cross-reference dialog and plain REF fields still recognize
+            // the SEQ target. Negative frame coordinates are clamped by Word to
+            // the top-left of the page, which exposed the number and frame edge.
+            // Use an exact 0.1 pt clipping frame at the bottom-right page boundary
+            // instead. The SEQ retains normal black 11 pt formatting for native
+            // REF inheritance, while its rendered content lies beyond the page.
+            var document = captionRange.Document;
+            RemoveLegacyEmptyCaptionFrames(document, captionRange);
+            frames = captionRange.Frames;
+            frame = frames.Count > 0 ? frames[1] : frames.Add(captionRange);
+            sections = captionRange.Sections;
+            section = sections[1];
+            pageSetup = section.PageSetup;
+            const float clippedFrameSize = 0.1f;
+            frame.WidthRule = WdFrameSizeRule.wdFrameExact;
+            frame.HeightRule = WdFrameSizeRule.wdFrameExact;
+            frame.Width = clippedFrameSize;
+            frame.Height = clippedFrameSize;
+            frame.RelativeHorizontalPosition =
+                WdRelativeHorizontalPosition.wdRelativeHorizontalPositionPage;
+            frame.RelativeVerticalPosition =
+                WdRelativeVerticalPosition.wdRelativeVerticalPositionPage;
+            frame.HorizontalPosition = Math.Max(0f, pageSetup.PageWidth - clippedFrameSize);
+            frame.VerticalPosition = Math.Max(0f, pageSetup.PageHeight - clippedFrameSize);
+            frame.TextWrap = false;
+            frame.LockAnchor = true;
+            borders = captionRange.Borders;
+            borders.Enable = 0;
         }
         finally
         {
+            Release(borders);
+            Release(pageSetup);
+            Release(section);
+            Release(sections);
+            Release(frame);
+            Release(frames);
             Release(listFormat);
             Release(paragraph);
             Release(numberFont);
             Release(font);
         }
+    }
+
+    private static void RemoveLegacyEmptyCaptionFrames(
+        Document document,
+        Range keepRange)
+    {
+        Frames? frames = null;
+        try
+        {
+            frames = document.Frames;
+            for (var index = frames.Count; index >= 1; index--)
+            {
+                Frame? candidate = null;
+                Range? range = null;
+                Fields? fields = null;
+                try
+                {
+                    candidate = frames[index];
+                    range = candidate.Range;
+                    if (range.Start <= keepRange.End && range.End >= keepRange.Start)
+                        continue;
+                    fields = range.Fields;
+                    var text = (range.Text ?? string.Empty)
+                        .Trim('\r', '\n', '\t', '\v', ' ');
+                    var oldVisualTeXFrame =
+                        candidate.HorizontalPosition <= -999f
+                        && candidate.VerticalPosition <= -999f
+                        && candidate.Width >= 70f
+                        && candidate.Height >= 17f;
+                    if (oldVisualTeXFrame
+                        && fields.Count == 0
+                        && string.IsNullOrEmpty(text))
+                        candidate.Delete();
+                }
+                finally
+                {
+                    Release(fields);
+                    Release(range);
+                    Release(candidate);
+                }
+            }
+        }
+        finally { Release(frames); }
     }
 
     private static bool TryGetNativeCaptionRanges(
@@ -941,6 +1200,7 @@ internal static class WordEquationNumbering
                 ref fieldCode,
                 ref preserveFormatting);
             field.Update();
+            NormalizeReferenceResult(field);
             fieldResult = field.Result;
 
             // Inserting a field inside scaffoldRange expands that Range to
@@ -1265,7 +1525,11 @@ internal static class WordEquationNumbering
                 {
                     field = fields[index];
                     code = field.Code;
-                    if (predicate(code.Text)) field.Update();
+                    if (predicate(code.Text))
+                    {
+                        field.Update();
+                        NormalizeReferenceResult(field);
+                    }
                 }
                 finally
                 {
@@ -1437,15 +1701,24 @@ internal static class WordEquationNumbering
             for (var index = 1; index <= fields.Count; index++)
             {
                 Field? field = null;
+                Range? code = null;
                 try
                 {
                     field = fields[index];
-                    if (field.Type != WdFieldType.wdFieldRef) continue;
-                    field.Update();
+                    code = field.Code;
+                    if (!IsReferenceFieldCode(code.Text)) continue;
+                    // NormalizeReferenceResult performs the update itself after
+                    // applying CHARFORMAT. Field.Type is not stable after Word
+                    // rewrites a native cross-reference field, so the real REF
+                    // field code is the authoritative discriminator.
                     NormalizeReferenceResult(field);
                     updated++;
                 }
-                finally { Release(field); }
+                finally
+                {
+                    Release(code);
+                    Release(field);
+                }
             }
         }
         finally { Release(fields); }
@@ -1456,35 +1729,153 @@ internal static class WordEquationNumbering
     {
         Range? code = null;
         Range? result = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
+        Microsoft.Office.Interop.Word.Font? codeFont = null;
+        Microsoft.Office.Interop.Word.Font? resultFont = null;
         try
         {
+            var size = ResolveReferenceFontSize(field);
             code = field.Code;
             var codeText = code.Text ?? string.Empty;
-            if (codeText.IndexOf("MERGEFORMAT", StringComparison.OrdinalIgnoreCase) < 0)
+            var normalizedCode = Regex.Replace(
+                codeText,
+                @"\\\*\s+MERGEFORMAT\b",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+            if (!Regex.IsMatch(
+                    normalizedCode,
+                    @"\\\*\s+CHARFORMAT\b",
+                    RegexOptions.IgnoreCase))
             {
-                code.Text = codeText.TrimEnd() + " \\* MERGEFORMAT ";
-                field.Update();
+                normalizedCode = normalizedCode.TrimEnd() + " \\* CHARFORMAT ";
             }
+            if (!string.Equals(codeText, normalizedCode, StringComparison.Ordinal))
+                code.Text = normalizedCode;
+
+            // CHARFORMAT makes Word use the field-code appearance instead of
+            // copying the hidden one-point SEQ target appearance into the REF.
+            codeFont = code.Font;
+            codeFont.Hidden = 0;
+            codeFont.Color = WdColor.wdColorAutomatic;
+            codeFont.Size = size;
+            codeFont.Position = 0;
+            field.Update();
+
             result = field.Result;
-            font = result.Font;
-            var size = 11f;
-            try { size = font.Size; } catch { }
-            if (float.IsNaN(size)
-                || float.IsInfinity(size)
-                || size <= 2f
-                || size > 256f)
-                size = 11f;
-            font.Hidden = 0;
-            font.Color = WdColor.wdColorAutomatic;
-            font.Size = size;
+            resultFont = result.Font;
+            resultFont.Hidden = 0;
+            resultFont.Color = WdColor.wdColorAutomatic;
+            resultFont.Size = size;
+            resultFont.Position = 0;
         }
         finally
         {
-            Release(font);
+            Release(resultFont);
+            Release(codeFont);
             Release(result);
             Release(code);
         }
+    }
+
+    private static float ResolveReferenceFontSize(Field field)
+    {
+        Range? result = null;
+        Range? code = null;
+        Range? paragraphRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Document? document = null;
+        try
+        {
+            result = field.Result;
+            var size = ReadUsableFontSize(result);
+            if (size.HasValue) return size.Value;
+
+            code = field.Code;
+            size = ReadUsableFontSize(code);
+            if (size.HasValue) return size.Value;
+
+            paragraphs = result.Paragraphs;
+            if (paragraphs.Count == 0) return 11f;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            document = result.Document;
+
+            // Result.Start sits inside the field, so the immediately adjacent
+            // character can still be a hidden field separator. Probe outside the
+            // complete field code/result boundary, then the paragraph mark. This
+            // recovers the surrounding body size even after Word copied the 1 pt
+            // SEQ target appearance into both field code and result.
+            var candidatePositions = new[]
+            {
+                code.Start - 2,
+                code.Start - 1,
+                result.End + 1,
+                result.End + 2,
+                paragraphRange.End - 1,
+                paragraphRange.Start,
+            };
+            foreach (var position in candidatePositions.Distinct())
+            {
+                size = ReadUsableFontSizeAt(
+                    document,
+                    paragraphRange,
+                    position);
+                if (size.HasValue) return size.Value;
+            }
+            return 11f;
+        }
+        finally
+        {
+            Release(document);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(code);
+            Release(result);
+        }
+    }
+
+    private static float? ReadUsableFontSizeAt(
+        Document document,
+        Range paragraphRange,
+        int position)
+    {
+        if (position < paragraphRange.Start || position >= paragraphRange.End)
+            return null;
+        Range? range = null;
+        try
+        {
+            object start = position;
+            object end = Math.Min(paragraphRange.End, position + 1);
+            range = document.Range(ref start, ref end);
+            return ReadUsableFontSize(range);
+        }
+        catch
+        {
+            return null;
+        }
+        finally { Release(range); }
+    }
+
+    private static float? ReadUsableFontSize(Range range)
+    {
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = range.Font;
+            var size = font.Size;
+            return float.IsNaN(size)
+                || float.IsInfinity(size)
+                || size <= 2f
+                || size > 256f
+                ? null
+                : size;
+        }
+        catch
+        {
+            return null;
+        }
+        finally { Release(font); }
     }
 
     private static List<int> GetNativeEquationFieldPositions(
@@ -1679,6 +2070,13 @@ internal static class WordEquationNumbering
             || code.IndexOf(
                    $"SEQ \"{nativeSequenceName}\"",
                    StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsReferenceFieldCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        var trimmed = code!.TrimStart();
+        return trimmed.StartsWith("REF ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsReferenceToBookmark(string? code, string bookmarkName) =>

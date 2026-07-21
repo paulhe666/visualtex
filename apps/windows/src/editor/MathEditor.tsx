@@ -33,7 +33,10 @@ import {
   createFormulaLine,
   useEditorStore,
 } from "../stores/editorStore";
-import { normalizeChineseLatex } from "./normalizeChineseLatex";
+import {
+  normalizeChineseLatex,
+  normalizeChineseTextLatex,
+} from "./normalizeChineseLatex";
 
 export interface MathEditorInsertionTarget {
   lineId: string;
@@ -589,9 +592,10 @@ function FormulaField(props: FormulaFieldProps) {
     const field = fieldRef.current;
     if (!field) return;
 
-    // 本地输入仅因中文规范化而与 store 等值时，不重建 MathLive 模型；
-    // 只更新事务基准，保留当前光标、选区和删除键内部状态。
-    if (normalizeChineseLatex(field.value) === props.latex) {
+    // 中文文本规范化不改变 MathLive 的数学原子结构，因此无需重建；
+    // 正体微分、常用函数等数学排版规范化则必须写回 MathLive，才能
+    // 在编辑器中立即显示正体。写回时恢复原选区，避免光标跳到末尾。
+    if (normalizeChineseTextLatex(field.value) === props.latex) {
       lastSnapshotRef.current = {
         latex: props.latex,
         selection: captureSelection(field),
@@ -599,6 +603,7 @@ function FormulaField(props: FormulaFieldProps) {
       return;
     }
 
+    const selection = captureSelection(field);
     field.setValue(props.latex, {
       mode: "math",
       format: "latex",
@@ -606,6 +611,11 @@ function FormulaField(props: FormulaFieldProps) {
       selectionMode: "after",
       silenceNotifications: true,
     });
+    try {
+      field.selection = clampSelection(selection, field.lastOffset);
+    } catch {
+      field.position = field.lastOffset;
+    }
     field.resetUndo();
     lastSnapshotRef.current = captureFieldSnapshot(field);
     syncFrameSizeRef.current?.();

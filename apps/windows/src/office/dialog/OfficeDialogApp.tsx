@@ -74,8 +74,9 @@ const USE_NATIVE_POWERPOINT_COMMIT =
     ?.content.toLowerCase() === "true";
 
 const OFFICE_COMMIT_RESULT_TIMEOUT_MS = 45_000;
-const IS_VSTO_DESKTOP_RUNTIME =
-  new URLSearchParams(window.location.search).get("runtime") === "vsto-desktop";
+const VSTO_RUNTIME = new URLSearchParams(window.location.search).get("runtime");
+const IS_VSTO_DESKTOP_RUNTIME = VSTO_RUNTIME === "vsto-desktop";
+const IS_VSTO_CONVERT_RUNTIME = VSTO_RUNTIME === "vsto-convert";
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -135,6 +136,7 @@ export function OfficeDialogApp() {
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const exportRunIdRef = useRef(0);
+  const conversionStartedRef = useRef(false);
   const latestCompleteExportRef = useRef<{
     fingerprint: string;
     exportResult: OfficeExportResult;
@@ -279,26 +281,32 @@ export function OfficeDialogApp() {
     return () => historyManager.configure(null);
   }, [captureSnapshot]);
 
-  const generateSvgExportResult = useCallback((): OfficeExportResult | null => {
-    if (!latex.trim()) return null;
-    const svg = latexToSvg(latex, {
-      displayMode: displayMode === "block",
+  const generateSvgExportResult = useCallback((
+    sourceLatex: string = latex,
+    sourceDisplayMode: "inline" | "block" = displayMode,
+  ): OfficeExportResult | null => {
+    if (!sourceLatex.trim()) return null;
+    const svg = latexToSvg(sourceLatex, {
+      displayMode: sourceDisplayMode === "block",
       fontSizePt: 14,
-      paddingPx: displayMode === "inline" ? 1 : 10,
+      paddingPx: sourceDisplayMode === "inline" ? 1 : 10,
       background: "transparent",
     });
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
-      mathMl: latexToMathMl(latex, displayMode === "block"),
+      mathMl: latexToMathMl(sourceLatex, sourceDisplayMode === "block"),
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,
     };
   }, [latex, displayMode]);
 
-  const generateExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
-    const base = generateSvgExportResult();
+  const generateExportResult = useCallback(async (
+    sourceLatex: string = latex,
+    sourceDisplayMode: "inline" | "block" = displayMode,
+  ): Promise<OfficeExportResult | null> => {
+    const base = generateSvgExportResult(sourceLatex, sourceDisplayMode);
     if (!base) return null;
     let pngBase64: string | undefined;
     try {
@@ -319,9 +327,85 @@ export function OfficeDialogApp() {
       // SVG remains a complete Office fallback when PNG rasterization fails.
     }
     return { ...base, pngBase64 };
-  }, [generateSvgExportResult]);
+  }, [latex, displayMode, generateSvgExportResult]);
 
   useEffect(() => {
+    if (
+      !IS_VSTO_CONVERT_RUNTIME ||
+      !session ||
+      !sessionId ||
+      conversionStartedRef.current
+    ) {
+      return;
+    }
+    conversionStartedRef.current = true;
+    void (async () => {
+      try {
+        // Use the immutable Session snapshot. The editor store is populated in
+        // another React effect and can still contain a previous formula during
+        // the first hidden conversion render.
+        const conversionLines = session.lines.length
+          ? session.lines
+          : [{ id: crypto.randomUUID(), latex: "" }];
+        const conversionLatex = joinFormulaLines(conversionLines);
+        const conversionDisplayMode = session.displayMode;
+        const conversionNumbered =
+          conversionDisplayMode === "block" && Boolean(session.numbered);
+        const conversionActiveLineId =
+          session.activeLineId &&
+          conversionLines.some((line) => line.id === session.activeLineId)
+            ? session.activeLineId
+            : conversionLines[0]?.id ?? null;
+        const exportResult = await generateExportResult(
+          conversionLatex,
+          conversionDisplayMode,
+        );
+        if (!exportResult?.pngBase64 || !exportResult.mathMl) {
+          throw new Error(
+            isEn
+              ? "Unable to render the formula for format conversion"
+              : "无法为格式转换生成完整公式预览",
+          );
+        }
+        await save({
+          title: session.title,
+          lines: conversionLines,
+          activeLineId: conversionActiveLineId,
+          codeFormat: normalizeOfficeCodeFormat(session.codeFormat),
+          displayMode: conversionDisplayMode,
+          numbered: conversionNumbered,
+          dirty: false,
+          status: "committing",
+          autoCommitOnClose: false,
+          exportResult,
+          exportWidth: exportResult.width,
+          exportHeight: exportResult.height,
+          error: null,
+        });
+      } catch (reason) {
+        const message =
+          reason instanceof Error
+            ? reason.message
+            : isEn
+              ? "Formula format conversion failed"
+              : "公式格式转换失败";
+        try {
+          await save({ status: "failed", error: message });
+        } catch {
+          // VSTO reports a timeout if the failure cannot be persisted.
+        }
+      } finally {
+        try {
+          await closeOfficeSessionWindow(sessionId);
+        } catch {
+          // Completion also removes the hidden conversion window.
+        }
+      }
+    })();
+  }, [session?.id, sessionId, isEn, save, generateExportResult]);
+
+  useEffect(() => {
+    if (IS_VSTO_CONVERT_RUNTIME) return;
     if (!session || !sessionId || finalizingRef.current) return;
     if (skipAutosaveForSessionRef.current === sessionId) {
       skipAutosaveForSessionRef.current = "";
@@ -437,7 +521,7 @@ export function OfficeDialogApp() {
   ]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (IS_VSTO_CONVERT_RUNTIME || !sessionId) return;
     const finalDraftUpdate = (status: "editing" | "committing") => {
       const cached = latestCompleteExportRef.current;
       const unchangedEdit = session?.mode === "edit" && !dirty;
@@ -547,6 +631,7 @@ export function OfficeDialogApp() {
   }, [toast]);
 
   useEffect(() => {
+    if (IS_VSTO_CONVERT_RUNTIME) return;
     const timer = window.setTimeout(() => {
       void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
     }, 300);
