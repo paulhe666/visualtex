@@ -1029,19 +1029,14 @@ kbd {
   justify-content: center;
 }
 
-.mathfield-host.has-pending-wrapper-placeholder::before,
 .mathfield-host.has-pending-wrapper-placeholder::after {
   content: "";
   position: absolute;
-  z-index: 3;
-  top: 50%;
-  left: 50%;
-  pointer-events: none;
-}
-
-.mathfield-host.has-pending-wrapper-placeholder::after {
+  z-index: 0;
+  top: var(--pending-wrapper-top, 50%);
+  left: var(--pending-wrapper-left, 50%);
   width: 18px;
-  height: 29px;
+  height: var(--pending-wrapper-height, 29px);
   transform: translate(-50%, -50%);
   border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border-strong));
   border-radius: 5px;
@@ -1053,18 +1048,12 @@ kbd {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent),
     0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.mathfield-host.has-pending-wrapper-placeholder::before {
-  width: 1.5px;
-  height: 17px;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 78%, var(--text));
-  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent);
+  pointer-events: none;
 }
 
 .visual-mathfield {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 92px;
   display: flex;

@@ -226,6 +226,7 @@ async function main() {
 
     if (scenario === "wrapper") {
       await focusField();
+      await typeText("abcdefghij");
       await typeText("\\mathbb");
       const nativeStructure = await waitForEvaluation(`(() => {
         const panel = document.getElementById("mathlive-suggestion-popover");
@@ -270,22 +271,56 @@ async function main() {
         const field = document.querySelector("math-field");
         const host = field?.closest(".mathfield-host");
         const placeholderStyle = host ? getComputedStyle(host, "::after") : null;
-        const caretStyle = host ? getComputedStyle(host, "::before") : null;
+        const fakeCaretStyle = host ? getComputedStyle(host, "::before") : null;
+        const nativeCaret = field?.shadowRoot?.querySelector(".ML__caret");
+        const nativeCaretStyle = nativeCaret
+          ? getComputedStyle(nativeCaret, "::after")
+          : null;
+        const nativeCaretBounds = nativeCaret?.getBoundingClientRect();
+        const hostBounds = host?.getBoundingClientRect();
+        const placeholderLeft = Number.parseFloat(
+          host?.style.getPropertyValue("--pending-wrapper-left") ?? "NaN",
+        );
+        const placeholderTop = Number.parseFloat(
+          host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN",
+        );
+        const expectedLeft =
+          nativeCaretBounds && hostBounds
+            ? nativeCaretBounds.left - hostBounds.left
+            : Number.NaN;
+        const expectedTop =
+          nativeCaretBounds && hostBounds
+            ? nativeCaretBounds.top - hostBounds.top + nativeCaretBounds.height / 2
+            : Number.NaN;
         return {
           ready:
-            field.value === "\\\\mathbb{}" &&
+            field.value === "abcdefghij\\\\mathbb{}" &&
             field.dataset.pendingWrapperCommand === "\\\\mathbb" &&
             host?.classList.contains("has-pending-wrapper-placeholder") &&
             placeholderStyle?.borderStyle === "solid" &&
             Number.parseFloat(placeholderStyle?.borderWidth ?? "0") <= 1.1 &&
-            Number.parseFloat(caretStyle?.width ?? "0") > 0 &&
+            Boolean(nativeCaret) &&
+            fakeCaretStyle?.content === "none" &&
+            nativeCaretStyle?.visibility === "visible" &&
+            nativeCaretStyle?.animationName.includes("caret-blink") &&
+            Math.abs(placeholderLeft - expectedLeft) <= 1.5 &&
+            Math.abs(placeholderTop - expectedTop) <= 1.5 &&
+            Math.abs(placeholderLeft - (hostBounds?.width ?? 0) / 2) >= 20 &&
             document.querySelectorAll("math-field").length === 1,
           value: field.value,
           pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
           placeholderClass: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
           placeholderBorderStyle: placeholderStyle?.borderStyle ?? "",
           placeholderBorderWidth: placeholderStyle?.borderWidth ?? "",
-          caretWidth: caretStyle?.width ?? "",
+          placeholderLeft,
+          placeholderTop,
+          expectedLeft,
+          expectedTop,
+          fakeCaretContent: fakeCaretStyle?.content ?? "",
+          nativeCaretVisibility: nativeCaretStyle?.visibility ?? "",
+          nativeCaretAnimation: nativeCaretStyle?.animationName ?? "",
+          nativeCaretBorder: nativeCaretStyle?.borderRightWidth ?? "",
+          hostCenter: (hostBounds?.width ?? 0) / 2,
           lineCount: document.querySelectorAll("math-field").length,
         };
       })()`, "mathbb visual empty wrapper insertion");
@@ -296,7 +331,7 @@ async function main() {
         const host = field?.closest(".mathfield-host");
         return {
           ready:
-            field.value === "\\\\mathbb{A}" &&
+            field.value === "abcdefghij\\\\mathbb{A}" &&
             !field.dataset.pendingWrapperCommand &&
             !host?.classList.contains("has-pending-wrapper-placeholder"),
           value: field.value,
@@ -309,7 +344,7 @@ async function main() {
         const field = document.querySelector("math-field");
         const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
         return {
-          ready: field?.value === "\\\\mathbb{A}B",
+          ready: field?.value === "abcdefghij\\\\mathbb{A}B",
           value: field?.value ?? "",
           mode: field?.mode ?? "",
           hasFocus: field?.hasFocus?.() ?? false,
@@ -325,7 +360,7 @@ async function main() {
       const enterState = await waitForEvaluation(`(() => {
         const fields = [...document.querySelectorAll("math-field")];
         return {
-          ready: fields.length === 2 && fields[0]?.value === "\\\\mathbb{A}B",
+          ready: fields.length === 2 && fields[0]?.value === "abcdefghij\\\\mathbb{A}B",
           lineCount: fields.length,
           values: fields.map((field) => field.value),
         };

@@ -650,6 +650,44 @@ function FormulaField(props: FormulaFieldProps) {
       content: string;
       suffix: string;
     } | null = null;
+    let wrapperPlaceholderFrame = 0;
+    const clearPendingWrapperPlaceholderPosition = () => {
+      host.style.removeProperty("--pending-wrapper-left");
+      host.style.removeProperty("--pending-wrapper-top");
+      host.style.removeProperty("--pending-wrapper-height");
+    };
+    const schedulePendingWrapperPlaceholderPosition = () => {
+      window.cancelAnimationFrame(wrapperPlaceholderFrame);
+      if (!host.classList.contains("has-pending-wrapper-placeholder")) {
+        clearPendingWrapperPlaceholderPosition();
+        return;
+      }
+      wrapperPlaceholderFrame = window.requestAnimationFrame(() => {
+        if (!field.isConnected) return;
+        const caret = field.shadowRoot?.querySelector<HTMLElement>(".ML__caret");
+        if (!caret) {
+          clearPendingWrapperPlaceholderPosition();
+          return;
+        }
+        const hostBounds = host.getBoundingClientRect();
+        const caretBounds = caret.getBoundingClientRect();
+        if (caretBounds.height <= 0) {
+          clearPendingWrapperPlaceholderPosition();
+          return;
+        }
+        const caretCenterY =
+          caretBounds.top - hostBounds.top + caretBounds.height / 2;
+        host.style.setProperty(
+          "--pending-wrapper-left",
+          `${caretBounds.left - hostBounds.left}px`,
+        );
+        host.style.setProperty("--pending-wrapper-top", `${caretCenterY}px`);
+        host.style.setProperty(
+          "--pending-wrapper-height",
+          `${Math.max(28, Math.min(72, caretBounds.height + 4))}px`,
+        );
+      });
+    };
     const syncPendingWrapperPlaceholder = () => {
       const showPlaceholder = Boolean(
         pendingWrapperInput && pendingWrapperInput.content.length === 0,
@@ -660,6 +698,7 @@ function FormulaField(props: FormulaFieldProps) {
       } else {
         delete host.dataset.pendingWrapperCommand;
       }
+      schedulePendingWrapperPlaceholderPosition();
     };
     const clearPendingWrapperInput = () => {
       pendingWrapperInput = null;
@@ -1194,9 +1233,17 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("paste", handlePaste, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
-    const resizeObserver = content ? new ResizeObserver(syncFrameSize) : null;
+    const resizeObserver = content
+      ? new ResizeObserver(() => {
+          syncFrameSize();
+          schedulePendingWrapperPlaceholderPosition();
+        })
+      : null;
     const inputMutationObserver = field.shadowRoot
-      ? new MutationObserver(scheduleInputActivity)
+      ? new MutationObserver(() => {
+          scheduleInputActivity();
+          schedulePendingWrapperPlaceholderPosition();
+        })
       : null;
     if (content) resizeObserver?.observe(content);
     if (field.shadowRoot) {
@@ -1210,6 +1257,7 @@ function FormulaField(props: FormulaFieldProps) {
 
     return () => {
       window.cancelAnimationFrame(resizeFrame);
+      window.cancelAnimationFrame(wrapperPlaceholderFrame);
       window.clearTimeout(resizeTimer);
       window.clearTimeout(backslashGuardTimer);
       resizeObserver?.disconnect();
