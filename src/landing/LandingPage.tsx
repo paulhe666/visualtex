@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
-const VERSION = "1.2.0";
-const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/releases/v${VERSION}`;
+const VERSION = "1.2.1";
+const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
 
 type PlatformId = "mac" | "windows";
