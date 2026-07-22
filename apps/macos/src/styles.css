@@ -615,6 +615,164 @@ textarea:focus-visible,
   gap: 8px;
 }
 
+.input-behavior-menu {
+  position: relative;
+  z-index: 6;
+}
+
+.canvas-input-behavior-trigger {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.canvas-input-behavior-trigger:hover,
+.canvas-input-behavior-trigger.is-active {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.canvas-input-behavior-trigger > svg:first-child {
+  color: var(--accent);
+}
+
+.canvas-input-behavior-trigger > svg:last-child {
+  color: var(--text-faint);
+  transition: transform 150ms ease;
+}
+
+.canvas-input-behavior-trigger.is-active > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.input-behavior-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(350px, calc(100vw - 28px));
+  max-height: min(420px, calc(100vh - 84px));
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+}
+
+.input-behavior-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 1px 2px 10px;
+}
+
+.input-behavior-heading strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.input-behavior-heading span {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.input-behavior-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-behavior-option {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.input-behavior-option:hover {
+  border-color: var(--border-strong);
+}
+
+.input-behavior-option > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.input-behavior-option strong {
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.input-behavior-option small {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.input-behavior-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.input-behavior-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: var(--border-strong);
+  transition: background 150ms ease;
+}
+
+.input-behavior-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 22, 30, 0.2);
+  transition: transform 150ms ease;
+}
+
+.input-behavior-option input:checked + .input-behavior-switch {
+  background: var(--accent);
+}
+
+.input-behavior-option input:checked + .input-behavior-switch::after {
+  transform: translateX(14px);
+}
+
+.input-behavior-option input:focus-visible + .input-behavior-switch {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .canvas-ocr-model {
   height: 34px;
   display: flex;
@@ -2563,7 +2721,49 @@ button:disabled {
 }
 
 .header-actions {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.file-actions {
   gap: 3px;
+  margin-right: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.file-actions .markdown-export-button {
+  margin-left: 3px;
+}
+
+.markdown-export-button {
+  height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.markdown-export-button:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.markdown-export-button:active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .action-group {
@@ -3141,6 +3341,15 @@ button:disabled {
 
   .copy-primary {
     padding: 0 9px;
+  }
+
+  .markdown-export-button {
+    width: var(--control-height);
+    padding: 0;
+  }
+
+  .markdown-export-button span {
+    display: none;
   }
 }
 

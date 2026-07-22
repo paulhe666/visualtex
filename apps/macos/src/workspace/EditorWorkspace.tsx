@@ -9,6 +9,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { MathEditor } from "../editor/MathEditor";
+import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import {
@@ -145,6 +146,7 @@ export function EditorWorkspace({
               </div>
             </div>
             <div className="canvas-tool-group">
+              <InputBehaviorMenu />
               {showOcrActions && ocrModels.length > 0 && ocrModel && (
                 <label
                   className="canvas-ocr-model"

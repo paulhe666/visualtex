@@ -48,3 +48,14 @@ export interface FormulaHistoryItem {
   latex: string;
   createdAt: number;
 }
+
+export interface InputBehaviorSettings {
+  autoExitSuperscript: boolean;
+  autoExitSubscript: boolean;
+  autoExitAccent: boolean;
+}
+
+export type InputBehaviorSettingKey =
+  | "autoExitSuperscript"
+  | "autoExitSubscript"
+  | "autoExitAccent";

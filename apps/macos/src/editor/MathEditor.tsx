@@ -12,7 +12,11 @@ import { MathfieldElement } from "mathlive";
 import { flushSync } from "react-dom";
 import { Plus } from "lucide-react";
 import type { CommandSource, LatexCommand } from "../types/command";
-import type { FormulaLine } from "../types/formula";
+import type {
+  FormulaLine,
+  InputBehaviorSettingKey,
+  InputBehaviorSettings,
+} from "../types/formula";
 import type {
   AddLineEntry,
   EditKind,
@@ -88,6 +92,7 @@ interface FormulaFieldProps {
   zoom: number;
   language: "cn" | "en";
   autoPairDelimiters: boolean;
+  inputBehavior: InputBehaviorSettings;
   register: (lineId: string, field: MathfieldElement | null) => void;
   onEdit: (edit: FormulaFieldEdit, field: MathfieldElement) => void;
   onFocus: (index: number, field: MathfieldElement) => void;
@@ -304,6 +309,72 @@ function getScriptCaretRegion(field: MathfieldElement): "upper" | "lower" | null
     : "lower";
 }
 
+const accentContainerPattern =
+  /\\(?:acute|grave|dot|ddot|dddot|ddddot|tilde|bar|breve|check|hat|vec|widehat|widetilde|overline|overrightarrow|overleftarrow|overleftrightarrow)\s*\{/;
+
+function caretIsInsideAccent(field: MathfieldElement) {
+  const currentOffset = Math.max(
+    field.position,
+    ...field.selection.ranges.flatMap(([start, end]) => [start, end]),
+  );
+  const currentDepth = field.getElementInfo(currentOffset)?.depth;
+  if (typeof currentDepth !== "number" || currentDepth <= 0) return false;
+
+  for (
+    let offset = currentOffset + 1;
+    offset <= Math.min(field.lastOffset, currentOffset + 2);
+    offset += 1
+  ) {
+    const info = field.getElementInfo(offset);
+    if (
+      typeof info?.depth === "number" &&
+      info.depth < currentDepth &&
+      accentContainerPattern.test(info.latex ?? "")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getCaretAutoExitSetting(
+  field: MathfieldElement,
+): InputBehaviorSettingKey | null {
+  if (caretIsInsideAccent(field)) return "autoExitAccent";
+
+  const scriptRegion = getScriptCaretRegion(field);
+  if (scriptRegion === "upper") return "autoExitSuperscript";
+  if (scriptRegion === "lower") return "autoExitSubscript";
+  return null;
+}
+
+function isSingleDirectInput(event: InputEvent, field: MathfieldElement) {
+  if (event.isComposing || field.mode === "latex") return false;
+  if (event.inputType !== "insertText") return false;
+  const data = event.data ?? "";
+  if (data === "\\" || Array.from(data).length !== 1) return false;
+  return true;
+}
+
+function moveCaretThroughEnabledAutoExitContainers(
+  field: MathfieldElement,
+  settings: InputBehaviorSettings,
+) {
+  let moved = false;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const setting = getCaretAutoExitSetting(field);
+    if (!setting || !settings[setting]) break;
+
+    const previousPosition = field.position;
+    const changed = field.executeCommand(
+      setting === "autoExitAccent" ? "moveToNextChar" : "moveAfterParent",
+    );
+    if (!changed && field.position === previousPosition) break;
+    moved = true;
+  }
+  return moved;
+}
+
 function templateForSelection(
   command: LatexCommand,
   selectedLatex: string,
@@ -450,6 +521,10 @@ function FormulaField(props: FormulaFieldProps) {
     } | null = null;
     let suppressBackslashReplayUntil = 0;
     let backslashGuardTimer = 0;
+    let pendingAutoExitSetting: InputBehaviorSettingKey | null = null;
+    let compositionDeleteObserved = false;
+    let suppressPostCompositionDeleteUntil = 0;
+
 
     const armPhysicalBackslashGuard = (
       kind: PhysicalBackslashInputKind,
@@ -527,36 +602,122 @@ function FormulaField(props: FormulaFieldProps) {
       field.resetUndo();
     };
     const handleCompositionStart = () => {
+      compositionDeleteObserved = false;
+      suppressPostCompositionDeleteUntil = 0;
+      const setting = getCaretAutoExitSetting(field);
+      pendingAutoExitSetting =
+        setting && propsRef.current.inputBehavior[setting] ? setting : null;
       propsRef.current.onCommitPending();
       imeGuard.compositionStart();
       compositionStartRef.current =
         lastSnapshotRef.current ?? captureFieldSnapshot(field);
     };
     const handleCompositionEnd = (event: CompositionEvent) => {
+      const cancelledByCompositionDelete =
+        event.data === "" && compositionDeleteObserved;
       imeGuard.compositionEnd(event.timeStamp);
+      suppressPostCompositionDeleteUntil = cancelledByCompositionDelete
+        ? event.timeStamp + 160
+        : 0;
+      compositionDeleteObserved = false;
       normalizeGuardedBackslashInput(event.timeStamp);
       const before =
         compositionStartRef.current ??
         lastSnapshotRef.current ??
         captureFieldSnapshot(field);
-      const after = captureFieldSnapshot(field);
+
+      // Cancelling an uncommitted macOS IME candidate with Backspace can make
+      // WKWebView/MathLive apply the same physical key to the confirmed formula.
+      // The composition contains no committed text in this case, so restore the
+      // exact pre-composition formula and selection instead of recording a delete.
+      if (event.data === "" && field.value !== before.latex) {
+        field.setValue(before.latex, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        const restored = clampSelection(before.selection, field.lastOffset);
+        field.selection = restored;
+        const restoredRange = restored.ranges.at(-1);
+        if (restoredRange) field.position = restoredRange[1];
+        field.resetUndo();
+        lastSnapshotRef.current = captureFieldSnapshot(field);
+        pendingAutoExitSetting = null;
+        compositionStartRef.current = null;
+        syncFrameSize();
+        return;
+      }
+
+      let after = captureFieldSnapshot(field);
+      if (pendingAutoExitSetting && before.latex !== after.latex) {
+        moveCaretThroughEnabledAutoExitContainers(
+          field,
+          propsRef.current.inputBehavior,
+        );
+        after = captureFieldSnapshot(field);
+      }
+      pendingAutoExitSetting = null;
       compositionStartRef.current = null;
       emitEdit(before, after, "composition", "keyboard");
       syncFrameSize();
     };
     const handleBeforeInput = (event: InputEvent) => {
       if (
+        event.inputType === "deleteContentBackward" &&
+        event.timeStamp <= suppressPostCompositionDeleteUntil
+      ) {
+        suppressPostCompositionDeleteUntil = 0;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (!event.isComposing && !imeGuard.isComposing()) {
+        pendingAutoExitSetting = null;
+        if (isSingleDirectInput(event, field)) {
+          const setting = getCaretAutoExitSetting(field);
+          if (setting && propsRef.current.inputBehavior[setting]) {
+            pendingAutoExitSetting = setting;
+          }
+        }
+      }
+      if (
         event.data === "\\" &&
         event.timeStamp <= suppressBackslashReplayUntil
       ) {
+        pendingAutoExitSetting = null;
         event.preventDefault();
         event.stopPropagation();
       }
     };
     const handleInput = (event: Event) => {
-      if (imeGuard.isComposing()) return;
+      if (imeGuard.isComposing()) {
+        if (
+          event instanceof InputEvent &&
+          event.inputType === "deleteCompositionText"
+        ) {
+          compositionDeleteObserved = true;
+        }
+        return;
+      }
       normalizeGuardedBackslashInput(event.timeStamp);
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
+      const directInputSetting =
+        event instanceof InputEvent && isSingleDirectInput(event, field)
+          ? getCaretAutoExitSetting(field)
+          : null;
+      const autoExitSetting = pendingAutoExitSetting ?? directInputSetting;
+      if (
+        autoExitSetting &&
+        propsRef.current.inputBehavior[autoExitSetting]
+      ) {
+        moveCaretThroughEnabledAutoExitContainers(
+          field,
+          propsRef.current.inputBehavior,
+        );
+      }
+      pendingAutoExitSetting = null;
       const after = captureFieldSnapshot(field);
       const inputType =
         event instanceof InputEvent ? event.inputType || "insertText" : "insertText";
@@ -698,7 +859,7 @@ function FormulaField(props: FormulaFieldProps) {
     propsRef.current.register(lineId, field);
     field.addEventListener("compositionstart", handleCompositionStart);
     field.addEventListener("compositionend", handleCompositionEnd);
-    field.addEventListener("beforeinput", handleBeforeInput);
+    field.addEventListener("beforeinput", handleBeforeInput, true);
     field.addEventListener("input", handleInput);
     field.addEventListener("selection-change", handleSelectionChange);
     field.addEventListener("focus", handleFocus);
@@ -719,7 +880,7 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSizeRef.current = null;
       field.removeEventListener("compositionstart", handleCompositionStart);
       field.removeEventListener("compositionend", handleCompositionEnd);
-      field.removeEventListener("beforeinput", handleBeforeInput);
+      field.removeEventListener("beforeinput", handleBeforeInput, true);
       field.removeEventListener("input", handleInput);
       field.removeEventListener("selection-change", handleSelectionChange);
       field.removeEventListener("focus", handleFocus);
@@ -734,6 +895,7 @@ function FormulaField(props: FormulaFieldProps) {
       fieldRef.current = null;
       lastSnapshotRef.current = null;
       compositionStartRef.current = null;
+      pendingAutoExitSetting = null;
       host.replaceChildren();
     };
   }, []);
@@ -839,6 +1001,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const autoPairDelimiters = useEditorStore(
       (state) => state.autoPairDelimiters,
     );
+    const inputBehavior = useEditorStore((state) => state.inputBehavior);
     const isEn = language === "en";
 
     linesRef.current = lines;
@@ -1247,6 +1410,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const insertionTemplate = activeQuery
         ? command.insertTemplate
         : templateForSelection(command, selectedLatex);
+      const autoExitSetting = getCaretAutoExitSetting(field);
       const historySource: FormulaEditSource =
         source === "candidate" ? "candidate" : "toolbar";
 
@@ -1281,7 +1445,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               };
             }
             const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
-            return field.insert(insertionTemplate, {
+            const inserted = field.insert(insertionTemplate, {
               mode: "math",
               format: "latex",
               insertionMode: "replaceSelection",
@@ -1289,6 +1453,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               focus: true,
               scrollIntoView: false,
             });
+            if (
+              inserted &&
+              !hasPlaceholder &&
+              autoExitSetting &&
+              inputBehavior[autoExitSetting]
+            ) {
+              moveCaretThroughEnabledAutoExitContainers(field, inputBehavior);
+            }
+            return inserted;
           },
         );
         if (!inserted) field.selection = originalSelection;
@@ -2007,6 +2180,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 zoom={zoom}
                 language={language}
                 autoPairDelimiters={autoPairDelimiters}
+                inputBehavior={inputBehavior}
                 register={registerField}
                 onEdit={handleFieldEdit}
                 onCommitPending={() => historyManager.commitPendingTransaction()}

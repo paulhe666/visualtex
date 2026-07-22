@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleHelp,
   Code2,
+  FileDown,
   FilePlus2,
   FolderOpen,
   History,
@@ -74,6 +75,7 @@ import {
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
+import { buildMarkdownDocument } from "./export/markdownExport";
 import {
   OCR_MODELS,
   cancelOcrRecognition,
@@ -668,25 +670,45 @@ function App() {
     }
   };
 
+  const getSafeDocumentTitle = () =>
+    title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
+    (isEn ? "Untitled Formula" : "未命名公式");
+
+  const downloadTextFile = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
     void historyManager.createCheckpoint("save-document");
     const document = toDocument();
-    const blob = new Blob([JSON.stringify(document, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = window.document.createElement("a");
-    const safeTitle =
-      title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
-      (isEn ? "Untitled Formula" : "未命名公式");
-    link.href = url;
-    link.download = safeTitle + ".visualtex.json";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(
+      JSON.stringify(document, null, 2),
+      `${getSafeDocumentTitle()}.visualtex.json`,
+      "application/json;charset=utf-8",
+    );
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
+  };
+
+  const exportMarkdown = () => {
+    const markdown = buildMarkdownDocument(
+      title,
+      lines.map((line) => line.latex),
+    );
+    downloadTextFile(
+      markdown,
+      `${getSafeDocumentTitle()}.md`,
+      "text/markdown;charset=utf-8",
+    );
+    setToast(isEn ? "Markdown exported" : "Markdown 已导出");
   };
 
   const openDocument = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -964,6 +986,11 @@ function App() {
                 <span>{isEn ? "Save document" : "保存文档"}</span>
                 <kbd>⌘S</kbd>
               </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(exportMarkdown)}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
+                <kbd>.md</kbd>
+              </button>
               <div className="app-menu-divider" />
               <button
                 type="button"
@@ -1062,6 +1089,16 @@ function App() {
             </button>
             <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · ⌘S" : "保存到本地 · ⌘S"}>
               <Save size={17} />
+            </button>
+            <button
+              type="button"
+              className="markdown-export-button"
+              onClick={exportMarkdown}
+              aria-label={isEn ? "Export Markdown" : "导出 Markdown"}
+              title={isEn ? "Export Markdown (.md)" : "导出 Markdown (.md)"}
+            >
+              <FileDown size={16} />
+              <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
             </button>
           </div>
           <div className="action-group edit-actions">
