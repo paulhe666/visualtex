@@ -186,21 +186,57 @@ function normalizedTokenText(element: Element) {
     .replaceAll("\u00a0", " ");
 }
 
-type RunStyle = "math" | "plain" | "normal";
+type OmmlScript =
+  | "roman"
+  | "script"
+  | "fraktur"
+  | "double-struck"
+  | "sans-serif"
+  | "monospace";
 
-function ommlRun(value: string, style: RunStyle = "math") {
+type OmmlStyle = "p" | "b" | "i" | "bi";
+
+interface OmmlRunProperties {
+  normalText?: boolean;
+  script?: OmmlScript;
+  style?: OmmlStyle;
+}
+
+const MATH_VARIANT_RUN_PROPERTIES: Record<string, OmmlRunProperties> = {
+  normal: { normalText: true, script: "roman", style: "p" },
+  upright: { normalText: true, script: "roman", style: "p" },
+  bold: { script: "roman", style: "b" },
+  italic: { script: "roman", style: "i" },
+  "bold-italic": { script: "roman", style: "bi" },
+  "double-struck": { script: "double-struck", style: "p" },
+  script: { script: "script", style: "p" },
+  "bold-script": { script: "script", style: "b" },
+  fraktur: { script: "fraktur", style: "p" },
+  "bold-fraktur": { script: "fraktur", style: "b" },
+  "sans-serif": { script: "sans-serif", style: "p" },
+  "bold-sans-serif": { script: "sans-serif", style: "b" },
+  "sans-serif-italic": { script: "sans-serif", style: "i" },
+  "sans-serif-bold-italic": { script: "sans-serif", style: "bi" },
+  monospace: { script: "monospace", style: "p" },
+};
+
+function ommlRun(value: string, properties: OmmlRunProperties = {}) {
   const text = sanitizeXmlText(value);
   if (!text) return "";
-  const properties =
-    style === "plain"
-      ? '<m:rPr><m:sty m:val="p"/></m:rPr>'
-      : style === "normal"
-        ? "<m:rPr><m:nor/></m:rPr>"
-        : "";
+  const propertyBody = [
+    properties.normalText ? "<m:nor/>" : "",
+    properties.script
+      ? `<m:scr m:val="${escapeXmlAttribute(properties.script)}"/>`
+      : "",
+    properties.style
+      ? `<m:sty m:val="${escapeXmlAttribute(properties.style)}"/>`
+      : "",
+  ].join("");
+  const runProperties = propertyBody ? `<m:rPr>${propertyBody}</m:rPr>` : "";
   const preserve = /^\s|\s$|\s{2,}/.test(text)
     ? ' xml:space="preserve"'
     : "";
-  return `<m:r>${properties}<m:t${preserve}>${escapeXmlText(text)}</m:t></m:r>`;
+  return `<m:r>${runProperties}<m:t${preserve}>${escapeXmlText(text)}</m:t></m:r>`;
 }
 
 function elementChildren(element: Element) {
@@ -240,20 +276,42 @@ function parseMathMl(latex: string, displayMode: OmmlDisplayMode) {
   return documentObject.documentElement;
 }
 
-function tokenRunStyle(element: Element): RunStyle {
+function effectiveMathVariant(element: Element) {
+  let current: Element | null = element;
+  while (current) {
+    const variant = current.getAttribute("mathvariant")?.trim();
+    if (variant) {
+      return variant.toLowerCase().replace(/[\s_]+/g, "-");
+    }
+    current = current.parentElement;
+  }
+  return "";
+}
+
+function tokenRunProperties(element: Element): OmmlRunProperties {
   const name = elementName(element);
-  if (name === "mtext" || name === "ms") return "normal";
-  if (name === "mn" || name === "mo") return "plain";
-  const variant = element.getAttribute("mathvariant")?.toLowerCase() ?? "";
-  if (variant.includes("normal") || variant.includes("upright")) {
-    // Word needs the explicit OMML normal-text flag for upright identifiers.
-    // A plain-style run alone is not reliable for d/e/i/j after DOCX transfer.
-    return "normal";
+  const variant = effectiveMathVariant(element);
+  const explicitProperties = variant
+    ? MATH_VARIANT_RUN_PROPERTIES[variant]
+    : undefined;
+
+  if (name === "mtext" || name === "ms") {
+    return explicitProperties
+      ? { ...explicitProperties, normalText: true }
+      : { normalText: true };
   }
-  if (variant.includes("sans-serif") || variant.includes("monospace")) {
-    return "plain";
+  if (explicitProperties) return explicitProperties;
+
+  if (name === "mn" || name === "mo") {
+    return { script: "roman", style: "p" };
   }
-  return "math";
+  if (name === "mi") {
+    const tokenLength = Array.from(normalizedTokenText(element).trim()).length;
+    return tokenLength > 1
+      ? { script: "roman", style: "p" }
+      : {};
+  }
+  return {};
 }
 
 function mspaceText(element: Element) {
@@ -622,7 +680,7 @@ function convertFenced(element: Element) {
   const separator = Array.from(separators)[0] ?? ",";
   const body = children
     .map((child, index) =>
-      `${index > 0 ? ommlRun(separator, "plain") : ""}${convertElement(child)}`,
+      `${index > 0 ? ommlRun(separator, { script: "roman", style: "p" }) : ""}${convertElement(child)}`,
     )
     .join("");
   return ommlDelimiter(begin, end, body);
@@ -661,9 +719,9 @@ function convertElement(element: Element): string {
     case "mo":
     case "mtext":
     case "ms":
-      return ommlRun(normalizedTokenText(element), tokenRunStyle(element));
+      return ommlRun(normalizedTokenText(element), tokenRunProperties(element));
     case "mspace":
-      return ommlRun(mspaceText(element), "plain");
+      return ommlRun(mspaceText(element), { script: "roman", style: "p" });
     case "mfrac":
       return convertFraction(element);
     case "msqrt":
@@ -712,7 +770,7 @@ function convertElement(element: Element): string {
     default: {
       const children = elementChildren(element);
       if (children.length > 0) return convertSequence(children);
-      return ommlRun(normalizedTokenText(element), "math");
+      return ommlRun(normalizedTokenText(element));
     }
   }
 }

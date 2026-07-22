@@ -124,6 +124,17 @@ async function main() {
       String.raw`\frac{a}{b}+dddc`,
       String.raw`\int_a^b x\,dy`,
       String.raw`\differentialD x+\capitalDifferentialD y+\exponentialE^{\imaginaryI x}+\imaginaryJ`,
+      String.raw`\mathrm{x}`,
+      String.raw`\mathbf{A+1}`,
+      String.raw`\mathit{x}`,
+      String.raw`\boldsymbol{\alpha}`,
+      String.raw`\mathbb{R}`,
+      String.raw`\mathcal{G}`,
+      String.raw`\mathscr{g}`,
+      String.raw`\mathfrak{g}`,
+      String.raw`\mathsf{x}`,
+      String.raw`\mathtt{x}`,
+      String.raw`\operatorname{sin}x`,
       String.raw`\sum_{b}^{a}xc`,
       String.raw`\sqrt{x}`,
       String.raw`x_i^2`,
@@ -160,6 +171,17 @@ async function main() {
       fraction,
       integral,
       uprightSymbols,
+      roman,
+      bold,
+      italic,
+      boldItalic,
+      doubleStruck,
+      calligraphic,
+      scriptVariant,
+      fraktur,
+      sansSerif,
+      monospace,
+      operatorName,
       sum,
       root,
       scripts,
@@ -189,6 +211,28 @@ async function main() {
     for (const symbol of ["d", "D", "e", "i", "j"]) {
       expectIncludes(uprightSymbols, `<m:t>${symbol}</m:t>`, `Upright ${symbol} must survive OMML conversion.`);
     }
+
+    expectIncludes(roman, "<m:nor/>", "mathrm must retain Word's explicit upright marker.");
+    expectIncludes(roman, '<m:scr m:val="roman"/>', "mathrm must use the OMML roman script.");
+    expectIncludes(roman, '<m:sty m:val="p"/>', "mathrm must use plain OMML style.");
+
+    expect((bold.match(/<m:sty m:val="b"\/>/g) ?? []).length >= 3, "mathbf must preserve bold style on identifiers, operators and numbers.");
+    expectIncludes(bold, '<m:scr m:val="roman"/>', "mathbf must use the OMML roman script.");
+    expectIncludes(italic, '<m:sty m:val="i"/>', "mathit must use italic OMML style.");
+    expectIncludes(boldItalic, '<m:sty m:val="bi"/>', "boldsymbol must use bold-italic OMML style.");
+    expectIncludes(boldItalic, "<m:t>α</m:t>", "boldsymbol must preserve Greek characters.");
+
+    expectIncludes(doubleStruck, '<m:scr m:val="double-struck"/>', "mathbb must use the OMML double-struck script.");
+    expectIncludes(calligraphic, '<m:scr m:val="script"/>', "mathcal must use the OMML script alphabet.");
+    expectIncludes(scriptVariant, '<m:scr m:val="script"/>', "mathscr must use the OMML script alphabet.");
+    expectIncludes(fraktur, '<m:scr m:val="fraktur"/>', "mathfrak must use the OMML fraktur alphabet.");
+    expectIncludes(sansSerif, '<m:scr m:val="sans-serif"/>', "mathsf must use the OMML sans-serif alphabet.");
+    expectIncludes(monospace, '<m:scr m:val="monospace"/>', "mathtt must use the OMML monospace alphabet.");
+
+    expect(
+      /<m:r><m:rPr><m:scr m:val="roman"\/><m:sty m:val="p"\/><\/m:rPr><m:t>sin<\/m:t><\/m:r>/.test(operatorName),
+      "Multi-character operator names must default to upright roman OMML runs.",
+    );
 
     expectIncludes(sum, '<m:chr m:val="∑"/>', "Summation must use an OMML n-ary operator.");
     expectIncludes(sum, '<m:limLoc m:val="undOvr"/>', "Summation limits must use above-and-below placement.");
@@ -228,9 +272,13 @@ async function main() {
       (async () => {
         const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
         const artifacts = module.latexLinesToOmmlArtifacts([String.raw\`\\frac{a}{b}\`], 'inline');
+        const fontArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\mathrm{x}+\\mathbf{A+1}+\\mathit{x}+\\boldsymbol{\\alpha}+\\mathbb{R}+\\mathcal{G}+\\mathscr{g}+\\mathfrak{g}+\\mathsf{x}+\\mathtt{x}\`,
+        ], 'inline');
         return {
           ommlBase64: artifacts.ommlBase64,
           ommlDocxBase64: artifacts.ommlDocxBase64,
+          fontOmmlDocxBase64: fontArtifacts.ommlDocxBase64,
         };
       })()
     `;
@@ -245,8 +293,10 @@ async function main() {
     const artifacts = docxEvaluation.result?.value;
     const docxBase64 = artifacts?.ommlDocxBase64;
     const ommlBase64 = artifacts?.ommlBase64;
+    const fontDocxBase64 = artifacts?.fontOmmlDocxBase64;
     expect(typeof docxBase64 === "string" && docxBase64.length > 100, "OMML DOCX export is missing.");
     expect(typeof ommlBase64 === "string" && ommlBase64.length > 100, "OMML Base64URL export is missing.");
+    expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
     docxDirectory = await mkdtemp("/tmp/visualtex-omml-docx-");
     const docxPath = join(docxDirectory, "fraction.docx");
     await writeFile(docxPath, Buffer.from(docxBase64, "base64url"));
@@ -257,6 +307,46 @@ async function main() {
       { encoding: "utf8" },
     );
     expectIncludes(documentXml, "<m:f>", "Generated DOCX must contain the structural fraction.");
+
+    const fontDocxPath = join(docxDirectory, "font-variants.docx");
+    await writeFile(fontDocxPath, Buffer.from(fontDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", fontDocxPath]);
+    const fontDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", fontDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    for (const script of [
+      "roman",
+      "double-struck",
+      "script",
+      "fraktur",
+      "sans-serif",
+      "monospace",
+    ]) {
+      expectIncludes(
+        fontDocumentXml,
+        `<m:scr m:val="${script}"/>`,
+        `Generated DOCX must preserve the ${script} OMML script.`,
+      );
+    }
+    for (const style of ["p", "b", "i", "bi"]) {
+      expectIncludes(
+        fontDocumentXml,
+        `<m:sty m:val="${style}"/>`,
+        `Generated DOCX must preserve the ${style} OMML style.`,
+      );
+    }
+
+    const roundtripRoot = process.env.VISUALTEX_OMML_ROUNDTRIP_ROOT;
+    if (roundtripRoot) {
+      await mkdir(roundtripRoot, { recursive: true, mode: 0o700 });
+      const sourcePath = join(roundtripRoot, "font-variants-source.docx");
+      await writeFile(sourcePath, Buffer.from(fontDocxBase64, "base64url"), {
+        mode: 0o600,
+      });
+      console.log(`Font-variant Word round-trip source written to ${sourcePath}.`);
+    }
 
     const persistentRoot = process.env.VISUALTEX_WORD_REGRESSION_ROOT;
     if (persistentRoot) {
