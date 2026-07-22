@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Braces,
   Code2,
+  FileDown,
   Minus,
   PanelBottomClose,
   PanelBottomOpen,
@@ -28,11 +29,13 @@ import type { EditorWorkspaceProps } from "./workspaceTypes";
 
 export function EditorWorkspace({
   mode,
+  showFileActions,
   showOfficeActions,
   showOcrActions,
   primaryActionLabel,
   onPrimaryAction,
   onCancel,
+  onExportMarkdown,
   editorRef,
   sidebarOpen,
   onSidebarOpenChange,
@@ -146,6 +149,18 @@ export function EditorWorkspace({
               </div>
             </div>
             <div className="canvas-tool-group">
+              {showFileActions && onExportMarkdown && (
+                <button
+                  type="button"
+                  className="markdown-export-button workspace-markdown-export"
+                  onClick={onExportMarkdown}
+                  aria-label={isEn ? "Export Markdown" : "导出 Markdown"}
+                  title={isEn ? "Export Markdown (.md)" : "导出 Markdown (.md)"}
+                >
+                  <FileDown size={16} />
+                  <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
+                </button>
+              )}
               <InputBehaviorMenu />
               {showOcrActions && ocrModels.length > 0 && ocrModel && (
                 <label

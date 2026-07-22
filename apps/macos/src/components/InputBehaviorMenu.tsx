@@ -11,7 +11,7 @@ interface InputBehaviorOption {
   descriptionEn: string;
 }
 
-const INPUT_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
+const CARET_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
   {
     key: "autoExitSuperscript",
     titleZh: "上标输入后跳出",
@@ -32,6 +32,30 @@ const INPUT_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
     titleEn: "Exit accent after input",
     descriptionZh: "适用于 hat、bar、vec、tilde、dot 等包裹结构",
     descriptionEn: "Applies to hat, bar, vec, tilde, dot and similar accents",
+  },
+  {
+    key: "autoExitWrapperCommand",
+    titleZh: "字体命令输入后跳出",
+    titleEn: "Exit font command after input",
+    descriptionZh: "默认输入一个字符后结束 mathbb、mathbf、mathcal 等字体作用域",
+    descriptionEn: "End mathbb, mathbf, mathcal and similar font scopes after one character by default",
+  },
+];
+
+const COMMAND_SUGGESTION_OPTIONS: InputBehaviorOption[] = [
+  {
+    key: "showStructuredCommandSuggestions",
+    titleZh: "求和、积分等结构候选框",
+    titleEn: "Structured command suggestions",
+    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启；不影响 MathLive 原生命令提示框",
+    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures; does not affect MathLive's native command panel",
+  },
+  {
+    key: "showOtherCommandSuggestions",
+    titleZh: "其他命令候选框",
+    titleEn: "Other command suggestions",
+    descriptionZh: "控制除求和、积分等结构外的 VisualTeX 大型候选框，默认关闭",
+    descriptionEn: "Controls the large VisualTeX panel for commands other than sums, integrals and similar structures; off by default",
   },
 ];
 
@@ -90,7 +114,37 @@ export function InputBehaviorMenu() {
           </div>
 
           <div className="input-behavior-options">
-            {INPUT_BEHAVIOR_OPTIONS.map((option) => (
+            {CARET_BEHAVIOR_OPTIONS.map((option) => (
+              <label className="input-behavior-option" key={option.key}>
+                <span>
+                  <strong>{isEn ? option.titleEn : option.titleZh}</strong>
+                  <small>
+                    {isEn ? option.descriptionEn : option.descriptionZh}
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={inputBehavior[option.key]}
+                  onChange={(event) =>
+                    setInputBehavior(option.key, event.target.checked)
+                  }
+                />
+                <span className="input-behavior-switch" aria-hidden="true" />
+              </label>
+            ))}
+          </div>
+
+          <div className="input-behavior-heading input-behavior-section-heading">
+            <strong>{isEn ? "Command suggestion panels" : "命令候选框"}</strong>
+            <span>
+              {isEn
+                ? "These switches affect only VisualTeX's large command panel, not the compact MathLive panel shown while typing LaTeX commands."
+                : "这里只控制 VisualTeX 的大型命令候选框，不控制输入 LaTeX 命令时出现的 MathLive 小型提示框。"}
+            </span>
+          </div>
+
+          <div className="input-behavior-options">
+            {COMMAND_SUGGESTION_OPTIONS.map((option) => (
               <label className="input-behavior-option" key={option.key}>
                 <span>
                   <strong>{isEn ? option.titleEn : option.titleZh}</strong>

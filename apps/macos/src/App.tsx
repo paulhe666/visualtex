@@ -1090,16 +1090,6 @@ function App() {
             <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · ⌘S" : "保存到本地 · ⌘S"}>
               <Save size={17} />
             </button>
-            <button
-              type="button"
-              className="markdown-export-button"
-              onClick={exportMarkdown}
-              aria-label={isEn ? "Export Markdown" : "导出 Markdown"}
-              title={isEn ? "Export Markdown (.md)" : "导出 Markdown (.md)"}
-            >
-              <FileDown size={16} />
-              <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
-            </button>
           </div>
           <div className="action-group edit-actions">
             <button
@@ -1269,6 +1259,7 @@ function App() {
         showUpdateActions
         showOfficeActions={false}
         showOcrActions
+        onExportMarkdown={exportMarkdown}
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}

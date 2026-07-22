@@ -8,10 +8,14 @@ import {
   forwardRef,
   type ReactNode,
 } from "react";
-import { MathfieldElement } from "mathlive";
+import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { flushSync } from "react-dom";
 import { Plus } from "lucide-react";
-import type { CommandSource, LatexCommand } from "../types/command";
+import type {
+  CommandSource,
+  CommandUsage,
+  LatexCommand,
+} from "../types/command";
 import type {
   FormulaLine,
   InputBehaviorSettingKey,
@@ -32,6 +36,7 @@ import {
 } from "../history/HistoryManager";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
 import { searchCommands } from "../autocomplete/CommandSearchEngine";
+import { commandRegistry } from "../autocomplete/commandRegistry";
 import { CommandSuggestionPopup } from "../autocomplete/CommandSuggestionPopup";
 import {
   createFormulaLine,
@@ -95,6 +100,7 @@ interface FormulaFieldProps {
   inputBehavior: InputBehaviorSettings;
   register: (lineId: string, field: MathfieldElement | null) => void;
   onEdit: (edit: FormulaFieldEdit, field: MathfieldElement) => void;
+  onInputActivity: (field: MathfieldElement) => void;
   onFocus: (index: number, field: MathfieldElement) => void;
   onCommitPending: () => void;
   onKeyDown: (index: number, event: KeyboardEvent, field: MathfieldElement) => void;
@@ -102,6 +108,115 @@ interface FormulaFieldProps {
 }
 
 const trailingCommand = /\\([\p{L}]*)$/u;
+
+function rawLatexInput(field: MathfieldElement) {
+  return Array.from(
+    field.shadowRoot?.querySelectorAll<HTMLElement>(".ML__raw-latex") ?? [],
+  )
+    .map((node) => node.textContent ?? "")
+    .join("");
+}
+
+function trailingCommandQuery(
+  field: MathfieldElement,
+  normalizedValue = field.value,
+) {
+  for (const source of [normalizedValue, field.value, rawLatexInput(field)]) {
+    const match = source.match(trailingCommand);
+    if (match) return "\\" + match[1];
+  }
+  return "";
+}
+
+function fieldValueIncludingRawQuery(
+  field: MathfieldElement,
+  activeQuery: string,
+) {
+  const value = field.value;
+  if (value.trimEnd().endsWith(activeQuery)) return value;
+  const rawInput = rawLatexInput(field);
+  if (rawInput.trimEnd().endsWith(activeQuery)) return value + rawInput;
+  return value;
+}
+
+const structuredSuggestionCommands = new Set([
+  "\\sum",
+  "\\prod",
+  "\\coprod",
+  "\\int",
+  "\\iint",
+  "\\iiint",
+  "\\oint",
+  "\\oiint",
+  "\\oiiint",
+  "\\lim",
+  "\\bigcup",
+  "\\bigcap",
+]);
+const wrapperCommandPreviews = new Map<string, string>([
+  ["\\mathbb", "\\mathbb{ABC}"],
+  ["\\mathbf", "\\mathbf{ABC}"],
+  ["\\mathit", "\\mathit{ABC}"],
+  ["\\mathop", "\\mathop{f(x)}"],
+  ["\\mathrm", "\\mathrm{ABC}"],
+  ["\\mathsf", "\\mathsf{ABC}"],
+  ["\\mathtt", "\\mathtt{ABC}"],
+  ["\\mathcal", "\\mathcal{ABC}"],
+  ["\\mathscr", "\\mathscr{gG}"],
+  ["\\mathfrak", "\\mathfrak{ABC}"],
+  ["\\boldsymbol", "\\boldsymbol{\\alpha A}"],
+  ["\\mathnormal", "\\mathnormal{ABC}"],
+]);
+
+function visibleCommandSuggestions(
+  rawQuery: string,
+  usage: Record<string, CommandUsage>,
+  personalize: boolean,
+  limit: number,
+  settings: InputBehaviorSettings,
+) {
+  return searchCommands(
+    rawQuery,
+    usage,
+    personalize,
+    commandRegistry.length,
+  )
+    .filter((command) =>
+      structuredSuggestionCommands.has(command.command)
+        ? settings.showStructuredCommandSuggestions
+        : settings.showOtherCommandSuggestions,
+    )
+    .slice(0, limit);
+}
+
+function exactWrapperCommand(rawQuery: string) {
+  const normalizedQuery = rawQuery.trim();
+  if (!wrapperCommandPreviews.has(normalizedQuery)) return null;
+  return (
+    commandRegistry.find((command) => command.command === normalizedQuery) ?? null
+  );
+}
+
+function decorateNativeSuggestionPreviews() {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel) return;
+
+  panel.querySelectorAll<HTMLElement>("li[data-command]").forEach((item) => {
+    const command = item.dataset.command ?? "";
+    const previewLatex = wrapperCommandPreviews.get(command);
+    const preview = item.querySelector<HTMLElement>(".ML__popover__command");
+    if (!previewLatex || !preview) return;
+    if (preview.dataset.visualtexPreview === previewLatex) return;
+
+    preview.innerHTML = convertLatexToMarkup(previewLatex, {
+      defaultMode: "math",
+    });
+    preview.dataset.visualtexPreview = previewLatex;
+    preview.setAttribute("aria-label", command);
+    item.classList.add("has-visualtex-command-preview");
+  });
+}
+
 const BASE_FORMULA_FONT_SIZE = 54;
 const MIN_FORMULA_FONT_SIZE = BASE_FORMULA_FONT_SIZE * 0.2;
 
@@ -312,7 +427,10 @@ function getScriptCaretRegion(field: MathfieldElement): "upper" | "lower" | null
 const accentContainerPattern =
   /\\(?:acute|grave|dot|ddot|dddot|ddddot|tilde|bar|breve|check|hat|vec|widehat|widetilde|overline|overrightarrow|overleftarrow|overleftrightarrow)\s*\{/;
 
-function caretIsInsideAccent(field: MathfieldElement) {
+function caretIsInsideLatexContainer(
+  field: MathfieldElement,
+  containerPattern: RegExp,
+) {
   const currentOffset = Math.max(
     field.position,
     ...field.selection.ranges.flatMap(([start, end]) => [start, end]),
@@ -329,12 +447,16 @@ function caretIsInsideAccent(field: MathfieldElement) {
     if (
       typeof info?.depth === "number" &&
       info.depth < currentDepth &&
-      accentContainerPattern.test(info.latex ?? "")
+      containerPattern.test(info.latex ?? "")
     ) {
       return true;
     }
   }
   return false;
+}
+
+function caretIsInsideAccent(field: MathfieldElement) {
+  return caretIsInsideLatexContainer(field, accentContainerPattern);
 }
 
 function getCaretAutoExitSetting(
@@ -522,6 +644,28 @@ function FormulaField(props: FormulaFieldProps) {
     let suppressBackslashReplayUntil = 0;
     let backslashGuardTimer = 0;
     let pendingAutoExitSetting: InputBehaviorSettingKey | null = null;
+    let pendingWrapperInput: {
+      command: string;
+      prefix: string;
+      content: string;
+      suffix: string;
+    } | null = null;
+    const syncPendingWrapperPlaceholder = () => {
+      const showPlaceholder = Boolean(
+        pendingWrapperInput && pendingWrapperInput.content.length === 0,
+      );
+      host.classList.toggle("has-pending-wrapper-placeholder", showPlaceholder);
+      if (showPlaceholder && pendingWrapperInput) {
+        host.dataset.pendingWrapperCommand = pendingWrapperInput.command;
+      } else {
+        delete host.dataset.pendingWrapperCommand;
+      }
+    };
+    const clearPendingWrapperInput = () => {
+      pendingWrapperInput = null;
+      delete field.dataset.pendingWrapperCommand;
+      syncPendingWrapperPlaceholder();
+    };
     let compositionDeleteObserved = false;
     let suppressPostCompositionDeleteUntil = 0;
 
@@ -664,6 +808,93 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSize();
     };
     const handleBeforeInput = (event: InputEvent) => {
+      if (pendingWrapperInput && !event.isComposing) {
+        if (event.inputType === "insertText" && event.data !== null) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          const before = captureFieldSnapshot(field);
+          const inputCharacters = Array.from(event.data);
+          const autoExit =
+            propsRef.current.inputBehavior.autoExitWrapperCommand &&
+            inputCharacters.length > 0;
+          const wrappedInput = autoExit
+            ? inputCharacters.slice(0, 1).join("")
+            : event.data;
+          const trailingInput = autoExit
+            ? inputCharacters.slice(1).join("")
+            : "";
+          if (
+            pendingWrapperInput.command === "\\mathcal" &&
+            pendingWrapperInput.content.length === 0 &&
+            /^[a-z]$/.test(wrappedInput)
+          ) {
+            pendingWrapperInput.command = "\\mathscr";
+            field.dataset.pendingWrapperCommand = "\\mathscr";
+          }
+          pendingWrapperInput.content += wrappedInput;
+          syncPendingWrapperPlaceholder();
+          const nextValue =
+            pendingWrapperInput.prefix +
+            pendingWrapperInput.command +
+            "{" +
+            pendingWrapperInput.content +
+            "}" +
+            pendingWrapperInput.suffix +
+            trailingInput;
+          field.setValue(nextValue, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.mode = "math";
+          field.position = field.lastOffset;
+          field.focus();
+          if (autoExit) clearPendingWrapperInput();
+          field.shadowRoot
+            ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+            ?.focus({ preventScroll: true });
+          const after = captureFieldSnapshot(field);
+          emitEdit(before, after, "insert", "keyboard");
+          syncFrameSize();
+          return;
+        }
+        if (event.inputType === "deleteContentBackward") {
+          if (pendingWrapperInput.content) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const before = captureFieldSnapshot(field);
+            pendingWrapperInput.content = Array.from(
+              pendingWrapperInput.content,
+            )
+              .slice(0, -1)
+              .join("");
+            syncPendingWrapperPlaceholder();
+            const nextValue =
+              pendingWrapperInput.prefix +
+              pendingWrapperInput.command +
+              "{" +
+              pendingWrapperInput.content +
+              "}" +
+              pendingWrapperInput.suffix;
+            field.setValue(nextValue, {
+              mode: "math",
+              format: "latex",
+              insertionMode: "replaceAll",
+              selectionMode: "after",
+              silenceNotifications: true,
+            });
+            field.position = field.lastOffset;
+            field.focus();
+            const after = captureFieldSnapshot(field);
+            emitEdit(before, after, "delete-backward", "keyboard");
+            syncFrameSize();
+            return;
+          }
+          clearPendingWrapperInput();
+        }
+      }
       if (
         event.inputType === "deleteContentBackward" &&
         event.timeStamp <= suppressPostCompositionDeleteUntil
@@ -727,7 +958,13 @@ function FormulaField(props: FormulaFieldProps) {
         inferEditKind(inputType, before.selection),
         inferEditSource(inputType),
       );
+      propsRef.current.onInputActivity(field);
       syncFrameSize();
+      window.requestAnimationFrame(() => {
+        if (!field.isConnected) return;
+        propsRef.current.onInputActivity(field);
+        decorateNativeSuggestionPreviews();
+      });
     };
     const handleSelectionChange = () => {
       if (imeGuard.isComposing() || !lastSnapshotRef.current) return;
@@ -741,7 +978,86 @@ function FormulaField(props: FormulaFieldProps) {
       lastSnapshotRef.current = captureFieldSnapshot(field);
     };
     const handleBlur = () => {
+      clearPendingWrapperInput();
       propsRef.current.onCommitPending();
+    };
+    const confirmRawWrapperCommand = (event: KeyboardEvent) => {
+      if (
+        pendingWrapperInput ||
+        event.isComposing ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        !(
+          event.key === "Enter" ||
+          event.key === "Tab" ||
+          event.key === " " ||
+          event.code === "Space"
+        )
+      ) {
+        return false;
+      }
+
+      const wrapperQuery = trailingCommandQuery(field);
+      const rawFieldValue = wrapperQuery
+        ? fieldValueIncludingRawQuery(field, wrapperQuery)
+        : field.value;
+      const wrapperCommand = wrapperQuery
+        ? exactWrapperCommand(wrapperQuery)
+        : null;
+      if (
+        !wrapperCommand ||
+        (field.mode !== "latex" && field.lastOffset !== 0)
+      ) {
+        return false;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      pendingAutoExitSetting = null;
+      const before = captureFieldSnapshot(field);
+      const queryStart = rawFieldValue.length - wrapperQuery.length;
+      const prefix = rawFieldValue.slice(0, queryStart);
+      const suffix = "";
+      const emptyTemplate = wrapperCommand.insertTemplate.replace(
+        /\\placeholder\{\}/g,
+        "",
+      );
+      const nextValue = prefix + emptyTemplate + suffix;
+      pendingWrapperInput = {
+        command: wrapperCommand.command,
+        prefix,
+        content: "",
+        suffix,
+      };
+      field.dataset.pendingWrapperCommand = wrapperCommand.command;
+      syncPendingWrapperPlaceholder();
+      field.setValue(nextValue, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.mode = "math";
+      field.position = field.lastOffset;
+      field.focus();
+      const after = captureFieldSnapshot(field);
+      emitEdit(before, after, "replace", "candidate");
+      syncFrameSize();
+      return true;
+    };
+    const handleRawWrapperKeyDown = (event: KeyboardEvent) => {
+      if (event.key === " " || event.code === "Space") {
+        confirmRawWrapperCommand(event);
+      }
+    };
+    const scheduleInputActivity = () => {
+      window.requestAnimationFrame(() => {
+        if (!field.isConnected) return;
+        propsRef.current.onInputActivity(field);
+        decorateNativeSuggestionPreviews();
+      });
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       const isUnmodifiedPhysicalBackslash =
@@ -779,6 +1095,9 @@ function FormulaField(props: FormulaFieldProps) {
         compositionStartRef.current = null;
         lastSnapshotRef.current = captureFieldSnapshot(field);
       }
+
+      if (confirmRawWrapperCommand(event)) return;
+
       propsRef.current.onKeyDown(propsRef.current.index, event, field);
     };
     const handlePaste = (event: ClipboardEvent) => {
@@ -809,6 +1128,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      clearPendingWrapperInput();
       propsRef.current.onCommitPending();
 
       const content = field.shadowRoot?.querySelector<HTMLElement>(
@@ -865,11 +1185,27 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
     field.addEventListener("keydown", handleKeyDown, true);
+    const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
+      '[part="keyboard-sink"]',
+    );
+    keyboardSink?.addEventListener("keydown", handleRawWrapperKeyDown, true);
+    keyboardSink?.addEventListener("input", scheduleInputActivity, true);
+    keyboardSink?.addEventListener("keyup", scheduleInputActivity, true);
     field.addEventListener("paste", handlePaste, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
     const resizeObserver = content ? new ResizeObserver(syncFrameSize) : null;
+    const inputMutationObserver = field.shadowRoot
+      ? new MutationObserver(scheduleInputActivity)
+      : null;
     if (content) resizeObserver?.observe(content);
+    if (field.shadowRoot) {
+      inputMutationObserver?.observe(field.shadowRoot, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    }
     syncFrameSize();
 
     return () => {
@@ -877,6 +1213,7 @@ function FormulaField(props: FormulaFieldProps) {
       window.clearTimeout(resizeTimer);
       window.clearTimeout(backslashGuardTimer);
       resizeObserver?.disconnect();
+      inputMutationObserver?.disconnect();
       syncFrameSizeRef.current = null;
       field.removeEventListener("compositionstart", handleCompositionStart);
       field.removeEventListener("compositionend", handleCompositionEnd);
@@ -886,6 +1223,9 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
       field.removeEventListener("keydown", handleKeyDown, true);
+      keyboardSink?.removeEventListener("keydown", handleRawWrapperKeyDown, true);
+      keyboardSink?.removeEventListener("input", scheduleInputActivity, true);
+      keyboardSink?.removeEventListener("keyup", scheduleInputActivity, true);
       field.removeEventListener("paste", handlePaste, true);
       host.removeEventListener("pointerdown", handlePointerDown, true);
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
@@ -896,6 +1236,7 @@ function FormulaField(props: FormulaFieldProps) {
       lastSnapshotRef.current = null;
       compositionStartRef.current = null;
       pendingAutoExitSetting = null;
+      clearPendingWrapperInput();
       host.replaceChildren();
     };
   }, []);
@@ -1012,9 +1353,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const suggestions = useMemo(
       () =>
         query
-          ? searchCommands(query, usage, personalize, suggestionCount)
+          ? visibleCommandSuggestions(
+              query,
+              usage,
+              personalize,
+              suggestionCount,
+              inputBehavior,
+            )
           : [],
-      [query, usage, personalize, suggestionCount],
+      [query, usage, personalize, suggestionCount, inputBehavior],
     );
 
     const selectSuggestionIndex = (index: number) => {
@@ -1180,11 +1527,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       field: MathfieldElement,
       normalized: string,
     ) => {
+      const activeCommandQuery = trailingCommandQuery(field, normalized);
       const suppressed = suppressedSuggestionRef.current;
       if (suppressed) {
         if (
           suppressed.lineId === lineId &&
-          suppressed.value.trim() === normalized.trim()
+          suppressed.value.trim() === normalized.trim() &&
+          !activeCommandQuery
         ) {
           queryRef.current = "";
           setQuery("");
@@ -1193,9 +1542,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         suppressedSuggestionRef.current = null;
       }
 
-      const match = normalized.match(trailingCommand);
-      if (match) {
-        setQuery("\\" + match[1]);
+      if (activeCommandQuery) {
+        setQuery(activeCommandQuery);
         selectSuggestionIndex(0);
         requestAnimationFrame(() => updatePopupPosition(field));
       } else {
@@ -1398,7 +1746,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const queryRange = activeQuery
         ? findTrailingCommandRange(field, activeQuery)
         : null;
-      if (activeQuery && !queryRange) {
+      const rawFieldValue = activeQuery
+        ? fieldValueIncludingRawQuery(field, activeQuery)
+        : field.value;
+      const rawFieldValueWithoutTrailingSpace = rawFieldValue.trimEnd();
+      const replacesRawCommand = Boolean(
+        activeQuery &&
+          rawFieldValueWithoutTrailingSpace.endsWith(activeQuery) &&
+          (field.mode === "latex" || field.lastOffset === 0),
+      );
+      if (activeQuery && !queryRange && !replacesRawCommand) {
         setQuery("");
         selectSuggestionIndex(0);
         return;
@@ -1438,13 +1795,31 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           field,
           historySource,
           () => {
+            const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
+            if (replacesRawCommand) {
+              const queryEnd = rawFieldValueWithoutTrailingSpace.length;
+              const queryStart = queryEnd - activeQuery.length;
+              const trailingSpace = rawFieldValue.slice(queryEnd);
+              const nextValue =
+                rawFieldValue.slice(0, queryStart) +
+                insertionTemplate +
+                trailingSpace;
+              field.setValue(nextValue, {
+                mode: "math",
+                format: "latex",
+                insertionMode: "replaceAll",
+                selectionMode: hasPlaceholder ? "placeholder" : "after",
+                silenceNotifications: true,
+              });
+              field.focus();
+              return true;
+            }
             if (queryRange) {
               field.selection = {
                 ranges: [queryRange],
                 direction: "forward",
               };
             }
-            const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
             const inserted = field.insert(insertionTemplate, {
               mode: "math",
               format: "latex",
@@ -1615,21 +1990,42 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const suppressesCurrentTrailingCommand =
         suppressedSuggestion?.lineId === lineId &&
         suppressedSuggestion.value.trim() === normalizedFieldValue.trim();
-      const liveMatch = suppressesCurrentTrailingCommand
-        ? null
-        : field.value.match(trailingCommand);
-      const liveQuery = liveMatch ? "\\" + liveMatch[1] : "";
+      const liveQuery = suppressesCurrentTrailingCommand
+        ? ""
+        : trailingCommandQuery(field);
       const candidateQuery = suppressesCurrentTrailingCommand
         ? ""
         : liveQuery || query;
+      const currentState = useEditorStore.getState();
       const liveSuggestions = candidateQuery
-        ? searchCommands(
+        ? visibleCommandSuggestions(
             candidateQuery,
-            useEditorStore.getState().usage,
-            useEditorStore.getState().personalize,
-            useEditorStore.getState().suggestionCount,
+            currentState.usage,
+            currentState.personalize,
+            currentState.suggestionCount,
+            currentState.inputBehavior,
           )
         : [];
+      const wrapperQuery = trailingCommandQuery(field) || candidateQuery;
+      const wrapperCommand = wrapperQuery
+        ? exactWrapperCommand(wrapperQuery)
+        : null;
+      const confirmsWrapperCommand =
+        wrapperCommand &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "Enter" ||
+          event.key === "Tab" ||
+          event.key === " " ||
+          event.code === "Space");
+
+      if (confirmsWrapperCommand) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertCommand(wrapperCommand, "candidate", wrapperQuery);
+        return;
+      }
 
       if (liveSuggestions.length) {
         if (event.key === "ArrowDown") {
@@ -1732,13 +2128,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const visibleLatex = field
           .getValue("latex-without-placeholders")
           .trim();
+        const rawCommandInput = rawLatexInput(field);
 
-        if (visibleLatex === "" && linesRef.current.length > 1) {
-          event.preventDefault();
-          event.stopPropagation();
-          removeEmptyLine(index);
-          return;
-        }
+        // While MathLive is collecting a raw LaTeX command such as `\\mat`,
+        // its public formula value is intentionally still empty. Let MathLive
+        // consume Backspace/Delete natively so one physical key removes one
+        // raw command character instead of being mistaken for an empty row.
+        if (field.mode === "latex" || rawCommandInput) return;
 
         // Preserve MathLive's native word/line deletion shortcuts such as
         // Option+Backspace and Command+Backspace on macOS.
@@ -2183,6 +2579,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 inputBehavior={inputBehavior}
                 register={registerField}
                 onEdit={handleFieldEdit}
+                onInputActivity={(field) =>
+                  refreshSuggestionQuery(
+                    lineId,
+                    field,
+                    normalizeChineseLatex(field.value),
+                  )
+                }
                 onCommitPending={() => historyManager.commitPendingTransaction()}
                 onFocus={(_lineIndex, field) => {
                   setActiveLine(lineId);

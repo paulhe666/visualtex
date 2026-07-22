@@ -689,6 +689,12 @@ textarea:focus-visible,
   line-height: 1.45;
 }
 
+.input-behavior-section-heading {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .input-behavior-options {
   display: flex;
   flex-direction: column;
@@ -1016,10 +1022,46 @@ kbd {
 }
 
 .mathfield-host {
+  position: relative;
   width: min(900px, 100%);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.mathfield-host.has-pending-wrapper-placeholder::before,
+.mathfield-host.has-pending-wrapper-placeholder::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+}
+
+.mathfield-host.has-pending-wrapper-placeholder::after {
+  width: 18px;
+  height: 29px;
+  transform: translate(-50%, -50%);
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border-strong));
+  border-radius: 5px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 58%, transparent),
+    color-mix(in srgb, var(--surface) 74%, transparent)
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent),
+    0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.mathfield-host.has-pending-wrapper-placeholder::before {
+  width: 1.5px;
+  height: 17px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 78%, var(--text));
+  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .visual-mathfield {
@@ -2764,6 +2806,13 @@ button:disabled {
 
 .markdown-export-button:active {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.workspace-markdown-export {
+  height: 34px;
+  padding-inline: 11px;
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .action-group {
@@ -5466,6 +5515,20 @@ html body #mathlive-suggestion-popover .ML__popover__command {
   font-size: 1.3rem !important;
 }
 
+html body #mathlive-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
+  min-width: 126px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 1.1rem !important;
+}
+
+html body #mathlive-suggestion-popover li.has-visualtex-command-preview .ML__popover__command > span {
+  max-width: 100%;
+}
+
 html body #mathlive-suggestion-popover li.ML__popover__current {
   border-color: var(--accent-border) !important;
   border-radius: 7px !important;
@@ -5716,45 +5779,55 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   white-space: nowrap;
 }
 
-.matrix-dimension-row {
+.matrix-size-picker {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
-  gap: 7px;
+  gap: 6px;
 }
 
-.matrix-dimension-row > span {
-  padding-bottom: 8px;
-  color: var(--text-faint);
-  font-size: 12px;
-}
-
-.matrix-dimension-row label {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.matrix-dimension-row label > span {
+.matrix-size-picker-label {
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 600;
+  line-height: 1.35;
 }
 
-.matrix-dimension-row select {
-  width: 100%;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
+.matrix-size-grid {
+  width: min(100%, 226px);
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
+  margin-inline: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
   background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
-.matrix-dimension-row select:focus-visible {
+.matrix-size-cell {
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
+}
+
+.matrix-size-cell:hover,
+.matrix-size-cell:focus-visible,
+.matrix-size-cell.is-previewed {
   border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.matrix-size-cell.is-selected-corner {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.matrix-size-cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .matrix-insert-button {

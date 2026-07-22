@@ -405,6 +405,27 @@ def atomic_write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
+def cleanup_stale_output_temporaries() -> None:
+    if not OUTPUT_ROOT.is_dir():
+        return
+    stale = [
+        path
+        for path in OUTPUT_ROOT.iterdir()
+        if path.is_file()
+        and path.name.startswith(".")
+        and path.name.endswith(".tmp")
+    ]
+    if not stale:
+        return
+    total_bytes = sum(path.stat().st_size for path in stale)
+    for path in stale:
+        path.unlink(missing_ok=True)
+    print(
+        f"Removed {len(stale)} stale OCR build temporary files "
+        f"({total_bytes / 1024 / 1024:.1f} MB)."
+    )
+
+
 def verify_manifest_outputs(manifest: dict[str, Any]) -> None:
     archives = manifest.get("archives")
     if not isinstance(archives, dict) or not archives:
@@ -547,6 +568,8 @@ def default_model_archive_is_reusable(manifest: dict[str, Any]) -> bool:
 
 
 def build_default_bundle(force: bool) -> None:
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    cleanup_stale_output_temporaries()
     fingerprint = build_fingerprint()
     manifest_path = OUTPUT_ROOT / "manifest.json"
     current: dict[str, Any] | None = None

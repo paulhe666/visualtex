@@ -53,9 +53,15 @@ export interface InputBehaviorSettings {
   autoExitSuperscript: boolean;
   autoExitSubscript: boolean;
   autoExitAccent: boolean;
+  autoExitWrapperCommand: boolean;
+  showStructuredCommandSuggestions: boolean;
+  showOtherCommandSuggestions: boolean;
 }
 
 export type InputBehaviorSettingKey =
   | "autoExitSuperscript"
   | "autoExitSubscript"
-  | "autoExitAccent";
+  | "autoExitAccent"
+  | "autoExitWrapperCommand"
+  | "showStructuredCommandSuggestions"
+  | "showOtherCommandSuggestions";

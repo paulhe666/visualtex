@@ -26,6 +26,9 @@ export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
   autoExitSuperscript: true,
   autoExitSubscript: true,
   autoExitAccent: true,
+  autoExitWrapperCommand: true,
+  showStructuredCommandSuggestions: true,
+  showOtherCommandSuggestions: false,
 };
 
 function normalizeInputBehaviorSettings(
@@ -48,6 +51,18 @@ function normalizeInputBehaviorSettings(
       typeof candidate.autoExitAccent === "boolean"
         ? candidate.autoExitAccent
         : true,
+    autoExitWrapperCommand:
+      typeof candidate.autoExitWrapperCommand === "boolean"
+        ? candidate.autoExitWrapperCommand
+        : true,
+    showStructuredCommandSuggestions:
+      typeof candidate.showStructuredCommandSuggestions === "boolean"
+        ? candidate.showStructuredCommandSuggestions
+        : true,
+    showOtherCommandSuggestions:
+      typeof candidate.showOtherCommandSuggestions === "boolean"
+        ? candidate.showOtherCommandSuggestions
+        : false,
   };
 }
 

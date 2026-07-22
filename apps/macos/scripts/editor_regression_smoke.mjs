@@ -234,6 +234,17 @@ async function main() {
     await evaluate(`(() => {
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...((persisted.state || {}).inputBehavior || {}),
+          showStructuredCommandSuggestions: true,
+          showOtherCommandSuggestions: true,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await sleep(800);
