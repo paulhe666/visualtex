@@ -25,6 +25,7 @@ const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
 const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
+const WORD_VBA_SOURCE_REVISION: &str = "word-events-external-seq-safe-insert-20260722-r31";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
 const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
 const CONTENT_TYPES_ZIP_PATTERN: &str = "\\[Content_Types\\].xml";
@@ -303,6 +304,34 @@ fn directory_name_matches(value: &Path, expected: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn push_existing_directory(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if path.is_dir() {
+        paths.push(path);
+    }
+}
+
+fn known_word_startup_paths(home: &Path) -> Vec<PathBuf> {
+    let office_group = home.join(OFFICE_GROUP_CONTAINER);
+    let mut paths = Vec::new();
+    for user_content in ["User Content.localized", "User Content"] {
+        for startup in ["Startup.localized", "Startup"] {
+            push_existing_directory(
+                &mut paths,
+                office_group.join(user_content).join(startup).join("Word"),
+            );
+        }
+    }
+    for path in [
+        home.join("Library/Application Support/Microsoft/Office/Startup/Word"),
+        home.join(
+            "Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/Startup/Word",
+        ),
+    ] {
+        push_existing_directory(&mut paths, path);
+    }
+    paths
+}
+
 fn collect_word_startup_paths(
     directory: &Path,
     depth: usize,
@@ -335,25 +364,38 @@ fn collect_word_startup_paths(
 }
 
 pub(crate) fn discover_word_startup_paths() -> Result<Vec<PathBuf>, String> {
-    let root = user_home()?.join(OFFICE_GROUP_CONTAINER);
-    if !root.is_dir() {
-        return Ok(Vec::new());
+    let home = user_home()?;
+    let root = home.join(OFFICE_GROUP_CONTAINER);
+    let mut paths = known_word_startup_paths(&home);
+    if root.is_dir() {
+        collect_word_startup_paths(&root, 0, &mut paths)?;
     }
-    let mut paths = Vec::new();
-    collect_word_startup_paths(&root, 0, &mut paths)?;
     paths.sort();
     paths.dedup();
     Ok(paths)
 }
 
-fn is_visualtex_word_startup_artifact(path: &Path) -> bool {
+fn is_visualtex_addin_artifact(path: &Path, extension: &str) -> bool {
     path.file_name()
         .and_then(|value| value.to_str())
         .map(|value| {
             let value = value.to_ascii_lowercase();
-            value == "visualtex.dotm" || value.starts_with("visualtex.dotm.")
+            let value = value.trim_start_matches('.');
+            let value = value.strip_prefix("~$").unwrap_or(value);
+            let Some(suffix) = value.strip_prefix("visualtex") else {
+                return false;
+            };
+            let separator_is_owned = suffix
+                .chars()
+                .next()
+                .is_some_and(|character| matches!(character, '.' | ' ' | '(' | '-' | '_'));
+            separator_is_owned && suffix.contains(extension)
         })
         .unwrap_or(false)
+}
+
+fn is_visualtex_word_startup_artifact(path: &Path) -> bool {
+    is_visualtex_addin_artifact(path, ".dotm")
 }
 
 fn discover_word_startup_artifacts() -> Result<Vec<PathBuf>, String> {
@@ -384,34 +426,50 @@ fn discover_word_startup_artifacts() -> Result<Vec<PathBuf>, String> {
     Ok(artifacts)
 }
 
-fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
-    let directory = offline_root()?.join("OfficeAddins");
-    if !directory.is_dir() {
-        return Ok(Vec::new());
+fn known_powerpoint_addin_directories() -> Result<Vec<PathBuf>, String> {
+    let home = user_home()?;
+    let office_group = home.join(OFFICE_GROUP_CONTAINER);
+    let mut directories = Vec::new();
+    push_existing_directory(&mut directories, offline_root()?.join("OfficeAddins"));
+    for user_content in ["User Content.localized", "User Content"] {
+        for addins in ["Add-Ins.localized", "Add-Ins", "Addins"] {
+            push_existing_directory(
+                &mut directories,
+                office_group.join(user_content).join(addins),
+            );
+        }
     }
+    for path in [
+        home.join("Library/Application Support/Microsoft/Office/PowerPoint Add-Ins"),
+        home.join(
+            "Library/Containers/com.microsoft.Powerpoint/Data/Library/Application Support/Microsoft/Office/PowerPoint Add-Ins",
+        ),
+    ] {
+        push_existing_directory(&mut directories, path);
+    }
+    directories.sort();
+    directories.dedup();
+    Ok(directories)
+}
+
+fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
     let mut artifacts = Vec::new();
-    for entry in fs::read_dir(&directory)
-        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
-    {
-        let entry = entry.map_err(|error| {
-            format!("Unable to inspect a VisualTeX PowerPoint add-in entry: {error}")
-        })?;
-        let path = entry.path();
-        let matches = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .map(|value| {
-                let value = value.to_ascii_lowercase();
-                value == "visualtex.ppam" || value.starts_with("visualtex.ppam.")
-            })
-            .unwrap_or(false);
-        if entry
-            .file_type()
-            .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
-            .is_file()
-            && matches
+    for directory in known_powerpoint_addin_directories()? {
+        for entry in fs::read_dir(&directory)
+            .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
         {
-            artifacts.push(path);
+            let entry = entry.map_err(|error| {
+                format!("Unable to inspect a VisualTeX PowerPoint add-in entry: {error}")
+            })?;
+            let path = entry.path();
+            if entry
+                .file_type()
+                .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
+                .is_file()
+                && is_visualtex_addin_artifact(&path, ".ppam")
+            {
+                artifacts.push(path);
+            }
         }
     }
     artifacts.sort();
@@ -543,6 +601,43 @@ fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
+fn addin_installation_matches(
+    source: &Path,
+    expected_destinations: &[PathBuf],
+    discovered_artifacts: &[PathBuf],
+) -> bool {
+    if expected_destinations.is_empty() {
+        return false;
+    }
+    let mut expected = expected_destinations.to_vec();
+    expected.sort();
+    expected.dedup();
+    let mut discovered = discovered_artifacts.to_vec();
+    discovered.sort();
+    discovered.dedup();
+    if expected != discovered {
+        return false;
+    }
+    expected
+        .iter()
+        .all(|destination| verify_copy(source, destination).is_ok())
+}
+
+fn verify_addin_installation(
+    source: &Path,
+    expected_destinations: &[PathBuf],
+    discovered_artifacts: &[PathBuf],
+    host: &str,
+) -> Result<(), String> {
+    if addin_installation_matches(source, expected_destinations, discovered_artifacts) {
+        Ok(())
+    } else {
+        Err(format!(
+            "The installed VisualTeX {host} add-in does not exactly match the packaged version or a stale loadable copy remains"
+        ))
+    }
+}
+
 fn capture_backup(path: &Path) -> Result<FileBackup, String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => Some(bytes),
@@ -626,7 +721,7 @@ fn validate_zip_entries(_path: &Path, _required_entries: &[&str]) -> Result<(), 
 }
 
 #[cfg(target_os = "macos")]
-fn validate_vba_module(path: &Path, vba_entry: &str, module_name: &str) -> Result<(), String> {
+fn validate_vba_markers(path: &Path, vba_entry: &str, markers: &[&str]) -> Result<(), String> {
     let output = Command::new("/usr/bin/unzip")
         .args(["-p"])
         .arg(path)
@@ -636,17 +731,19 @@ fn validate_vba_module(path: &Path, vba_entry: &str, module_name: &str) -> Resul
     if !output.status.success() {
         return Err(format!("Unable to read {vba_entry} from {}", path.display()));
     }
-    if !bytes_contain(&output.stdout, module_name.as_bytes()) {
-        return Err(format!(
-            "Compiled add-in {} is missing required VBA module {module_name}",
-            path.display()
-        ));
+    for marker in markers {
+        if !bytes_contain(&output.stdout, marker.as_bytes()) {
+            return Err(format!(
+                "Compiled add-in {} is missing required VBA marker {marker}",
+                path.display()
+            ));
+        }
     }
     Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn validate_vba_module(_path: &Path, _vba_entry: &str, _module_name: &str) -> Result<(), String> {
+fn validate_vba_markers(_path: &Path, _vba_entry: &str, _markers: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
@@ -720,7 +817,29 @@ fn validate_compiled_addin(
     }
     validate_zip_entries(path, &required_entries)?;
     validate_main_content_type(path, expected_name)?;
-    validate_vba_module(path, expected_vba_entry, "VTOfficePaths")?;
+    let required_vba_markers: &[&str] = match expected_name {
+        WORD_ADDIN_NAME => &[
+            "VTProtocol",
+            "VTOfficePaths",
+            "VTWordAdapter",
+            "VTWordEvents",
+            "AutoExec",
+            "App_WindowBeforeDoubleClick",
+            env!("CARGO_PKG_VERSION"),
+            WORD_VBA_SOURCE_REVISION,
+        ],
+        POWERPOINT_ADDIN_NAME => &[
+            "VTProtocol",
+            "VTOfficePaths",
+            "VTPowerPointAdapter",
+            "VTPowerPointEvents",
+            "Auto_Open",
+            "App_WindowBeforeDoubleClick",
+            env!("CARGO_PKG_VERSION"),
+        ],
+        _ => return Err(format!("Unsupported compiled add-in name {expected_name}")),
+    };
+    validate_vba_markers(path, expected_vba_entry, required_vba_markers)?;
     Ok(bytes)
 }
 
@@ -841,20 +960,35 @@ fn host_status(
     app_name: &str,
     process_name: &str,
     install_paths: Vec<PathBuf>,
+    files_installed: bool,
 ) -> Result<MacOfflineHostInstallStatus, String> {
-    let (health_reported, loaded, plugin_version, last_error) = match read_health(host) {
-        Ok(health) => (
-            health.reported,
-            health.loaded,
-            health.plugin_version,
-            None,
-        ),
-        Err(error) => (false, false, None, Some(error)),
-    };
-    let files_installed = !install_paths.is_empty() && install_paths.iter().all(|path| path.is_file());
+    let application_running = application_running(process_name);
+    let macro_responsive = files_installed
+        && application_running
+        && crate::office::macos_offline::refresh_health_signal(host);
+    let (mut health_reported, mut loaded, mut plugin_version, last_error) =
+        match read_health(host) {
+            Ok(health) => (
+                health.reported,
+                health.loaded,
+                health.plugin_version,
+                None,
+            ),
+            Err(error) => (false, false, None, Some(error)),
+        };
+    if macro_responsive {
+        // A successful fixed macro invocation proves that the installed DOTM or
+        // PPAM is loaded. Do not display a false warning merely because Office
+        // delayed or sandboxed the optional JSON health write.
+        health_reported = true;
+        loaded = true;
+        if plugin_version.is_none() {
+            plugin_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        }
+    }
     Ok(MacOfflineHostInstallStatus {
         application_installed: application_installed(app_name),
-        application_running: application_running(process_name),
+        application_running,
         files_installed,
         health_reported,
         loaded,
@@ -870,27 +1004,63 @@ fn host_status(
 
 pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
     let root = resource_root(app)?;
-    let mut word_paths = discover_word_startup_paths()?
+    let (word_source, powerpoint_source) = source_artifacts(&root);
+    let word_destinations = discover_word_startup_paths()?
         .into_iter()
         .map(|path| path.join(WORD_ADDIN_NAME))
         .collect::<Vec<_>>();
+    let discovered_word_artifacts = discover_word_startup_artifacts()?;
     let powerpoint_path = powerpoint_addin_path()?;
+    let powerpoint_destinations = vec![powerpoint_path.clone()];
+    let discovered_powerpoint_artifacts = discover_powerpoint_addin_artifacts()?;
     let word_script = word_script_path()?;
     let powerpoint_script = powerpoint_script_path()?;
     let compatibility_placeholder = compatibility_placeholder_path()?;
     let canonical_placeholder = canonical_placeholder_path()?;
-    word_paths.extend([
+    let word_support_paths = vec![
         word_script.clone(),
         compatibility_placeholder.clone(),
         canonical_placeholder.clone(),
-    ]);
+    ];
+    let powerpoint_support_paths = vec![powerpoint_script.clone()];
+    let word_files_installed = word_support_paths.iter().all(|path| path.is_file())
+        && addin_installation_matches(
+            &word_source,
+            &word_destinations,
+            &discovered_word_artifacts,
+        );
+    let powerpoint_files_installed = powerpoint_support_paths
+        .iter()
+        .all(|path| path.is_file())
+        && addin_installation_matches(
+            &powerpoint_source,
+            &powerpoint_destinations,
+            &discovered_powerpoint_artifacts,
+        );
+    let mut word_paths = word_destinations.clone();
+    word_paths.extend(discovered_word_artifacts.iter().cloned());
+    word_paths.extend(word_support_paths);
+    word_paths.sort();
+    word_paths.dedup();
+    let mut powerpoint_paths = powerpoint_destinations.clone();
+    powerpoint_paths.extend(discovered_powerpoint_artifacts.iter().cloned());
+    powerpoint_paths.extend(powerpoint_support_paths);
+    powerpoint_paths.sort();
+    powerpoint_paths.dedup();
     Ok(MacOfflineOfficeInstallStatus {
-        word: host_status("word", WORD_APP_NAME, WORD_PROCESS_NAME, word_paths)?,
+        word: host_status(
+            "word",
+            WORD_APP_NAME,
+            WORD_PROCESS_NAME,
+            word_paths,
+            word_files_installed,
+        )?,
         powerpoint: host_status(
             "powerpoint",
             POWERPOINT_APP_NAME,
             POWERPOINT_PROCESS_NAME,
-            vec![powerpoint_path.clone(), powerpoint_script.clone()],
+            powerpoint_paths,
+            powerpoint_files_installed,
         )?,
         compiled_artifacts_available: compiled_artifacts_available(&root),
         resource_root: root.display().to_string(),
@@ -933,6 +1103,8 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
     let word_health = health_path("word")?;
     let powerpoint_health = health_path("powerpoint")?;
     let legacy_wef_files = discover_legacy_visualtex_wef_files()?;
+    let existing_word_artifacts = discover_word_startup_artifacts()?;
+    let existing_powerpoint_artifacts = discover_powerpoint_addin_artifacts()?;
 
     let mut mutation_paths = word_destinations.clone();
     mutation_paths.extend([
@@ -946,6 +1118,8 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         powerpoint_health.clone(),
     ]);
     mutation_paths.extend(legacy_wef_files.iter().cloned());
+    mutation_paths.extend(existing_word_artifacts.iter().cloned());
+    mutation_paths.extend(existing_powerpoint_artifacts.iter().cloned());
     mutation_paths.sort();
     mutation_paths.dedup();
     let backups = mutation_paths
@@ -964,6 +1138,18 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         }
         copy_atomic(&powerpoint_source, &powerpoint_destination, 0o600)?;
         verify_copy(&powerpoint_source, &powerpoint_destination)?;
+        verify_addin_installation(
+            &word_source,
+            &word_destinations,
+            &discover_word_startup_artifacts()?,
+            "Word",
+        )?;
+        verify_addin_installation(
+            &powerpoint_source,
+            &[powerpoint_destination.clone()],
+            &discover_powerpoint_addin_artifacts()?,
+            "PowerPoint",
+        )?;
 
         let placeholder = BASE64_STANDARD
             .decode(PLACEHOLDER_PNG_BASE64)
@@ -1182,6 +1368,63 @@ mod tests {
         assert!(directory_name_matches(Path::new("Startup.localized"), "Startup"));
         assert!(directory_name_matches(Path::new("Word"), "Word"));
         assert!(!directory_name_matches(Path::new("PowerPoint"), "Word"));
+    }
+
+    #[test]
+    fn visualtex_addin_cleanup_matches_loadable_copies_but_not_build_artifacts() {
+        for name in [
+            "VisualTeX.dotm",
+            "VisualTeX.dotm.backup",
+            "VisualTeX (1).dotm",
+            "VisualTeX-old.dotm",
+            ".VisualTeX_copy.dotm",
+            "~$VisualTeX.dotm",
+        ] {
+            assert!(is_visualtex_word_startup_artifact(Path::new(name)), "{name}");
+        }
+        assert!(!is_visualtex_word_startup_artifact(Path::new(
+            "VisualTeXWordBuild.dotm"
+        )));
+        assert!(!is_visualtex_addin_artifact(
+            Path::new("UnrelatedVisualTeX.ppam"),
+            ".ppam"
+        ));
+        assert!(is_visualtex_addin_artifact(
+            Path::new("VisualTeX copy.ppam"),
+            ".ppam"
+        ));
+    }
+
+    #[test]
+    fn installed_addins_require_exact_bytes_and_no_extra_loadable_copy() {
+        let root = std::env::temp_dir().join(format!(
+            "visualtex-installed-addin-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("temp directory should be created");
+        let source = root.join("source.dotm");
+        let destination = root.join("VisualTeX.dotm");
+        let stale = root.join("VisualTeX (1).dotm");
+        fs::write(&source, b"current").expect("source should be written");
+        fs::write(&destination, b"current").expect("destination should be written");
+        assert!(addin_installation_matches(
+            &source,
+            std::slice::from_ref(&destination),
+            std::slice::from_ref(&destination),
+        ));
+        fs::write(&stale, b"old").expect("stale copy should be written");
+        assert!(!addin_installation_matches(
+            &source,
+            std::slice::from_ref(&destination),
+            &[destination.clone(), stale],
+        ));
+        fs::write(&destination, b"old").expect("destination should become stale");
+        assert!(!addin_installation_matches(
+            &source,
+            std::slice::from_ref(&destination),
+            std::slice::from_ref(&destination),
+        ));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

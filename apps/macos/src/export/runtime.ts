@@ -4,6 +4,7 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
 import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
+import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import type {
   PngExportOptions,
   PngExportResult,
@@ -44,7 +45,9 @@ function nonNegativeFinite(value: number, fallback: number) {
 }
 
 function prepareLatex(latex: string) {
-  const normalized = latex.replace(/\r\n?/g, "\n").trim();
+  const normalized = normalizeMathLiveCanonicalUprightCommands(
+    latex.replace(/\r\n?/g, "\n"),
+  ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
   if (/\\begin\s*\{/.test(normalized)) return normalized;
 

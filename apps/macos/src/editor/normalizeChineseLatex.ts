@@ -1,5 +1,28 @@
 const chineseChar = /[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’]/;
 
+const MATHLIVE_CANONICAL_UPRIGHT_COMMANDS: ReadonlyArray<
+  readonly [command: string, standardLatex: string]
+> = [
+  ["capitalDifferentialD", "\\mathrm{D}"],
+  ["differentialD", "\\mathrm{d}"],
+  ["exponentialE", "\\mathrm{e}"],
+  ["imaginaryI", "\\mathrm{i}"],
+  ["imaginaryJ", "\\mathrm{j}"],
+];
+
+export function normalizeMathLiveCanonicalUprightCommands(
+  source: string,
+): string {
+  let normalized = source;
+  for (const [command, standardLatex] of MATHLIVE_CANONICAL_UPRIGHT_COMMANDS) {
+    normalized = normalized.replace(
+      new RegExp(`\\\\${command}(?![A-Za-z])`, "g"),
+      standardLatex,
+    );
+  }
+  return normalized;
+}
+
 function readBracedCommand(source: string, start: number): number {
   const openingBrace = source.indexOf("{", start);
   if (openingBrace < 0) return start;
@@ -15,7 +38,9 @@ function readBracedCommand(source: string, start: number): number {
 }
 
 export function normalizeChineseLatex(source: string): string {
-  const normalizedTextCommands = source.replace(
+  const normalizedTextCommands = normalizeMathLiveCanonicalUprightCommands(
+    source,
+  ).replace(
     /\\(?:mathrm|textrm)\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
     "\\text{$1}",
   );

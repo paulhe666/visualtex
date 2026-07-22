@@ -11,5 +11,6 @@ function run(command, args) {
   }
 }
 
+run("node", ["scripts/verify_macos_offline_addins.mjs"]);
 run("npm", ["run", "build:desktop"]);
 run("npm", ["run", "prepare:ocr-offline"]);

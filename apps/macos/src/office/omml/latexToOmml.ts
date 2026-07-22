@@ -8,6 +8,7 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
+import { normalizeMathLiveCanonicalUprightCommands } from "../../editor/normalizeChineseLatex.ts";
 
 export type OmmlDisplayMode = "inline" | "block";
 
@@ -136,7 +137,11 @@ const ACCENT_CHARACTERS = new Set([
 
 function normalizeLines(lines: string[]) {
   const normalized = lines
-    .map((line) => line.replace(/\r\n?/g, "\n").trim())
+    .map((line) =>
+      normalizeMathLiveCanonicalUprightCommands(
+        line.replace(/\r\n?/g, "\n"),
+      ).trim(),
+    )
     .filter(Boolean);
   if (normalized.length === 0) {
     throw new Error("Cannot generate Word OMML for an empty formula.");
@@ -240,12 +245,12 @@ function tokenRunStyle(element: Element): RunStyle {
   if (name === "mtext" || name === "ms") return "normal";
   if (name === "mn" || name === "mo") return "plain";
   const variant = element.getAttribute("mathvariant")?.toLowerCase() ?? "";
-  if (
-    variant.includes("normal") ||
-    variant.includes("upright") ||
-    variant.includes("sans-serif") ||
-    variant.includes("monospace")
-  ) {
+  if (variant.includes("normal") || variant.includes("upright")) {
+    // Word needs the explicit OMML normal-text flag for upright identifiers.
+    // A plain-style run alone is not reliable for d/e/i/j after DOCX transfer.
+    return "normal";
+  }
+  if (variant.includes("sans-serif") || variant.includes("monospace")) {
     return "plain";
   }
   return "math";

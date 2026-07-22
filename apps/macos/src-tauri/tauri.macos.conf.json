@@ -4,7 +4,16 @@
       "infoPlist": "Info.macos.plist"
     },
     "resources": {
-      "../office/macos-offline/": "office/macos-offline/",
+      "../office/macos-offline/BUILD_ADDINS.md": "office/macos-offline/BUILD_ADDINS.md",
+      "../office/macos-offline/POWERPOINT_INSTALL.md": "office/macos-offline/POWERPOINT_INSTALL.md",
+      "../office/macos-offline/PROTOCOL.md": "office/macos-offline/PROTOCOL.md",
+      "../office/macos-offline/word/": "office/macos-offline/word/",
+      "../office/macos-offline/powerpoint/": "office/macos-offline/powerpoint/",
+      "../office/macos-offline/shared/": "office/macos-offline/shared/",
+      "../office/macos-offline/resources/README.md": "office/macos-offline/resources/README.md",
+      "../office/macos-offline/resources/VisualTeX.dotm": "office/macos-offline/resources/VisualTeX.dotm",
+      "../office/macos-offline/resources/VisualTeX.ppam": "office/macos-offline/resources/VisualTeX.ppam",
+      "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json",
       "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
     }
   }

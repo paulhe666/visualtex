@@ -18,9 +18,11 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
 4. Save the template as exactly `VisualTeX.dotm`.
 5. Quit Word before packaging so Office has flushed `vbaProject.bin`.
 
-## PowerPoint: VisualTeX.ppam
+## PowerPoint: compile a PPTM, then package VisualTeX.ppam
 
-1. Open Microsoft PowerPoint for Mac and create a blank macro-enabled presentation.
+PowerPoint for Mac loads `.ppam` files as add-ins and does not provide a reliable direct **Save As PPAM** workflow. Compile the VBA project in a temporary macro-enabled presentation, then inject that compiled VBA project into the reviewed PPAM shell with the repository packager.
+
+1. Open Microsoft PowerPoint for Mac and create a blank macro-enabled presentation (`.pptm`).
 2. Import these modules without changing their module names:
    - `shared/VTProtocol.bas`
    - `shared/VTOfficePaths.bas`
@@ -31,8 +33,8 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
    - `powerpoint/VTPowerPointEvents.cls`
    - `powerpoint/VTRibbonCallbacks.bas`
 3. Run **Debug → Compile VBAProject**. Confirm `VTPowerPointEvents` compiles and `Auto_Open` initializes the application event sink.
-4. Save as a PowerPoint Add-In with the exact filename `VisualTeX.ppam`.
-5. Quit PowerPoint before packaging.
+4. Save the editable build input as a `.pptm` file and quit PowerPoint so Office flushes `ppt/vbaProject.bin`.
+5. Keep a known-good `VisualTeX.ppam` as the package shell. Do not attempt to open or edit the PPAM directly on macOS.
 
 ## Inject and verify Ribbon XML
 
@@ -41,10 +43,11 @@ Run:
 ```bash
 node scripts/package_macos_offline_addins.mjs \
   --word /absolute/path/VisualTeX.dotm \
-  --powerpoint /absolute/path/VisualTeX.ppam
+  --powerpoint /absolute/path/VisualTeX-build.pptm \
+  --powerpoint-shell /absolute/path/known-good-VisualTeX.ppam
 ```
 
-The packager performs all non-UI packaging work. It verifies the macro project and expected module names, injects the reviewed `customUI14.xml` relationship, validates the result, copies the fixed files to `resources/`, and writes `addins.json` with SHA-256 hashes.
+The packager performs all non-UI packaging work. For PowerPoint it extracts the compiled `ppt/vbaProject.bin` from the PPTM, injects it into the reviewed PPAM shell, restores the reviewed `customUI14.xml` relationship and images, validates the result, copies the fixed files to `resources/`, and writes `addins.json` with SHA-256 hashes.
 
 ## Required validation
 

@@ -80,6 +80,7 @@ struct MacOfflineSessionRequest {
 pub struct MacOfflinePluginHealth {
     loaded: bool,
     plugin_version: Option<String>,
+    source_revision: Option<String>,
     host: String,
     timestamp: Option<String>,
     status_path: String,
@@ -625,6 +626,12 @@ pub fn close_macos_offline_office_editor_window(window: WebviewWindow) -> Result
         }
     }
     Ok(())
+}
+
+pub(crate) fn has_open_office_editor(app: &AppHandle) -> bool {
+    app.webview_windows()
+        .keys()
+        .any(|label| label.starts_with("office-native-"))
 }
 
 pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
@@ -1287,7 +1294,7 @@ pub async fn cancel_macos_offline_office_session(
 }
 
 #[cfg(target_os = "macos")]
-fn refresh_health_signal(host: &str) {
+pub(crate) fn refresh_health_signal(host: &str) -> bool {
     let (process_name, script) = match host {
         "word" => (
             "Microsoft Word",
@@ -1297,23 +1304,26 @@ fn refresh_health_signal(host: &str) {
             "Microsoft PowerPoint",
             r#"tell application "Microsoft PowerPoint" to run VB macro macro name "Auto_Open" list of parameters {}"#,
         ),
-        _ => return,
+        _ => return false,
     };
     let running = Command::new("/usr/bin/pgrep")
         .args(["-x", process_name])
         .output()
         .is_ok_and(|output| output.status.success());
     if !running {
-        return;
+        return false;
     }
-    let _ = Command::new("/usr/bin/osascript")
+    Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
-        .output();
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn refresh_health_signal(_host: &str) {}
+pub(crate) fn refresh_health_signal(_host: &str) -> bool {
+    false
+}
 
 pub(crate) fn health_path(host: &str) -> Result<PathBuf, String> {
     Ok(runtime_root(host_from_request_name(host)?)?
@@ -1326,6 +1336,7 @@ fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
     let fallback = || MacOfflinePluginHealth {
         loaded: false,
         plugin_version: None,
+        source_revision: None,
         host: host.to_string(),
         timestamp: None,
         status_path: path.display().to_string(),
@@ -1337,29 +1348,44 @@ fn read_health(host: &str) -> Result<MacOfflinePluginHealth, String> {
     };
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|error| format!("{host} health file contains invalid JSON: {error}"))?;
+    let plugin_version = value
+        .get("pluginVersion")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let source_revision = value
+        .get("sourceRevision")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let reported_host = value
+        .get("host")
+        .and_then(Value::as_str)
+        .unwrap_or(host)
+        .to_string();
+    let timestamp = value
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
+        })
+        .map(str::to_string);
+    let loaded = value.get("loaded").and_then(Value::as_bool).unwrap_or(false)
+        && plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))
+        && reported_host == host
+        && timestamp.is_some();
     Ok(MacOfflinePluginHealth {
-        loaded: value.get("loaded").and_then(Value::as_bool).unwrap_or(false),
-        plugin_version: value
-            .get("pluginVersion")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        host: value
-            .get("host")
-            .and_then(Value::as_str)
-            .unwrap_or(host)
-            .to_string(),
-        timestamp: value
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        loaded,
+        plugin_version,
+        source_revision,
+        host: reported_host,
+        timestamp,
         status_path: path.display().to_string(),
     })
 }
 
 #[tauri::command]
 pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, String> {
-    refresh_health_signal("word");
-    refresh_health_signal("powerpoint");
+    let _ = refresh_health_signal("word");
+    let _ = refresh_health_signal("powerpoint");
     Ok(vec![read_health("word")?, read_health("powerpoint")?])
 }
 

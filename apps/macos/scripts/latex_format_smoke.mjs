@@ -4,6 +4,10 @@ import {
   latexCodeFormats,
   parseLatexSource,
 } from "../src/clipboard/LatexCopyService.ts";
+import {
+  normalizeMathLiveCanonicalUprightCommands,
+  visualTexUprightInlineShortcuts,
+} from "../src/editor/normalizeChineseLatex.ts";
 
 const formulas = [
   "a=b+c",
@@ -55,4 +59,33 @@ assert.match(
   /^\\\[[\s\S]*\\begin\{aligned\}[\s\S]*\\end\{aligned\}[\s\S]*\\\]$/,
 );
 
+const canonicalUpright = String.raw`\differentialD x+\capitalDifferentialD y+\exponentialE^{\imaginaryI x}+\imaginaryJ`;
+assert.equal(
+  normalizeMathLiveCanonicalUprightCommands(canonicalUpright),
+  String.raw`\mathrm{d} x+\mathrm{D} y+\mathrm{e}^{\mathrm{i} x}+\mathrm{j}`,
+  "MathLive upright commands must be converted to portable LaTeX",
+);
+assert.equal(
+  normalizeMathLiveCanonicalUprightCommands(
+    String.raw`d+e+i+j+distance+limit+imaginaryIndex+\mathrm{d}`,
+  ),
+  String.raw`d+e+i+j+distance+limit+imaginaryIndex+\mathrm{d}`,
+  "ordinary variables and identifiers must not be over-normalized",
+);
+assert.equal(
+  formatLatex(canonicalUpright, "raw"),
+  String.raw`\mathrm{d} x+\mathrm{D} y+\mathrm{e}^{\mathrm{i} x}+\mathrm{j}`,
+  "copied LaTeX must never expose MathLive-only upright commands",
+);
+for (const shortcut of Object.values(visualTexUprightInlineShortcuts)) {
+  assert.doesNotMatch(
+    shortcut.after,
+    /(?:^|\+)letter(?:\+|$)|(?:^|\+)digit(?:\+|$)/,
+    "VisualTeX upright shortcuts must not trigger inside identifiers",
+  );
+}
+assert.equal(
+  visualTexUprightInlineShortcuts.dz.value,
+  String.raw`\differentialD z`,
+);
 console.log(`LaTeX format smoke test passed (${latexCodeFormats.length} formats)`);

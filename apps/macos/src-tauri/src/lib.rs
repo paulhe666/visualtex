@@ -1363,6 +1363,7 @@ pub fn run() {
             let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                 .map_err(std::io::Error::other)?;
             if let Err(error) = office::powerpoint_native::start_double_click_monitor(
+                app.handle().clone(),
                 office_state.powerpoint_interactions.clone(),
             ) {
                 eprintln!("Unable to start PowerPoint double-click monitor: {error}");

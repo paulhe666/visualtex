@@ -123,6 +123,7 @@ async function main() {
     const formulas = [
       String.raw`\frac{a}{b}+dddc`,
       String.raw`\int_a^b x\,dy`,
+      String.raw`\differentialD x+\capitalDifferentialD y+\exponentialE^{\imaginaryI x}+\imaginaryJ`,
       String.raw`\sum_{b}^{a}xc`,
       String.raw`\sqrt{x}`,
       String.raw`x_i^2`,
@@ -158,6 +159,7 @@ async function main() {
     const [
       fraction,
       integral,
+      uprightSymbols,
       sum,
       root,
       scripts,
@@ -177,6 +179,16 @@ async function main() {
     expectIncludes(integral, "<m:sub>", "Integral must preserve the lower limit.");
     expectIncludes(integral, "<m:sup>", "Integral must preserve the upper limit.");
     expectIncludes(integral, "<m:e>", "Integral must preserve the integrand as its body.");
+
+    expect(!uprightSymbols.includes("differentialD"), "MathLive differentialD must not leak into OMML.");
+    expect(!uprightSymbols.includes("capitalDifferentialD"), "MathLive capitalDifferentialD must not leak into OMML.");
+    expect(!uprightSymbols.includes("exponentialE"), "MathLive exponentialE must not leak into OMML.");
+    expect(!uprightSymbols.includes("imaginaryI"), "MathLive imaginaryI must not leak into OMML.");
+    expect(!uprightSymbols.includes("imaginaryJ"), "MathLive imaginaryJ must not leak into OMML.");
+    expect((uprightSymbols.match(/<m:nor\/>/g) ?? []).length >= 5, "Every canonical upright symbol must use explicit OMML normal style.");
+    for (const symbol of ["d", "D", "e", "i", "j"]) {
+      expectIncludes(uprightSymbols, `<m:t>${symbol}</m:t>`, `Upright ${symbol} must survive OMML conversion.`);
+    }
 
     expectIncludes(sum, '<m:chr m:val="∑"/>', "Summation must use an OMML n-ary operator.");
     expectIncludes(sum, '<m:limLoc m:val="undOvr"/>', "Summation limits must use above-and-below placement.");

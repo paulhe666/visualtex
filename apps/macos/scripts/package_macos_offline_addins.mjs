@@ -126,6 +126,18 @@ function validateMacroContainer(path, kind, options = {}) {
         `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas and .cls sources before packaging.`,
       );
     }
+    const expectedMarkers = [
+      packageVersion,
+      ...(kind === "Word" ? ["word-events-external-seq-safe-insert-20260722-r31"] : []),
+    ];
+    const missingMarkers = expectedMarkers.filter(
+      (marker) => !containsModuleName(vbaProject, marker),
+    );
+    if (missingMarkers.length > 0) {
+      throw new Error(
+        `${kind} VBA project is stale and does not contain the required compiled markers: ${missingMarkers.join(", ")}. Recompile the add-in in Office for Mac before packaging.`,
+      );
+    }
   }
   if (requireExpectedMainType && !hasExpectedMainContentType(path, kind)) {
     const expected = MAIN_CONTENT_TYPES[kind];

@@ -1,4 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   Braces,
@@ -106,6 +107,17 @@ interface InlineOcrState {
   model: OcrModelName;
 }
 
+interface MacOfficeStartupHostStatus {
+  applicationInstalled: boolean;
+  filesInstalled: boolean;
+}
+
+interface MacOfficeStartupStatus {
+  word: MacOfficeStartupHostStatus;
+  powerpoint: MacOfficeStartupHostStatus;
+  compiledArtifactsAvailable: boolean;
+}
+
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
@@ -167,6 +179,7 @@ function App() {
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
   const ocrPrewarmStartedRef = useRef(false);
+  const macOfficeInstallStatusCheckedRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
@@ -278,6 +291,41 @@ function App() {
       },
     });
     return () => historyManager.configure(null);
+  }, []);
+
+  useEffect(() => {
+    if (
+      DESKTOP_PLATFORM !== "macos" ||
+      !isTauriEnvironment() ||
+      macOfficeInstallStatusCheckedRef.current
+    ) {
+      return;
+    }
+    macOfficeInstallStatusCheckedRef.current = true;
+    let cancelled = false;
+
+    void invoke<MacOfficeStartupStatus>(
+      "get_macos_offline_office_install_status",
+    )
+      .then((status) => {
+        if (cancelled || !status.compiledArtifactsAvailable) return;
+        const needsCurrentAddins =
+          (status.word.applicationInstalled && !status.word.filesInstalled) ||
+          (status.powerpoint.applicationInstalled &&
+            !status.powerpoint.filesInstalled);
+        if (!needsCurrentAddins) return;
+
+        // The local completion flag records that the user saw an earlier setup
+        // dialog. It must not suppress a later in-version DOTM/PPAM replacement
+        // when the installed Office files no longer match this application.
+        setOnboardingOpen(false);
+        setMacOfficeFirstRunOpen(true);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

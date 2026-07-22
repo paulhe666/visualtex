@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-#[cfg(target_os = "macos")]
-use std::fs;
 use std::io::Read;
-#[cfg(target_os = "macos")]
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -111,17 +107,6 @@ impl PowerPointInteractionBus {
             "powerpoint",
             shape_name,
             formula_id,
-            Some(selection),
-        );
-    }
-
-    pub fn push_powerpoint_edit_requested(&self, selection: PowerPointNativeSelection) {
-        let shape_name = selection.shape_name.clone();
-        self.push_edit_target(
-            "edit-requested",
-            "powerpoint",
-            shape_name,
-            String::new(),
             Some(selection),
         );
     }
@@ -970,7 +955,10 @@ where
 }
 
 #[cfg(target_os = "macos")]
-pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), String> {
+pub fn start_double_click_monitor(
+    app: tauri::AppHandle,
+    bus: PowerPointInteractionBus,
+) -> Result<(), String> {
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask};
     use std::ptr::NonNull;
@@ -987,32 +975,49 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
             return;
         }
         let frontmost = frontmost_bundle_id();
+        let app = app.clone();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
-            let native_plugin_loaded = native_offline_plugin_loaded("powerpoint");
             std::thread::spawn(move || {
+                if crate::office::macos_offline::focus_open_office_editor(&app) {
+                    return;
+                }
                 let Some((selection, formula_id)) =
                     powerpoint_selection_after_double_click(selected_shape, std::thread::sleep)
                 else {
                     return;
                 };
-                if native_plugin_loaded {
-                    if formula_id.is_some() {
-                        let _ = crate::office::macos_offline::run_double_click_edit_macro(
-                            crate::office::sessions::OfficeHost::Powerpoint,
-                        );
-                    }
+                if crate::office::macos_offline::focus_open_office_editor(&app) {
                     return;
                 }
-                if let Some(formula_id) = formula_id {
-                    bus.push_powerpoint_edit_selected(selection, formula_id);
-                } else {
-                    bus.push_powerpoint_edit_requested(selection);
+                let Some(formula_id) = formula_id else {
+                    // Preserve PowerPoint's ordinary double-click behavior. A
+                    // durable VisualTeX formula always exposes a validated id.
+                    return;
+                };
+                // A health file is only a status signal. It must never prevent a
+                // loaded PPAM from receiving the edit request while upgrading.
+                if crate::office::macos_offline::run_double_click_edit_macro(
+                    crate::office::sessions::OfficeHost::Powerpoint,
+                )
+                .is_ok()
+                {
+                    return;
                 }
+                bus.push_powerpoint_edit_selected(selection, formula_id);
             });
         } else if frontmost.as_deref() == Some(WORD_BUNDLE_ID) {
-            let native_plugin_loaded = native_offline_plugin_loaded("word");
             std::thread::spawn(move || {
+                // Word's native VBA WindowBeforeDoubleClick event owns both
+                // InlineShape and native OMath editing. Keep only an image-only
+                // compatibility fallback here: never invoke the generic Word
+                // double-click macro from the global monitor, because native
+                // OMath can otherwise open a second editor while the first
+                // session is still becoming visible.
+                std::thread::sleep(Duration::from_millis(320));
+                if crate::office::macos_offline::has_open_office_editor(&app) {
+                    return;
+                }
                 let Some(selection) =
                     word_formula_after_double_click(selected_word_formula, std::thread::sleep)
                 else {
@@ -1021,10 +1026,7 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
                 if !selection.marker.starts_with(WORD_METADATA_PREFIX) {
                     return;
                 }
-                if native_plugin_loaded {
-                    let _ = crate::office::macos_offline::run_double_click_edit_macro(
-                        crate::office::sessions::OfficeHost::Word,
-                    );
+                if crate::office::macos_offline::focus_open_office_editor(&app) {
                     return;
                 }
                 bus.push_word_edit_selected(selection);
@@ -1044,43 +1046,11 @@ pub fn start_double_click_monitor(bus: PowerPointInteractionBus) -> Result<(), S
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn start_double_click_monitor(_bus: PowerPointInteractionBus) -> Result<(), String> {
+pub fn start_double_click_monitor(
+    _app: tauri::AppHandle,
+    _bus: PowerPointInteractionBus,
+) -> Result<(), String> {
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn native_offline_plugin_loaded(host: &str) -> bool {
-    let file_name = match host {
-        "word" => "word.json",
-        "powerpoint" => "powerpoint.json",
-        _ => return false,
-    };
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let Some(home) = home else {
-        return false;
-    };
-    let path = match host {
-        "word" => home.join(
-            "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime/OfficePluginStatus",
-        ),
-        "powerpoint" => home.join(
-            "Library/Application Scripts/com.microsoft.Powerpoint/VisualTeXRuntime/OfficePluginStatus",
-        ),
-        _ => return false,
-    }
-    .join(file_name);
-    let Ok(bytes) = fs::read(path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return false;
-    };
-    value.get("loaded").and_then(serde_json::Value::as_bool) == Some(true)
-        && value.get("host").and_then(serde_json::Value::as_str) == Some(host)
-        && value
-            .get("pluginVersion")
-            .and_then(serde_json::Value::as_str)
-            == Some(env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(target_os = "macos")]
