@@ -166,46 +166,347 @@ function readDifferentialVariableEnd(source: string, start: number): number {
   return -1;
 }
 
-function hasIntegralBefore(source: string, index: number): boolean {
-  const prefix = source.slice(0, index);
-  return ["\\iiint", "\\iint", "\\oint", "\\oiint", "\\int"].some(
-    (command) => prefix.lastIndexOf(command) >= 0,
+const latexSpacingCommands = [
+  "\\qquad",
+  "\\quad",
+  "\\,",
+  "\\;",
+  "\\:",
+  "\\!",
+];
+
+interface BracedArgumentRange {
+  contentStart: number;
+  contentEnd: number;
+  nextIndex: number;
+}
+
+interface SourceDepth {
+  braces: number;
+  parentheses: number;
+  brackets: number;
+}
+
+function skipWhitespaceAndSpacing(
+  source: string,
+  start: number,
+  limit = source.length,
+): number {
+  let index = start;
+  while (index < limit) {
+    if (/\s/.test(source[index] ?? "")) {
+      index += 1;
+      continue;
+    }
+    const spacing = latexSpacingCommands.find((command) =>
+      source.startsWith(command, index),
+    );
+    if (!spacing) break;
+    index += spacing.length;
+  }
+  return index;
+}
+
+function readBracedArgument(
+  source: string,
+  start: number,
+): BracedArgumentRange | null {
+  const openingBrace = skipWhitespaceAndSpacing(source, start);
+  if (source[openingBrace] !== "{") return null;
+
+  let depth = 0;
+  for (let index = openingBrace; index < source.length; index += 1) {
+    if (source[index] === "{" && source[index - 1] !== "\\") depth += 1;
+    if (source[index] === "}" && source[index - 1] !== "\\") {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          contentStart: openingBrace + 1,
+          contentEnd: index,
+          nextIndex: index + 1,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function readBalancedGroupEnd(
+  source: string,
+  start: number,
+  opening: string,
+  closing: string,
+  limit = source.length,
+): number {
+  if (source[start] !== opening) return -1;
+  let depth = 0;
+  for (let index = start; index < limit; index += 1) {
+    if (source[index - 1] === "\\") continue;
+    if (source[index] === opening) depth += 1;
+    if (source[index] === closing) {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return -1;
+}
+
+function readScriptArgumentEnd(
+  source: string,
+  start: number,
+  limit = source.length,
+): number {
+  const argumentStart = skipWhitespaceAndSpacing(source, start, limit);
+  if (argumentStart >= limit) return -1;
+  if (source[argumentStart] === "{") {
+    return readBalancedGroupEnd(source, argumentStart, "{", "}", limit);
+  }
+  if (source[argumentStart] === "\\") {
+    const command = /^\\(?:[A-Za-z]+|.)/.exec(source.slice(argumentStart));
+    return command ? Math.min(limit, argumentStart + command[0].length) : -1;
+  }
+  return Math.min(limit, argumentStart + Array.from(source.slice(argumentStart))[0].length);
+}
+
+function readMathAtomEnd(
+  source: string,
+  start: number,
+  limit = source.length,
+): number {
+  const atomStart = skipWhitespaceAndSpacing(source, start, limit);
+  if (atomStart >= limit) return -1;
+
+  let atomEnd = -1;
+  const first = source[atomStart];
+  if (first === "{") {
+    atomEnd = readBalancedGroupEnd(source, atomStart, "{", "}", limit);
+  } else if (first === "(") {
+    atomEnd = readBalancedGroupEnd(source, atomStart, "(", ")", limit);
+  } else if (first === "[") {
+    atomEnd = readBalancedGroupEnd(source, atomStart, "[", "]", limit);
+  } else if (first === "\\") {
+    const command = /^\\(?:[A-Za-z]+|.)/.exec(source.slice(atomStart));
+    if (!command) return -1;
+    atomEnd = atomStart + command[0].length;
+    while (true) {
+      const argumentStart = skipWhitespaceAndSpacing(source, atomEnd, limit);
+      if (source[argumentStart] !== "{") break;
+      const argumentEnd = readBalancedGroupEnd(
+        source,
+        argumentStart,
+        "{",
+        "}",
+        limit,
+      );
+      if (argumentEnd < 0) return -1;
+      atomEnd = argumentEnd;
+    }
+  } else if (!/[=,+\-*/;&|]/.test(first ?? "")) {
+    const character = Array.from(source.slice(atomStart))[0];
+    atomEnd = atomStart + character.length;
+  }
+
+  if (atomEnd < 0) return -1;
+  while (true) {
+    const scriptStart = skipWhitespaceAndSpacing(source, atomEnd, limit);
+    if (source[scriptStart] !== "^" && source[scriptStart] !== "_") break;
+    const scriptEnd = readScriptArgumentEnd(source, scriptStart + 1, limit);
+    if (scriptEnd < 0) return -1;
+    atomEnd = scriptEnd;
+  }
+  return atomEnd;
+}
+
+function readDifferentialTokenEnd(
+  source: string,
+  dIndex: number,
+  limit = source.length,
+): number {
+  let variableStart = skipWhitespaceAndSpacing(source, dIndex + 1, limit);
+  if (source[variableStart] === "^") {
+    variableStart = skipWhitespaceAndSpacing(
+      source,
+      readExponentEnd(source, variableStart),
+      limit,
+    );
+  }
+
+  const variableEnd = readMathAtomEnd(source, variableStart, limit);
+  return variableEnd < 0 ? -1 : variableEnd;
+}
+
+function differentialOperatorAtArgumentStart(
+  source: string,
+  range: BracedArgumentRange,
+  allowBareD: boolean,
+): number | null {
+  const dIndex = skipWhitespaceAndSpacing(
+    source,
+    range.contentStart,
+    range.contentEnd,
+  );
+  if (source[dIndex] !== "d") return null;
+  if (source[dIndex - 1] === "\\" || isAsciiLetter(source[dIndex - 1])) {
+    return null;
+  }
+
+  let operandStart = skipWhitespaceAndSpacing(source, dIndex + 1, range.contentEnd);
+  if (source[operandStart] === "^") {
+    operandStart = skipWhitespaceAndSpacing(
+      source,
+      readExponentEnd(source, operandStart),
+      range.contentEnd,
+    );
+  }
+
+  return operandStart < range.contentEnd || allowBareD ? dIndex : null;
+}
+
+function denominatorDifferentialPositions(
+  source: string,
+  range: BracedArgumentRange,
+): number[] {
+  const positions: number[] = [];
+  let index = skipWhitespaceAndSpacing(
+    source,
+    range.contentStart,
+    range.contentEnd,
+  );
+
+  while (index < range.contentEnd) {
+    if (
+      source[index] !== "d" ||
+      source[index - 1] === "\\" ||
+      isAsciiLetter(source[index - 1])
+    ) {
+      return [];
+    }
+
+    const tokenEnd = readDifferentialTokenEnd(source, index, range.contentEnd);
+    if (tokenEnd < 0 || tokenEnd > range.contentEnd) return [];
+    positions.push(index);
+    index = skipWhitespaceAndSpacing(source, tokenEnd, range.contentEnd);
+  }
+
+  return positions;
+}
+
+function collectFractionDifferentialPositions(source: string): Set<number> {
+  const positions = new Set<number>();
+  const fractionPattern = /\\(?:dfrac|tfrac|frac)(?![A-Za-z])/g;
+  for (const match of source.matchAll(fractionPattern)) {
+    const numerator = readBracedArgument(source, match.index! + match[0].length);
+    if (!numerator) continue;
+    const denominator = readBracedArgument(source, numerator.nextIndex);
+    if (!denominator) continue;
+
+    const numeratorD = differentialOperatorAtArgumentStart(source, numerator, true);
+    const denominatorDs = denominatorDifferentialPositions(source, denominator);
+    if (numeratorD === null || denominatorDs.length === 0) continue;
+    positions.add(numeratorD);
+    denominatorDs.forEach((position) => positions.add(position));
+  }
+  return positions;
+}
+
+function sourceDepthAt(source: string, end: number): SourceDepth {
+  const depth: SourceDepth = {
+    braces: 0,
+    parentheses: 0,
+    brackets: 0,
+  };
+  for (let index = 0; index < end; index += 1) {
+    if (source[index - 1] === "\\") continue;
+    if (source[index] === "{") depth.braces += 1;
+    else if (source[index] === "}") depth.braces = Math.max(0, depth.braces - 1);
+    else if (source[index] === "(") depth.parentheses += 1;
+    else if (source[index] === ")") {
+      depth.parentheses = Math.max(0, depth.parentheses - 1);
+    } else if (source[index] === "[") depth.brackets += 1;
+    else if (source[index] === "]") {
+      depth.brackets = Math.max(0, depth.brackets - 1);
+    }
+  }
+  return depth;
+}
+
+function depthsEqual(left: SourceDepth, right: SourceDepth): boolean {
+  return (
+    left.braces === right.braces &&
+    left.parentheses === right.parentheses &&
+    left.brackets === right.brackets
   );
 }
 
-function isDifferentialContext(source: string, index: number): boolean {
-  if (index === 0) return true;
-  const previous = source[index - 1];
-  if (previous === "\\" || isAsciiLetter(previous)) return false;
-  if (/\s|[{}()[\]/=,+\-]/.test(previous)) return true;
-  if (
-    ["\\,", "\\;", "\\:", "\\!", "\\quad", "\\qquad"].some(
-      (spacing) => source.slice(0, index).endsWith(spacing),
-    )
-  ) {
+function hasIntegralAtSameDepth(source: string, dIndex: number): boolean {
+  const differentialDepth = sourceDepthAt(source, dIndex);
+  const integralPattern = /\\(?:oiiint|oiint|iiint|iint|oint|int)(?![A-Za-z])/g;
+  let found = false;
+  for (const match of source.slice(0, dIndex).matchAll(integralPattern)) {
+    if (depthsEqual(sourceDepthAt(source, match.index!), differentialDepth)) {
+      found = true;
+    }
+  }
+  return found;
+}
+
+function isTrailingDifferentialBoundary(source: string, tokenEnd: number): boolean {
+  const next = skipWhitespaceAndSpacing(source, tokenEnd);
+  if (next >= source.length) return true;
+  if (source.startsWith("\\right", next) || source.startsWith("\\\\", next)) {
     return true;
   }
-  return hasIntegralBefore(source, index);
+  if (source[next] === "d" && readDifferentialTokenEnd(source, next) >= 0) {
+    return true;
+  }
+  return /[}\])=,+\-;&]/.test(source[next]);
+}
+
+function isIntegralTrailingDifferential(
+  source: string,
+  dIndex: number,
+  tokenEnd: number,
+): boolean {
+  let variableStart = skipWhitespaceAndSpacing(source, dIndex + 1);
+  if (source[variableStart] === "^") {
+    variableStart = skipWhitespaceAndSpacing(
+      source,
+      readExponentEnd(source, variableStart),
+    );
+  }
+
+  const beginsWithGroupedExpression = /[([{]/.test(source[variableStart] ?? "");
+  const beginsWithLeftDelimiter = source.startsWith("\\left", variableStart);
+  return (
+    tokenEnd >= 0 &&
+    !beginsWithGroupedExpression &&
+    !beginsWithLeftDelimiter &&
+    hasIntegralAtSameDepth(source, dIndex) &&
+    isTrailingDifferentialBoundary(source, tokenEnd)
+  );
 }
 
 function normalizeDifferentialD(source: string): string {
+  const fractionDifferentials = collectFractionDifferentialPositions(source);
   let result = "";
   let index = 0;
 
   while (index < source.length) {
-    if (source[index] !== "d" || !isDifferentialContext(source, index)) {
+    if (
+      source[index] !== "d" ||
+      source[index - 1] === "\\" ||
+      isAsciiLetter(source[index - 1])
+    ) {
       result += source[index];
       index += 1;
       continue;
     }
 
-    let tailStart = index + 1;
-    while (/\s/.test(source[tailStart] ?? "")) tailStart += 1;
-    if (source[tailStart] === "^") {
-      tailStart = readExponentEnd(source, tailStart);
-    }
-    const variableEnd = readDifferentialVariableEnd(source, tailStart);
-    if (variableEnd < 0) {
+    const tokenEnd = readDifferentialTokenEnd(source, index);
+    const isExplicitStructure =
+      fractionDifferentials.has(index) ||
+      isIntegralTrailingDifferential(source, index, tokenEnd);
+    if (!isExplicitStructure) {
       result += source[index];
       index += 1;
       continue;
@@ -273,7 +574,7 @@ function normalizeImaginaryUnitInExponentials(source: string): string {
     );
 }
 
-function normalizeMathLiveCanonicalUprightCommands(source: string): string {
+export function normalizeMathLiveCanonicalUprightCommands(source: string): string {
   return source.replace(
     mathLiveCanonicalUprightPattern,
     (_match, command: string) => mathLiveCanonicalUprightCommands[command],

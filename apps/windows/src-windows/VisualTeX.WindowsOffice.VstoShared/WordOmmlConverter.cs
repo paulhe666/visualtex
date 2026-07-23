@@ -119,7 +119,7 @@ internal static class WordOmmlConverter
             IgnoreWhitespace = true,
             MaxCharactersInDocument = 4_000_000,
         };
-        var outputSettings = transform.OutputSettings.Clone();
+        var outputSettings = transform.OutputSettings?.Clone() ?? new XmlWriterSettings();
         outputSettings.OmitXmlDeclaration = true;
         outputSettings.Encoding = new UTF8Encoding(false);
         using var sourceText = new StringReader(mathMl);
@@ -128,7 +128,49 @@ internal static class WordOmmlConverter
         using (var output = XmlWriter.Create(outputText, outputSettings))
             transform.Transform(source, output);
         var transformed = outputText.ToString();
-        return NormalizeDisplayNaryOmml(ExtractSingleOMath(transformed), display);
+        var omml = ExtractSingleOMath(transformed);
+        omml = NormalizeExplicitUprightRuns(omml, mathMl);
+        return NormalizeDisplayNaryOmml(omml, display);
+    }
+
+    internal static string NormalizeExplicitUprightRuns(string omml, string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(omml) || string.IsNullOrWhiteSpace(mathMl))
+            return omml;
+
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var mathMlDocument = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var uprightTokens = mathMlDocument
+            .Descendants()
+            .Where(element =>
+            {
+                if (element.Name.Namespace != presentationMath) return false;
+                var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
+                return variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
+                    || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
+            })
+            .Select(element => element.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.Ordinal);
+        if (uprightTokens.Count == 0) return omml;
+
+        var ommlDocument = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        XNamespace math = MathNamespace;
+        foreach (var run in ommlDocument.Descendants(math + "r"))
+        {
+            var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
+            if (!uprightTokens.Contains(text)) continue;
+
+            var properties = run.Element(math + "rPr");
+            var plainStyle = properties?.Element(math + "sty");
+            if (plainStyle?.Attribute(math + "val")?.Value != "p") continue;
+
+            plainStyle.Remove();
+            if (properties!.Element(math + "nor") is null)
+                properties.AddFirst(new XElement(math + "nor"));
+        }
+
+        return ommlDocument.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
     }
 
     internal static string NormalizeNaryArguments(string mathMl)
@@ -260,6 +302,10 @@ internal static class WordOmmlConverter
             }
             grow.SetAttributeValue(math + "val", "1");
 
+            // The synthetic empty limit used to make a bare display integral
+            // become a growing native n-ary operator must be explicitly hidden.
+            // Without m:subHide/m:supHide Word renders the empty limit slot as a
+            // dotted placeholder box below or above the operator.
             SetNaryLimitVisibility(
                 properties,
                 math + "subHide",
@@ -312,7 +358,7 @@ internal static class WordOmmlConverter
             IgnoreWhitespace = true,
             MaxCharactersInDocument = 4_000_000,
         };
-        var outputSettings = transform.OutputSettings.Clone();
+        var outputSettings = transform.OutputSettings?.Clone() ?? new XmlWriterSettings();
         outputSettings.OmitXmlDeclaration = true;
         outputSettings.Encoding = new UTF8Encoding(false);
         using var sourceText = new StringReader(omml);

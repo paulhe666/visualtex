@@ -29,6 +29,7 @@ export interface EditorWorkspaceProps {
 
   onPrimaryAction?: () => Promise<void>;
   onCancel?: () => Promise<void>;
+  onOpenExport?: () => void;
 
   editorRef: RefObject<MathEditorHandle | null>;
   sidebarOpen: boolean;

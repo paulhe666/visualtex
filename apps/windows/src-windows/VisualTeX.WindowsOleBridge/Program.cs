@@ -15,11 +15,6 @@ internal static class Program
         {
             var sid = WindowsIdentity.GetCurrent().User?.Value
                 ?? throw new InvalidOperationException("Unable to resolve current Windows user SID.");
-            var expectedPipe = $@"\\.\pipe\VisualTeX.OfficeBridge.{sid}";
-            var pipeName = Required(options, "pipe-name");
-            if (!string.Equals(pipeName, expectedPipe, StringComparison.OrdinalIgnoreCase))
-                throw new UnauthorizedAccessException("The Office bridge pipe name does not match the current user SID.");
-
             var token = Required(options, "token");
             if (token.Length < 64)
                 throw new UnauthorizedAccessException("The Office bridge token is too short.");
@@ -27,6 +22,15 @@ internal static class Program
             if (!int.TryParse(Required(options, "parent-pid"), out var parentPid) ||
                 parentPid <= 0 || parentPid == Environment.ProcessId)
                 throw new ArgumentException("The Office bridge parent process ID is invalid.");
+
+            var acceptanceMode = options.TryGetValue("acceptance", out var acceptanceValue) &&
+                string.Equals(acceptanceValue, "true", StringComparison.OrdinalIgnoreCase);
+            var expectedPipe = acceptanceMode
+                ? $@"\\.\pipe\VisualTeX.OfficeBridge.{sid}.Acceptance.{parentPid}"
+                : $@"\\.\pipe\VisualTeX.OfficeBridge.{sid}";
+            var pipeName = Required(options, "pipe-name");
+            if (!string.Equals(pipeName, expectedPipe, StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("The Office bridge pipe name does not match the secured current-user endpoint.");
 
             var expectedTempRoot = Path.GetFullPath(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -37,9 +41,12 @@ internal static class Program
             if (!string.Equals(tempRoot, expectedTempRoot, StringComparison.OrdinalIgnoreCase))
                 throw new UnauthorizedAccessException("The Office temp root is not the VisualTeX current-user directory.");
 
+            var mutexName = acceptanceMode
+                ? $@"Local\VisualTeX.OfficeBridge.{sid}.Acceptance.{parentPid}"
+                : $@"Local\VisualTeX.OfficeBridge.{sid}";
             using var singleInstance = new Mutex(
                 initiallyOwned: true,
-                name: $@"Local\VisualTeX.OfficeBridge.{sid}",
+                name: mutexName,
                 createdNew: out var createdNew);
             if (!createdNew)
             {

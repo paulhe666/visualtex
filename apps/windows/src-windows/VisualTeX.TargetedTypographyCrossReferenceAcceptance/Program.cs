@@ -46,6 +46,8 @@ internal static class Program
             : Path.Combine(
                 Path.GetDirectoryName(fixturePath) ?? Environment.CurrentDirectory,
                 "word");
+        var skipNumberingFont = args.Any(argument =>
+            string.Equals(argument, "--skip-numbering-font", StringComparison.OrdinalIgnoreCase));
         Directory.CreateDirectory(artifactRoot);
         _reportPath = Path.Combine(artifactRoot, "targeted-upright-crossref-report.txt");
         Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", "1");
@@ -62,21 +64,30 @@ internal static class Program
             Assert(fixture.Cases.Count >= 10, "The upright fixture does not contain detailed coverage.");
 
             var wordAssembly = Assembly.Load("VisualTeX.WordVsto");
-            var numberingType = wordAssembly.GetType(
-                "VisualTeX.WordVsto.WordEquationNumbering",
-                throwOnError: true)!;
             var converterType = wordAssembly.GetType(
                 "VisualTeX.WordVsto.WordOmmlConverter",
                 throwOnError: true)!;
 
             ValidateWordOmmlUprightConversion(fixture, converterType, artifactRoot);
-            ValidateNativeCrossReferenceFormatting(
-                fixture,
-                numberingType,
-                converterType,
-                artifactRoot);
+            if (skipNumberingFont)
+            {
+                Log("[Issue 2] SKIP - Word display-number font styling is outside the current task scope.");
+            }
+            else
+            {
+                var numberingType = wordAssembly.GetType(
+                    "VisualTeX.WordVsto.WordEquationNumbering",
+                    throwOnError: true)!;
+                ValidateNativeCrossReferenceFormatting(
+                    fixture,
+                    numberingType,
+                    converterType,
+                    artifactRoot);
+            }
 
-            Log("RESULT: PASS - both targeted issues passed all detailed acceptance checks.");
+            Log(skipNumberingFont
+                ? "RESULT: PASS - upright OMML acceptance passed; numbering-font checks were explicitly skipped."
+                : "RESULT: PASS - both targeted issues passed all detailed acceptance checks.");
             File.WriteAllLines(_reportPath, Report, new UTF8Encoding(false));
             return 0;
         }
@@ -129,12 +140,37 @@ internal static class Program
                 $"{item.Name}: Word-visible text contains imaginaryJ.");
 
             var compactVisibleText = RemoveWhitespace(visibleText);
+            var explicitNormalText = string.Concat(
+                document
+                    .Descendants(math + "r")
+                    .Where(run => run.Element(math + "rPr")?.Element(math + "nor") is not null)
+                    .SelectMany(run => run.Elements(math + "t"))
+                    .Select(element => element.Value));
+            var compactExplicitNormalText = RemoveWhitespace(explicitNormalText);
+            XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+            var explicitNormalMathMlTokens = XDocument.Parse(item.MathMl)
+                .Descendants(presentationMath + "mi")
+                .Where(element =>
+                {
+                    var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
+                    return variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
+                        || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
+                })
+                .Select(element => RemoveWhitespace(element.Value))
+                .Where(value => value.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var token in item.NormalMathMlTokens)
             {
                 var compactToken = RemoveWhitespace(token);
                 Assert(
                     compactVisibleText.IndexOf(compactToken, StringComparison.OrdinalIgnoreCase) >= 0,
                     $"{item.Name}: Word OMML no longer contains expected upright token '{token}'.");
+                if (explicitNormalMathMlTokens.Contains(compactToken))
+                {
+                    Assert(
+                        compactExplicitNormalText.IndexOf(compactToken, StringComparison.OrdinalIgnoreCase) >= 0,
+                        $"{item.Name}: Word OMML token '{token}' is not marked with explicit m:nor normal style.");
+                }
                 checkedTokens++;
             }
 

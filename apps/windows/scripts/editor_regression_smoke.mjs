@@ -1,13 +1,27 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 
 const portOffset = process.pid % 1000;
 const previewPort = 5300 + portOffset;
 const debugPort = 10300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = join(tmpdir(), `visualtex-editor-smoke-${process.pid}`);
+const chromeCandidates = [
+  process.env.VISUALTEX_CHROME_PATH,
+  process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
+  process.env["PROGRAMFILES(X86)"] && join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
+  process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
+  process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
+  process.env["PROGRAMFILES(X86)"] && join(process.env["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
+].filter(Boolean);
+const chromePath = chromeCandidates.find((candidate) => existsSync(candidate));
+if (!chromePath) {
+  throw new Error(`No Chrome/Edge executable found. Checked: ${chromeCandidates.join(", ")}`);
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -271,51 +285,18 @@ async function main() {
     const setField = async (latex) => setFieldAt(0, latex);
 
     await setField("\\theta");
-    await waitForEvaluation(
+    const defaultOtherSuggestionState = await waitForEvaluation(
       `(() => ({
-        ready: Boolean(document.querySelector(".suggestion-popup")),
+        ready: !document.querySelector(".suggestion-popup"),
         candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+        value: document.querySelector("math-field")?.value ?? "",
       }))()`,
-      "custom command candidate for \\theta",
+      "default other-command candidate setting",
     );
-    let thetaState;
-    let thetaCommitError;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      await key("Enter", "Enter", 13);
-      try {
-        thetaState = await waitForEvaluation(`(() => {
-      const field = document.querySelector("math-field");
-      const surface = document.querySelector(".multi-line-editor");
-      const active = document.activeElement;
-      const state = {
-        value: field.value,
-        selection: field.selection,
-        position: field.position,
-        lineCount: document.querySelectorAll(".formula-line").length,
-        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-        candidateCount: document.querySelectorAll(".suggestion-popup").length,
-        candidateConnected: document.querySelector(".suggestion-popup")?.isConnected ?? false,
-        candidateParentClass: document.querySelector(".suggestion-popup")?.parentElement?.className ?? "",
-        candidateParentQuery: document.querySelector(".suggestion-popup")?.parentElement?.dataset.commandQuery ?? "",
-        candidateText: document.querySelector(".suggestion-popup")?.innerText ?? "",
-        commandQuery: surface?.dataset.commandQuery ?? "",
-        activeLineId: surface?.dataset.activeLineId ?? "",
-        activeTag: active?.tagName ?? "",
-        activeClass: active?.className ?? "",
-      };
-      return {
-        ...state,
-        ready: state.value === "\\\\theta" && !state.candidateVisible,
-      };
-        })()`, "custom command candidate commit", 900);
-        break;
-      } catch (error) {
-        thetaCommitError = error;
-      }
-    }
-    if (!thetaState) throw thetaCommitError;
-    if (thetaState.candidateVisible) {
-      throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
+    if (defaultOtherSuggestionState.candidateVisible) {
+      throw new Error(
+        `The VisualTeX large panel must be off by default for non-structured commands: ${JSON.stringify(defaultOtherSuggestionState)}`,
+      );
     }
 
     await setField("");
@@ -455,6 +436,18 @@ async function main() {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: true,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
     await reloadEditor();
     await setField("\\alpha");
     await waitForEvaluation(
@@ -484,6 +477,18 @@ async function main() {
       ready: document.querySelectorAll("math-field").length === 1,
       lineCount: document.querySelectorAll("math-field").length,
     }))()`, "remove empty line after committed command");
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: true,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
 
     await reloadEditor();
     await setField("x\\degree");
@@ -543,6 +548,18 @@ async function main() {
         `Backspace did not modify the committed degree command: ${JSON.stringify({ degreeCommitState, degreeDeleteState })}`,
       );
     }
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: false,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
 
     await resetEditorDocument([""]);
     await setField("");
@@ -648,7 +665,8 @@ async function main() {
         if (operatorOffset < 0) {
           throw new Error("Structured operator offset was not found: " + command);
         }
-        field.position = operatorOffset;
+        const lowerOffset = Math.max(0, operatorOffset - 1);
+        field.position = lowerOffset;
         field.focus();
         field.shadowRoot
           ?.querySelector('[part="keyboard-sink"]')
@@ -658,8 +676,13 @@ async function main() {
         field.addEventListener("input", () => {
           window.__visualtexNavigationInputEvents += 1;
         });
-        const moved = field.executeCommand("moveToSubscript");
-        return { moved, operatorOffset, beforeLatex, position: field.position };
+        return {
+          moved: field.position === lowerOffset,
+          operatorOffset,
+          lowerOffset,
+          beforeLatex,
+          position: field.position,
+        };
       })()`);
       if (!navigationStart.moved) {
         throw new Error(
@@ -674,7 +697,13 @@ async function main() {
           ) ?? [])];
           const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
           const script = caret?.closest(".ML__msubsup, .ML__op-group");
-          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          if (!field || !caret || !script) return {
+            ready: false,
+            region: null,
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            selection: field?.selection ?? null,
+          };
           const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
           const scriptBounds = script.getBoundingClientRect();
           const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
@@ -1163,6 +1192,45 @@ async function main() {
       await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
       await sleep(100);
     }
+    const onboardingMatrixStep = await evaluate(`(() => ({
+      progressCount: document.querySelectorAll(".onboarding-progress > span").length,
+      visible: Boolean(document.querySelector(".onboarding-matrix-font-demo")),
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      selectedCells: document.querySelectorAll(".onboarding-mini-matrix-grid .is-selected").length,
+      fontCards: document.querySelectorAll(".onboarding-font-variants-preview > div > span").length,
+      text: document.querySelector(".onboarding-matrix-font-demo")?.textContent ?? "",
+    }))()`);
+    if (
+      onboardingMatrixStep.progressCount < 10 ||
+      !onboardingMatrixStep.visible ||
+      onboardingMatrixStep.selectedCells !== 11 ||
+      onboardingMatrixStep.fontCards !== 3 ||
+      !onboardingMatrixStep.text.includes("10 × 10")
+    ) {
+      throw new Error(`The onboarding matrix/font step is incomplete: ${JSON.stringify(onboardingMatrixStep)}`);
+    }
+
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
+    const onboardingInputBehaviorStep = await evaluate(`(() => ({
+      visible: Boolean(document.querySelector(".onboarding-input-behavior-demo")),
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      toggles: document.querySelectorAll(".onboarding-input-toggle-list > span").length,
+      hasActiveToggle: Boolean(document.querySelector(".onboarding-input-toggle-list i.is-on")),
+      text: document.querySelector(".onboarding-input-behavior-demo")?.textContent ?? "",
+    }))()`);
+    if (
+      !onboardingInputBehaviorStep.visible ||
+      onboardingInputBehaviorStep.toggles !== 2 ||
+      !onboardingInputBehaviorStep.hasActiveToggle ||
+      !onboardingInputBehaviorStep.text.includes("Enter") ||
+      !onboardingInputBehaviorStep.text.includes("微分正体")
+    ) {
+      throw new Error(`The onboarding input-behavior step is incomplete: ${JSON.stringify(onboardingInputBehaviorStep)}`);
+    }
+
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
     const onboardingFormatStep = await evaluate(`(() => ({
       progressCount: document.querySelectorAll(".onboarding-progress > span").length,
       visible: Boolean(document.querySelector(".onboarding-code-format-demo")),
@@ -1170,7 +1238,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount < 7 ||
+      onboardingFormatStep.progressCount < 10 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")
@@ -1178,8 +1246,26 @@ async function main() {
       throw new Error(`The onboarding LaTeX format step is incomplete: ${JSON.stringify(onboardingFormatStep)}`);
     }
 
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
+    const onboardingExportStep = await evaluate(`(() => ({
+      visible: Boolean(document.querySelector(".onboarding-export-demo")),
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      formats: [...document.querySelectorAll(".onboarding-export-formats strong")].map((item) => item.textContent),
+      selected: document.querySelector(".onboarding-export-formats .is-selected strong")?.textContent ?? "",
+      path: document.querySelector(".onboarding-export-path strong")?.textContent ?? "",
+    }))()`);
+    if (
+      !onboardingExportStep.visible ||
+      onboardingExportStep.formats.join(",") !== "Markdown,SVG,PNG" ||
+      onboardingExportStep.selected !== "SVG" ||
+      !onboardingExportStep.path.includes("formula.svg")
+    ) {
+      throw new Error(`The onboarding export step is incomplete: ${JSON.stringify(onboardingExportStep)}`);
+    }
+
     console.log(JSON.stringify({
-      thetaState,
+      defaultOtherSuggestionState,
       enterAfterCandidateState,
       nativePopover,
       nativeCommitState,
@@ -1202,7 +1288,10 @@ async function main() {
       chineseIdeographicCommaValue,
       arrowUpLineState,
       arrowDownLineState,
+      onboardingMatrixStep,
+      onboardingInputBehaviorStep,
       onboardingFormatStep,
+      onboardingExportStep,
     }, null, 2));
     console.log("Editor regression smoke test passed");
   } finally {

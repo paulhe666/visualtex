@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ExpectedAppVersion = "1.2.1",
-    [string]$ExpectedOfficeMsiVersion = "1.0.34.0"
+    [string]$ExpectedAppVersion = "1.2.2",
+    [string]$ExpectedOfficeMsiVersion = "1.0.35.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,8 +55,8 @@ if (($localServer.Trim('"')) -ne $oleServer -or $serverExecutable -ne $oleServer
 
 $installer = New-Object -ComObject WindowsInstaller.Installer
 $officeProductCodes = @(
-    "{B4E2A791-6C35-4F8D-9A20-7E1C5B3D8642}",
-    "{5F9C2D18-A743-4B6E-8D01-C2E7A5943B60}"
+    "{8BF4D9CB-320D-4AEB-929F-7E04812795AF}",
+    "{48ABC5AF-2963-4BE6-86E3-F03950ECD270}"
 )
 $installedOfficeVersions = @()
 foreach ($productCode in $officeProductCodes) {

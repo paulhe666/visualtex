@@ -69,6 +69,39 @@ public sealed class WordOmmlTests
         Assert.DoesNotContain("<math", omml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void UprightMathMlIdentifiersUseExplicitNormalOmmlRuns()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mi mathvariant=\"normal\">d</mi><mi>x</mi><mo>+</mo>"
+            + "<mi>d</mi><mi>f</mi><mo>+</mo>"
+            + "<mi mathvariant=\"normal\">e</mi>"
+            + "<msup><mi mathvariant=\"normal\">i</mi><mi>x</mi></msup>"
+            + "</math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var runs = document.Descendants(math + "r").ToArray();
+
+        static bool IsNormalRun(XElement run, XNamespace math) =>
+            run.Element(math + "rPr")?.Element(math + "nor") is not null;
+
+        foreach (var token in new[] { "d", "e", "i" })
+        {
+            Assert.Contains(
+                runs,
+                run => run.Element(math + "t")?.Value == token && IsNormalRun(run, math));
+        }
+
+        Assert.Contains(
+            runs,
+            run =>
+                (run.Element(math + "t")?.Value.Contains("df", StringComparison.Ordinal) ?? false)
+                && !IsNormalRun(run, math));
+    }
+
     [Theory]
     [MemberData(nameof(NaryMathMlCases))]
     public void OfficeMathMlTransformNeverLeavesAnEmptyNaryOperand(
@@ -89,6 +122,23 @@ public sealed class WordOmmlTests
                 operand!.Elements().Any(),
                 $"{latex} produced an empty m:nary/m:e operand: {omml}");
         });
+    }
+
+    [Fact]
+    public void OfficeTransformSupportsSyntheticEmptyLimitForBareIntegral()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<msub><mo>&#x222B;</mo><mrow /></msub><mrow><mi>a</mi></mrow>"
+            + "<mi>d</mi><mi>b</mi></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var nary = document.Descendants(math + "nary").SingleOrDefault();
+
+        Assert.True(nary is not null, $"Synthetic bare integral did not become m:nary: {omml}");
+        Assert.True(nary!.Element(math + "e")?.Elements().Any() == true);
     }
 
     [Fact]

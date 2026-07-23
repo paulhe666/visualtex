@@ -1,13 +1,27 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 
 const portOffset = process.pid % 1000;
 const previewPort = 4300 + portOffset;
 const debugPort = 9300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = `/tmp/visualtex-history-smoke-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = join(tmpdir(), `visualtex-history-smoke-${process.pid}`);
+const chromeCandidates = [
+  process.env.VISUALTEX_CHROME_PATH,
+  process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
+  process.env["PROGRAMFILES(X86)"] && join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
+  process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
+  process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
+  process.env["PROGRAMFILES(X86)"] && join(process.env["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
+].filter(Boolean);
+const chromePath = chromeCandidates.find((candidate) => existsSync(candidate));
+if (!chromePath) {
+  throw new Error(`No Chrome/Edge executable found. Checked: ${chromeCandidates.join(", ")}`);
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -585,7 +599,7 @@ async function main() {
       field.shadowRoot
         ?.querySelector('[part="keyboard-sink"]')
         ?.focus({ preventScroll: true });
-      field.setValue("\\\\the", {
+      field.setValue("\\\\su", {
         mode: "math",
         format: "latex",
         insertionMode: "replaceAll",
@@ -604,7 +618,7 @@ async function main() {
     assertEqual(
       await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`),
       true,
-      "candidate popup should open",
+      "structured candidate popup should open",
     );
     await key("Enter", "Enter", 13);
     await sleep(220);
@@ -707,7 +721,7 @@ async function main() {
     await client.send("Input.insertText", { text: "c" });
     await sleep(150);
     assertDeepEqual(await values(), ["a=b"], "CodeMirror draft must not update formulas");
-    await key("z", "KeyZ", 90, 4, false);
+    await key("z", "KeyZ", 90, 2, false);
     await sleep(150);
     assertEqual(
       await evaluate(`document.querySelector(".cm-content").innerText`),

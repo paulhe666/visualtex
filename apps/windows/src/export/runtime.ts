@@ -7,6 +7,7 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
+import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import type {
   PngExportOptions,
   PngExportResult,
@@ -48,7 +49,9 @@ function nonNegativeFinite(value: number, fallback: number) {
 }
 
 function prepareLatex(latex: string) {
-  const normalized = latex.replace(/\r\n?/g, "\n").trim();
+  const normalized = normalizeMathLiveCanonicalUprightCommands(
+    latex.replace(/\r\n?/g, "\n"),
+  ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
   if (/\\begin\s*\{/.test(normalized)) return normalized;
 

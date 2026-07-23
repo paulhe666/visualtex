@@ -168,7 +168,7 @@ function Invoke-Bridge(
 }
 
 function Start-BridgeProcess {
-    $argumentLine = "--parent-pid $PID --pipe-name `"$script:FullPipeName`" --token $script:Token --temp-root `"$script:TempRoot`" --log-root `"$script:LogRoot`""
+    $argumentLine = "--parent-pid $PID --pipe-name `"$script:FullPipeName`" --token $script:Token --temp-root `"$script:TempRoot`" --log-root `"$script:LogRoot`" --acceptance true"
     $process = Start-Process -FilePath $SidecarPath -ArgumentList $argumentLine -PassThru -WindowStyle Hidden
     $sidecarFullPath = [IO.Path]::GetFullPath($SidecarPath)
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
@@ -434,7 +434,9 @@ function Assert-SameIdSet([string[]]$Expected, [string[]]$Actual, [string]$Conte
 }
 
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$script:PipeLeaf = "VisualTeX.OfficeBridge.$sid"
+# Acceptance mode keeps the production SID binding while using a PID-scoped
+# pipe and mutex, so it can coexist with an installed VisualTeX bridge.
+$script:PipeLeaf = "VisualTeX.OfficeBridge.$sid.Acceptance.$PID"
 $script:FullPipeName = "\\.\pipe\$($script:PipeLeaf)"
 $script:Token = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Minimum 0 -Maximum 256) })
 $script:TempRoot = Join-Path $env:LOCALAPPDATA "VisualTeX\office\temp"
@@ -460,6 +462,11 @@ $presentation = $null
 $slide = $null
 $wordPath = Join-Path $artifactRoot "VisualTeX-Word-Acceptance.docx"
 $powerPointPath = Join-Path $artifactRoot "VisualTeX-PowerPoint-Acceptance.pptx"
+$preexistingOfficeProcessIds = @(
+    Get-Process WINWORD, POWERPNT -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Id
+)
+$acceptanceOfficeProcessIds = @()
 
 try {
     Write-Host "[1/10] Starting authenticated current-user named-pipe bridge..."
@@ -477,6 +484,11 @@ try {
     $presentation = $powerPoint.Presentations.Add()
     $slide = $presentation.Slides.Add(1, 12)
     Start-Sleep -Milliseconds 500
+    $acceptanceOfficeProcessIds = @(
+        Get-Process WINWORD, POWERPNT -ErrorAction SilentlyContinue |
+            Where-Object { $_.Id -notin $preexistingOfficeProcessIds } |
+            Select-Object -ExpandProperty Id
+    )
 
     Write-Host "[3/10] Inserting $FormulaCount independent Word formulas..."
     $wordIds = New-Object System.Collections.Generic.List[string]
@@ -713,8 +725,29 @@ try {
             break
         }
     } while ([DateTimeOffset]::UtcNow -lt $officeExitDeadline)
-    Assert-True ($detectAfter.result.wordRunning -eq $false) "Word remained detectable after Quit."
-    Assert-True ($detectAfter.result.powerPointRunning -eq $false) "PowerPoint remained detectable after Quit."
+
+    if ($detectAfter.result.wordRunning -or $detectAfter.result.powerPointRunning) {
+        $lingeringAcceptanceProcesses = @(
+            Get-Process WINWORD, POWERPNT -ErrorAction SilentlyContinue |
+                Where-Object { $_.Id -in $acceptanceOfficeProcessIds }
+        )
+        foreach ($process in $lingeringAcceptanceProcesses) {
+            Write-Host "Stopping acceptance-owned Office background process $($process.ProcessName) ($($process.Id))."
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+        $forcedExitDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+        do {
+            Start-Sleep -Milliseconds 250
+            $detectAfter = Invoke-Bridge "office.detect" ([ordered]@{})
+            if ($detectAfter.result.wordRunning -eq $false -and
+                $detectAfter.result.powerPointRunning -eq $false) {
+                break
+            }
+        } while ([DateTimeOffset]::UtcNow -lt $forcedExitDeadline)
+    }
+
+    Assert-True ($detectAfter.result.wordRunning -eq $false) "Word remained detectable after Quit and acceptance-owned background cleanup."
+    Assert-True ($detectAfter.result.powerPointRunning -eq $false) "PowerPoint remained detectable after Quit and acceptance-owned background cleanup."
     $notRunning = Invoke-Bridge "word.getSelection" ([ordered]@{}) -AllowFailure
     Assert-True ($notRunning.ok -eq $false) "Word selection unexpectedly succeeded while Word was stopped."
 
@@ -726,7 +759,7 @@ try {
     Write-Host "[10/10] Optional OLE/VSTO mode mutual-exclusion test..."
     if ($TestModeSwitch) {
         & (Join-Path $PSScriptRoot "install_windows_ole.ps1")
-        $catalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\VisualTeX"
+        $catalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\{69C6A866-755B-4C5A-BACB-EEA28B03C724}"
         Assert-True (Test-Path $catalogKey) "OLE Trusted Catalog was not registered."
         foreach ($key in @(
             "HKCU:\Software\Microsoft\Office\Word\Addins\VisualTeX.WordVsto",

@@ -74,7 +74,11 @@ function Get-RelatedProductCodes {
         if (-not (Test-Path $uninstallRoot)) { continue }
         foreach ($key in Get-ChildItem $uninstallRoot -ErrorAction SilentlyContinue) {
             $item = Get-ItemProperty $key.PSPath -ErrorAction SilentlyContinue
-            if ($item.DisplayName -eq $displayName -and $key.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$') {
+            if ($null -eq $item) { continue }
+            $displayNameProperty = $item.PSObject.Properties["DisplayName"]
+            if ($null -ne $displayNameProperty -and
+                [string]$displayNameProperty.Value -eq $displayName -and
+                $key.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$') {
                 [void]$codes.Add($key.PSChildName)
             }
         }

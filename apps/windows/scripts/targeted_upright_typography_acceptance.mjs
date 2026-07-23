@@ -26,9 +26,49 @@ const cases = [
     normalMathMlTokens: ["d"],
   },
   {
+    name: "arbitrary Latin differential operand",
+    input: String.raw`\frac{dQ}{dt}`,
+    expectedFragments: [String.raw`\mathrm{d}Q`, String.raw`\mathrm{d}t`],
+    normalMathMlTokens: ["d"],
+  },
+  {
+    name: "Greek differential operand and variable",
+    input: String.raw`\frac{d\Phi}{d\theta}`,
+    expectedFragments: [String.raw`\mathrm{d}\Phi`, String.raw`\mathrm{d}\theta`],
+    normalMathMlTokens: ["d"],
+  },
+  {
+    name: "styled vector differential operand",
+    input: String.raw`\frac{d\mathbf{r}}{dt}`,
+    expectedFragments: [String.raw`\mathrm{d}\mathbf{r}`, String.raw`\mathrm{d}t`],
+    normalMathMlTokens: ["d"],
+  },
+  {
+    name: "parenthesized differential expression",
+    input: String.raw`\frac{d(xy+\theta)}{dx}`,
+    expectedFragments: [String.raw`\mathrm{d}(xy+\theta)`, String.raw`\mathrm{d}x`],
+    normalMathMlTokens: ["d"],
+  },
+  {
     name: "second-order differential",
     input: String.raw`\frac{d^2y}{dx^2}`,
     expectedFragments: [String.raw`\mathrm{d}^2y`, String.raw`\mathrm{d}x^2`],
+    normalMathMlTokens: ["d"],
+  },
+  {
+    name: "mixed higher-order differential",
+    input: String.raw`\frac{d^2(\alpha+\beta)}{dx\,dy}`,
+    expectedFragments: [
+      String.raw`\mathrm{d}^2(\alpha+\beta)`,
+      String.raw`\mathrm{d}x`,
+      String.raw`\mathrm{d}y`,
+    ],
+    normalMathMlTokens: ["d"],
+  },
+  {
+    name: "subscripted differential variable",
+    input: String.raw`\frac{du_i}{dt_j}`,
+    expectedFragments: [String.raw`\mathrm{d}u_i`, String.raw`\mathrm{d}t_j`],
     normalMathMlTokens: ["d"],
   },
   {
@@ -42,6 +82,20 @@ const cases = [
     input: String.raw`\int_0^1 f(x)dx`,
     expectedFragments: [String.raw`\mathrm{d}x`],
     normalMathMlTokens: ["d"],
+  },
+  {
+    name: "ordinary d identifiers remain italic",
+    input: String.raw`d+df+dx`,
+    expectedNormalized: String.raw`d+df+dx`,
+    expectedFragments: [String.raw`d+df+dx`],
+    normalMathMlTokens: [],
+  },
+  {
+    name: "integrand d identifiers are not trailing differentials",
+    input: String.raw`\int_0^1 f(dx)+d(x)`,
+    expectedNormalized: String.raw`\int_0^1 f(dx)+d(x)`,
+    expectedFragments: [String.raw`f(dx)+d(x)`],
+    normalMathMlTokens: [],
   },
   {
     name: "MathLive canonical upright commands",
@@ -189,6 +243,13 @@ for (const item of cases) {
     normalized,
     `${item.name}: normalization is not idempotent`,
   );
+  if (item.expectedNormalized !== undefined) {
+    assert.equal(
+      normalized,
+      item.expectedNormalized,
+      `${item.name}: normalization changed an ordinary italic identifier`,
+    );
+  }
   for (const fragment of item.expectedFragments) {
     assert.ok(
       normalized.includes(fragment),

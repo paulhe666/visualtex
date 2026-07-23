@@ -34,12 +34,26 @@ FunctionEnd
 Function VisualTeXOfficePageLeave
   ${NSD_GetState} $VisualTeXOfficeOleRadio $0
   ${If} $0 == ${BST_CHECKED}
-    nsExec::ExecToStack `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process WINWORD,POWERPNT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
+    nsExec::ExecToStack `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
     Pop $1
     Pop $2
     ${If} $1 != "0"
-      MessageBox MB_ICONEXCLAMATION "请先完全关闭 Microsoft Word 和 PowerPoint，再继续安装 Office 集成。安装器不会自动关闭或重新启动 Office。$\r$\n$\r$\nClose Microsoft Word and PowerPoint before continuing. The installer will not close or restart Office automatically."
+      MessageBox MB_ICONEXCLAMATION|MB_YESNO "检测到 Microsoft Office 仍在运行。强制关闭会立即结束 Word、PowerPoint、Excel、Outlook、OneNote、Access、Publisher、Visio 和 Project；未保存的 Office 文档可能丢失。$\r$\n$\r$\n是否强制关闭所有这些 Office 进程并继续安装？选择“否”将返回上一页，由您自行保存并关闭 Office。$\r$\n$\r$\nMicrosoft Office is still running. Force closing will terminate all common Office apps immediately and may discard unsaved work.$\r$\n$\r$\nForce close all Office processes and continue? Choose No to go back and close Office yourself." IDYES visualtex_force_close_office IDNO visualtex_office_close_declined
+
+visualtex_force_close_office:
+      nsExec::ExecToStack `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800; if (Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
+      Pop $1
+      Pop $2
+      ${If} $1 != "0"
+        MessageBox MB_ICONSTOP "无法完全关闭所有 Office 进程。请保存工作并在任务管理器中关闭残留的 Office 进程后重试。$\r$\n$\r$\nThe installer could not close every Office process. Save your work, close the remaining Office processes in Task Manager, and try again."
+        Abort
+      ${EndIf}
+      Goto visualtex_office_process_check_done
+
+visualtex_office_close_declined:
       Abort
+
+visualtex_office_process_check_done:
     ${EndIf}
     StrCpy $VisualTeXOfficeChoice "ole"
     Return

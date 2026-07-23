@@ -299,11 +299,19 @@ public static class VisualTeXOfficeInput {
         if ($application) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($application) | Out-Null }
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
-        if ($startedProcessId) {
-            Start-Sleep -Seconds 2
-            Get-Process -Id $startedProcessId -ErrorAction SilentlyContinue |
-                Stop-Process -Force -ErrorAction SilentlyContinue
-        }
+        # Office can hand off the automation instance to a replacement PID while
+        # the Add-ins dialog is open. The function refuses to start when this host
+        # already has a running process, so every remaining process with this name
+        # belongs to this setup attempt and must be closed before mode switching.
+        Start-Sleep -Seconds 2
+        $exitDeadline = [DateTimeOffset]::UtcNow.AddSeconds(8)
+        do {
+            $remaining = @(Get-Process $processName -ErrorAction SilentlyContinue)
+            if ($remaining.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTimeOffset]::UtcNow -lt $exitDeadline)
+        Get-Process $processName -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
     }
 }
 

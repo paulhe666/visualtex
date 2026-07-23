@@ -2,13 +2,21 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   Download,
+  Github,
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  Star,
+  UserRound,
+  UsersRound,
   WifiOff,
   Wrench,
   X,
 } from "lucide-react";
+import {
+  VISUALTEX_QQ_GROUP_NUMBER,
+  VISUALTEX_QQ_GROUP_QR_DATA_URL,
+} from "../assets/visualtexQqGroup";
 import type { Language } from "../stores/editorStore";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
@@ -24,6 +32,7 @@ interface Props {
   onCheckOnStartupChange: (enabled: boolean) => void;
   onRetry: () => void;
   onOpenRelease: () => void;
+  onOpenProject: () => void;
   onClose: () => void;
 }
 
@@ -38,6 +47,7 @@ export function UpdateDialog({
   onCheckOnStartupChange,
   onRetry,
   onOpenRelease,
+  onOpenProject,
   onClose,
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -254,6 +264,68 @@ export function UpdateDialog({
               )}
             </>
           ) : null}
+
+          <section className="update-project-card" aria-label={isEn ? "Project information" : "项目信息"}>
+            <div className="update-project-author">
+              <UserRound size={15} aria-hidden="true" />
+              <span>
+                <small>{isEn ? "Author" : "作者"}</small>
+                <strong>{isEn ? "Liao Pojian (paulhe666)" : "廖珀健（paulhe666）"}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              className="update-project-link"
+              onClick={onOpenProject}
+              title="https://github.com/paulhe666/visualtex"
+            >
+              <Github size={15} aria-hidden="true" />
+              <span>github.com/paulhe666/visualtex</span>
+            </button>
+            <p>
+              <Star size={14} aria-hidden="true" />
+              {isEn
+                ? "If you like the project, please give it a Star!"
+                : "如果觉得项目不错请点个 Star 噢！"}
+            </p>
+          </section>
+
+          <section
+            className="update-community-card"
+            aria-label={isEn ? "VisualTeX QQ community" : "VisualTeX QQ 交流群"}
+          >
+            <div className="update-community-copy">
+              <span className="update-community-icon">
+                <UsersRound size={18} aria-hidden="true" />
+              </span>
+              <div>
+                <small>{isEn ? "Community" : "交流社区"}</small>
+                <strong>{isEn ? "VisualTeX QQ Group" : "VisualTeX 交流群"}</strong>
+                <p>
+                  {isEn
+                    ? "Scan with QQ or search the group number to discuss usage, report issues, and follow development updates."
+                    : "使用 QQ 扫码或搜索群号，交流使用方法、反馈问题并获取开发动态。"}
+                </p>
+                <span className="update-community-number">
+                  {isEn ? "Group number" : "群号"}：
+                  <b>{VISUALTEX_QQ_GROUP_NUMBER}</b>
+                </span>
+              </div>
+            </div>
+            <figure className="update-community-qr">
+              <img
+                src={VISUALTEX_QQ_GROUP_QR_DATA_URL}
+                alt={
+                  isEn
+                    ? `QR code for VisualTeX QQ group ${VISUALTEX_QQ_GROUP_NUMBER}`
+                    : `VisualTeX QQ 交流群 ${VISUALTEX_QQ_GROUP_NUMBER} 二维码`
+                }
+                width={240}
+                height={240}
+              />
+              <figcaption>{isEn ? "Scan with QQ" : "使用 QQ 扫码加入"}</figcaption>
+            </figure>
+          </section>
 
           <label className="update-preference-row">
             <input

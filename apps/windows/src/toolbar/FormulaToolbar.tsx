@@ -30,7 +30,10 @@ const categories = [
   "physics",
 ];
 
-const matrixSizes = Array.from({ length: 10 }, (_, index) => index + 1);
+const matrixGridCells = Array.from({ length: 100 }, (_, index) => ({
+  row: Math.floor(index / 10) + 1,
+  column: (index % 10) + 1,
+}));
 const matrixDelimiterOptions: Array<{
   id: MatrixDelimiter;
   preview: string;
@@ -99,6 +102,10 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
   const [activeCategory, setActiveCategory] = useState("common");
   const [matrixRows, setMatrixRows] = useState(2);
   const [matrixColumns, setMatrixColumns] = useState(2);
+  const [matrixHover, setMatrixHover] = useState<{
+    rows: number;
+    columns: number;
+  } | null>(null);
   const [matrixDelimiter, setMatrixDelimiter] =
     useState<MatrixDelimiter>("bmatrix");
   const language = useEditorStore((state) => state.language);
@@ -129,6 +136,8 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
   const insertCustomMatrix = () => {
     onInsert(createMatrixCommand(matrixRows, matrixColumns, matrixDelimiter));
   };
+  const previewRows = matrixHover?.rows ?? matrixRows;
+  const previewColumns = matrixHover?.columns ?? matrixColumns;
 
   return (
     <aside
@@ -194,8 +203,8 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
                 <strong>{isEn ? "Custom matrix" : "自定义矩阵"}</strong>
                 <span>{isEn ? "Up to 10 × 10" : "最大 10 × 10"}</span>
               </div>
-              <span className="matrix-size-badge">
-                {matrixRows} × {matrixColumns}
+              <span className="matrix-size-badge" aria-live="polite">
+                {previewRows} × {previewColumns}
               </span>
             </div>
 
@@ -215,30 +224,71 @@ export function FormulaToolbar({ onInsert, onClose }: Props) {
               ))}
             </div>
 
-            <div className="matrix-dimension-row">
-              <label>
-                <span>{isEn ? "Rows" : "行数"}</span>
-                <select
-                  value={matrixRows}
-                  onChange={(event) => setMatrixRows(Number(event.target.value))}
-                >
-                  {matrixSizes.map((size) => (
-                    <option key={size} value={size}>{size}</option>
-                  ))}
-                </select>
-              </label>
-              <span aria-hidden="true">×</span>
-              <label>
-                <span>{isEn ? "Columns" : "列数"}</span>
-                <select
-                  value={matrixColumns}
-                  onChange={(event) => setMatrixColumns(Number(event.target.value))}
-                >
-                  {matrixSizes.map((size) => (
-                    <option key={size} value={size}>{size}</option>
-                  ))}
-                </select>
-              </label>
+            <div className="matrix-size-picker">
+              <span className="matrix-size-picker-label">
+                {isEn
+                  ? "Move to preview · Click to select rows and columns"
+                  : "移动预览 · 单击选择行数和列数"}
+              </span>
+              <div
+                className="matrix-size-grid"
+                role="grid"
+                aria-label={
+                  isEn
+                    ? "Select matrix rows and columns"
+                    : "选择矩阵行数和列数"
+                }
+                aria-rowcount={10}
+                aria-colcount={10}
+                onPointerLeave={() => setMatrixHover(null)}
+                onBlur={(event) => {
+                  if (
+                    !event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    )
+                  ) {
+                    setMatrixHover(null);
+                  }
+                }}
+              >
+                {matrixGridCells.map(({ row, column }) => {
+                  const previewed =
+                    row <= previewRows && column <= previewColumns;
+                  const selectedCorner =
+                    row === matrixRows && column === matrixColumns;
+                  return (
+                    <button
+                      key={`${row}-${column}`}
+                      type="button"
+                      role="gridcell"
+                      className={
+                        "matrix-size-cell" +
+                        (previewed ? " is-previewed" : "") +
+                        (selectedCorner ? " is-selected-corner" : "")
+                      }
+                      aria-label={
+                        isEn
+                          ? `${row} rows by ${column} columns`
+                          : `${row} 行 ${column} 列`
+                      }
+                      aria-selected={selectedCorner}
+                      data-matrix-rows={row}
+                      data-matrix-columns={column}
+                      onPointerEnter={() =>
+                        setMatrixHover({ rows: row, columns: column })
+                      }
+                      onFocus={() =>
+                        setMatrixHover({ rows: row, columns: column })
+                      }
+                      onClick={() => {
+                        setMatrixRows(row);
+                        setMatrixColumns(column);
+                        setMatrixHover(null);
+                      }}
+                    />
+                  );
+                })}
+              </div>
             </div>
 
             <button

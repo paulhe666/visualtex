@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleHelp,
   Code2,
+  FileDown,
   FilePlus2,
   FolderOpen,
   History,
@@ -38,6 +39,7 @@ import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
+import { ExportDialog } from "./components/ExportDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
@@ -88,6 +90,7 @@ import {
 import {
   checkForUpdates,
   openReleasePage,
+  PROJECT_URL,
   type UpdateCheckResult,
 } from "./update/updateService";
 import {
@@ -122,6 +125,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [onboardingOpen, setOnboardingOpen] = useState(() =>
     shouldOpenOnboardingInitially(
@@ -745,7 +749,14 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) {
+      if (
+        settingsOpen ||
+        ocrOpen ||
+        historyOpen ||
+        exportOpen ||
+        onboardingOpen ||
+        updateOpen
+      ) {
         return;
       }
 
@@ -794,7 +805,18 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
+  }, [
+    latex,
+    title,
+    isEn,
+    zoom,
+    settingsOpen,
+    ocrOpen,
+    historyOpen,
+    exportOpen,
+    onboardingOpen,
+    updateOpen,
+  ]);
 
   return (
     <div className="app-shell">
@@ -871,6 +893,15 @@ function App() {
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
                 <kbd>⌘S</kbd>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => setExportOpen(true))}
+              >
+                <FileDown size={16} />
+                <span>{isEn ? "Export…" : "导出…"}</span>
+                <kbd>MD/SVG/PNG</kbd>
               </button>
               <div className="app-menu-divider" />
               <button
@@ -1140,6 +1171,7 @@ function App() {
         showUpdateActions
         showOfficeActions={false}
         showOcrActions
+        onOpenExport={() => setExportOpen(true)}
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
@@ -1206,6 +1238,14 @@ function App() {
         }
       />
 
+      <ExportDialog
+        open={exportOpen}
+        title={title}
+        formulas={lines.map((line) => line.latex)}
+        language={language}
+        onClose={() => setExportOpen(false)}
+        onNotify={setToast}
+      />
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -1277,6 +1317,17 @@ function App() {
                 : isEn
                   ? "Unable to open the download page"
                   : "无法打开下载页面",
+            );
+          });
+        }}
+        onOpenProject={() => {
+          void openReleasePage(PROJECT_URL).catch((error) => {
+            setUpdateError(
+              error instanceof Error
+                ? error.message
+                : isEn
+                  ? "Unable to open the project page"
+                  : "无法打开项目页面",
             );
           });
         }}

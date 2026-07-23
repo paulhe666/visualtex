@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Braces,
   Code2,
+  FileDown,
   Minus,
   PanelBottomClose,
   PanelBottomOpen,
@@ -9,6 +10,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { MathEditor } from "../editor/MathEditor";
+import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import {
@@ -27,11 +29,13 @@ import type { EditorWorkspaceProps } from "./workspaceTypes";
 
 export function EditorWorkspace({
   mode,
+  showFileActions,
   showOfficeActions,
   showOcrActions,
   primaryActionLabel,
   onPrimaryAction,
   onCancel,
+  onOpenExport,
   editorRef,
   sidebarOpen,
   onSidebarOpenChange,
@@ -145,6 +149,19 @@ export function EditorWorkspace({
               </div>
             </div>
             <div className="canvas-tool-group">
+              {showFileActions && onOpenExport && (
+                <button
+                  type="button"
+                  className="export-trigger-button workspace-export-trigger"
+                  onClick={onOpenExport}
+                  aria-label={isEn ? "Export" : "导出"}
+                  title={isEn ? "Export Markdown, SVG or PNG" : "导出 Markdown、SVG 或 PNG"}
+                >
+                  <FileDown size={16} />
+                  <span>{isEn ? "Export" : "导出"}</span>
+                </button>
+              )}
+              <InputBehaviorMenu />
               {showOcrActions && ocrModels.length > 0 && ocrModel && (
                 <label
                   className="canvas-ocr-model"
@@ -158,9 +175,7 @@ export function EditorWorkspace({
                   <select
                     value={ocrModel}
                     disabled={ocrBusy}
-                    onChange={(event) =>
-                      onOcrModelChange?.(event.target.value)
-                    }
+                    onChange={(event) => onOcrModelChange?.(event.target.value)}
                     aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
                   >
                     {ocrModels.map((item) => (

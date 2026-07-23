@@ -5,6 +5,8 @@ import type {
   FormulaDocument,
   FormulaHistoryItem,
   FormulaLine,
+  InputBehaviorSettingKey,
+  InputBehaviorSettings,
   LatexCodeFormat,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
@@ -19,6 +21,48 @@ type Theme = "light" | "dark";
 export type Language = "cn" | "en";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
+
+export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
+  autoExitSuperscript: true,
+  autoExitSubscript: true,
+  autoExitAccent: true,
+  autoExitWrapperCommand: true,
+  showStructuredCommandSuggestions: true,
+  showOtherCommandSuggestions: false,
+};
+
+function normalizeInputBehaviorSettings(value: unknown): InputBehaviorSettings {
+  const candidate =
+    value && typeof value === "object"
+      ? (value as Partial<InputBehaviorSettings>)
+      : {};
+  return {
+    autoExitSuperscript:
+      typeof candidate.autoExitSuperscript === "boolean"
+        ? candidate.autoExitSuperscript
+        : true,
+    autoExitSubscript:
+      typeof candidate.autoExitSubscript === "boolean"
+        ? candidate.autoExitSubscript
+        : true,
+    autoExitAccent:
+      typeof candidate.autoExitAccent === "boolean"
+        ? candidate.autoExitAccent
+        : true,
+    autoExitWrapperCommand:
+      typeof candidate.autoExitWrapperCommand === "boolean"
+        ? candidate.autoExitWrapperCommand
+        : true,
+    showStructuredCommandSuggestions:
+      typeof candidate.showStructuredCommandSuggestions === "boolean"
+        ? candidate.showStructuredCommandSuggestions
+        : true,
+    showOtherCommandSuggestions:
+      typeof candidate.showOtherCommandSuggestions === "boolean"
+        ? candidate.showOtherCommandSuggestions
+        : false,
+  };
+}
 
 function normalizeEditorZoom(value: unknown) {
   const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
@@ -113,6 +157,7 @@ interface EditorState {
   sourceOpen: boolean;
   latexCodeFormat: LatexCodeFormat;
   autoPairDelimiters: boolean;
+  inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
@@ -130,6 +175,10 @@ interface EditorState {
   setSourceOpen: (open: boolean) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
+  setInputBehavior: (
+    setting: InputBehaviorSettingKey,
+    enabled: boolean,
+  ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
@@ -156,6 +205,7 @@ export const useEditorStore = create<EditorState>()(
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       autoPairDelimiters: true,
+      inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
       checkUpdatesOnStartup: true,
@@ -217,6 +267,13 @@ export const useEditorStore = create<EditorState>()(
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
+      setInputBehavior: (setting, enabled) =>
+        set((state) => ({
+          inputBehavior: {
+            ...state.inputBehavior,
+            [setting]: enabled,
+          },
+        })),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
@@ -322,6 +379,7 @@ export const useEditorStore = create<EditorState>()(
         sourceOpen: state.sourceOpen,
         latexCodeFormat: state.latexCodeFormat,
         autoPairDelimiters: state.autoPairDelimiters,
+        inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
@@ -347,6 +405,9 @@ export const useEditorStore = create<EditorState>()(
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters
               : true,
+          inputBehavior: normalizeInputBehaviorSettings(
+            persisted.inputBehavior,
+          ),
         };
       },
     },

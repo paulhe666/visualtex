@@ -457,7 +457,7 @@ assert.ok(wordVsto.includes("targetObjectMode"));
 assert.ok(wordVsto.includes("requiresObjectModeChange"));
 assert.ok(wordVsto.includes("session.ExportResult is null"));
 assert.ok(powerpointVsto.includes('BeginSession("create", "crossPlatformPicture", null)'));
-assert.ok(powerpointVsto.includes('BeginSelectedSession("nativeOle")'));
+assert.ok(powerpointVsto.includes('BeginSelectedSession("nativeOle", conversionOnly: true)'));
 assert.ok(powerpointVsto.includes("capturedSelection"));
 assert.ok(powerpointVsto.includes("ResolveFormulaSelection"));
 assert.ok(powerpointVsto.includes("targetObjectMode"));
@@ -637,6 +637,9 @@ assert.ok(installOle.includes("Schannel HTTP 200"));
 assert.ok(installOle.includes("Clear-VisualTeXWefCache"));
 assert.ok(installOle.includes("Test-VisualTeXOnlyRibbonCache"));
 assert.ok(installOle.includes("Preserved shared Office Ribbon cache"));
+assert.ok(installOle.includes("$exitDeadline = [DateTimeOffset]::UtcNow.AddSeconds(8)"));
+assert.ok(installOle.includes("Get-Process $processName -ErrorAction SilentlyContinue"));
+assert.ok(installOle.includes("Stop-Process -Force -ErrorAction SilentlyContinue"));
 
 const platformBundle = await source("scripts/build_platform_bundle.mjs");
 const windowsBundle = await source("src-tauri/tauri.windows.conf.json");
@@ -665,7 +668,11 @@ assert.ok(installerHooks.includes("VisualTeX-WindowsOffice-VSTO-x86.sha256.json"
 assert.ok(installerHooks.includes('-PackageDirectory "$INSTDIR\\windows-office"'));
 assert.ok(installerHooks.includes("uninstall_windows_vsto.ps1"));
 assert.ok(installerHooks.includes("Get-Process WINWORD,POWERPNT"));
-assert.ok(installerHooks.includes("安装器不会自动关闭或重新启动 Office"));
+assert.ok(installerHooks.includes("Stop-Process -Force"));
+assert.ok(installerHooks.includes("IDYES visualtex_force_close_office"));
+assert.ok(installerHooks.includes("未保存的 Office 文档可能丢失"));
+assert.ok(installerHooks.includes("选择“否”将返回上一页"));
+assert.ok(installerHooks.indexOf("IDYES visualtex_force_close_office") < installerHooks.indexOf("Stop-Process -Force"));
 assert.ok(!installerHooks.includes("VisualTeXOfficeVstoRadio"));
 assert.ok(!installerHooks.includes('VisualTeXOfficeChoice == "vsto"'));
 assert.ok(

@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -1602,6 +1603,49 @@ fn run_recognition(
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportFileRequest {
+    path: String,
+    text: Option<String>,
+    base64: Option<String>,
+}
+
+fn write_export_file_request(request: ExportFileRequest) -> Result<(), String> {
+    let trimmed_path = request.path.trim();
+    if trimmed_path.is_empty() {
+        return Err("Export path is empty".to_string());
+    }
+
+    let path = PathBuf::from(trimmed_path);
+    if path.file_name().is_none() {
+        return Err("Export path must include a file name".to_string());
+    }
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create export directory: {error}"))?;
+    }
+
+    let bytes = match (request.text, request.base64) {
+        (Some(text), None) => text.into_bytes(),
+        (None, Some(encoded)) => BASE64_STANDARD
+            .decode(encoded.trim())
+            .map_err(|error| format!("Unable to decode export data: {error}"))?,
+        (Some(_), Some(_)) => {
+            return Err("Export request must contain text or base64 data, not both".to_string())
+        }
+        (None, None) => return Err("Export request contains no data".to_string()),
+    };
+
+    fs::write(&path, bytes)
+        .map_err(|error| format!("Unable to write export file '{}': {error}", path.display()))
+}
+
+#[tauri::command]
+fn write_export_file(request: ExportFileRequest) -> Result<(), String> {
+    write_export_file_request(request)
+}
+
 #[tauri::command]
 async fn get_ocr_runtime_status(
     app: AppHandle,
@@ -1724,6 +1768,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            write_export_file,
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,
