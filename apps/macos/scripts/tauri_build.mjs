@@ -29,6 +29,7 @@ if (process.platform === "darwin") {
   // OCR archive temporaries can never survive into a new app or DMG.
   for (const generatedPath of [
     "src-tauri/target/release/ocr/offline/macos-arm64",
+    "src-tauri/target/release/office/macos-offline",
     "src-tauri/target/release/bundle/macos/VisualTeX.app",
     "src-tauri/target/release/bundle/dmg",
   ]) {

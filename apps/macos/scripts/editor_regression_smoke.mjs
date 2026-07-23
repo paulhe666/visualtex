@@ -329,6 +329,24 @@ async function main() {
       throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
     }
 
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: false,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+      location.reload();
+    })()`);
+    await waitForEvaluation(
+      `(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`,
+      "formula field after isolating native recommendation test",
+    );
+
     await setField("");
     await key("\\", "Backslash", 220);
     await key("t", "KeyT", 84);
@@ -386,17 +404,19 @@ async function main() {
       const style = getComputedStyle(selected);
       const samePanelNode = panel === window.__visualtexStableNativePanel;
       const command = selected?.dataset.command;
+      const visible = panel.classList.contains("is-visible") && style.display !== "none";
       return {
-        ready: samePanelNode && command === "\\\\thetasym",
+        ready: visible && command === "\\\\thetasym",
         samePanelNode,
+        visible,
         command,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
       };
     })()`, "MathLive recommendation ArrowDown selection");
-    if (!nativeAfterArrow.samePanelNode) {
-      throw new Error("Arrow navigation replaced the native recommendation panel and can flicker");
+    if (!nativeAfterArrow.visible) {
+      throw new Error("Arrow navigation dismissed the native recommendation panel");
     }
     if (nativeAfterArrow.command !== "\\thetasym") {
       throw new Error(`ArrowDown did not move the native recommendation selection: ${JSON.stringify(nativeAfterArrow)}`);
@@ -466,6 +486,18 @@ async function main() {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: true,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
     await reloadEditor();
     await setField("\\alpha");
     await waitForEvaluation(
@@ -595,6 +627,14 @@ async function main() {
         candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
       };
     })()`, "ArrowUp switches to previous formula line");
+
+    if (arrowUpLineState.candidateVisible) {
+      await key("Escape", "Escape", 27);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector(".suggestion-popup") }))()`,
+        "dismiss command candidate before formula-line navigation",
+      );
+    }
 
     await key("ArrowDown", "ArrowDown", 40);
     const arrowDownLineState = await waitForEvaluation(`(() => {

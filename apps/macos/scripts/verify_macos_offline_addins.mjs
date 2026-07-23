@@ -53,7 +53,9 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "VTWordEvents",
   "AutoExec",
   "App_WindowBeforeDoubleClick",
-  "word-events-external-seq-safe-insert-20260722-r31",
+  "App_WindowSelectionChange",
+  "VisualTeX_StabilizeImageEquationNumberSelection",
+  "word-image-number-deterministic-assertion-20260723-r39",
 ]);
 inspectAddin("VisualTeX.ppam", "ppt/vbaProject.bin", [
   packageVersion,

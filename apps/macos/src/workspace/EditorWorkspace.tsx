@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Braces,
   Code2,
-  FileDown,
   Minus,
   PanelBottomClose,
   PanelBottomOpen,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { MathEditor } from "../editor/MathEditor";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { ExportMenu } from "../components/ExportMenu";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import {
@@ -35,7 +35,10 @@ export function EditorWorkspace({
   primaryActionLabel,
   onPrimaryAction,
   onCancel,
-  onExportMarkdown,
+  onExport,
+  onChooseExportDirectory,
+  exportDirectory,
+  exportBusy = false,
   editorRef,
   sidebarOpen,
   onSidebarOpenChange,
@@ -149,17 +152,14 @@ export function EditorWorkspace({
               </div>
             </div>
             <div className="canvas-tool-group">
-              {showFileActions && onExportMarkdown && (
-                <button
-                  type="button"
-                  className="markdown-export-button workspace-markdown-export"
-                  onClick={onExportMarkdown}
-                  aria-label={isEn ? "Export Markdown" : "导出 Markdown"}
-                  title={isEn ? "Export Markdown (.md)" : "导出 Markdown (.md)"}
-                >
-                  <FileDown size={16} />
-                  <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
-                </button>
+              {showFileActions && onExport && onChooseExportDirectory && (
+                <ExportMenu
+                  isEn={isEn}
+                  directory={exportDirectory}
+                  busy={exportBusy}
+                  onChooseDirectory={onChooseExportDirectory}
+                  onExport={onExport}
+                />
               )}
               <InputBehaviorMenu />
               {showOcrActions && ocrModels.length > 0 && ocrModel && (

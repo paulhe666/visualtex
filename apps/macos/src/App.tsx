@@ -1,5 +1,6 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri as isNativeTauri } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
   Braces,
@@ -76,6 +77,8 @@ import {
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import { buildMarkdownDocument } from "./export/markdownExport";
+import { latexToSvg, svgToPng } from "./export/runtime";
+import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import {
   OCR_MODELS,
   cancelOcrRecognition,
@@ -122,6 +125,7 @@ interface MacOfficeStartupStatus {
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const EXPORT_DIRECTORY_STORAGE_KEY = "visualtex.export.directory";
 const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
   "visualtex.office.macos.native-first-run.v1.2.0.completed";
 const DESKTOP_PLATFORM = detectDesktopPlatform();
@@ -168,6 +172,10 @@ function App() {
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
+  const [exportDirectory, setExportDirectory] = useState(() =>
+    window.localStorage.getItem(EXPORT_DIRECTORY_STORAGE_KEY) ?? "",
+  );
+  const [exportBusy, setExportBusy] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
     return OCR_MODELS.some((item) => item.id === stored)
@@ -674,14 +682,121 @@ function App() {
     title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
     (isEn ? "Untitled Formula" : "未命名公式");
 
-  const downloadTextFile = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type });
+  const downloadBlobFile = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const link = window.document.createElement("a");
     link.href = url;
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadTextFile = (content: string, filename: string, type: string) => {
+    downloadBlobFile(new Blob([content], { type }), filename);
+  };
+
+  const utf8ToBase64 = (value: string) => {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return btoa(binary);
+  };
+
+  const chooseExportDirectory = async () => {
+    if (!isNativeTauri()) {
+      setToast(
+        isEn
+          ? "Browser exports use the system Downloads folder"
+          : "浏览器模式下将导出到系统下载目录",
+      );
+      return exportDirectory;
+    }
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: isEn ? "Choose export folder" : "选择导出文件夹",
+      defaultPath: exportDirectory || undefined,
+    });
+    const directory = Array.isArray(selected) ? selected[0] : selected;
+    if (!directory) return "";
+    setExportDirectory(directory);
+    window.localStorage.setItem(EXPORT_DIRECTORY_STORAGE_KEY, directory);
+    return directory;
+  };
+
+  const exportPath = (directory: string, filename: string) =>
+    `${directory.replace(/\/+$/, "")}/${filename}`;
+
+  const exportDocument = async (format: WorkspaceExportFormat) => {
+    if (exportBusy) return;
+    if (!latex.trim()) {
+      setToast(isEn ? "Cannot export an empty formula" : "空公式无法导出");
+      return;
+    }
+
+    setExportBusy(true);
+    try {
+      const safeTitle = getSafeDocumentTitle();
+      let filename = `${safeTitle}.md`;
+      let mimeType = "text/markdown;charset=utf-8";
+      let blob: Blob;
+      let dataBase64: string;
+
+      if (format === "markdown") {
+        const markdown = buildMarkdownDocument(
+          title,
+          lines.map((line) => line.latex),
+        );
+        blob = new Blob([markdown], { type: mimeType });
+        dataBase64 = utf8ToBase64(markdown);
+      } else {
+        const svg = latexToSvg(latex);
+        if (format === "svg") {
+          filename = `${safeTitle}.svg`;
+          mimeType = "image/svg+xml;charset=utf-8";
+          blob = new Blob([svg.svg], { type: mimeType });
+          dataBase64 = svg.base64;
+        } else {
+          filename = `${safeTitle}.png`;
+          mimeType = "image/png";
+          const png = await svgToPng(svg, {
+            scale: 2,
+            background: "transparent",
+          });
+          blob = png.blob;
+          dataBase64 = png.base64;
+        }
+      }
+
+      if (isNativeTauri()) {
+        const directory = exportDirectory || (await chooseExportDirectory());
+        if (!directory) return;
+        await invoke("write_export_file", {
+          path: exportPath(directory, filename),
+          dataBase64,
+        });
+      } else {
+        downloadBlobFile(blob, filename);
+      }
+
+      setToast(
+        isEn
+          ? `${format.toUpperCase()} exported`
+          : `${format.toUpperCase()} 已导出`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setToast(
+        isEn
+          ? `Export failed: ${message}`
+          : `导出失败：${message}`,
+      );
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   const saveDocument = () => {
@@ -699,16 +814,7 @@ function App() {
   };
 
   const exportMarkdown = () => {
-    const markdown = buildMarkdownDocument(
-      title,
-      lines.map((line) => line.latex),
-    );
-    downloadTextFile(
-      markdown,
-      `${getSafeDocumentTitle()}.md`,
-      "text/markdown;charset=utf-8",
-    );
-    setToast(isEn ? "Markdown exported" : "Markdown 已导出");
+    void exportDocument("markdown");
   };
 
   const openDocument = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1259,7 +1365,12 @@ function App() {
         showUpdateActions
         showOfficeActions={false}
         showOcrActions
-        onExportMarkdown={exportMarkdown}
+        onExport={exportDocument}
+        onChooseExportDirectory={async () => {
+          await chooseExportDirectory();
+        }}
+        exportDirectory={exportDirectory}
+        exportBusy={exportBusy}
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}

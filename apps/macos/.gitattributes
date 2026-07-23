@@ -1,0 +1,2 @@
+# VBA class modules must stay CRLF so Word for Mac imports them as classes.
+office/macos-offline/**/*.cls text eol=crlf

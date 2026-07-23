@@ -11,6 +11,8 @@ export type WorkspaceMode =
   | "office-create"
   | "office-edit";
 
+export type WorkspaceExportFormat = "markdown" | "svg" | "png";
+
 export interface WorkspaceOcrModelOption {
   id: string;
   labelZh: string;
@@ -29,7 +31,10 @@ export interface EditorWorkspaceProps {
 
   onPrimaryAction?: () => Promise<void>;
   onCancel?: () => Promise<void>;
-  onExportMarkdown?: () => void;
+  onExport?: (format: WorkspaceExportFormat) => Promise<void>;
+  onChooseExportDirectory?: () => Promise<void>;
+  exportDirectory?: string;
+  exportBusy?: boolean;
 
   editorRef: RefObject<MathEditorHandle | null>;
   sidebarOpen: boolean;

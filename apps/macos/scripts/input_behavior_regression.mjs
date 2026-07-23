@@ -201,18 +201,41 @@ async function main() {
       );
     };
 
+    const prepareEmptyField = async () => {
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        field.executeCommand("selectAll");
+        field.executeCommand("deleteBackward");
+        field.position = field.lastOffset;
+      })()`);
+      await sleep(120);
+    };
+
     const readState = () =>
       evaluate(`(() => {
         const field = document.querySelector("math-field");
         const markers = Array.from(field.shadowRoot?.querySelectorAll(
           ".ML__placeholder-selected, .ML__caret, .ML__selected"
         ) || []);
+        const marker = markers.find((candidate) =>
+          candidate.closest(".ML__msubsup, .ML__op-group")
+        );
+        const script = marker?.closest(".ML__msubsup, .ML__op-group");
+        const markerBox = (marker?.parentElement || marker)?.getBoundingClientRect();
+        const scriptBox = script?.getBoundingClientRect();
         return {
           value: field.value,
           position: field.position,
           lastOffset: field.lastOffset,
-          inScript: markers.some((marker) => marker.closest(".ML__msubsup, .ML__op-group")),
-          inAccent: markers.some((marker) => marker.closest(".ML__accent-body")),
+          inScript: Boolean(marker && script),
+          inAccent: markers.some((candidate) => candidate.closest(".ML__accent-body")),
+          markerClass: marker?.className || "",
+          markerParentClass: marker?.parentElement?.className || "",
+          scriptClass: script?.className || "",
+          markerCenter: markerBox ? markerBox.top + markerBox.height / 2 : null,
+          scriptCenter: scriptBox ? scriptBox.top + scriptBox.height / 2 : null,
         };
       })()`);
 
@@ -263,13 +286,67 @@ async function main() {
     const composedAccent = await readState();
     assert.equal(composedAccent.value, "\\vec{m}n+z");
 
-    await configure({ autoExitSuperscript: false });
+    await configure({ autoExitSuperscript: false, autoExitSubscript: false });
+    await reload();
+    await prepareEmptyField();
+    await typeCharacter("x", "KeyX", 88);
+    await typeCharacter("^", "Digit6", 54);
+    await typeCharacter("2", "Digit2", 50);
+    const bothDisabledSuperscript = await readState();
+    assert.match(bothDisabledSuperscript.value, /^x(?:\^2|\^\{2\})$/);
+    assert.equal(bothDisabledSuperscript.inScript, true);
+    assert.notEqual(
+      bothDisabledSuperscript.position,
+      bothDisabledSuperscript.lastOffset,
+    );
+
+    await configure({ autoExitSuperscript: false, autoExitSubscript: true });
     await preparePlaceholder("x^{\\placeholder{}}");
     await typeCharacter("d", "KeyD", 68);
     const disabled = await readState();
     assert.equal(disabled.value, "x^{d}");
     assert.equal(disabled.inScript, true);
     assert.notEqual(disabled.position, disabled.lastOffset);
+
+    await reload();
+    await prepareEmptyField();
+    await typeCharacter("x", "KeyX", 88);
+    await typeCharacter("^", "Digit6", 54);
+    const emptyUpperState = await readState();
+    await typeCharacter("2", "Digit2", 50);
+    const independentSuperscript = await readState();
+    assert.match(independentSuperscript.value, /^x(?:\^2|\^\{2\})$/);
+    assert.equal(
+      independentSuperscript.inScript,
+      true,
+      `Upper script incorrectly followed the subscript switch; before=${JSON.stringify(emptyUpperState)} after=${JSON.stringify(independentSuperscript)}`,
+    );
+    assert.notEqual(independentSuperscript.position, independentSuperscript.lastOffset);
+
+    await configure({ autoExitSuperscript: true, autoExitSubscript: false });
+    await reload();
+    await prepareEmptyField();
+    await typeCharacter("x", "KeyX", 88);
+    await typeCharacter("^", "Digit6", 54);
+    await typeCharacter("a", "KeyA", 65);
+    const enabledSuperscript = await readState();
+    assert.equal(enabledSuperscript.value, "x^{a}");
+    assert.equal(enabledSuperscript.inScript, false);
+    assert.equal(enabledSuperscript.position, enabledSuperscript.lastOffset);
+
+    await reload();
+    await prepareEmptyField();
+    await typeCharacter("x", "KeyX", 88);
+    await typeCharacter("_", "Minus", 189);
+    await typeCharacter("b", "KeyB", 66);
+    const independentSubscript = await readState();
+    assert.equal(independentSubscript.value, "x_{b}");
+    assert.equal(
+      independentSubscript.inScript,
+      true,
+      `Lower script incorrectly followed the superscript switch: ${JSON.stringify(independentSubscript)}`,
+    );
+    assert.notEqual(independentSubscript.position, independentSubscript.lastOffset);
 
     const menu = await evaluate(`new Promise((resolve) => {
       const trigger = document.querySelector(".canvas-input-behavior-trigger");
@@ -280,7 +357,7 @@ async function main() {
       }), 50);
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
-    assert.equal(menu.optionCount, 3);
+    assert.equal(menu.optionCount, 6);
 
     console.log("Input behavior regression passed");
   } finally {

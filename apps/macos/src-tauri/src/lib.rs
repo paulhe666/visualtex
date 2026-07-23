@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -1226,6 +1227,61 @@ fn run_recognition(
 }
 
 #[tauri::command]
+fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
+    let target = PathBuf::from(path.trim());
+    if !target.is_absolute() {
+        return Err("Export path must be absolute".to_string());
+    }
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "md" | "svg" | "png") {
+        return Err("Unsupported export file extension".to_string());
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| "Export path has no parent directory".to_string())?;
+    if !parent.is_dir() {
+        return Err("Export directory does not exist".to_string());
+    }
+    let bytes = BASE64_STANDARD
+        .decode(data_base64.trim())
+        .map_err(|error| format!("Unable to decode export data: {error}"))?;
+    if bytes.len() > 100 * 1024 * 1024 {
+        return Err("Export file is unexpectedly large".to_string());
+    }
+
+    let file_name = target
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Export filename is invalid".to_string())?;
+    let temporary = parent.join(format!(
+        ".{file_name}.visualtex-{}.tmp",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&temporary);
+    let write_result = (|| -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| format!("Unable to create export file: {error}"))?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| format!("Unable to write export file: {error}"))?;
+        fs::rename(&temporary, &target)
+            .map_err(|error| format!("Unable to finalize export file: {error}"))?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result
+}
+
+#[tauri::command]
 async fn get_ocr_runtime_status(
     app: AppHandle,
     state: State<'_, OcrState>,
@@ -1386,6 +1442,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            write_export_file,
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,
@@ -1518,6 +1575,42 @@ mod protocol_tests {
         assert_eq!(bounded.events.len(), MAX_OCR_EVENTS);
         assert_eq!(bounded.cursor, (MAX_OCR_EVENTS + 22) as u64);
         assert!(bounded.events.first().is_some_and(|event| event.id > 1));
+    }
+
+    #[test]
+    fn export_file_write_is_atomic_and_overwrites_existing_output() {
+        let directory = tempfile::tempdir().expect("temporary export directory");
+        let target = directory.path().join("formula.svg");
+        let first = "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>";
+        let second = "<svg xmlns=\"http://www.w3.org/2000/svg\"><path/></svg>";
+
+        write_export_file(
+            target.to_string_lossy().into_owned(),
+            BASE64_STANDARD.encode(first.as_bytes()),
+        )
+        .expect("first export should succeed");
+        assert_eq!(fs::read_to_string(&target).unwrap(), first);
+
+        write_export_file(
+            target.to_string_lossy().into_owned(),
+            BASE64_STANDARD.encode(second.as_bytes()),
+        )
+        .expect("second export should replace the existing file");
+        assert_eq!(fs::read_to_string(&target).unwrap(), second);
+        assert!(fs::read_dir(directory.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("visualtex-")
+        }));
+
+        let unsupported = directory.path().join("formula.exe");
+        assert!(write_export_file(
+            unsupported.to_string_lossy().into_owned(),
+            BASE64_STANDARD.encode(b"not allowed"),
+        )
+        .is_err());
     }
 
     #[test]

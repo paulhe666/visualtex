@@ -5,6 +5,7 @@ import {
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  UsersRound,
   WifiOff,
   Wrench,
   X,
@@ -12,6 +13,9 @@ import {
 import type { Language } from "../stores/editorStore";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
+
+const QQ_GROUP_NUMBER = "1045801770";
+const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg";
 
 interface Props {
   open: boolean;
@@ -244,6 +248,31 @@ export function UpdateDialog({
                         : "前往 GitHub Releases 查看完整更新说明，并下载适合当前平台的安装包。"}
                     </p>
                   )}
+
+                  <section
+                    className="update-community-card"
+                    aria-label="VisualTeX QQ 交流群"
+                  >
+                    <div className="update-community-copy">
+                      <span className="update-community-icon" aria-hidden="true">
+                        <UsersRound size={18} />
+                      </span>
+                      <div>
+                        <strong>加入 VisualTeX QQ 交流群</strong>
+                        <p>
+                          对 VisualTeX 的使用、开发或改进感兴趣，欢迎扫码或搜索群号加入交流。
+                        </p>
+                        <span className="update-community-number">
+                          QQ群号：<b>{QQ_GROUP_NUMBER}</b>
+                        </span>
+                      </div>
+                    </div>
+                    <img
+                      src={QQ_GROUP_IMAGE_URL}
+                      alt={`VisualTeX QQ 群 ${QQ_GROUP_NUMBER} 二维码`}
+                      loading="lazy"
+                    />
+                  </section>
                 </>
               ) : (
                 <p>

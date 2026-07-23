@@ -79,7 +79,7 @@ function updateInfoPlist() {
     ["CFBundleIdentifier", "-string", "com.visualtex.studio.dev-url-handler"],
     ["CFBundleDisplayName", "-string", "VisualTeX Dev URL Handler"],
     ["CFBundleName", "-string", "VisualTeX Dev URL Handler"],
-    ["CFBundleShortVersionString", "-string", "1.2.1-dev"],
+    ["CFBundleShortVersionString", "-string", "1.2.2-dev"],
     ["CFBundleVersion", "-string", "1"],
     ["LSUIElement", "-bool", "YES"],
   ]) {

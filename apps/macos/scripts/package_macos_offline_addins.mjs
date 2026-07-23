@@ -128,7 +128,13 @@ function validateMacroContainer(path, kind, options = {}) {
     }
     const expectedMarkers = [
       packageVersion,
-      ...(kind === "Word" ? ["word-events-external-seq-safe-insert-20260722-r31"] : []),
+      ...(kind === "Word"
+        ? [
+            "word-image-number-deterministic-assertion-20260723-r39",
+            "App_WindowSelectionChange",
+            "VisualTeX_StabilizeImageEquationNumberSelection",
+          ]
+        : []),
     ];
     const missingMarkers = expectedMarkers.filter(
       (marker) => !containsModuleName(vbaProject, marker),

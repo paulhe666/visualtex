@@ -37,8 +37,8 @@ const CARET_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
     key: "autoExitWrapperCommand",
     titleZh: "字体命令输入后跳出",
     titleEn: "Exit font command after input",
-    descriptionZh: "默认输入一个字符后结束 mathbb、mathbf、mathcal 等字体作用域",
-    descriptionEn: "End mathbb, mathbf, mathcal and similar font scopes after one character by default",
+    descriptionZh: "开启时输入一个字符后自动结束；关闭后可连续输入，并按 Enter 确认 mathbb、mathbf、mathcal 等字体作用域",
+    descriptionEn: "When enabled, exit after one character; when disabled, keep typing and press Enter to confirm mathbb, mathbf, mathcal and similar font scopes",
   },
 ];
 

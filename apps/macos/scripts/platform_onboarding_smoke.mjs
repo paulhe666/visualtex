@@ -22,10 +22,14 @@ assert.equal(shouldOpenOnboardingInitially(true, false), false);
 
 const macSteps = tutorialSteps("cn", "macos");
 const macIds = macSteps.map((step) => step.id);
+assert(macIds.includes("export"));
+assert(macIds.includes("input-behavior"));
 assert(macIds.includes("mac-word-plugin"));
 assert(macIds.includes("mac-powerpoint-load"));
 assert(macIds.includes("mac-powerpoint-use"));
 assert(!macIds.includes("windows-office-manage"));
+assert(macSteps.find((step) => step.id === "export")?.description.includes("Markdown"));
+assert(macSteps.find((step) => step.id === "input-behavior")?.description.includes("Enter"));
 assert(macSteps.find((step) => step.id === "mac-word-plugin")?.description.includes("OMML"));
 assert(macSteps.find((step) => step.id === "mac-powerpoint-load")?.description.includes("PowerPoint 加载项"));
 assert(macSteps.find((step) => step.id === "mac-powerpoint-use")?.description.includes("双击"));

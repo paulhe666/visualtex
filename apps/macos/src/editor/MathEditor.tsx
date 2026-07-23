@@ -42,7 +42,12 @@ import {
   createFormulaLine,
   useEditorStore,
 } from "../stores/editorStore";
-import { normalizeChineseLatex } from "./normalizeChineseLatex";
+import {
+  normalizeChineseLatex,
+  normalizeContextualUprightSymbols,
+  normalizeMathLiveCanonicalUprightCommands,
+  visualTexUprightInlineShortcuts,
+} from "./normalizeChineseLatex";
 import { ImeCompositionGuard } from "./imeCompositionGuard";
 
 export interface MathEditorInsertionTarget {
@@ -239,6 +244,30 @@ function captureFieldSnapshot(field: MathfieldElement) {
   };
 }
 
+function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
+  if (field.mode === "latex" || !field.selectionIsCollapsed) return false;
+
+  const portableValue = normalizeMathLiveCanonicalUprightCommands(field.value);
+  const contextualValue = normalizeContextualUprightSymbols(portableValue);
+  if (contextualValue === portableValue) return false;
+
+  const distanceFromEnd = Math.max(0, field.lastOffset - field.position);
+  field.setValue(contextualValue, {
+    mode: "math",
+    format: "latex",
+    insertionMode: "replaceAll",
+    selectionMode: "after",
+    silenceNotifications: true,
+  });
+  const nextPosition = Math.max(0, field.lastOffset - distanceFromEnd);
+  field.selection = {
+    ranges: [[nextPosition, nextPosition]],
+    direction: "none",
+  };
+  field.position = nextPosition;
+  return true;
+}
+
 type PhysicalBackslashInputKind = "ideographic-comma" | "latin-backslash";
 
 function normalizePhysicalBackslashInput(
@@ -345,10 +374,12 @@ function getVisibleNativeSuggestionItems(): HTMLElement[] {
   );
 }
 
-function moveNativeSuggestionSelection(direction: 1 | -1): boolean {
+function moveNativeSuggestionSelection(
+  field: MathfieldElement,
+  direction: 1 | -1,
+): string | null {
   const items = getVisibleNativeSuggestionItems();
-  if (!items.length) return false;
-
+  if (!items.length) return null;
   const currentIndex = items.findIndex((item) =>
     item.classList.contains("ML__popover__current"),
   );
@@ -358,24 +389,60 @@ function moveNativeSuggestionSelection(direction: 1 | -1): boolean {
         ? 0
         : items.length - 1
       : (currentIndex + direction + items.length) % items.length;
-
-  items.forEach((item, index) => {
-    const selected = index === nextIndex;
-    item.classList.toggle("ML__popover__current", selected);
-    item.setAttribute("aria-selected", String(selected));
-  });
-  items[nextIndex].scrollIntoView({ block: "nearest" });
-  return true;
+  const command = items[nextIndex]?.dataset.command ?? "";
+  const moved = field.executeCommand(
+    direction > 0 ? "nextSuggestion" : "previousSuggestion",
+  );
+  return moved && command ? command : null;
 }
 
-function commitNativeSuggestion(): boolean {
-  const items = getVisibleNativeSuggestionItems();
-  if (!items.length) return false;
-  const selected =
-    items.find((item) => item.classList.contains("ML__popover__current")) ??
-    items[0];
-  selected.click();
-  return true;
+function commitNativeSuggestion(
+  field: MathfieldElement,
+  rememberedCommand = "",
+): boolean {
+  const selectedCommand =
+    rememberedCommand ||
+    getVisibleNativeSuggestionItems().find((item) =>
+      item.classList.contains("ML__popover__current"),
+    )?.dataset.command ||
+    "";
+
+  if (selectedCommand) {
+    const rawInput = rawLatexInput(field);
+    let rawValue = field.value;
+    if (rawInput && !rawValue.trimEnd().endsWith(rawInput.trimEnd())) {
+      rawValue += rawInput;
+    }
+    const commandStart = rawValue.lastIndexOf("\\");
+    if (commandStart >= 0) {
+      field.setValue(rawValue.slice(0, commandStart) + selectedCommand, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.mode = "math";
+      field.position = field.lastOffset;
+      return true;
+    }
+  }
+
+  if (!getVisibleNativeSuggestionItems().length && field.mode !== "latex") {
+    return false;
+  }
+  return field.executeCommand(["complete", "accept-all"]);
+}
+
+function dismissNativeSuggestionPopover(field: MathfieldElement) {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  field.popoverPolicy = "off";
+  panel?.classList.remove("is-visible");
+  panel?.setAttribute("aria-hidden", "true");
+  window.setTimeout(() => {
+    if (!field.isConnected) return;
+    field.popoverPolicy = "auto";
+  }, 120);
 }
 
 function keepCaretAfterBareStructuredOperator(
@@ -400,6 +467,26 @@ function keepCaretAfterBareStructuredOperator(
 }
 
 function getScriptCaretRegion(field: MathfieldElement): "upper" | "lower" | null {
+  const currentOffset = Math.max(
+    field.position,
+    ...field.selection.ranges.flatMap(([start, end]) => [start, end]),
+  );
+  const currentDepth = field.getElementInfo(currentOffset)?.depth;
+  if (typeof currentDepth === "number" && currentDepth > 0) {
+    for (
+      let offset = currentOffset + 1;
+      offset <= Math.min(field.lastOffset, currentOffset + 3);
+      offset += 1
+    ) {
+      const info = field.getElementInfo(offset);
+      if (typeof info?.depth !== "number" || info.depth >= currentDepth) continue;
+      const containerLatex = (info.latex ?? "").trim();
+      if (/^\^\s*\{/.test(containerLatex)) return "upper";
+      if (/^_\s*\{/.test(containerLatex)) return "lower";
+      break;
+    }
+  }
+
   const markers = Array.from(
     field.shadowRoot?.querySelectorAll<HTMLElement>(
       ".ML__placeholder-selected, .ML__selected, .ML__caret",
@@ -409,12 +496,12 @@ function getScriptCaretRegion(field: MathfieldElement): "upper" | "lower" | null
     marker.closest(".ML__msubsup, .ML__op-group"),
   );
   // Side scripts use ML__msubsup; large operators such as sum/product render
-  // their over/under limits directly inside ML__op-group.
+  // their over/under limits directly inside ML__op-group. Model markers above
+  // distinguish ordinary ^{...} and _{...} exactly; geometry is only the
+  // fallback for combined upper/lower operator limits.
   const script = caret?.closest<HTMLElement>(".ML__msubsup, .ML__op-group");
   if (!caret || !script) return null;
 
-  // MathLive's caret itself can span most of a tall large-operator box. Its
-  // immediate row wrapper has the actual upper/lower-limit geometry.
   const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
   const scriptBounds = script.getBoundingClientRect();
   if (!caretBounds.height || !scriptBounds.height) return null;
@@ -481,7 +568,19 @@ function isSingleDirectInput(event: InputEvent, field: MathfieldElement) {
 function moveCaretThroughEnabledAutoExitContainers(
   field: MathfieldElement,
   settings: InputBehaviorSettings,
+  capturedSetting?: InputBehaviorSettingKey | null,
 ) {
+  if (capturedSetting) {
+    if (!settings[capturedSetting]) return false;
+    const previousPosition = field.position;
+    const changed = field.executeCommand(
+      capturedSetting === "autoExitAccent"
+        ? "moveToNextChar"
+        : "moveAfterParent",
+    );
+    return Boolean(changed || field.position !== previousPosition);
+  }
+
   let moved = false;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const setting = getCaretAutoExitSetting(field);
@@ -569,6 +668,10 @@ function FormulaField(props: FormulaFieldProps) {
     field.className = "visual-mathfield";
     field.smartMode = false;
     field.smartFence = propsRef.current.autoPairDelimiters;
+    // VisualTeX handles superscript and subscript auto-exit independently.
+    // Keep MathLive's built-in superscript heuristic disabled so it cannot
+    // move out of an empty superscript before the first character is inserted.
+    field.smartSuperscript = false;
     field.popoverPolicy = "auto";
     field.maxMatrixCols = 10;
     field.setAttribute("math-virtual-keyboard-policy", "manual");
@@ -651,9 +754,11 @@ function FormulaField(props: FormulaFieldProps) {
       suffix: string;
     } | null = null;
     let wrapperPlaceholderFrame = 0;
+    let wrapperMeasure: HTMLSpanElement | null = null;
     const clearPendingWrapperPlaceholderPosition = () => {
       host.style.removeProperty("--pending-wrapper-left");
       host.style.removeProperty("--pending-wrapper-top");
+      host.style.removeProperty("--pending-wrapper-width");
       host.style.removeProperty("--pending-wrapper-height");
     };
     const schedulePendingWrapperPlaceholderPosition = () => {
@@ -671,17 +776,41 @@ function FormulaField(props: FormulaFieldProps) {
         }
         const hostBounds = host.getBoundingClientRect();
         const caretBounds = caret.getBoundingClientRect();
-        if (caretBounds.height <= 0) {
+        if (caretBounds.height <= 0 || !pendingWrapperInput) {
           clearPendingWrapperPlaceholderPosition();
           return;
         }
+        if (!wrapperMeasure) {
+          wrapperMeasure = document.createElement("span");
+          wrapperMeasure.className = "pending-wrapper-measure";
+          wrapperMeasure.setAttribute("aria-hidden", "true");
+          host.append(wrapperMeasure);
+        }
+        const content = pendingWrapperInput.content;
+        let renderedWidth = 0;
+        if (content) {
+          wrapperMeasure.style.fontSize = field.style.fontSize;
+          wrapperMeasure.innerHTML = convertLatexToMarkup(
+            pendingWrapperInput.command + "{" + content + "}",
+            { defaultMode: "math" },
+          );
+          renderedWidth = wrapperMeasure.getBoundingClientRect().width;
+        } else {
+          wrapperMeasure.replaceChildren();
+        }
+        const frameWidth = Math.max(18, Math.ceil(renderedWidth + 10));
+        const caretLeft = caretBounds.left - hostBounds.left;
+        const frameCenterX = content
+          ? caretLeft - renderedWidth / 2
+          : caretLeft;
         const caretCenterY =
           caretBounds.top - hostBounds.top + caretBounds.height / 2;
         host.style.setProperty(
           "--pending-wrapper-left",
-          `${caretBounds.left - hostBounds.left}px`,
+          `${frameCenterX}px`,
         );
         host.style.setProperty("--pending-wrapper-top", `${caretCenterY}px`);
+        host.style.setProperty("--pending-wrapper-width", `${frameWidth}px`);
         host.style.setProperty(
           "--pending-wrapper-height",
           `${Math.max(28, Math.min(72, caretBounds.height + 4))}px`,
@@ -689,14 +818,16 @@ function FormulaField(props: FormulaFieldProps) {
       });
     };
     const syncPendingWrapperPlaceholder = () => {
-      const showPlaceholder = Boolean(
-        pendingWrapperInput && pendingWrapperInput.content.length === 0,
-      );
+      const showPlaceholder = Boolean(pendingWrapperInput);
       host.classList.toggle("has-pending-wrapper-placeholder", showPlaceholder);
       if (showPlaceholder && pendingWrapperInput) {
         host.dataset.pendingWrapperCommand = pendingWrapperInput.command;
+        host.dataset.pendingWrapperLength = String(
+          Array.from(pendingWrapperInput.content).length,
+        );
       } else {
         delete host.dataset.pendingWrapperCommand;
+        delete host.dataset.pendingWrapperLength;
       }
       schedulePendingWrapperPlaceholderPosition();
     };
@@ -787,9 +918,7 @@ function FormulaField(props: FormulaFieldProps) {
     const handleCompositionStart = () => {
       compositionDeleteObserved = false;
       suppressPostCompositionDeleteUntil = 0;
-      const setting = getCaretAutoExitSetting(field);
-      pendingAutoExitSetting =
-        setting && propsRef.current.inputBehavior[setting] ? setting : null;
+      pendingAutoExitSetting = getCaretAutoExitSetting(field);
       propsRef.current.onCommitPending();
       imeGuard.compositionStart();
       compositionStartRef.current =
@@ -838,6 +967,7 @@ function FormulaField(props: FormulaFieldProps) {
         moveCaretThroughEnabledAutoExitContainers(
           field,
           propsRef.current.inputBehavior,
+          pendingAutoExitSetting,
         );
         after = captureFieldSnapshot(field);
       }
@@ -944,12 +1074,14 @@ function FormulaField(props: FormulaFieldProps) {
         return;
       }
       if (!event.isComposing && !imeGuard.isComposing()) {
-        pendingAutoExitSetting = null;
         if (isSingleDirectInput(event, field)) {
-          const setting = getCaretAutoExitSetting(field);
-          if (setting && propsRef.current.inputBehavior[setting]) {
-            pendingAutoExitSetting = setting;
-          }
+          // Keep the script type captured during keydown when WebKit's
+          // beforeinput geometry is temporarily incomplete. A non-null
+          // beforeinput result may refine it, but null must not erase it.
+          pendingAutoExitSetting =
+            getCaretAutoExitSetting(field) ?? pendingAutoExitSetting;
+        } else {
+          pendingAutoExitSetting = null;
         }
       }
       if (
@@ -985,9 +1117,11 @@ function FormulaField(props: FormulaFieldProps) {
         moveCaretThroughEnabledAutoExitContainers(
           field,
           propsRef.current.inputBehavior,
+          autoExitSetting,
         );
       }
       pendingAutoExitSetting = null;
+      normalizeCompletedDifferentialDisplay(field);
       const after = captureFieldSnapshot(field);
       const inputType =
         event instanceof InputEvent ? event.inputType || "insertText" : "insertText";
@@ -1001,6 +1135,16 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSize();
       window.requestAnimationFrame(() => {
         if (!field.isConnected) return;
+        const deferredBefore =
+          lastSnapshotRef.current ?? captureFieldSnapshot(field);
+        if (normalizeCompletedDifferentialDisplay(field)) {
+          emitEdit(
+            deferredBefore,
+            captureFieldSnapshot(field),
+            "replace",
+            "keyboard",
+          );
+        }
         propsRef.current.onInputActivity(field);
         decorateNativeSuggestionPreviews();
       });
@@ -1019,6 +1163,35 @@ function FormulaField(props: FormulaFieldProps) {
     const handleBlur = () => {
       clearPendingWrapperInput();
       propsRef.current.onCommitPending();
+    };
+    const confirmPendingWrapperInput = (event: KeyboardEvent) => {
+      if (
+        !pendingWrapperInput ||
+        event.isComposing ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.key !== "Enter"
+      ) {
+        return false;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      clearPendingWrapperInput();
+      field.mode = "math";
+      field.position = field.lastOffset;
+      field.selection = {
+        ranges: [[field.lastOffset, field.lastOffset]],
+        direction: "none",
+      };
+      field.focus();
+      field.shadowRoot
+        ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+      propsRef.current.onCommitPending();
+      syncFrameSize();
+      return true;
     };
     const confirmRawWrapperCommand = (event: KeyboardEvent) => {
       if (
@@ -1087,6 +1260,7 @@ function FormulaField(props: FormulaFieldProps) {
       return true;
     };
     const handleRawWrapperKeyDown = (event: KeyboardEvent) => {
+      if (confirmPendingWrapperInput(event)) return;
       if (event.key === " " || event.code === "Space") {
         confirmRawWrapperCommand(event);
       }
@@ -1135,6 +1309,26 @@ function FormulaField(props: FormulaFieldProps) {
         lastSnapshotRef.current = captureFieldSnapshot(field);
       }
 
+      const capturesDirectMathInput =
+        !event.isComposing &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        field.mode !== "latex" &&
+        event.key !== "\\" &&
+        Array.from(event.key).length === 1;
+      if (capturesDirectMathInput) {
+        pendingAutoExitSetting = getCaretAutoExitSetting(field);
+      } else if (
+        event.key !== "Shift" &&
+        event.key !== "Control" &&
+        event.key !== "Alt" &&
+        event.key !== "Meta"
+      ) {
+        pendingAutoExitSetting = null;
+      }
+
+      if (confirmPendingWrapperInput(event)) return;
       if (confirmRawWrapperCommand(event)) return;
 
       propsRef.current.onKeyDown(propsRef.current.index, event, field);
@@ -1208,6 +1402,10 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onFocus(propsRef.current.index, field);
     };
     host.replaceChildren(field);
+    field.inlineShortcuts = {
+      ...field.inlineShortcuts,
+      ...visualTexUprightInlineShortcuts,
+    };
     // MathLive mounts a pre-filled field with the whole formula selected.
     // Collapse that implicit selection so toolbar commands insert at the end
     // instead of unexpectedly replacing/wrapping the entire line.
@@ -1327,6 +1525,7 @@ function FormulaField(props: FormulaFieldProps) {
       fieldRef.current.smartFence = props.autoPairDelimiters;
     }
   }, [props.autoPairDelimiters]);
+
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -1580,8 +1779,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (suppressed) {
         if (
           suppressed.lineId === lineId &&
-          suppressed.value.trim() === normalized.trim() &&
-          !activeCommandQuery
+          suppressed.value.trim() === normalized.trim()
         ) {
           queryRef.current = "";
           setQuery("");
@@ -1591,10 +1789,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       if (activeCommandQuery) {
+        const queryChanged = queryRef.current !== activeCommandQuery;
+        queryRef.current = activeCommandQuery;
         setQuery(activeCommandQuery);
-        selectSuggestionIndex(0);
+        if (queryChanged) selectSuggestionIndex(0);
         requestAnimationFrame(() => updatePopupPosition(field));
       } else {
+        queryRef.current = "";
         setQuery("");
       }
     };
@@ -1666,6 +1867,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
       if (!changed) return false;
 
+      normalizeCompletedDifferentialDisplay(field);
       const after = captureFieldSnapshot(field);
       if (before.latex === after.latex) {
         field.resetUndo();
@@ -1718,6 +1920,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           await new Promise<void>((resolve) =>
             window.setTimeout(resolve, 16),
           );
+          normalizeCompletedDifferentialDisplay(field);
           after = captureFieldSnapshot(field);
           const nativeRecommendationVisible =
             document
@@ -1832,6 +2035,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         recordCommand(command.id, activeQuery, source);
         setQuery("");
         selectSuggestionIndex(0);
+        if (
+          source === "candidate" &&
+          !structuredSuggestionCommands.has(command.command)
+        ) {
+          dismissNativeSuggestionPopover(field);
+        }
         field.focus();
         return;
       }
@@ -1882,7 +2091,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               autoExitSetting &&
               inputBehavior[autoExitSetting]
             ) {
-              moveCaretThroughEnabledAutoExitContainers(field, inputBehavior);
+              moveCaretThroughEnabledAutoExitContainers(
+                field,
+                inputBehavior,
+                autoExitSetting,
+              );
             }
             return inserted;
           },
@@ -1900,6 +2113,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         recordCommand(command.id, activeQuery, source);
         setQuery("");
         selectSuggestionIndex(0);
+        if (
+          source === "candidate" &&
+          !structuredSuggestionCommands.has(command.command)
+        ) {
+          dismissNativeSuggestionPopover(field);
+        }
         focusLine(targetLineId, {
           latex: normalizedValue,
           selection: captureSelection(field),
@@ -2033,6 +2252,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
+      if (
+        event.key !== "ArrowDown" &&
+        event.key !== "ArrowUp" &&
+        event.key !== "Enter" &&
+        event.key !== "Tab"
+      ) {
+        delete field.dataset.pendingNativeSuggestion;
+      }
+
       const normalizedFieldValue = normalizeChineseLatex(field.value);
       const suppressedSuggestion = suppressedSuggestionRef.current;
       const suppressesCurrentTrailingCommand =
@@ -2128,15 +2356,26 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         document
           .getElementById("mathlive-suggestion-popover")
           ?.classList.contains("is-visible") ?? false;
+      const pendingNativeSuggestion =
+        field.dataset.pendingNativeSuggestion ?? "";
       if (
         !suppressesCurrentTrailingCommand &&
         !liveSuggestions.length &&
-        nativeRecommendationVisible
+        (nativeRecommendationVisible || Boolean(pendingNativeSuggestion))
       ) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (
+          nativeRecommendationVisible &&
+          (event.key === "ArrowDown" || event.key === "ArrowUp")
+        ) {
           event.preventDefault();
           event.stopPropagation();
-          moveNativeSuggestionSelection(event.key === "ArrowDown" ? 1 : -1);
+          const selectedNativeCommand = moveNativeSuggestionSelection(
+            field,
+            event.key === "ArrowDown" ? 1 : -1,
+          );
+          if (selectedNativeCommand) {
+            field.dataset.pendingNativeSuggestion = selectedNativeCommand;
+          }
           return;
         }
         if (event.key === "Enter" || event.key === "Tab") {
@@ -2146,9 +2385,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             lineId,
             field,
             "candidate",
-            commitNativeSuggestion,
+            () => commitNativeSuggestion(field, pendingNativeSuggestion),
           ).then((committed) => {
             if (!committed) return;
+            delete field.dataset.pendingNativeSuggestion;
             setQuery("");
             selectSuggestionIndex(0);
             focusLine(lineId, {
@@ -2159,6 +2399,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           return;
         }
         if (event.key === "Escape") {
+          delete field.dataset.pendingNativeSuggestion;
           // Escape only dismisses the panel and does not rebuild its rows, so
           // MathLive can safely handle it itself.
           return;
@@ -2177,12 +2418,40 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           .getValue("latex-without-placeholders")
           .trim();
         const rawCommandInput = rawLatexInput(field);
+        const state = useEditorStore.getState();
+        const currentLine = state.lines.find((line) => line.id === lineId);
+        const trulyEmpty = Boolean(
+          currentLine &&
+            visibleLatex.length === 0 &&
+            rawCommandInput.length === 0 &&
+            normalizeChineseLatex(field.value).trim().length === 0 &&
+            currentLine.latex.trim().length === 0,
+        );
 
-        // While MathLive is collecting a raw LaTeX command such as `\\mat`,
-        // its public formula value is intentionally still empty. Let MathLive
-        // consume Backspace/Delete natively so one physical key removes one
-        // raw command character instead of being mistaken for an empty row.
-        if (field.mode === "latex" || rawCommandInput) return;
+        // Backspace on a truly empty row restores the multiline editor's
+        // previous-row behavior. This check must happen before the raw-LaTeX
+        // mode guard because MathLive can remain in `latex` mode after the
+        // final raw command character has already been deleted.
+        if (
+          event.key === "Backspace" &&
+          trulyEmpty &&
+          field.selectionIsCollapsed &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          removeEmptyLine(index);
+          return;
+        }
+
+        // While MathLive is collecting a non-empty raw LaTeX command such as
+        // `\\mat`, its public formula value is intentionally still empty. Let
+        // MathLive consume Backspace/Delete natively so one physical key
+        // removes one raw command character instead of deleting the row.
+        if (rawCommandInput || (field.mode === "latex" && !trulyEmpty)) return;
 
         // Preserve MathLive's native word/line deletion shortcuts such as
         // Option+Backspace and Command+Backspace on macOS.
@@ -2193,8 +2462,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         event.preventDefault();
         event.stopPropagation();
 
-        const state = useEditorStore.getState();
-        const currentLine = state.lines.find((line) => line.id === lineId);
         if (!currentLine) return;
         const before = captureFieldSnapshot(field);
         const beforePosition = field.position;
@@ -2577,7 +2844,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
     useEffect(() => {
       selectedIndexRef.current = selectedIndex;
-      if (selectedIndex >= suggestions.length) selectSuggestionIndex(0);
+      // A caret/selection refresh can briefly hide the candidate list before
+      // restoring the same query. Do not reset the highlighted row during that
+      // transient empty state; a genuinely new query is reset explicitly in
+      // refreshSuggestionQuery().
+      if (
+        suggestions.length > 0 &&
+        selectedIndex >= suggestions.length
+      ) {
+        selectSuggestionIndex(suggestions.length - 1);
+      }
     }, [suggestions.length, selectedIndex]);
 
     useEffect(() => {

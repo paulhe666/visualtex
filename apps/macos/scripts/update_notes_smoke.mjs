@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { localizeReleaseNotes } from "../src/update/releaseNotes.ts";
 
 const bilingualNotes = `
@@ -43,4 +44,15 @@ assert.deepEqual(localizeReleaseNotes(legacyNotes, "cn"), {
   other: ["VisualTeX improves editing stability.", "Existing release note."],
 });
 
-console.log("Localized update notes smoke test passed");
+const updateDialogSource = await readFile("src/components/UpdateDialog.tsx", "utf8");
+const qqGroupCard = await readFile("public/qq-group-card.svg", "utf8");
+assert(updateDialogSource.includes('const QQ_GROUP_NUMBER = "1045801770"'));
+assert(updateDialogSource.includes('const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg"'));
+assert(updateDialogSource.includes('className="update-community-card"'));
+assert(updateDialogSource.includes("加入 VisualTeX QQ 交流群"));
+assert(!updateDialogSource.includes("Join the VisualTeX QQ community"));
+assert(qqGroupCard.includes("https://qm.qq.com/q/TppXdoOO8Q") === false);
+assert(qqGroupCard.includes("1045801770"));
+assert(qqGroupCard.includes("VisualTeX 交流群"));
+
+console.log("Localized update notes and QQ community card smoke test passed");

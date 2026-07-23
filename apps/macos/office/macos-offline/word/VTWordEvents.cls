@@ -12,6 +12,12 @@ Option Explicit
 Public WithEvents App As Word.Application
 Attribute App.VB_VarHelpID = -1
 
+Private Sub App_WindowSelectionChange(ByVal Sel As Word.Selection)
+    On Error Resume Next
+    If Sel Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
+    VisualTeX_StabilizeImageEquationNumberSelection Sel.Range
+End Sub
+
 Private Sub App_WindowBeforeDoubleClick(ByVal Sel As Word.Selection, Cancel As Boolean)
     Dim selectedFormula As InlineShape
 

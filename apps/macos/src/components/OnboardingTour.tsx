@@ -5,9 +5,13 @@ import {
   Check,
   Code2,
   Download,
+  FileCode2,
+  FileImage,
   FileText,
+  FolderOpen,
   Keyboard,
   Menu,
+  MousePointerClick,
   PanelLeft,
   Power,
   Presentation,
@@ -36,6 +40,8 @@ type StepId =
   | "library"
   | "keyboard"
   | "code-format"
+  | "export"
+  | "input-behavior"
   | "ocr-setup"
   | "paste-image"
   | "mac-word-plugin"
@@ -80,6 +86,20 @@ export function tutorialSteps(language: Language, platform: DesktopPlatform): Tu
       description: isEn
         ? "Choose an independent or combined environment from the top bar. The source panel and copied output update immediately."
         : "从顶部选择单公式或多公式环境；下方源码区和复制结果会立即按所选格式更新。",
+    },
+    {
+      id: "export",
+      title: isEn ? "Export the current document" : "导出当前公式文档",
+      description: isEn
+        ? "Open Export in the top bar to save the current document as Markdown, SVG, or PNG. Choose the destination once and VisualTeX remembers it for later exports."
+        : "从顶部打开“导出”，可将当前公式文档保存为 Markdown、SVG 或 PNG；首次选择路径后，VisualTeX 会记住后续导出位置。",
+    },
+    {
+      id: "input-behavior",
+      title: isEn ? "Customize input behavior" : "自定义操作逻辑",
+      description: isEn
+        ? "Use Input behavior to control automatic exits from scripts, accents, and font commands, plus the large command suggestion panels. With font auto-exit off, type multiple characters and press Enter to confirm."
+        : "通过“操作逻辑”分别控制上下标、重音和字体命令的自动跳出，以及大型命令候选框。关闭字体命令自动跳出后，可连续输入多个字符并按 Enter 确认。",
     },
     {
       id: "ocr-setup",
@@ -297,6 +317,53 @@ export function OnboardingTour({ open, language, platform, onFinish }: Props) {
                 </div>
                 <i><ArrowRight size={15} /></i>
                 <pre>{"\\begin{align*}\na &= b + c \\\\\\nd &= e - f\n\\end{align*}"}</pre>
+              </div>
+            )}
+
+            {current.id === "export" && (
+              <div className="onboarding-export-demo">
+                <div className="onboarding-export-trigger">
+                  <Download size={17} />
+                  <strong>{isEn ? "Export" : "导出"}</strong>
+                  <span>⌄</span>
+                </div>
+                <div className="onboarding-export-formats">
+                  <span><FileText size={18} /><strong>Markdown</strong><small>.md</small></span>
+                  <span><FileCode2 size={18} /><strong>SVG</strong><small>.svg</small></span>
+                  <span><FileImage size={18} /><strong>PNG</strong><small>.png</small></span>
+                </div>
+                <div className="onboarding-export-path">
+                  <span><FolderOpen size={16} /><small>{isEn ? "Export location" : "导出路径"}</small></span>
+                  <strong>{isEn ? "Choose on first export" : "首次导出时选择"}</strong>
+                </div>
+              </div>
+            )}
+
+            {current.id === "input-behavior" && (
+              <div className="onboarding-input-behavior-demo">
+                <div className="onboarding-input-behavior-heading">
+                  <MousePointerClick size={17} />
+                  <strong>{isEn ? "Input behavior" : "操作逻辑"}</strong>
+                </div>
+                <div className="onboarding-input-behavior-options">
+                  <span>
+                    <div><strong>{isEn ? "Exit superscript after input" : "上标输入后跳出"}</strong><small>{isEn ? "Return after one character" : "输入一个字符后返回主公式"}</small></div>
+                    <i className="is-on" />
+                  </span>
+                  <span>
+                    <div><strong>{isEn ? "Exit font command after input" : "字体命令输入后跳出"}</strong><small>{isEn ? "Off: type multiple characters" : "关闭后可连续输入多个字符"}</small></div>
+                    <i />
+                  </span>
+                  <span>
+                    <div><strong>{isEn ? "Structured command suggestions" : "求和、积分等结构候选框"}</strong><small>{isEn ? "Large VisualTeX command panel" : "VisualTeX 大型命令候选框"}</small></div>
+                    <i className="is-on" />
+                  </span>
+                </div>
+                <div className="onboarding-input-behavior-example">
+                  <code>\\mathbb&#123;AB&#125;</code>
+                  <kbd>Enter</kbd>
+                  <small>{isEn ? "Confirm and leave the font scope" : "确认并退出字体作用域"}</small>
+                </div>
               </div>
             )}
 

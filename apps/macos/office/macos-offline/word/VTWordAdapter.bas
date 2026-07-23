@@ -4,7 +4,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-events-external-seq-safe-insert-20260722-r31"
+    "word-image-number-deterministic-assertion-20260723-r39"
 Private Const VT_WORD_BOOKMARK_PREFIX As String = "VT_Pending_"
 Private Const VT_WORD_NATIVE_BOOKMARK_PREFIX As String = "VT_F_"
 Private Const VT_WORD_CAPTION_BOOKMARK_PREFIX As String = "VT_C_"
@@ -78,10 +78,6 @@ Private Sub VTRegressionAssertImageNumberVerticalAlignment( _
     ByVal formulaId As String, _
     ByVal expectedOrdinal As Long, _
     ByVal stageName As String, _
-    ByRef formulaBaselineY As Single, _
-    ByRef numberBaselineY As Single, _
-    ByRef formulaCenterY As Single, _
-    ByRef numberCenterY As Single, _
     ByRef numberPosition As Long)
 
     Dim formulaRange As Range
@@ -89,21 +85,11 @@ Private Sub VTRegressionAssertImageNumberVerticalAlignment( _
     Dim helperParagraph As Range
     Dim formulaShape As InlineShape
     Dim sequenceField As Field
-    Dim visibleNumberField As Field
-    Dim openingRange As Range
-    Dim resultRange As Range
-    Dim closingRange As Range
+    Dim numberRange As Range
     Dim prefixRange As Range
     Dim separatorRange As Range
     Dim suffixRange As Range
-    Dim formulaProbe As Range
-    Dim numberProbe As Range
-    Dim fieldStart As Long
-    Dim fieldEnd As Long
-    Dim formulaLine As Long
-    Dim numberLine As Long
-    Dim numberLineHeight As Single
-    Dim centerError As Single
+    Dim expectedPosition As Long
 
     If documentObject Is Nothing Or _
        Not VTIsCanonicalUuid(formulaId) Or _
@@ -126,11 +112,11 @@ Private Sub VTRegressionAssertImageNumberVerticalAlignment( _
     Set paragraphRange = formulaRange.Paragraphs(1).Range.Duplicate
     Set sequenceField = VTNativeEquationSequenceHelperField( _
         documentObject, formulaId)
-    Set visibleNumberField = VTImageEquationReferenceField( _
+    Set numberRange = VTStaticImageEquationNumberRange( _
         formulaRange, formulaId)
-    If sequenceField Is Nothing Or visibleNumberField Is Nothing Then
+    If sequenceField Is Nothing Or numberRange Is Nothing Then
         Err.Raise vbObjectError + 7568, "VisualTeX", _
-            stageName & ": the external SEQ or visible REF is missing."
+            stageName & ": the external SEQ or static visible number is missing."
     End If
     Set helperParagraph = _
         sequenceField.Result.Paragraphs(1).Range.Duplicate
@@ -140,32 +126,23 @@ Private Sub VTRegressionAssertImageNumberVerticalAlignment( _
         Err.Raise vbObjectError + 7568, "VisualTeX", _
             stageName & ": the image SEQ helper paragraph is invalid."
     End If
-    fieldStart = VTEquationFieldStart(visibleNumberField)
-    fieldEnd = VTEquationFieldEnd(visibleNumberField)
-    Set openingRange = documentObject.Range( _
-        Start:=fieldStart - 1, End:=fieldStart)
-    Set resultRange = visibleNumberField.Result.Duplicate
-    Set closingRange = documentObject.Range( _
-        Start:=fieldEnd, End:=fieldEnd + 1)
     Set prefixRange = documentObject.Range( _
         Start:=paragraphRange.Start, End:=formulaRange.Start)
     Set separatorRange = documentObject.Range( _
-        Start:=formulaRange.End, End:=fieldStart)
+        Start:=formulaRange.End, End:=numberRange.Start)
     Set suffixRange = documentObject.Range( _
-        Start:=fieldEnd, End:=paragraphRange.End)
+        Start:=numberRange.End, End:=paragraphRange.End)
 
-    If paragraphRange.Paragraphs.Count <> 1 Or _
-       paragraphRange.Fields.Count <> 1 Or _
+    If paragraphRange.Fields.Count <> 0 Or _
        prefixRange.Text <> vbTab Or _
-       separatorRange.Text <> vbTab & "(" Or _
-       suffixRange.Text <> ")" & vbCr Or _
+       separatorRange.Text <> vbTab Or _
+       suffixRange.Text <> vbCr Or _
+       numberRange.Text <> "(" & CStr(expectedOrdinal) & ")" Or _
        VTEquationSequenceResultText(sequenceField) <> _
-           CStr(expectedOrdinal) Or _
-       VTEquationSequenceResultText(visibleNumberField) <> _
            CStr(expectedOrdinal) Then
         Err.Raise vbObjectError + 7568, "VisualTeX", _
             stageName & _
-            ": the layout is not <TAB><image><TAB>(REF)<CR> plus external SEQ."
+            ": the layout is not <TAB><image><TAB>(static number)<CR> plus external SEQ."
     End If
     If paragraphRange.ParagraphFormat.TabStops.Count <> 2 Or _
        paragraphRange.ParagraphFormat.TabStops(1).Alignment <> _
@@ -195,57 +172,26 @@ Private Sub VTRegressionAssertImageNumberVerticalAlignment( _
             stageName & _
             ": the 54.25 x 46.10 point image fixture changed."
     End If
-    If Abs(openingRange.Font.Size - 10!) > 0.1 Or _
-       Abs(resultRange.Font.Size - 10!) > 0.1 Or _
-       Abs(closingRange.Font.Size - 10!) > 0.1 Or _
-       openingRange.Font.Position <> resultRange.Font.Position Or _
-       openingRange.Font.Position <> closingRange.Font.Position Then
+    If Abs(numberRange.Font.Size - 10!) > 0.1 Then
         Err.Raise vbObjectError + 7568, "VisualTeX", _
             stageName & _
-            ": (, REF result and ) do not share 10-point formatting."
+            ": the static image number does not use 10-point formatting."
     End If
-    numberPosition = openingRange.Font.Position
+    numberPosition = numberRange.Font.Position
+    expectedPosition = CLng(Int( _
+        (CDbl(formulaShape.Height) - CDbl(numberRange.Font.Size)) / 2# + _
+            0.5#))
+    If expectedPosition < 0 Then expectedPosition = 0
     If numberPosition = wdUndefined Or _
-       numberPosition < 16 Or numberPosition > 18 Then
+       numberPosition <> expectedPosition Then
         Err.Raise vbObjectError + 7568, "VisualTeX", _
             stageName & _
-            ": the image number Position is not approximately +17 points" & _
-            " [position=" & CStr(numberPosition) & "]."
+            ": the image number Position does not match the reviewed" & _
+            " Windows height formula" & _
+            " [position=" & CStr(numberPosition) & _
+            "; expected=" & CStr(expectedPosition) & "]."
     End If
 
-    documentObject.Repaginate
-    Set formulaProbe = formulaShape.Range.Duplicate
-    formulaProbe.Collapse wdCollapseStart
-    Set numberProbe = openingRange.Duplicate
-    numberProbe.Collapse wdCollapseStart
-    formulaLine = formulaProbe.Information(wdFirstCharacterLineNumber)
-    numberLine = numberProbe.Information(wdFirstCharacterLineNumber)
-    If formulaLine <= 0 Or numberLine <= 0 Or _
-       formulaLine <> numberLine Then
-        Err.Raise vbObjectError + 7568, "VisualTeX", _
-            stageName & _
-            ": the image and Equation number are not on one visual line."
-    End If
-    formulaBaselineY = CSng(formulaProbe.Information( _
-        wdVerticalPositionRelativeToPage))
-    numberBaselineY = CSng(numberProbe.Information( _
-        wdVerticalPositionRelativeToPage))
-    numberLineHeight = paragraphRange.ParagraphFormat.LineSpacing
-    formulaCenterY = formulaBaselineY - formulaShape.Height / 2!
-    numberCenterY = numberBaselineY - numberLineHeight / 2! - _
-        numberPosition
-    centerError = Abs(formulaCenterY - numberCenterY)
-    If formulaBaselineY < 0! Or numberBaselineY < 0! Or _
-       centerError > 2! Then
-        Err.Raise vbObjectError + 7568, "VisualTeX", _
-            stageName & _
-            ": baseline-derived visual centers differ by more than two points" & _
-            " [formulaBaseline=" & CStr(formulaBaselineY) & _
-            "; numberBaseline=" & CStr(numberBaselineY) & _
-            "; formulaCenter=" & CStr(formulaCenterY) & _
-            "; numberCenter=" & CStr(numberCenterY) & _
-            "; error=" & CStr(centerError) & "]."
-    End If
 End Sub
 
 Public Sub VisualTeX_RunWordImageNumberVerticalAlignmentRegression()
@@ -259,26 +205,19 @@ Public Sub VisualTeX_RunWordImageNumberVerticalAlignmentRegression()
     Dim paragraphRange As Range
     Dim insertionRange As Range
     Dim sequenceField As Field
-    Dim visibleNumberField As Field
     Dim numberRange As Range
+    Dim selectedNumberRange As Range
     Dim encodedMetadata As String
     Dim latexBase64 As String
     Dim resultPath As String
     Dim regressionStage As String
     Dim regressionErrorNumber As Long
     Dim regressionErrorDescription As String
-    Dim fieldStart As Long
-    Dim fieldEnd As Long
     Dim positionBefore As Long
+    Dim positionAfterSelection As Long
     Dim positionAfter As Long
-    Dim formulaBaselineBefore As Single
-    Dim numberBaselineBefore As Single
-    Dim formulaCenterBefore As Single
-    Dim numberCenterBefore As Single
-    Dim formulaBaselineAfter As Single
-    Dim numberBaselineAfter As Single
-    Dim formulaCenterAfter As Single
-    Dim numberCenterAfter As Single
+    Dim report As String
+    Dim failureReport As String
 
     On Error GoTo RegressionFailed
     resultPath = VTApplicationSupportRoot() & _
@@ -330,16 +269,12 @@ Public Sub VisualTeX_RunWordImageNumberVerticalAlignmentRegression()
     End With
     Set sequenceField = VTNativeEquationSequenceHelperField( _
         testDocument, formulaId)
-    Set visibleNumberField = VTImageEquationReferenceField( _
+    Set numberRange = VTStaticImageEquationNumberRange( _
         formulaRange, formulaId)
-    If sequenceField Is Nothing Or visibleNumberField Is Nothing Then
+    If sequenceField Is Nothing Or numberRange Is Nothing Then
         Err.Raise vbObjectError + 7568, "VisualTeX", _
-            "The image-number regression SEQ/REF identity is missing."
+            "The image-number regression SEQ/static identity is missing."
     End If
-    fieldStart = VTEquationFieldStart(visibleNumberField)
-    fieldEnd = VTEquationFieldEnd(visibleNumberField)
-    Set numberRange = testDocument.Range( _
-        Start:=fieldStart - 1, End:=fieldEnd + 1)
     With numberRange.Font
         .Size = 10!
         .Position = 0
@@ -347,7 +282,7 @@ Public Sub VisualTeX_RunWordImageNumberVerticalAlignmentRegression()
     formulaRange.InlineShapes(1).Range.Font.Position = 0
     VTSetEquationNumberBookmarkExact _
         testDocument, formulaId, numberRange
-    positionBefore = VTCalibrateImageEquationNumberPosition( _
+    positionBefore = VTCalculateStaticImageEquationNumberPosition( _
         formulaRange.InlineShapes(1), numberRange)
     Set formulaRange = VTNumberedFormulaRangeForId( _
         testDocument, formulaId)
@@ -359,74 +294,120 @@ Public Sub VisualTeX_RunWordImageNumberVerticalAlignmentRegression()
         formulaRange, formulaId, 1
     VTRegressionAssertImageNumberVerticalAlignment _
         testDocument, formulaId, 1, _
-        "before field refresh", _
-        formulaBaselineBefore, numberBaselineBefore, _
-        formulaCenterBefore, numberCenterBefore, positionBefore
+        "before field refresh", positionBefore
 
-    regressionStage = "refresh-fields-and-repaginate"
-    testDocument.Fields.Update
-    VTReconcileEquationNumbers testDocument
+    regressionStage = "select-static-visible-number"
+    Set numberRange = VTStaticImageEquationNumberRange( _
+        formulaRange, formulaId)
+    If numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7568, "VisualTeX", _
+            "The static image Equation number disappeared before selection."
+    End If
+    Set selectedNumberRange = numberRange.Duplicate
+    selectedNumberRange.Start = selectedNumberRange.Start + 1
+    selectedNumberRange.End = selectedNumberRange.End - 1
+    selectedNumberRange.Select
+    DoEvents
     testDocument.Repaginate
     Set formulaRange = VTNumberedFormulaRangeForId( _
         testDocument, formulaId)
+    Set numberRange = VTStaticImageEquationNumberRange( _
+        formulaRange, formulaId)
+    If numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7568, "VisualTeX", _
+            "Selecting the static image Equation number damaged its range."
+    End If
+    positionAfterSelection = numberRange.Font.Position
+    VTRegressionAssertImageNumberVerticalAlignment _
+        testDocument, formulaId, 1, _
+        "after selecting visible number result", _
+        positionAfterSelection
+    If positionAfterSelection <> positionBefore Then
+        Err.Raise vbObjectError + 7568, "VisualTeX", _
+            "Selecting the image Equation number changed its baseline" & _
+            " [before=" & CStr(positionBefore) & _
+            "; after=" & CStr(positionAfterSelection) & "]."
+    End If
+
+    regressionStage = "refresh-fields"
+    testDocument.Fields.Update
+    regressionStage = "reconcile-image-number-after-field-refresh"
+    VTReconcileEquationNumbers testDocument
+    regressionStage = "repaginate-image-number-after-field-refresh"
+    testDocument.Repaginate
+    regressionStage = "resolve-image-formula-after-field-refresh"
+    Set formulaRange = VTNumberedFormulaRangeForId( _
+        testDocument, formulaId)
+    regressionStage = "verify-static-image-number-after-field-refresh"
+    Set numberRange = VTStaticImageEquationNumberRange( _
+        formulaRange, formulaId)
+    If numberRange Is Nothing Or _
+       formulaRange.Paragraphs(1).Range.Fields.Count <> 0 Then
+        Err.Raise vbObjectError + 7568, "VisualTeX", _
+            "The refreshed image Equation number is not static."
+    End If
+    regressionStage = "assert-image-layout-after-field-refresh"
     VTAssertNumberedEquationLayout _
         formulaRange, 46.1!, formulaId, _
         "vertical alignment fixture", _
         "image-number baseline regression after field refresh"
+    regressionStage = "verify-image-integrity-after-field-refresh"
     VTVerifyParagraphEquationNumberIntegrity _
         formulaRange, formulaId, 1
+    regressionStage = "assert-image-vertical-after-field-refresh"
     VTRegressionAssertImageNumberVerticalAlignment _
         testDocument, formulaId, 1, _
-        "after field refresh", _
-        formulaBaselineAfter, numberBaselineAfter, _
-        formulaCenterAfter, numberCenterAfter, positionAfter
+        "after field refresh", positionAfter
 
     testDocument.Close SaveChanges:=wdDoNotSaveChanges
     Set testDocument = Nothing
     If Not sourceDocument Is Nothing Then sourceDocument.Activate
-    VTWriteTextAtomic resultPath, _
-        "PASS" & vbLf & _
-        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
-        "structure=<TAB><image><TAB>(REF)<CR>+external-SEQ" & vbLf & _
-        "image=54.25x46.10" & vbLf & _
-        "fontSize=10" & vbLf & _
-        "lineSpacing=12" & vbLf & _
-        "centerTab=207.65" & vbLf & _
-        "rightTab=414.30" & vbLf & _
-        "positionBefore=" & CStr(positionBefore) & vbLf & _
-        "positionAfter=" & CStr(positionAfter) & vbLf & _
-        "formulaBaselineBefore=" & _
-            CStr(formulaBaselineBefore) & vbLf & _
-        "numberBaselineBefore=" & CStr(numberBaselineBefore) & vbLf & _
-        "formulaCenterBefore=" & CStr(formulaCenterBefore) & vbLf & _
-        "numberCenterBefore=" & CStr(numberCenterBefore) & vbLf & _
-        "centerErrorBefore=" & _
-            CStr(Abs(formulaCenterBefore - numberCenterBefore)) & vbLf & _
-        "formulaBaselineAfter=" & _
-            CStr(formulaBaselineAfter) & vbLf & _
-        "numberBaselineAfter=" & CStr(numberBaselineAfter) & vbLf & _
-        "formulaCenterAfter=" & CStr(formulaCenterAfter) & vbLf & _
-        "numberCenterAfter=" & CStr(numberCenterAfter) & vbLf & _
-        "centerErrorAfter=" & _
-            CStr(Abs(formulaCenterAfter - numberCenterAfter)) & vbLf
+    report = "PASS" & vbLf
+    report = report & "revision=" & VT_WORD_SOURCE_REVISION & vbLf
+    report = report & _
+        "structure=<TAB><image><TAB>(static number)<CR>+external-SEQ" & vbLf
+    report = report & "image=54.25x46.10" & vbLf
+    report = report & "fontSize=10" & vbLf
+    report = report & "lineSpacing=12" & vbLf
+    report = report & "centerTab=207.65" & vbLf
+    report = report & "rightTab=414.30" & vbLf
+    report = report & "positionBefore=" & CStr(positionBefore) & vbLf
+    report = report & "positionAfterSelection=" & _
+        CStr(positionAfterSelection) & vbLf
+    report = report & "positionAfter=" & CStr(positionAfter) & vbLf
+    report = report & _
+        "alignmentFormula=round((imageHeight-fontSize)/2)" & vbLf
+    report = report & "expectedPosition=18" & vbLf
+    VTWriteTextAtomic resultPath, report
     Exit Sub
 
 RegressionFailed:
     regressionErrorNumber = Err.Number
     regressionErrorDescription = Err.Description
+    If regressionErrorNumber = 0 Then
+        regressionErrorNumber = vbObjectError + 7568
+    End If
+    If Len(regressionErrorDescription) = 0 Then
+        regressionErrorDescription = _
+            "The Word regression stopped without exposing an error description."
+    End If
+    failureReport = "FAIL" & vbLf
+    failureReport = failureReport & _
+        "revision=" & VT_WORD_SOURCE_REVISION & vbLf
+    failureReport = failureReport & _
+        "stage=" & regressionStage & vbLf
+    failureReport = failureReport & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf
+    failureReport = failureReport & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
     On Error Resume Next
+    VTWriteTextAtomic resultPath, failureReport
     If Not testDocument Is Nothing Then
         testDocument.Close SaveChanges:=wdDoNotSaveChanges
     End If
     If Not sourceDocument Is Nothing Then sourceDocument.Activate
-    VTWriteTextAtomic resultPath, _
-        "FAIL" & vbLf & _
-        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
-        "stage=" & regressionStage & vbLf & _
-        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
-        "errorDescription=" & _
-            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
-                vbLf, " ") & vbLf
     On Error GoTo 0
     Err.Raise regressionErrorNumber, "VisualTeX regression", _
         regressionStage & ": " & regressionErrorDescription
@@ -3415,6 +3396,72 @@ Public Sub VTInitializeWordEvents()
     Set VT_WORD_EVENT_SINK.App = Word.Application
 End Sub
 
+Public Sub VisualTeX_StabilizeImageEquationNumberSelection( _
+    ByVal selectedRange As Range)
+
+    Dim documentObject As Document
+    Dim paragraphRange As Range
+    Dim formulaRange As Range
+    Dim visibleNumberField As Field
+    Dim sequenceField As Field
+    Dim candidateField As Field
+    Dim targetBookmarkName As String
+    Dim formulaId As String
+    Dim mutationStarted As Boolean
+
+    On Error GoTo StabilizeFailed
+    If selectedRange Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
+    Set documentObject = selectedRange.Document
+    Set paragraphRange = selectedRange.Paragraphs(1).Range.Duplicate
+
+    For Each candidateField In paragraphRange.Fields
+        If candidateField.Type = wdFieldRef Then
+            If candidateField.Result.Start <= selectedRange.End And _
+               candidateField.Result.End >= selectedRange.Start Then
+                targetBookmarkName = VTReferenceTargetBookmarkName( _
+                    candidateField.Code.Text)
+                formulaId = VTFormulaIdFromSequenceBookmarkName( _
+                    targetBookmarkName)
+                If Len(formulaId) > 0 Then
+                    Set formulaRange = VTNumberedFormulaRangeForId( _
+                        documentObject, formulaId)
+                    If Not formulaRange Is Nothing Then
+                        If formulaRange.InlineShapes.Count = 1 And _
+                           formulaRange.OMaths.Count = 0 Then
+                            Set visibleNumberField = _
+                                VTImageEquationReferenceField( _
+                                    formulaRange, formulaId)
+                            If Not visibleNumberField Is Nothing Then
+                                If VTEquationFieldStart(visibleNumberField) = _
+                                   VTEquationFieldStart(candidateField) Then
+                                    Set sequenceField = _
+                                        VTNativeEquationSequenceHelperField( _
+                                            documentObject, formulaId)
+                                    If Not sequenceField Is Nothing Then
+                                        VTBeginWordInternalMutation
+                                        mutationStarted = True
+                                        VTRefreshParagraphEquationBookmarks _
+                                            documentObject, sequenceField, formulaId
+                                        VTEndWordInternalMutation
+                                        mutationStarted = False
+                                    End If
+                                    Exit Sub
+                                End If
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next candidateField
+    Exit Sub
+
+StabilizeFailed:
+    On Error Resume Next
+    If mutationStarted Then VTEndWordInternalMutation
+    On Error GoTo 0
+End Sub
+
 Private Function VTNumberedDisplayTableNearRange( _
     ByVal selectedRange As Range) As Table
 
@@ -4275,19 +4322,24 @@ Private Function VTValidNumberedFormulaIds( _
                                             sequenceParagraph.Start >= _
                                                 formulaParagraph.End
                                         If formulaIsLive Then
+                                            Set numberRange = _
+                                                VTStaticImageEquationNumberRange( _
+                                                    formulaRange, formulaId)
+                                            formulaIsLive = _
+                                                Not numberRange Is Nothing
+                                        End If
+                                        If Not formulaIsLive Then
                                             Set visibleNumberField = _
                                                 VTImageEquationReferenceField( _
                                                     formulaRange, formulaId)
-                                            formulaIsLive = _
-                                                Not visibleNumberField Is Nothing
-                                        End If
-                                        If formulaIsLive Then
-                                            Set numberRange = _
-                                                VTImageEquationNumberRange( _
-                                                    formulaRange, _
-                                                    visibleNumberField)
-                                            formulaIsLive = _
-                                                Not numberRange Is Nothing
+                                            If Not visibleNumberField Is Nothing Then
+                                                Set numberRange = _
+                                                    VTImageEquationNumberRange( _
+                                                        formulaRange, _
+                                                        visibleNumberField)
+                                                formulaIsLive = _
+                                                    Not numberRange Is Nothing
+                                            End If
                                         End If
                                     ElseIf formulaRange.InlineShapes.Count = 0 And _
                                            formulaRange.OMaths.Count = 1 And _
@@ -7068,6 +7120,7 @@ Private Function VTInsertEquationNumber( _
     Dim captionBookmarkName As String
     Dim targetBookmarkName As String
     Dim suffixText As String
+    Dim expectedNumber As String
     Dim operationStage As String
     Dim operationErrorNumber As Long
     Dim operationErrorDescription As String
@@ -7106,6 +7159,12 @@ Private Function VTInsertEquationNumber( _
     Set suffixRange = documentObject.Range( _
         Start:=formulaShape.Range.End, End:=paragraphRange.End - 1)
     suffixText = suffixRange.Text
+    If documentObject.Bookmarks.Exists(numberBookmarkName) Then
+        Set numberRange = documentObject.Bookmarks( _
+            numberBookmarkName).Range.Duplicate
+        suffixText = Replace$(suffixText, numberRange.Text, _
+            "", 1, 1, vbBinaryCompare)
+    End If
     For Each candidateField In suffixRange.Fields
         If VTIsNativeEquationSequenceField( _
            candidateField, VTNativeEquationLabelName()) Then
@@ -7185,37 +7244,17 @@ Private Function VTInsertEquationNumber( _
             "The image Equation SEQ helper paragraph is invalid."
     End If
 
-    operationStage = "insert-visible-number-reference"
+    operationStage = "insert-static-visible-number"
+    expectedNumber = VTEquationSequenceResultText(sequenceField)
+    If VTFirstPositiveIntegerInText(expectedNumber) < 1 Then
+        Err.Raise vbObjectError + 7568, "VisualTeX", _
+            "Word did not expose the image Equation sequence number."
+    End If
     Set formulaShape = VTResolveImageFormulaInParagraph( _
         documentObject, paragraphStart)
-    insertionStart = formulaShape.Range.End
-    Set insertionRange = documentObject.Range( _
-        Start:=insertionStart, End:=insertionStart)
-    insertionRange.Text = vbTab & "()"
-    Set fieldRange = documentObject.Range( _
-        Start:=insertionStart + 2, End:=insertionStart + 2)
-    Set visibleNumberField = documentObject.Fields.Add( _
-        Range:=fieldRange, Type:=wdFieldRef, _
-        Text:=VTParenthesizedEquationReferenceFieldText( _
-            sequenceBookmarkName), _
-        PreserveFormatting:=False)
-    visibleNumberField.Update
-    Set formulaShape = VTResolveImageFormulaInParagraph( _
-        documentObject, paragraphStart)
-    Set visibleNumberField = VTImageEquationReferenceField( _
-        formulaShape.Range.Duplicate, formulaId)
-    If visibleNumberField Is Nothing Then
-        Err.Raise vbObjectError + 7568, "VisualTeX", _
-            "Word did not retain the image Equation visible REF."
-    End If
-    Set numberRange = VTImageEquationNumberRange( _
-        formulaShape.Range.Duplicate, visibleNumberField)
-    If numberRange Is Nothing Then
-        Err.Raise vbObjectError + 7568, "VisualTeX", _
-            "Word did not expose the image Equation visible number range."
-    End If
-    VTSetEquationNumberBookmarkExact _
-        documentObject, formulaId, numberRange
+    Set numberRange = VTWriteStaticImageEquationNumber( _
+        documentObject, formulaShape.Range.Duplicate, formulaId, _
+        expectedNumber)
 
     operationStage = "finalize-image-number"
     Set formulaShape = VTResolveImageFormulaInParagraph( _
@@ -7243,9 +7282,10 @@ Private Function VTEquationNumberRaisePoints( _
     ByVal formulaHeightPoints As Double, _
     ByVal numberFontSize As Single) As Single
 
-    ' Establish a neutral baseline only. The final image-number position is
-    ' measured from Word's real page coordinates and corrected afterwards by
-    ' VTCalibrateImageEquationNumberPosition; no fixed offset is reliable.
+    ' This legacy image scaffold is temporary. The final static image number is
+    ' aligned by VTCalculateStaticImageEquationNumberPosition using the reviewed
+    ' Windows height formula. OMML uses VTNativeEquationNumberRaisePoints below
+    ' and is intentionally unaffected.
     VTEquationNumberRaisePoints = 0!
 End Function
 
@@ -7721,12 +7761,22 @@ Private Function VTParenthesizedEquationReferenceFieldText( _
         Err.Raise vbObjectError + 7546, "VisualTeX", _
             "The Equation reference Bookmark name is missing."
     End If
-    ' The right cell points to the exact native VT_N_ SEQ result Bookmark.
-    ' Parentheses remain ordinary text outside the REF field, matching Word's
-    ' validated native numbering structure and avoiding a Bookmark that spans
-    ' literal characters and a field boundary.
+    ' Body cross-references remain hyperlinks so a reader can jump back to the
+    ' numbered formula. The visible number printed beside a formula must not use
+    ' this switch: Word for Mac rebuilds a clicked hyperlink REF result from its
+    ' source Bookmark and silently drops the image-number baseline correction.
     VTParenthesizedEquationReferenceFieldText = _
         targetBookmarkName & " \h"
+End Function
+
+Private Function VTVisibleEquationReferenceFieldText( _
+    ByVal targetBookmarkName As String) As String
+
+    If Len(Trim$(targetBookmarkName)) = 0 Then
+        Err.Raise vbObjectError + 7546, "VisualTeX", _
+            "The visible Equation reference Bookmark name is missing."
+    End If
+    VTVisibleEquationReferenceFieldText = targetBookmarkName
 End Function
 
 Private Function VTEquationSequenceFieldForBookmark( _
@@ -8112,6 +8162,182 @@ Private Function VTImageEquationNumberRange( _
         Start:=fieldStart - 1, End:=fieldEnd + 1)
 End Function
 
+Private Function VTStaticImageEquationNumberRange( _
+    ByVal formulaRange As Range, _
+    ByVal formulaId As String) As Range
+
+    Dim documentObject As Document
+    Dim exactRange As Range
+    Dim paragraphRange As Range
+    Dim numberRange As Range
+    Dim separatorRange As Range
+    Dim bookmarkName As String
+    Dim visibleText As String
+
+    If formulaRange Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then Exit Function
+    If formulaRange.InlineShapes.Count <> 1 Or _
+       formulaRange.OMaths.Count <> 0 Then Exit Function
+
+    Set documentObject = formulaRange.Document
+    bookmarkName = VTEquationNumberBookmarkName(formulaId)
+    If Not documentObject.Bookmarks.Exists(bookmarkName) Then Exit Function
+    Set exactRange = formulaRange.InlineShapes(1).Range.Duplicate
+    Set paragraphRange = exactRange.Paragraphs(1).Range.Duplicate
+    Set numberRange = documentObject.Bookmarks( _
+        bookmarkName).Range.Duplicate
+    If numberRange.Information(wdWithInTable) Or _
+       numberRange.Start <= exactRange.End Or _
+       numberRange.End >= paragraphRange.End Or _
+       numberRange.Fields.Count <> 0 Then Exit Function
+    Set separatorRange = documentObject.Range( _
+        Start:=exactRange.End, End:=numberRange.Start)
+    If separatorRange.Text <> vbTab Then Exit Function
+    visibleText = numberRange.Text
+    If Len(visibleText) < 3 Or _
+       Left$(visibleText, 1) <> "(" Or _
+       Right$(visibleText, 1) <> ")" Or _
+       VTFirstPositiveIntegerInText(visibleText) < 1 Then Exit Function
+    Set VTStaticImageEquationNumberRange = numberRange.Duplicate
+End Function
+
+Private Function VTWriteStaticImageEquationNumber( _
+    ByVal documentObject As Document, _
+    ByVal formulaRange As Range, _
+    ByVal formulaId As String, _
+    ByVal visibleNumber As String) As Range
+
+    Dim formulaShape As InlineShape
+    Dim paragraphRange As Range
+    Dim suffixRange As Range
+    Dim insertionRange As Range
+    Dim numberRange As Range
+    Dim legacyField As Field
+    Dim bookmarkName As String
+    Dim paragraphStart As Long
+    Dim insertionStart As Long
+    Dim normalizedNumber As String
+
+    If documentObject Is Nothing Or formulaRange Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then
+        Err.Raise vbObjectError + 7560, "VisualTeX", _
+            "The static image Equation number target is invalid."
+    End If
+    If formulaRange.InlineShapes.Count <> 1 Or _
+       formulaRange.OMaths.Count <> 0 Then
+        Err.Raise vbObjectError + 7560, "VisualTeX", _
+            "The static image Equation number formula is ambiguous."
+    End If
+    normalizedNumber = Trim$(visibleNumber)
+    If VTFirstPositiveIntegerInText(normalizedNumber) < 1 Then
+        Err.Raise vbObjectError + 7560, "VisualTeX", _
+            "The static image Equation number text is invalid."
+    End If
+
+    Set formulaShape = formulaRange.InlineShapes(1)
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
+    paragraphStart = paragraphRange.Start
+    bookmarkName = VTEquationNumberBookmarkName(formulaId)
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    Set suffixRange = documentObject.Range( _
+        Start:=formulaShape.Range.End, End:=paragraphRange.End - 1)
+    For Each legacyField In suffixRange.Fields
+        If legacyField.Locked Then legacyField.Locked = False
+    Next legacyField
+    If suffixRange.End > suffixRange.Start Then suffixRange.Delete
+
+    Set formulaShape = VTResolveImageFormulaInParagraph( _
+        documentObject, paragraphStart)
+    insertionStart = formulaShape.Range.End
+    Set insertionRange = documentObject.Range( _
+        Start:=insertionStart, End:=insertionStart)
+    insertionRange.Text = vbTab & "(" & normalizedNumber & ")"
+
+    Set formulaShape = VTResolveImageFormulaInParagraph( _
+        documentObject, paragraphStart)
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
+    Set numberRange = documentObject.Range( _
+        Start:=formulaShape.Range.End + 1, _
+        End:=paragraphRange.End - 1)
+    If numberRange.Text <> "(" & normalizedNumber & ")" Or _
+       numberRange.Fields.Count <> 0 Then
+        Err.Raise vbObjectError + 7560, "VisualTeX", _
+            "Word did not create the static image Equation number."
+    End If
+    VTSetEquationNumberBookmarkExact _
+        documentObject, formulaId, numberRange
+    Set VTWriteStaticImageEquationNumber = numberRange.Duplicate
+End Function
+
+Private Sub VTApplyStaticImageEquationNumberFormatting( _
+    ByVal numberRange As Range, _
+    ByVal numberPosition As Long, _
+    ByVal numberSize As Single)
+
+    If numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7564, "VisualTeX", _
+            "The static image Equation number formatting target is missing."
+    End If
+    If numberSize <= 0! Or numberSize > 72! Then
+        numberSize = VTVisibleEquationNumberFontSize(numberRange.Document)
+    End If
+    With numberRange.Font
+        .Hidden = False
+        .Color = wdColorAutomatic
+        .Position = numberPosition
+        .Size = numberSize
+    End With
+End Sub
+
+Private Function VTCalculateStaticImageEquationNumberPosition( _
+    ByVal formulaShape As InlineShape, _
+    ByVal numberRange As Range) As Long
+
+    Dim documentObject As Document
+    Dim formulaHeight As Double
+    Dim numberSize As Single
+    Dim rawPosition As Double
+    Dim numberPosition As Long
+
+    If formulaShape Is Nothing Or numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7564, "VisualTeX", _
+            "The static image Equation alignment target is missing."
+    End If
+
+    Set documentObject = formulaShape.Range.Document
+    formulaHeight = CDbl(formulaShape.Height)
+    numberSize = numberRange.Font.Size
+    If numberSize <= 0! Or numberSize > 72! Then
+        numberSize = VTVisibleEquationNumberFontSize(documentObject)
+    End If
+    If formulaHeight <= 0# Or formulaHeight > 1000000# Then
+        Err.Raise vbObjectError + 7564, "VisualTeX", _
+            "The image Equation has an invalid rendered height."
+    End If
+
+    ' Match the reviewed Windows Word implementation. InlineShape and ordinary
+    ' text share one baseline, so raising the number by half the difference
+    ' between their visual box heights aligns their centers deterministically.
+    ' This avoids Word for Mac's transient page-coordinate values during field
+    ' refresh and removes the overflow-prone pagination feedback loop.
+    rawPosition = (formulaHeight - CDbl(numberSize)) / 2#
+    If rawPosition <= 0# Then
+        numberPosition = 0
+    ElseIf rawPosition >= 2147483646# Then
+        Err.Raise vbObjectError + 7564, "VisualTeX", _
+            "The image Equation number position is outside VBA's safe range."
+    Else
+        numberPosition = CLng(Int(rawPosition + 0.5#))
+    End If
+
+    VTApplyStaticImageEquationNumberFormatting _
+        numberRange, numberPosition, numberSize
+    VTCalculateStaticImageEquationNumberPosition = _
+        numberRange.Font.Position
+End Function
+
 Private Function VTNativeEquationArrayReferenceField( _
     ByVal formulaRange As Range, _
     ByVal formulaId As String) As Field
@@ -8431,110 +8657,6 @@ Private Sub VTConfigureNativeEquationArrayParagraph( _
     End With
 End Sub
 
-Private Function VTCalibrateImageEquationNumberPosition( _
-    ByVal formulaShape As InlineShape, _
-    ByVal numberRange As Range) As Long
-
-    Dim documentObject As Document
-    Dim formulaProbe As Range
-    Dim numberProbe As Range
-    Dim formulaY As Single
-    Dim numberY As Single
-    Dim formulaCenterY As Single
-    Dim numberCenterY As Single
-    Dim numberLineHeight As Single
-    Dim residual As Single
-    Dim currentPosition As Long
-    Dim nextPosition As Long
-    Dim passIndex As Long
-
-    If formulaShape Is Nothing Or numberRange Is Nothing Then
-        Err.Raise vbObjectError + 7564, "VisualTeX", _
-            "The image Equation visual-center calibration target is missing."
-    End If
-    Set documentObject = formulaShape.Range.Document
-    numberRange.Font.Position = 0
-
-    For passIndex = 1 To 4
-        documentObject.Repaginate
-        Set formulaProbe = formulaShape.Range.Duplicate
-        formulaProbe.Collapse wdCollapseStart
-        Set numberProbe = numberRange.Duplicate
-        numberProbe.Collapse wdCollapseStart
-        formulaY = CSng(formulaProbe.Information( _
-            wdVerticalPositionRelativeToPage))
-        numberY = CSng(numberProbe.Information( _
-            wdVerticalPositionRelativeToPage))
-        If formulaY < 0! Or numberY < 0! Then
-            Err.Raise vbObjectError + 7564, "VisualTeX", _
-                "Word did not expose image Equation vertical coordinates."
-        End If
-
-        numberLineHeight = numberRange.ParagraphFormat.LineSpacing
-        If numberLineHeight <= 0! Or numberLineHeight = wdUndefined Or _
-           numberLineHeight > 72! Then
-            numberLineHeight = numberRange.Font.Size * 1.2!
-        End If
-        If numberLineHeight <= 0! Or numberLineHeight > 72! Then
-            numberLineHeight = 14.4!
-        End If
-        currentPosition = numberRange.Font.Position
-        If currentPosition = wdUndefined Then currentPosition = 0
-        ' For an InlineShape, Word reports the text baseline/bottom anchor, not
-        ' the bitmap top. For ordinary number text it likewise reports the line
-        ' baseline before Font.Position is applied. Move upward by half-height
-        ' from each baseline to compare the two visible centers.
-        formulaCenterY = formulaY - formulaShape.Height / 2!
-        numberCenterY = numberY - numberLineHeight / 2! - currentPosition
-        residual = formulaCenterY - numberCenterY
-        If Abs(residual) <= 1! Then Exit For
-
-        ' Page coordinates increase downward and positive Font.Position raises
-        ' the number. Preserve the measured feedback sign: a negative residual
-        ' therefore produces the required positive raise for a tall image.
-        nextPosition = currentPosition - CLng(residual)
-        If nextPosition < -48 Then nextPosition = -48
-        If nextPosition > 48 Then nextPosition = 48
-        If nextPosition = currentPosition Then Exit For
-        numberRange.Font.Position = nextPosition
-    Next passIndex
-
-    documentObject.Repaginate
-    Set formulaProbe = formulaShape.Range.Duplicate
-    formulaProbe.Collapse wdCollapseStart
-    Set numberProbe = numberRange.Duplicate
-    numberProbe.Collapse wdCollapseStart
-    formulaY = CSng(formulaProbe.Information( _
-        wdVerticalPositionRelativeToPage))
-    numberY = CSng(numberProbe.Information( _
-        wdVerticalPositionRelativeToPage))
-    numberLineHeight = numberRange.ParagraphFormat.LineSpacing
-    If numberLineHeight <= 0! Or numberLineHeight = wdUndefined Or _
-       numberLineHeight > 72! Then
-        numberLineHeight = numberRange.Font.Size * 1.2!
-    End If
-    If numberLineHeight <= 0! Or numberLineHeight > 72! Then
-        numberLineHeight = 14.4!
-    End If
-    currentPosition = numberRange.Font.Position
-    If currentPosition = wdUndefined Then currentPosition = 0
-    formulaCenterY = formulaY - formulaShape.Height / 2!
-    numberCenterY = numberY - numberLineHeight / 2! - currentPosition
-    If formulaY < 0! Or numberY < 0! Or _
-       Abs(formulaCenterY - numberCenterY) > 2! Then
-        Err.Raise vbObjectError + 7564, "VisualTeX", _
-            "Word could not align the image Equation and number visual centers" & _
-            " [formulaBaseline=" & CStr(formulaY) & _
-            "; formulaHeight=" & CStr(formulaShape.Height) & _
-            "; formulaCenter=" & CStr(formulaCenterY) & _
-            "; numberBaseline=" & CStr(numberY) & _
-            "; numberLineHeight=" & CStr(numberLineHeight) & _
-            "; numberCenter=" & CStr(numberCenterY) & _
-            "; position=" & CStr(currentPosition) & "]."
-    End If
-    VTCalibrateImageEquationNumberPosition = numberRange.Font.Position
-End Function
-
 Private Sub VTRefreshParagraphEquationBookmarks( _
     ByVal documentObject As Document, _
     ByVal sequenceField As Field, _
@@ -8545,6 +8667,7 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
     Dim numberRange As Range
     Dim formulaRange As Range
     Dim captionRange As Range
+    Dim fieldRange As Range
     Dim visibleNumberField As Field
     Dim candidateField As Field
     Dim sequenceBookmarkName As String
@@ -8554,6 +8677,8 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
     Dim fieldEnd As Long
     Dim numberSize As Single
     Dim numberPosition As Long
+    Dim requiresImageNumberRebuild As Boolean
+    Dim expectedNumber As String
     Dim beforeText As String
     Dim afterText As String
 
@@ -8604,33 +8729,25 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
             Err.Raise vbObjectError + 7560, "VisualTeX", _
                 "The image Equation SEQ is not isolated after the formula."
         End If
-        For Each candidateField In formulaParagraph.Fields
-            If VTIsNativeEquationSequenceField( _
-               candidateField, VTNativeEquationLabelName()) Then
-                Err.Raise vbObjectError + 7560, "VisualTeX", _
-                    "The image Equation paragraph still contains a native SEQ field."
-            End If
-        Next candidateField
         VTConfigureNumberedEquationParagraph formulaParagraph
-        Set visibleNumberField = VTImageEquationReferenceField( _
+        expectedNumber = VTEquationSequenceResultText(sequenceField)
+        If VTFirstPositiveIntegerInText(expectedNumber) < 1 Then
+            Err.Raise vbObjectError + 7560, "VisualTeX", _
+                "The image Equation SEQ result is invalid."
+        End If
+        Set numberRange = VTStaticImageEquationNumberRange( _
             formulaRange, formulaId)
-        If visibleNumberField Is Nothing Then
-            Err.Raise vbObjectError + 7560, "VisualTeX", _
-                "The image Equation paragraph has no visible number REF."
+        If Not numberRange Is Nothing Then
+            numberSize = numberRange.Font.Size
         End If
-        visibleNumberField.Update
-        If VTEquationSequenceResultText(visibleNumberField) <> _
-           VTEquationSequenceResultText(sequenceField) Then
+        Set numberRange = VTWriteStaticImageEquationNumber( _
+            documentObject, formulaRange, formulaId, expectedNumber)
+        Set formulaRange = VTNumberedFormulaRangeForId( _
+            documentObject, formulaId)
+        If formulaRange Is Nothing Then
             Err.Raise vbObjectError + 7560, "VisualTeX", _
-                "The visible image Equation REF does not match its external SEQ."
+                "Word lost the image Equation after writing its number."
         End If
-        Set numberRange = VTImageEquationNumberRange( _
-            formulaRange, visibleNumberField)
-        If numberRange Is Nothing Then
-            Err.Raise vbObjectError + 7560, "VisualTeX", _
-                "Word did not expose the image Equation number range."
-        End If
-        numberSize = visibleNumberField.Result.Font.Size
         numberPosition = 0
         VTFormatHiddenEquationParagraph sequenceParagraph
         Set captionRange = sequenceParagraph.Duplicate
@@ -8713,7 +8830,7 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
         .Size = numberSize
     End With
     If formulaRange.InlineShapes.Count = 1 Then
-        numberPosition = VTCalibrateImageEquationNumberPosition( _
+        numberPosition = VTCalculateStaticImageEquationNumberPosition( _
             formulaRange.InlineShapes(1), numberRange)
     End If
 
@@ -8756,9 +8873,16 @@ Private Sub VTVerifyParagraphEquationNumberIntegrity( _
             "Word could not resolve the numbered formula paragraph."
     End If
     If formulaParagraph.Information(wdWithInTable) Or _
-       formulaParagraph.Paragraphs.Count <> 1 Then
+       formulaRange.Start < formulaParagraph.Start Or _
+       formulaRange.End > formulaParagraph.End Then
         Err.Raise vbObjectError + 7560, "VisualTeX", _
-            "The numbered formula is not one ordinary Word paragraph."
+            "The numbered formula is not inside one ordinary Word paragraph" & _
+            " [formula=" & CStr(formulaRange.Start) & "-" & _
+                CStr(formulaRange.End) & _
+            "; paragraph=" & CStr(formulaParagraph.Start) & "-" & _
+                CStr(formulaParagraph.End) & _
+            "; table=" & CStr(formulaParagraph.Information( _
+                wdWithInTable)) & "]."
     End If
 
     sequenceBookmarkName = _
@@ -8791,37 +8915,27 @@ Private Sub VTVerifyParagraphEquationNumberIntegrity( _
        formulaRange.OMaths.Count = 0 Then
         Set helperParagraph = _
             sequenceField.Result.Paragraphs(1).Range.Duplicate
-        Set visibleNumberField = VTImageEquationReferenceField( _
+        Set expectedNumberRange = VTStaticImageEquationNumberRange( _
             formulaRange, formulaId)
-        Set expectedNumberRange = VTImageEquationNumberRange( _
-            formulaRange, visibleNumberField)
-        If visibleNumberField Is Nothing Or _
-           expectedNumberRange Is Nothing Then
+        If expectedNumberRange Is Nothing Then
             Err.Raise vbObjectError + 7560, "VisualTeX", _
-                "The image Equation visible REF range is missing."
+                "The static image Equation number range is missing."
         End If
         If Not VTHelperParagraphOwnsNativeEquationSequence( _
                helperParagraph) Or _
            helperParagraph.Start < formulaParagraph.End Or _
-           VTEquationSequenceResultText(visibleNumberField) <> expectedText Or _
            numberRange.Start <> expectedNumberRange.Start Or _
            numberRange.End <> expectedNumberRange.End Or _
            numberRange.Information(wdWithInTable) Or _
            numberRange.Paragraphs(1).Range.Start <> _
                formulaParagraph.Start Or _
            numberRange.Text <> "(" & expectedText & ")" Or _
+           formulaParagraph.Fields.Count <> 0 Or _
            Not VTEquationCaptionBookmarkIsCollapsedInParagraph( _
                captionRange, helperParagraph) Then
             Err.Raise vbObjectError + 7560, "VisualTeX", _
-                "The image Equation external SEQ or visible REF is incomplete."
+                "The image Equation external SEQ or static number is incomplete."
         End If
-        For Each candidateField In formulaParagraph.Fields
-            If VTIsNativeEquationSequenceField( _
-               candidateField, VTNativeEquationLabelName()) Then
-                Err.Raise vbObjectError + 7560, "VisualTeX", _
-                    "The image Equation paragraph contains a duplicate SEQ field."
-            End If
-        Next candidateField
         Exit Sub
     End If
 
@@ -9709,6 +9823,103 @@ Private Sub VTAssertNativeEquationArrayLayout( _
     End If
 End Sub
 
+Private Sub VTAssertStaticImageEquationLayout( _
+    ByVal formulaRange As Range, _
+    ByVal renderedHeightPoints As Double, _
+    ByVal formulaId As String, _
+    ByVal assertionName As String)
+
+    Dim documentObject As Document
+    Dim paragraphRange As Range
+    Dim helperParagraph As Range
+    Dim sequenceField As Field
+    Dim numberRange As Range
+    Dim prefixRange As Range
+    Dim separatorRange As Range
+    Dim suffixRange As Range
+    Dim formulaShape As InlineShape
+    Dim textWidth As Single
+    Dim numberSize As Single
+    Dim numberPosition As Long
+    Dim expectedNumber As String
+
+    If formulaRange Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then
+        Err.Raise vbObjectError + 7505, "VisualTeX", _
+            assertionName & ": static image formula target is missing."
+    End If
+    If formulaRange.InlineShapes.Count <> 1 Or _
+       formulaRange.OMaths.Count <> 0 Then
+        Err.Raise vbObjectError + 7506, "VisualTeX", _
+            assertionName & ": static image formula is ambiguous."
+    End If
+    Set documentObject = formulaRange.Document
+    Set formulaShape = formulaRange.InlineShapes(1)
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
+    Set sequenceField = VTNativeEquationSequenceHelperField( _
+        documentObject, formulaId)
+    Set numberRange = VTStaticImageEquationNumberRange( _
+        formulaRange, formulaId)
+    If sequenceField Is Nothing Or numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7506, "VisualTeX", _
+            assertionName & ": external SEQ or static number is missing."
+    End If
+    Set helperParagraph = _
+        sequenceField.Result.Paragraphs(1).Range.Duplicate
+    If Not VTHelperParagraphOwnsNativeEquationSequence( _
+           helperParagraph) Or _
+       helperParagraph.Start < paragraphRange.End Then
+        Err.Raise vbObjectError + 7506, "VisualTeX", _
+            assertionName & ": static image SEQ helper is invalid."
+    End If
+    expectedNumber = VTEquationSequenceResultText(sequenceField)
+    Set prefixRange = documentObject.Range( _
+        Start:=paragraphRange.Start, End:=formulaShape.Range.Start)
+    Set separatorRange = documentObject.Range( _
+        Start:=formulaShape.Range.End, End:=numberRange.Start)
+    Set suffixRange = documentObject.Range( _
+        Start:=numberRange.End, End:=paragraphRange.End)
+    If paragraphRange.Fields.Count <> 0 Or _
+       prefixRange.Text <> vbTab Or _
+       separatorRange.Text <> vbTab Or _
+       suffixRange.Text <> vbCr Or _
+       numberRange.Text <> "(" & expectedNumber & ")" Then
+        Err.Raise vbObjectError + 7512, "VisualTeX", _
+            assertionName & _
+            ": static image number paragraph contains invalid content."
+    End If
+
+    textWidth = VTEquationLayoutWidth(paragraphRange)
+    If paragraphRange.ParagraphFormat.Alignment <> wdAlignParagraphLeft Or _
+       paragraphRange.ParagraphFormat.TabStops.Count <> 2 Or _
+       paragraphRange.ParagraphFormat.TabStops(1).Alignment <> _
+           wdAlignTabCenter Or _
+       paragraphRange.ParagraphFormat.TabStops(2).Alignment <> _
+           wdAlignTabRight Or _
+       Abs(paragraphRange.ParagraphFormat.TabStops(1).Position - _
+           textWidth / 2!) > 0.5 Or _
+       Abs(paragraphRange.ParagraphFormat.TabStops(2).Position - _
+           (textWidth - 1!)) > 0.5 Then
+        Err.Raise vbObjectError + 7509, "VisualTeX", _
+            assertionName & ": static image tab geometry is invalid."
+    End If
+    If renderedHeightPoints > 0! And _
+       Abs(formulaShape.Height - renderedHeightPoints) > 0.5 Then
+        Err.Raise vbObjectError + 7514, "VisualTeX", _
+            assertionName & ": image height changed unexpectedly."
+    End If
+    numberSize = numberRange.Font.Size
+    numberPosition = numberRange.Font.Position
+    If numberSize <= 0! Or numberSize > 72! Or _
+       numberPosition = wdUndefined Or _
+       numberPosition < -48 Or numberPosition > 48 Or _
+       numberRange.Font.Hidden <> False Or _
+       numberRange.Font.Color <> wdColorAutomatic Then
+        Err.Raise vbObjectError + 7513, "VisualTeX", _
+            assertionName & ": static image number formatting is invalid."
+    End If
+End Sub
+
 Private Sub VTAssertNumberedEquationLayout( _
     ByVal formulaRange As Range, _
     ByVal renderedHeightPoints As Double, _
@@ -9772,6 +9983,11 @@ Private Sub VTAssertNumberedEquationLayout( _
     If formulaRange.OMaths.Count = 1 Then
         VTAssertNativeEquationArrayLayout _
             formulaRange, formulaId, expectedCaptionText, assertionName
+        Exit Sub
+    End If
+    If formulaRange.InlineShapes.Count = 1 Then
+        VTAssertStaticImageEquationLayout _
+            formulaRange, renderedHeightPoints, formulaId, assertionName
         Exit Sub
     End If
 
@@ -10416,26 +10632,22 @@ Private Function VTNumberedEquationInvariantSnapshot( _
                     Mid$(numberBookmark.Name, _
                         Len(VT_WORD_NUMBER_BOOKMARK_PREFIX) + 1))
                 If Len(formulaId) > 0 Then
-                    Set visibleNumberField = VTImageEquationReferenceField( _
+                    Set numberRange = VTStaticImageEquationNumberRange( _
                         formulaRange, formulaId)
-                    If Not visibleNumberField Is Nothing Then
-                        Set numberRange = VTImageEquationNumberRange( _
-                            formulaRange, visibleNumberField)
-                        If Not numberRange Is Nothing Then
-                            If numberBookmark.Range.Start = numberRange.Start And _
-                               numberBookmark.Range.End = numberRange.End Then
-                                bookmarkName = numberBookmark.Name
-                                Exit For
-                            End If
+                    If Not numberRange Is Nothing Then
+                        If numberBookmark.Range.Start = numberRange.Start And _
+                           numberBookmark.Range.End = numberRange.End Then
+                            bookmarkName = numberBookmark.Name
+                            Exit For
                         End If
                     End If
                 End If
             End If
         End If
     Next numberBookmark
-    If Len(bookmarkName) = 0 Or visibleNumberField Is Nothing Then
+    If Len(bookmarkName) = 0 Or numberRange Is Nothing Then
         Err.Raise vbObjectError + 7547, "VisualTeX", _
-            "The numbered image Equation invariant REF is missing."
+            "The numbered image Equation invariant static number is missing."
     End If
     sequenceBookmarkName = _
         VTEquationSequenceNumberBookmarkName(formulaId)
@@ -10453,15 +10665,11 @@ Private Function VTNumberedEquationInvariantSnapshot( _
             "The numbered image Equation invariant helper is invalid."
     End If
 
-    fieldStart = VTEquationFieldStart(visibleNumberField)
-    fieldEnd = VTEquationFieldEnd(visibleNumberField)
-    Set openingRange = documentObject.Range(fieldStart - 1, fieldStart)
-    Set closingRange = documentObject.Range(fieldEnd, fieldEnd + 1)
     Set formulaStartProbe = formulaRange.Duplicate
     formulaStartProbe.Collapse wdCollapseStart
     Set formulaEndProbe = formulaRange.Duplicate
     formulaEndProbe.Collapse wdCollapseEnd
-    Set numberEndProbe = closingRange.Duplicate
+    Set numberEndProbe = numberRange.Duplicate
     numberEndProbe.Collapse wdCollapseEnd
     documentObject.Repaginate
 
@@ -10469,9 +10677,8 @@ Private Function VTNumberedEquationInvariantSnapshot( _
         "paragraph=" & CStr(paragraphRange.Start) & ":" & _
             CStr(paragraphRange.End) & _
         "|text=" & Replace$(Replace$(paragraphRange.Text, vbTab, "<TAB>"), vbCr, "<CR>") & _
-        "|visibleRef=" & CStr(fieldStart) & ":" & CStr(fieldEnd) & _
-            ":" & visibleNumberField.Result.Text & ":" & _
-                Trim$(visibleNumberField.Code.Text) & _
+        "|visibleStatic=" & CStr(numberRange.Start) & ":" & _
+            CStr(numberRange.End) & ":" & numberRange.Text & _
         "|externalSeq=" & CStr(VTEquationFieldStart(sequenceField)) & _
             ":" & CStr(VTEquationFieldEnd(sequenceField)) & _
             ":" & sequenceField.Result.Text & ":" & _
@@ -10479,7 +10686,6 @@ Private Function VTNumberedEquationInvariantSnapshot( _
         "|helper=" & CStr(helperParagraph.Start) & ":" & _
             CStr(helperParagraph.End)
     VTNumberedEquationInvariantSnapshot = VTNumberedEquationInvariantSnapshot & _
-        "|parens=" & openingRange.Text & closingRange.Text & _
         "|formula=" & CStr(formulaRange.Start) & ":" & _
             CStr(formulaRange.End) & ":" & CStr(formulaType) & _
             ":" & CStr(formulaRange.Font.Size) & _
@@ -10500,8 +10706,7 @@ Private Function VTNumberedEquationInvariantSnapshot( _
             wdFirstCharacterLineNumber)) & ":" & _
             CStr(numberEndProbe.Information(wdFirstCharacterLineNumber))
     VTNumberedEquationInvariantSnapshot = VTNumberedEquationInvariantSnapshot & _
-        "|bookmark=" & bookmarkName & ":" & _
-            documentObject.Range(openingRange.Start, closingRange.End).Text
+        "|bookmark=" & bookmarkName & ":" & numberRange.Text
 End Function
 
 Private Function VTNumberedDisplayTableInvariantSnapshot( _
@@ -10634,26 +10839,31 @@ Private Function VTNumberedDisplayTableInvariantSnapshot( _
     VTNumberedDisplayTableInvariantSnapshot = _
         VTNumberedDisplayTableInvariantSnapshot & _
         "|sequence=" & sequenceBookmarkName & ":" & _
-            CStr(sequenceRange.Start) & ":" & CStr(sequenceRange.End) & _
-            ":" & sequenceField.Result.Text & ":" & _
-            Trim$(sequenceField.Code.Text) & _
-        "|paragraphs=" & _
-            CStr(layoutTable.Cell(1, 2).Range.Paragraphs(1).Range.Start) & _
-            ":" & _
-            CStr(layoutTable.Cell(1, 2).Range.Paragraphs(1).Range.End) & _
-            ":" & _
-            CStr(layoutTable.Cell(1, 3).Range.Paragraphs(1).Range.Start) & _
-            ":" & _
-            CStr(layoutTable.Cell(1, 3).Range.Paragraphs(1).Range.End) & _
-        "|tabs=" & _
-            CStr(VTCustomTabStopCount( _
-                layoutTable.Cell(1, 2).Range.Paragraphs(1).Range)) & _
-            ":" & _
-            CStr(VTCustomTabStopCount( _
-                layoutTable.Cell(1, 3).Range.Paragraphs(1).Range)) & _
+        CStr(sequenceRange.Start) & ":" & CStr(sequenceRange.End)
+    VTNumberedDisplayTableInvariantSnapshot = _
+        VTNumberedDisplayTableInvariantSnapshot & ":" & _
+        sequenceField.Result.Text & ":" & Trim$(sequenceField.Code.Text)
+    VTNumberedDisplayTableInvariantSnapshot = _
+        VTNumberedDisplayTableInvariantSnapshot & "|paragraphs=" & _
+        CStr(layoutTable.Cell(1, 2).Range.Paragraphs(1).Range.Start) & _
+        ":" & _
+        CStr(layoutTable.Cell(1, 2).Range.Paragraphs(1).Range.End)
+    VTNumberedDisplayTableInvariantSnapshot = _
+        VTNumberedDisplayTableInvariantSnapshot & ":" & _
+        CStr(layoutTable.Cell(1, 3).Range.Paragraphs(1).Range.Start) & _
+        ":" & _
+        CStr(layoutTable.Cell(1, 3).Range.Paragraphs(1).Range.End)
+    VTNumberedDisplayTableInvariantSnapshot = _
+        VTNumberedDisplayTableInvariantSnapshot & "|tabs=" & _
+        CStr(VTCustomTabStopCount( _
+            layoutTable.Cell(1, 2).Range.Paragraphs(1).Range)) & ":" & _
+        CStr(VTCustomTabStopCount( _
+            layoutTable.Cell(1, 3).Range.Paragraphs(1).Range))
+    VTNumberedDisplayTableInvariantSnapshot = _
+        VTNumberedDisplayTableInvariantSnapshot & _
         "|centerStructure=" & CStr(centerParagraphCount) & ":" & _
-            CStr(mathParaPresent) & ":" & CStr(tailFontSize) & ":" & _
-            CStr(tailLineSpacing)
+        CStr(mathParaPresent) & ":" & CStr(tailFontSize) & ":" & _
+        CStr(tailLineSpacing)
     VTNumberedDisplayTableInvariantSnapshot = _
         VTNumberedDisplayTableInvariantSnapshot & _
         "|xy=" & CStr(formulaStartProbe.Information( _
@@ -10983,7 +11193,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     operationStage = "insert-equation-array-reference"
     Set visibleNumberField = documentObject.Fields.Add( _
         Range:=numberSlotRange, Type:=wdFieldRef, _
-        Text:=VTParenthesizedEquationReferenceFieldText( _
+        Text:=VTVisibleEquationReferenceFieldText( _
             sequenceBookmarkName), _
         PreserveFormatting:=False)
     visibleNumberField.Update
@@ -11876,7 +12086,7 @@ Private Sub VTEnsureEquationNumberFields( _
         Start:=visibleStart + 1, End:=visibleStart + 1)
     Set referenceField = documentObject.Fields.Add( _
         Range:=fieldRange, Type:=wdFieldRef, _
-        Text:=VTParenthesizedEquationReferenceFieldText( _
+        Text:=VTVisibleEquationReferenceFieldText( _
             sequenceBookmarkName), _
         PreserveFormatting:=False)
     referenceField.Update
@@ -12288,7 +12498,7 @@ Private Sub VTNormalizeVisibleEquationReferenceField( _
             Start:=cellStart + 1, End:=cellStart + 1)
         Set referenceField = documentObject.Fields.Add( _
             Range:=fieldRange, Type:=wdFieldRef, _
-            Text:=VTParenthesizedEquationReferenceFieldText( _
+            Text:=VTVisibleEquationReferenceFieldText( _
                 sequenceBookmarkName), _
             PreserveFormatting:=False)
     End If
@@ -12973,6 +13183,7 @@ Private Function VTWordParagraphContainingFormula( _
     Dim exactRange As Range
     Dim probeRange As Range
     Dim paragraphRange As Range
+    Dim paragraphEndProbe As Range
     Dim probeStart As Long
 
     If formulaRange Is Nothing Then Exit Function
@@ -13000,6 +13211,24 @@ Private Function VTWordParagraphContainingFormula( _
             Start:=probeStart, End:=probeStart)
         Set paragraphRange = probeRange.Paragraphs(1).Range.Duplicate
     End If
+
+    ' Word for Mac can report Paragraphs.Count = 2 for a Range ending at the
+    ' paragraph mark when the next paragraph contains a hidden SEQ field. Clamp
+    ' the paragraph explicitly to the first real paragraph mark after its start
+    ' so formula and helper paragraphs remain distinct regardless of that API
+    ' quirk.
+    Set paragraphEndProbe = exactRange.Document.Range( _
+        Start:=paragraphRange.Start, End:=exactRange.Document.Content.End)
+    With paragraphEndProbe.Find
+        .ClearFormatting
+        .Text = "^p"
+        .Forward = True
+        .Wrap = wdFindStop
+        .Format = False
+    End With
+    If Not paragraphEndProbe.Find.Execute Then Exit Function
+    paragraphRange.End = paragraphEndProbe.End
+
     If exactRange.Start < paragraphRange.Start Or _
        exactRange.End > paragraphRange.End Then Exit Function
 

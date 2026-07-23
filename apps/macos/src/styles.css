@@ -1035,7 +1035,7 @@ kbd {
   z-index: 0;
   top: var(--pending-wrapper-top, 50%);
   left: var(--pending-wrapper-left, 50%);
-  width: 18px;
+  width: var(--pending-wrapper-width, 18px);
   height: var(--pending-wrapper-height, 29px);
   transform: translate(-50%, -50%);
   border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border-strong));
@@ -1048,6 +1048,20 @@ kbd {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent),
     0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+  transition:
+    width 90ms ease,
+    left 90ms ease;
+}
+
+.pending-wrapper-measure {
+  position: absolute;
+  left: -10000px;
+  top: -10000px;
+  display: inline-block;
+  width: max-content;
+  white-space: nowrap;
+  visibility: hidden;
   pointer-events: none;
 }
 
@@ -2757,27 +2771,28 @@ button:disabled {
 }
 
 .file-actions {
-  gap: 3px;
-  margin-right: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  gap: 4px;
+  margin-left: 0;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-.file-actions .markdown-export-button {
-  margin-left: 3px;
+.export-menu {
+  position: relative;
+  z-index: 8;
 }
 
-.markdown-export-button {
-  height: var(--control-height);
+.export-menu-trigger {
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent);
   font: inherit;
@@ -2785,29 +2800,180 @@ button:disabled {
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
   transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-.markdown-export-button:hover {
+.export-menu-trigger:hover,
+.export-menu-trigger.is-active {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
-.markdown-export-button:active {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+.export-menu-trigger > svg:last-child {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+  transition: transform 150ms ease;
 }
 
-.workspace-markdown-export {
-  height: 34px;
-  padding-inline: 11px;
+.export-menu-trigger.is-active > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.export-menu-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 90;
+  width: min(350px, calc(100vw - 28px));
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.export-menu-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 1px 2px 10px;
+}
+
+.export-menu-heading strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.export-menu-heading span {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.export-format-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.export-format-options > button {
+  min-width: 0;
+  min-height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.export-format-options > button:hover:not(:disabled) {
   border-color: var(--accent-border);
-  box-shadow: var(--shadow-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.export-format-options > button:disabled,
+.export-path-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.export-format-options > button > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.export-format-options strong {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.export-format-options small {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.export-path-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.export-path-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.export-path-copy span {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.export-path-copy strong {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 8px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-path-button {
+  height: 30px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.export-path-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .action-group {
   gap: 1px;
   margin-right: 3px;
   padding-right: 4px;
+}
+
+.header-actions .file-actions {
+  position: relative;
+  left: 6px;
+  gap: 4px;
+  margin-left: 0;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .copy-control {
@@ -3381,12 +3547,13 @@ button:disabled {
     padding: 0 9px;
   }
 
-  .markdown-export-button {
+  .export-menu-trigger {
     width: var(--control-height);
     padding: 0;
   }
 
-  .markdown-export-button span {
+  .export-menu-trigger > span,
+  .export-menu-trigger > svg:last-child {
     display: none;
   }
 }
@@ -5350,6 +5517,83 @@ textarea:disabled {
   line-height: 1.55;
 }
 
+.update-community-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+}
+
+.update-community-copy {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.update-community-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--primary-foreground);
+}
+
+.update-community-copy > div {
+  min-width: 0;
+}
+
+.update-community-copy strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.update-community-copy p {
+  margin: 5px 0 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.update-community-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.update-community-number b {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.2px;
+}
+
+.update-community-card > img {
+  width: 112px;
+  height: 178px;
+  display: block;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: white;
+}
+
 .update-preference-row {
   display: flex;
   align-items: flex-start;
@@ -5406,6 +5650,16 @@ textarea:disabled {
 
   .update-dialog-content {
     padding: 14px;
+  }
+
+  .update-community-card {
+    grid-template-columns: 1fr;
+  }
+
+  .update-community-card > img {
+    width: 104px;
+    height: 166px;
+    justify-self: center;
   }
 }
 
@@ -5860,6 +6114,193 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   }
 }
 
+.onboarding-export-demo,
+.onboarding-input-behavior-demo {
+  width: calc(100% - 30px);
+  display: grid;
+  gap: 10px;
+}
+
+.onboarding-export-trigger,
+.onboarding-input-behavior-heading {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--primary-foreground);
+}
+
+.onboarding-export-trigger strong,
+.onboarding-input-behavior-heading strong {
+  min-width: 0;
+  flex: 1;
+  font-size: 11px;
+}
+
+.onboarding-export-trigger > span {
+  font-size: 13px;
+}
+
+.onboarding-export-formats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.onboarding-export-formats > span {
+  min-width: 0;
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 3px 7px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.onboarding-export-formats strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.onboarding-export-formats small {
+  grid-column: 2;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.onboarding-export-path {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.onboarding-export-path > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+}
+
+.onboarding-export-path small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.onboarding-export-path strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-input-behavior-options {
+  display: grid;
+  gap: 6px;
+}
+
+.onboarding-input-behavior-options > span {
+  min-width: 0;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.onboarding-input-behavior-options > span > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.onboarding-input-behavior-options strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-input-behavior-options small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-input-behavior-options i {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: var(--border-strong);
+}
+
+.onboarding-input-behavior-options i::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  content: "";
+}
+
+.onboarding-input-behavior-options i.is-on {
+  background: var(--accent);
+}
+
+.onboarding-input-behavior-options i.is-on::after {
+  left: 14px;
+}
+
+.onboarding-input-behavior-example {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+}
+
+.onboarding-input-behavior-example code {
+  color: var(--text);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
+.onboarding-input-behavior-example small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
 .onboarding-ocr-setup-demo,
 .onboarding-update-demo {
   width: calc(100% - 30px);
@@ -6078,6 +6519,8 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 }
 
 @media (max-width: 720px), (max-height: 560px) {
+  .onboarding-export-demo,
+  .onboarding-input-behavior-demo,
   .onboarding-ocr-setup-demo,
   .onboarding-update-demo {
     width: calc(100% - 18px);
