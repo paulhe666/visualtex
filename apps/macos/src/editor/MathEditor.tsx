@@ -8,7 +8,11 @@ import {
   forwardRef,
   type ReactNode,
 } from "react";
-import { MathfieldElement, convertLatexToMarkup } from "mathlive";
+import {
+  MathfieldElement,
+  convertLatexToMarkup,
+  type Style,
+} from "mathlive";
 import { flushSync } from "react-dom";
 import { Plus } from "lucide-react";
 import type {
@@ -114,34 +118,131 @@ interface FormulaFieldProps {
 
 const trailingCommand = /\\([\p{L}]*)$/u;
 
+function hasRawLatexInput(field: MathfieldElement) {
+  return Boolean(field.shadowRoot?.querySelector(".ML__raw-latex"));
+}
+
 function rawLatexInput(field: MathfieldElement) {
   return Array.from(
     field.shadowRoot?.querySelectorAll<HTMLElement>(".ML__raw-latex") ?? [],
   )
+    .filter((node) => !node.classList.contains("ML__suggestion"))
     .map((node) => node.textContent ?? "")
     .join("");
+}
+
+function rawCommandQuery(field: MathfieldElement) {
+  if (!hasRawLatexInput(field)) return "";
+  const match = rawLatexInput(field).match(trailingCommand);
+  return match && match[1].length > 0 ? "\\" + match[1] : "";
 }
 
 function trailingCommandQuery(
   field: MathfieldElement,
   normalizedValue = field.value,
 ) {
-  for (const source of [normalizedValue, field.value, rawLatexInput(field)]) {
+  if (hasRawLatexInput(field)) return rawCommandQuery(field);
+  for (const source of [normalizedValue, field.value]) {
     const match = source.match(trailingCommand);
     if (match) return "\\" + match[1];
   }
   return "";
 }
 
-function fieldValueIncludingRawQuery(
+interface WrapperCaretAnchor {
+  left: number;
+  centerY: number;
+  height: number;
+}
+
+interface RawCommandAnchor {
+  latex: string;
+  selection: MathSelectionSnapshot;
+  position: number;
+  visualCaret: WrapperCaretAnchor | null;
+}
+
+const rawCommandAnchors = new WeakMap<MathfieldElement, RawCommandAnchor>();
+
+function captureWrapperCaretAnchor(
   field: MathfieldElement,
-  activeQuery: string,
+): WrapperCaretAnchor | null {
+  const host = field.closest<HTMLElement>(".mathfield-host");
+  if (!host) return null;
+  const hostBounds = host.getBoundingClientRect();
+  const candidateOffsets = Array.from(
+    new Set(
+      [field.position, field.position - 1, field.position + 1].filter(
+        (offset) => offset >= 0 && offset <= field.lastOffset,
+      ),
+    ),
+  );
+  for (const offset of candidateOffsets) {
+    const bounds = field.getElementInfo(offset)?.bounds;
+    if (
+      bounds &&
+      Number.isFinite(bounds.right) &&
+      Number.isFinite(bounds.top) &&
+      bounds.height > 0
+    ) {
+      return {
+        left: bounds.right - hostBounds.left,
+        centerY: bounds.top - hostBounds.top + bounds.height / 2,
+        height: bounds.height,
+      };
+    }
+  }
+
+  const markers = Array.from(
+    field.shadowRoot?.querySelectorAll<HTMLElement>(
+      ".ML__caret, .ML__text-caret, .ML__latex-caret",
+    ) ?? [],
+  )
+    .map((marker) => marker.getBoundingClientRect())
+    .filter((bounds) => bounds.height > 0 && bounds.width >= 0);
+  const caretBounds = markers[0];
+  if (!caretBounds) return null;
+  return {
+    left: caretBounds.right - hostBounds.left,
+    centerY:
+      caretBounds.top - hostBounds.top + caretBounds.height / 2,
+    height: caretBounds.height,
+  };
+}
+
+function rememberRawCommandAnchor(field: MathfieldElement) {
+  rawCommandAnchors.set(field, {
+    latex: normalizeChineseLatex(field.value),
+    selection: captureSelection(field),
+    position: field.position,
+    visualCaret: captureWrapperCaretAnchor(field),
+  });
+}
+
+function restoreRawCommandAnchor(
+  field: MathfieldElement,
+  anchor: RawCommandAnchor,
 ) {
-  const value = field.value;
-  if (value.trimEnd().endsWith(activeQuery)) return value;
-  const rawInput = rawLatexInput(field);
-  if (rawInput.trimEnd().endsWith(activeQuery)) return value + rawInput;
-  return value;
+  const rejectedRawGroup = field.executeCommand(["complete", "reject"]);
+  if (!rejectedRawGroup) field.mode = "math";
+  if (normalizeChineseLatex(field.value) !== anchor.latex) {
+    field.setValue(anchor.latex, {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceAll",
+      selectionMode: "after",
+      silenceNotifications: true,
+    });
+  }
+  const selection = clampSelection(anchor.selection, field.lastOffset);
+  field.selection = selection;
+  const selectionIsCollapsed = selection.ranges.every(
+    ([start, end]) => start === end,
+  );
+  if (selectionIsCollapsed) {
+    field.position = Math.max(0, Math.min(field.lastOffset, anchor.position));
+  }
+  return selection;
 }
 
 const structuredSuggestionCommands = new Set([
@@ -204,7 +305,10 @@ function exactWrapperCommand(rawQuery: string) {
 
 function decorateNativeSuggestionPreviews() {
   const panel = document.getElementById("mathlive-suggestion-popover");
-  if (!panel) return;
+  if (!panel) {
+    scheduleStableNativeInputPopoverSync();
+    return;
+  }
 
   panel.querySelectorAll<HTMLElement>("li[data-command]").forEach((item) => {
     const command = item.dataset.command ?? "";
@@ -220,6 +324,147 @@ function decorateNativeSuggestionPreviews() {
     preview.setAttribute("aria-label", command);
     item.classList.add("has-visualtex-command-preview");
   });
+  scheduleStableNativeInputPopoverSync();
+}
+
+const STABLE_NATIVE_INPUT_POPOVER_ID =
+  "visualtex-native-input-suggestion-popover";
+let stableNativeInputPopoverFrame = 0;
+let stableNativeInputPopoverHideTimer = 0;
+let nativeInputPopoverBodyObserver: MutationObserver | null = null;
+let nativeInputPopoverSourceObserver: MutationObserver | null = null;
+let observedNativeInputPopoverSource: HTMLElement | null = null;
+
+function getNativeInputPopoverSource() {
+  return document.getElementById("mathlive-suggestion-popover");
+}
+
+function ensureStableNativeInputPopover() {
+  let panel = document.getElementById(STABLE_NATIVE_INPUT_POPOVER_ID);
+  if (panel) return panel;
+
+  panel = document.createElement("div");
+  panel.id = STABLE_NATIVE_INPUT_POPOVER_ID;
+  panel.setAttribute("aria-hidden", "true");
+  panel.addEventListener("pointerdown", (event) => event.preventDefault());
+  panel.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const item = target.closest<HTMLElement>("li[data-command]");
+    const command = item?.dataset.command ?? "";
+    if (!command) return;
+    const sourceItem = Array.from(
+      getNativeInputPopoverSource()?.querySelectorAll<HTMLElement>(
+        "li[data-command]",
+      ) ?? [],
+    ).find((candidate) => candidate.dataset.command === command);
+    sourceItem?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      }),
+    );
+  });
+  document.body.append(panel);
+  return panel;
+}
+
+function bindNativeInputPopoverSource() {
+  const source = getNativeInputPopoverSource();
+  if (source === observedNativeInputPopoverSource) return;
+  nativeInputPopoverSourceObserver?.disconnect();
+  observedNativeInputPopoverSource = source;
+  if (!source) return;
+  nativeInputPopoverSourceObserver = new MutationObserver(() =>
+    scheduleStableNativeInputPopoverSync(),
+  );
+  nativeInputPopoverSourceObserver.observe(source, {
+    attributes: true,
+    attributeFilter: ["class", "style", "aria-hidden"],
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+
+function ensureNativeInputPopoverObservers() {
+  if (nativeInputPopoverBodyObserver || !document.body) return;
+  nativeInputPopoverBodyObserver = new MutationObserver(() => {
+    bindNativeInputPopoverSource();
+    scheduleStableNativeInputPopoverSync();
+  });
+  nativeInputPopoverBodyObserver.observe(document.body, { childList: true });
+  bindNativeInputPopoverSource();
+}
+
+function syncStableNativeInputPopoverSelection(command: string) {
+  for (const panel of [
+    getNativeInputPopoverSource(),
+    document.getElementById(STABLE_NATIVE_INPUT_POPOVER_ID),
+  ]) {
+    const items = Array.from(
+      panel?.querySelectorAll<HTMLElement>("li[data-command]") ?? [],
+    );
+    for (const item of items) {
+      item.classList.toggle(
+        "ML__popover__current",
+        item.dataset.command === command,
+      );
+    }
+    items
+      .find((item) => item.dataset.command === command)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+function syncStableNativeInputPopover() {
+  bindNativeInputPopoverSource();
+  const source = getNativeInputPopoverSource();
+  const sourceVisible = Boolean(
+    source?.classList.contains("is-visible") &&
+      source.querySelector("li[data-command]"),
+  );
+  const stable = ensureStableNativeInputPopover();
+
+  if (!source || !sourceVisible) {
+    window.clearTimeout(stableNativeInputPopoverHideTimer);
+    stableNativeInputPopoverHideTimer = window.setTimeout(() => {
+      const latest = getNativeInputPopoverSource();
+      if (
+        latest?.classList.contains("is-visible") &&
+        latest.querySelector("li[data-command]")
+      ) {
+        scheduleStableNativeInputPopoverSync();
+        return;
+      }
+      stable.classList.remove("is-visible");
+      stable.setAttribute("aria-hidden", "true");
+    }, 64);
+    return;
+  }
+
+  window.clearTimeout(stableNativeInputPopoverHideTimer);
+  source.dataset.visualtexInputPopoverSource = "true";
+  const nextHtml = source.innerHTML;
+  if (stable.innerHTML !== nextHtml) stable.innerHTML = nextHtml;
+  stable.classList.toggle("top-tip", source.classList.contains("top-tip"));
+  stable.classList.toggle(
+    "bottom-tip",
+    source.classList.contains("bottom-tip"),
+  );
+  stable.style.left = source.style.left;
+  stable.style.top = source.style.top;
+  stable.classList.add("is-visible");
+  stable.setAttribute("aria-hidden", "false");
+}
+
+function scheduleStableNativeInputPopoverSync() {
+  ensureNativeInputPopoverObservers();
+  window.cancelAnimationFrame(stableNativeInputPopoverFrame);
+  stableNativeInputPopoverFrame = window.requestAnimationFrame(
+    syncStableNativeInputPopover,
+  );
 }
 
 const BASE_FORMULA_FONT_SIZE = 54;
@@ -242,6 +487,231 @@ function captureFieldSnapshot(field: MathfieldElement) {
     latex: normalizeChineseLatex(field.value),
     selection: captureSelection(field),
   };
+}
+
+const visualTexPlaceholderStyleId = "visualtex-structural-placeholder-style";
+const visualTexPlaceholderClass = "visualtex-structural-placeholder";
+const visualTexPlaceholderCaretClass =
+  "visualtex-structural-placeholder-caret";
+const visualTexPlaceholderSelectionClass =
+  "has-visualtex-structural-placeholder-selection";
+const visualTexRawLatexClass = "has-visualtex-raw-latex-command";
+const visualTexPointerSelectingClass = "visualtex-pointer-selecting";
+const visualTexPointerSelectingFields = new WeakSet<MathfieldElement>();
+
+function markVisualTexStructuralPlaceholders(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  if (!shadowRoot || visualTexPointerSelectingFields.has(field)) return;
+  const placeholderSymbol = field.placeholderSymbol || "▢";
+  const selectionRanges = field.selection.ranges;
+  const [selectionStart, selectionEnd] = selectionRanges[0] ?? [-1, -1];
+  const isFocusedPlaceholderSelection =
+    !visualTexPointerSelectingFields.has(field) &&
+    selectionRanges.length === 1 &&
+    Math.abs(selectionEnd - selectionStart) <= 1 &&
+    !shadowRoot.querySelector(".ML__raw-latex");
+  let selectedPlaceholder = false;
+
+  shadowRoot
+    .querySelectorAll<HTMLElement>(".ML__cmr[data-atom-id], .ML__placeholder")
+    .forEach((node) => {
+      const visibleText = Array.from(node.childNodes)
+        .filter(
+          (child) =>
+            !(child instanceof HTMLElement) ||
+            !child.classList.contains(visualTexPlaceholderCaretClass),
+        )
+        .map((child) => child.textContent ?? "")
+        .join("")
+        .trim();
+      const isPlaceholder =
+        node.classList.contains(visualTexPlaceholderClass) ||
+        node.classList.contains("ML__placeholder") ||
+        visibleText === placeholderSymbol;
+      node.classList.toggle(visualTexPlaceholderClass, isPlaceholder);
+
+      const isSelected = Boolean(
+        isFocusedPlaceholderSelection &&
+          isPlaceholder &&
+          (node.classList.contains("ML__placeholder-selected") ||
+            node.classList.contains("ML__selected") ||
+            node.closest(".ML__selected")),
+      );
+      let caret = node.querySelector<HTMLElement>(
+        `:scope > .${visualTexPlaceholderCaretClass}`,
+      );
+      if (isSelected) {
+        selectedPlaceholder = true;
+        if (!caret) {
+          caret = document.createElement("span");
+          caret.className = visualTexPlaceholderCaretClass;
+          caret.setAttribute("aria-hidden", "true");
+          node.append(caret);
+        }
+      } else {
+        caret?.remove();
+      }
+    });
+
+  const container = shadowRoot.querySelector<HTMLElement>(".ML__container");
+  container?.classList.toggle(
+    visualTexPlaceholderSelectionClass,
+    selectedPlaceholder,
+  );
+  container?.classList.toggle(
+    visualTexRawLatexClass,
+    Boolean(shadowRoot.querySelector(".ML__raw-latex")),
+  );
+}
+
+function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  if (!shadowRoot) return;
+  if (!shadowRoot.getElementById(visualTexPlaceholderStyleId)) {
+    const style = document.createElement("style");
+    style.id = visualTexPlaceholderStyleId;
+    style.textContent = `
+      .ML__placeholder,
+      .${visualTexPlaceholderClass} {
+        position: relative !important;
+        display: inline-block !important;
+        box-sizing: border-box !important;
+        width: 0.40em !important;
+        min-width: 0.32em !important;
+        height: 0.74em !important;
+        margin: 0 0.065em !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: 0.075em !important;
+        background: #d9edf9 !important;
+        color: transparent !important;
+        opacity: 1 !important;
+        text-indent: -999px !important;
+        vertical-align: -0.075em !important;
+        box-shadow: none !important;
+      }
+
+      .ML__mfrac .ML__placeholder,
+      .ML__mfrac .${visualTexPlaceholderClass} {
+        width: 0.38em !important;
+        min-width: 0.31em !important;
+        height: 0.70em !important;
+        border-radius: 0.07em !important;
+      }
+
+      .ML__msubsup .ML__placeholder,
+      .ML__msubsup .${visualTexPlaceholderClass},
+      .ML__op-group .ML__placeholder,
+      .ML__op-group .${visualTexPlaceholderClass} {
+        width: 0.35em !important;
+        min-width: 0.28em !important;
+        height: 0.66em !important;
+        border-radius: 0.065em !important;
+      }
+
+      .ML__sqrt .ML__placeholder,
+      .ML__sqrt .${visualTexPlaceholderClass} {
+        width: 0.40em !important;
+        min-width: 0.32em !important;
+        height: 0.71em !important;
+      }
+
+      .ML__mtable .ML__placeholder,
+      .ML__mtable .${visualTexPlaceholderClass} {
+        width: 0.42em !important;
+        min-width: 0.34em !important;
+        height: 0.73em !important;
+      }
+
+      .ML__contains-highlight,
+      .ML__highlight {
+        border-color: transparent !important;
+        outline: 0 !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected {
+        border-color: transparent !important;
+        outline: 0 !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      .ML__container.${visualTexPlaceholderSelectionClass} .ML__placeholder-selected,
+      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected .ML__placeholder,
+      .ML__container.${visualTexPlaceholderSelectionClass} .${visualTexPlaceholderClass}.ML__selected,
+      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected .${visualTexPlaceholderClass} {
+        border: 0 !important;
+        background: #cfe8f7 !important;
+        color: transparent !important;
+        opacity: 1 !important;
+        box-shadow: none !important;
+      }
+
+      .${visualTexPlaceholderCaretClass} {
+        position: absolute !important;
+        z-index: 2 !important;
+        left: 0 !important;
+        top: 0.04em !important;
+        display: block !important;
+        width: 0 !important;
+        height: 0.66em !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-left: max(1px, 0.045em) solid var(--_caret-color) !important;
+        border-radius: 1px !important;
+        background: transparent !important;
+        opacity: 1;
+        text-indent: 0 !important;
+        animation: visualtex-placeholder-caret-blink 1.05s step-end infinite !important;
+        pointer-events: none !important;
+      }
+
+      @keyframes visualtex-placeholder-caret-blink {
+        0%, 48% { opacity: 1; }
+        49%, 100% { opacity: 0; }
+      }
+
+      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selection {
+        display: none !important;
+      }
+
+      :host(.${visualTexPointerSelectingClass})
+        .ML__container.${visualTexPlaceholderSelectionClass}
+        .ML__selection {
+        display: block !important;
+        background: var(--_selection-background-color) !important;
+      }
+
+      :host(.${visualTexPointerSelectingClass})
+        .${visualTexPlaceholderCaretClass} {
+        opacity: 0 !important;
+        animation: none !important;
+      }
+
+      .ML__container.${visualTexRawLatexClass} .ML__latex,
+      .ML__container.${visualTexRawLatexClass} .ML__raw-latex,
+      .ML__container.${visualTexRawLatexClass} .ML__selected,
+      .ML__container.${visualTexRawLatexClass} .ML__contains-highlight,
+      .ML__container.${visualTexRawLatexClass} .ML__selection {
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+        outline: 0 !important;
+      }
+
+      .ML__container.${visualTexRawLatexClass} .ML__selection {
+        display: none !important;
+      }
+    `;
+    shadowRoot.append(style);
+  }
+  markVisualTexStructuralPlaceholders(field);
 }
 
 function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
@@ -375,7 +845,7 @@ function getVisibleNativeSuggestionItems(): HTMLElement[] {
 }
 
 function moveNativeSuggestionSelection(
-  field: MathfieldElement,
+  _field: MathfieldElement,
   direction: 1 | -1,
 ): string | null {
   const items = getVisibleNativeSuggestionItems();
@@ -390,10 +860,14 @@ function moveNativeSuggestionSelection(
         : items.length - 1
       : (currentIndex + direction + items.length) % items.length;
   const command = items[nextIndex]?.dataset.command ?? "";
-  const moved = field.executeCommand(
-    direction > 0 ? "nextSuggestion" : "previousSuggestion",
-  );
-  return moved && command ? command : null;
+  if (!command) return null;
+
+  // MathLive rebuilds and remounts its entire suggestion popover when the
+  // nextSuggestion/previousSuggestion commands run. VisualTeX commits the
+  // remembered command itself, so moving only the current-row marker preserves
+  // the same popover node and avoids a visible flash on every arrow key.
+  syncStableNativeInputPopoverSelection(command);
+  return command;
 }
 
 function commitNativeSuggestion(
@@ -408,24 +882,32 @@ function commitNativeSuggestion(
     "";
 
   if (selectedCommand) {
-    const rawInput = rawLatexInput(field);
-    let rawValue = field.value;
-    if (rawInput && !rawValue.trimEnd().endsWith(rawInput.trimEnd())) {
-      rawValue += rawInput;
-    }
-    const commandStart = rawValue.lastIndexOf("\\");
-    if (commandStart >= 0) {
-      field.setValue(rawValue.slice(0, commandStart) + selectedCommand, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
+    const rawInput = rawLatexInput(field).trim();
+    const anchor = rawCommandAnchors.get(field);
+    const queryRange = rawInput
+      ? findTrailingCommandRange(field, rawInput)
+      : null;
+    if (anchor) {
+      restoreRawCommandAnchor(field, anchor);
+    } else {
       field.mode = "math";
-      field.position = field.lastOffset;
-      return true;
+      if (queryRange) {
+        field.selection = {
+          ranges: [queryRange],
+          direction: "forward",
+        };
+      }
     }
+    const inserted = field.insert(selectedCommand, {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceSelection",
+      selectionMode: "after",
+      focus: true,
+      scrollIntoView: false,
+    });
+    if (inserted) rawCommandAnchors.delete(field);
+    return inserted;
   }
 
   if (!getVisibleNativeSuggestionItems().length && field.mode !== "latex") {
@@ -684,6 +1166,7 @@ function FormulaField(props: FormulaFieldProps) {
     );
     field.removeAttribute("placeholder");
     field.style.fontSize = formulaFontSize(propsRef.current.zoom) + "px";
+    installVisualTexStructuralPlaceholderStyle(field);
 
     let resizeFrame = 0;
     let resizeTimer = 0;
@@ -749,17 +1232,112 @@ function FormulaField(props: FormulaFieldProps) {
     let pendingAutoExitSetting: InputBehaviorSettingKey | null = null;
     let pendingWrapperInput: {
       command: string;
-      prefix: string;
       content: string;
-      suffix: string;
+      range: [number, number];
+      anchorStyle: Readonly<Style>;
+      visualCaret: WrapperCaretAnchor | null;
     } | null = null;
+    let replacingPendingWrapperInput = false;
+    let restoringRawCommandAnchor = false;
     let wrapperPlaceholderFrame = 0;
+    let wrapperPlaceholderPass = 0;
     let wrapperMeasure: HTMLSpanElement | null = null;
     const clearPendingWrapperPlaceholderPosition = () => {
       host.style.removeProperty("--pending-wrapper-left");
       host.style.removeProperty("--pending-wrapper-top");
       host.style.removeProperty("--pending-wrapper-width");
       host.style.removeProperty("--pending-wrapper-height");
+      delete host.dataset.pendingWrapperAnchorY;
+    };
+    const measurePendingWrapperPlaceholderPosition = () => {
+      if (!field.isConnected || !pendingWrapperInput) return;
+      const hostBounds = host.getBoundingClientRect();
+      const anchor = pendingWrapperInput.visualCaret;
+      const markers = Array.from(
+        field.shadowRoot?.querySelectorAll<HTMLElement>(
+          ".ML__caret, .ML__text-caret, .ML__latex-caret",
+        ) ?? [],
+      )
+        .map((marker) => {
+          const bounds = marker.getBoundingClientRect();
+          return {
+            left: bounds.right - hostBounds.left,
+            centerY: bounds.top - hostBounds.top + bounds.height / 2,
+            height: bounds.height,
+          };
+        })
+        .filter((marker) => marker.height > 0)
+        .sort(
+          (first, second) =>
+            Math.abs(first.centerY - (anchor?.centerY ?? first.centerY)) -
+            Math.abs(second.centerY - (anchor?.centerY ?? second.centerY)),
+        );
+      const closestMarker = markers[0] ?? null;
+      const sameStructuralBand = Boolean(
+        closestMarker &&
+          (!anchor ||
+            Math.abs(closestMarker.centerY - anchor.centerY) <=
+              Math.max(14, Math.min(24, anchor.height * 0.8))),
+      );
+      const verticalCaret =
+        !pendingWrapperInput.content && anchor
+          ? anchor
+          : sameStructuralBand
+            ? closestMarker
+            : anchor;
+      if (!verticalCaret) {
+        clearPendingWrapperPlaceholderPosition();
+        return;
+      }
+
+      if (!wrapperMeasure) {
+        wrapperMeasure = document.createElement("span");
+        wrapperMeasure.className = "pending-wrapper-measure";
+        wrapperMeasure.setAttribute("aria-hidden", "true");
+        host.append(wrapperMeasure);
+      }
+      const content = pendingWrapperInput.content;
+      let renderedWidth = 0;
+      if (content) {
+        wrapperMeasure.style.fontSize = field.style.fontSize;
+        wrapperMeasure.innerHTML = convertLatexToMarkup(
+          pendingWrapperInput.command + "{" + content + "}",
+          { defaultMode: "math" },
+        );
+        renderedWidth = wrapperMeasure.getBoundingClientRect().width;
+      } else {
+        wrapperMeasure.replaceChildren();
+      }
+      const frameWidth = Math.max(18, Math.ceil(renderedWidth + 10));
+      const caretLeft = content
+        ? closestMarker?.left ?? anchor?.left ?? verticalCaret.left
+        : anchor?.left ?? closestMarker?.left ?? verticalCaret.left;
+      const frameCenterX = content
+        ? caretLeft - renderedWidth / 2
+        : caretLeft;
+      host.style.setProperty("--pending-wrapper-left", `${frameCenterX}px`);
+      host.style.setProperty(
+        "--pending-wrapper-top",
+        `${verticalCaret.centerY}px`,
+      );
+      host.style.setProperty("--pending-wrapper-width", `${frameWidth}px`);
+      host.style.setProperty(
+        "--pending-wrapper-height",
+        `${Math.max(28, Math.min(72, verticalCaret.height + 4))}px`,
+      );
+      if (anchor) {
+        host.dataset.pendingWrapperAnchorY = String(anchor.centerY);
+      }
+
+      wrapperPlaceholderPass += 1;
+      if (
+        wrapperPlaceholderPass < 3 &&
+        host.classList.contains("has-pending-wrapper-placeholder")
+      ) {
+        wrapperPlaceholderFrame = window.requestAnimationFrame(
+          measurePendingWrapperPlaceholderPosition,
+        );
+      }
     };
     const schedulePendingWrapperPlaceholderPosition = () => {
       window.cancelAnimationFrame(wrapperPlaceholderFrame);
@@ -767,55 +1345,10 @@ function FormulaField(props: FormulaFieldProps) {
         clearPendingWrapperPlaceholderPosition();
         return;
       }
-      wrapperPlaceholderFrame = window.requestAnimationFrame(() => {
-        if (!field.isConnected) return;
-        const caret = field.shadowRoot?.querySelector<HTMLElement>(".ML__caret");
-        if (!caret) {
-          clearPendingWrapperPlaceholderPosition();
-          return;
-        }
-        const hostBounds = host.getBoundingClientRect();
-        const caretBounds = caret.getBoundingClientRect();
-        if (caretBounds.height <= 0 || !pendingWrapperInput) {
-          clearPendingWrapperPlaceholderPosition();
-          return;
-        }
-        if (!wrapperMeasure) {
-          wrapperMeasure = document.createElement("span");
-          wrapperMeasure.className = "pending-wrapper-measure";
-          wrapperMeasure.setAttribute("aria-hidden", "true");
-          host.append(wrapperMeasure);
-        }
-        const content = pendingWrapperInput.content;
-        let renderedWidth = 0;
-        if (content) {
-          wrapperMeasure.style.fontSize = field.style.fontSize;
-          wrapperMeasure.innerHTML = convertLatexToMarkup(
-            pendingWrapperInput.command + "{" + content + "}",
-            { defaultMode: "math" },
-          );
-          renderedWidth = wrapperMeasure.getBoundingClientRect().width;
-        } else {
-          wrapperMeasure.replaceChildren();
-        }
-        const frameWidth = Math.max(18, Math.ceil(renderedWidth + 10));
-        const caretLeft = caretBounds.left - hostBounds.left;
-        const frameCenterX = content
-          ? caretLeft - renderedWidth / 2
-          : caretLeft;
-        const caretCenterY =
-          caretBounds.top - hostBounds.top + caretBounds.height / 2;
-        host.style.setProperty(
-          "--pending-wrapper-left",
-          `${frameCenterX}px`,
-        );
-        host.style.setProperty("--pending-wrapper-top", `${caretCenterY}px`);
-        host.style.setProperty("--pending-wrapper-width", `${frameWidth}px`);
-        host.style.setProperty(
-          "--pending-wrapper-height",
-          `${Math.max(28, Math.min(72, caretBounds.height + 4))}px`,
-        );
-      });
+      wrapperPlaceholderPass = 0;
+      wrapperPlaceholderFrame = window.requestAnimationFrame(
+        measurePendingWrapperPlaceholderPosition,
+      );
     };
     const syncPendingWrapperPlaceholder = () => {
       const showPlaceholder = Boolean(pendingWrapperInput);
@@ -835,6 +1368,45 @@ function FormulaField(props: FormulaFieldProps) {
       pendingWrapperInput = null;
       delete field.dataset.pendingWrapperCommand;
       syncPendingWrapperPlaceholder();
+    };
+    const replacePendingWrapperInput = (
+      command: string,
+      content: string,
+      trailingInput = "",
+    ) => {
+      const pending = pendingWrapperInput;
+      if (!pending) return false;
+
+      const [rangeStart, rangeEnd] = pending.range;
+      field.mode = "math";
+      field.selection = {
+        ranges: [[rangeStart, rangeEnd]],
+        direction: "forward",
+      };
+      replacingPendingWrapperInput = true;
+      let inserted = false;
+      try {
+        inserted = field.insert(
+          command + "{" + content + "}" + trailingInput,
+          {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after",
+            focus: true,
+            scrollIntoView: false,
+          },
+        );
+      } finally {
+        replacingPendingWrapperInput = false;
+      }
+      if (!inserted) return false;
+
+      field.applyStyle(pending.anchorStyle);
+      pending.command = command;
+      pending.content = content;
+      if (!trailingInput) pending.range = [rangeStart, field.position];
+      return true;
     };
     let compositionDeleteObserved = false;
     let suppressPostCompositionDeleteUntil = 0;
@@ -977,7 +1549,38 @@ function FormulaField(props: FormulaFieldProps) {
       syncFrameSize();
     };
     const handleBeforeInput = (event: InputEvent) => {
-      if (pendingWrapperInput && !event.isComposing) {
+      if (restoringRawCommandAnchor) return;
+      if (
+        event.inputType === "deleteContentBackward" &&
+        !pendingWrapperInput &&
+        Boolean(rawCommandAnchors.get(field))
+      ) {
+        const anchor = rawCommandAnchors.get(field);
+        const rawInput = rawLatexInput(field);
+        if (anchor && Array.from(rawInput).length <= 1) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          const before = captureFieldSnapshot(field);
+          restoringRawCommandAnchor = true;
+          try {
+            restoreRawCommandAnchor(field, anchor);
+          } finally {
+            restoringRawCommandAnchor = false;
+          }
+          rawCommandAnchors.delete(field);
+          markVisualTexStructuralPlaceholders(field);
+          const after = captureFieldSnapshot(field);
+          emitEdit(before, after, "delete-backward", "keyboard");
+          propsRef.current.onInputActivity(field);
+          syncFrameSize();
+          return;
+        }
+      }
+      if (
+        pendingWrapperInput &&
+        !replacingPendingWrapperInput &&
+        !event.isComposing
+      ) {
         if (event.inputType === "insertText" && event.data !== null) {
           event.preventDefault();
           event.stopImmediatePropagation();
@@ -992,33 +1595,24 @@ function FormulaField(props: FormulaFieldProps) {
           const trailingInput = autoExit
             ? inputCharacters.slice(1).join("")
             : "";
-          if (
+          const nextCommand =
             pendingWrapperInput.command === "\\mathcal" &&
             pendingWrapperInput.content.length === 0 &&
             /^[a-z]$/.test(wrappedInput)
+              ? "\\mathscr"
+              : pendingWrapperInput.command;
+          const nextContent = pendingWrapperInput.content + wrappedInput;
+          if (
+            !replacePendingWrapperInput(
+              nextCommand,
+              nextContent,
+              trailingInput,
+            )
           ) {
-            pendingWrapperInput.command = "\\mathscr";
-            field.dataset.pendingWrapperCommand = "\\mathscr";
+            return;
           }
-          pendingWrapperInput.content += wrappedInput;
+          field.dataset.pendingWrapperCommand = nextCommand;
           syncPendingWrapperPlaceholder();
-          const nextValue =
-            pendingWrapperInput.prefix +
-            pendingWrapperInput.command +
-            "{" +
-            pendingWrapperInput.content +
-            "}" +
-            pendingWrapperInput.suffix +
-            trailingInput;
-          field.setValue(nextValue, {
-            mode: "math",
-            format: "latex",
-            insertionMode: "replaceAll",
-            selectionMode: "after",
-            silenceNotifications: true,
-          });
-          field.mode = "math";
-          field.position = field.lastOffset;
           field.focus();
           if (autoExit) clearPendingWrapperInput();
           field.shadowRoot
@@ -1034,27 +1628,18 @@ function FormulaField(props: FormulaFieldProps) {
             event.preventDefault();
             event.stopImmediatePropagation();
             const before = captureFieldSnapshot(field);
-            pendingWrapperInput.content = Array.from(
-              pendingWrapperInput.content,
-            )
+            const nextContent = Array.from(pendingWrapperInput.content)
               .slice(0, -1)
               .join("");
+            if (
+              !replacePendingWrapperInput(
+                pendingWrapperInput.command,
+                nextContent,
+              )
+            ) {
+              return;
+            }
             syncPendingWrapperPlaceholder();
-            const nextValue =
-              pendingWrapperInput.prefix +
-              pendingWrapperInput.command +
-              "{" +
-              pendingWrapperInput.content +
-              "}" +
-              pendingWrapperInput.suffix;
-            field.setValue(nextValue, {
-              mode: "math",
-              format: "latex",
-              insertionMode: "replaceAll",
-              selectionMode: "after",
-              silenceNotifications: true,
-            });
-            field.position = field.lastOffset;
             field.focus();
             const after = captureFieldSnapshot(field);
             emitEdit(before, after, "delete-backward", "keyboard");
@@ -1094,6 +1679,7 @@ function FormulaField(props: FormulaFieldProps) {
       }
     };
     const handleInput = (event: Event) => {
+      if (replacingPendingWrapperInput || restoringRawCommandAnchor) return;
       if (imeGuard.isComposing()) {
         if (
           event instanceof InputEvent &&
@@ -1150,6 +1736,7 @@ function FormulaField(props: FormulaFieldProps) {
       });
     };
     const handleSelectionChange = () => {
+      markVisualTexStructuralPlaceholders(field);
       if (imeGuard.isComposing() || !lastSnapshotRef.current) return;
       lastSnapshotRef.current = {
         ...lastSnapshotRef.current,
@@ -1162,6 +1749,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleBlur = () => {
       clearPendingWrapperInput();
+      rawCommandAnchors.delete(field);
       propsRef.current.onCommitPending();
     };
     const confirmPendingWrapperInput = (event: KeyboardEvent) => {
@@ -1178,13 +1766,14 @@ function FormulaField(props: FormulaFieldProps) {
 
       event.preventDefault();
       event.stopImmediatePropagation();
+      const confirmedPosition = field.position;
       clearPendingWrapperInput();
       field.mode = "math";
-      field.position = field.lastOffset;
       field.selection = {
-        ranges: [[field.lastOffset, field.lastOffset]],
+        ranges: [[confirmedPosition, confirmedPosition]],
         direction: "none",
       };
+      field.position = confirmedPosition;
       field.focus();
       field.shadowRoot
         ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
@@ -1210,13 +1799,18 @@ function FormulaField(props: FormulaFieldProps) {
         return false;
       }
 
-      const wrapperQuery = trailingCommandQuery(field);
-      const rawFieldValue = wrapperQuery
-        ? fieldValueIncludingRawQuery(field, wrapperQuery)
-        : field.value;
-      const wrapperCommand = wrapperQuery
-        ? exactWrapperCommand(wrapperQuery)
-        : null;
+      const wrapperQuery = rawCommandQuery(field) || trailingCommandQuery(field);
+      const selectedNativeCommand =
+        field.dataset.pendingNativeSuggestion ||
+        getVisibleNativeSuggestionItems().find((item) =>
+          item.classList.contains("ML__popover__current"),
+        )?.dataset.command ||
+        "";
+      const wrapperCommand =
+        (wrapperQuery ? exactWrapperCommand(wrapperQuery) : null) ??
+        (selectedNativeCommand
+          ? exactWrapperCommand(selectedNativeCommand)
+          : null);
       if (
         !wrapperCommand ||
         (field.mode !== "latex" && field.lastOffset !== 0)
@@ -1225,35 +1819,59 @@ function FormulaField(props: FormulaFieldProps) {
       }
 
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       pendingAutoExitSetting = null;
       const before = captureFieldSnapshot(field);
-      const queryStart = rawFieldValue.length - wrapperQuery.length;
-      const prefix = rawFieldValue.slice(0, queryStart);
-      const suffix = "";
-      const emptyTemplate = wrapperCommand.insertTemplate.replace(
-        /\\placeholder\{\}/g,
-        "",
-      );
-      const nextValue = prefix + emptyTemplate + suffix;
+      const anchor = rawCommandAnchors.get(field) ?? {
+        latex: before.latex,
+        selection: before.selection,
+        position: field.position,
+        visualCaret: captureWrapperCaretAnchor(field),
+      };
+      const anchorSelection = restoreRawCommandAnchor(field, anchor);
+      const anchorRange = anchorSelection.ranges.at(-1) ?? [anchor.position, anchor.position];
+      const rangeStart = Math.min(anchorRange[0], anchorRange[1]);
+      rawCommandAnchors.delete(field);
+      delete field.dataset.pendingNativeSuggestion;
+      const styleAtAnchor =
+        field.getElementInfo(rangeStart)?.style ??
+        field.getElementInfo(Math.max(0, rangeStart - 1))?.style ??
+        {};
+      const anchorStyle: Readonly<Style> = {
+        variant: styleAtAnchor.variant ?? "normal",
+        variantStyle: styleAtAnchor.variantStyle ?? "",
+        fontFamily: styleAtAnchor.fontFamily ?? "none",
+        fontShape: styleAtAnchor.fontShape ?? "",
+        fontSeries: styleAtAnchor.fontSeries ?? "",
+      };
       pendingWrapperInput = {
         command: wrapperCommand.command,
-        prefix,
         content: "",
-        suffix,
+        range: [rangeStart, rangeStart],
+        anchorStyle,
+        visualCaret: anchor.visualCaret,
       };
       field.dataset.pendingWrapperCommand = wrapperCommand.command;
-      syncPendingWrapperPlaceholder();
-      field.setValue(nextValue, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-      field.mode = "math";
-      field.position = field.lastOffset;
       field.focus();
+      field.shadowRoot
+        ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+      const pendingReference = pendingWrapperInput;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (
+            !field.isConnected ||
+            !pendingReference ||
+            pendingWrapperInput !== pendingReference
+          ) {
+            return;
+          }
+          if (!pendingReference.visualCaret) {
+            pendingReference.visualCaret = captureWrapperCaretAnchor(field);
+          }
+          syncPendingWrapperPlaceholder();
+        });
+      });
       const after = captureFieldSnapshot(field);
       emitEdit(before, after, "replace", "candidate");
       syncFrameSize();
@@ -1261,9 +1879,25 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleRawWrapperKeyDown = (event: KeyboardEvent) => {
       if (confirmPendingWrapperInput(event)) return;
-      if (event.key === " " || event.code === "Space") {
-        confirmRawWrapperCommand(event);
+      confirmRawWrapperCommand(event);
+    };
+    const handleWindowRawWrapperKeyDown = (event: KeyboardEvent) => {
+      if (!event.composedPath().includes(field)) return;
+      const isUnmodifiedPhysicalBackslash =
+        event.code === "Backslash" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+      if (
+        isUnmodifiedPhysicalBackslash &&
+        event.key === "\\" &&
+        !pendingWrapperInput &&
+        !rawLatexInput(field)
+      ) {
+        rememberRawCommandAnchor(field);
       }
+      if (confirmPendingWrapperInput(event)) return;
+      confirmRawWrapperCommand(event);
     };
     const scheduleInputActivity = () => {
       window.requestAnimationFrame(() => {
@@ -1278,6 +1912,7 @@ function FormulaField(props: FormulaFieldProps) {
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey;
+      if (event.key === "Escape") rawCommandAnchors.delete(field);
       if (isUnmodifiedPhysicalBackslash && event.key === "、") {
         armPhysicalBackslashGuard("ideographic-comma", event.timeStamp);
         suppressBackslashReplayUntil = event.timeStamp + 180;
@@ -1292,6 +1927,33 @@ function FormulaField(props: FormulaFieldProps) {
           return;
         }
         armPhysicalBackslashGuard("latin-backslash", event.timeStamp);
+      }
+
+      if (
+        event.key === "Backspace" &&
+        !pendingWrapperInput &&
+        rawCommandAnchors.has(field) &&
+        Array.from(rawLatexInput(field)).length <= 1
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const anchor = rawCommandAnchors.get(field);
+        if (anchor) {
+          const before = captureFieldSnapshot(field);
+          restoringRawCommandAnchor = true;
+          try {
+            restoreRawCommandAnchor(field, anchor);
+          } finally {
+            restoringRawCommandAnchor = false;
+          }
+          rawCommandAnchors.delete(field);
+          markVisualTexStructuralPlaceholders(field);
+          const after = captureFieldSnapshot(field);
+          emitEdit(before, after, "delete-backward", "keyboard");
+          propsRef.current.onInputActivity(field);
+          syncFrameSize();
+        }
+        return;
       }
 
       const imeDecision = imeGuard.keyDown(event, event.timeStamp);
@@ -1359,9 +2021,20 @@ function FormulaField(props: FormulaFieldProps) {
         direction: selection.direction ?? "none",
       });
     };
+    const handlePointerSelectionEnd = () => {
+      if (!visualTexPointerSelectingFields.delete(field)) return;
+      field.classList.remove(visualTexPointerSelectingClass);
+      window.requestAnimationFrame(() => {
+        if (!field.isConnected) return;
+        markVisualTexStructuralPlaceholders(field);
+      });
+    };
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      visualTexPointerSelectingFields.add(field);
+      field.classList.add(visualTexPointerSelectingClass);
       clearPendingWrapperInput();
+      rawCommandAnchors.delete(field);
       propsRef.current.onCommitPending();
 
       const content = field.shadowRoot?.querySelector<HTMLElement>(
@@ -1402,6 +2075,7 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onFocus(propsRef.current.index, field);
     };
     host.replaceChildren(field);
+    installVisualTexStructuralPlaceholderStyle(field);
     field.inlineShortcuts = {
       ...field.inlineShortcuts,
       ...visualTexUprightInlineShortcuts,
@@ -1421,6 +2095,7 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("selection-change", handleSelectionChange);
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
+    window.addEventListener("keydown", handleWindowRawWrapperKeyDown, true);
     field.addEventListener("keydown", handleKeyDown, true);
     const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
       '[part="keyboard-sink"]',
@@ -1430,6 +2105,8 @@ function FormulaField(props: FormulaFieldProps) {
     keyboardSink?.addEventListener("keyup", scheduleInputActivity, true);
     field.addEventListener("paste", handlePaste, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("pointerup", handlePointerSelectionEnd, true);
+    window.addEventListener("pointercancel", handlePointerSelectionEnd, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
     const resizeObserver = content
       ? new ResizeObserver(() => {
@@ -1439,6 +2116,7 @@ function FormulaField(props: FormulaFieldProps) {
       : null;
     const inputMutationObserver = field.shadowRoot
       ? new MutationObserver(() => {
+          markVisualTexStructuralPlaceholders(field);
           scheduleInputActivity();
           schedulePendingWrapperPlaceholderPosition();
         })
@@ -1448,6 +2126,8 @@ function FormulaField(props: FormulaFieldProps) {
       inputMutationObserver?.observe(field.shadowRoot, {
         childList: true,
         characterData: true,
+        attributes: true,
+        attributeFilter: ["class"],
         subtree: true,
       });
     }
@@ -1468,12 +2148,17 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("selection-change", handleSelectionChange);
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
+      window.removeEventListener("keydown", handleWindowRawWrapperKeyDown, true);
       field.removeEventListener("keydown", handleKeyDown, true);
       keyboardSink?.removeEventListener("keydown", handleRawWrapperKeyDown, true);
       keyboardSink?.removeEventListener("input", scheduleInputActivity, true);
       keyboardSink?.removeEventListener("keyup", scheduleInputActivity, true);
       field.removeEventListener("paste", handlePaste, true);
       host.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("pointerup", handlePointerSelectionEnd, true);
+      window.removeEventListener("pointercancel", handlePointerSelectionEnd, true);
+      visualTexPointerSelectingFields.delete(field);
+      field.classList.remove(visualTexPointerSelectingClass);
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
         "--formula-row-height",
       );
@@ -1483,6 +2168,7 @@ function FormulaField(props: FormulaFieldProps) {
       compositionStartRef.current = null;
       pendingAutoExitSetting = null;
       clearPendingWrapperInput();
+      rawCommandAnchors.delete(field);
       host.replaceChildren();
     };
   }, []);
@@ -1774,7 +2460,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       field: MathfieldElement,
       normalized: string,
     ) => {
-      const activeCommandQuery = trailingCommandQuery(field, normalized);
+      if (lineId !== activeLineIdRef.current) return;
+      const rawCommandActive = hasRawLatexInput(field);
+      const activeCommandQuery = rawCommandActive
+        ? ""
+        : trailingCommandQuery(field, normalized);
       const suppressed = suppressedSuggestionRef.current;
       if (suppressed) {
         if (
@@ -1993,18 +2683,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       setActiveLine(targetLineId);
       field.focus();
 
-      const originalSelection = captureSelection(field);
+      const rawAnchor = activeQuery
+        ? rawCommandAnchors.get(field) ?? null
+        : null;
+      const originalSelection = rawAnchor?.selection ?? captureSelection(field);
       const queryRange = activeQuery
         ? findTrailingCommandRange(field, activeQuery)
         : null;
-      const rawFieldValue = activeQuery
-        ? fieldValueIncludingRawQuery(field, activeQuery)
-        : field.value;
-      const rawFieldValueWithoutTrailingSpace = rawFieldValue.trimEnd();
       const replacesRawCommand = Boolean(
-        activeQuery &&
-          rawFieldValueWithoutTrailingSpace.endsWith(activeQuery) &&
-          (field.mode === "latex" || field.lastOffset === 0),
+        activeQuery && !queryRange && rawAnchor,
       );
       if (activeQuery && !queryRange && !replacesRawCommand) {
         setQuery("");
@@ -2046,31 +2733,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       const tryInsert = () => {
-        field.selection = originalSelection;
+        if (rawAnchor) restoreRawCommandAnchor(field, rawAnchor);
+        else field.selection = originalSelection;
         const inserted = applyDiscreteFormulaMutation(
           targetLineId,
           field,
           historySource,
           () => {
             const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
-            if (replacesRawCommand) {
-              const queryEnd = rawFieldValueWithoutTrailingSpace.length;
-              const queryStart = queryEnd - activeQuery.length;
-              const trailingSpace = rawFieldValue.slice(queryEnd);
-              const nextValue =
-                rawFieldValue.slice(0, queryStart) +
-                insertionTemplate +
-                trailingSpace;
-              field.setValue(nextValue, {
-                mode: "math",
-                format: "latex",
-                insertionMode: "replaceAll",
-                selectionMode: hasPlaceholder ? "placeholder" : "after",
-                silenceNotifications: true,
-              });
-              field.focus();
-              return true;
-            }
             if (queryRange) {
               field.selection = {
                 ranges: [queryRange],
@@ -2100,7 +2770,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             return inserted;
           },
         );
-        if (!inserted) field.selection = originalSelection;
+        if (inserted) rawCommandAnchors.delete(field);
+        else field.selection = originalSelection;
         return inserted;
       };
 
@@ -2266,12 +2937,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const suppressesCurrentTrailingCommand =
         suppressedSuggestion?.lineId === lineId &&
         suppressedSuggestion.value.trim() === normalizedFieldValue.trim();
-      const liveQuery = suppressesCurrentTrailingCommand
-        ? ""
-        : trailingCommandQuery(field);
-      const candidateQuery = suppressesCurrentTrailingCommand
-        ? ""
-        : liveQuery || query;
+      const rawCommandActive = hasRawLatexInput(field);
+      const liveQuery =
+        suppressesCurrentTrailingCommand || rawCommandActive
+          ? ""
+          : trailingCommandQuery(field);
+      const candidateQuery =
+        suppressesCurrentTrailingCommand || rawCommandActive
+          ? ""
+          : liveQuery || query;
       const currentState = useEditorStore.getState();
       const liveSuggestions = candidateQuery
         ? visibleCommandSuggestions(
@@ -2282,7 +2956,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             currentState.inputBehavior,
           )
         : [];
-      const wrapperQuery = trailingCommandQuery(field) || candidateQuery;
+      const wrapperQuery =
+        rawCommandQuery(field) || trailingCommandQuery(field) || candidateQuery;
       const wrapperCommand = wrapperQuery
         ? exactWrapperCommand(wrapperQuery)
         : null;
@@ -2347,7 +3022,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             lineId,
             value: normalizeChineseLatex(field.value),
           };
+          queryRef.current = "";
           setQuery("");
+          selectSuggestionIndex(0);
           return;
         }
       }
@@ -2378,7 +3055,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           }
           return;
         }
-        if (event.key === "Enter" || event.key === "Tab") {
+        if (
+          event.key === "Enter" ||
+          event.key === "Tab" ||
+          event.key === " " ||
+          event.code === "Space"
+        ) {
           event.preventDefault();
           event.stopPropagation();
           void applyDeferredDiscreteFormulaMutation(
