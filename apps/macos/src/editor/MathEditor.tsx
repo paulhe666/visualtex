@@ -714,6 +714,92 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
   markVisualTexStructuralPlaceholders(field);
 }
 
+const visualTexPointerPlaceholderStyleId =
+  "visualtex-pointer-placeholder-style";
+const visualTexPointerPlaceholderStyles = new WeakMap<
+  MathfieldElement,
+  string
+>();
+
+function installPointerPlaceholderSnapshotStyle(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  if (!shadowRoot) return;
+  shadowRoot.getElementById(visualTexPointerPlaceholderStyleId)?.remove();
+
+  const placeholderSymbol = field.placeholderSymbol || "▢";
+  const rules = Array.from(
+    shadowRoot.querySelectorAll<HTMLElement>(
+      ".ML__cmr[data-atom-id], .ML__placeholder",
+    ),
+  ).flatMap((node) => {
+    const visibleText = node.textContent?.trim() ?? "";
+    if (
+      !node.classList.contains(visualTexPlaceholderClass) &&
+      !node.classList.contains("ML__placeholder") &&
+      visibleText !== placeholderSymbol
+    ) {
+      return [];
+    }
+    const atomId = node.dataset.atomId;
+    if (!atomId) return [];
+    const style = getComputedStyle(node);
+    const escapedAtomId = CSS.escape(atomId);
+    return [
+      `
+      :host(.${visualTexPointerSelectingClass}) [data-atom-id="${escapedAtomId}"] {
+        position: relative !important;
+        display: inline-block !important;
+        box-sizing: border-box !important;
+        width: ${style.width} !important;
+        min-width: ${style.minWidth} !important;
+        height: ${style.height} !important;
+        margin: ${style.margin} !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: ${style.borderRadius} !important;
+        background: #d9edf9 !important;
+        color: transparent !important;
+        opacity: 1 !important;
+        text-indent: -999px !important;
+        vertical-align: ${style.verticalAlign} !important;
+        box-shadow: none !important;
+      }
+      `,
+    ];
+  });
+  if (!rules.length) return;
+
+  const style = document.createElement("style");
+  style.id = visualTexPointerPlaceholderStyleId;
+  style.textContent = rules.join("\n");
+  visualTexPointerPlaceholderStyles.set(field, style.textContent);
+  shadowRoot.append(style);
+}
+
+function restorePointerPlaceholderSnapshotStyle(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  const cssText = visualTexPointerPlaceholderStyles.get(field);
+  if (
+    !shadowRoot ||
+    !cssText ||
+    shadowRoot.getElementById(visualTexPointerPlaceholderStyleId)
+  ) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = visualTexPointerPlaceholderStyleId;
+  style.textContent = cssText;
+  shadowRoot.append(style);
+}
+
+function removePointerPlaceholderSnapshotStyle(field: MathfieldElement) {
+  visualTexPointerPlaceholderStyles.delete(field);
+  field.shadowRoot
+    ?.getElementById(visualTexPointerPlaceholderStyleId)
+    ?.remove();
+}
+
 function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
   if (field.mode === "latex" || !field.selectionIsCollapsed) return false;
 
@@ -1168,6 +1254,21 @@ function FormulaField(props: FormulaFieldProps) {
     field.style.fontSize = formulaFontSize(propsRef.current.zoom) + "px";
     installVisualTexStructuralPlaceholderStyle(field);
 
+    let pointerPlaceholderFrame = 0;
+    const schedulePointerPlaceholderSnapshotStyle = () => {
+      window.cancelAnimationFrame(pointerPlaceholderFrame);
+      pointerPlaceholderFrame = window.requestAnimationFrame(() => {
+        if (
+          field.isConnected &&
+          visualTexPointerSelectingFields.has(field)
+        ) {
+          if (!visualTexPointerPlaceholderStyles.has(field)) {
+            installPointerPlaceholderSnapshotStyle(field);
+          }
+          restorePointerPlaceholderSnapshotStyle(field);
+        }
+      });
+    };
     let resizeFrame = 0;
     let resizeTimer = 0;
     let resizePass = 0;
@@ -1737,6 +1838,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleSelectionChange = () => {
       markVisualTexStructuralPlaceholders(field);
+      schedulePointerPlaceholderSnapshotStyle();
       if (imeGuard.isComposing() || !lastSnapshotRef.current) return;
       lastSnapshotRef.current = {
         ...lastSnapshotRef.current,
@@ -2024,6 +2126,7 @@ function FormulaField(props: FormulaFieldProps) {
     const handlePointerSelectionEnd = () => {
       if (!visualTexPointerSelectingFields.delete(field)) return;
       field.classList.remove(visualTexPointerSelectingClass);
+      removePointerPlaceholderSnapshotStyle(field);
       window.requestAnimationFrame(() => {
         if (!field.isConnected) return;
         markVisualTexStructuralPlaceholders(field);
@@ -2031,8 +2134,10 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      installPointerPlaceholderSnapshotStyle(field);
       visualTexPointerSelectingFields.add(field);
       field.classList.add(visualTexPointerSelectingClass);
+      schedulePointerPlaceholderSnapshotStyle();
       clearPendingWrapperInput();
       rawCommandAnchors.delete(field);
       propsRef.current.onCommitPending();
@@ -2117,6 +2222,7 @@ function FormulaField(props: FormulaFieldProps) {
     const inputMutationObserver = field.shadowRoot
       ? new MutationObserver(() => {
           markVisualTexStructuralPlaceholders(field);
+          schedulePointerPlaceholderSnapshotStyle();
           scheduleInputActivity();
           schedulePendingWrapperPlaceholderPosition();
         })
@@ -2135,6 +2241,7 @@ function FormulaField(props: FormulaFieldProps) {
 
     return () => {
       window.cancelAnimationFrame(resizeFrame);
+      window.cancelAnimationFrame(pointerPlaceholderFrame);
       window.cancelAnimationFrame(wrapperPlaceholderFrame);
       window.clearTimeout(resizeTimer);
       window.clearTimeout(backslashGuardTimer);
@@ -2159,6 +2266,7 @@ function FormulaField(props: FormulaFieldProps) {
       window.removeEventListener("pointercancel", handlePointerSelectionEnd, true);
       visualTexPointerSelectingFields.delete(field);
       field.classList.remove(visualTexPointerSelectingClass);
+      removePointerPlaceholderSnapshotStyle(field);
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
         "--formula-row-height",
       );

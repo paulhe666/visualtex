@@ -725,6 +725,66 @@ async function main() {
           ranges: [[0, field.lastOffset]],
           direction: "forward",
         };
+      })()`);
+      await sleep(80);
+
+      const heldPointerSelectionState = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const root = field?.shadowRoot;
+        const placeholderSymbol = field?.placeholderSymbol || "▢";
+        const placeholderAtoms = [
+          ...(root?.querySelectorAll(".ML__cmr[data-atom-id], .ML__placeholder") ?? []),
+        ].filter((node) =>
+          node.classList.contains("ML__placeholder") ||
+          node.textContent?.trim() === placeholderSymbol
+        );
+        const placeholderStyles = placeholderAtoms.map((node) => {
+          const style = getComputedStyle(node);
+          return {
+            classes: node.className,
+            backgroundColor: style.backgroundColor,
+            borderTopWidth: style.borderTopWidth,
+            color: style.color,
+          };
+        });
+        const blackBoxPlaceholders = placeholderStyles.filter((style) =>
+          style.backgroundColor === "rgba(0, 0, 0, 0)" ||
+          style.backgroundColor === "transparent" ||
+          style.borderTopWidth !== "0px" ||
+          style.color !== "rgba(0, 0, 0, 0)"
+        );
+        const selection = root?.querySelector(".ML__selection");
+        const selectionBounds = selection?.getBoundingClientRect();
+        return {
+          ready:
+            Boolean(field?.classList.contains("visualtex-pointer-selecting")) &&
+            Boolean(field && !field.selectionIsCollapsed) &&
+            placeholderAtoms.length >= 2 &&
+            blackBoxPlaceholders.length === 0 &&
+            Boolean(
+              selection &&
+              getComputedStyle(selection).display !== "none" &&
+              selectionBounds &&
+              selectionBounds.width > 5
+            ),
+          pointerSelectingClass:
+            field?.classList.contains("visualtex-pointer-selecting") ?? false,
+          selectionCollapsed: field?.selectionIsCollapsed ?? true,
+          placeholderCount: placeholderAtoms.length,
+          blackBoxPlaceholderCount: blackBoxPlaceholders.length,
+          placeholderStyles,
+          placeholderCaretCount:
+            root?.querySelectorAll(".visualtex-structural-placeholder-caret")
+              .length ?? -1,
+          selectionDisplay: selection ? getComputedStyle(selection).display : "missing",
+          selectionWidth: selectionBounds?.width ?? 0,
+        };
+      })()`, "held pointer selection keeps placeholders blue and range continuous");
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return;
+        const bounds = field.getBoundingClientRect();
         window.dispatchEvent(new PointerEvent("pointerup", {
           bubbles: true,
           composed: true,
@@ -789,7 +849,12 @@ async function main() {
 
       console.log(
         JSON.stringify(
-          { alphaPlaceholderState, dragGeometry, rangeSelectionState },
+          {
+            alphaPlaceholderState,
+            dragGeometry,
+            heldPointerSelectionState,
+            rangeSelectionState,
+          },
           null,
           2,
         ),
