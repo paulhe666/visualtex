@@ -5815,6 +5815,149 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
 }
 
+/* MathLive removes and recreates its native input-selection popover whenever
+   the query or highlighted row changes. Keep the source measurable but hidden,
+   and project it into one persistent VisualTeX node so the frame never flashes. */
+html body #mathlive-suggestion-popover {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html body #visualtex-native-input-suggestion-popover {
+  min-width: 250px;
+  max-width: min(380px, calc(100vw - 24px));
+  position: fixed;
+  z-index: var(--suggestion-zindex, 100);
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+html body #visualtex-native-input-suggestion-popover.is-visible {
+  display: flex;
+}
+
+html body #visualtex-native-input-suggestion-popover.top-tip::after {
+  content: "";
+  position: absolute;
+  top: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-right: 15px solid transparent;
+  border-bottom: 15px solid var(--surface);
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover.bottom-tip::after {
+  content: "";
+  position: absolute;
+  bottom: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-top: 15px solid var(--surface);
+  border-right: 15px solid transparent;
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover ul {
+  max-height: 320px;
+  display: flex;
+  flex-flow: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--surface);
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+html body #visualtex-native-input-suggestion-popover li {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+html body #visualtex-native-input-suggestion-popover li + li {
+  margin-top: 3px;
+}
+
+html body #visualtex-native-input-suggestion-popover li:hover,
+html body #visualtex-native-input-suggestion-popover li.is-active,
+html body #visualtex-native-input-suggestion-popover li.is-pressed {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+html body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: var(--accent-border);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__command {
+  min-width: 72px;
+  color: var(--text);
+  font-size: 1.3rem;
+}
+
+html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
+  min-width: 126px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 1.1rem;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover ul {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li:hover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-active,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-pressed {
+  background: #f4f9ff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: #9fc8e5;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
+}
+
 .suggestion-popup {
   width: min(440px, calc(100% - 24px));
   border: 1px solid var(--border-strong);
