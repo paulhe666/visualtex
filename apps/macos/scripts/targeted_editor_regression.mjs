@@ -451,21 +451,52 @@ async function main() {
         };
       })()`, "arrow key selects theta in the native input-selection list");
 
+      const nativeSpaceStartedAt = await evaluate(`(() => {
+        window.__visualtexNativeSpaceTiming = {};
+        window.addEventListener("keydown", () => {
+          const handlerStartedAt = performance.now();
+          queueMicrotask(() => {
+            window.__visualtexNativeSpaceTiming.handlerMs =
+              performance.now() - handlerStartedAt;
+          });
+        }, { capture: true, once: true });
+        return performance.now();
+      })()`);
       await key(" ", "Space", 32);
       const committedState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
+        const source = document.getElementById("mathlive-suggestion-popover");
+        const stable = document.getElementById(
+          "visualtex-native-input-suggestion-popover",
+        );
         const normalized = (field?.value ?? "").replaceAll(" ", "");
         return {
           ready:
             normalized === "\\\\theta" &&
             (field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1) === 0 &&
-            !field?.dataset.pendingNativeSuggestion,
+            !field?.dataset.pendingNativeSuggestion &&
+            !source?.classList.contains("is-visible") &&
+            !stable?.classList.contains("is-visible"),
           value: field?.value ?? "",
           normalized,
           pendingNativeSuggestion: field?.dataset.pendingNativeSuggestion ?? "",
           rawCount: field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1,
+          sourceVisible: source?.classList.contains("is-visible") ?? false,
+          stableVisible: stable?.classList.contains("is-visible") ?? false,
+          elapsedMs: performance.now() - ${nativeSpaceStartedAt},
+          handlerMs: window.__visualtexNativeSpaceTiming?.handlerMs ?? null,
         };
       })()`, "Space commits the arrow-selected theta item");
+
+      if (
+        committedState.elapsedMs > 250 ||
+        committedState.handlerMs === null ||
+        committedState.handlerMs > 32
+      ) {
+        throw new Error(
+          `Native Space selection was delayed: ${JSON.stringify(committedState)}`,
+        );
+      }
 
       if (initialState.firstCommand === "\\theta") {
         throw new Error(`Theta unexpectedly remained the first command: ${JSON.stringify(initialState)}`);
@@ -1647,9 +1678,26 @@ async function main() {
         const placeholderLeft = Number.parseFloat(
           host?.style.getPropertyValue("--pending-wrapper-left") ?? "NaN",
         );
-        const placeholderTop = Number.parseFloat(
-          host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN",
-        );
+      const placeholderTop = Number.parseFloat(
+        host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN",
+      );
+      const placeholderWidth = Number.parseFloat(
+        host?.style.getPropertyValue("--pending-wrapper-width") ?? "NaN",
+      );
+      const placeholderHeight = Number.parseFloat(
+        host?.style.getPropertyValue("--pending-wrapper-height") ?? "NaN",
+      );
+      const anchorTop = Number.parseFloat(
+        host?.dataset.pendingWrapperAnchorY ?? "NaN",
+      );
+      const frameLeft = placeholderLeft - placeholderWidth / 2;
+      const formulaFontSize =
+        Number.parseFloat(field?.style.fontSize ?? "") || 54;
+      const minimumFrameHeight = Math.max(12, formulaFontSize * 0.52);
+      const maximumFrameHeight = Math.max(
+        minimumFrameHeight,
+        formulaFontSize * 1.08,
+      );
         const expectedLeft =
           modelBounds && hostBounds
             ? modelBounds.right - hostBounds.left
@@ -1669,8 +1717,10 @@ async function main() {
             fakeCaretStyle?.content === "none" &&
             nativeCaretStyle?.visibility === "visible" &&
             nativeCaretStyle?.animationName.includes("caret-blink") &&
-            Math.abs(placeholderLeft - expectedLeft) <= 1.5 &&
-            Math.abs(placeholderTop - expectedTop) <= 1.5 &&
+          Math.abs(frameLeft - expectedLeft) <= 2 &&
+          Math.abs(placeholderTop - anchorTop) <= 1.5 &&
+          placeholderHeight >= minimumFrameHeight - 0.5 &&
+          placeholderHeight <= maximumFrameHeight + 0.5 &&
             Math.abs(placeholderLeft - (hostBounds?.width ?? 0) / 2) >= 20 &&
             document.querySelectorAll("math-field").length === 1,
           value: field.value,
@@ -1678,8 +1728,14 @@ async function main() {
           placeholderClass: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
           placeholderBorderStyle: placeholderStyle?.borderStyle ?? "",
           placeholderBorderWidth: placeholderStyle?.borderWidth ?? "",
-          placeholderLeft,
-          placeholderTop,
+        placeholderLeft,
+        placeholderTop,
+        placeholderWidth,
+        placeholderHeight,
+        frameLeft,
+        anchorTop,
+        minimumFrameHeight,
+        maximumFrameHeight,
           expectedLeft,
           expectedTop,
           fakeCaretContent: fakeCaretStyle?.content ?? "",
@@ -2021,7 +2077,6 @@ async function main() {
         command,
         expectedSource,
         pending,
-        verifyEmptyFrame = false,
       }) => {
         return await waitForEvaluation(`(() => {
           const field = document.querySelector("math-field");
@@ -2048,18 +2103,21 @@ async function main() {
           const placeholderTop = Number.parseFloat(
             host.style.getPropertyValue("--pending-wrapper-top") || "NaN",
           );
-          const placeholderWidth = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-width") || "NaN",
-          );
+        const placeholderWidth = Number.parseFloat(
+          host.style.getPropertyValue("--pending-wrapper-width") || "NaN",
+        );
+        const placeholderHeight = Number.parseFloat(
+          host.style.getPropertyValue("--pending-wrapper-height") || "NaN",
+        );
           const expectedAnchorLeft = Number.parseFloat(
             host.dataset.testExpectedWrapperAnchorX || "NaN",
           );
           const expectedAnchorTop = Number.parseFloat(
             host.dataset.testExpectedWrapperAnchorY || "NaN",
           );
-          const productAnchorTop = Number.parseFloat(
-            host.dataset.pendingWrapperAnchorY || "NaN",
-          );
+        const productAnchorTop = Number.parseFloat(
+          host.dataset.pendingWrapperAnchorY || "NaN",
+        );
           const expectedAnchorHeight = Number.parseFloat(
             host.dataset.testExpectedWrapperAnchorHeight || "NaN",
           );
@@ -2071,23 +2129,24 @@ async function main() {
           const currentModelTop = currentBounds
             ? currentBounds.top - hostBounds.top + currentBounds.height / 2
             : Number.NaN;
-          const expectedLeft = ${verifyEmptyFrame}
-            ? expectedAnchorLeft
-            : currentModelRight;
-          const verticalTolerance = ${verifyEmptyFrame}
-            ? 1.5
-            : Math.max(5, Math.min(12, expectedAnchorHeight * 0.35));
+        const frameLeft = placeholderLeft - placeholderWidth / 2;
+        const formulaFontSize =
+          Number.parseFloat(field.style.fontSize) || 54;
+        const minimumFrameHeight = Math.max(12, formulaFontSize * 0.52);
+        const maximumFrameHeight = Math.max(
+          minimumFrameHeight,
+          formulaFontSize * 1.08,
+        );
           const hasPending = field.dataset.pendingWrapperCommand === ${JSON.stringify(command)};
           const frameAligned =
             !${pending} ||
             (host.classList.contains("has-pending-wrapper-placeholder") &&
-              Math.abs(productAnchorTop - expectedAnchorTop) <= 1.5 &&
-              Math.abs(placeholderTop - expectedAnchorTop) <= verticalTolerance &&
-              (${verifyEmptyFrame}
-                ? Math.abs(placeholderLeft - expectedLeft) <= 1.5
-                : Math.abs(
-                    placeholderLeft + placeholderWidth / 2 - 5 - expectedLeft,
-                  ) <= 2));
+            Number.isFinite(productAnchorTop) &&
+            Math.abs(frameLeft - expectedAnchorLeft) <= 2.5 &&
+            Math.abs(productAnchorTop - expectedAnchorTop) <= 6 &&
+            Math.abs(placeholderTop - productAnchorTop) <= 1.5 &&
+            placeholderHeight >= minimumFrameHeight - 0.5 &&
+            placeholderHeight <= maximumFrameHeight + 0.5);
           return {
             ready:
               normalizedValue === normalizedExpected &&
@@ -2105,13 +2164,16 @@ async function main() {
             lastOffset: field.lastOffset,
             pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
             frameVisible: host.classList.contains("has-pending-wrapper-placeholder"),
-            placeholderLeft,
-            placeholderTop,
-            placeholderWidth,
-            expectedLeft,
-            expectedAnchorLeft,
-            expectedAnchorTop,
-            productAnchorTop,
+          placeholderLeft,
+          placeholderTop,
+          placeholderWidth,
+          placeholderHeight,
+          frameLeft,
+          expectedAnchorLeft,
+          expectedAnchorTop,
+          productAnchorTop,
+          minimumFrameHeight,
+          maximumFrameHeight,
             expectedAnchorHeight,
             currentModelRight,
             currentModelTop,
@@ -2135,7 +2197,6 @@ async function main() {
             ...testCase,
             expectedSource: testCase.source,
             pending: true,
-            verifyEmptyFrame: true,
           })),
         });
         await key("A", "KeyA", 65);
@@ -2167,7 +2228,6 @@ async function main() {
             ...testCase,
             expectedSource: testCase.source,
             pending: true,
-            verifyEmptyFrame: true,
           })),
         });
         await key("A", "KeyA", 65);

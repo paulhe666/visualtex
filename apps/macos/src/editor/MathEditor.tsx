@@ -177,37 +177,47 @@ function captureWrapperCaretAnchor(
       ),
     ),
   );
-  for (const offset of candidateOffsets) {
-    const bounds = field.getElementInfo(offset)?.bounds;
-    if (
-      bounds &&
-      Number.isFinite(bounds.right) &&
-      Number.isFinite(bounds.top) &&
-      bounds.height > 0
-    ) {
-      return {
+  const modelAnchors = candidateOffsets
+    .flatMap((offset) => {
+      const bounds = field.getElementInfo(offset)?.bounds;
+      if (
+        !bounds ||
+        !Number.isFinite(bounds.right) ||
+        !Number.isFinite(bounds.top) ||
+        bounds.height <= 0
+      ) {
+        return [];
+      }
+      return [{
         left: bounds.right - hostBounds.left,
         centerY: bounds.top - hostBounds.top + bounds.height / 2,
         height: bounds.height,
-      };
-    }
-  }
-
-  const markers = Array.from(
+      }];
+    });
+  const modelAnchor = modelAnchors[0] ?? null;
+  const markerAnchors = Array.from(
     field.shadowRoot?.querySelectorAll<HTMLElement>(
       ".ML__caret, .ML__text-caret, .ML__latex-caret",
     ) ?? [],
   )
-    .map((marker) => marker.getBoundingClientRect())
-    .filter((bounds) => bounds.height > 0 && bounds.width >= 0);
-  const caretBounds = markers[0];
-  if (!caretBounds) return null;
-  return {
-    left: caretBounds.right - hostBounds.left,
-    centerY:
-      caretBounds.top - hostBounds.top + caretBounds.height / 2,
-    height: caretBounds.height,
-  };
+    .flatMap((marker) => {
+      const bounds = marker.getBoundingClientRect();
+      if (bounds.height <= 0 && bounds.width <= 0) return [];
+      return [{
+        left: bounds.right - hostBounds.left,
+        centerY: bounds.top - hostBounds.top + bounds.height / 2,
+        height: bounds.height,
+      }];
+    })
+    .sort((first, second) => first.height - second.height);
+  const markerAnchor = markerAnchors[0] ?? null;
+  if (!markerAnchor || !modelAnchor) return markerAnchor ?? modelAnchor;
+
+  const markerMatchesLocalAtom =
+    Math.abs(markerAnchor.left - modelAnchor.left) <= 8 &&
+    Math.abs(markerAnchor.centerY - modelAnchor.centerY) <=
+      Math.max(6, Math.min(14, modelAnchor.height * 0.3));
+  return markerMatchesLocalAtom ? markerAnchor : modelAnchor;
 }
 
 function rememberRawCommandAnchor(field: MathfieldElement) {
@@ -992,7 +1002,10 @@ function commitNativeSuggestion(
       focus: true,
       scrollIntoView: false,
     });
-    if (inserted) rawCommandAnchors.delete(field);
+    if (inserted) {
+      rawCommandAnchors.delete(field);
+      dismissNativeSuggestionPopover(field);
+    }
     return inserted;
   }
 
@@ -1004,9 +1017,13 @@ function commitNativeSuggestion(
 
 function dismissNativeSuggestionPopover(field: MathfieldElement) {
   const panel = document.getElementById("mathlive-suggestion-popover");
+  const stablePanel = document.getElementById(STABLE_NATIVE_INPUT_POPOVER_ID);
+  window.clearTimeout(stableNativeInputPopoverHideTimer);
   field.popoverPolicy = "off";
   panel?.classList.remove("is-visible");
   panel?.setAttribute("aria-hidden", "true");
+  stablePanel?.classList.remove("is-visible");
+  stablePanel?.setAttribute("aria-hidden", "true");
   window.setTimeout(() => {
     if (!field.isConnected) return;
     field.popoverPolicy = "auto";
@@ -1346,14 +1363,18 @@ function FormulaField(props: FormulaFieldProps) {
     const clearPendingWrapperPlaceholderPosition = () => {
       host.style.removeProperty("--pending-wrapper-left");
       host.style.removeProperty("--pending-wrapper-top");
-      host.style.removeProperty("--pending-wrapper-width");
-      host.style.removeProperty("--pending-wrapper-height");
-      delete host.dataset.pendingWrapperAnchorY;
+    host.style.removeProperty("--pending-wrapper-width");
+    host.style.removeProperty("--pending-wrapper-height");
+    delete host.dataset.pendingWrapperAnchorY;
     };
     const measurePendingWrapperPlaceholderPosition = () => {
       if (!field.isConnected || !pendingWrapperInput) return;
       const hostBounds = host.getBoundingClientRect();
-      const anchor = pendingWrapperInput.visualCaret;
+    const anchor =
+      pendingWrapperInput.visualCaret ?? captureWrapperCaretAnchor(field);
+    if (!pendingWrapperInput.visualCaret && anchor) {
+      pendingWrapperInput.visualCaret = anchor;
+    }
       const markers = Array.from(
         field.shadowRoot?.querySelectorAll<HTMLElement>(
           ".ML__caret, .ML__text-caret, .ML__latex-caret",
@@ -1372,24 +1393,13 @@ function FormulaField(props: FormulaFieldProps) {
           (first, second) =>
             Math.abs(first.centerY - (anchor?.centerY ?? first.centerY)) -
             Math.abs(second.centerY - (anchor?.centerY ?? second.centerY)),
-        );
-      const closestMarker = markers[0] ?? null;
-      const sameStructuralBand = Boolean(
-        closestMarker &&
-          (!anchor ||
-            Math.abs(closestMarker.centerY - anchor.centerY) <=
-              Math.max(14, Math.min(24, anchor.height * 0.8))),
-      );
-      const verticalCaret =
-        !pendingWrapperInput.content && anchor
-          ? anchor
-          : sameStructuralBand
-            ? closestMarker
-            : anchor;
-      if (!verticalCaret) {
-        clearPendingWrapperPlaceholderPosition();
-        return;
-      }
+    );
+    const closestMarker = markers[0] ?? null;
+    const verticalCaret = anchor ?? closestMarker;
+    if (!verticalCaret) {
+      clearPendingWrapperPlaceholderPosition();
+      return;
+    }
 
       if (!wrapperMeasure) {
         wrapperMeasure = document.createElement("span");
@@ -1408,27 +1418,35 @@ function FormulaField(props: FormulaFieldProps) {
         renderedWidth = wrapperMeasure.getBoundingClientRect().width;
       } else {
         wrapperMeasure.replaceChildren();
-      }
-      const frameWidth = Math.max(18, Math.ceil(renderedWidth + 10));
-      const caretLeft = content
-        ? closestMarker?.left ?? anchor?.left ?? verticalCaret.left
-        : anchor?.left ?? closestMarker?.left ?? verticalCaret.left;
-      const frameCenterX = content
-        ? caretLeft - renderedWidth / 2
-        : caretLeft;
+    }
+    const frameWidth = Math.max(18, Math.ceil(renderedWidth + 10));
+    const fallbackFrameLeft = content
+      ? (closestMarker?.left ?? verticalCaret.left) - renderedWidth
+      : closestMarker?.left ?? verticalCaret.left;
+    const frameLeft = anchor?.left ?? fallbackFrameLeft;
+    const frameCenterX = frameLeft + frameWidth / 2;
+    const formulaFontSize =
+      Number.parseFloat(field.style.fontSize) || BASE_FORMULA_FONT_SIZE;
+    const minimumFrameHeight = Math.max(12, formulaFontSize * 0.52);
+    const maximumFrameHeight = Math.max(
+      minimumFrameHeight,
+      formulaFontSize * 1.08,
+    );
+    const frameHeight = Math.max(
+      minimumFrameHeight,
+      Math.min(maximumFrameHeight, verticalCaret.height + 4),
+    );
       host.style.setProperty("--pending-wrapper-left", `${frameCenterX}px`);
       host.style.setProperty(
         "--pending-wrapper-top",
         `${verticalCaret.centerY}px`,
       );
-      host.style.setProperty("--pending-wrapper-width", `${frameWidth}px`);
-      host.style.setProperty(
-        "--pending-wrapper-height",
-        `${Math.max(28, Math.min(72, verticalCaret.height + 4))}px`,
-      );
-      if (anchor) {
-        host.dataset.pendingWrapperAnchorY = String(anchor.centerY);
-      }
+    host.style.setProperty("--pending-wrapper-width", `${frameWidth}px`);
+    host.style.setProperty(
+      "--pending-wrapper-height",
+      `${frameHeight}px`,
+    );
+    host.dataset.pendingWrapperAnchorY = String(verticalCaret.centerY);
 
       wrapperPlaceholderPass += 1;
       if (
@@ -2693,73 +2711,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       return true;
     };
 
-    const applyDeferredDiscreteFormulaMutation = async (
-      lineId: string,
-      field: MathfieldElement,
-      source: FormulaEditSource,
-      mutate: () => boolean,
-    ) => {
-      historyManager.commitPendingTransaction();
-      const state = useEditorStore.getState();
-      if (!state.lines.some((line) => line.id === lineId)) return false;
-
-      const before = captureFieldSnapshot(field);
-      const beforeActiveLineId = state.activeLineId;
-      onHistoryBusyChange?.(true);
-      suppressedHistoryLineIdRef.current = lineId;
-      let changed = false;
-      let after = before;
-      try {
-        changed = mutate();
-        if (!changed) return false;
-
-        const startedAt = performance.now();
-        while (performance.now() - startedAt < 1000) {
-          await new Promise<void>((resolve) =>
-            window.setTimeout(resolve, 16),
-          );
-          normalizeCompletedDifferentialDisplay(field);
-          after = captureFieldSnapshot(field);
-          const nativeRecommendationVisible =
-            document
-              .getElementById("mathlive-suggestion-popover")
-              ?.classList.contains("is-visible") ?? false;
-          if (
-            after.latex !== before.latex &&
-            !nativeRecommendationVisible
-          ) {
-            break;
-          }
-        }
-        if (before.latex === after.latex) {
-          field.resetUndo();
-          return false;
-        }
-
-        state.replaceFormulaLine(lineId, after.latex);
-        state.setActiveLineId(lineId);
-        linesRef.current = useEditorStore.getState().lines;
-        setActiveLine(lineId);
-        field.resetUndo();
-        historyManager.push({
-          type: "replace-formula",
-          lineId,
-          beforeLatex: before.latex,
-          afterLatex: after.latex,
-          beforeSelection: before.selection,
-          afterSelection: after.selection,
-          beforeActiveLineId,
-          afterActiveLineId: lineId,
-          timestamp: Date.now(),
-          source,
-        });
-        return true;
-      } finally {
-        suppressedHistoryLineIdRef.current = null;
-        onHistoryBusyChange?.(false);
-      }
-    };
-
     const resolveTargetField = () => {
       let targetLineId = activeLineIdRef.current;
       let field = targetLineId
@@ -3171,13 +3122,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         ) {
           event.preventDefault();
           event.stopPropagation();
-          void applyDeferredDiscreteFormulaMutation(
+          // The remembered native command is inserted synchronously. Waiting
+          // for MathLive's popover mutation here used to add up to one second
+          // before the editor state and history caught up with the field.
+          const committed = applyDiscreteFormulaMutation(
             lineId,
             field,
             "candidate",
             () => commitNativeSuggestion(field, pendingNativeSuggestion),
-          ).then((committed) => {
-            if (!committed) return;
+          );
+          if (committed) {
             delete field.dataset.pendingNativeSuggestion;
             setQuery("");
             selectSuggestionIndex(0);
@@ -3185,7 +3139,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               latex: normalizeChineseLatex(field.value),
               selection: captureSelection(field),
             });
-          });
+          }
           return;
         }
         if (event.key === "Escape") {
