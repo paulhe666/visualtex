@@ -1239,6 +1239,151 @@ async function main() {
         };
       })()`, "deleting the backslash restores the empty structural placeholder");
 
+      const wrapperPlaceholderCases = [
+        {
+          name: "fraction-numerator",
+          source: String.raw`p+\frac{\placeholder{}}{d}+q`,
+          command: String.raw`\mathbf`,
+        },
+        {
+          name: "fraction-denominator",
+          source: String.raw`p+\frac{n}{\placeholder{}}+q`,
+          command: String.raw`\mathcal`,
+        },
+        {
+          name: "integral-upper-limit",
+          source: String.raw`p+\int_{l}^{\placeholder{}}f\,dx+q`,
+          command: String.raw`\mathfrak`,
+        },
+        {
+          name: "integral-lower-limit",
+          source: String.raw`p+\int_{\placeholder{}}^{u}f\,dx+q`,
+          command: String.raw`\mathbb`,
+        },
+        {
+          name: "summation-upper-limit",
+          source: String.raw`p+\sum_{i=0}^{\placeholder{}}a_{i}+q`,
+          command: String.raw`\mathbf`,
+        },
+        {
+          name: "summation-lower-limit",
+          source: String.raw`p+\sum_{\placeholder{}}^{n}a_{i}+q`,
+          command: String.raw`\mathcal`,
+        },
+      ];
+      const wrapperPlaceholderStates = [];
+      for (const testCase of wrapperPlaceholderCases) {
+        await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          field.setValue(${JSON.stringify(testCase.source)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "placeholder",
+            silenceNotifications: true,
+          });
+          field.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: "insertText",
+          }));
+          field.focus();
+          field.shadowRoot
+            ?.querySelector('[part="keyboard-sink"]')
+            ?.focus({ preventScroll: true });
+        })()`);
+        await sleep(100);
+        const caretState = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const host = field?.closest(".mathfield-host");
+          const caret = field?.shadowRoot?.querySelector(
+            ".visualtex-structural-placeholder-caret",
+          );
+          if (!field || !host || !caret) return { ready: false };
+          const hostBounds = host.getBoundingClientRect();
+          const caretBounds = caret.getBoundingClientRect();
+          host.dataset.testExpectedWrapperAnchorX = String(
+            caretBounds.left - hostBounds.left,
+          );
+          host.dataset.testExpectedWrapperAnchorY = String(
+            caretBounds.top - hostBounds.top + caretBounds.height / 2,
+          );
+          return {
+            ready: caretBounds.height > 0,
+            left: caretBounds.left - hostBounds.left,
+            centerY:
+              caretBounds.top - hostBounds.top + caretBounds.height / 2,
+            height: caretBounds.height,
+          };
+        })()`, `visible structural caret before ${testCase.name}`);
+        await typeText(testCase.command);
+        await key(" ", "Space", 32);
+        const frameState = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const host = field?.closest(".mathfield-host");
+          if (!field || !host) return { ready: false };
+          const frameCenter = Number.parseFloat(
+            host.style.getPropertyValue("--pending-wrapper-left") || "NaN",
+          );
+          const frameTop = Number.parseFloat(
+            host.style.getPropertyValue("--pending-wrapper-top") || "NaN",
+          );
+          const frameWidth = Number.parseFloat(
+            host.style.getPropertyValue("--pending-wrapper-width") || "NaN",
+          );
+          const frameHeight = Number.parseFloat(
+            host.style.getPropertyValue("--pending-wrapper-height") || "NaN",
+          );
+          const frameLeft = frameCenter - frameWidth / 2;
+          const expectedLeft = Number.parseFloat(
+            host.dataset.testExpectedWrapperAnchorX || "NaN",
+          );
+          const expectedTop = Number.parseFloat(
+            host.dataset.testExpectedWrapperAnchorY || "NaN",
+          );
+          const formulaFontSize =
+            Number.parseFloat(field.style.fontSize) || 54;
+          const minimumFrameHeight = Math.max(
+            12,
+            formulaFontSize * 0.52,
+          );
+          const maximumFrameHeight = Math.max(
+            minimumFrameHeight,
+            formulaFontSize * 1.08,
+          );
+          const expectedHeight = Math.max(
+            minimumFrameHeight,
+            Math.min(
+              maximumFrameHeight,
+              ${caretState.height} + 4,
+            ),
+          );
+          return {
+            ready:
+              field.dataset.pendingWrapperCommand ===
+                ${JSON.stringify(testCase.command)} &&
+              host.classList.contains("has-pending-wrapper-placeholder") &&
+              Math.abs(frameLeft - expectedLeft) <= 2.5 &&
+              Math.abs(frameTop - expectedTop) <= 2.5 &&
+              Math.abs(frameHeight - expectedHeight) <= 0.5,
+            value: field.value,
+            frameLeft,
+            frameTop,
+            frameWidth,
+            frameHeight,
+            expectedLeft,
+            expectedTop,
+            expectedHeight,
+          };
+        })()`, `wrapper frame at structural caret: ${testCase.name}`);
+        wrapperPlaceholderStates.push({
+          name: testCase.name,
+          caretState,
+          frameState,
+        });
+        await key("Enter", "Enter", 13);
+      }
+
       const heights = Object.fromEntries(
         styleStates.map((state) => [
           state.name,
@@ -1263,6 +1408,7 @@ async function main() {
             visibleBlinkState,
             typedState,
             restoredState,
+            wrapperPlaceholderStates,
             heights,
           },
           null,
@@ -2044,6 +2190,38 @@ async function main() {
           const hostBounds = host.getBoundingClientRect();
           const info = field.getElementInfo(field.position);
           const bounds = info?.bounds;
+          const caretMarkers = [
+            ...(field.shadowRoot?.querySelectorAll(
+              ".visualtex-structural-placeholder-caret, .ML__caret, .ML__text-caret, .ML__latex-caret",
+            ) ?? []),
+          ]
+            .map((marker) => {
+              const markerBounds = marker.getBoundingClientRect();
+              const style = getComputedStyle(marker);
+              return {
+                classes: marker.className,
+                left: markerBounds.left - hostBounds.left,
+                right: markerBounds.right - hostBounds.left,
+                centerY:
+                  markerBounds.top -
+                  hostBounds.top +
+                  markerBounds.height / 2,
+                width: markerBounds.width,
+                height: markerBounds.height,
+                visible:
+                  style.display !== "none" &&
+                  style.visibility !== "hidden" &&
+                  Number.parseFloat(style.opacity || "1") > 0 &&
+                  markerBounds.height > 0,
+              };
+            })
+            .filter((marker) => marker.visible)
+            .sort(
+              (first, second) =>
+                first.width - second.width ||
+                first.height - second.height,
+            );
+          const caretMarker = caretMarkers[0];
           if (!bounds || bounds.height <= 0) {
             return {
               ready: false,
@@ -2052,18 +2230,23 @@ async function main() {
               latex: info?.latex ?? "",
             };
           }
-          const expectedLeft = bounds.right - hostBounds.left;
+          const expectedLeft =
+            caretMarker?.left ?? bounds.right - hostBounds.left;
           const expectedTop =
+            caretMarker?.centerY ??
             bounds.top - hostBounds.top + bounds.height / 2;
+          const expectedHeight = caretMarker?.height ?? bounds.height;
           host.dataset.testExpectedWrapperAnchorX = String(expectedLeft);
           host.dataset.testExpectedWrapperAnchorY = String(expectedTop);
-          host.dataset.testExpectedWrapperAnchorHeight = String(bounds.height);
+          host.dataset.testExpectedWrapperAnchorHeight =
+            String(expectedHeight);
           return {
             ready: true,
             name: ${JSON.stringify(name)},
             expectedLeft,
             expectedTop,
-            expectedHeight: bounds.height,
+            expectedHeight,
+            caretMarkers,
             modelLatex: info?.latex ?? "",
             modelDepth: info?.depth ?? -1,
             value: field.value,
@@ -2160,10 +2343,10 @@ async function main() {
             expected,
             normalizedValue,
             normalizedExpected,
-            position: field.position,
-            lastOffset: field.lastOffset,
-            pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
-            frameVisible: host.classList.contains("has-pending-wrapper-placeholder"),
+          position: field.position,
+          lastOffset: field.lastOffset,
+          pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
+          frameVisible: host.classList.contains("has-pending-wrapper-placeholder"),
           placeholderLeft,
           placeholderTop,
           placeholderWidth,
@@ -2183,6 +2366,16 @@ async function main() {
           };
         })()`, `nested wrapper state: ${name}`);
       };
+
+      const expectedNestedWrapperSource = (
+        testCase,
+        content,
+        trailingContent = "",
+      ) =>
+        testCase.source.replace(
+          "z",
+          `z${testCase.command}{${content}}${trailingContent}`,
+        );
 
       const autoExitNestedStates = [];
       if (scenario !== "wrapper-continuous") {
@@ -2205,10 +2398,7 @@ async function main() {
             phase: "auto-exit",
             ...(await waitForNestedWrapperState({
               ...testCase,
-              expectedSource: testCase.source.replace(
-                "z",
-                `z${testCase.command}{A}B`,
-              ),
+            expectedSource: expectedNestedWrapperSource(testCase, "A", "B"),
               pending: false,
             })),
           });
@@ -2236,10 +2426,7 @@ async function main() {
           phase: "continuous",
           ...(await waitForNestedWrapperState({
             ...testCase,
-            expectedSource: testCase.source.replace(
-              "z",
-              `z${testCase.command}{AB}`,
-            ),
+            expectedSource: expectedNestedWrapperSource(testCase, "AB"),
             pending: true,
           })),
         });
@@ -2248,10 +2435,7 @@ async function main() {
           phase: "continuous-backspace",
           ...(await waitForNestedWrapperState({
             ...testCase,
-            expectedSource: testCase.source.replace(
-              "z",
-              `z${testCase.command}{A}`,
-            ),
+            expectedSource: expectedNestedWrapperSource(testCase, "A"),
             pending: true,
           })),
         });
@@ -2260,10 +2444,7 @@ async function main() {
           phase: "continuous-restored",
           ...(await waitForNestedWrapperState({
             ...testCase,
-            expectedSource: testCase.source.replace(
-              "z",
-              `z${testCase.command}{AB}`,
-            ),
+            expectedSource: expectedNestedWrapperSource(testCase, "AB"),
             pending: true,
           })),
         });
@@ -2273,10 +2454,7 @@ async function main() {
             phase: "confirmed",
             ...(await waitForNestedWrapperState({
               ...testCase,
-              expectedSource: testCase.source.replace(
-                "z",
-                `z${testCase.command}{AB}C`,
-              ),
+            expectedSource: expectedNestedWrapperSource(testCase, "AB", "C"),
               pending: false,
             })),
           });

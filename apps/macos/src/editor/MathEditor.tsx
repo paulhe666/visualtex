@@ -197,27 +197,54 @@ function captureWrapperCaretAnchor(
   const modelAnchor = modelAnchors[0] ?? null;
   const markerAnchors = Array.from(
     field.shadowRoot?.querySelectorAll<HTMLElement>(
-      ".ML__caret, .ML__text-caret, .ML__latex-caret",
+      ".visualtex-structural-placeholder-caret, .ML__caret, .ML__text-caret, .ML__latex-caret",
     ) ?? [],
   )
     .flatMap((marker) => {
       const bounds = marker.getBoundingClientRect();
-      if (bounds.height <= 0 && bounds.width <= 0) return [];
+      const style = getComputedStyle(marker);
+      const overlapsHost =
+        bounds.right >= hostBounds.left &&
+        bounds.left <= hostBounds.right &&
+        bounds.bottom >= hostBounds.top &&
+        bounds.top <= hostBounds.bottom;
+      if (
+        bounds.height <= 0 ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        !overlapsHost
+      ) {
+        return [];
+      }
       return [{
-        left: bounds.right - hostBounds.left,
+        left: bounds.left - hostBounds.left,
         centerY: bounds.top - hostBounds.top + bounds.height / 2,
         height: bounds.height,
+        width: bounds.width,
+        priority: marker.classList.contains(
+          "visualtex-structural-placeholder-caret",
+        )
+          ? 0
+          : marker.classList.contains("ML__caret")
+            ? 1
+            : 2,
       }];
     })
-    .sort((first, second) => first.height - second.height);
+    .sort(
+      (first, second) =>
+        first.priority - second.priority ||
+        first.width - second.width ||
+        first.height - second.height,
+    );
   const markerAnchor = markerAnchors[0] ?? null;
-  if (!markerAnchor || !modelAnchor) return markerAnchor ?? modelAnchor;
-
-  const markerMatchesLocalAtom =
-    Math.abs(markerAnchor.left - modelAnchor.left) <= 8 &&
-    Math.abs(markerAnchor.centerY - modelAnchor.centerY) <=
-      Math.max(6, Math.min(14, modelAnchor.height * 0.3));
-  return markerMatchesLocalAtom ? markerAnchor : modelAnchor;
+  if (markerAnchor) {
+    return {
+      left: markerAnchor.left,
+      centerY: markerAnchor.centerY,
+      height: markerAnchor.height,
+    };
+  }
+  return modelAnchor;
 }
 
 function rememberRawCommandAnchor(field: MathfieldElement) {
@@ -1375,10 +1402,10 @@ function FormulaField(props: FormulaFieldProps) {
     if (!pendingWrapperInput.visualCaret && anchor) {
       pendingWrapperInput.visualCaret = anchor;
     }
-      const markers = Array.from(
-        field.shadowRoot?.querySelectorAll<HTMLElement>(
-          ".ML__caret, .ML__text-caret, .ML__latex-caret",
-        ) ?? [],
+    const markers = Array.from(
+      field.shadowRoot?.querySelectorAll<HTMLElement>(
+        ".visualtex-structural-placeholder-caret, .ML__caret, .ML__text-caret, .ML__latex-caret",
+      ) ?? [],
       )
         .map((marker) => {
           const bounds = marker.getBoundingClientRect();
