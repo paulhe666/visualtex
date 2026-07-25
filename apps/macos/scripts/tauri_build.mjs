@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 function run(command, args, env = process.env) {
   const isWindowsCmd =
@@ -27,6 +28,19 @@ if (process.platform === "darwin") {
   // Tauri may reuse generated resource and bundle directories between builds.
   // Remove them after preparing the verified source bundle so stale interrupted
   // OCR archive temporaries can never survive into a new app or DMG.
+  const macosBundleDirectory = "src-tauri/target/release/bundle/macos";
+  try {
+    for (const entry of readdirSync(macosBundleDirectory)) {
+      if (entry.endsWith(".dmg")) {
+        rmSync(join(macosBundleDirectory, entry), { force: true });
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+
   for (const generatedPath of [
     "src-tauri/target/release/ocr/offline/macos-arm64",
     "src-tauri/target/release/office/macos-offline",

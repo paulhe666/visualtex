@@ -3,7 +3,13 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
-import { Check, Code2, Copy, RotateCcw } from "lucide-react";
+import {
+  Check,
+  Code2,
+  Copy,
+  PanelBottomClose,
+  RotateCcw,
+} from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCodeFormat } from "../types/formula";
 
@@ -11,6 +17,7 @@ interface Props {
   latex: string;
   theme: "light" | "dark";
   format: LatexCodeFormat;
+  onCollapse: () => void;
   onApply: (latex: string, sourceFormat: LatexCodeFormat) => void;
   onCopy: () => void;
 }
@@ -19,6 +26,7 @@ export function LatexSourceEditor({
   latex,
   theme,
   format,
+  onCollapse,
   onApply,
   onCopy,
 }: Props) {
@@ -185,6 +193,15 @@ export function LatexSourceEditor({
             title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
           >
             <Copy size={14} />
+          </button>
+          <button
+            type="button"
+            className="text-button source-collapse-button"
+            onClick={onCollapse}
+            aria-label={isEn ? "Hide LaTeX source" : "收起 LaTeX 源码"}
+            title={isEn ? "Hide LaTeX source" : "收起 LaTeX 源码"}
+          >
+            <PanelBottomClose size={14} />
           </button>
         </div>
       </div>

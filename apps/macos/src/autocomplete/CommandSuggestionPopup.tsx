@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { CornerDownLeft, Pin } from "lucide-react";
 import type { LatexCommand } from "../types/command";
 import { MathPreview } from "../components/MathPreview";
@@ -87,7 +88,7 @@ export function CommandSuggestionPopup({
 
   if (!suggestions.length) return null;
 
-  return (
+  return createPortal(
     <div
       className="suggestion-popup"
       style={{ left: position.left, top: position.top }}
@@ -120,6 +121,7 @@ export function CommandSuggestionPopup({
           ? "Click to select · Double-click to insert"
           : "单击选择 · 双击插入"}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

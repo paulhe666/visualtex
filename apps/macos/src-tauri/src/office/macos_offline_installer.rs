@@ -68,10 +68,10 @@ pub struct MacOfflineOfficeInstallStatus {
     tutorial_path: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 struct PluginHealthFile {
-    loaded: bool,
+    loaded: Option<bool>,
     plugin_version: Option<String>,
     host: Option<String>,
     timestamp: Option<String>,
@@ -122,6 +122,47 @@ fn application_paths(home: &Path, app_name: &str) -> [PathBuf; 2] {
     ]
 }
 
+fn application_bundle_identifier(app_name: &str) -> Option<&'static str> {
+    match app_name {
+        WORD_APP_NAME => Some("com.microsoft.Word"),
+        POWERPOINT_APP_NAME => Some("com.microsoft.Powerpoint"),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn application_installed(app_name: &str) -> bool {
+    let standard_location_found = user_home()
+        .map(|home| {
+            application_paths(&home, app_name)
+                .into_iter()
+                .any(|path| path.is_dir())
+        })
+        .unwrap_or(false);
+    if standard_location_found {
+        return true;
+    }
+
+    let Some(bundle_identifier) = application_bundle_identifier(app_name) else {
+        return false;
+    };
+    let query = format!("kMDItemCFBundleIdentifier == '{bundle_identifier}'");
+    Command::new("/usr/bin/mdfind")
+        .arg(query)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .is_some_and(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(Path::new)
+                .any(Path::is_dir)
+        })
+}
+
+#[cfg(not(target_os = "macos"))]
 fn application_installed(app_name: &str) -> bool {
     user_home()
         .map(|home| {
@@ -310,6 +351,11 @@ fn push_existing_directory(paths: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+fn canonical_word_startup_path(home: &Path) -> PathBuf {
+    home.join(OFFICE_GROUP_CONTAINER)
+        .join("User Content.localized/Startup.localized/Word")
+}
+
 fn known_word_startup_paths(home: &Path) -> Vec<PathBuf> {
     let office_group = home.join(OFFICE_GROUP_CONTAINER);
     let mut paths = Vec::new();
@@ -372,6 +418,18 @@ pub(crate) fn discover_word_startup_paths() -> Result<Vec<PathBuf>, String> {
     }
     paths.sort();
     paths.dedup();
+    Ok(paths)
+}
+
+fn word_startup_install_paths() -> Result<Vec<PathBuf>, String> {
+    let mut paths = discover_word_startup_paths()?;
+    if paths.is_empty() {
+        // Some Office releases do not create the Startup directory until a
+        // template has been installed. Use Microsoft's stable group-container
+        // location as a safe fallback instead of requiring Word to be opened
+        // once before installation.
+        paths.push(canonical_word_startup_path(&user_home()?));
+    }
     Ok(paths)
 }
 
@@ -918,7 +976,14 @@ fn health_is_current(host: &str, health: &PluginHealthFile) -> bool {
     let has_timestamp = health.timestamp.as_deref().is_some_and(|value| {
         !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
     });
-    health.loaded && host_matches && version_matches && has_timestamp
+    health.loaded.unwrap_or(false) && host_matches && version_matches && has_timestamp
+}
+
+fn parse_health(bytes: &[u8]) -> Option<PluginHealthFile> {
+    // Health files are written by VBA and may gain diagnostic fields in newer
+    // add-ins. Ignore unknown fields and treat truncated legacy files as stale
+    // status instead of turning a working Office integration into an error.
+    serde_json::from_slice(bytes).ok()
 }
 
 fn read_health(host: &str) -> Result<PluginHealthStatus, String> {
@@ -934,8 +999,13 @@ fn read_health(host: &str) -> Result<PluginHealthStatus, String> {
         }
         Err(error) => return Err(format!("Unable to read {}: {error}", path.display())),
     };
-    let health: PluginHealthFile = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{} contains invalid JSON: {error}", path.display()))?;
+    let Some(health) = parse_health(&bytes) else {
+        return Ok(PluginHealthStatus {
+            reported: false,
+            loaded: false,
+            plugin_version: None,
+        });
+    };
     let loaded = health_is_current(host, &health);
     Ok(PluginHealthStatus {
         reported: true,
@@ -1083,13 +1153,7 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
     ensure_office_hosts_stopped()?;
     backup_compiled_artifacts_to_scratch(&word_source, &powerpoint_source)?;
 
-    let word_startup_paths = discover_word_startup_paths()?;
-    if word_startup_paths.is_empty() {
-        return Err(
-            "Microsoft Word Startup directory was not found. Start Word once, quit it, and run Repair."
-                .to_string(),
-        );
-    }
+    let word_startup_paths = word_startup_install_paths()?;
     let word_destinations = word_startup_paths
         .iter()
         .map(|startup| startup.join(WORD_ADDIN_NAME))
@@ -1309,7 +1373,7 @@ mod tests {
     #[test]
     fn health_requires_exact_host_current_version_and_timestamp() {
         let current = PluginHealthFile {
-            loaded: true,
+            loaded: Some(true),
             plugin_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             host: Some("word".to_string()),
             timestamp: Some("2026-07-15T12:34:56".to_string()),
@@ -1334,13 +1398,44 @@ mod tests {
     }
 
     #[test]
-    fn application_detection_checks_system_and_user_application_directories() {
+    fn health_parser_accepts_new_fields_and_ignores_truncated_legacy_status() {
+        let current = format!(
+            r#"{{"loaded":true,"pluginVersion":"{}","host":"word","timestamp":"2026-07-25T11:30:00","sourceRevision":"future-r1","diagnostics":{{"mode":"native"}}}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        let parsed = parse_health(current.as_bytes())
+            .expect("health with forward-compatible fields should parse");
+        assert!(health_is_current("word", &parsed));
+        assert!(parse_health(br#"{"loaded":true"#).is_none());
+    }
+
+    #[test]
+    fn canonical_word_startup_path_is_stable_across_office_versions() {
+        let path = canonical_word_startup_path(Path::new("/Users/tester"));
+        assert_eq!(
+            path,
+            PathBuf::from(
+                "/Users/tester/Library/Group Containers/UBF8T346G9.Office/User Content.localized/Startup.localized/Word"
+            )
+        );
+    }
+
+    #[test]
+    fn application_detection_checks_system_user_and_bundle_locations() {
         let home = Path::new("/Users/tester");
         let paths = application_paths(home, WORD_APP_NAME);
         assert_eq!(paths[0], PathBuf::from("/Applications/Microsoft Word.app"));
         assert_eq!(
             paths[1],
             PathBuf::from("/Users/tester/Applications/Microsoft Word.app")
+        );
+        assert_eq!(
+            application_bundle_identifier(WORD_APP_NAME),
+            Some("com.microsoft.Word")
+        );
+        assert_eq!(
+            application_bundle_identifier(POWERPOINT_APP_NAME),
+            Some("com.microsoft.Powerpoint")
         );
     }
 

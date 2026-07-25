@@ -39,6 +39,7 @@ import {
 import { FormulaToolbar } from "./toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
@@ -142,6 +143,7 @@ function App() {
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
   const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
@@ -965,7 +967,7 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || macOfficeFirstRunOpen || onboardingOpen || updateOpen) {
+      if (settingsOpen || formulaHotkeyManagerOpen || ocrOpen || historyOpen || macOfficeFirstRunOpen || onboardingOpen || updateOpen) {
         return;
       }
 
@@ -1014,7 +1016,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, macOfficeFirstRunOpen, onboardingOpen, updateOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, ocrOpen, historyOpen, macOfficeFirstRunOpen, onboardingOpen, updateOpen]);
 
   return (
     <div className="app-shell">
@@ -1444,6 +1446,14 @@ function App() {
           setSettingsOpen(false);
           void runUpdateCheck(true);
         }}
+        onOpenFormulaHotkeys={() => {
+          setSettingsOpen(false);
+          setFormulaHotkeyManagerOpen(true);
+        }}
+      />
+      <FormulaHotkeyManagerDialog
+        open={formulaHotkeyManagerOpen}
+        onClose={() => setFormulaHotkeyManagerOpen(false)}
       />
       <HistoryPanel
         open={historyOpen}

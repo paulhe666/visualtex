@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   BrainCircuit,
+  Keyboard,
   Languages,
   Moon,
   RefreshCw,
@@ -16,9 +17,15 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCheckForUpdates: () => void;
+  onOpenFormulaHotkeys: () => void;
 }
 
-export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
+export function SettingsDialog({
+  open,
+  onClose,
+  onCheckForUpdates,
+  onOpenFormulaHotkeys,
+}: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
@@ -163,6 +170,28 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates }: Props) {
             >
               <RotateCcw size={15} />
               {isEn ? "Reset recommendation history" : "重置推荐记录"}
+            </button>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Keyboard size={18} />
+              <div>
+                <h3>{isEn ? "Formula hotkeys" : "公式快捷键"}</h3>
+                <p>
+                  {isEn
+                    ? "Review the hotkeys assigned from formula tools and tiles."
+                    : "查看和管理通过公式工具与磁贴设置的快捷键。"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="secondary-button settings-hotkey-button"
+              onClick={onOpenFormulaHotkeys}
+            >
+              <Keyboard size={15} />
+              {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
             </button>
           </div>
 

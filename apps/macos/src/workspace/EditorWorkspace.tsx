@@ -3,7 +3,6 @@ import {
   Braces,
   Code2,
   Minus,
-  PanelBottomClose,
   PanelBottomOpen,
   Plus,
   ScanLine,
@@ -137,7 +136,6 @@ export function EditorWorkspace({
         {sidebarOpen && (
           <FormulaToolbar
             onInsert={(command) => editorRef.current?.insertCommand(command)}
-            onClose={() => onSidebarOpenChange(false)}
           />
         )}
 
@@ -228,78 +226,65 @@ export function EditorWorkspace({
             </div>
           </header>
 
-          <div className="editor-pane-scroll">
-            <MathEditor
-              ref={editorRef}
-              lines={lines}
-              activeLineId={activeLineId}
-              zoom={zoom}
-              onPasteImage={showOcrActions ? onPasteImage : undefined}
-              onHistoryBusyChange={onHistoryBusyChange}
-              overlay={ocrOverlay}
-            />
-
-            <div className="source-toggle-row">
-              <button
-                type="button"
-                className="source-toggle"
-                onClick={() => setSourceOpen(!sourceOpen)}
-                aria-label={
-                  sourceOpen
-                    ? isEn
-                      ? "Hide LaTeX source"
-                      : "收起 LaTeX 源码"
-                    : isEn
-                      ? "Show LaTeX source"
-                      : "展开 LaTeX 源码"
-                }
-                title={
-                  sourceOpen
-                    ? isEn
-                      ? "Hide LaTeX source"
-                      : "收起 LaTeX 源码"
-                    : isEn
-                      ? "Show LaTeX source"
-                      : "展开 LaTeX 源码"
-                }
-              >
-                <Code2 size={15} />
-                {sourceOpen ? (
-                  <PanelBottomClose size={15} />
-                ) : (
-                  <PanelBottomOpen size={15} />
-                )}
-              </button>
+          <div className={`editor-pane-body${sourceOpen ? " has-source" : ""}`}>
+            <div className="editor-pane-scroll">
+              <MathEditor
+                ref={editorRef}
+                lines={lines}
+                activeLineId={activeLineId}
+                zoom={zoom}
+                onPasteImage={showOcrActions ? onPasteImage : undefined}
+                onHistoryBusyChange={onHistoryBusyChange}
+                overlay={ocrOverlay}
+              />
             </div>
 
-            {sourceOpen && (
-              <LatexSourceEditor
-                latex={sourceLatex}
-                theme={theme}
-                format={latexCodeFormat}
-                onApply={(source, sourceFormat) => {
-                  const values = parseLatexSource(source, sourceFormat).map(
-                    normalizeChineseLatex,
-                  );
-                  const nextLines = reconcileFormulaLines(values, lines);
-                  const nextActiveLineId = nextLines.some(
-                    (line) => line.id === activeLineId,
-                  )
-                    ? activeLineId
-                    : nextLines[0]?.id ?? null;
-                  onReplaceDocument(
-                    {
-                      title,
-                      lines: nextLines,
-                      activeLineId: nextActiveLineId,
-                      selectionByLineId:
-                        editorRef.current?.getSelectionMap() ?? {},
-                    },
-                    "source-apply",
-                  );
-                }}
-                onCopy={() => void onCopy()}
-              />
+            {sourceOpen ? (
+              <div className="source-pane-slot">
+                <LatexSourceEditor
+                  latex={sourceLatex}
+                  theme={theme}
+                  format={latexCodeFormat}
+                  onCollapse={() => setSourceOpen(false)}
+                  onApply={(source, sourceFormat) => {
+                    const values = parseLatexSource(source, sourceFormat).map(
+                      normalizeChineseLatex,
+                    );
+                    const nextLines = reconcileFormulaLines(values, lines);
+                    const nextActiveLineId = nextLines.some(
+                      (line) => line.id === activeLineId,
+                    )
+                      ? activeLineId
+                      : nextLines[0]?.id ?? null;
+                    onReplaceDocument(
+                      {
+                        title,
+                        lines: nextLines,
+                        activeLineId: nextActiveLineId,
+                        selectionByLineId:
+                          editorRef.current?.getSelectionMap() ?? {},
+                      },
+                      "source-apply",
+                    );
+                  }}
+                  onCopy={() => void onCopy()}
+                />
+              </div>
+            ) : (
+              <div className="source-toggle-row">
+                <span className="source-toggle-label" aria-hidden="true">
+                  <Code2 size={15} />
+                </span>
+                <button
+                  type="button"
+                  className="source-toggle"
+                  onClick={() => setSourceOpen(true)}
+                  aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                  title={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                >
+                  <PanelBottomOpen size={15} />
+                </button>
+              </div>
             )}
           </div>
         </section>

@@ -153,10 +153,52 @@ async function main() {
       await sleep(180);
     };
 
+    const typeRawCommand = async (command) => {
+      await typeCharacter("\\", "Backslash", 220);
+      for (const character of command) {
+        const upper = character.toUpperCase();
+        await typeCharacter(character, `Key${upper}`, upper.charCodeAt(0));
+      }
+      await typeCharacter(" ", "Space", 32);
+    };
+
+    const pressEnter = async () => {
+      const common = {
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      };
+      await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+      await sleep(180);
+    };
+
+    const pressArrow = async (key) => {
+      const keyCode = key === "ArrowUp" ? 38 : 40;
+      const common = {
+        key,
+        code: key,
+        windowsVirtualKeyCode: keyCode,
+        nativeVirtualKeyCode: keyCode,
+      };
+      await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+      await sleep(180);
+    };
+
     const configure = async (overrides = {}) => {
       await evaluate(`(() => {
         localStorage.setItem("visualtex.onboarding.v3.completed", "true");
         localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+        localStorage.setItem(
+          "visualtex.onboarding.macos.desktop.v1.2.0.completed",
+          "true",
+        );
+        localStorage.setItem(
+          "visualtex.office.macos.native-first-run.v1.2.0.completed",
+          "true",
+        );
         const key = "visualtex-editor";
         const persisted = JSON.parse(localStorage.getItem(key) || "{}");
         persisted.state = {
@@ -165,6 +207,9 @@ async function main() {
             autoExitSuperscript: true,
             autoExitSubscript: true,
             autoExitAccent: true,
+            autoExitWrapperCommand: true,
+            showStructuredCommandSuggestions: true,
+            showOtherCommandSuggestions: false,
             ...${JSON.stringify(overrides)},
           },
         };
@@ -220,7 +265,7 @@ async function main() {
           ".ML__placeholder-selected, .ML__caret, .ML__selected"
         ) || []);
         const marker = markers.find((candidate) =>
-          candidate.closest(".ML__msubsup, .ML__op-group")
+          candidate.closest(".ML__msubsup, .ML__op-group, .ML__mfrac")
         );
         const script = marker?.closest(".ML__msubsup, .ML__op-group");
         const markerBox = (marker?.parentElement || marker)?.getBoundingClientRect();
@@ -229,7 +274,59 @@ async function main() {
           value: field.value,
           position: field.position,
           lastOffset: field.lastOffset,
+          pendingWrapperCommand: field.dataset.pendingWrapperCommand || "",
+          pendingWrapperLength: field.closest(".mathfield-host")?.dataset.pendingWrapperLength || "",
+          hasPendingWrapperFrame: field.closest(".mathfield-host")?.classList.contains(
+            "has-pending-wrapper-placeholder",
+          ) || false,
+          structuralPlaceholderCount: field.shadowRoot?.querySelectorAll(
+            ".visualtex-structural-placeholder-caret, .ML__placeholder-selected",
+          ).length || 0,
+          placeholderNodes: Array.from(field.shadowRoot?.querySelectorAll("*") || [])
+            .filter((node) => {
+              const text = (node.textContent || "").trim();
+              return (
+                node.classList.contains("ML__placeholder") ||
+                node.classList.contains("visualtex-structural-placeholder") ||
+                text === (field.placeholderSymbol || "▢")
+              );
+          })
+          .map((node) => {
+            const style = getComputedStyle(node);
+            const pseudoStyle = getComputedStyle(node, "::before");
+            const visualBackground =
+              pseudoStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+                ? pseudoStyle.backgroundColor
+                : style.backgroundColor;
+            const visualWidth =
+              pseudoStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+                ? pseudoStyle.width
+                : style.width;
+            return {
+                tag: node.tagName,
+                className: node.className,
+                text: (node.textContent || "").trim(),
+                parentClass: node.parentElement?.className || "",
+                grandParentClass: node.parentElement?.parentElement?.className || "",
+              color: style.color,
+              background: style.backgroundColor,
+              visualBackground,
+              visualWidth,
+                border: style.border,
+                width: style.width,
+                height: style.height,
+              };
+            }),
           inScript: Boolean(marker && script),
+          inOperatorLimit: Boolean(marker?.closest(".ML__op-group")),
+          inFraction: Boolean(marker?.closest(".ML__mfrac")),
+          scriptRegion:
+            markerBox && scriptBox
+              ? markerBox.top + markerBox.height / 2 <
+                scriptBox.top + scriptBox.height / 2
+                ? "upper"
+                : "lower"
+              : null,
           inAccent: markers.some((candidate) => candidate.closest(".ML__accent-body")),
           markerClass: marker?.className || "",
           markerParentClass: marker?.parentElement?.className || "",
@@ -253,6 +350,185 @@ async function main() {
     assert.equal(subscript.value, "x_{b}");
     assert.equal(subscript.position, subscript.lastOffset);
     assert.equal(subscript.inScript, false);
+
+    const operatorLimitCases = [
+      ["integral lower limit", "\\int_{\\placeholder{}}^{1} f"],
+      ["integral upper limit", "\\int_{0}^{\\placeholder{}} f"],
+      ["sum lower limit", "\\sum_{\\placeholder{}}^{n} a"],
+      ["sum upper limit", "\\sum_{i=1}^{\\placeholder{}} a"],
+      ["product lower limit", "\\prod_{\\placeholder{}}^{n} a"],
+      ["product upper limit", "\\prod_{i=1}^{\\placeholder{}} a"],
+      ["limit condition", "\\lim_{x\\to\\placeholder{}} f"],
+    ];
+    for (const [label, latex] of operatorLimitCases) {
+      await preparePlaceholder(latex);
+      await typeCharacter("a", "KeyA", 65);
+      await typeCharacter("b", "KeyB", 66);
+      const operatorLimit = await readState();
+      assert.match(
+        operatorLimit.value,
+        /ab/,
+        `${label} lost consecutive input: ${JSON.stringify(operatorLimit)}`,
+      );
+      assert.equal(
+        operatorLimit.inOperatorLimit,
+        true,
+        `${label} incorrectly auto-exited: ${JSON.stringify(operatorLimit)}`,
+      );
+      assert.notEqual(
+        operatorLimit.position,
+        operatorLimit.lastOffset,
+        `${label} moved to the end of the formula`,
+      );
+    }
+
+    await preparePlaceholder("\\int_{\\placeholder{}}^{n} f");
+    await typeCharacter("i", "KeyI", 73);
+    await pressArrow("ArrowUp");
+    const operatorUpperNavigation = await readState();
+    assert.equal(
+      operatorUpperNavigation.inOperatorLimit,
+      true,
+      JSON.stringify(operatorUpperNavigation),
+    );
+    assert.equal(operatorUpperNavigation.scriptRegion, "upper");
+    await pressArrow("ArrowDown");
+    const operatorLowerNavigation = await readState();
+    assert.equal(
+      operatorLowerNavigation.inOperatorLimit,
+      true,
+      JSON.stringify(operatorLowerNavigation),
+    );
+    assert.equal(operatorLowerNavigation.scriptRegion, "lower");
+
+    await preparePlaceholder("\\frac{x^{\\placeholder{}}+y}{z}+q");
+    await typeCharacter("a", "KeyA", 65);
+    await typeCharacter("b", "KeyB", 66);
+    const fractionScript = await readState();
+    assert.match(fractionScript.value, /x\^\{a\}b/);
+    assert.equal(fractionScript.inFraction, true, JSON.stringify(fractionScript));
+    assert.equal(fractionScript.inScript, false, JSON.stringify(fractionScript));
+    assert.notEqual(fractionScript.position, fractionScript.lastOffset);
+
+    await preparePlaceholder("\\frac{n}{\\placeholder{}}+q");
+    await pressArrow("ArrowUp");
+    const fractionNumeratorNavigation = await readState();
+    assert.equal(
+      fractionNumeratorNavigation.inFraction,
+      true,
+      JSON.stringify(fractionNumeratorNavigation),
+    );
+    await pressArrow("ArrowDown");
+    const fractionDenominatorNavigation = await readState();
+    assert.equal(
+      fractionDenominatorNavigation.inFraction,
+      true,
+      JSON.stringify(fractionDenominatorNavigation),
+    );
+
+    const rawStructuralCommandCases = [
+      ["sqrt", /^\\sqrt\{ab\}$/],
+      ["frac", /^\\frac\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["dfrac", /^\\dfrac\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["tfrac", /^\\tfrac\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["binom", /^\\binom\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["overset", /^\\overset\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["underset", /^\\underset\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      [
+        "overunderset",
+        /^\\overset\{ab\}\{\\underset\{(?:\\placeholder\{\})?\}\{(?:\\placeholder\{\})?\}\}$/,
+      ],
+      ["stackrel", /^\\stackrel\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["stackbin", /^\\stackbin\{ab\}\{(?:\\placeholder\{\})?\}$/],
+      ["overarc", /^\\overarc\{ab\}$/],
+      ["overbrace", /^\\overbrace\{ab\}$/],
+      ["overgroup", /^\\overgroup\{ab\}$/],
+      ["overparen", /^\\overparen\{ab\}$/],
+      ["overleftharpoon", /^\\overleftharpoon\{ab\}$/],
+      ["overrightharpoon", /^\\overrightharpoon\{ab\}$/],
+      ["overlinesegment", /^\\overlinesegment\{ab\}$/],
+      ["underarc", /^\\underarc\{ab\}$/],
+      ["underline", /^\\underline\{ab\}$/],
+      ["underbrace", /^\\underbrace\{ab\}$/],
+      ["undergroup", /^\\undergroup\{ab\}$/],
+      ["underparen", /^\\underparen\{ab\}$/],
+      ["underleftarrow", /^\\underleftarrow\{ab\}$/],
+      ["underrightarrow", /^\\underrightarrow\{ab\}$/],
+      ["underleftrightarrow", /^\\underleftrightarrow\{ab\}$/],
+      ["underlinesegment", /^\\underlinesegment\{ab\}$/],
+    ];
+    for (const [command, expectedValue] of rawStructuralCommandCases) {
+      await prepareEmptyField();
+      await typeRawCommand(command);
+      const pendingStructure = await readState();
+      assert.notEqual(
+        pendingStructure.position,
+        pendingStructure.lastOffset,
+        `Native \\${command} confirmation did not select its first argument: ${JSON.stringify(
+          pendingStructure,
+        )}`,
+      );
+      await typeCharacter("a", "KeyA", 65);
+      await typeCharacter("b", "KeyB", 66);
+      const typedStructure = await readState();
+      assert.match(
+        typedStructure.value,
+        expectedValue,
+        `Typed content escaped \\${command}'s structure: ${JSON.stringify(
+          typedStructure,
+        )}`,
+      );
+      assert.match(
+        typedStructure.value,
+        /ab/,
+        `\\${command} did not keep typed content inside any argument`,
+      );
+      assert.notEqual(
+        typedStructure.position,
+        typedStructure.lastOffset,
+        `\\${command} unexpectedly jumped out of its argument`,
+      );
+    }
+
+    const rawAccentAuditCommands = [
+      "acute",
+      "grave",
+      "dot",
+      "ddot",
+      "dddot",
+      "ddddot",
+      "tilde",
+      "bar",
+      "breve",
+      "check",
+      "hat",
+      "vec",
+      "widehat",
+      "widetilde",
+      "overline",
+      "overrightarrow",
+      "overleftarrow",
+      "overleftrightarrow",
+      "mathring",
+    ];
+    for (const command of rawAccentAuditCommands) {
+      await prepareEmptyField();
+      await typeRawCommand(command);
+      await typeCharacter("a", "KeyA", 65);
+      const typedAccentCommand = await readState();
+      assert.match(
+        typedAccentCommand.value,
+        /\{a\}/,
+        `\\${command} left its argument empty: ${JSON.stringify(
+          typedAccentCommand,
+        )}`,
+      );
+      assert.doesNotMatch(
+        typedAccentCommand.value,
+        /\{\}a/,
+        `\\${command} placed input outside an empty argument`,
+      );
+    }
 
     await preparePlaceholder("\\hat{\\placeholder{}}+z");
     await typeCharacter("c", "KeyC", 67);
@@ -285,6 +561,88 @@ async function main() {
     await typeCharacter("n", "KeyN", 78);
     const composedAccent = await readState();
     assert.equal(composedAccent.value, "\\vec{m}n+z");
+
+    await configure({ autoExitAccent: false });
+    await preparePlaceholder("\\dot{\\placeholder{}}+z");
+    await typeCharacter("c", "KeyC", 67);
+    await typeCharacter("d", "KeyD", 68);
+    const disabledAccentPlaceholder = await readState();
+    assert.equal(disabledAccentPlaceholder.value, "\\dot{cd}+z");
+    assert.notEqual(
+      disabledAccentPlaceholder.position,
+      disabledAccentPlaceholder.lastOffset,
+      JSON.stringify(disabledAccentPlaceholder),
+    );
+
+    await configure({
+      autoExitAccent: true,
+      autoExitWrapperCommand: false,
+    });
+    await prepareEmptyField();
+    await typeRawCommand("dot");
+    const pendingDot = await readState();
+    const dotPlaceholder = pendingDot.placeholderNodes.find((node) =>
+      node.className.includes("visualtex-structural-placeholder"),
+    );
+    assert.ok(dotPlaceholder, JSON.stringify(pendingDot));
+    assert.equal(dotPlaceholder.visualBackground, "rgb(207, 232, 247)");
+    assert.equal(dotPlaceholder.color, "rgba(0, 0, 0, 0)");
+    assert.ok(
+      Number.parseFloat(dotPlaceholder.visualWidth) <= 24,
+      JSON.stringify(dotPlaceholder),
+    );
+    assert.match(pendingDot.value, /^\\dot\{(?:\\placeholder\{\})?\}$/);
+    assert.equal(pendingDot.pendingWrapperCommand, "");
+    assert.equal(pendingDot.hasPendingWrapperFrame, false);
+    assert.notEqual(
+      pendingDot.position,
+      pendingDot.lastOffset,
+      JSON.stringify(pendingDot),
+    );
+    await typeCharacter("a", "KeyA", 65);
+    await typeCharacter("b", "KeyB", 66);
+    const enabledRawAccent = await readState();
+    assert.equal(enabledRawAccent.value, "\\dot{a}b");
+    assert.equal(enabledRawAccent.pendingWrapperCommand, "");
+    assert.equal(enabledRawAccent.hasPendingWrapperFrame, false);
+
+    await configure({
+      autoExitAccent: false,
+      autoExitWrapperCommand: true,
+    });
+    await prepareEmptyField();
+    await typeCharacter("t", "KeyT", 84);
+    await typeRawCommand("ddot");
+    const pendingDdot = await readState();
+    const ddotPlaceholder = pendingDdot.placeholderNodes.find((node) =>
+      node.className.includes("visualtex-structural-placeholder"),
+    );
+    assert.ok(ddotPlaceholder, JSON.stringify(pendingDdot));
+    assert.equal(ddotPlaceholder.visualBackground, "rgb(207, 232, 247)");
+    assert.equal(ddotPlaceholder.color, "rgba(0, 0, 0, 0)");
+    assert.ok(
+      Number.parseFloat(ddotPlaceholder.visualWidth) <= 24,
+      JSON.stringify(ddotPlaceholder),
+    );
+    assert.match(pendingDdot.value, /^t\\ddot\{(?:\\placeholder\{\})?\}$/);
+    assert.equal(pendingDdot.pendingWrapperCommand, "");
+    assert.equal(pendingDdot.hasPendingWrapperFrame, false);
+    assert.notEqual(
+      pendingDdot.position,
+      pendingDdot.lastOffset,
+      JSON.stringify(pendingDdot),
+    );
+    await typeCharacter("a", "KeyA", 65);
+    await typeCharacter("b", "KeyB", 66);
+    const disabledRawAccent = await readState();
+    assert.equal(disabledRawAccent.value, "t\\ddot{ab}");
+    assert.equal(disabledRawAccent.pendingWrapperCommand, "");
+    assert.equal(disabledRawAccent.hasPendingWrapperFrame, false);
+    assert.notEqual(
+      disabledRawAccent.position,
+      disabledRawAccent.lastOffset,
+      JSON.stringify(disabledRawAccent),
+    );
 
     await configure({ autoExitSuperscript: false, autoExitSubscript: false });
     await reload();
@@ -358,6 +716,125 @@ async function main() {
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
     assert.equal(menu.optionCount, 6);
+    await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+
+    const loadSingleFormulaLine = async (latex) => {
+      await evaluate(`(() => {
+        const key = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(key) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          lines: [{ id: "enter-split-line", latex: ${JSON.stringify(latex)} }],
+          activeLineId: "enter-split-line",
+          sourceOpen: false,
+        };
+        localStorage.setItem(key, JSON.stringify(persisted));
+      })()`);
+      await reload();
+    };
+
+    const pressEnterAtPrefix = async (prefix, selectionEndPrefix = null) =>
+      evaluate(`new Promise((resolve) => {
+        const field = document.querySelector("math-field");
+        const compact = (value) => value.replace(/\\s+/g, "");
+        const findOffset = (target) => {
+          for (let offset = 0; offset <= field.lastOffset; offset += 1) {
+            if (compact(field.getValue(0, offset, "latex")) === compact(target)) {
+              return offset;
+            }
+          }
+          return -1;
+        };
+        const start = findOffset(${JSON.stringify(prefix)});
+        const end = ${selectionEndPrefix === null
+          ? "start"
+          : `findOffset(${JSON.stringify(selectionEndPrefix)})`};
+        if (start < 0 || end < 0) {
+          resolve({ error: "offset-not-found", start, end, value: field.value });
+          return;
+        }
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        field.selection = {
+          ranges: [[Math.min(start, end), Math.max(start, end)]],
+          direction: start === end ? "none" : "forward",
+        };
+        if (start === end) field.position = end;
+        field.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        }));
+        setTimeout(() => {
+          const fields = Array.from(document.querySelectorAll("math-field"));
+          resolve({
+            values: fields.map((item) => item.value),
+            positions: fields.map((item) => item.position),
+            activeIndex: fields.findIndex((item) => item === document.activeElement),
+          });
+        }, 150);
+      })`);
+
+    await loadSingleFormulaLine("abcdef");
+    const middleSplit = await pressEnterAtPrefix("abc");
+    assert.deepEqual(middleSplit.values, ["abc", "def"]);
+    assert.equal(middleSplit.positions[1], 0);
+
+    const undoSplit = await evaluate(`new Promise((resolve) => {
+      const field = document.querySelectorAll("math-field")[1];
+      field.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z",
+        code: "KeyZ",
+        metaKey: true,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      }));
+      setTimeout(() => {
+        const fields = Array.from(document.querySelectorAll("math-field"));
+        resolve({
+          values: fields.map((item) => item.value),
+          prefix: fields[0]?.getValue(0, fields[0].position, "latex") ?? "",
+        });
+      }, 150);
+    })`);
+    assert.deepEqual(undoSplit.values, ["abcdef"]);
+    assert.equal(undoSplit.prefix, "abc");
+
+    const redoSplit = await evaluate(`new Promise((resolve) => {
+      const field = document.querySelector("math-field");
+      field.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z",
+        code: "KeyZ",
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      }));
+      setTimeout(() => resolve(
+        Array.from(document.querySelectorAll("math-field")).map((item) => item.value)
+      ), 150);
+    })`);
+    assert.deepEqual(redoSplit, ["abc", "def"]);
+
+    await loadSingleFormulaLine("abcdef");
+    const startSplit = await pressEnterAtPrefix("");
+    assert.deepEqual(startSplit.values, ["", "abcdef"]);
+
+    await loadSingleFormulaLine("abcdef");
+    const endSplit = await pressEnterAtPrefix("abcdef");
+    assert.deepEqual(endSplit.values, ["abcdef", ""]);
+
+    await loadSingleFormulaLine("abcdef");
+    const selectedEnter = await pressEnterAtPrefix("a", "abc");
+    assert.deepEqual(selectedEnter.values, ["abcdef", ""]);
+
+    await loadSingleFormulaLine("x\\frac{a}{b}");
+    const structuredBoundarySplit = await pressEnterAtPrefix("x");
+    assert.deepEqual(structuredBoundarySplit.values, ["x", "\\frac{a}{b}"]);
 
     console.log("Input behavior regression passed");
   } finally {

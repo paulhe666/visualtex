@@ -18,6 +18,7 @@ export type FormulaEditSource =
   | "keyboard"
   | "toolbar"
   | "candidate"
+  | "shortcut"
   | "ocr"
   | "paste";
 
@@ -95,6 +96,7 @@ export type ReplaceDocumentSource =
   | "history-restore"
   | "new-document"
   | "open-document"
+  | "split-line"
   | "ocr";
 
 export interface ReplaceDocumentEntry {
