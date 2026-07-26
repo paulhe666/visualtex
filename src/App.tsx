@@ -13,37 +13,34 @@ import {
   LoaderCircle,
   Menu,
   Minus,
-  Moon,
   PanelBottomClose,
   PanelBottomOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Redo2,
   RefreshCw,
   Save,
   ScanLine,
   Settings2,
-  Sun,
   Undo2,
   X,
 } from "lucide-react";
 import {
-  MathEditor,
   type MathEditorHandle,
   type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
-import { FormulaToolbar } from "./toolbar/FormulaToolbar";
-import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { OcrDialog } from "./components/OcrDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
+import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
-  MAX_EDITOR_ZOOM,
-  MIN_EDITOR_ZOOM,
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
@@ -70,6 +67,9 @@ import {
   parseLatexSource,
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
+import { buildMarkdownDocument } from "./export/markdownExport";
+import { latexToSvg, svgToPng } from "./export/runtime";
+import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import {
   OCR_MODELS,
@@ -100,6 +100,7 @@ interface InlineOcrState {
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
+const LEGACY_ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
 const LANDING_PREVIEW_LINES = [
   String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
   String.raw`R_{\mu\nu}-\frac{1}{2}Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\frac{8\pi G}{c^4}T_{\mu\nu}`,
@@ -116,11 +117,15 @@ function App() {
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
   const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [onboardingOpen, setOnboardingOpen] = useState(
-    () => !landingPreview && window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true",
+    () =>
+      !landingPreview &&
+      window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true" &&
+      window.localStorage.getItem(LEGACY_ONBOARDING_STORAGE_KEY) !== "true",
   );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -132,6 +137,7 @@ function App() {
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
     return OCR_MODELS.some((item) => item.id === stored)
@@ -149,8 +155,9 @@ function App() {
   const setTitle = useEditorStore((state) => state.setTitle);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
+  const formulaAlignment = useEditorStore((state) => state.formulaAlignment);
+  const editorLayout = useEditorStore((state) => state.editorLayout);
   const theme = useEditorStore((state) => state.theme);
-  const setTheme = useEditorStore((state) => state.setTheme);
   const language = useEditorStore((state) => state.language);
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
@@ -211,11 +218,12 @@ function App() {
         latex,
       })),
       activeLineId: "landing-preview-1",
+      formulaAlignment,
       selectionByLineId: {},
     });
     setZoom(0.8);
     setSourceOpen(false);
-  }, [landingPreview, replaceDocumentState, setSourceOpen, setZoom]);
+  }, [formulaAlignment, landingPreview, replaceDocumentState, setSourceOpen, setZoom]);
 
   const captureDocumentSnapshot = (): DocumentSnapshot =>
     getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
@@ -585,22 +593,76 @@ function App() {
     }
   };
 
+  const getSafeDocumentTitle = () =>
+    title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
+    (isEn ? "Untitled Formula" : "未命名公式");
+
+  const downloadBlobFile = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDocument = async (format: WorkspaceExportFormat) => {
+    if (exportBusy) return;
+    if (!latex.trim()) {
+      setToast(isEn ? "Cannot export an empty formula" : "空公式无法导出");
+      return;
+    }
+
+    setExportBusy(true);
+    try {
+      const safeTitle = getSafeDocumentTitle();
+      if (format === "markdown") {
+        const markdown = buildMarkdownDocument(
+          title,
+          lines.map((line) => line.latex),
+        );
+        downloadBlobFile(
+          new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
+          `${safeTitle}.md`,
+        );
+      } else {
+        const svg = latexToSvg(latex);
+        if (format === "svg") {
+          downloadBlobFile(
+            new Blob([svg.svg], { type: "image/svg+xml;charset=utf-8" }),
+            `${safeTitle}.svg`,
+          );
+        } else {
+          const png = await svgToPng(svg, {
+            scale: 2,
+            background: "transparent",
+          });
+          downloadBlobFile(png.blob, `${safeTitle}.png`);
+        }
+      }
+      setToast(
+        isEn
+          ? `${format.toUpperCase()} exported`
+          : `${format.toUpperCase()} 已导出`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setToast(isEn ? `Export failed: ${message}` : `导出失败：${message}`);
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
     void historyManager.createCheckpoint("save-document");
     const document = toDocument();
-    const blob = new Blob([JSON.stringify(document, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = window.document.createElement("a");
-    const safeTitle =
-      title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
-      (isEn ? "Untitled Formula" : "未命名公式");
-    link.href = url;
-    link.download = safeTitle + ".visualtex.json";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlobFile(
+      new Blob([JSON.stringify(document, null, 2)], {
+        type: "application/json;charset=utf-8",
+      }),
+      `${getSafeDocumentTitle()}.visualtex.json`,
+    );
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
@@ -665,6 +727,7 @@ function App() {
 
   const finishOnboarding = useCallback(() => {
     window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
+    window.localStorage.setItem(LEGACY_ONBOARDING_STORAGE_KEY, "true");
     setOnboardingOpen(false);
     window.requestAnimationFrame(() => editorRef.current?.focus());
   }, []);
@@ -741,7 +804,14 @@ function App() {
         return;
       }
 
-      if (settingsOpen || ocrOpen || historyOpen || onboardingOpen || updateOpen) {
+      if (
+        settingsOpen ||
+        formulaHotkeyManagerOpen ||
+        ocrOpen ||
+        historyOpen ||
+        onboardingOpen ||
+        updateOpen
+      ) {
         return;
       }
 
@@ -790,7 +860,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
 
   return (
     <div className="app-shell">
@@ -822,11 +892,33 @@ function App() {
           <button
             type="button"
             className={"icon-button sidebar-toggle " + (sidebarOpen ? "is-active" : "")}
-            aria-label={sidebarOpen ? (isEn ? "Hide formula tools" : "隐藏公式工具") : (isEn ? "Show formula tools" : "显示公式工具")}
+            aria-label={
+              editorLayout === "classic"
+                ? sidebarOpen
+                  ? isEn
+                    ? "Hide formula tiles"
+                    : "隐藏公式磁贴"
+                  : isEn
+                    ? "Show formula tiles"
+                    : "显示公式磁贴"
+                : sidebarOpen
+                  ? isEn
+                    ? "Hide formula tools"
+                    : "隐藏公式工具"
+                  : isEn
+                    ? "Show formula tools"
+                    : "显示公式工具"
+            }
             aria-pressed={sidebarOpen}
             onClick={() => setSidebarOpen((open) => !open)}
           >
-            {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+            {editorLayout === "classic" ? (
+              sidebarOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />
+            ) : sidebarOpen ? (
+              <PanelLeftClose size={17} />
+            ) : (
+              <PanelLeftOpen size={17} />
+            )}
           </button>
           <div className="brand-mark" aria-hidden="true">
             <VisualTeXLogo className="visualtex-brand-logo" />
@@ -1010,23 +1102,6 @@ function App() {
               <ScanLine size={17} />
             </button>
           )}
-          <button
-            type="button"
-            className="icon-button theme-toggle"
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-            aria-label={theme === "light" ? (isEn ? "Switch to dark mode" : "切换深色模式") : (isEn ? "Switch to light mode" : "切换浅色模式")}
-            title={
-              isEn
-                ? theme === "light"
-                  ? "Switch to dark mode"
-                  : "Switch to light mode"
-                : theme === "light"
-                  ? "切换深色模式"
-                  : "切换浅色模式"
-            }
-          >
-            {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
-          </button>
           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
             <Settings2 size={17} />
           </button>
@@ -1136,213 +1211,86 @@ function App() {
         />
       )}
 
-      <main
-        className={`workspace${sidebarOpen ? " has-sidebar" : ""}`}
-      >
-        {sidebarOpen && (
-          <FormulaToolbar
-            onInsert={(command) => editorRef.current?.insertCommand(command)}
-            onClose={() => setSidebarOpen(false)}
-          />
-        )}
-
-        <section className="formula-workspace editor-pane">
-          <header className="workspace-heading pane-header editor-pane-header">
-            <div className="pane-title-group">
-              <span className="pane-icon" aria-hidden="true">
-                <Braces size={16} />
-              </span>
-              <div className="pane-title-copy">
-                <h1>{isEn ? "Visual editor" : "可视化编辑"}</h1>
-              </div>
-            </div>
-            <div className="canvas-tool-group">
-              {desktopRuntime && (
-                <label
-                  className="canvas-ocr-model"
-                  title={
-                    isEn
-                      ? "Model used when an image is pasted into a formula field"
-                      : "在公式输入框中粘贴图片时使用的 OCR 模型"
-                  }
-                >
-                  <ScanLine size={14} />
-                  <select
-                    value={ocrModel}
-                    disabled={inlineOcrIsBusy}
-                    onChange={(event) =>
-                      handleOcrModelChange(event.target.value as OcrModelName)
-                    }
-                    aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
-                  >
-                    {OCR_MODELS.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {isEn ? item.labelEn : item.labelZh}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <div className="canvas-controls">
-                <button
-                  type="button"
-                  className="icon-button compact"
-                  onClick={() => setZoom(zoom - 0.1)}
-                  disabled={zoom <= MIN_EDITOR_ZOOM + 0.0001}
-                  aria-label={isEn ? "Zoom out" : "缩小公式"}
-                  title={
-                    zoom <= MIN_EDITOR_ZOOM + 0.0001
-                      ? isEn
-                        ? "Minimum zoom: 20%"
-                        : "最小缩放：20%"
-                      : undefined
-                  }
-                >
-                  <Minus size={15} />
-                </button>
-                <span aria-live="polite" aria-atomic="true">{Math.round(zoom * 100)}%</span>
-                <button
-                  type="button"
-                  className="icon-button compact"
-                  onClick={() => setZoom(zoom + 0.1)}
-                  disabled={zoom >= MAX_EDITOR_ZOOM - 0.0001}
-                  aria-label={isEn ? "Zoom in" : "放大公式"}
-                  title={
-                    zoom >= MAX_EDITOR_ZOOM - 0.0001
-                      ? isEn
-                        ? "Maximum zoom: 160%"
-                        : "最大缩放：160%"
-                      : undefined
-                  }
-                >
-                  <Plus size={15} />
-                </button>
-              </div>
-            </div>
-          </header>
-
-          <div className="editor-pane-scroll">
-            <MathEditor
-            ref={editorRef}
-            lines={lines}
-            activeLineId={activeLineId}
-            zoom={zoom}
-            onPasteImage={desktopRuntime ? handleEditorImagePaste : undefined}
-            onHistoryBusyChange={setEditorHistoryBusy}
-            overlay={
-              desktopRuntime && inlineOcr ? (
-                <div
-                  className={`inline-ocr-progress is-${inlineOcr.status}`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span className="inline-ocr-progress-icon">
-                    {inlineOcr.status === "running" ||
-                    inlineOcr.status === "cancelling" ? (
-                      <LoaderCircle size={17} className="is-spinning" />
-                    ) : inlineOcr.status === "success" ? (
-                      <Check size={17} />
-                    ) : inlineOcr.status === "error" ? (
-                      <AlertCircle size={17} />
-                    ) : (
-                      <X size={17} />
-                    )}
-                  </span>
-                  <div>
-                    <strong>{inlineOcr.message}</strong>
-                    <span>
-                      {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
-                      {" · "}
-                      {inlineOcr.seconds}
-                      {isEn ? "s" : " 秒"}
-                    </span>
-                  </div>
-                  {inlineOcrIsBusy ? (
-                    <button
-                      type="button"
-                      className="inline-ocr-cancel"
-                      onClick={cancelInlineOcr}
-                      disabled={inlineOcr.status === "cancelling"}
-                    >
-                      <X size={13} />
-                      {isEn ? "Cancel" : "取消"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="inline-ocr-dismiss"
-                      onClick={() => setInlineOcr(null)}
-                      aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-              ) : null
-            }
-            />
-
-            <div className="source-toggle-row">
-            <button
-              type="button"
-              className="source-toggle"
-              onClick={() => setSourceOpen(!sourceOpen)}
-              aria-label={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
-              title={sourceOpen ? (isEn ? "Hide LaTeX source" : "收起 LaTeX 源码") : (isEn ? "Show LaTeX source" : "展开 LaTeX 源码")}
+      <EditorWorkspace
+        mode="desktop"
+        showFileActions
+        showUpdateActions={desktopRuntime}
+        showOfficeActions={false}
+        showOcrActions={desktopRuntime}
+        onExport={exportDocument}
+        onChooseExportDirectory={async () => {
+          setToast(
+            isEn
+              ? "Browser exports use the system Downloads folder"
+              : "浏览器模式下将导出到系统下载目录",
+          );
+        }}
+        exportBusy={exportBusy}
+        editorRef={editorRef}
+        sidebarOpen={sidebarOpen}
+        onSidebarOpenChange={setSidebarOpen}
+        onHistoryBusyChange={setEditorHistoryBusy}
+        onPasteImage={desktopRuntime ? handleEditorImagePaste : undefined}
+        onCopy={handleCopy}
+        onReplaceDocument={replaceDocumentWithHistory}
+        ocrModel={ocrModel}
+        ocrModels={OCR_MODELS}
+        ocrBusy={inlineOcrIsBusy}
+        onOcrModelChange={(model) =>
+          handleOcrModelChange(model as OcrModelName)
+        }
+        ocrOverlay={
+          desktopRuntime && inlineOcr ? (
+            <div
+              className={`inline-ocr-progress is-${inlineOcr.status}`}
+              role="status"
+              aria-live="polite"
             >
-              <Code2 size={15} />
-              {sourceOpen ? <PanelBottomClose size={15} /> : <PanelBottomOpen size={15} />}
-            </button>
+              <span className="inline-ocr-progress-icon">
+                {inlineOcr.status === "running" ||
+                inlineOcr.status === "cancelling" ? (
+                  <LoaderCircle size={17} className="is-spinning" />
+                ) : inlineOcr.status === "success" ? (
+                  <Check size={17} />
+                ) : inlineOcr.status === "error" ? (
+                  <AlertCircle size={17} />
+                ) : (
+                  <X size={17} />
+                )}
+              </span>
+              <div>
+                <strong>{inlineOcr.message}</strong>
+                <span>
+                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {" · "}
+                  {inlineOcr.seconds}
+                  {isEn ? "s" : " 秒"}
+                </span>
+              </div>
+              {inlineOcrIsBusy ? (
+                <button
+                  type="button"
+                  className="inline-ocr-cancel"
+                  onClick={cancelInlineOcr}
+                  disabled={inlineOcr.status === "cancelling"}
+                >
+                  <X size={13} />
+                  {isEn ? "Cancel" : "取消"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-ocr-dismiss"
+                  onClick={() => setInlineOcr(null)}
+                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
-
-            {sourceOpen && (
-              <LatexSourceEditor
-                latex={sourceLatex}
-                theme={theme}
-                format={latexCodeFormat}
-                onApply={(source, sourceFormat) => {
-                  const values = parseLatexSource(source, sourceFormat).map(
-                    normalizeChineseLatex,
-                  );
-                  const nextLines = reconcileFormulaLines(values, lines);
-                  const nextActiveLineId = nextLines.some(
-                    (line) => line.id === activeLineId,
-                  )
-                    ? activeLineId
-                    : nextLines[0]?.id ?? null;
-                  replaceDocumentWithHistory(
-                    {
-                      title,
-                      lines: nextLines,
-                      activeLineId: nextActiveLineId,
-                      selectionByLineId:
-                        editorRef.current?.getSelectionMap() ?? {},
-                    },
-                    "source-apply",
-                  );
-                }}
-                onCopy={() => void handleCopy()}
-              />
-            )}
-          </div>
-        </section>
-
-      </main>
-
-      <footer className="status-bar">
-        <div>
-          <span className="status-live-dot" />
-          {isEn ? "Ready" : "就绪"}
-        </div>
-        <div>
-          <span>
-            {lines.length} {isEn ? "lines" : "行"}
-          </span>
-          <span>
-            · {latex.length} {isEn ? "characters" : "字符"}
-          </span>
-        </div>
-      </footer>
+          ) : null
+        }
+      />
 
       <SettingsDialog
         open={settingsOpen}
@@ -1352,6 +1300,14 @@ function App() {
           setSettingsOpen(false);
           void runUpdateCheck(true);
         }}
+        onOpenFormulaHotkeys={() => {
+          setSettingsOpen(false);
+          setFormulaHotkeyManagerOpen(true);
+        }}
+      />
+      <FormulaHotkeyManagerDialog
+        open={formulaHotkeyManagerOpen}
+        onClose={() => setFormulaHotkeyManagerOpen(false)}
       />
       <HistoryPanel
         open={historyOpen}
@@ -1372,6 +1328,7 @@ function App() {
               title,
               lines: nextLines,
               activeLineId: nextActiveLineId,
+              formulaAlignment,
               selectionByLineId:
                 editorRef.current?.getSelectionMap() ?? {},
             },

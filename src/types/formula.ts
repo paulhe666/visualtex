@@ -16,6 +16,9 @@ export type LatexCodeFormat =
   | "equation-split"
   | "equation-star-split";
 
+export type FormulaAlignment = "left" | "center" | "right";
+export type Theme = "light" | "beige" | "dark" | "purple" | "green";
+
 export interface FormulaLine {
   id: string;
   latex: string;
@@ -25,7 +28,7 @@ export interface FormulaBlock {
   id: string;
   latex: string;
   displayMode: "inline" | "block";
-  alignment: "left" | "center" | "right";
+  alignment: FormulaAlignment;
   fontSize: number;
   createdAt: number;
   updatedAt: number;
@@ -37,8 +40,9 @@ export interface FormulaDocument {
   formulas: FormulaBlock[];
   macros: Record<string, string>;
   settings: {
-    theme: "light" | "dark";
+    theme: Theme;
     zoom: number;
+    formulaAlignment?: FormulaAlignment;
     latexCodeFormat?: LatexCodeFormat;
   };
 }
@@ -48,3 +52,20 @@ export interface FormulaHistoryItem {
   latex: string;
   createdAt: number;
 }
+
+export interface InputBehaviorSettings {
+  autoExitSuperscript: boolean;
+  autoExitSubscript: boolean;
+  autoExitAccent: boolean;
+  autoExitWrapperCommand: boolean;
+  showStructuredCommandSuggestions: boolean;
+  showOtherCommandSuggestions: boolean;
+}
+
+export type InputBehaviorSettingKey =
+  | "autoExitSuperscript"
+  | "autoExitSubscript"
+  | "autoExitAccent"
+  | "autoExitWrapperCommand"
+  | "showStructuredCommandSuggestions"
+  | "showOtherCommandSuggestions";

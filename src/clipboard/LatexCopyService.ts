@@ -1,3 +1,4 @@
+import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import type { LatexCodeFormat } from "../types/formula";
 
 export type LatexCodeFormatGroup = "single" | "multi";
@@ -194,7 +195,9 @@ export function splitLatexLines(latex: string): string[] {
 }
 
 function filledFormulaLines(latex: string): string[] {
-  const lines = splitLatexLines(latex)
+  const lines = splitLatexLines(
+    normalizeMathLiveCanonicalUprightCommands(latex),
+  )
     .map((line) => line.trim())
     .filter(Boolean);
   return lines.length ? lines : [""];

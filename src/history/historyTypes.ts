@@ -1,4 +1,4 @@
-import type { FormulaLine } from "../types/formula";
+import type { FormulaAlignment, FormulaLine } from "../types/formula";
 
 export type EditKind =
   | "insert"
@@ -18,6 +18,7 @@ export type FormulaEditSource =
   | "keyboard"
   | "toolbar"
   | "candidate"
+  | "shortcut"
   | "ocr"
   | "paste";
 
@@ -87,6 +88,7 @@ export interface DocumentSnapshot {
   title: string;
   lines: FormulaLine[];
   activeLineId: string | null;
+  formulaAlignment: FormulaAlignment;
   selectionByLineId: Record<string, MathSelectionSnapshot>;
 }
 
@@ -95,6 +97,9 @@ export type ReplaceDocumentSource =
   | "history-restore"
   | "new-document"
   | "open-document"
+  | "split-line"
+  | "merge-line"
+  | "delete-multi-line"
   | "ocr";
 
 export interface ReplaceDocumentEntry {

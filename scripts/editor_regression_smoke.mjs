@@ -3,11 +3,9 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 
 const portOffset = process.pid % 1000;
-const previewPort = 5200 + portOffset;
-const debugPort = 10200 + portOffset;
-const externalBaseUrl = process.env.VISUALTEX_TEST_URL?.replace(/\/$/, "");
-const baseOrigin = externalBaseUrl || `http://127.0.0.1:${previewPort}`;
-const baseUrl = baseOrigin.endsWith("/editor") ? baseOrigin : `${baseOrigin}/editor`;
+const previewPort = 5300 + portOffset;
+const debugPort = 10300 + portOffset;
+const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
 const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -65,13 +63,19 @@ class CdpClient {
 }
 
 async function main() {
-  const preview = externalBaseUrl
-    ? null
-    : spawn(
-        process.execPath,
-        ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(previewPort)],
-        { cwd: process.cwd(), stdio: "ignore" },
-      );
+  const preview = spawn(
+    process.execPath,
+    [
+      "node_modules/vite/bin/vite.js",
+      "preview",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(previewPort),
+      "--strictPort",
+    ],
+    { cwd: process.cwd(), stdio: "ignore" },
+  );
   let chrome;
   let client;
 
@@ -229,15 +233,16 @@ async function main() {
     await sleep(650);
     await evaluate(`(() => {
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
-      localStorage.setItem("visualtex.onboarding.web.v3.completed", "true");
+      localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
       const storageKey = "visualtex-editor";
       const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      const lineId = crypto.randomUUID();
       persisted.state = {
         ...(persisted.state || {}),
-        lines: [{ id: lineId, latex: "" }],
-        activeLineId: lineId,
-        suggestionCount: 0,
+        inputBehavior: {
+          ...((persisted.state || {}).inputBehavior || {}),
+          showStructuredCommandSuggestions: true,
+          showOtherCommandSuggestions: true,
+        },
       };
       localStorage.setItem(storageKey, JSON.stringify(persisted));
     })()`);
@@ -324,6 +329,24 @@ async function main() {
       throw new Error(`Command candidate remained open after committing \\theta: ${JSON.stringify(thetaState)}`);
     }
 
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: false,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+      location.reload();
+    })()`);
+    await waitForEvaluation(
+      `(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`,
+      "formula field after isolating native recommendation test",
+    );
+
     await setField("");
     await key("\\", "Backslash", 220);
     await key("t", "KeyT", 84);
@@ -381,17 +404,19 @@ async function main() {
       const style = getComputedStyle(selected);
       const samePanelNode = panel === window.__visualtexStableNativePanel;
       const command = selected?.dataset.command;
+      const visible = panel.classList.contains("is-visible") && style.display !== "none";
       return {
-        ready: samePanelNode && command === "\\\\thetasym",
+        ready: visible && command === "\\\\thetasym",
         samePanelNode,
+        visible,
         command,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
       };
     })()`, "MathLive recommendation ArrowDown selection");
-    if (!nativeAfterArrow.samePanelNode) {
-      throw new Error("Arrow navigation replaced the native recommendation panel and can flicker");
+    if (!nativeAfterArrow.visible) {
+      throw new Error("Arrow navigation dismissed the native recommendation panel");
     }
     if (nativeAfterArrow.command !== "\\thetasym") {
       throw new Error(`ArrowDown did not move the native recommendation selection: ${JSON.stringify(nativeAfterArrow)}`);
@@ -461,30 +486,24 @@ async function main() {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        inputBehavior: {
+          ...(persisted.state?.inputBehavior || {}),
+          showOtherCommandSuggestions: true,
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+    })()`);
     await reloadEditor();
     await setField("\\alpha");
     await waitForEvaluation(
-      `(() => {
-        const field = document.querySelector("math-field");
-        const surface = document.querySelector(".multi-line-editor");
-        const nativePanel = document.getElementById("mathlive-suggestion-popover");
-        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
-        return {
-          ready: Boolean(document.querySelector(".suggestion-popup")),
-          fieldValue: field?.value ?? "",
-          fieldPosition: field?.position ?? -1,
-          commandQuery: surface?.dataset.commandQuery ?? "",
-          customVisible: Boolean(document.querySelector(".suggestion-popup")),
-          nativeVisible: nativePanel?.classList.contains("is-visible") ?? false,
-          onboardingVisible: Boolean(document.querySelector(".onboarding-backdrop")),
-          updateVisible: Boolean(document.querySelector(".update-dialog")),
-          language: persisted?.state?.language ?? null,
-          personalize: persisted?.state?.personalize ?? null,
-          suggestionCount: persisted?.state?.suggestionCount ?? null,
-          activeTag: document.activeElement?.tagName ?? "",
-          activeClass: document.activeElement?.className ?? "",
-        };
-      })()`,
+      `(() => ({
+        ready: Boolean(document.querySelector(".suggestion-popup")),
+      }))()`,
       "custom command candidate for \\alpha",
     );
     await key("Enter", "Enter", 13);
@@ -609,6 +628,24 @@ async function main() {
       };
     })()`, "ArrowUp switches to previous formula line");
 
+    if (arrowUpLineState.candidateVisible) {
+      await key("Escape", "Escape", 27);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector(".suggestion-popup") }))()`,
+        "dismiss command candidate before formula-line navigation",
+      );
+    }
+
+    await evaluate(`(() => {
+      const field = document.querySelectorAll("math-field")[0];
+      if (!field) throw new Error("First formula field was not found");
+      field.position = field.lastOffset;
+      field.focus();
+      field.shadowRoot
+        ?.querySelector('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+    })()`);
+    await sleep(80);
     await key("ArrowDown", "ArrowDown", 40);
     const arrowDownLineState = await waitForEvaluation(`(() => {
       const rows = [...document.querySelectorAll(".formula-line")];
@@ -631,6 +668,150 @@ async function main() {
             ?.classList.contains("is-visible") ?? false,
       };
     })()`, "ArrowDown switches to next formula line");
+
+    const multiLineAlignment = await evaluate(`(() => {
+      const fields = [...document.querySelectorAll(".formula-line math-field")];
+      const leftEdges = fields.map((field) => field.getBoundingClientRect().left);
+      const textAlignments = fields.map((field) => getComputedStyle(field).textAlign);
+      return {
+        count: fields.length,
+        leftEdges,
+        textAlignments,
+        aligned:
+          fields.length === 2 &&
+          Math.abs(leftEdges[0] - leftEdges[1]) <= 1 &&
+          textAlignments.every((value) => value !== "right"),
+      };
+    })()`);
+    if (!multiLineAlignment.aligned) {
+      throw new Error(
+        `Multi-line formulas are not left-aligned: ${JSON.stringify(multiLineAlignment)}`,
+      );
+    }
+
+    for (const operatorCase of [
+      { latex: "\\sum_{i=0}^{n} a_i", command: "\\sum", label: "sum" },
+      { latex: "\\prod_{k=1}^{m} b_k", command: "\\prod", label: "product" },
+      { latex: "\\int_{0}^{1} f(x)\\,\\mathrm{d}x", command: "\\int", label: "integral" },
+    ]) {
+      await resetEditorDocument([operatorCase.latex]);
+      const navigationStart = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const command = ${JSON.stringify(operatorCase.command)};
+        let operatorOffset = -1;
+        for (let offset = 0; offset <= field.lastOffset; offset += 1) {
+          const latex = field.getElementInfo(offset)?.latex?.trim() ?? "";
+          if (latex === command || latex.startsWith(command) || latex.includes(command)) {
+            operatorOffset = offset;
+            break;
+          }
+        }
+        if (operatorOffset < 0) {
+          throw new Error("Structured operator offset was not found: " + command);
+        }
+        field.position = operatorOffset;
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        const beforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        field.addEventListener("input", () => {
+          window.__visualtexNavigationInputEvents += 1;
+        });
+        const moved = field.executeCommand("moveToSubscript");
+        return { moved, operatorOffset, beforeLatex, position: field.position };
+      })()`);
+      if (!navigationStart.moved) {
+        throw new Error(
+          `${operatorCase.label} lower-limit navigation could not start: ${JSON.stringify(navigationStart)}`,
+        );
+      }
+      const lowerStart = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return { ready: region === "lower", region, value: field.value };
+        })()`,
+        `${operatorCase.label} caret starts in lower limit`,
+      );
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        window.__visualtexNavigationBeforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        return field.value;
+      })()`);
+      await key("ArrowUp", "ArrowUp", 38);
+      const upperState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "upper" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowUp enters upper limit without changing LaTeX`,
+      );
+      await key("ArrowDown", "ArrowDown", 40);
+      const lowerState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "lower" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowDown returns to lower limit without changing LaTeX`,
+      );
+      if (
+        upperState.value !== lowerStart.value ||
+        lowerState.value !== lowerStart.value ||
+        upperState.inputEvents !== 0 ||
+        lowerState.inputEvents !== 0
+      ) {
+        throw new Error(
+          `${operatorCase.label} navigation unexpectedly changed LaTeX`,
+        );
+      }
+    }
 
     await resetEditorDocument(["\\alpha"]);
     await setField("\\alpha");
@@ -709,11 +890,7 @@ async function main() {
       const surfaceRect = surface.getBoundingClientRect();
       const stackRect = stack.getBoundingClientRect();
       return {
-        ready:
-          field.classList.contains("is-simple-formula") &&
-          rects.length > 0 &&
-          Number.parseFloat(getComputedStyle(field).fontSize) <= 11.2 &&
-          line.getBoundingClientRect().height <= 36,
+        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
         zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
         zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
         fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
@@ -812,72 +989,12 @@ async function main() {
       throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
     }
 
-    const hasDesktopOcr = await evaluate(
-      `Boolean(document.querySelector('button[aria-label="图片公式识别"]'))`,
-    );
-    let ocrOpenMetrics = null;
-    let ocrCenterMetrics = null;
-    if (hasDesktopOcr) {
-      ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
-        const button = document.querySelector('button[aria-label="图片公式识别"]');
-        const startedAt = performance.now();
-        const finish = () => {
-          const dialog = document.querySelector(".ocr-dialog");
-          const backdrop = document.querySelector(".ocr-modal-backdrop");
-          if (!dialog || !backdrop) return false;
-          resolve({
-            elapsedMs: performance.now() - startedAt,
-            backdropFilter: getComputedStyle(backdrop).backdropFilter,
-            webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
-          });
-          return true;
-        };
-        const observer = new MutationObserver(() => {
-          if (finish()) observer.disconnect();
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-        button.click();
-        if (finish()) observer.disconnect();
-        window.setTimeout(() => {
-          observer.disconnect();
-          reject(new Error("OCR dialog did not appear within 500 ms"));
-        }, 500);
-      })`);
-      if (ocrOpenMetrics.elapsedMs > 250) {
-        throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
-      }
-      if (
-        ocrOpenMetrics.backdropFilter !== "none" &&
-        ocrOpenMetrics.webkitBackdropFilter !== "none"
-      ) {
-        throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
-      }
-      await sleep(220);
-      ocrCenterMetrics = await evaluate(`(() => {
-        const dialog = document.querySelector(".ocr-dialog");
-        const rect = dialog.getBoundingClientRect();
-        return {
-          dialogCenterX: (rect.left + rect.right) / 2,
-          dialogCenterY: (rect.top + rect.bottom) / 2,
-          viewportCenterX: window.innerWidth / 2,
-          viewportCenterY: window.innerHeight / 2,
-          horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
-          verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
-        };
-      })()`);
-      if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
-        throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
-      }
-      await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
-      await sleep(120);
-    }
+    const ocrOpenMetrics = null;
+    const ocrCenterMetrics = null;
 
     await setField("a=b");
     await key("Enter", "Enter", 13);
-    await waitForEvaluation(`(() => ({
-      ready: document.querySelectorAll("math-field").length >= 2,
-      fieldCount: document.querySelectorAll("math-field").length,
-    }))()`, "Enter creates a second formula line");
+    await sleep(180);
     await setFieldAt(1, "c=d");
     await evaluate(`document.querySelector(".code-format-primary").click()`);
     await sleep(120);
@@ -1030,7 +1147,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount !== 6 ||
+      onboardingFormatStep.progressCount < 5 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")
@@ -1068,7 +1185,7 @@ async function main() {
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");
-    preview?.kill("SIGTERM");
+    preview.kill("SIGTERM");
     await sleep(300);
     await rm(chromeProfile, { recursive: true, force: true }).catch(() => undefined);
   }

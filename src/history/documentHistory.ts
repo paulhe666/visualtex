@@ -40,6 +40,7 @@ export function getEditorDocumentSnapshot(
     title: state.title,
     lines: cloneFormulaLines(state.lines),
     activeLineId: state.activeLineId,
+    formulaAlignment: state.formulaAlignment,
     selectionByLineId: cloneSelectionMap(selectionByLineId),
   };
 }
@@ -51,6 +52,8 @@ export function documentSnapshotsEquivalent(
   return (
     left.title === right.title &&
     left.activeLineId === right.activeLineId &&
+    (left.formulaAlignment ?? "left") ===
+      (right.formulaAlignment ?? "left") &&
     left.lines.length === right.lines.length &&
     left.lines.every(
       (line, index) =>
@@ -77,6 +80,7 @@ export function createBlankDocumentSnapshot(title: string): DocumentSnapshot {
     title,
     lines: [line],
     activeLineId: line.id,
+    formulaAlignment: "left",
     selectionByLineId: {
       [line.id]: { ranges: [[0, 0]], direction: "none" },
     },

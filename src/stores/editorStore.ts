@@ -3,9 +3,13 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
+  FormulaAlignment,
   FormulaHistoryItem,
   FormulaLine,
+  InputBehaviorSettingKey,
+  InputBehaviorSettings,
   LatexCodeFormat,
+  Theme,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import {
@@ -14,15 +18,72 @@ import {
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
-import {
-  DEFAULT_SUGGESTION_COUNT,
-  normalizeSuggestionCount,
-} from "./settingNormalizers";
 
-type Theme = "light" | "dark";
 export type Language = "cn" | "en";
+export type EditorLayout = "standard" | "classic";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
+
+export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
+  autoExitSuperscript: true,
+  autoExitSubscript: true,
+  autoExitAccent: true,
+  autoExitWrapperCommand: true,
+  showStructuredCommandSuggestions: true,
+  showOtherCommandSuggestions: false,
+};
+
+function normalizeInputBehaviorSettings(
+  value: unknown,
+): InputBehaviorSettings {
+  const candidate =
+    value && typeof value === "object"
+      ? (value as Partial<InputBehaviorSettings>)
+      : {};
+  return {
+    autoExitSuperscript:
+      typeof candidate.autoExitSuperscript === "boolean"
+        ? candidate.autoExitSuperscript
+        : true,
+    autoExitSubscript:
+      typeof candidate.autoExitSubscript === "boolean"
+        ? candidate.autoExitSubscript
+        : true,
+    autoExitAccent:
+      typeof candidate.autoExitAccent === "boolean"
+        ? candidate.autoExitAccent
+        : true,
+    autoExitWrapperCommand:
+      typeof candidate.autoExitWrapperCommand === "boolean"
+        ? candidate.autoExitWrapperCommand
+        : true,
+    showStructuredCommandSuggestions:
+      typeof candidate.showStructuredCommandSuggestions === "boolean"
+        ? candidate.showStructuredCommandSuggestions
+        : true,
+    showOtherCommandSuggestions:
+      typeof candidate.showOtherCommandSuggestions === "boolean"
+        ? candidate.showOtherCommandSuggestions
+        : false,
+  };
+}
+
+function normalizeFormulaAlignment(value: unknown): FormulaAlignment {
+  return value === "center" || value === "right" ? value : "left";
+}
+
+function normalizeEditorLayout(value: unknown): EditorLayout {
+  return value === "classic" ? "classic" : "standard";
+}
+
+function normalizeTheme(value: unknown): Theme {
+  return value === "dark" ||
+    value === "beige" ||
+    value === "purple" ||
+    value === "green"
+    ? value
+    : "light";
+}
 
 function normalizeEditorZoom(value: unknown) {
   const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
@@ -73,7 +134,7 @@ export function normalizeFormulaLines(
           ),
         } satisfies FormulaLine;
       })
-      .filter((line): line is FormulaLine => line !== null);
+      .filter((line): line is NonNullable<typeof line> => line !== null);
     if (normalized.length) return normalized;
   }
 
@@ -111,12 +172,15 @@ interface EditorState {
   title: string;
   lines: FormulaLine[];
   activeLineId: string | null;
+  formulaAlignment: FormulaAlignment;
+  editorLayout: EditorLayout;
   theme: Theme;
   language: Language;
   zoom: number;
   sourceOpen: boolean;
   latexCodeFormat: LatexCodeFormat;
   autoPairDelimiters: boolean;
+  inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
@@ -125,6 +189,8 @@ interface EditorState {
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
   replaceFormulaLine: (lineId: string, latex: string) => void;
+  setFormulaAlignment: (alignment: FormulaAlignment) => void;
+  setEditorLayout: (layout: EditorLayout) => void;
   insertFormulaLine: (line: FormulaLine, index: number) => void;
   removeFormulaLine: (lineId: string) => void;
   replaceDocumentState: (snapshot: DocumentSnapshot) => void;
@@ -134,6 +200,10 @@ interface EditorState {
   setSourceOpen: (open: boolean) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
+  setInputBehavior: (
+    setting: InputBehaviorSettingKey,
+    enabled: boolean,
+  ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
@@ -154,14 +224,17 @@ export const useEditorStore = create<EditorState>()(
       title: "未命名公式",
       lines: initialLines,
       activeLineId: initialLines[0].id,
+      formulaAlignment: "left",
+      editorLayout: "standard",
       theme: "light",
       language: "cn",
       zoom: 1,
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       autoPairDelimiters: true,
+      inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
-      suggestionCount: DEFAULT_SUGGESTION_COUNT,
+      suggestionCount: 6,
       checkUpdatesOnStartup: true,
       usage: {},
       history: [],
@@ -178,6 +251,10 @@ export const useEditorStore = create<EditorState>()(
               : line,
           ),
         })),
+      setFormulaAlignment: (formulaAlignment) =>
+        set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
+      setEditorLayout: (editorLayout) =>
+        set({ editorLayout: normalizeEditorLayout(editorLayout) }),
       insertFormulaLine: (line, index) =>
         set((state) => {
           const nextLines = state.lines.filter((item) => item.id !== line.id);
@@ -207,9 +284,12 @@ export const useEditorStore = create<EditorState>()(
             title: snapshot.title,
             lines,
             activeLineId: validActiveLineId(lines, snapshot.activeLineId),
+            formulaAlignment: normalizeFormulaAlignment(
+              snapshot.formulaAlignment,
+            ),
           };
         }),
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => set({ theme: normalizeTheme(theme) }),
       setLanguage: (language) => set({ language }),
       setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
@@ -221,9 +301,16 @@ export const useEditorStore = create<EditorState>()(
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
+      setInputBehavior: (setting, enabled) =>
+        set((state) => ({
+          inputBehavior: {
+            ...state.inputBehavior,
+            [setting]: enabled,
+          },
+        })),
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
-        set({ suggestionCount: normalizeSuggestionCount(suggestionCount) }),
+        set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
       recordCommand: (commandId, prefix) =>
@@ -282,7 +369,11 @@ export const useEditorStore = create<EditorState>()(
             title: document.title,
             lines,
             activeLineId: lines[0]?.id ?? null,
-            theme: document.settings.theme,
+            formulaAlignment: normalizeFormulaAlignment(
+              document.settings.formulaAlignment ??
+                document.formulas[0]?.alignment,
+            ),
+            theme: normalizeTheme(document.settings.theme),
             zoom: normalizeEditorZoom(document.settings.zoom),
             latexCodeFormat: isLatexCodeFormat(document.settings.latexCodeFormat)
               ? document.settings.latexCodeFormat
@@ -299,7 +390,7 @@ export const useEditorStore = create<EditorState>()(
             id: line.id,
             latex: line.latex,
             displayMode: "block",
-            alignment: "center",
+            alignment: state.formulaAlignment,
             fontSize: Math.round(36 * state.zoom),
             createdAt: now,
             updatedAt: now,
@@ -308,26 +399,28 @@ export const useEditorStore = create<EditorState>()(
           settings: {
             theme: state.theme,
             zoom: state.zoom,
+            formulaAlignment: state.formulaAlignment,
             latexCodeFormat: state.latexCodeFormat,
           },
         };
       },
     }),
     {
-      name: window.location.search.includes("landing-preview")
-        ? "visualtex-editor-landing-preview"
-        : "visualtex-editor",
+      name: "visualtex-editor",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,
         activeLineId: state.activeLineId,
+        formulaAlignment: state.formulaAlignment,
+        editorLayout: state.editorLayout,
         theme: state.theme,
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
         latexCodeFormat: state.latexCodeFormat,
         autoPairDelimiters: state.autoPairDelimiters,
+        inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
@@ -340,11 +433,19 @@ export const useEditorStore = create<EditorState>()(
         };
         const { latex: legacyLatex, ...currentPersisted } = persisted;
         const lines = normalizeFormulaLines(persisted.lines, legacyLatex);
+        const legacyLineAlignment = Array.isArray(persisted.lines)
+          ? (persisted.lines[0] as { alignment?: unknown } | undefined)?.alignment
+          : undefined;
         return {
           ...currentState,
           ...currentPersisted,
           lines,
           activeLineId: validActiveLineId(lines, persisted.activeLineId),
+          formulaAlignment: normalizeFormulaAlignment(
+            persisted.formulaAlignment ?? legacyLineAlignment,
+          ),
+          editorLayout: normalizeEditorLayout(persisted.editorLayout),
+          theme: normalizeTheme(persisted.theme),
           zoom: normalizeEditorZoom(persisted.zoom),
           latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
             ? persisted.latexCodeFormat
@@ -353,11 +454,9 @@ export const useEditorStore = create<EditorState>()(
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters
               : true,
-          personalize:
-            typeof persisted.personalize === "boolean"
-              ? persisted.personalize
-              : currentState.personalize,
-          suggestionCount: normalizeSuggestionCount(persisted.suggestionCount),
+          inputBehavior: normalizeInputBehaviorSettings(
+            persisted.inputBehavior,
+          ),
         };
       },
     },

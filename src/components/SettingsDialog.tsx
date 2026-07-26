@@ -1,24 +1,30 @@
 import { useEffect, useRef } from "react";
 import {
   BrainCircuit,
+  Keyboard,
   Languages,
-  Moon,
   RefreshCw,
   RotateCcw,
   SlidersHorizontal,
-  Sun,
   X,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 
 interface Props {
   open: boolean;
+  showApplicationUpdates?: boolean;
   onClose: () => void;
   onCheckForUpdates: () => void;
-  showApplicationUpdates?: boolean;
+  onOpenFormulaHotkeys: () => void;
 }
 
-export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicationUpdates = false }: Props) {
+export function SettingsDialog({
+  open,
+  showApplicationUpdates = true,
+  onClose,
+  onCheckForUpdates,
+  onOpenFormulaHotkeys,
+}: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const theme = useEditorStore((state) => state.theme);
@@ -27,6 +33,8 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicati
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
+  const editorLayout = useEditorStore((state) => state.editorLayout);
+  const setEditorLayout = useEditorStore((state) => state.setEditorLayout);
   const autoPairDelimiters = useEditorStore(
     (state) => state.autoPairDelimiters,
   );
@@ -168,6 +176,28 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicati
 
           <div className="settings-section">
             <div className="settings-section-title">
+              <Keyboard size={18} />
+              <div>
+                <h3>{isEn ? "Formula hotkeys" : "公式快捷键"}</h3>
+                <p>
+                  {isEn
+                    ? "Review the hotkeys assigned from formula tools and tiles."
+                    : "查看和管理通过公式工具与磁贴设置的快捷键。"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="secondary-button settings-hotkey-button"
+              onClick={onOpenFormulaHotkeys}
+            >
+              <Keyboard size={15} />
+              {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
+            </button>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
               <SlidersHorizontal size={18} />
               <div>
                 <h3>{isEn ? "Appearance & editor" : "外观与编辑"}</h3>
@@ -178,23 +208,80 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicati
                 </p>
               </div>
             </div>
-            <div className="theme-segment">
-              <button
-                type="button"
-                className={theme === "light" ? "is-active" : ""}
-                aria-pressed={theme === "light"}
-                onClick={() => setTheme("light")}
+            <div className="editor-layout-setting">
+              <span>
+                <strong>{isEn ? "Editor layout" : "编辑器布局"}</strong>
+                <small>
+                  {isEn
+                    ? "Keep the current sidebar layout or use a classic bottom-tools layout."
+                    : "保留当前侧栏布局，或切换为底部工具栏与右侧磁贴的经典布局。"}
+                </small>
+              </span>
+              <div
+                className="theme-segment editor-layout-segment"
+                role="group"
+                aria-label={isEn ? "Editor layout" : "编辑器布局"}
               >
-                <Sun size={16} /> {isEn ? "Light" : "浅色"}
-              </button>
-              <button
-                type="button"
-                className={theme === "dark" ? "is-active" : ""}
-                aria-pressed={theme === "dark"}
-                onClick={() => setTheme("dark")}
+                <button
+                  type="button"
+                  className={editorLayout === "standard" ? "is-active" : ""}
+                  aria-pressed={editorLayout === "standard"}
+                  data-editor-layout-choice="standard"
+                  onClick={() => setEditorLayout("standard")}
+                >
+                  {isEn ? "Standard" : "标准布局"}
+                </button>
+                <button
+                  type="button"
+                  className={editorLayout === "classic" ? "is-active" : ""}
+                  aria-pressed={editorLayout === "classic"}
+                  data-editor-layout-choice="classic"
+                  onClick={() => setEditorLayout("classic")}
+                >
+                  {isEn ? "Classic" : "经典布局"}
+                </button>
+              </div>
+            </div>
+            <div className="theme-choice-setting">
+              <span>
+                <strong>{isEn ? "Colour theme" : "界面配色"}</strong>
+                <small>
+                  {isEn
+                    ? "Choose a complete semantic colour system for the app and formula canvas."
+                    : "选择整套界面、公式画布、Placeholder 与光标配色。"}
+                </small>
+              </span>
+              <div
+                className="theme-segment theme-choice-segment"
+                role="group"
+                aria-label={isEn ? "Colour theme" : "界面配色"}
               >
-                <Moon size={16} /> {isEn ? "Dark" : "深色"}
-              </button>
+                {(
+                  [
+                    ["light", isEn ? "Light" : "浅色"],
+                    ["beige", isEn ? "Warm beige" : "暖米色"],
+                    ["dark", isEn ? "Dark" : "深色"],
+                    ["purple", isEn ? "Deep purple" : "深紫色"],
+                    ["green", isEn ? "Deep green" : "深绿色"],
+                  ] as const
+                ).map(([themeId, label]) => (
+                  <button
+                    key={themeId}
+                    type="button"
+                    className={theme === themeId ? "is-active" : ""}
+                    aria-pressed={theme === themeId}
+                    data-theme-choice={themeId}
+                    onClick={() => setTheme(themeId)}
+                  >
+                    <span className="theme-choice-swatch" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <label className="switch-row">
               <span>
@@ -260,45 +347,47 @@ export function SettingsDialog({ open, onClose, onCheckForUpdates, showApplicati
             </div>
           </div>
 
-          {showApplicationUpdates && <div className="settings-section">
-            <div className="settings-section-title">
-              <RefreshCw size={18} />
-              <div>
-                <h3>{isEn ? "Application updates" : "应用更新"}</h3>
-                <p>
-                  {isEn
-                    ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
-                    : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
-                </p>
+          {showApplicationUpdates && (
+            <div className="settings-section">
+              <div className="settings-section-title">
+                <RefreshCw size={18} />
+                <div>
+                  <h3>{isEn ? "Application updates" : "应用更新"}</h3>
+                  <p>
+                    {isEn
+                      ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
+                      : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
+                  </p>
+                </div>
               </div>
+              <label className="switch-row">
+                <span>
+                  <strong>{isEn ? "Automatic update notifications" : "自动更新提醒"}</strong>
+                  <small>
+                    {isEn
+                      ? "When disabled, VisualTeX will never check or notify automatically. Manual checks remain available."
+                      : "关闭后将永久停止自动检查和主动弹窗，但仍可手动检查。"}
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={checkUpdatesOnStartup}
+                  onChange={(event) =>
+                    setCheckUpdatesOnStartup(event.target.checked)
+                  }
+                />
+                <span className="switch-control" />
+              </label>
+              <button
+                type="button"
+                className="secondary-button settings-update-button"
+                onClick={onCheckForUpdates}
+              >
+                <RefreshCw size={15} />
+                {isEn ? "Check now" : "立即检查"}
+              </button>
             </div>
-            <label className="switch-row">
-              <span>
-                <strong>{isEn ? "Automatic update notifications" : "自动更新提醒"}</strong>
-                <small>
-                  {isEn
-                    ? "When disabled, VisualTeX will never check or notify automatically. Manual checks remain available."
-                    : "关闭后将永久停止自动检查和主动弹窗，但仍可手动检查。"}
-                </small>
-              </span>
-              <input
-                type="checkbox"
-                checked={checkUpdatesOnStartup}
-                onChange={(event) =>
-                  setCheckUpdatesOnStartup(event.target.checked)
-                }
-              />
-              <span className="switch-control" />
-            </label>
-            <button
-              type="button"
-              className="secondary-button settings-update-button"
-              onClick={onCheckForUpdates}
-            >
-              <RefreshCw size={15} />
-              {isEn ? "Check now" : "立即检查"}
-            </button>
-          </div>}
+          )}
         </div>
 
         <footer className="dialog-footer">
