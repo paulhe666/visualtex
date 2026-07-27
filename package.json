@@ -19,6 +19,7 @@
     "test:editor-history:run": "node scripts/editor_history_regression.mjs",
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:input-behavior": "npm run build && node scripts/input_behavior_regression.mjs",
+    "test:auto-escape": "npm run build && node scripts/auto_escape_regression.mjs",
     "test:radical-render": "npm run build && node scripts/radical_render_regression.mjs",
     "test:formula-hotkeys": "npm run build && node scripts/formula_hotkey_regression.mjs",
     "test:editor-layout": "npm run build && node scripts/editor_layout_switch_regression.mjs",

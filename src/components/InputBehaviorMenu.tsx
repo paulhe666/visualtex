@@ -11,6 +11,18 @@ interface InputBehaviorOption {
   descriptionEn: string;
 }
 
+const AUTO_ESCAPE_OPTIONS: InputBehaviorOption[] = [
+  {
+    key: "autoEscapeShortcuts",
+    titleZh: "常用数学输入自动转义",
+    titleEn: "Auto-convert common math input",
+    descriptionZh:
+      "开启后 alpha、varphi、>=、pp、ss、mm、dd、eq、hat 等可直接转义；关闭后所有无反斜杠快捷转义均停用",
+    descriptionEn:
+      "When enabled, alpha, varphi, >=, pp, ss, mm, dd, eq, hat and similar input are converted directly; disabling turns off all shortcuts without a backslash",
+  },
+];
+
 const CARET_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
   {
     key: "autoExitSuperscript",
@@ -105,6 +117,36 @@ export function InputBehaviorMenu() {
           aria-label={isEn ? "Input behavior settings" : "操作逻辑设置"}
         >
           <div className="input-behavior-heading">
+            <strong>{isEn ? "Automatic conversion" : "输入自动转义"}</strong>
+            <span>
+              {isEn
+                ? "Control whether common plain-text math input is converted to LaTeX commands."
+                : "控制常见的普通字符输入是否自动转换为 LaTeX 命令。"}
+            </span>
+          </div>
+
+          <div className="input-behavior-options">
+            {AUTO_ESCAPE_OPTIONS.map((option) => (
+              <label className="input-behavior-option" key={option.key}>
+                <span>
+                  <strong>{isEn ? option.titleEn : option.titleZh}</strong>
+                  <small>
+                    {isEn ? option.descriptionEn : option.descriptionZh}
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={inputBehavior[option.key]}
+                  onChange={(event) =>
+                    setInputBehavior(option.key, event.target.checked)
+                  }
+                />
+                <span className="input-behavior-switch" aria-hidden="true" />
+              </label>
+            ))}
+          </div>
+
+          <div className="input-behavior-heading input-behavior-section-heading">
             <strong>{isEn ? "Caret auto-exit" : "光标自动跳出"}</strong>
             <span>
               {isEn

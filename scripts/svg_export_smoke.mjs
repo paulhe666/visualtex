@@ -13,6 +13,10 @@ const cases = [
   ["matrix", String.raw`\begin{pmatrix}${matrixRows}\end{pmatrix}`],
   ["chinese", String.raw`\text{测试}+\alpha`],
   ["multiline", "a=b+c\nd=e-f\ng=h"],
+  [
+    "multiline-inner-environment",
+    `${String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`}\n${String.raw`\int_0^1 x^2\,\mathrm{d}x`}\n${String.raw`\frac{p}{q}`}`,
+  ],
   ["long", Array.from({ length: 25 }, (_, index) => `x_{${index + 1}}`).join("+")],
 ];
 
@@ -48,6 +52,29 @@ for (const [name, latex] of cases) {
   );
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
+
+const verticalMatrix = latexToSvg(
+  String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`,
+);
+const verticalIntegral = latexToSvg(String.raw`\int_0^1 x^2\,\mathrm{d}x`);
+const verticalDocument = latexToSvg(
+  `${String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`}\n${String.raw`\int_0^1 x^2\,\mathrm{d}x`}`,
+);
+const siblingMatrices = latexToSvg(
+  `${String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`}\n${String.raw`\begin{pmatrix}e&f\\g&h\end{pmatrix}`}`,
+);
+assert.ok(
+  verticalDocument.height > Math.max(verticalMatrix.height, verticalIntegral.height) * 1.45,
+  "Multiple formula rows, including an inner matrix environment, must stack vertically",
+);
+assert.ok(
+  verticalDocument.width < verticalMatrix.width + verticalIntegral.width,
+  "Vertical formula export width must not equal a horizontal concatenation",
+);
+assert.ok(
+  siblingMatrices.height > verticalMatrix.height * 1.65,
+  "Two sibling matrix formula rows must remain separate vertical rows",
+);
 
 assert.throws(
   () =>

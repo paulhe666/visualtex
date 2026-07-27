@@ -1008,6 +1008,7 @@ async function main() {
           ...(persisted.state || {}),
           lines,
           activeLineId: lines[0].id,
+          editorLayout: "standard",
           sourceOpen: false,
           latexCodeFormat: "raw",
         };

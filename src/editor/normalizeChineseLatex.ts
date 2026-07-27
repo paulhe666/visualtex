@@ -10,6 +10,15 @@ const MATHLIVE_CANONICAL_UPRIGHT_COMMANDS: ReadonlyArray<
   ["imaginaryJ", "\\mathrm{j}"],
 ];
 
+export type VisualTexInlineShortcutDefinition =
+  | string
+  | { value: string; after?: string };
+
+export type VisualTexInlineShortcutDefinitions = Record<
+  string,
+  VisualTexInlineShortcutDefinition
+>;
+
 const UPRIGHT_SHORTCUT_AFTER =
   "nothing+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text";
 
@@ -36,17 +45,292 @@ const GREEK_DIFFERENTIAL_VARIABLES = {
   chi: "\\chi",
 } as const;
 
-export const visualTexUprightInlineShortcuts = Object.fromEntries([
-  ...Object.entries(GREEK_DIFFERENTIAL_VARIABLES).map(
-    ([name, variableLatex]) => [
-      `d${name}`,
+const LATIN_DIFFERENTIAL_VARIABLES = ["x", "y", "t"] as const;
+
+export const visualTexUprightInlineShortcuts: VisualTexInlineShortcutDefinitions =
+  Object.fromEntries([
+    ...LATIN_DIFFERENTIAL_VARIABLES.map((variable) => [
+      `d${variable}`,
       {
         after: UPRIGHT_SHORTCUT_AFTER,
-        value: `\\differentialD ${variableLatex}`,
+        value: `\\mathrm{d}${variable}`,
       },
-    ],
-  ),
+    ]),
+    ...Object.entries(GREEK_DIFFERENTIAL_VARIABLES).map(
+      ([name, variableLatex]) => [
+        `d${name}`,
+        {
+          after: UPRIGHT_SHORTCUT_AFTER,
+          value: `\\mathrm{d}${variableLatex}`,
+        },
+      ],
+    ),
+  ]);
+
+const GREEK_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  alpha: "\\alpha",
+  beta: "\\beta",
+  gamma: "\\gamma",
+  delta: "\\delta",
+  epsilon: "\\epsilon",
+  varepsilon: "\\varepsilon",
+  zeta: "\\zeta",
+  eta: "\\eta",
+  theta: "\\theta",
+  vartheta: "\\vartheta",
+  iota: "\\iota",
+  kappa: "\\kappa",
+  lambda: "\\lambda",
+  mu: "\\mu",
+  nu: "\\nu",
+  xi: "\\xi",
+  pi: "\\pi",
+  varpi: "\\varpi",
+  rho: "\\rho",
+  varrho: "\\varrho",
+  sigma: "\\sigma",
+  varsigma: "\\varsigma",
+  tau: "\\tau",
+  upsilon: "\\upsilon",
+  phi: "\\phi",
+  varphi: "\\varphi",
+  chi: "\\chi",
+  psi: "\\psi",
+  omega: "\\omega",
+  Gamma: "\\Gamma",
+  Delta: "\\Delta",
+  Theta: "\\Theta",
+  Lambda: "\\Lambda",
+  Xi: "\\Xi",
+  Pi: "\\Pi",
+  Sigma: "\\Sigma",
+  Upsilon: "\\Upsilon",
+  Phi: "\\Phi",
+  Psi: "\\Psi",
+  Omega: "\\Omega",
+};
+
+const BASIC_OPERATOR_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  pp: "+",
+  plus: "+",
+  add: "+",
+  ss: "-",
+  minus: "-",
+  subtract: "-",
+  mm: "\\times",
+  mul: "\\times",
+  multiply: "\\times",
+  times: "\\times",
+  dd: "\\div",
+  div: "\\div",
+  divide: "\\div",
+  eq: "=",
+  equal: "=",
+  pm: "\\pm",
+  plusminus: "\\pm",
+  mp: "\\mp",
+  minusplus: "\\mp",
+  cdot: "\\cdot",
+  ast: "\\ast",
+  star: "\\star",
+  circ: "\\circ",
+  bullet: "\\bullet",
+};
+
+const RELATION_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  ">=": "\\ge",
+  "<=": "\\le",
+  "!=": "\\ne",
+  "~=": "\\approx",
+  "~~": "\\approx",
+  "===": "\\equiv",
+  ge: "\\ge",
+  geq: "\\geq",
+  gte: "\\geq",
+  le: "\\le",
+  leq: "\\leq",
+  lte: "\\leq",
+  ne: "\\ne",
+  neq: "\\neq",
+  gt: ">",
+  lt: "<",
+  gg: "\\gg",
+  ll: "\\ll",
+  propto: "\\propto",
+  prop: "\\propto",
+  approx: "\\approx",
+  equiv: "\\equiv",
+  sim: "\\sim",
+  simeq: "\\simeq",
+  cong: "\\cong",
+  doteq: "\\doteq",
+  prec: "\\prec",
+  preceq: "\\preceq",
+  succ: "\\succ",
+  succeq: "\\succeq",
+  notin: "\\notin",
+  subset: "\\subset",
+  subseteq: "\\subseteq",
+  supset: "\\supset",
+  supseteq: "\\supseteq",
+  parallel: "\\parallel",
+  perp: "\\perp",
+  mid: "\\mid",
+  nmid: "\\nmid",
+};
+
+const ARROW_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  "->": "\\to",
+  "<-": "\\leftarrow",
+  "<->": "\\leftrightarrow",
+  "=>": "\\Rightarrow",
+  "==>": "\\Longrightarrow",
+  "<==": "\\Longleftarrow",
+  "<==>": "\\Longleftrightarrow",
+  mapsto: "\\mapsto",
+  uparrow: "\\uparrow",
+  downarrow: "\\downarrow",
+};
+
+const ACCENT_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  acute: "\\acute{#?}",
+  grave: "\\grave{#?}",
+  hat: "\\hat{#?}",
+  widehat: "\\widehat{#?}",
+  bar: "\\bar{#?}",
+  overline: "\\overline{#?}",
+  vec: "\\vec{#?}",
+  tilde: "\\tilde{#?}",
+  widetilde: "\\widetilde{#?}",
+  dot: "\\dot{#?}",
+  ddot: "\\ddot{#?}",
+  dddot: "\\dddot{#?}",
+  breve: "\\breve{#?}",
+  check: "\\check{#?}",
+  mathring: "\\mathring{#?}",
+};
+
+const COMMON_COMMAND_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+  frac: "\\frac{#?}{#?}",
+  dfrac: "\\dfrac{#?}{#?}",
+  tfrac: "\\tfrac{#?}{#?}",
+  sqrt: "\\sqrt{#?}",
+  binom: "\\binom{#?}{#?}",
+  sum: "\\sum_{#?}^{#?}",
+  prod: "\\prod_{#?}^{#?}",
+  int: "\\int_{#?}^{#?}",
+  iint: "\\iint_{#?}^{#?}",
+  iiint: "\\iiint_{#?}^{#?}",
+  oint: "\\oint_{#?}^{#?}",
+  lim: "\\lim_{#?\\to#?}",
+  sin: "\\sin",
+  cos: "\\cos",
+  tan: "\\tan",
+  cot: "\\cot",
+  sec: "\\sec",
+  csc: "\\csc",
+  arcsin: "\\arcsin",
+  arccos: "\\arccos",
+  arctan: "\\arctan",
+  sinh: "\\sinh",
+  cosh: "\\cosh",
+  tanh: "\\tanh",
+  log: "\\log",
+  ln: "\\ln",
+  exp: "\\exp",
+  max: "\\max",
+  min: "\\min",
+  det: "\\det",
+  gcd: "\\gcd",
+  infty: "\\infty",
+  partial: "\\partial",
+  nabla: "\\nabla",
+  ell: "\\ell",
+  hbar: "\\hbar",
+  angle: "\\angle",
+  degree: "\\degree",
+  therefore: "\\therefore",
+  because: "\\because",
+  forall: "\\forall",
+  exists: "\\exists",
+  nexists: "\\nexists",
+  land: "\\land",
+  lor: "\\lor",
+  neg: "\\neg",
+  implies: "\\implies",
+  iff: "\\iff",
+  NN: "\\mathbb{N}",
+  ZZ: "\\mathbb{Z}",
+  QQ: "\\mathbb{Q}",
+  RR: "\\mathbb{R}",
+  CC: "\\mathbb{C}",
+  "+-": "\\pm",
+  "-+": "\\mp",
+  cup: "\\cup",
+  cap: "\\cap",
+  union: "\\cup",
+  intersection: "\\cap",
+  emptyset: "\\emptyset",
+  setminus: "\\setminus",
+  ldots: "\\ldots",
+  cdots: "\\cdots",
+  vdots: "\\vdots",
+  ddots: "\\ddots",
+};
+
+export const visualTexAutoEscapeInlineShortcuts: VisualTexInlineShortcutDefinitions = {
+  ...GREEK_INLINE_SHORTCUTS,
+  ...BASIC_OPERATOR_INLINE_SHORTCUTS,
+  ...RELATION_INLINE_SHORTCUTS,
+  ...ARROW_INLINE_SHORTCUTS,
+  ...ACCENT_INLINE_SHORTCUTS,
+  ...COMMON_COMMAND_INLINE_SHORTCUTS,
+  ...visualTexUprightInlineShortcuts,
+};
+
+const DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS = new Set([
+  "xx",
+  "th",
+  "mathrm",
+  "mathit",
+  "mathbf",
+  "mathnormal",
+  "boldsymbol",
+  "mathbb",
+  "mathcal",
+  "mathscr",
+  "mathfrak",
+  "mathsf",
+  "mathtt",
+  "mathbfit",
+  "mathsfit",
+  "mathsfbf",
+  "mathsfbfit",
+  "symbf",
+  "symbb",
+  "symcal",
+  "symfrak",
+  "symit",
+  "symnormal",
+  "symsf",
+  "symtt",
 ]);
+
+export function resolveVisualTexInlineShortcuts(
+  mathLiveDefaults: Readonly<VisualTexInlineShortcutDefinitions>,
+  enabled: boolean,
+): VisualTexInlineShortcutDefinitions {
+  if (!enabled) return {};
+  const safeMathLiveDefaults = Object.fromEntries(
+    Object.entries(mathLiveDefaults).filter(
+      ([shortcut]) => !DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS.has(shortcut),
+    ),
+  );
+  return {
+    ...safeMathLiveDefaults,
+    ...visualTexAutoEscapeInlineShortcuts,
+  };
+}
 
 export function normalizeContextualUprightSymbols(source: string): string {
   return normalizeContextualDifferentialOperators(source);
@@ -62,7 +346,10 @@ export function normalizeMathLiveCanonicalUprightCommands(
       standardLatex,
     );
   }
-  return normalized;
+  return normalized.replace(
+    /\\(?:mathrm|textrm)\{d([A-Za-z])\}/g,
+    "\\mathrm{d}$1",
+  );
 }
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];

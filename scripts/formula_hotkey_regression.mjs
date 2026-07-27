@@ -140,6 +140,10 @@ async function main() {
       localStorage.clear();
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem(
+        "visualtex-editor",
+        JSON.stringify({ state: { editorLayout: "standard" }, version: 0 }),
+      );
+      localStorage.setItem(
         "visualtex-custom-formula-tiles",
         JSON.stringify([
           "\\beta_{\\omega_1^2}",

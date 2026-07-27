@@ -21,10 +21,13 @@ import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 
 export type Language = "cn" | "en";
 export type EditorLayout = "standard" | "classic";
+export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
+export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 
 export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
+  autoEscapeShortcuts: true,
   autoExitSuperscript: true,
   autoExitSubscript: true,
   autoExitAccent: true,
@@ -41,6 +44,10 @@ function normalizeInputBehaviorSettings(
       ? (value as Partial<InputBehaviorSettings>)
       : {};
   return {
+    autoEscapeShortcuts:
+      typeof candidate.autoEscapeShortcuts === "boolean"
+        ? candidate.autoEscapeShortcuts
+        : true,
     autoExitSuperscript:
       typeof candidate.autoExitSuperscript === "boolean"
         ? candidate.autoExitSuperscript
@@ -73,7 +80,7 @@ function normalizeFormulaAlignment(value: unknown): FormulaAlignment {
 }
 
 function normalizeEditorLayout(value: unknown): EditorLayout {
-  return value === "classic" ? "classic" : "standard";
+  return value === "standard" ? "standard" : DEFAULT_EDITOR_LAYOUT;
 }
 
 function normalizeTheme(value: unknown): Theme {
@@ -82,7 +89,7 @@ function normalizeTheme(value: unknown): Theme {
     value === "purple" ||
     value === "green"
     ? value
-    : "light";
+    : DEFAULT_THEME;
 }
 
 function normalizeEditorZoom(value: unknown) {
@@ -225,8 +232,8 @@ export const useEditorStore = create<EditorState>()(
       lines: initialLines,
       activeLineId: initialLines[0].id,
       formulaAlignment: "left",
-      editorLayout: "standard",
-      theme: "light",
+      editorLayout: DEFAULT_EDITOR_LAYOUT,
+      theme: DEFAULT_THEME,
       language: "cn",
       zoom: 1,
       sourceOpen: false,

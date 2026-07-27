@@ -54,6 +54,7 @@ export interface FormulaHistoryItem {
 }
 
 export interface InputBehaviorSettings {
+  autoEscapeShortcuts: boolean;
   autoExitSuperscript: boolean;
   autoExitSubscript: boolean;
   autoExitAccent: boolean;
@@ -63,6 +64,7 @@ export interface InputBehaviorSettings {
 }
 
 export type InputBehaviorSettingKey =
+  | "autoEscapeShortcuts"
   | "autoExitSuperscript"
   | "autoExitSubscript"
   | "autoExitAccent"

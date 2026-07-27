@@ -55,7 +55,8 @@ import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
   normalizeMathLiveCanonicalUprightCommands,
-  visualTexUprightInlineShortcuts,
+  resolveVisualTexInlineShortcuts,
+  type VisualTexInlineShortcutDefinitions,
 } from "./normalizeChineseLatex";
 import { ImeCompositionGuard } from "./imeCompositionGuard";
 
@@ -2511,12 +2512,18 @@ function removePointerPlaceholderSnapshotStyle(field: MathfieldElement) {
     ?.remove();
 }
 
-function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
+function normalizeCompletedDifferentialDisplay(
+  field: MathfieldElement,
+  autoEscapeShortcuts = true,
+) {
   if (field.mode === "latex" || !field.selectionIsCollapsed) return false;
 
-  const portableValue = normalizeMathLiveCanonicalUprightCommands(field.value);
-  const contextualValue = normalizeContextualUprightSymbols(portableValue);
-  if (contextualValue === portableValue) return false;
+  const originalValue = field.value;
+  const portableValue = normalizeMathLiveCanonicalUprightCommands(originalValue);
+  const contextualValue = autoEscapeShortcuts
+    ? normalizeContextualUprightSymbols(portableValue)
+    : portableValue;
+  if (contextualValue === originalValue) return false;
 
   const distanceFromEnd = Math.max(0, field.lastOffset - field.position);
   field.setValue(contextualValue, {
@@ -3401,6 +3408,8 @@ function FormulaField(props: FormulaFieldProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<MathfieldElement | null>(null);
   const syncFrameSizeRef = useRef<(() => void) | null>(null);
+  const defaultInlineShortcutsRef =
+    useRef<VisualTexInlineShortcutDefinitions | null>(null);
   const lastSnapshotRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
   const compositionStartRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
   const sizingZoomRef = useRef(props.zoom);
@@ -4138,7 +4147,10 @@ function FormulaField(props: FormulaFieldProps) {
         );
     }
     clearPendingAutoExit();
-    normalizeCompletedDifferentialDisplay(field);
+    normalizeCompletedDifferentialDisplay(
+      field,
+      propsRef.current.inputBehavior.autoEscapeShortcuts,
+    );
     const inputType =
       event instanceof InputEvent ? event.inputType || "insertText" : "insertText";
     let postInputSnapshot = captureFieldSnapshot(field);
@@ -4164,7 +4176,12 @@ function FormulaField(props: FormulaFieldProps) {
         if (!field.isConnected) return;
         const deferredBefore =
           lastSnapshotRef.current ?? captureFieldSnapshot(field);
-        if (normalizeCompletedDifferentialDisplay(field)) {
+        if (
+          normalizeCompletedDifferentialDisplay(
+            field,
+            propsRef.current.inputBehavior.autoEscapeShortcuts,
+          )
+        ) {
           emitEdit(
             deferredBefore,
             captureFieldSnapshot(field),
@@ -4887,10 +4904,11 @@ function FormulaField(props: FormulaFieldProps) {
     };
     host.replaceChildren(field);
     installVisualTexStructuralPlaceholderStyle(field);
-    field.inlineShortcuts = {
-      ...field.inlineShortcuts,
-      ...visualTexUprightInlineShortcuts,
-    };
+    defaultInlineShortcutsRef.current = { ...field.inlineShortcuts };
+    field.inlineShortcuts = resolveVisualTexInlineShortcuts(
+      defaultInlineShortcutsRef.current,
+      propsRef.current.inputBehavior.autoEscapeShortcuts,
+    );
     // MathLive mounts a pre-filled field with the whole formula selected.
     // Collapse that implicit selection so toolbar commands insert at the end
     // instead of unexpectedly replacing/wrapping the entire line.
@@ -4988,6 +5006,7 @@ function FormulaField(props: FormulaFieldProps) {
       );
       propsRef.current.register(lineId, null);
       fieldRef.current = null;
+      defaultInlineShortcutsRef.current = null;
       lastSnapshotRef.current = null;
       compositionStartRef.current = null;
       clearPendingAutoExit();
@@ -5053,6 +5072,15 @@ function FormulaField(props: FormulaFieldProps) {
     }
   }, [props.autoPairDelimiters]);
 
+  useEffect(() => {
+    const field = fieldRef.current;
+    const defaults = defaultInlineShortcutsRef.current;
+    if (!field || !defaults) return;
+    field.inlineShortcuts = resolveVisualTexInlineShortcuts(
+      defaults,
+      props.inputBehavior.autoEscapeShortcuts,
+    );
+  }, [props.inputBehavior.autoEscapeShortcuts]);
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -5714,7 +5742,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
       if (!changed) return false;
 
-      normalizeCompletedDifferentialDisplay(field);
+      normalizeCompletedDifferentialDisplay(
+        field,
+        state.inputBehavior.autoEscapeShortcuts,
+      );
       const after = captureFieldSnapshot(field);
       if (before.latex === after.latex) {
         field.resetUndo();

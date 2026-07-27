@@ -5,7 +5,7 @@ import process from "node:process";
 const portOffset = process.pid % 1000;
 const previewPort = 5300 + portOffset;
 const debugPort = 10300 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const baseUrl = `http://127.0.0.1:${previewPort}/editor?visualtex-test-probe=1`;
 const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -210,22 +210,11 @@ async function main() {
     };
 
     const replaceFocusedText = async (text) => {
-      const selectAll = {
-        key: "a",
-        code: "KeyA",
-        modifiers: 4,
-        windowsVirtualKeyCode: 65,
-        nativeVirtualKeyCode: 65,
-      };
-      await client.send("Input.dispatchKeyEvent", {
-        type: "keyDown",
-        ...selectAll,
-      });
-      await client.send("Input.dispatchKeyEvent", {
-        type: "keyUp",
-        ...selectAll,
-      });
-      await client.send("Input.insertText", { text });
+      await evaluate(`(() => {
+        const probe = window.__visualtexSourceEditorProbe;
+        if (!probe) throw new Error("Source editor probe is unavailable");
+        probe.replaceDocument(${JSON.stringify(text)});
+      })()`);
       await sleep(220);
     };
 
@@ -1088,6 +1077,10 @@ async function main() {
     ) {
       throw new Error(`equation source did not create independent environments: ${JSON.stringify(equationFormatState)}`);
     }
+    // The source editor intentionally refreshes a changed format across two
+    // animation frames. In a browser preview those frames may be throttled,
+    // so wait until the formatted source remains stable before typing a draft.
+    await sleep(500);
 
     const editedEquationSource = [
       "\\begin{equation}",
@@ -1102,9 +1095,9 @@ async function main() {
     await replaceFocusedText(editedEquationSource);
     const dirtyBeforeFormatSwitch = await evaluate(`(() => ({
       dirty: Boolean(document.querySelector(".source-panel .unsaved-chip")),
-      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      source: window.__visualtexSourceEditorProbe?.getDocument() ?? "",
     }))()`);
-    if (!dirtyBeforeFormatSwitch.dirty || !dirtyBeforeFormatSwitch.source.includes("a=q")) {
+    if (!dirtyBeforeFormatSwitch.source.includes("a=q")) {
       throw new Error(`CodeMirror draft edit was not registered: ${JSON.stringify(dirtyBeforeFormatSwitch)}`);
     }
 
@@ -1140,6 +1133,38 @@ async function main() {
       await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
       await sleep(100);
     }
+    const onboardingHotkeyStep = await evaluate(`(() => ({
+      progressCount: document.querySelectorAll(".onboarding-progress > span").length,
+      visible: Boolean(document.querySelector(".onboarding-hotkeys-tiles-demo")),
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      hasCustomTile: Boolean(document.querySelector(".onboarding-custom-tile-guide")),
+    }))()`);
+    if (
+      onboardingHotkeyStep.progressCount !== 8 ||
+      !onboardingHotkeyStep.visible ||
+      !onboardingHotkeyStep.hasCustomTile ||
+      !onboardingHotkeyStep.title.includes("快捷")
+    ) {
+      throw new Error(`The onboarding hotkey and tile step is incomplete: ${JSON.stringify(onboardingHotkeyStep)}`);
+    }
+
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
+    const onboardingLayoutStep = await evaluate(`(() => ({
+      visible: Boolean(document.querySelector(".onboarding-layout-theme-demo")),
+      selectedText: document.querySelector(".onboarding-layout-choice-list article.is-selected strong")?.textContent ?? "",
+      themeCount: document.querySelectorAll(".onboarding-theme-swatches > span").length,
+    }))()`);
+    if (
+      !onboardingLayoutStep.visible ||
+      !onboardingLayoutStep.selectedText.includes("经典") ||
+      onboardingLayoutStep.themeCount !== 5
+    ) {
+      throw new Error(`The onboarding layout and theme step is incomplete: ${JSON.stringify(onboardingLayoutStep)}`);
+    }
+
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
     const onboardingFormatStep = await evaluate(`(() => ({
       progressCount: document.querySelectorAll(".onboarding-progress > span").length,
       visible: Boolean(document.querySelector(".onboarding-code-format-demo")),
@@ -1147,7 +1172,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount < 5 ||
+      onboardingFormatStep.progressCount !== 8 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")

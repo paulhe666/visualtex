@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import {
@@ -12,6 +14,38 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCodeFormat, Theme } from "../types/formula";
+
+const visualTeXLatexHighlightStyle = HighlightStyle.define([
+  {
+    tag: [
+      tags.keyword,
+      tags.definitionKeyword,
+      tags.macroName,
+      tags.labelName,
+      tags.heading,
+    ],
+    color: "var(--syntax-command)",
+  },
+  {
+    tag: [tags.className, tags.typeName, tags.namespace],
+    color: "var(--syntax-function)",
+  },
+  {
+    tag: [tags.operator, tags.processingInstruction],
+    color: "var(--syntax-operator)",
+  },
+  { tag: tags.number, color: "var(--syntax-number)" },
+  { tag: tags.bracket, color: "var(--syntax-bracket)" },
+  { tag: [tags.string, tags.quote, tags.meta], color: "var(--syntax-string)" },
+  { tag: tags.comment, color: "var(--syntax-comment)", fontStyle: "italic" },
+  { tag: [tags.variableName, tags.content], color: "var(--syntax-variable)" },
+  { tag: tags.invalid, color: "var(--syntax-error)", textDecoration: "underline" },
+]);
+
+interface SourceEditorProbe {
+  replaceDocument: (value: string) => void;
+  getDocument: () => string;
+}
 
 interface Props {
   latex: string;
@@ -77,6 +111,7 @@ export function LatexSourceEditor({
         lineNumbers(),
         history(),
         latexLanguageSupport({ enableLinting: false, enableTooltips: false }),
+        syntaxHighlighting(visualTeXLatexHighlightStyle),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,
         EditorView.lineWrapping,
@@ -98,10 +133,30 @@ export function LatexSourceEditor({
     draftRef.current = sourceRef.current;
     updateDirty(false);
 
+    const probe: SourceEditorProbe = {
+      replaceDocument: (value) => {
+        const current = view.state.doc.toString();
+        view.dispatch({
+          changes: { from: 0, to: current.length, insert: value },
+        });
+      },
+      getDocument: () => view.state.doc.toString(),
+    };
+    const probeWindow = window as Window & {
+      __visualtexSourceEditorProbe?: SourceEditorProbe;
+    };
+    const probeEnabled = new URLSearchParams(window.location.search).has(
+      "visualtex-test-probe",
+    );
+    if (probeEnabled) probeWindow.__visualtexSourceEditorProbe = probe;
+
     return () => {
       if (formatRefreshFrameRef.current !== null) {
         window.cancelAnimationFrame(formatRefreshFrameRef.current);
         formatRefreshFrameRef.current = null;
+      }
+      if (probeWindow.__visualtexSourceEditorProbe === probe) {
+        delete probeWindow.__visualtexSourceEditorProbe;
       }
       view.destroy();
       viewRef.current = null;

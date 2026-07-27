@@ -44,21 +44,54 @@ function nonNegativeFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function isSingleCompleteEnvironment(source: string) {
+  const first = source.match(/^\\begin\s*\{([^{}]+)\}/);
+  if (!first) return false;
+
+  const environmentToken = /\\(begin|end)\s*\{([^{}]+)\}/g;
+  const stack: string[] = [];
+  let match: RegExpExecArray | null;
+  let outerEnd = -1;
+
+  while ((match = environmentToken.exec(source))) {
+    const [, kind, name] = match;
+    if (kind === "begin") {
+      stack.push(name);
+      continue;
+    }
+    if (stack.at(-1) !== name) return false;
+    stack.pop();
+    if (stack.length === 0) {
+      outerEnd = environmentToken.lastIndex;
+      break;
+    }
+  }
+
+  return outerEnd >= 0 && source.slice(outerEnd).trim().length === 0;
+}
+
 function prepareLatex(latex: string) {
   const normalized = normalizeMathLiveCanonicalUprightCommands(
     latex.replace(/\r\n?/g, "\n"),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
-  if (/\\begin\s*\{/.test(normalized)) return normalized;
 
   const lines = normalized
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length <= 1) return normalized;
+
+  // Preserve a source string that is itself one complete TeX environment.
+  // A document with multiple VisualTeX formula rows may still contain an
+  // inner matrix/cases environment on one row; that must not make all rows
+  // collapse into a single horizontal TeX expression.
+  if (isSingleCompleteEnvironment(normalized)) return normalized;
+
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep
-  // the whole formula as one image, but anchor every row on its left edge.
+  // the whole document as one image, but anchor every formula row on its left
+  // edge and preserve the editor's vertical ordering.
   return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
 }
 
