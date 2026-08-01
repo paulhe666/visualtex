@@ -1000,6 +1000,46 @@ html[data-page="landing"] body {
   gap: 18px;
 }
 
+.landing-ocr-model-section {
+  width: min(1080px, 100%);
+  margin: 68px auto 0;
+}
+
+.landing-ocr-model-heading {
+  max-width: 720px;
+  margin: 0 auto 26px;
+  text-align: center;
+}
+
+.landing-ocr-model-heading > span {
+  display: inline-block;
+  margin-bottom: 9px;
+  color: var(--landing-blue);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+.landing-ocr-model-heading h3 {
+  margin: 0;
+  color: var(--landing-text);
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.035em;
+}
+
+.landing-ocr-model-heading p {
+  margin: 12px 0 0;
+  color: var(--landing-muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.landing-ocr-model-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .landing-download-card {
   position: relative;
   min-height: 300px;
@@ -1056,6 +1096,15 @@ html[data-page="landing"] body {
   margin: 0 0 24px;
   color: var(--landing-muted);
   font-size: 14px;
+}
+
+.landing-ocr-model-card {
+  min-height: 270px;
+  padding: 25px;
+}
+
+.landing-ocr-model-card h3 {
+  font-size: 22px;
 }
 
 .landing-download-actions {
@@ -1262,7 +1311,8 @@ html[data-page="landing"] body {
   }
 
   .landing-feature-grid,
-  .landing-download-grid {
+  .landing-download-grid,
+  .landing-ocr-model-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1271,7 +1321,7 @@ html[data-page="landing"] body {
     gap: 44px;
   }
 
-  .landing-download-card:last-child {
+  .landing-ocr-model-grid .landing-download-card:last-child {
     grid-column: 1 / -1;
     width: calc(50% - 9px);
     justify-self: center;
@@ -1416,7 +1466,8 @@ html[data-page="landing"] body {
   }
 
   .landing-feature-grid,
-  .landing-download-grid {
+  .landing-download-grid,
+  .landing-ocr-model-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1442,7 +1493,15 @@ html[data-page="landing"] body {
     border-radius: 13px;
   }
 
-  .landing-download-card:last-child {
+  .landing-ocr-model-section {
+    margin-top: 54px;
+  }
+
+  .landing-ocr-model-heading {
+    margin-bottom: 22px;
+  }
+
+  .landing-ocr-model-grid .landing-download-card:last-child {
     grid-column: auto;
     width: 100%;
   }

@@ -18,6 +18,7 @@ import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
 const VERSION = "1.2.3";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
+const OCR_MODEL_BASE = "https://download.visualtex.pauljianliao.com/ppformula-model";
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
 
 type PlatformId = "mac" | "windows";
@@ -51,6 +52,33 @@ const downloads: readonly DownloadOption[] = [
     action: "下载安装程序",
   },
 ];
+
+const ocrModels = [
+  {
+    id: "ocr-s",
+    title: "OCR-S 模型",
+    detail: "轻量版 · Windows x64 · 200.05 MB",
+    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel`,
+    action: "下载 OCR-S 模型",
+    recommended: false,
+  },
+  {
+    id: "ocr-m",
+    title: "OCR-M 模型",
+    detail: "均衡版 · Windows x64 · 425.83 MB",
+    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel`,
+    action: "下载 OCR-M 模型",
+    recommended: true,
+  },
+  {
+    id: "ocr-l",
+    title: "OCR-L 模型",
+    detail: "高精度版 · Windows x64 · 670.29 MB",
+    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel`,
+    action: "下载 OCR-L 模型",
+    recommended: false,
+  },
+] as const;
 
 const features = [
   {
@@ -234,6 +262,31 @@ export function LandingPage() {
                 </article>
               );
             })}
+          </div>
+
+          <div className="landing-ocr-model-section">
+            <div className="landing-ocr-model-heading">
+              <span>本地公式识别</span>
+              <h3>按需下载 Windows OCR 模型</h3>
+              <p>S 版体积最小，M 版兼顾速度与精度，L 版适合精度优先的使用场景。</p>
+            </div>
+
+            <div className="landing-ocr-model-grid">
+              {ocrModels.map((model) => (
+                <article
+                  className={`landing-download-card landing-ocr-model-card${model.recommended ? " is-recommended" : ""}`}
+                  key={model.id}
+                >
+                  {model.recommended && <span className="landing-recommended-badge">推荐</span>}
+                  <span className="landing-download-icon"><ScanLine size={25} /></span>
+                  <h3>{model.title}</h3>
+                  <p>{model.detail}</p>
+                  <div className="landing-download-actions">
+                    <a className="landing-download-primary" href={model.href}><Download size={17} />{model.action}</a>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
 
           <div className="landing-release-link">
