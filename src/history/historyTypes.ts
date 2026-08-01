@@ -45,9 +45,18 @@ export interface PendingTitleTransaction {
   updatedAt: number;
 }
 
+export interface PendingSourceDocumentTransaction {
+  kind: "source-document";
+  before: DocumentSnapshot;
+  after: DocumentSnapshot;
+  startedAt: number;
+  updatedAt: number;
+}
+
 export type PendingEditTransaction =
   | PendingFormulaEditTransaction
-  | PendingTitleTransaction;
+  | PendingTitleTransaction
+  | PendingSourceDocumentTransaction;
 
 export interface ReplaceFormulaEntry {
   type: "replace-formula";

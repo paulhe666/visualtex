@@ -6,13 +6,14 @@ import { tags } from "@lezer/highlight";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import {
-  Check,
+  AlertTriangle,
   Code2,
   Copy,
   PanelBottomClose,
   RotateCcw,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
 import type { LatexCodeFormat, Theme } from "../types/formula";
 
 const visualTeXLatexHighlightStyle = HighlightStyle.define([
@@ -42,11 +43,6 @@ const visualTeXLatexHighlightStyle = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--syntax-error)", textDecoration: "underline" },
 ]);
 
-interface SourceEditorProbe {
-  replaceDocument: (value: string) => void;
-  getDocument: () => string;
-}
-
 interface Props {
   latex: string;
   theme: Theme;
@@ -55,7 +51,10 @@ interface Props {
   showCollapseAction?: boolean;
   showCopyAction?: boolean;
   compact?: boolean;
-  onApply: (latex: string, sourceFormat: LatexCodeFormat) => void;
+  onLiveChange: (
+    latex: string,
+    sourceFormat: LatexCodeFormat,
+  ) => LatexSourceDraftResult;
   onCopy: () => void;
 }
 
@@ -67,30 +66,40 @@ export function LatexSourceEditor({
   showCollapseAction = true,
   showCopyAction = true,
   compact = false,
-  onApply,
+  onLiveChange,
   onCopy,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const draftRef = useRef(latex);
   const sourceRef = useRef(latex);
+  const latestLatexRef = useRef(latex);
   const dirtyRef = useRef(false);
+  const sourceFocusedRef = useRef(false);
+  const syncErrorRef = useRef<string | null>(null);
   const suppressChangeRef = useRef(false);
   const formatRef = useRef(format);
-  const onApplyRef = useRef(onApply);
+  const onLiveChangeRef = useRef(onLiveChange);
   const formatRefreshFrameRef = useRef<number | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
-  onApplyRef.current = onApply;
+  onLiveChangeRef.current = onLiveChange;
 
   const updateDirty = (value: boolean) => {
     dirtyRef.current = value;
     setDirty(value);
   };
 
+  const updateSyncError = (value: string | null) => {
+    syncErrorRef.current = value;
+    setSyncError(value);
+  };
+
   useEffect(() => {
     sourceRef.current = latex;
+    latestLatexRef.current = latex;
   }, [latex]);
 
   useEffect(() => {
@@ -116,13 +125,38 @@ export function LatexSourceEditor({
         editorTheme,
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
+          if (update.focusChanged) {
+            sourceFocusedRef.current = update.view.hasFocus;
+            if (!update.view.hasFocus && !syncErrorRef.current) {
+              window.requestAnimationFrame(() => {
+                const view = viewRef.current;
+                if (!view || view.hasFocus || syncErrorRef.current) return;
+                const canonical = latestLatexRef.current;
+                const current = view.state.doc.toString();
+                if (current !== canonical) {
+                  suppressChangeRef.current = true;
+                  view.dispatch({
+                    changes: { from: 0, to: current.length, insert: canonical },
+                  });
+                }
+                draftRef.current = canonical;
+                updateDirty(false);
+              });
+            }
+          }
           if (!update.docChanged) return;
           draftRef.current = update.state.doc.toString();
           if (suppressChangeRef.current) {
             suppressChangeRef.current = false;
             updateDirty(false);
+            updateSyncError(null);
             return;
           }
+          const result = onLiveChangeRef.current(
+            draftRef.current,
+            formatRef.current,
+          );
+          updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
           updateDirty(draftRef.current !== sourceRef.current);
         }),
       ],
@@ -133,30 +167,10 @@ export function LatexSourceEditor({
     draftRef.current = sourceRef.current;
     updateDirty(false);
 
-    const probe: SourceEditorProbe = {
-      replaceDocument: (value) => {
-        const current = view.state.doc.toString();
-        view.dispatch({
-          changes: { from: 0, to: current.length, insert: value },
-        });
-      },
-      getDocument: () => view.state.doc.toString(),
-    };
-    const probeWindow = window as Window & {
-      __visualtexSourceEditorProbe?: SourceEditorProbe;
-    };
-    const probeEnabled = new URLSearchParams(window.location.search).has(
-      "visualtex-test-probe",
-    );
-    if (probeEnabled) probeWindow.__visualtexSourceEditorProbe = probe;
-
     return () => {
       if (formatRefreshFrameRef.current !== null) {
         window.cancelAnimationFrame(formatRefreshFrameRef.current);
         formatRefreshFrameRef.current = null;
-      }
-      if (probeWindow.__visualtexSourceEditorProbe === probe) {
-        delete probeWindow.__visualtexSourceEditorProbe;
       }
       view.destroy();
       viewRef.current = null;
@@ -165,25 +179,26 @@ export function LatexSourceEditor({
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || dirtyRef.current) return;
+    if (!view || sourceFocusedRef.current || syncErrorRef.current) return;
     const current = view.state.doc.toString();
-    if (current === latex) return;
+    if (current === latex) {
+      updateDirty(false);
+      return;
+    }
 
     suppressChangeRef.current = true;
     view.dispatch({
       changes: { from: 0, to: current.length, insert: latex },
     });
     draftRef.current = latex;
+    updateDirty(false);
   }, [latex]);
 
   useEffect(() => {
     const previousFormat = formatRef.current;
     if (previousFormat === format) return;
     formatRef.current = format;
-
-    if (!dirtyRef.current) return;
-    onApplyRef.current(draftRef.current, previousFormat);
-    updateDirty(false);
+    updateSyncError(null);
 
     if (formatRefreshFrameRef.current !== null) {
       window.cancelAnimationFrame(formatRefreshFrameRef.current);
@@ -192,7 +207,7 @@ export function LatexSourceEditor({
       formatRefreshFrameRef.current = window.requestAnimationFrame(() => {
         const view = viewRef.current;
         if (!view) return;
-        const nextSource = sourceRef.current;
+        const nextSource = latestLatexRef.current;
         const current = view.state.doc.toString();
         if (current !== nextSource) {
           suppressChangeRef.current = true;
@@ -214,23 +229,20 @@ export function LatexSourceEditor({
     suppressChangeRef.current = true;
     view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     draftRef.current = value;
+    const result = onLiveChangeRef.current(value, formatRef.current);
+    updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
     updateDirty(false);
   };
 
-  const applyDraft = () => {
-    onApply(draftRef.current, formatRef.current);
-    sourceRef.current = draftRef.current;
-    updateDirty(false);
-  };
-
-  const showHeader = !compact || dirty;
+  const showHeader = !compact || dirty || Boolean(syncError);
 
   return (
     <section
       className={
         "source-panel" +
         (compact ? " is-compact" : "") +
-        (compact && dirty ? " has-dirty-actions" : "")
+        (compact && (dirty || syncError) ? " has-dirty-actions" : "") +
+        (syncError ? " has-source-error" : "")
       }
     >
       {showHeader && (
@@ -239,23 +251,45 @@ export function LatexSourceEditor({
             <div className="source-title">
               <Code2 size={16} />
               <span>{isEn ? "LaTeX source" : "LaTeX 源码"}</span>
-              {dirty && (
-                <span className="unsaved-chip">
-                  {isEn ? "Unsynced changes" : "有未同步更改"}
+              {syncError ? (
+                <span className="source-error-chip">
+                  <AlertTriangle size={12} />
+                  {syncError === "incomplete-format-wrapper"
+                    ? isEn
+                      ? "Formula wrapper is incomplete"
+                      : "公式环境包裹尚未完成"
+                    : isEn
+                      ? "Incomplete fragment is shown as LaTeX"
+                      : "未完成片段按源码显示，其余保持渲染"}
                 </span>
-              )}
+              ) : dirty ? (
+                <span className="source-live-chip">
+                  {isEn ? "Live synced" : "已实时同步"}
+                </span>
+              ) : null}
             </div>
           )}
+          {compact && syncError && (
+            <span className="source-error-chip source-error-chip-compact">
+              <AlertTriangle size={12} />
+              {syncError === "incomplete-format-wrapper"
+                ? isEn
+                  ? "Incomplete wrapper"
+                  : "环境包裹未完成"
+                : isEn
+                  ? "Partial LaTeX preview"
+                  : "局部源码预览"}
+            </span>
+          )}
           <div className="source-actions">
-            {dirty && (
-              <>
-                <button type="button" className="text-button" onClick={() => replaceDraft(latex)}>
-                  <RotateCcw size={14} /> {isEn ? "Reset" : "还原"}
-                </button>
-                <button type="button" className="primary-small-button" onClick={applyDraft}>
-                  <Check size={14} /> {isEn ? "Apply" : "同步到公式"}
-                </button>
-              </>
+            {(dirty || syncError) && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => replaceDraft(latex)}
+              >
+                <RotateCcw size={14} /> {isEn ? "Reset" : "还原"}
+              </button>
             )}
             {showCopyAction && (
               <button

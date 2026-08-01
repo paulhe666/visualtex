@@ -244,7 +244,7 @@ function App() {
     after: DocumentSnapshot,
     source: ReplaceDocumentEntry["source"],
   ) => {
-    historyManager.commitPendingTransaction();
+    if (source !== "source-apply") historyManager.commitPendingTransaction();
     const before = captureDocumentSnapshot();
     if (documentSnapshotsEquivalent(before, after)) return false;
     useEditorStore.getState().replaceDocumentState(after);
@@ -255,8 +255,12 @@ function App() {
       source,
       timestamp: Date.now(),
     };
-    historyManager.push(entry);
-    window.requestAnimationFrame(() => restoreSnapshotFocus(after));
+    if (source === "source-apply") {
+      historyManager.recordSourceDocumentEdit(entry);
+    } else {
+      historyManager.push(entry);
+      window.requestAnimationFrame(() => restoreSnapshotFocus(after));
+    }
     return true;
   };
 

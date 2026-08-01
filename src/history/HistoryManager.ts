@@ -10,11 +10,13 @@ import type {
   MathSelectionSnapshot,
   PendingEditTransaction,
   PendingFormulaEditTransaction,
+  ReplaceDocumentEntry,
   ReplaceFormulaEntry,
   TitleEditInput,
 } from "./historyTypes";
 
 export const EDIT_GROUP_TIMEOUT_MS = 500;
+export const SOURCE_EDIT_GROUP_TIMEOUT_MS = 900;
 export const MAX_HISTORY_ENTRIES = 300;
 export const CHECKPOINT_INTERVAL = 30;
 export const MAX_MEMORY_CHECKPOINTS = 10;
@@ -42,6 +44,23 @@ export function clampSelection(
     ]),
     direction: selection.direction,
   };
+}
+
+function documentSnapshotsMatch(
+  left: ReplaceDocumentEntry["after"],
+  right: ReplaceDocumentEntry["before"],
+): boolean {
+  return (
+    left.title === right.title &&
+    left.activeLineId === right.activeLineId &&
+    left.formulaAlignment === right.formulaAlignment &&
+    left.lines.length === right.lines.length &&
+    left.lines.every(
+      (line, index) =>
+        line.id === right.lines[index]?.id &&
+        line.latex === right.lines[index]?.latex,
+    )
+  );
 }
 
 function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
@@ -315,11 +334,23 @@ export class HistoryManager {
         this.pushInternal(entry, true);
         return;
       }
-    } else if (pending.beforeTitle !== pending.afterTitle) {
-      const entry: ChangeTitleEntry = {
-        type: "change-title",
-        beforeTitle: pending.beforeTitle,
-        afterTitle: pending.afterTitle,
+    } else if (pending.kind === "title") {
+      if (pending.beforeTitle !== pending.afterTitle) {
+        const entry: ChangeTitleEntry = {
+          type: "change-title",
+          beforeTitle: pending.beforeTitle,
+          afterTitle: pending.afterTitle,
+          timestamp: pending.updatedAt,
+        };
+        this.pushInternal(entry, true);
+        return;
+      }
+    } else if (!documentSnapshotsMatch(pending.before, pending.after)) {
+      const entry: ReplaceDocumentEntry = {
+        type: "replace-document",
+        before: pending.before,
+        after: pending.after,
+        source: "source-apply",
         timestamp: pending.updatedAt,
       };
       this.pushInternal(entry, true);
@@ -333,6 +364,45 @@ export class HistoryManager {
     if (this.isReplaying) return;
     this.commitPendingTransaction();
     this.pushInternal(entry, true);
+  }
+
+  recordSourceDocumentEdit(entry: ReplaceDocumentEntry) {
+    if (this.isReplaying || entry.source !== "source-apply") return;
+    const timestamp = entry.timestamp ?? Date.now();
+    const normalized = cloneHistoryEntry(entry) as ReplaceDocumentEntry;
+    const pending = this.pendingTransaction;
+
+    this.redoStack = [];
+    if (
+      pending?.kind === "source-document" &&
+      timestamp - pending.updatedAt <= SOURCE_EDIT_GROUP_TIMEOUT_MS &&
+      documentSnapshotsMatch(pending.after, normalized.before)
+    ) {
+      if (documentSnapshotsMatch(pending.before, normalized.after)) {
+        this.pendingTransaction = null;
+        this.clearCommitTimer();
+      } else {
+        this.pendingTransaction = {
+          ...pending,
+          after: normalized.after,
+          updatedAt: timestamp,
+        };
+        this.schedulePendingCommit(SOURCE_EDIT_GROUP_TIMEOUT_MS);
+      }
+      this.emit();
+      return;
+    }
+
+    this.commitPendingTransaction();
+    this.pendingTransaction = {
+      kind: "source-document",
+      before: normalized.before,
+      after: normalized.after,
+      startedAt: timestamp,
+      updatedAt: timestamp,
+    };
+    this.schedulePendingCommit(SOURCE_EDIT_GROUP_TIMEOUT_MS);
+    this.emit();
   }
 
   async undo(): Promise<boolean> {
@@ -444,11 +514,11 @@ export class HistoryManager {
     this.emit();
   }
 
-  private schedulePendingCommit() {
+  private schedulePendingCommit(timeoutMs = EDIT_GROUP_TIMEOUT_MS) {
     this.clearCommitTimer();
     this.commitTimer = setTimeout(
       () => this.commitPendingTransaction(),
-      EDIT_GROUP_TIMEOUT_MS,
+      timeoutMs,
     );
   }
 

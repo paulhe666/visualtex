@@ -1,4 +1,63 @@
+import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+
 const chineseChar = /[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’]/;
+
+const protectedTypographyCommands = new Set([
+  "text",
+  "textnormal",
+  "textrm",
+  "mathrm",
+  "operatorname",
+  "mbox",
+]);
+
+const uprightOperators: Record<string, string> = {
+  arcsin: "\\arcsin",
+  arccos: "\\arccos",
+  arctan: "\\arctan",
+  sinh: "\\sinh",
+  cosh: "\\cosh",
+  tanh: "\\tanh",
+  coth: "\\coth",
+  limsup: "\\limsup",
+  liminf: "\\liminf",
+  sin: "\\sin",
+  cos: "\\cos",
+  tan: "\\tan",
+  cot: "\\cot",
+  sec: "\\sec",
+  csc: "\\csc",
+  exp: "\\exp",
+  log: "\\log",
+  ln: "\\ln",
+  lg: "\\lg",
+  lim: "\\lim",
+  max: "\\max",
+  min: "\\min",
+  sup: "\\sup",
+  inf: "\\inf",
+  det: "\\det",
+  dim: "\\dim",
+  ker: "\\ker",
+  gcd: "\\gcd",
+  lcm: "\\operatorname{lcm}",
+  mod: "\\mod",
+  rank: "\\operatorname{rank}",
+  tr: "\\operatorname{tr}",
+  diag: "\\operatorname{diag}",
+  sgn: "\\operatorname{sgn}",
+  erf: "\\operatorname{erf}",
+  erfc: "\\operatorname{erfc}",
+  Re: "\\operatorname{Re}",
+  Im: "\\operatorname{Im}",
+};
+
+const uprightOperatorPattern = new RegExp(
+  `(^|[^\\\\A-Za-z])(${Object.keys(uprightOperators)
+    .sort((left, right) => right.length - left.length)
+    .join("|")})(?=$|[^A-Za-z])`,
+  "g",
+);
 
 const MATHLIVE_CANONICAL_UPRIGHT_COMMANDS: ReadonlyArray<
   readonly [command: string, standardLatex: string]
@@ -67,7 +126,7 @@ export const visualTexUprightInlineShortcuts: VisualTexInlineShortcutDefinitions
     ),
   ]);
 
-const GREEK_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const GREEK_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   alpha: "\\alpha",
   beta: "\\beta",
   gamma: "\\gamma",
@@ -110,7 +169,7 @@ const GREEK_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   Omega: "\\Omega",
 };
 
-const BASIC_OPERATOR_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const BASIC_OPERATOR_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   pp: "+",
   plus: "+",
   add: "+",
@@ -137,7 +196,7 @@ const BASIC_OPERATOR_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   bullet: "\\bullet",
 };
 
-const RELATION_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const RELATION_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   ">=": "\\ge",
   "<=": "\\le",
   "!=": "\\ne",
@@ -179,7 +238,7 @@ const RELATION_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   nmid: "\\nmid",
 };
 
-const ARROW_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const ARROW_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   "->": "\\to",
   "<-": "\\leftarrow",
   "<->": "\\leftrightarrow",
@@ -192,7 +251,7 @@ const ARROW_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   downarrow: "\\downarrow",
 };
 
-const ACCENT_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const ACCENT_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   acute: "\\acute{#?}",
   grave: "\\grave{#?}",
   hat: "\\hat{#?}",
@@ -210,7 +269,7 @@ const ACCENT_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   mathring: "\\mathring{#?}",
 };
 
-const COMMON_COMMAND_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
+export const COMMON_COMMAND_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   frac: "\\frac{#?}{#?}",
   dfrac: "\\dfrac{#?}{#?}",
   tfrac: "\\tfrac{#?}{#?}",
@@ -278,6 +337,58 @@ const COMMON_COMMAND_INLINE_SHORTCUTS: VisualTexInlineShortcutDefinitions = {
   ddots: "\\ddots",
 };
 
+export interface VisualTexAutoEscapeShortcutGroup {
+  id: string;
+  titleZh: string;
+  titleEn: string;
+  shortcuts: VisualTexInlineShortcutDefinitions;
+}
+
+export const visualTexAutoEscapeShortcutGroups: readonly VisualTexAutoEscapeShortcutGroup[] = [
+  {
+    id: "greek",
+    titleZh: "希腊字母",
+    titleEn: "Greek letters",
+    shortcuts: GREEK_INLINE_SHORTCUTS,
+  },
+  {
+    id: "operators",
+    titleZh: "基本运算",
+    titleEn: "Basic operators",
+    shortcuts: BASIC_OPERATOR_INLINE_SHORTCUTS,
+  },
+  {
+    id: "relations",
+    titleZh: "关系与集合",
+    titleEn: "Relations and sets",
+    shortcuts: RELATION_INLINE_SHORTCUTS,
+  },
+  {
+    id: "arrows",
+    titleZh: "箭头",
+    titleEn: "Arrows",
+    shortcuts: ARROW_INLINE_SHORTCUTS,
+  },
+  {
+    id: "accents",
+    titleZh: "重音结构",
+    titleEn: "Accents",
+    shortcuts: ACCENT_INLINE_SHORTCUTS,
+  },
+  {
+    id: "commands",
+    titleZh: "常用命令",
+    titleEn: "Common commands",
+    shortcuts: COMMON_COMMAND_INLINE_SHORTCUTS,
+  },
+  {
+    id: "differentials",
+    titleZh: "微分变量",
+    titleEn: "Differentials",
+    shortcuts: visualTexUprightInlineShortcuts,
+  },
+];
+
 export const visualTexAutoEscapeInlineShortcuts: VisualTexInlineShortcutDefinitions = {
   ...GREEK_INLINE_SHORTCUTS,
   ...BASIC_OPERATOR_INLINE_SHORTCUTS,
@@ -332,8 +443,103 @@ export function resolveVisualTexInlineShortcuts(
   };
 }
 
+function transformOutsideProtectedCommands(
+  source: string,
+  transform: (value: string) => string,
+): string {
+  let result = "";
+  let chunkStart = 0;
+  let index = 0;
+
+  while (index < source.length) {
+    if (source[index] !== "\\") {
+      index += 1;
+      continue;
+    }
+
+    const commandMatch = /^\\([A-Za-z]+)\{/.exec(source.slice(index));
+    if (!commandMatch || !protectedTypographyCommands.has(commandMatch[1])) {
+      index += 1;
+      continue;
+    }
+
+    result += transform(source.slice(chunkStart, index));
+    const end = readBracedCommand(source, index);
+    result += source.slice(index, end);
+    index = end;
+    chunkStart = end;
+  }
+
+  return result + transform(source.slice(chunkStart));
+}
+
+function normalizeNamedOperators(source: string): string {
+  return source.replace(
+    uprightOperatorPattern,
+    (_match, prefix: string, operator: string) =>
+      `${prefix}${uprightOperators[operator]}`,
+  );
+}
+
+function normalizeEulerConstant(source: string): string {
+  let result = "";
+  let index = 0;
+  while (index < source.length) {
+    if (source[index] !== "e") {
+      result += source[index];
+      index += 1;
+      continue;
+    }
+
+    const previous = source[index - 1];
+    if (previous === "\\" || /[A-Za-z]/.test(previous ?? "")) {
+      result += source[index];
+      index += 1;
+      continue;
+    }
+
+    let next = index + 1;
+    while (/\s/.test(source[next] ?? "")) next += 1;
+    if (source[next] !== "^") {
+      result += source[index];
+      index += 1;
+      continue;
+    }
+
+    result += "\\mathrm{e}";
+    index += 1;
+  }
+  return result;
+}
+
+function normalizeImaginaryUnitInExponentials(source: string): string {
+  return source
+    .replace(
+      /(\\mathrm\{e\}\s*\^\s*\{\s*)i(?=$|[^A-Za-z])/g,
+      "$1\\mathrm{i}",
+    )
+    .replace(
+      /(\\mathrm\{e\}\s*\^\s*)i(?=$|[^A-Za-z])/g,
+      "$1\\mathrm{i}",
+    )
+    .replace(
+      /(\\exp\s*[({]\s*)i(?=$|[^A-Za-z])/g,
+      "$1\\mathrm{i}",
+    );
+}
+
+function normalizeTypographyChunk(source: string): string {
+  return normalizeImaginaryUnitInExponentials(
+    normalizeEulerConstant(
+      normalizeContextualDifferentialOperators(
+        normalizeNamedOperators(source),
+      ),
+    ),
+  );
+}
+
 export function normalizeContextualUprightSymbols(source: string): string {
-  return normalizeContextualDifferentialOperators(source);
+  return transformOutsideProtectedCommands(source, normalizeTypographyChunk);
 }
 
 export function normalizeMathLiveCanonicalUprightCommands(
@@ -342,7 +548,7 @@ export function normalizeMathLiveCanonicalUprightCommands(
   let normalized = source;
   for (const [command, standardLatex] of MATHLIVE_CANONICAL_UPRIGHT_COMMANDS) {
     normalized = normalized.replace(
-      new RegExp(`\\\\${command}(?![A-Za-z])`, "g"),
+      new RegExp(`\\\\${command}(?![A-Za-z])[ \\t]*`, "g"),
       standardLatex,
     );
   }
@@ -410,6 +616,48 @@ const styledVariableCommands = new Set([
   "mathcal",
   "mathscr",
   "mathfrak",
+]);
+const greekVariableCommands = new Set([
+  "alpha",
+  "beta",
+  "gamma",
+  "delta",
+  "epsilon",
+  "varepsilon",
+  "zeta",
+  "eta",
+  "theta",
+  "vartheta",
+  "iota",
+  "kappa",
+  "lambda",
+  "mu",
+  "nu",
+  "xi",
+  "pi",
+  "varpi",
+  "rho",
+  "varrho",
+  "sigma",
+  "varsigma",
+  "tau",
+  "upsilon",
+  "phi",
+  "varphi",
+  "chi",
+  "psi",
+  "omega",
+  "Gamma",
+  "Delta",
+  "Theta",
+  "Lambda",
+  "Xi",
+  "Pi",
+  "Sigma",
+  "Upsilon",
+  "Phi",
+  "Psi",
+  "Omega",
 ]);
 
 interface BracedSpan {
@@ -596,6 +844,55 @@ function uprightDifferentialPrefix(
   );
 }
 
+function leadingDifferentialVariableCommand(source: string): string | null {
+  let index = skipDifferentialSpacing(source, 0);
+  if (source.startsWith("\\mathrm{d}", index)) return null;
+  if (source.startsWith("\\differentialD", index)) return null;
+  if (source[index] !== "d") return null;
+
+  index += 1;
+  index = skipDifferentialSpacing(source, index);
+  if (source[index] === "^") {
+    index = readScriptEnd(source, index);
+  }
+  index = skipDifferentialSpacing(source, index);
+
+  if (source[index] === "{") {
+    const group = readBracedSpan(source, index);
+    if (!group) return null;
+    const groupIndex = skipDifferentialSpacing(group.content, 0);
+    if (group.content[groupIndex] !== "\\") return null;
+    const commandEnd = readCommandEnd(group.content, groupIndex);
+    return group.content.slice(groupIndex + 1, commandEnd);
+  }
+
+  if (source[index] !== "\\") return null;
+  const commandEnd = readCommandEnd(source, index);
+  return source.slice(index + 1, commandEnd);
+}
+
+function uprightLeadingGreekDifferential(source: string): string {
+  const variableCommand = leadingDifferentialVariableCommand(source);
+  if (!variableCommand || !greekVariableCommands.has(variableCommand)) {
+    return source;
+  }
+  return uprightDifferentialPrefix(source, false);
+}
+
+function uprightDifferentialSequence(source: string): string {
+  const sequence = integralMeasureTail(source, 0, source.length);
+  if (!sequence) return uprightDifferentialPrefix(source, false);
+
+  let normalized = source;
+  for (const dIndex of [...sequence.dIndices].sort((a, b) => b - a)) {
+    normalized =
+      normalized.slice(0, dIndex) +
+      "\\mathrm{d}" +
+      normalized.slice(dIndex + 1);
+  }
+  return normalized;
+}
+
 function normalizeDerivativeFractions(source: string): string {
   let result = "";
   let index = 0;
@@ -625,14 +922,18 @@ function normalizeDerivativeFractions(source: string): string {
       continue;
     }
 
-    let numerator = normalizeDerivativeFractions(numeratorGroup.content);
-    let denominator = normalizeDerivativeFractions(denominatorGroup.content);
+    let numerator = uprightLeadingGreekDifferential(
+      normalizeDerivativeFractions(numeratorGroup.content),
+    );
+    let denominator = uprightLeadingGreekDifferential(
+      normalizeDerivativeFractions(denominatorGroup.content),
+    );
     if (
       readDifferentialPrefix(numerator, true) &&
       readDifferentialPrefix(denominator, false)
     ) {
       numerator = uprightDifferentialPrefix(numerator, true);
-      denominator = uprightDifferentialPrefix(denominator, false);
+      denominator = uprightDifferentialSequence(denominator);
     }
 
     result +=
@@ -757,8 +1058,27 @@ function normalizeIntegralDifferentials(source: string): string {
   for (const match of integralMatches) {
     const integralEnd = (match.index ?? 0) + match[0].length;
     const segmentEnd = topLevelBoundaryAfter(source, integralEnd);
+    let braceDepth = 0;
+    let fenceDepth = 0;
     for (let index = integralEnd; index < segmentEnd; index += 1) {
-      if (source[index] !== "d") continue;
+      const character = source[index];
+      if (character === "{") {
+        braceDepth += 1;
+        continue;
+      }
+      if (character === "}") {
+        braceDepth = Math.max(0, braceDepth - 1);
+        continue;
+      }
+      if (character === "(" || character === "[") {
+        fenceDepth += 1;
+        continue;
+      }
+      if (character === ")" || character === "]") {
+        fenceDepth = Math.max(0, fenceDepth - 1);
+        continue;
+      }
+      if (character !== "d" || braceDepth > 0 || fenceDepth > 0) continue;
       if (index > 0 && /[A-Za-z\\]/.test(source[index - 1])) continue;
       const tail = integralMeasureTail(source, index, segmentEnd);
       if (!tail) continue;
@@ -797,7 +1117,9 @@ function readBracedCommand(source: string, start: number): number {
 
 export function normalizeChineseLatex(source: string): string {
   const normalizedTextCommands = normalizeContextualUprightSymbols(
-    normalizeMathLiveCanonicalUprightCommands(source),
+    normalizeMathLiveCanonicalUprightCommands(
+      normalizeExtendedIntegralLatexCommands(source),
+    ),
   ).replace(
     /\\(?:mathrm|textrm)\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
     "\\text{$1}",

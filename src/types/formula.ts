@@ -1,6 +1,7 @@
 export type LatexCodeFormat =
   | "raw"
   | "inline-dollar"
+  | "inline-text-double-dollar"
   | "inline-paren"
   | "display-dollar"
   | "display-bracket"

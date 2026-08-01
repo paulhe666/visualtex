@@ -9,10 +9,13 @@ import {
   FileImage,
   FileText,
   FolderOpen,
+  Grid3X3,
   Keyboard,
-  MousePointerClick,
   PanelLeft,
   Settings2,
+  Subscript,
+  Superscript,
+  Type,
   X,
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
@@ -31,9 +34,10 @@ type StepId =
   | "keyboard"
   | "hotkeys-tiles"
   | "layouts-themes"
+  | "matrix-fonts"
+  | "input-behavior"
   | "code-format"
-  | "export"
-  | "input-behavior";
+  | "export";
 
 interface TutorialStep {
   id: StepId;
@@ -80,6 +84,20 @@ export function tutorialSteps(language: Language): TutorialStep[] {
         : "在“设置 → 外观与编辑”中切换标准布局、经典布局和五套完整主题。",
     },
     {
+      id: "matrix-fonts",
+      title: isEn ? "Build matrices and styled symbols" : "快速插入矩阵与字体变体",
+      description: isEn
+        ? "Choose matrix dimensions up to 10 × 10, then insert blackboard bold, calligraphic, Fraktur, bold, and other styled symbols from the formula tools."
+        : "通过尺寸面板快速插入最高 10×10 的矩阵，并从公式工具中使用黑板粗体、花体、哥特体、粗体等字体变体。",
+    },
+    {
+      id: "input-behavior",
+      title: isEn ? "Control each input scope independently" : "独立控制每一种输入逻辑",
+      description: isEn
+        ? "Superscript and subscript auto-exit are independent. Styled-font input can exit after one character, or stay open and grow until Enter. Differential d is normalized upright in derivative and integral contexts."
+        : "上标与下标的自动跳出可独立设置；字体变体既可输入一个字符后跳出，也可连续扩展输入框并按 Enter 结束。导数和积分语境中的微分 d 会自动规范为正体。",
+    },
+    {
       id: "code-format",
       title: isEn ? "Switch the LaTeX code format" : "切换 LaTeX 代码格式",
       description: isEn
@@ -92,13 +110,6 @@ export function tutorialSteps(language: Language): TutorialStep[] {
       description: isEn
         ? "Open Export in the top bar to download the current document as Markdown, SVG, or PNG through your browser."
         : "从顶部打开“导出”，即可通过浏览器将当前公式文档下载为 Markdown、SVG 或 PNG。",
-    },
-    {
-      id: "input-behavior",
-      title: isEn ? "Customize input behavior" : "自定义操作逻辑",
-      description: isEn
-        ? "Control plain-text math conversion, automatic exits from scripts, accents, and font commands, plus the large command suggestion panels."
-        : "控制普通字符数学转义、上下标、重音和字体命令的自动跳出，以及大型命令候选框。",
     },
   ];
 }
@@ -314,6 +325,64 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
+            {current.id === "matrix-fonts" && (
+              <div className="onboarding-matrix-font-demo">
+                <div className="onboarding-matrix-picker-preview">
+                  <span className="onboarding-demo-heading">
+                    <Grid3X3 size={16} />
+                    <strong>{isEn ? "Matrix size" : "矩阵尺寸"}</strong>
+                    <small>10 × 10</small>
+                  </span>
+                  <div className="onboarding-mini-matrix-grid">
+                    {Array.from({ length: 16 }, (_, index) => (
+                      <i key={index} className={index < 11 ? "is-selected" : ""} />
+                    ))}
+                  </div>
+                  <b>3 × 4</b>
+                </div>
+                <i className="onboarding-feature-arrow"><ArrowRight size={15} /></i>
+                <div className="onboarding-font-variants-preview">
+                  <span className="onboarding-demo-heading">
+                    <Type size={16} />
+                    <strong>{isEn ? "Font variants" : "字体变体"}</strong>
+                  </span>
+                  <div>
+                    <span><MathPreview latex="\\mathbb{R}" /><small>mathbb</small></span>
+                    <span><MathPreview latex="\\mathcal{F}" /><small>mathcal</small></span>
+                    <span><MathPreview latex="\\mathfrak{g}" /><small>mathfrak</small></span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {current.id === "input-behavior" && (
+              <div className="onboarding-input-behavior-demo">
+                <div className="onboarding-input-toggle-list">
+                  <span>
+                    <Superscript size={17} />
+                    <strong>{isEn ? "Superscript auto-exit" : "上标输入后跳出"}</strong>
+                    <i className="is-on"><b /></i>
+                  </span>
+                  <span>
+                    <Subscript size={17} />
+                    <strong>{isEn ? "Subscript auto-exit" : "下标输入后跳出"}</strong>
+                    <i><b /></i>
+                  </span>
+                </div>
+                <div className="onboarding-wrapper-input-preview">
+                  <small>{isEn ? "Continuous styled input" : "字体变体连续输入"}</small>
+                  <span><MathPreview latex="\\mathbb{AB}" /><i /></span>
+                  <kbd>Enter</kbd>
+                  <ArrowRight size={15} />
+                  <MathPreview latex="\\mathbb{AB}C" />
+                </div>
+                <div className="onboarding-upright-preview">
+                  <small>{isEn ? "Automatic upright differential" : "微分正体自动规范"}</small>
+                  <MathPreview latex="\\frac{\\mathrm{d}\\Phi}{\\mathrm{d}\\theta}" />
+                </div>
+              </div>
+            )}
+
             {current.id === "code-format" && (
               <div className="onboarding-code-format-demo">
                 <div className="onboarding-code-format-toolbar">
@@ -356,33 +425,6 @@ export function OnboardingTour({ open, language, onFinish }: Props) {
               </div>
             )}
 
-            {current.id === "input-behavior" && (
-              <div className="onboarding-input-behavior-demo">
-                <div className="onboarding-input-behavior-heading">
-                  <MousePointerClick size={17} />
-                  <strong>{isEn ? "Input behavior" : "操作逻辑"}</strong>
-                </div>
-                <div className="onboarding-input-behavior-options">
-                  <span>
-                    <div><strong>{isEn ? "Auto-convert common math input" : "常用数学输入自动转义"}</strong><small>{isEn ? "alpha, >=, pp, hat and more" : "支持 alpha、>=、pp、hat 等输入"}</small></div>
-                    <i className="is-on" />
-                  </span>
-                  <span>
-                    <div><strong>{isEn ? "Exit font command after input" : "字体命令输入后跳出"}</strong><small>{isEn ? "Off: type multiple characters" : "关闭后可连续输入多个字符"}</small></div>
-                    <i />
-                  </span>
-                  <span>
-                    <div><strong>{isEn ? "Structured command suggestions" : "求和、积分等结构候选框"}</strong><small>{isEn ? "Large VisualTeX command panel" : "VisualTeX 大型命令候选框"}</small></div>
-                    <i className="is-on" />
-                  </span>
-                </div>
-                <div className="onboarding-input-behavior-example">
-                  <code>\\mathbb&#123;AB&#125;</code>
-                  <kbd>Enter</kbd>
-                  <small>{isEn ? "Confirm and leave the font scope" : "确认并退出字体作用域"}</small>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

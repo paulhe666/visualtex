@@ -13,6 +13,7 @@ import {
   Palette,
   Pencil,
   Plus,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -93,6 +94,8 @@ interface SectionEditorState {
 }
 
 const customFormulaTilesStorageKey = "visualtex-custom-formula-tiles";
+const commonToolbarCommandsStorageKey = "visualtex-common-toolbar-command-ids-v1";
+const commonToolbarCommandLimit = 45;
 const defaultCustomSectionId = "default";
 const defaultCustomSectionName = "未命名分区";
 const maxCustomFormulaTiles = 30;
@@ -111,6 +114,39 @@ const customTileRowGap = 3;
 const customTileHorizontalChrome = 6;
 const customTileMinimumScale = 0.9;
 const customTileMaximumItemsPerRow = 7;
+
+function normalizeCommonToolbarCommandIds(value: unknown) {
+  const validIds = new Set(commandRegistry.map((command) => command.id));
+  const result: string[] = [];
+  const append = (id: unknown) => {
+    if (
+      typeof id !== "string" ||
+      !validIds.has(id) ||
+      result.includes(id) ||
+      result.length >= commonToolbarCommandLimit
+    ) {
+      return;
+    }
+    result.push(id);
+  };
+
+  if (Array.isArray(value)) value.forEach(append);
+  commonCommandIds.forEach(append);
+  commandRegistry
+    .filter((command) => !hiddenToolbarCommandIds.has(command.id))
+    .forEach((command) => append(command.id));
+  return result.slice(0, commonToolbarCommandLimit);
+}
+
+function loadCommonToolbarCommandIds() {
+  try {
+    return normalizeCommonToolbarCommandIds(
+      JSON.parse(localStorage.getItem(commonToolbarCommandsStorageKey) ?? "null"),
+    );
+  } catch {
+    return normalizeCommonToolbarCommandIds(null);
+  }
+}
 
 function compactCustomTileWidth(latex: string) {
   const normalized = latex.replace(/\s+/g, "");
@@ -672,6 +708,9 @@ export function FormulaToolbar({
     useState<TileCategory>("common");
   const [customTileLibrary, setCustomTileLibrary] =
     useState<CustomFormulaTileLibrary>(loadCustomFormulaTiles);
+  const [commonToolbarCommandIds, setCommonToolbarCommandIds] = useState(
+    loadCommonToolbarCommandIds,
+  );
   const [activeCustomSectionId, setActiveCustomSectionId] = useState(
     defaultCustomSectionId,
   );
@@ -719,6 +758,13 @@ export function FormulaToolbar({
   useEffect(() => {
     persistCustomFormulaTiles(customTileLibrary);
   }, [customTileLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      commonToolbarCommandsStorageKey,
+      JSON.stringify(commonToolbarCommandIds),
+    );
+  }, [commonToolbarCommandIds]);
 
   useEffect(() => {
     if (
@@ -816,6 +862,43 @@ export function FormulaToolbar({
   ]);
 
   useEffect(() => {
+    if (layout !== "horizontal") return;
+    const root = toolbarRef.current;
+    if (!root) return;
+
+    const handleHorizontalWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target instanceof Element
+        ? event.target.closest<HTMLElement>(".template-strip, .toolbar-tabs")
+        : null;
+      if (!target || !root.contains(target)) return;
+      const overflow = target.scrollWidth - target.clientWidth;
+      if (overflow <= 1) return;
+
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 24
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? Math.max(120, target.clientWidth * 0.82)
+          : 1;
+      const rawDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX)
+        ? event.deltaY
+        : event.deltaX;
+      if (!rawDelta) return;
+      const previous = target.scrollLeft;
+      target.scrollLeft = Math.max(
+        0,
+        Math.min(overflow, previous + rawDelta * unit),
+      );
+      if (Math.abs(target.scrollLeft - previous) > 0.5) {
+        event.preventDefault();
+      }
+    };
+
+    root.addEventListener("wheel", handleHorizontalWheel, { passive: false });
+    return () => root.removeEventListener("wheel", handleHorizontalWheel);
+  }, [layout, activeCategory, activeView]);
+
+  useEffect(() => {
     if (!contextMenu) return;
 
     const closeFromPointer = (event: PointerEvent) => {
@@ -850,7 +933,7 @@ export function FormulaToolbar({
 
   const visibleCommands = useMemo(() => {
     const preferredIds = activeCategory === "common"
-      ? commonCommandIds
+      ? commonToolbarCommandIds
       : activeCategory === "calculus"
         ? calculusCommandIds
         : null;
@@ -869,7 +952,7 @@ export function FormulaToolbar({
       seenCommandIds.add(command.id);
       return true;
     });
-  }, [activeCategory]);
+  }, [activeCategory, commonToolbarCommandIds]);
 
   const customTileDefinitions = useMemo<FormulaTileDefinition[]>(
     () =>
@@ -883,10 +966,13 @@ export function FormulaToolbar({
       })),
     [customTileLibrary.tiles],
   );
-  const visibleFormulaTiles =
-    activeTileCategory === "common"
-      ? commonFormulaTiles
-      : customTileDefinitions;
+  const visibleFormulaTiles = useMemo(
+    () =>
+      activeTileCategory === "common"
+        ? commonFormulaTiles
+        : customTileDefinitions,
+    [activeTileCategory, customTileDefinitions],
+  );
 
   const recordCustomTileNaturalWidth = (tileId: string, width: number) => {
     const stableWidth = Math.max(1, Math.round(width));
@@ -1045,6 +1131,16 @@ export function FormulaToolbar({
       ),
     }));
   };
+  const addCommandToCommon = (commandId: string) => {
+    setCommonToolbarCommandIds((current) =>
+      normalizeCommonToolbarCommandIds([
+        commandId,
+        ...current.filter((id) => id !== commandId),
+      ]).slice(0, commonToolbarCommandLimit),
+    );
+    setActiveCategory("common");
+    setContextMenu(null);
+  };
   const openFormulaContextMenu = (
     event: MouseEvent<HTMLButtonElement>,
     target: FormulaHotkeyTarget,
@@ -1053,7 +1149,10 @@ export function FormulaToolbar({
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = customTileId ? 252 : 224;
-    const menuHeight = customTileId ? 330 : 132;
+    const canAddToCommon =
+      target.kind === "command" &&
+      !commonToolbarCommandIds.includes(target.command.id);
+    const menuHeight = customTileId ? 330 : 132 + (canAddToCommon ? 38 : 0);
     setContextMenu({
       target,
       customTileId,
@@ -1704,6 +1803,21 @@ export function FormulaToolbar({
                   : "未设置快捷键"}
             </span>
           </div>
+          {contextMenu.target.kind === "command" &&
+            !commonToolbarCommandIds.includes(contextMenu.target.command.id) && (
+              <button
+                type="button"
+                role="menuitem"
+                className="formula-hotkey-context-action"
+                data-add-to-common-command={contextMenu.target.command.id}
+                onClick={() =>
+                  addCommandToCommon(contextMenu.target.command.id)
+                }
+              >
+                <Star size={14} />
+                {isEn ? "Add to Common" : "设为常用"}
+              </button>
+            )}
           <button
             type="button"
             role="menuitem"

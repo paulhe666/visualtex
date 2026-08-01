@@ -79,7 +79,7 @@ function normalizeFormulaAlignment(value: unknown): FormulaAlignment {
   return value === "center" || value === "right" ? value : "left";
 }
 
-function normalizeEditorLayout(value: unknown): EditorLayout {
+export function normalizeEditorLayout(value: unknown): EditorLayout {
   return value === "standard" ? "standard" : DEFAULT_EDITOR_LAYOUT;
 }
 
@@ -320,7 +320,7 @@ export const useEditorStore = create<EditorState>()(
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
-      recordCommand: (commandId, prefix) =>
+      recordCommand: (commandId, prefix, source) =>
         set((state) => {
           const now = Date.now();
           const normalizedPrefix = prefix.replace(/^\\/, "").toLocaleLowerCase();
@@ -344,6 +344,10 @@ export const useEditorStore = create<EditorState>()(
                 acceptedPrefixes: {
                   ...previous.acceptedPrefixes,
                   [normalizedPrefix]: (previous.acceptedPrefixes[normalizedPrefix] ?? 0) + 1,
+                },
+                contextCounts: {
+                  ...(previous.contextCounts ?? {}),
+                  [source]: (previous.contextCounts?.[source] ?? 0) + 1,
                 },
               },
             },

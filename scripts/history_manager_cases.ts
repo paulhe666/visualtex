@@ -395,6 +395,98 @@ async function run() {
 
   {
     const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
+    const before = cloneDocument(document);
+    const firstAfter: DocumentSnapshot = {
+      ...cloneDocument(document),
+      lines: [{ id: "line-1", latex: "ax" }],
+      selectionByLineId: { "line-1": selection(2) },
+    };
+    manager.recordSourceDocumentEdit({
+      type: "replace-document",
+      before,
+      after: firstAfter,
+      source: "source-apply",
+      timestamp: 10,
+    });
+    Object.assign(document, {
+      lines: firstAfter.lines.map((line) => ({ ...line })),
+      selectionByLineId: firstAfter.selectionByLineId,
+    });
+
+    const secondBefore = cloneDocument(document);
+    const secondAfter: DocumentSnapshot = {
+      ...secondBefore,
+      lines: [{ id: "line-1", latex: "axy" }],
+      selectionByLineId: { "line-1": selection(3) },
+    };
+    manager.recordSourceDocumentEdit({
+      type: "replace-document",
+      before: secondBefore,
+      after: secondAfter,
+      source: "source-apply",
+      timestamp: 100,
+    });
+    Object.assign(document, {
+      lines: secondAfter.lines.map((line) => ({ ...line })),
+      selectionByLineId: secondAfter.selectionByLineId,
+    });
+
+    assert.equal(
+      manager.getState().undoStack.length,
+      0,
+      "continuous source edits should remain pending during the typing window",
+    );
+    assert.equal(
+      manager.getState().pendingTransaction?.kind,
+      "source-document",
+      "continuous source edits should share one pending document transaction",
+    );
+    await manager.undo();
+    assert.equal(document.lines[0].latex, "a");
+    await manager.redo();
+    assert.equal(document.lines[0].latex, "axy");
+  }
+
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
+    const before = cloneDocument(document);
+    const changed: DocumentSnapshot = {
+      ...before,
+      lines: [{ id: "line-1", latex: "ab" }],
+      selectionByLineId: { "line-1": selection(2) },
+    };
+    manager.recordSourceDocumentEdit({
+      type: "replace-document",
+      before,
+      after: changed,
+      source: "source-apply",
+      timestamp: 10,
+    });
+    Object.assign(document, {
+      lines: changed.lines.map((line) => ({ ...line })),
+      selectionByLineId: changed.selectionByLineId,
+    });
+    manager.recordSourceDocumentEdit({
+      type: "replace-document",
+      before: cloneDocument(document),
+      after: before,
+      source: "source-apply",
+      timestamp: 100,
+    });
+    assert.equal(
+      manager.getState().undoStack.length,
+      0,
+      "a CodeMirror undo back to the source-edit origin should not create global history",
+    );
+    assert.equal(
+      manager.getState().pendingTransaction,
+      null,
+      "a CodeMirror undo back to the source-edit origin should cancel the pending transaction",
+    );
+  }
+
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
     manager.push({
       type: "replace-formula",
       lineId: "line-1",

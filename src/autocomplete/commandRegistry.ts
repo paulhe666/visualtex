@@ -164,6 +164,7 @@ export const commonCommandIds = [
   "pi",
   "sigma",
   "omega",
+  "delta",
   "equal",
   "neq",
   "approx",
@@ -173,6 +174,10 @@ export const commonCommandIds = [
   "in",
   "subset",
   "rightarrow",
+  "notin",
+  "forall",
+  "exists",
+  "leftarrow",
 ];
 
 export const calculusCommandIds = [

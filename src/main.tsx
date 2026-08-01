@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "./styles.css";
+import "./styles-editor-features.css";
 import "./landing/landing.css";
 import App from "./App";
 import { LandingPage } from "./landing/LandingPage";

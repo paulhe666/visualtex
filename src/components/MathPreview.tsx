@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { convertLatexToMarkup } from "mathlive";
+import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
 
 interface MathPreviewProps {
   latex: string;
@@ -102,7 +102,7 @@ export function MathPreview({
     [latex, showPlaceholders],
   );
   const markup = useMemo(
-    () => convertLatexToMarkup(previewLatex, { defaultMode: "math" }),
+    () => convertVisualTexLatexToMarkup(previewLatex, { defaultMode: "math" }),
     [previewLatex],
   );
 
