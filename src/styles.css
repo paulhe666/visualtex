@@ -2151,7 +2151,7 @@ kbd {
   display: flex;
   flex-direction: column;
   margin: 0 auto;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .formula-line {
@@ -6480,6 +6480,13 @@ textarea:disabled {
 .formula-line .visual-mathfield::part(container),
 .formula-line .visual-mathfield::part(content) {
   min-height: 0;
+}
+
+/* MathLive clips its internal content box by default and only leaves 1px on
+   the leading edge. Large delimiters, italic glyphs and operators can paint
+   outside that box, so keep the ink visible without moving the formula row. */
+.formula-line .visual-mathfield::part(content) {
+  overflow: visible;
 }
 
 .formula-line .visual-mathfield::part(container) {

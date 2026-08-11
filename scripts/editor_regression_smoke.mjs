@@ -242,6 +242,24 @@ async function main() {
       done();
     })`);
 
+    const clippingGuardState = await evaluate(`(() => {
+      const stack = document.querySelector(".mathfield-stack");
+      const field = document.querySelector("math-field");
+      const content = field?.shadowRoot?.querySelector('[part="content"]');
+      return {
+        stackOverflow: stack ? getComputedStyle(stack).overflow : "missing",
+        contentOverflow: content ? getComputedStyle(content).overflow : "missing",
+      };
+    })()`);
+    if (
+      clippingGuardState.stackOverflow !== "visible" ||
+      clippingGuardState.contentOverflow !== "visible"
+    ) {
+      throw new Error(
+        `Formula clipping guard is inactive: ${JSON.stringify(clippingGuardState)}`,
+      );
+    }
+
     const setFieldAt = async (index, latex) => {
       await evaluate(`(() => {
         const field = document.querySelectorAll("math-field")[${index}];
