@@ -193,7 +193,33 @@ export function LatexSourceEditor({
     draftRef.current = sourceRef.current;
     updateDirty(false);
 
+    type SourceEditorProbe = {
+      replaceDocument: (value: string) => void;
+      getDocument: () => string;
+    };
+    const probeWindow = window as Window & {
+      __visualtexSourceEditorProbe?: SourceEditorProbe;
+    };
+    const testProbeEnabled =
+      new URLSearchParams(window.location.search).get("visualtex-test-probe") ===
+      "1";
+    const sourceEditorProbe: SourceEditorProbe = {
+      replaceDocument: (value) => {
+        const current = view.state.doc.toString();
+        view.dispatch({
+          changes: { from: 0, to: current.length, insert: value },
+        });
+      },
+      getDocument: () => view.state.doc.toString(),
+    };
+    if (testProbeEnabled) {
+      probeWindow.__visualtexSourceEditorProbe = sourceEditorProbe;
+    }
+
     return () => {
+      if (probeWindow.__visualtexSourceEditorProbe === sourceEditorProbe) {
+        delete probeWindow.__visualtexSourceEditorProbe;
+      }
       if (formatRefreshFrameRef.current !== null) {
         window.cancelAnimationFrame(formatRefreshFrameRef.current);
         formatRefreshFrameRef.current = null;

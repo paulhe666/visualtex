@@ -284,6 +284,7 @@ interface PointerSelectionSession {
   startX: number;
   startY: number;
   anchor: MultiLineSelectionPoint;
+  allowSameLine: boolean;
   active: boolean;
 }
 
@@ -1884,6 +1885,7 @@ const visualTexPlaceholderSelectionClass =
   "has-visualtex-structural-placeholder-selection";
 const visualTexRawLatexClass = "has-visualtex-raw-latex-command";
 const visualTexPointerSelectingClass = "visualtex-pointer-selecting";
+const visualTexSourcePreviewClass = "visualtex-source-preview-only";
 const visualTexCaretRepaintClass = "visualtex-caret-repaint";
 const visualTexCaretRepaintFrames = new WeakMap<MathfieldElement, number>();
 
@@ -5019,6 +5021,15 @@ function FormulaField(props: FormulaFieldProps) {
       };
     };
     const handleFocus = () => {
+      if (field.classList.contains(visualTexSourcePreviewClass)) {
+        field.blur();
+        queueMicrotask(() => {
+          document
+            .querySelector<HTMLElement>(".source-panel .cm-content")
+            ?.focus({ preventScroll: true });
+        });
+        return;
+      }
       nativeInputPopoverActiveField = field;
       scheduleStableNativeInputPopoverSync();
       propsRef.current.onFocus(propsRef.current.index, field);
@@ -6122,6 +6133,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       null,
     );
     const multiLineSelectedIdsRef = useRef(new Set<string>());
+    const [, setMultiLineSelectionRevision] = useState(0);
     const pendingFocusRef = useRef<{
       lineId: string;
       latex: string | null;
@@ -6703,9 +6715,67 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           };
         }
       }
+      const hadSelection = multiLineSelectedIdsRef.current.size > 0;
       multiLineSelectedIdsRef.current.clear();
       multiLineSelectionRef.current = null;
+      if (hadSelection) {
+        setMultiLineSelectionRevision((revision) => revision + 1);
+      }
     };
+
+    useLayoutEffect(() => {
+      const fields = Array.from(fieldRefs.current.values()).filter(
+        (field) => field.isConnected,
+      );
+
+      if (!previewOnly) {
+        for (const field of fields) {
+          field.classList.remove(visualTexSourcePreviewClass);
+          field.readOnly = readOnly;
+        }
+        return;
+      }
+
+      historyManager.commitPendingTransaction();
+      queryRef.current = "";
+      setQuery("");
+      selectSuggestionIndex(0);
+      suppressedSuggestionRef.current = null;
+      lastSelectionTargetRef.current = null;
+      pointerSelectionSessionRef.current = null;
+      clearMultiLineSelection();
+
+      for (const field of fields) {
+        field.classList.add(visualTexSourcePreviewClass);
+        field.readOnly = true;
+        const position = Math.max(0, Math.min(field.position, field.lastOffset));
+        if (!field.selectionIsCollapsed) {
+          field.selection = {
+            ranges: [[position, position]],
+            direction: "none",
+          };
+        }
+        field.blur();
+        delete field.dataset.pendingNativeSuggestion;
+        field.classList.remove("has-visualtex-multi-line-selection");
+        const host = field.closest<HTMLElement>(".mathfield-host");
+        host?.classList.remove("has-pending-wrapper-placeholder");
+        if (host) delete host.dataset.pendingWrapperCommand;
+        field
+          .closest<HTMLElement>(".formula-line")
+          ?.classList.remove("is-multi-line-selected");
+        dismissNativeSuggestionPopover(field);
+      }
+
+      return () => {
+        if (previewOnlyRef.current) return;
+        for (const field of fields) {
+          if (!field.isConnected) continue;
+          field.classList.remove(visualTexSourcePreviewClass);
+          field.readOnly = readOnly;
+        }
+      };
+    }, [lines, previewOnly, readOnly]);
 
     const resolveMultiLineSelectionPoint = (
       clientX: number,
@@ -8822,7 +8892,43 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         );
         if (!entry) return;
 
+        if (previewOnlyRef.current) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          previewOnlyRef.current = false;
+          for (const field of fieldRefs.current.values()) {
+            if (!field.isConnected) continue;
+            field.classList.remove(visualTexSourcePreviewClass);
+            field.readOnly = readOnly;
+          }
+          onPreviewActivate?.();
+
+          const [lineId, field] = entry;
+          const offset = Math.max(
+            0,
+            Math.min(
+              field.getOffsetFromPoint(event.clientX, event.clientY, { bias: 0 }),
+              field.lastOffset,
+            ),
+          );
+          field.focus();
+          field.position = offset;
+          field.shadowRoot
+            ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+            ?.focus({ preventScroll: true });
+          setActiveLine(lineId);
+          return;
+        }
+
         clearMultiLineSelection();
+        const contentBounds = entry[1].shadowRoot
+          ?.querySelector<HTMLElement>('[part="content"]')
+          ?.getBoundingClientRect();
+        const startedOutsideFormula = Boolean(
+          contentBounds &&
+            (event.clientX < contentBounds.left - 6 ||
+              event.clientX > contentBounds.right + 6),
+        );
         const anchor = resolveMultiLineSelectionPoint(
           event.clientX,
           event.clientY,
@@ -8834,6 +8940,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           startX: event.clientX,
           startY: event.clientY,
           anchor,
+          allowSameLine: startedOutsideFormula,
           active: false,
         };
       };
@@ -8858,6 +8965,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           event.clientY,
         );
         if (!focus) return;
+        if (
+          !session.active &&
+          focus.lineId === session.anchor.lineId &&
+          !session.allowSameLine
+        ) {
+          return;
+        }
         session.active = true;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -9058,7 +9172,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             const lineId = line.id;
             return (
             <div
-              className={"formula-line " + (lineId === activeLineIdRef.current ? "is-active" : "")}
+              className={
+                "formula-line " +
+                (lineId === activeLineIdRef.current ? "is-active " : "") +
+                (multiLineSelectedIdsRef.current.has(lineId)
+                  ? "is-multi-line-selected"
+                  : "")
+              }
               data-line-id={lineId}
               key={lineId}
             >

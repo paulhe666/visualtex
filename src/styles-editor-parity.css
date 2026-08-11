@@ -123,6 +123,12 @@
   pointer-events: none;
 }
 
+/* Keep the original Web matrix-builder height when the post-1.2.4
+   delimiter set expands from three choices to six. */
+.formula-toolbar.is-horizontal .matrix-delimiter-options {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 /* Settings */
 .web-settings-backdrop {
   z-index: 12000;
@@ -961,19 +967,26 @@
   }
 }
 
-/* Classic layout resizers preserve the original Web geometry by using the
-   same 300px sidebar and 240px dock defaults. */
+/* Classic layout resizing uses overlay hit areas so enabling the feature does
+   not consume layout space or change the original Web geometry. */
 .workspace.is-classic-layout.has-sidebar {
-  grid-template-columns: minmax(0, 1fr) 7px var(--classic-tile-width, 300px);
+  --classic-tile-effective-width: var(--classic-tile-width, 300px);
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) var(--classic-tile-effective-width);
 }
 
 .classic-editor-pane-body:not(.is-dock-collapsed) {
-  grid-template-rows: minmax(0, 1fr) 7px var(--classic-dock-height, 240px);
+  --classic-dock-effective-height: var(
+    --classic-dock-height,
+    clamp(230px, 29vh, 250px)
+  );
+  position: relative;
+  grid-template-rows: minmax(0, 1fr) var(--classic-dock-effective-height);
 }
 
 .workspace-panel-resizer {
-  position: relative;
-  z-index: 12;
+  position: absolute;
+  z-index: 40;
   min-width: 0;
   min-height: 0;
   border: 0;
@@ -986,34 +999,44 @@
   content: "";
   position: absolute;
   border-radius: 999px;
-  background: var(--border-strong);
-  opacity: 0.5;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
 
 .workspace-panel-resizer:hover::before,
 .workspace-panel-resizer:focus-visible::before {
-  background: var(--accent);
-  opacity: 1;
+  opacity: 0.72;
 }
 
 .classic-tile-resizer {
-  width: 7px;
+  top: 0;
+  right: calc(var(--classic-tile-effective-width) - 4px);
+  bottom: 0;
+  width: 8px;
   cursor: col-resize;
 }
 
 .classic-tile-resizer::before {
-  inset: 8px 2px;
-  width: 3px;
+  top: 8px;
+  right: 3px;
+  bottom: 8px;
+  width: 2px;
 }
 
 .classic-dock-resizer {
-  height: 7px;
+  right: 0;
+  bottom: calc(var(--classic-dock-effective-height) - 4px);
+  left: 0;
+  height: 8px;
   cursor: row-resize;
 }
 
 .classic-dock-resizer::before {
-  inset: 2px 10px;
-  height: 3px;
+  right: 10px;
+  bottom: 3px;
+  left: 10px;
+  height: 2px;
 }
 
 body[data-workspace-resize="tiles"],
@@ -1030,13 +1053,23 @@ body[data-workspace-resize="dock"] * {
 
 @media (max-width: 980px) {
   .workspace.is-classic-layout.has-sidebar {
-    grid-template-columns: minmax(0, 1fr) 7px clamp(220px, 28vw, 260px);
+    --classic-tile-effective-width: var(
+      --classic-tile-width,
+      clamp(220px, 28vw, 260px)
+    );
   }
 }
 
 @media (max-width: 760px) {
   .workspace.is-classic-layout.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .classic-editor-pane-body:not(.is-dock-collapsed) {
+    --classic-dock-effective-height: var(
+      --classic-dock-height,
+      clamp(210px, 32vh, 238px)
+    );
   }
 
   .classic-tile-resizer {

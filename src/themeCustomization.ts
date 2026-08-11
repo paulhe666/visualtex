@@ -66,7 +66,7 @@ export const THEME_DEFINITIONS: ThemeDefinition[] = [
     labelZh: "浅色",
     labelEn: "Light",
     mode: "light",
-    swatches: ["#F4F5F2", "#FFFFFF", "#456A55"],
+    swatches: ["#F2F4F6", "#FFFFFF", "#1F638E"],
     colors: light,
   },
   {
@@ -74,7 +74,7 @@ export const THEME_DEFINITIONS: ThemeDefinition[] = [
     labelZh: "米色",
     labelEn: "Beige",
     mode: "light",
-    swatches: ["#F3EBDD", "#FBF4E8", "#8A7354"],
+    swatches: ["#E4D5BF", "#FFF9EF", "#785536"],
     colors: palette({
       accent: "#8A7354",
       background: "#F3EBDD",
@@ -94,7 +94,7 @@ export const THEME_DEFINITIONS: ThemeDefinition[] = [
     labelZh: "深色",
     labelEn: "Dark",
     mode: "dark",
-    swatches: ["#161A17", "#202622", "#7FC89B"],
+    swatches: ["#16181B", "#202328", "#72B7DD"],
     colors: palette({
       accent: "#7FC89B",
       background: "#151916",
@@ -117,8 +117,8 @@ export const THEME_DEFINITIONS: ThemeDefinition[] = [
     id: "purple",
     labelZh: "紫色",
     labelEn: "Purple",
-    mode: "light",
-    swatches: ["#F3EFF8", "#FFFFFF", "#73558F"],
+    mode: "dark",
+    swatches: ["#120E16", "#362842", "#BFA4EF"],
     colors: palette({
       accent: "#73558F",
       background: "#F3EFF8",
@@ -134,7 +134,7 @@ export const THEME_DEFINITIONS: ThemeDefinition[] = [
     labelZh: "深绿",
     labelEn: "Forest",
     mode: "dark",
-    swatches: ["#102019", "#183126", "#72C696"],
+    swatches: ["#0D120F", "#25352D", "#78C595"],
     colors: palette({
       accent: "#72C696",
       background: "#102019",
@@ -461,13 +461,42 @@ const cssVariables: Record<keyof ThemePaletteColors, string[]> = {
   toolbarGreek: ["--toolbar-greek"],
 };
 
+const legacyWebThemeIds = new Set<Theme>([
+  "light",
+  "beige",
+  "dark",
+  "purple",
+  "green",
+]);
+
+function clearAppliedThemePalette(root: HTMLElement) {
+  for (const key of Object.keys(cssVariables) as Array<keyof ThemePaletteColors>) {
+    for (const cssVariable of cssVariables[key]) {
+      root.style.removeProperty(cssVariable);
+    }
+  }
+  root.style.removeProperty("--accent-soft");
+  root.style.removeProperty("--focus-soft");
+}
+
 export function applyThemePalette(theme: Theme) {
   if (typeof document === "undefined") return;
   const definition = getThemeDefinition(theme);
+  const root = document.documentElement;
+
+  // The original five Web themes are fully defined in styles.css. Do not let
+  // the post-1.2.4 palette system overwrite their established colors; only
+  // additional presets and the custom theme need inline palette variables.
+  if (legacyWebThemeIds.has(theme)) {
+    clearAppliedThemePalette(root);
+    root.dataset.visualtexThemeMode = definition.mode;
+    root.style.removeProperty("color-scheme");
+    return;
+  }
+
   const custom = theme === "custom" ? readCustomTheme() : null;
   const colors = custom?.colors ?? definition.colors;
   const mode = custom?.mode ?? definition.mode;
-  const root = document.documentElement;
   root.dataset.visualtexThemeMode = mode;
   root.style.colorScheme = mode;
   for (const key of Object.keys(cssVariables) as Array<keyof ThemePaletteColors>) {

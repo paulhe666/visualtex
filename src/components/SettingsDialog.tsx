@@ -1,43 +1,59 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { createPortal } from "react-dom";
-import { Download, Shapes, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  BrainCircuit,
+  Download,
+  Image,
+  Keyboard,
+  Languages,
+  Palette,
+  RefreshCw,
+  RotateCcw,
+  Shapes,
+  SlidersHorizontal,
+  Type,
+  Upload,
+  X,
+} from "lucide-react";
 import { CustomSymbolDesignerDialog } from "./CustomSymbolDesignerDialog";
 import {
   FORMULA_CHINESE_FONT_OPTIONS,
   FORMULA_LETTER_FONT_OPTIONS,
 } from "../editor/formulaFontPreferences";
 import {
-  pngExportBackgroundPickerValue,
   normalizePngExportBackground,
+  pngExportBackgroundPickerValue,
 } from "../export/pngBackground";
 import {
   createDefaultCustomTheme,
-  getThemeDefinition,
   publishCustomTheme,
   readCustomTheme,
   THEME_DEFINITIONS,
   type CustomThemeState,
   type ThemePaletteColors,
 } from "../themeCustomization";
-import { useEditorStore } from "../stores/editorStore";
 import {
   readCustomSymbolLibrary,
   replaceCustomSymbolLibrary,
 } from "../math/customSymbolRegistry";
-import type { InputBehaviorSettingKey, Theme } from "../types/formula";
 import {
   readWebKeypadMode,
   subscribeWebKeypadMode,
   writeWebKeypadMode,
 } from "../runtime/webKeypadMode";
+import { useEditorStore } from "../stores/editorStore";
+import type {
+  InputBehaviorSettingKey,
+  LatexCodeFormat,
+  Theme,
+} from "../types/formula";
 
 interface Props {
   open: boolean;
+  showApplicationUpdates?: boolean;
   onClose: () => void;
-  [key: string]: unknown;
+  onCheckForUpdates: () => void;
+  onOpenFormulaHotkeys: () => void;
 }
-
-type SettingsTab = "appearance" | "editor" | "input" | "backup";
 
 const DEFAULT_FORMULA_INSET = 34;
 const MIN_FORMULA_INSET = 0;
@@ -51,45 +67,12 @@ const MAX_FORMULA_TOOL_BUTTON_SIZE = 84;
 const DEFAULT_FORMULA_TOOL_BUTTON_PADDING = 2;
 const MIN_FORMULA_TOOL_BUTTON_PADDING = 0;
 const MAX_FORMULA_TOOL_BUTTON_PADDING = 12;
-const DEFAULT_CLASSIC_TILE_WIDTH = 320;
+const DEFAULT_CLASSIC_TILE_WIDTH = 300;
 const MIN_CLASSIC_TILE_WIDTH = 220;
 const MAX_CLASSIC_TILE_WIDTH = 720;
 const DEFAULT_CLASSIC_DOCK_HEIGHT = 240;
 const MIN_CLASSIC_DOCK_HEIGHT = 140;
 const MAX_CLASSIC_DOCK_HEIGHT = 560;
-
-interface WebEditorConfiguration {
-  version: 1;
-  exportedAt: string;
-  editor: {
-    theme: Theme;
-    language: "cn" | "en";
-    editorLayout: "standard" | "classic";
-    zoom: number;
-    sourceOpen: boolean;
-    latexCodeFormat: string;
-    autoPairDelimiters: boolean;
-    showLineNumbers: boolean;
-    highlightActiveLine: boolean;
-    formulaInsetLeft: number;
-    formulaInsetRight: number;
-    formulaToolButtonSize: number;
-    formulaToolButtonPadding: number;
-    formulaRowVerticalInset: number;
-    pngExportBackground: string;
-    formulaLetterFont: string;
-    formulaChineseFont: string;
-    classicTileWidth: number;
-    classicDockHeight: number;
-    inputBehavior: Record<string, boolean>;
-    personalize: boolean;
-    suggestionCount: number;
-    checkUpdatesOnStartup: boolean;
-    webKeypadMode: boolean;
-  };
-  customTheme: CustomThemeState;
-  customSymbols: ReturnType<typeof readCustomSymbolLibrary>;
-}
 
 const paletteKeys: Array<{
   key: keyof ThemePaletteColors;
@@ -118,35 +101,126 @@ const inputBehaviorRows: Array<{
   zh: string;
   en: string;
 }> = [
-  { key: "autoEscapeShortcuts", zh: "自动识别快捷输入", en: "Automatic shortcut expansion" },
-  { key: "autoExitSuperscript", zh: "自动退出上标", en: "Auto-exit superscript" },
-  { key: "autoExitSubscript", zh: "自动退出下标", en: "Auto-exit subscript" },
-  { key: "autoExitAccent", zh: "自动退出重音结构", en: "Auto-exit accents" },
-  { key: "autoExitWrapperCommand", zh: "自动退出包裹命令", en: "Auto-exit wrapper commands" },
-  { key: "showStructuredCommandSuggestions", zh: "显示结构命令建议", en: "Structured command suggestions" },
-  { key: "showOtherCommandSuggestions", zh: "显示其他命令建议", en: "Other command suggestions" },
+  {
+    key: "autoEscapeShortcuts",
+    zh: "自动识别快捷输入",
+    en: "Automatic shortcut expansion",
+  },
+  {
+    key: "autoExitSuperscript",
+    zh: "自动退出上标",
+    en: "Auto-exit superscript",
+  },
+  {
+    key: "autoExitSubscript",
+    zh: "自动退出下标",
+    en: "Auto-exit subscript",
+  },
+  {
+    key: "autoExitAccent",
+    zh: "自动退出重音结构",
+    en: "Auto-exit accents",
+  },
+  {
+    key: "autoExitWrapperCommand",
+    zh: "自动退出包裹命令",
+    en: "Auto-exit wrapper commands",
+  },
+  {
+    key: "showStructuredCommandSuggestions",
+    zh: "显示结构命令建议",
+    en: "Structured command suggestions",
+  },
+  {
+    key: "showOtherCommandSuggestions",
+    zh: "显示其他命令建议",
+    en: "Other command suggestions",
+  },
 ];
 
-function RangeSetting({
-  label,
-  value,
+interface WebEditorConfiguration {
+  version: 1;
+  exportedAt: string;
+  editor: {
+    theme: Theme;
+    language: "cn" | "en";
+    editorLayout: "standard" | "classic";
+    zoom: number;
+    sourceOpen: boolean;
+    latexCodeFormat: LatexCodeFormat;
+    autoPairDelimiters: boolean;
+    showLineNumbers: boolean;
+    highlightActiveLine: boolean;
+    formulaInsetLeft: number;
+    formulaInsetRight: number;
+    formulaToolButtonSize: number;
+    formulaToolButtonPadding: number;
+    formulaRowVerticalInset: number;
+    pngExportBackground: string;
+    formulaLetterFont: string;
+    formulaChineseFont: string;
+    classicTileWidth: number;
+    classicDockHeight: number;
+    inputBehavior: Record<string, boolean>;
+    personalize: boolean;
+    suggestionCount: number;
+    checkUpdatesOnStartup: boolean;
+    webKeypadMode: boolean;
+  };
+  customTheme: CustomThemeState;
+  customSymbols: ReturnType<typeof readCustomSymbolLibrary>;
+}
+
+function ToggleRow({
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  title: string;
+  description?: string;
+  checked: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <label className="switch-row">
+      <span>
+        <strong>{title}</strong>
+        {description ? <small>{description}</small> : null}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+      />
+      <span className="switch-control" />
+    </label>
+  );
+}
+
+function RangeRow({
+  title,
+  valueLabel,
   min,
   max,
   step = 1,
-  suffix = "px",
+  value,
   onChange,
 }: {
-  label: string;
-  value: number;
+  title: string;
+  valueLabel: string;
   min: number;
   max: number;
   step?: number;
-  suffix?: string;
+  value: number;
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="web-settings-range">
-      <span>{label}</span>
+    <label className="range-setting">
+      <span>
+        <strong>{title}</strong>
+        <small>{valueLabel}</small>
+      </span>
       <input
         type="range"
         min={min}
@@ -155,63 +229,104 @@ function RangeSetting({
         value={value}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => {
-          const next = Number(event.currentTarget.value);
-          if (Number.isFinite(next)) onChange(next);
-        }}
-      />
-      <em>{suffix}</em>
     </label>
   );
 }
 
-function ToggleSetting({
-  label,
-  checked,
+function SelectRow({
+  title,
+  description,
+  value,
   onChange,
+  children,
 }: {
-  label: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
+  title: string;
+  description?: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
 }) {
   return (
-    <label className="web-settings-toggle">
-      <span>{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
+    <label className="range-setting visualtex-settings-select-row">
+      <span>
+        <strong>{title}</strong>
+        {description ? <small>{description}</small> : null}
+      </span>
+      <select value={value} onChange={(event) => onChange(event.currentTarget.value)}>
+        {children}
+      </select>
     </label>
   );
 }
 
-export function SettingsDialog({ open, onClose }: Props) {
-  const language = useEditorStore((state) => state.language);
-  const isEn = language === "en";
-  const [tab, setTab] = useState<SettingsTab>("appearance");
-  const [customTheme, setCustomTheme] = useState<CustomThemeState>(() => readCustomTheme());
-  const [backupStatus, setBackupStatus] = useState("");
+export function SettingsDialog({
+  open,
+  showApplicationUpdates = true,
+  onClose,
+  onCheckForUpdates,
+  onOpenFormulaHotkeys,
+}: Props) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const configInputRef = useRef<HTMLInputElement>(null);
+  const state = useEditorStore();
+  const isEn = state.language === "en";
+  const [customTheme, setCustomTheme] = useState<CustomThemeState>(() =>
+    readCustomTheme(),
+  );
   const [customSymbolDesignerOpen, setCustomSymbolDesignerOpen] = useState(false);
   const [webKeypadMode, setWebKeypadMode] = useState(readWebKeypadMode);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [backupStatus, setBackupStatus] = useState("");
 
-  const state = useEditorStore();
-  useEffect(
-    () => subscribeWebKeypadMode(setWebKeypadMode),
-    [],
-  );
+  useEffect(() => subscribeWebKeypadMode(setWebKeypadMode), []);
 
-  const selectedThemeDefinition = useMemo(
-    () => getThemeDefinition(state.theme),
-    [state.theme],
-  );
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    setCustomTheme(readCustomTheme());
+    setBackupStatus("");
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLElement>("button, input, select")
+        ?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (customSymbolDesignerOpen) {
+          setCustomSymbolDesignerOpen(false);
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus({ preventScroll: true });
+    };
+  }, [open, customSymbolDesignerOpen, onClose]);
 
   if (!open) return null;
 
@@ -224,6 +339,13 @@ export function SettingsDialog({ open, onClose }: Props) {
       return next;
     });
     if (state.theme !== "custom") state.setTheme("custom");
+  };
+
+  const resetCustomTheme = () => {
+    const next = createDefaultCustomTheme();
+    setCustomTheme(next);
+    publishCustomTheme(next);
+    state.setTheme("custom");
   };
 
   const exportConfiguration = () => {
@@ -266,7 +388,9 @@ export function SettingsDialog({ open, onClose }: Props) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `visualtex-web-config-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `visualtex-web-config-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
     setBackupStatus(isEn ? "Configuration exported." : "配置已导出。" );
@@ -277,38 +401,94 @@ export function SettingsDialog({ open, onClose }: Props) {
     event.currentTarget.value = "";
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<WebEditorConfiguration>;
+      const parsed = JSON.parse(
+        await file.text(),
+      ) as Partial<WebEditorConfiguration>;
       if (parsed.version !== 1 || !parsed.editor) {
-        throw new Error(isEn ? "Unsupported configuration file." : "不支持的配置文件。" );
+        throw new Error(
+          isEn ? "Unsupported configuration file." : "不支持的配置文件。",
+        );
       }
       const editor = parsed.editor;
       const current = useEditorStore.getState();
       if (typeof editor.theme === "string") current.setTheme(editor.theme as Theme);
-      if (editor.language === "cn" || editor.language === "en") current.setLanguage(editor.language);
-      if (editor.editorLayout === "standard" || editor.editorLayout === "classic") current.setEditorLayout(editor.editorLayout);
+      if (editor.language === "cn" || editor.language === "en") {
+        current.setLanguage(editor.language);
+      }
+      if (
+        editor.editorLayout === "standard" ||
+        editor.editorLayout === "classic"
+      ) {
+        current.setEditorLayout(editor.editorLayout);
+      }
       if (typeof editor.zoom === "number") current.setZoom(editor.zoom);
       if (typeof editor.sourceOpen === "boolean") current.setSourceOpen(editor.sourceOpen);
-      if (typeof editor.autoPairDelimiters === "boolean") current.setAutoPairDelimiters(editor.autoPairDelimiters);
-      if (typeof editor.showLineNumbers === "boolean") current.setShowLineNumbers(editor.showLineNumbers);
-      if (typeof editor.highlightActiveLine === "boolean") current.setHighlightActiveLine(editor.highlightActiveLine);
-      if (typeof editor.formulaInsetLeft === "number") current.setFormulaInsetLeft(editor.formulaInsetLeft);
-      if (typeof editor.formulaInsetRight === "number") current.setFormulaInsetRight(editor.formulaInsetRight);
-      if (typeof editor.formulaToolButtonSize === "number") current.setFormulaToolButtonSize(editor.formulaToolButtonSize);
-      if (typeof editor.formulaToolButtonPadding === "number") current.setFormulaToolButtonPadding(editor.formulaToolButtonPadding);
-      if (typeof editor.formulaRowVerticalInset === "number") current.setFormulaRowVerticalInset(editor.formulaRowVerticalInset);
-      if (typeof editor.pngExportBackground === "string") current.setPngExportBackground(normalizePngExportBackground(editor.pngExportBackground));
-      if (typeof editor.formulaLetterFont === "string") current.setFormulaLetterFont(editor.formulaLetterFont as typeof current.formulaLetterFont);
-      if (typeof editor.formulaChineseFont === "string") current.setFormulaChineseFont(editor.formulaChineseFont as typeof current.formulaChineseFont);
-      if (typeof editor.classicTileWidth === "number") current.setClassicTileWidth(editor.classicTileWidth);
-      if (typeof editor.classicDockHeight === "number") current.setClassicDockHeight(editor.classicDockHeight);
-      if (typeof editor.personalize === "boolean") current.setPersonalize(editor.personalize);
-      if (typeof editor.suggestionCount === "number") current.setSuggestionCount(editor.suggestionCount);
-      if (typeof editor.checkUpdatesOnStartup === "boolean") current.setCheckUpdatesOnStartup(editor.checkUpdatesOnStartup);
-      if (typeof editor.webKeypadMode === "boolean") writeWebKeypadMode(editor.webKeypadMode);
+      if (typeof editor.latexCodeFormat === "string") {
+        current.setLatexCodeFormat(editor.latexCodeFormat as LatexCodeFormat);
+      }
+      if (typeof editor.autoPairDelimiters === "boolean") {
+        current.setAutoPairDelimiters(editor.autoPairDelimiters);
+      }
+      if (typeof editor.showLineNumbers === "boolean") {
+        current.setShowLineNumbers(editor.showLineNumbers);
+      }
+      if (typeof editor.highlightActiveLine === "boolean") {
+        current.setHighlightActiveLine(editor.highlightActiveLine);
+      }
+      if (typeof editor.formulaInsetLeft === "number") {
+        current.setFormulaInsetLeft(editor.formulaInsetLeft);
+      }
+      if (typeof editor.formulaInsetRight === "number") {
+        current.setFormulaInsetRight(editor.formulaInsetRight);
+      }
+      if (typeof editor.formulaToolButtonSize === "number") {
+        current.setFormulaToolButtonSize(editor.formulaToolButtonSize);
+      }
+      if (typeof editor.formulaToolButtonPadding === "number") {
+        current.setFormulaToolButtonPadding(editor.formulaToolButtonPadding);
+      }
+      if (typeof editor.formulaRowVerticalInset === "number") {
+        current.setFormulaRowVerticalInset(editor.formulaRowVerticalInset);
+      }
+      if (typeof editor.pngExportBackground === "string") {
+        current.setPngExportBackground(
+          normalizePngExportBackground(editor.pngExportBackground),
+        );
+      }
+      if (typeof editor.formulaLetterFont === "string") {
+        current.setFormulaLetterFont(
+          editor.formulaLetterFont as typeof current.formulaLetterFont,
+        );
+      }
+      if (typeof editor.formulaChineseFont === "string") {
+        current.setFormulaChineseFont(
+          editor.formulaChineseFont as typeof current.formulaChineseFont,
+        );
+      }
+      if (typeof editor.classicTileWidth === "number") {
+        current.setClassicTileWidth(editor.classicTileWidth);
+      }
+      if (typeof editor.classicDockHeight === "number") {
+        current.setClassicDockHeight(editor.classicDockHeight);
+      }
+      if (typeof editor.personalize === "boolean") {
+        current.setPersonalize(editor.personalize);
+      }
+      if (typeof editor.suggestionCount === "number") {
+        current.setSuggestionCount(editor.suggestionCount);
+      }
+      if (typeof editor.checkUpdatesOnStartup === "boolean") {
+        current.setCheckUpdatesOnStartup(editor.checkUpdatesOnStartup);
+      }
+      if (typeof editor.webKeypadMode === "boolean") {
+        writeWebKeypadMode(editor.webKeypadMode);
+      }
       if (editor.inputBehavior && typeof editor.inputBehavior === "object") {
         for (const row of inputBehaviorRows) {
           const value = editor.inputBehavior[row.key];
-          if (typeof value === "boolean") current.setInputBehavior(row.key, value);
+          if (typeof value === "boolean") {
+            current.setInputBehavior(row.key, value);
+          }
         }
       }
       if (parsed.customTheme) {
@@ -322,413 +502,635 @@ export function SettingsDialog({ open, onClose }: Props) {
     }
   };
 
-  const resetCustomTheme = () => {
-    const next = createDefaultCustomTheme();
-    setCustomTheme(next);
-    publishCustomTheme(next);
-    state.setTheme("custom");
-  };
-
-  return createPortal(
+  return (
     <div
-      className="modal-backdrop web-settings-backdrop"
+      className="modal-backdrop"
+      role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) onClose();
       }}
     >
       <section
-        className="web-settings-dialog"
+        ref={dialogRef}
+        className="settings-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={isEn ? "Settings" : "设置"}
+        aria-labelledby="settings-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="web-settings-header">
-          <strong>{isEn ? "Settings" : "设置"}</strong>
-          <button type="button" className="icon-button compact" onClick={onClose}>
-            <X size={16} />
+        <header className="dialog-header">
+          <div>
+            <span className="eyebrow">PREFERENCES</span>
+            <h2 id="settings-title">{isEn ? "Settings" : "设置"}</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            aria-label={isEn ? "Close settings" : "关闭设置"}
+          >
+            <X size={18} />
           </button>
         </header>
-        <div className="web-settings-content">
-          <nav className="web-settings-nav">
-            {([
-              ["appearance", isEn ? "Appearance" : "界面"],
-              ["editor", isEn ? "Editor" : "编辑器"],
-              ["input", isEn ? "Input" : "输入"],
-              ["backup", isEn ? "Configuration" : "配置备份"],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={tab === id ? "is-active" : ""}
-                onClick={() => setTab(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-          <main className="web-settings-main">
-            {tab === "appearance" ? (
-              <>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Theme" : "主题"}</h3>
-                  <div className="web-theme-grid">
-                    {THEME_DEFINITIONS.map((definition) => (
-                      <button
-                        type="button"
-                        key={definition.id}
-                        className={state.theme === definition.id ? "is-active" : ""}
-                        onClick={() => state.setTheme(definition.id)}
-                      >
-                        <span className="web-theme-swatches">
-                          {definition.swatches.map((color) => (
-                            <i key={color} style={{ backgroundColor: color }} />
-                          ))}
-                        </span>
-                        <span>{isEn ? definition.labelEn : definition.labelZh}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="web-settings-meta">
-                    {isEn ? selectedThemeDefinition.labelEn : selectedThemeDefinition.labelZh}
-                  </p>
-                </section>
-                <section className="web-settings-section">
-                  <div className="web-settings-section-title-row">
-                    <h3>{isEn ? "Custom palette" : "自定义配色"}</h3>
-                    <button type="button" onClick={resetCustomTheme}>
-                      {isEn ? "Reset" : "重置"}
-                    </button>
-                  </div>
-                  <label className="web-settings-select-row">
-                    <span>{isEn ? "Palette mode" : "配色模式"}</span>
-                    <select
-                      value={customTheme.mode}
-                      onChange={(event) =>
-                        updateCustomTheme((current) => ({
-                          ...current,
-                          mode: event.currentTarget.value === "dark" ? "dark" : "light",
-                        }))
-                      }
-                    >
-                      <option value="light">{isEn ? "Light" : "浅色"}</option>
-                      <option value="dark">{isEn ? "Dark" : "深色"}</option>
-                    </select>
-                  </label>
-                  <div className="web-palette-grid">
-                    {paletteKeys.map((item) => (
-                      <label key={item.key}>
-                        <span>{isEn ? item.en : item.zh}</span>
-                        <input
-                          type="color"
-                          value={customTheme.colors[item.key]}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value.toUpperCase();
-                            updateCustomTheme((current) => ({
-                              ...current,
-                              colors: { ...current.colors, [item.key]: value },
-                            }));
-                          }}
-                        />
-                        <code>{customTheme.colors[item.key]}</code>
-                      </label>
-                    ))}
-                  </div>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Custom symbols" : "自定义字符"}</h3>
-                  <p className="web-settings-meta">
-                    {isEn
-                      ? "Build reusable vector symbols from LaTeX glyphs and geometry, then use them as normal LaTeX commands."
-                      : "用 LaTeX 字形和几何图形组合可复用的矢量字符，并注册为普通 LaTeX 命令。"}
-                  </p>
-                  <button
-                    type="button"
-                    className="web-settings-open-designer"
-                    onClick={() => setCustomSymbolDesignerOpen(true)}
-                  >
-                    <Shapes size={15} />
-                    {isEn ? "Open custom symbol designer" : "打开自定义字符设计器"}
-                  </button>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Formula fonts" : "公式字体"}</h3>
-                  <label className="web-settings-select-row">
-                    <span>{isEn ? "Letters and numbers" : "字母与数字"}</span>
-                    <select
-                      value={state.formulaLetterFont}
-                      onChange={(event) =>
-                        state.setFormulaLetterFont(
-                          event.currentTarget.value as typeof state.formulaLetterFont,
-                        )
-                      }
-                    >
-                      {FORMULA_LETTER_FONT_OPTIONS.map((option) => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="web-settings-select-row">
-                    <span>{isEn ? "Chinese text" : "中文字体"}</span>
-                    <select
-                      value={state.formulaChineseFont}
-                      onChange={(event) =>
-                        state.setFormulaChineseFont(
-                          event.currentTarget.value as typeof state.formulaChineseFont,
-                        )
-                      }
-                    >
-                      {FORMULA_CHINESE_FONT_OPTIONS.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {isEn ? option.labelEn : option.labelZh}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </section>
-              </>
-            ) : null}
 
-            {tab === "editor" ? (
-              <>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Formula area" : "公式编辑区"}</h3>
-                  <ToggleSetting
-                    label={isEn ? "Show line numbers" : "显示行号"}
-                    checked={state.showLineNumbers}
-                    onChange={state.setShowLineNumbers}
-                  />
-                  <ToggleSetting
-                    label={isEn ? "Highlight active line" : "高亮当前行"}
-                    checked={state.highlightActiveLine}
-                    onChange={state.setHighlightActiveLine}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Left inset" : "左侧留白"}
-                    value={state.formulaInsetLeft}
-                    min={MIN_FORMULA_INSET}
-                    max={MAX_FORMULA_INSET}
-                    onChange={state.setFormulaInsetLeft}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Right inset" : "右侧留白"}
-                    value={state.formulaInsetRight}
-                    min={MIN_FORMULA_INSET}
-                    max={MAX_FORMULA_INSET}
-                    onChange={state.setFormulaInsetRight}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Row vertical inset" : "公式行上下留白"}
-                    value={state.formulaRowVerticalInset}
-                    min={MIN_FORMULA_ROW_VERTICAL_INSET}
-                    max={MAX_FORMULA_ROW_VERTICAL_INSET}
-                    onChange={state.setFormulaRowVerticalInset}
-                  />
+        <div className="settings-content">
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <BrainCircuit size={18} />
+              <div>
+                <h3>{isEn ? "Personalized commands" : "个性化命令推荐"}</h3>
+                <p>
+                  {isEn
+                    ? "Rank suggestions using frequency, accepted prefixes and recency."
+                    : "根据使用频率、前缀选择和最近使用时间调整候选顺序。"}
+                </p>
+              </div>
+            </div>
+            <ToggleRow
+              title={
+                isEn ? "Enable personalized ranking" : "启用个性化排序"
+              }
+              description={
+                isEn
+                  ? "Turn off to restore the default order"
+                  : "关闭后恢复系统默认顺序"
+              }
+              checked={state.personalize}
+              onChange={state.setPersonalize}
+            />
+            <RangeRow
+              title={isEn ? "Suggestion count" : "候选项数量"}
+              valueLabel={`${state.suggestionCount} ${isEn ? "items" : "项"}`}
+              min={3}
+              max={10}
+              value={state.suggestionCount}
+              onChange={state.setSuggestionCount}
+            />
+            <button
+              type="button"
+              className="secondary-button danger-subtle"
+              onClick={state.resetUsage}
+            >
+              <RotateCcw size={15} />
+              {isEn ? "Reset recommendation history" : "重置推荐记录"}
+            </button>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Keyboard size={18} />
+              <div>
+                <h3>{isEn ? "Formula hotkeys" : "公式快捷键"}</h3>
+                <p>
+                  {isEn
+                    ? "Manage formula shortcuts. Ctrl+G (Command+G on macOS) arms one-shot Greek input."
+                    : "管理公式快捷键。Ctrl+G（macOS 为 Command+G）可开启一次性希腊字母输入。"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="secondary-button settings-hotkey-button"
+              onClick={onOpenFormulaHotkeys}
+            >
+              <Keyboard size={15} />
+              {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
+            </button>
+            <ToggleRow
+              title={isEn ? "Keypad mode" : "小键盘模式"}
+              description={
+                isEn
+                  ? "Ctrl/Cmd+S copies the current LaTeX source in the browser."
+                  : "浏览器中 Ctrl/Cmd+S 复制当前 LaTeX 源码。"
+              }
+              checked={webKeypadMode}
+              onChange={(enabled) => {
+                setWebKeypadMode(enabled);
+                writeWebKeypadMode(enabled);
+              }}
+            />
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <SlidersHorizontal size={18} />
+              <div>
+                <h3>{isEn ? "Appearance & editor" : "外观与编辑"}</h3>
+                <p>
+                  {isEn
+                    ? "Keep the original Web layout while configuring the new editor capabilities."
+                    : "保持 Web 原有布局，同时配置新增编辑能力。"}
+                </p>
+              </div>
+            </div>
+
+            <div className="editor-layout-setting">
+              <span>
+                <strong>{isEn ? "Editor layout" : "编辑器布局"}</strong>
+                <small>
+                  {isEn
+                    ? "Switch between the existing sidebar layout and the classic bottom-tools layout."
+                    : "在原有侧栏布局与经典底部工具栏布局之间切换。"}
+                </small>
+              </span>
+              <div
+                className="theme-segment editor-layout-segment"
+                role="group"
+                aria-label={isEn ? "Editor layout" : "编辑器布局"}
+              >
+                <button
+                  type="button"
+                  className={state.editorLayout === "standard" ? "is-active" : ""}
+                  aria-pressed={state.editorLayout === "standard"}
+                  data-editor-layout-choice="standard"
+                  onClick={() => state.setEditorLayout("standard")}
+                >
+                  {isEn ? "Standard" : "标准布局"}
+                </button>
+                <button
+                  type="button"
+                  className={state.editorLayout === "classic" ? "is-active" : ""}
+                  aria-pressed={state.editorLayout === "classic"}
+                  data-editor-layout-choice="classic"
+                  onClick={() => state.setEditorLayout("classic")}
+                >
+                  {isEn ? "Classic" : "经典布局"}
+                </button>
+              </div>
+            </div>
+
+            <div className="theme-choice-setting visualtex-settings-block-gap">
+              <span>
+                <strong>{isEn ? "Colour theme" : "界面配色"}</strong>
+                <small>
+                  {isEn
+                    ? "The original five Web themes remain available together with the new presets."
+                    : "保留原 Web 五套主题，并补充新增主题预设。"}
+                </small>
+              </span>
+              <div
+                className="theme-segment theme-choice-segment"
+                role="group"
+                aria-label={isEn ? "Colour theme" : "界面配色"}
+              >
+                {THEME_DEFINITIONS.map((definition) => (
+                  <button
+                    key={definition.id}
+                    type="button"
+                    className={state.theme === definition.id ? "is-active" : ""}
+                    aria-pressed={state.theme === definition.id}
+                    data-theme-choice={definition.id}
+                    onClick={() => state.setTheme(definition.id)}
+                  >
+                    <span className="theme-choice-swatch" aria-hidden="true">
+                      {definition.swatches.map((color) => (
+                        <i key={color} style={{ background: color }} />
+                      ))}
+                    </span>
+                    <span>{isEn ? definition.labelEn : definition.labelZh}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {state.theme === "custom" ? (
+              <div className="visualtex-custom-palette-panel">
+                <div className="visualtex-settings-inline-heading">
+                  <strong>{isEn ? "Custom palette" : "自定义配色"}</strong>
                   <button
                     type="button"
-                    className="web-settings-reset-row"
-                    onClick={() => {
-                      state.setFormulaInsetLeft(DEFAULT_FORMULA_INSET);
-                      state.setFormulaInsetRight(DEFAULT_FORMULA_INSET);
-                      state.setFormulaRowVerticalInset(DEFAULT_FORMULA_ROW_VERTICAL_INSET);
-                    }}
+                    className="secondary-button"
+                    onClick={resetCustomTheme}
                   >
-                    {isEn ? "Reset formula spacing" : "恢复公式区默认间距"}
+                    <RotateCcw size={14} />
+                    {isEn ? "Reset" : "重置"}
                   </button>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Formula toolbar" : "公式工具栏"}</h3>
-                  <RangeSetting
-                    label={isEn ? "Button size" : "按钮尺寸"}
-                    value={state.formulaToolButtonSize}
-                    min={MIN_FORMULA_TOOL_BUTTON_SIZE}
-                    max={MAX_FORMULA_TOOL_BUTTON_SIZE}
-                    onChange={state.setFormulaToolButtonSize}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Button padding" : "按钮间距"}
-                    value={state.formulaToolButtonPadding}
-                    min={MIN_FORMULA_TOOL_BUTTON_PADDING}
-                    max={MAX_FORMULA_TOOL_BUTTON_PADDING}
-                    onChange={state.setFormulaToolButtonPadding}
-                  />
-                  <button
-                    type="button"
-                    className="web-settings-reset-row"
-                    onClick={() => {
-                      state.setFormulaToolButtonSize(DEFAULT_FORMULA_TOOL_BUTTON_SIZE);
-                      state.setFormulaToolButtonPadding(DEFAULT_FORMULA_TOOL_BUTTON_PADDING);
-                    }}
-                  >
-                    {isEn ? "Reset toolbar sizing" : "恢复工具栏默认尺寸"}
-                  </button>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Classic layout" : "经典布局"}</h3>
-                  <RangeSetting
-                    label={isEn ? "Tile column width" : "磁贴栏宽度"}
-                    value={state.classicTileWidth}
-                    min={MIN_CLASSIC_TILE_WIDTH}
-                    max={MAX_CLASSIC_TILE_WIDTH}
-                    onChange={state.setClassicTileWidth}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Bottom dock height" : "底部工具栏高度"}
-                    value={state.classicDockHeight}
-                    min={MIN_CLASSIC_DOCK_HEIGHT}
-                    max={MAX_CLASSIC_DOCK_HEIGHT}
-                    onChange={state.setClassicDockHeight}
-                  />
-                  <button
-                    type="button"
-                    className="web-settings-reset-row"
-                    onClick={() => {
-                      state.setClassicTileWidth(DEFAULT_CLASSIC_TILE_WIDTH);
-                      state.setClassicDockHeight(DEFAULT_CLASSIC_DOCK_HEIGHT);
-                    }}
-                  >
-                    {isEn ? "Reset classic layout" : "恢复经典布局尺寸"}
-                  </button>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "PNG export" : "PNG 导出"}</h3>
-                  <label className="web-settings-select-row">
-                    <span>{isEn ? "Background" : "背景"}</span>
-                    <select
-                      value={state.pngExportBackground === "transparent" ? "transparent" : "custom"}
-                      onChange={(event) => {
-                        state.setPngExportBackground(
-                          event.currentTarget.value === "transparent"
-                            ? "transparent"
-                            : pngExportBackgroundPickerValue(state.pngExportBackground),
-                        );
-                      }}
-                    >
-                      <option value="transparent">{isEn ? "Transparent" : "透明"}</option>
-                      <option value="custom">{isEn ? "Solid color" : "纯色"}</option>
-                    </select>
-                  </label>
-                  {state.pngExportBackground !== "transparent" ? (
-                    <label className="web-settings-color-row">
-                      <span>{isEn ? "Background color" : "背景颜色"}</span>
+                </div>
+                <SelectRow
+                  title={isEn ? "Palette mode" : "配色模式"}
+                  value={customTheme.mode}
+                  onChange={(value) =>
+                    updateCustomTheme((current) => ({
+                      ...current,
+                      mode: value === "dark" ? "dark" : "light",
+                    }))
+                  }
+                >
+                  <option value="light">{isEn ? "Light" : "浅色"}</option>
+                  <option value="dark">{isEn ? "Dark" : "深色"}</option>
+                </SelectRow>
+                <div className="visualtex-custom-palette-grid">
+                  {paletteKeys.map((item) => (
+                    <label key={item.key}>
+                      <span>{isEn ? item.en : item.zh}</span>
                       <input
                         type="color"
-                        value={pngExportBackgroundPickerValue(state.pngExportBackground)}
-                        onChange={(event) =>
-                          state.setPngExportBackground(
-                            normalizePngExportBackground(event.currentTarget.value),
-                          )
-                        }
+                        value={customTheme.colors[item.key]}
+                        onChange={(event) => {
+                          const value = event.currentTarget.value.toUpperCase();
+                          updateCustomTheme((current) => ({
+                            ...current,
+                            colors: {
+                              ...current.colors,
+                              [item.key]: value,
+                            },
+                          }));
+                        }}
                       />
-                      <code>{state.pngExportBackground}</code>
                     </label>
-                  ) : null}
-                </section>
-              </>
-            ) : null}
-
-            {tab === "input" ? (
-              <>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Input behavior" : "输入行为"}</h3>
-                  <ToggleSetting
-                    label={isEn ? "Pair delimiters automatically" : "自动补全括号与定界符"}
-                    checked={state.autoPairDelimiters}
-                    onChange={state.setAutoPairDelimiters}
-                  />
-                  {inputBehaviorRows.map((row) => (
-                    <ToggleSetting
-                      key={row.key}
-                      label={isEn ? row.en : row.zh}
-                      checked={state.inputBehavior[row.key]}
-                      onChange={(enabled) => state.setInputBehavior(row.key, enabled)}
-                    />
                   ))}
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Suggestions" : "命令建议"}</h3>
-                  <ToggleSetting
-                    label={isEn ? "Personalized ranking" : "根据使用习惯排序"}
-                    checked={state.personalize}
-                    onChange={state.setPersonalize}
-                  />
-                  <RangeSetting
-                    label={isEn ? "Suggestion count" : "候选数量"}
-                    value={state.suggestionCount}
-                    min={3}
-                    max={10}
-                    suffix=""
-                    onChange={state.setSuggestionCount}
-                  />
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Keypad mode" : "小键盘模式"}</h3>
-                  <ToggleSetting
-                    label={
-                      isEn
-                        ? "Ctrl/Cmd+S copies the current LaTeX source"
-                        : "Ctrl/Cmd+S 复制当前 LaTeX 源码"
-                    }
-                    checked={webKeypadMode}
-                    onChange={(enabled) => {
-                      setWebKeypadMode(enabled);
-                      writeWebKeypadMode(enabled);
-                    }}
-                  />
-                  <p className="web-settings-meta">
-                    {isEn
-                      ? "The browser version does not minimize the window after copying."
-                      : "浏览器版复制后不会执行桌面端的窗口最小化。"}
-                  </p>
-                </section>
-                <section className="web-settings-section">
-                  <h3>{isEn ? "Greek one-shot input" : "希腊字母一次性输入"}</h3>
-                  <p className="web-settings-meta">
-                    {isEn
-                      ? "Press Ctrl+G (Command+G on macOS), then a Latin letter. Hold Shift for capitals."
-                      : "按 Ctrl+G（macOS 为 Command+G），再按对应拉丁字母；按住 Shift 输入大写希腊字母。"}
-                  </p>
-                </section>
-              </>
+                </div>
+              </div>
             ) : null}
 
-            {tab === "backup" ? (
-              <section className="web-settings-section">
-                <h3>{isEn ? "Configuration backup" : "配置备份"}</h3>
-                <p className="web-settings-meta">
-                  {isEn
-                    ? "Exports editor preferences, the custom palette and custom symbols. Document contents are not included."
-                    : "导出编辑器设置、自定义配色和自定义字符；不会包含当前文档内容。"}
-                </p>
-                <div className="web-settings-backup-actions">
-                  <button type="button" onClick={exportConfiguration}>
-                    <Download size={15} />
-                    {isEn ? "Export configuration" : "导出配置"}
-                  </button>
-                  <button type="button" onClick={() => fileInputRef.current?.click()}>
-                    <Upload size={15} />
-                    {isEn ? "Import configuration" : "导入配置"}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    hidden
-                    onChange={importConfiguration}
-                  />
-                </div>
-                {backupStatus ? <div className="web-settings-status">{backupStatus}</div> : null}
-              </section>
+            <ToggleRow
+              title={isEn ? "Auto-pair delimiters" : "自动补全成对符号"}
+              description={
+                isEn
+                  ? "Automatically add the matching bracket, brace or vertical bar"
+                  : "输入括号、花括号或竖线时自动添加匹配符号"
+              }
+              checked={state.autoPairDelimiters}
+              onChange={state.setAutoPairDelimiters}
+            />
+            <ToggleRow
+              title={isEn ? "Show line numbers" : "显示行号"}
+              checked={state.showLineNumbers}
+              onChange={state.setShowLineNumbers}
+            />
+            <ToggleRow
+              title={isEn ? "Highlight active line" : "高亮当前行"}
+              checked={state.highlightActiveLine}
+              onChange={state.setHighlightActiveLine}
+            />
+            <RangeRow
+              title={isEn ? "Formula zoom" : "公式显示缩放"}
+              valueLabel={`${Math.round(state.zoom * 100)}%`}
+              min={0.5}
+              max={1.6}
+              step={0.05}
+              value={state.zoom}
+              onChange={state.setZoom}
+            />
+            <RangeRow
+              title={isEn ? "Left formula inset" : "公式区左侧留白"}
+              valueLabel={`${state.formulaInsetLeft}px`}
+              min={MIN_FORMULA_INSET}
+              max={MAX_FORMULA_INSET}
+              value={state.formulaInsetLeft}
+              onChange={state.setFormulaInsetLeft}
+            />
+            <RangeRow
+              title={isEn ? "Right formula inset" : "公式区右侧留白"}
+              valueLabel={`${state.formulaInsetRight}px`}
+              min={MIN_FORMULA_INSET}
+              max={MAX_FORMULA_INSET}
+              value={state.formulaInsetRight}
+              onChange={state.setFormulaInsetRight}
+            />
+            <RangeRow
+              title={isEn ? "Formula row spacing" : "公式行上下留白"}
+              valueLabel={`${state.formulaRowVerticalInset}px`}
+              min={MIN_FORMULA_ROW_VERTICAL_INSET}
+              max={MAX_FORMULA_ROW_VERTICAL_INSET}
+              value={state.formulaRowVerticalInset}
+              onChange={state.setFormulaRowVerticalInset}
+            />
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                state.setFormulaInsetLeft(DEFAULT_FORMULA_INSET);
+                state.setFormulaInsetRight(DEFAULT_FORMULA_INSET);
+                state.setFormulaRowVerticalInset(
+                  DEFAULT_FORMULA_ROW_VERTICAL_INSET,
+                );
+              }}
+            >
+              <RotateCcw size={14} />
+              {isEn ? "Reset formula spacing" : "恢复公式区默认间距"}
+            </button>
+
+            <RangeRow
+              title={isEn ? "Formula tool button size" : "公式工具按钮尺寸"}
+              valueLabel={`${state.formulaToolButtonSize}px`}
+              min={MIN_FORMULA_TOOL_BUTTON_SIZE}
+              max={MAX_FORMULA_TOOL_BUTTON_SIZE}
+              value={state.formulaToolButtonSize}
+              onChange={state.setFormulaToolButtonSize}
+            />
+            <RangeRow
+              title={isEn ? "Formula tool gap" : "公式工具按钮间距"}
+              valueLabel={`${state.formulaToolButtonPadding}px`}
+              min={MIN_FORMULA_TOOL_BUTTON_PADDING}
+              max={MAX_FORMULA_TOOL_BUTTON_PADDING}
+              value={state.formulaToolButtonPadding}
+              onChange={state.setFormulaToolButtonPadding}
+            />
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                state.setFormulaToolButtonSize(DEFAULT_FORMULA_TOOL_BUTTON_SIZE);
+                state.setFormulaToolButtonPadding(
+                  DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
+                );
+              }}
+            >
+              <RotateCcw size={14} />
+              {isEn ? "Reset toolbar sizing" : "恢复工具栏默认尺寸"}
+            </button>
+
+            {state.editorLayout === "classic" ? (
+              <>
+                <RangeRow
+                  title={isEn ? "Classic tile width" : "经典布局磁贴栏宽度"}
+                  valueLabel={`${state.classicTileWidth}px`}
+                  min={MIN_CLASSIC_TILE_WIDTH}
+                  max={MAX_CLASSIC_TILE_WIDTH}
+                  value={state.classicTileWidth}
+                  onChange={state.setClassicTileWidth}
+                />
+                <RangeRow
+                  title={isEn ? "Classic dock height" : "经典布局底部栏高度"}
+                  valueLabel={`${state.classicDockHeight}px`}
+                  min={MIN_CLASSIC_DOCK_HEIGHT}
+                  max={MAX_CLASSIC_DOCK_HEIGHT}
+                  value={state.classicDockHeight}
+                  onChange={state.setClassicDockHeight}
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    state.setClassicTileWidth(DEFAULT_CLASSIC_TILE_WIDTH);
+                    state.setClassicDockHeight(DEFAULT_CLASSIC_DOCK_HEIGHT);
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  {isEn ? "Reset classic layout size" : "恢复经典布局默认尺寸"}
+                </button>
+              </>
             ) : null}
-          </main>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Type size={18} />
+              <div>
+                <h3>{isEn ? "Formula output" : "公式输出"}</h3>
+                <p>
+                  {isEn
+                    ? "Choose formula fonts and the PNG background without changing the Web page theme."
+                    : "设置公式字体和 PNG 背景，不改变 Web 页面主题。"}
+                </p>
+              </div>
+            </div>
+            <SelectRow
+              title={isEn ? "Letters and numbers" : "字母与数字字体"}
+              value={state.formulaLetterFont}
+              onChange={(value) =>
+                state.setFormulaLetterFont(
+                  value as typeof state.formulaLetterFont,
+                )
+              }
+            >
+              {FORMULA_LETTER_FONT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </SelectRow>
+            <SelectRow
+              title={isEn ? "Chinese formula text" : "公式中文字体"}
+              value={state.formulaChineseFont}
+              onChange={(value) =>
+                state.setFormulaChineseFont(
+                  value as typeof state.formulaChineseFont,
+                )
+              }
+            >
+              {FORMULA_CHINESE_FONT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {isEn ? option.labelEn : option.labelZh}
+                </option>
+              ))}
+            </SelectRow>
+            <SelectRow
+              title={isEn ? "PNG background" : "PNG 背景"}
+              value={
+                state.pngExportBackground === "transparent"
+                  ? "transparent"
+                  : "solid"
+              }
+              onChange={(value) =>
+                state.setPngExportBackground(
+                  value === "transparent"
+                    ? "transparent"
+                    : pngExportBackgroundPickerValue(
+                        state.pngExportBackground,
+                      ),
+                )
+              }
+            >
+              <option value="transparent">
+                {isEn ? "Transparent" : "透明"}
+              </option>
+              <option value="solid">{isEn ? "Solid colour" : "纯色"}</option>
+            </SelectRow>
+            {state.pngExportBackground !== "transparent" ? (
+              <label className="range-setting visualtex-settings-color-row">
+                <span>
+                  <strong>{isEn ? "PNG background colour" : "PNG 背景颜色"}</strong>
+                  <small>{state.pngExportBackground}</small>
+                </span>
+                <input
+                  type="color"
+                  value={pngExportBackgroundPickerValue(
+                    state.pngExportBackground,
+                  )}
+                  onChange={(event) =>
+                    state.setPngExportBackground(
+                      normalizePngExportBackground(event.currentTarget.value),
+                    )
+                  }
+                />
+              </label>
+            ) : null}
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Keyboard size={18} />
+              <div>
+                <h3>{isEn ? "Input behavior" : "输入行为"}</h3>
+                <p>
+                  {isEn
+                    ? "The new input rules can be changed independently."
+                    : "各项新增输入逻辑可独立开关。"}
+                </p>
+              </div>
+            </div>
+            {inputBehaviorRows.map((row) => (
+              <ToggleRow
+                key={row.key}
+                title={isEn ? row.en : row.zh}
+                checked={state.inputBehavior[row.key]}
+                onChange={(enabled) => state.setInputBehavior(row.key, enabled)}
+              />
+            ))}
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Shapes size={18} />
+              <div>
+                <h3>{isEn ? "Custom symbols" : "自定义字符"}</h3>
+                <p>
+                  {isEn
+                    ? "Build reusable vector symbols and register them as LaTeX commands."
+                    : "组合矢量字符并注册为可直接输入的 LaTeX 命令。"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setCustomSymbolDesignerOpen(true)}
+            >
+              <Shapes size={15} />
+              {isEn ? "Open custom symbol designer" : "打开自定义字符设计器"}
+            </button>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Languages size={18} />
+              <div>
+                <h3>{isEn ? "Interface language" : "界面语言"}</h3>
+                <p>
+                  {isEn
+                    ? "Switch between English and Chinese."
+                    : "切换中文或英文界面。"}
+                </p>
+              </div>
+            </div>
+            <div className="theme-segment">
+              <button
+                type="button"
+                className={state.language === "cn" ? "is-active" : ""}
+                aria-pressed={state.language === "cn"}
+                onClick={() => state.setLanguage("cn")}
+              >
+                中文
+              </button>
+              <button
+                type="button"
+                className={state.language === "en" ? "is-active" : ""}
+                aria-pressed={state.language === "en"}
+                onClick={() => state.setLanguage("en")}
+              >
+                English
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Palette size={18} />
+              <div>
+                <h3>{isEn ? "Configuration backup" : "配置备份"}</h3>
+                <p>
+                  {isEn
+                    ? "Export or restore editor preferences, custom themes and custom symbols."
+                    : "导出或恢复编辑器设置、自定义配色和自定义字符。"}
+                </p>
+              </div>
+            </div>
+            <div className="visualtex-settings-action-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={exportConfiguration}
+              >
+                <Download size={15} />
+                {isEn ? "Export configuration" : "导出配置"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => configInputRef.current?.click()}
+              >
+                <Upload size={15} />
+                {isEn ? "Import configuration" : "导入配置"}
+              </button>
+              <input
+                ref={configInputRef}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={importConfiguration}
+              />
+            </div>
+            {backupStatus ? (
+              <div className="visualtex-settings-status" role="status">
+                {backupStatus}
+              </div>
+            ) : null}
+          </div>
+
+          {showApplicationUpdates ? (
+            <div className="settings-section">
+              <div className="settings-section-title">
+                <RefreshCw size={18} />
+                <div>
+                  <h3>{isEn ? "Application updates" : "应用更新"}</h3>
+                  <p>
+                    {isEn
+                      ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
+                      : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
+                  </p>
+                </div>
+              </div>
+              <ToggleRow
+                title={
+                  isEn
+                    ? "Automatic update notifications"
+                    : "自动更新提醒"
+                }
+                description={
+                  isEn
+                    ? "Manual checks remain available when automatic checks are disabled."
+                    : "关闭自动检查后仍可手动检查更新。"
+                }
+                checked={state.checkUpdatesOnStartup}
+                onChange={state.setCheckUpdatesOnStartup}
+              />
+              <button
+                type="button"
+                className="secondary-button settings-update-button"
+                onClick={onCheckForUpdates}
+              >
+                <RefreshCw size={15} />
+                {isEn ? "Check now" : "立即检查"}
+              </button>
+            </div>
+          ) : null}
         </div>
+
+        <footer className="dialog-footer">
+          <span>{isEn ? "Settings saved automatically" : "设置已自动保存"}</span>
+          <button type="button" className="primary-button" onClick={onClose}>
+            {isEn ? "Done" : "完成"}
+          </button>
+        </footer>
       </section>
+
       <CustomSymbolDesignerDialog
         open={customSymbolDesignerOpen}
-        language={language}
+        language={state.language}
         onClose={() => setCustomSymbolDesignerOpen(false)}
       />
-    </div>,
-    document.body,
+    </div>
   );
 }

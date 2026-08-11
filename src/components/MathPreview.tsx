@@ -206,7 +206,10 @@ function MathPreviewComponent({
         contentRect.height,
         visualRect.height,
       );
-      onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
+      onMeasureRef.current?.({
+        width: Math.max(1, content.offsetWidth),
+        height: Math.max(1, content.offsetHeight),
+      });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
           intrinsicMaxWidth,

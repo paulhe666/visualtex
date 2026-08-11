@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import {
+  browserTestProfilePath,
+  resolveBrowserTestChromePath,
+} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = `/tmp/visualtex-formula-hotkeys-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = browserTestProfilePath("visualtex-formula-hotkeys");
+const chromePath = resolveBrowserTestChromePath();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -136,6 +140,17 @@ async function main() {
       })`);
     };
 
+    const seededCustomTiles = [
+      "\\beta_{\\omega_1^2}",
+      "\\beta",
+      "\\int_b^a b",
+      "\\int_b^a a",
+      "\\int_b^a t",
+      "\\frac{R}{Tf}\\int_b^a t",
+      "\\frac{R}{Tf}\\int_b^a t\\,dpq",
+      "\\frac{R}{Tf}\\int_b^a t\\,dp",
+      "a^2+b^2=c^2",
+    ];
     await evaluate(`(() => {
       localStorage.clear();
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
@@ -145,17 +160,7 @@ async function main() {
       );
       localStorage.setItem(
         "visualtex-custom-formula-tiles",
-        JSON.stringify([
-          "\\beta_{\\omega_1^2}",
-          "\\beta",
-          "\\int_b^a b",
-          "\\int_b^a a",
-          "\\int_b^a t",
-          "\\frac{R}{Tf}\\int_b^a t",
-          "\\frac{R}{Tf}\\int_b^a t\\,dpq",
-          "\\frac{R}{Tf}\\int_b^a t\\,dp",
-          "a^2+b^2=c^2",
-        ]),
+        JSON.stringify(${JSON.stringify(seededCustomTiles)}),
       );
     })()`);
     await reload();
@@ -326,7 +331,11 @@ async function main() {
         }, 80);
       }, 80);
     })`);
-    assert.equal(managerState.rows, 1);
+    assert.equal(
+      managerState.rows,
+      10,
+      "the manager should contain the ten Windows 1.2.5 default formula hotkey bindings",
+    );
     assert.ok(managerState.hotkey);
     assert.ok(managerState.keycapCenterDelta <= 1, JSON.stringify(managerState));
     await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
@@ -452,7 +461,7 @@ async function main() {
       const listStyle = list ? getComputedStyle(list) : null;
       const gridRect = grid?.getBoundingClientRect();
       const betaButton = buttons.find(
-        (button) => button.dataset.formulaTileLatex === "\\beta",
+        (button) => button.dataset.formulaTileLatex === ${JSON.stringify("\\beta")},
       );
       const betaRect = betaButton?.getBoundingClientRect();
       const firstTop = Math.min(...rects.map((rect) => Math.round(rect.top)));
@@ -462,6 +471,8 @@ async function main() {
         widths: rects.map((rect) => Math.round(rect.width)),
         tops: rects.map((rect) => Math.round(rect.top)),
         weights: buttons.map((button) => Number(button.dataset.customTileWeight || 0)),
+        latex: buttons.map((button) => button.dataset.formulaTileLatex || ""),
+        minWidths: buttons.map((button) => Number(button.dataset.customTileMinWidth || 0)),
         scales: buttons.map((button) => Number(
           button.querySelector(".math-preview")?.dataset.fitScale || 1,
         )),

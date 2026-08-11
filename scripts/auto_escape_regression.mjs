@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import {
+  browserTestProfilePath,
+  resolveBrowserTestChromePath,
+} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 700;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = `/tmp/visualtex-auto-escape-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = browserTestProfilePath("visualtex-auto-escape");
+const chromePath = resolveBrowserTestChromePath();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 12000) {
@@ -118,6 +122,8 @@ async function main() {
     await client.connect();
     await client.send("Runtime.enable");
     await client.send("Page.enable");
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(300);
 
     const evaluate = async (expression) => {
       const result = await client.send("Runtime.evaluate", {
@@ -137,6 +143,7 @@ async function main() {
 
     const reload = async () => {
       await client.send("Page.reload", { ignoreCache: true });
+      await sleep(500);
       await evaluate(`new Promise((resolve) => {
         const done = () => document.querySelector("math-field")
           ? resolve(true)
@@ -222,6 +229,12 @@ async function main() {
     await configure(true);
 
     await evaluate(`document.querySelector(".canvas-input-behavior-trigger").click()`);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelector(".input-behavior-popover")
+        ? resolve(true)
+        : setTimeout(done, 25);
+      done();
+    })`);
     await sleep(80);
     const behaviorUi = await evaluate(`(() => {
       const popover = document.querySelector(".input-behavior-popover");
@@ -345,7 +358,11 @@ async function main() {
     assert.equal(await typeText("varphi"), "varphi");
     assert.equal(await typeText("mathbb"), "mathbb");
     assert.equal(await typeText("xx"), "xx");
-    assert.equal(await typeText("dx"), "dx");
+    assert.equal(
+      await typeText("dx"),
+      "\\mathrm{d}x",
+      "semantic differential detection remains active when shortcut expansion is disabled",
+    );
 
     console.log("Auto escape regression passed");
   } finally {

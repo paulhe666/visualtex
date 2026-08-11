@@ -45,7 +45,10 @@ import {
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
-import { useEditorStore } from "../stores/editorStore";
+import {
+  DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
+  useEditorStore,
+} from "../stores/editorStore";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
@@ -861,7 +864,7 @@ export function FormulaToolbar({
   );
   const toolbarPreviewMaximumScale = Math.min(
     1.55,
-    Math.max(1, formulaToolButtonSize / 42),
+    Math.max(1, formulaToolButtonSize / DEFAULT_FORMULA_TOOL_BUTTON_SIZE),
   );
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
@@ -1520,14 +1523,12 @@ export function FormulaToolbar({
   const renderToolbarCommandButton = (command: LatexCommand) => {
     const previewLatex = toolbarPreviewLatex(command);
     const widePreview = wideToolbarCommandIds.has(command.id);
-    const enlargedCasesPreview = command.id === "cases" || command.id === "cases-three";
     return (
       <button
         type="button"
         className={
           "template-button is-unified-fit" +
-          (widePreview ? " is-wide-preview" : "") +
-          (enlargedCasesPreview ? " is-enlarged-cases-preview" : "")
+          (widePreview ? " is-wide-preview" : "")
         }
         data-command-id={command.id}
         data-preview-latex={previewLatex}
@@ -1545,12 +1546,8 @@ export function FormulaToolbar({
         <MathPreview
           latex={previewLatex}
           fit
-          maximumFitScale={
-            enlargedCasesPreview
-              ? Math.max(1.85, toolbarPreviewMaximumScale)
-              : toolbarPreviewMaximumScale
-          }
-          fitInsetRatio={enlargedCasesPreview ? 0.98 : toolbarPreviewInsetRatio}
+          maximumFitScale={toolbarPreviewMaximumScale}
+          fitInsetRatio={toolbarPreviewInsetRatio}
         />
       </button>
     );

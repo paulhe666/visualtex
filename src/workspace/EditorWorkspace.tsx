@@ -242,7 +242,13 @@ export function EditorWorkspace({
   };
 
   useLayoutEffect(() => {
-    setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
+    // Preserve the original Web store as the source of truth when no newer
+    // per-workspace panel preference exists. This keeps saved documents and
+    // imported configurations with sourceOpen=true compatible after reload.
+    const storedSourceOpen = useEditorStore.getState().sourceOpen;
+    setStoredSourceOpen(
+      readWorkspacePanelOpen(mode, "source", storedSourceOpen),
+    );
   }, [mode, setStoredSourceOpen]);
 
   useEffect(() => {
@@ -713,7 +719,11 @@ export function EditorWorkspace({
           (sidebarOpen ? " has-sidebar" : "") +
           (highlightActiveLine ? " has-active-line-highlight" : "")
         }
-        style={{ "--classic-tile-width": `${classicTileWidth}px` } as CSSProperties}
+        style={
+          (classicTileWidth === DEFAULT_CLASSIC_TILE_WIDTH
+            ? undefined
+            : ({ "--classic-tile-width": `${classicTileWidth}px` } as CSSProperties))
+        }
         data-editor-layout={editorLayout}
         data-highlight-active-line={highlightActiveLine ? "true" : "false"}
       >
@@ -1057,7 +1067,13 @@ export function EditorWorkspace({
                 "classic-editor-pane-body" +
                 (classicDockOpen ? "" : " is-dock-collapsed")
               }
-              style={{ "--classic-dock-height": `${classicDockHeight}px` } as CSSProperties}
+              style={
+                classicDockHeight === DEFAULT_CLASSIC_DOCK_HEIGHT
+                  ? undefined
+                  : ({
+                      "--classic-dock-height": `${classicDockHeight}px`,
+                    } as CSSProperties)
+              }
             >
               <div className="editor-pane-scroll">
                 {renderVisualEditor()}
