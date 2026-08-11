@@ -1,19 +1,11 @@
 import { StrictMode } from "react";
-import { installBrowserCompatibility } from "./runtime/browserCompatibility";
-import "./editor/formulaFontRuntime";
-import "./shortcuts/greekLetterHotkeyRuntime";
-import "./runtime/editorVisualPreferencesRuntime";
-import "./runtime/webKeypadMode";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "./styles.css";
-import "./styles-editor-parity.css";
 import "./styles-editor-features.css";
 import "./landing/landing.css";
 import App from "./App";
 import { LandingPage } from "./landing/LandingPage";
-
-installBrowserCompatibility();
 
 const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
 const showEditor = normalizedPath === "/editor" || normalizedPath.startsWith("/editor/");

@@ -1,4 +1,4 @@
-import { getRuntimeCommandRegistry } from "./runtimeCommandRegistry";
+import { commandRegistry } from "./commandRegistry";
 import type { CommandUsage, LatexCommand } from "../types/command";
 
 const normalize = (value: string) =>
@@ -98,7 +98,7 @@ export function searchCommands(
   limit: number,
 ): LatexCommand[] {
   const query = normalize(rawQuery);
-  return getRuntimeCommandRegistry()
+  return commandRegistry
     .map((command) => ({
       command,
       score:
