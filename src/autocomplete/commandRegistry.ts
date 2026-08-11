@@ -1,5 +1,6 @@
 import type { LatexCommand } from "../types/command";
-import { additionalCommands } from "./additionalCommands";
+import { additionalCommands } from "./additionalCommands.ts";
+import { latestSharedCommands } from "./latestSharedCommands.ts";
 
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
@@ -61,6 +62,8 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "math-script", command: "\\mathscr", insertTemplate: "\\mathscr{\\placeholder{}}", previewLatex: "\\mathscr{gG}", labelZh: "手写花体", labelEn: "Math script", aliases: ["script", "mathscr"], keywords: ["小写花体", "手写体", "字体"], category: "matrix", defaultPriority: 75, supportedInMathMode: true },
   { id: "math-fraktur", command: "\\mathfrak", insertTemplate: "\\mathfrak{\\placeholder{}}", previewLatex: "\\mathfrak{ABC}", labelZh: "数学哥特体", labelEn: "Math Fraktur", aliases: ["fraktur", "mathfrak"], keywords: ["哥特体", "字体"], category: "matrix", defaultPriority: 72, supportedInMathMode: true },
   { id: "bold-symbol", command: "\\boldsymbol", insertTemplate: "\\boldsymbol{\\placeholder{}}", previewLatex: "\\boldsymbol{\\alpha A}", labelZh: "粗体符号", labelEn: "Bold symbol", aliases: ["bold symbol", "boldsymbol"], keywords: ["粗体希腊字母", "字体"], category: "matrix", defaultPriority: 75, supportedInMathMode: true },
+  { id: "bm-bold-symbol", command: "\\bm", insertTemplate: "\\bm{\\placeholder{}}", previewLatex: "\\bm{\\alpha A}", labelZh: "BM 数学粗体", labelEn: "BM bold math", aliases: ["bm", "bold math italic"], keywords: ["粗斜体", "粗体希腊字母", "字体"], category: "matrix", defaultPriority: 76, supportedInMathMode: true },
+  { id: "math-bold-italic", command: "\\mathbfit", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{ABC}", labelZh: "数学粗斜体", labelEn: "Bold italic math", aliases: ["bold italic", "mathbfit"], keywords: ["粗斜体", "字体"], category: "matrix", defaultPriority: 73, supportedInMathMode: true },
   { id: "math-normal", command: "\\mathnormal", insertTemplate: "\\mathnormal{\\placeholder{}}", previewLatex: "\\mathnormal{ABC}", labelZh: "默认数学字体", labelEn: "Normal math", aliases: ["normal math", "mathnormal"], keywords: ["默认字体", "字体"], category: "matrix", defaultPriority: 64, supportedInMathMode: true },
   { id: "math-operator", command: "\\mathop", insertTemplate: "\\mathop{\\placeholder{}}", previewLatex: "\\mathop{f(x)}", labelZh: "自定义算子", labelEn: "Math operator", aliases: ["operator", "mathop"], keywords: ["算子", "运算符"], category: "matrix", defaultPriority: 66, supportedInMathMode: true },
 
@@ -81,6 +84,8 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "leq", command: "\\leq", insertTemplate: "\\leq", previewLatex: "\\leq", labelZh: "小于等于", labelEn: "Less or equal", aliases: ["less equal"], keywords: ["小于等于"], category: "relation", defaultPriority: 90, supportedInMathMode: true },
   { id: "geq", command: "\\geq", insertTemplate: "\\geq", previewLatex: "\\geq", labelZh: "大于等于", labelEn: "Greater or equal", aliases: ["greater equal"], keywords: ["大于等于"], category: "relation", defaultPriority: 90, supportedInMathMode: true },
   { id: "propto", command: "\\propto", insertTemplate: "\\propto", previewLatex: "\\propto", labelZh: "正比于", labelEn: "Proportional to", aliases: ["proportional"], keywords: ["正比"], category: "relation", defaultPriority: 82, supportedInMathMode: true },
+  { id: "times", command: "\\times", insertTemplate: "\\times", previewLatex: "\\times", labelZh: "乘号", labelEn: "Multiplication", aliases: ["times", "multiply", "multiplication"], keywords: ["乘号", "乘法"], category: "relation", defaultPriority: 98, supportedInMathMode: true },
+  { id: "div", command: "\\div", insertTemplate: "\\div", previewLatex: "\\div", labelZh: "除号", labelEn: "Division", aliases: ["divide", "division"], keywords: ["除号", "除法"], category: "relation", defaultPriority: 97, supportedInMathMode: true },
 
   { id: "in", command: "\\in", insertTemplate: "\\in", previewLatex: "\\in", labelZh: "属于", labelEn: "Element of", aliases: ["element"], keywords: ["属于"], category: "set", defaultPriority: 100, supportedInMathMode: true },
   { id: "notin", command: "\\notin", insertTemplate: "\\notin", previewLatex: "\\notin", labelZh: "不属于", labelEn: "Not an element", aliases: ["not element"], keywords: ["不属于"], category: "set", defaultPriority: 92, supportedInMathMode: true },
@@ -106,6 +111,7 @@ const baseCommandRegistry: LatexCommand[] = [
 export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
   ...additionalCommands,
+  ...latestSharedCommands,
 ];
 
 export const categoryLabels: Record<string, string> = {
@@ -171,13 +177,13 @@ export const commonCommandIds = [
   "leq",
   "geq",
   "propto",
+  "times",
+  "div",
   "in",
   "subset",
   "rightarrow",
-  "notin",
   "forall",
   "exists",
-  "leftarrow",
 ];
 
 export const calculusCommandIds = [

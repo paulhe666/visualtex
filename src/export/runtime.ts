@@ -10,10 +10,17 @@ import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
+import {
+  applyCustomSymbolArtworkToSvg,
+  expandCustomSymbolsForMathMl,
+  expandCustomSymbolsForSvg,
+} from "../math/customSymbolRendering.ts";
 import { readErrorMessage } from "../errors/readErrorMessage.ts";
 import {
+  assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,
   assertResolvedPresentationMathMl,
+  normalizePackageLatexCommands,
   VISUALTEX_MATHML_MACROS,
   VISUALTEX_SVG_MACROS,
   type VisualTexMathJaxMacro,
@@ -23,7 +30,15 @@ import type {
   PngExportResult,
   SvgExportOptions,
   SvgExportResult,
-} from "./exportTypes";
+} from "./exportTypes.ts";
+import {
+  DEFAULT_FORMULA_CHINESE_FONT,
+  DEFAULT_FORMULA_LETTER_FONT,
+  formulaChineseFontFamily,
+  formulaLetterFontFamilies,
+  normalizeFormulaChineseFont,
+  normalizeFormulaLetterFont,
+} from "../editor/formulaFontPreferences.ts";
 
 const DEFAULT_OPTIONS: SvgExportOptions = {
   displayMode: true,
@@ -103,9 +118,12 @@ function isSingleCompleteEnvironment(source: string) {
 
 function prepareLatex(latex: string) {
   const normalized = normalizeMathLiveCanonicalUprightCommands(
-    normalizeExtendedIntegralLatexCommands(latex.replace(/\r\n?/g, "\n")),
+    normalizeExtendedIntegralLatexCommands(
+      normalizePackageLatexCommands(latex.replace(/\r\n?/g, "\n")),
+    ),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
+  assertNoUnfilledStructuralPlaceholders(normalized);
 
   const lines = normalized
     .split("\n")
@@ -135,20 +153,152 @@ function extractSvg(markup: string) {
   return markup.slice(start, end + "</svg>".length);
 }
 
-function parseViewBox(svg: string) {
-  const match = svg.match(
-    /\bviewBox=["']\s*([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s*["']/,
+type SvgViewBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type SvgRootGeometry = {
+  viewBox: SvgViewBox;
+  unitsPerPx: number;
+  baselinePx: number | null;
+  fullViewportNestedSvg: boolean;
+};
+
+function readSvgAttribute(opening: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return opening.match(new RegExp(`\\s${escaped}=["']([^"']*)["']`, "i"))?.[1] ?? null;
+}
+
+function readStyleDeclaration(style: string | null, name: string) {
+  if (!style) return null;
+  const normalizedName = name.toLowerCase();
+  for (const declaration of style.split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator <= 0) continue;
+    if (declaration.slice(0, separator).trim().toLowerCase() === normalizedName) {
+      return declaration.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function parseSvgViewBox(value: string | null) {
+  if (!value) return null;
+  const match = value.match(
+    /^\s*([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)\s*$/,
   );
-  if (!match) throw new Error("Exported SVG is missing a valid viewBox.");
+  if (!match) throw new Error("Exported SVG has an invalid viewBox.");
   const values = match.slice(1).map(Number);
-  if (values.some((value) => !Number.isFinite(value))) {
+  if (values.some((number) => !Number.isFinite(number))) {
     throw new Error("Exported SVG has an invalid viewBox.");
   }
   const [x, y, width, height] = values;
-  if (width <= 0 || height <= 0) {
-    throw new Error("Exported SVG has non-positive dimensions.");
+  if (!(width > 0) || !(height > 0)) {
+    throw new Error("Exported SVG has a non-positive viewBox.");
   }
   return { x, y, width, height };
+}
+
+function parseCssSvgLength(
+  value: string | null,
+  fontSizePx: number,
+  exPx: number,
+) {
+  if (!value) return null;
+  const match = value.trim().match(/^([-+\d.eE]+)\s*(px|ex|em)?$/i);
+  if (!match) return null;
+  const number = Number(match[1]);
+  if (!Number.isFinite(number)) return null;
+  const unit = (match[2] ?? "px").toLowerCase();
+  return unit === "ex" ? number * exPx : unit === "em" ? number * fontSizePx : number;
+}
+
+function resolveSvgRootGeometry(
+  svg: string,
+  fontSizePx: number,
+  exPx: number,
+): SvgRootGeometry {
+  const rootOpening = svg.match(/^<svg\b[^>]*>/i)?.[0];
+  if (!rootOpening) throw new Error("MathJax did not produce an SVG root element.");
+
+  const rootViewBox = parseSvgViewBox(readSvgAttribute(rootOpening, "viewBox"));
+  if (rootViewBox) {
+    return {
+      viewBox: rootViewBox,
+      unitsPerPx: 1000 / fontSizePx,
+      baselinePx: null,
+      fullViewportNestedSvg: false,
+    };
+  }
+
+  const style = readSvgAttribute(rootOpening, "style");
+  const widthPx = parseCssSvgLength(
+    readStyleDeclaration(style, "min-width") ?? readSvgAttribute(rootOpening, "width"),
+    fontSizePx,
+    exPx,
+  );
+  const heightPx = parseCssSvgLength(
+    readSvgAttribute(rootOpening, "height"),
+    fontSizePx,
+    exPx,
+  );
+  const verticalAlignPx = parseCssSvgLength(
+    readStyleDeclaration(style, "vertical-align"),
+    fontSizePx,
+    exPx,
+  ) ?? 0;
+  if (!widthPx || widthPx <= 0 || !heightPx || heightPx <= 0) {
+    throw new Error("Exported SVG is missing a valid root viewBox and intrinsic size.");
+  }
+  return {
+    viewBox: { x: 0, y: 0, width: widthPx, height: heightPx },
+    unitsPerPx: 1,
+    baselinePx: Math.max(0, Math.min(heightPx, heightPx + verticalAlignPx)),
+    fullViewportNestedSvg: true,
+  };
+}
+
+function normalizeFullViewportNestedSvg(
+  svg: string,
+  width: number,
+  height: number,
+) {
+  return svg.replace(
+    /<svg\b([^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*)>/gi,
+    (_opening, rawAttributes: string) => {
+      let attributes = rawAttributes;
+      const append: string[] = [];
+      if (!/\swidth=["']/i.test(attributes)) append.push(`width="${width}"`);
+      if (!/\sheight=["']/i.test(attributes)) append.push(`height="${height}"`);
+      if (!/\sx=["']/i.test(attributes)) append.push('x="0"');
+      if (!/\sy=["']/i.test(attributes)) append.push('y="0"');
+      if (!/\soverflow=["']/i.test(attributes)) append.push('overflow="visible"');
+      attributes = attributes.trim();
+      return `<svg${attributes ? ` ${attributes}` : ""}${append.length ? ` ${append.join(" ")}` : ""}>`;
+    },
+  );
+}
+
+function rewriteRootSvgOpening(
+  svg: string,
+  width: number,
+  height: number,
+  viewBox: SvgViewBox,
+) {
+  return svg.replace(/^<svg\b([^>]*)>/i, (_opening, rawAttributes: string) => {
+    const attributes = rawAttributes
+      .replace(
+        /\s(?:xmlns|width|height|role|focusable|style|viewBox)=["'][^"']*["']/gi,
+        "",
+      )
+      .trim();
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"${
+      attributes ? ` ${attributes}` : ""
+    }>`;
+  });
 }
 
 function assertSelfContained(svg: string) {
@@ -166,6 +316,70 @@ function assertSelfContained(svg: string) {
   }
 }
 
+function escapeSvgAttribute(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function escapeSvgText(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function mathAlphabetBaseCharacter(codePointHex: string) {
+  const codePoint = Number.parseInt(codePointHex, 16);
+  if (!Number.isFinite(codePoint)) return "";
+  const source = String.fromCodePoint(codePoint);
+  const normalized = source.normalize("NFKD");
+  const characters = Array.from(normalized);
+  if (characters.length !== 1 || !/\p{L}/u.test(characters[0])) return "";
+  return characters[0];
+}
+
+function applyVisualTexSvgFontPreferences(
+  svg: string,
+  options: SvgExportOptions,
+) {
+  const letterFont = normalizeFormulaLetterFont(
+    options.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
+  );
+  const chineseFont = normalizeFormulaChineseFont(
+    options.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
+  );
+  let output = svg;
+
+  const chineseFamily = escapeSvgAttribute(formulaChineseFontFamily(chineseFont));
+  output = output.replace(
+    /(<g\b[^>]*data-mml-node=["']mtext["'][^>]*>)([\s\S]*?)(<\/g>)/gi,
+    (_whole, opening: string, body: string, closing: string) =>
+      `${opening}${body.replace(
+        /font-family=["'][^"']*["']/gi,
+        `font-family="${chineseFamily}" data-visualtex-output-text-font="${escapeSvgAttribute(chineseFont)}"`,
+      )}${closing}`,
+  );
+
+  if (letterFont === DEFAULT_FORMULA_LETTER_FONT) return output;
+  const families = formulaLetterFontFamilies(letterFont);
+  output = output.replace(/<use\b([^>]*)><\/use>/gi, (whole, attributes: string) => {
+    const codePoint = attributes.match(/\bdata-c=["']([0-9A-F]+)["']/i)?.[1];
+    const href = attributes.match(/\bxlink:href=["']#([^"']+)["']/i)?.[1] ?? "";
+    const variant = href.match(/-TEX-(BI|B|I|N)-[0-9A-F]+$/i)?.[1]?.toUpperCase();
+    if (!codePoint || !variant) return whole;
+    const character = mathAlphabetBaseCharacter(codePoint);
+    if (!character) return whole;
+    const italic = variant === "I" || variant === "BI";
+    const bold = variant === "B" || variant === "BI";
+    const family = escapeSvgAttribute(italic ? families.italic : families.upright);
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}" transform="scale(1,-1)" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+  });
+  return output;
+}
+
 function encodeUtf8Base64(value: string) {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
@@ -181,7 +395,7 @@ export function svgToBase64(svg: string) {
 }
 
 export function latexToMathMl(latex: string, displayMode = true) {
-  const source = prepareLatex(latex);
+  const source = expandCustomSymbolsForMathMl(prepareLatex(latex));
   const root = mathMlDocument.convert(source, {
     display: displayMode,
     end: STATE.COMPILED,
@@ -198,7 +412,7 @@ export function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
 ): SvgExportResult {
-  const source = prepareLatex(latex);
+  const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
@@ -212,37 +426,32 @@ export function latexToSvg(
   });
   let svg = extractSvg(adaptor.outerHTML(container));
   svg = applyVisualTexIntegralSvgGlyphs(svg, options.displayMode);
-  const viewBox = parseViewBox(svg);
+  svg = applyCustomSymbolArtworkToSvg(svg);
+  svg = applyVisualTexSvgFontPreferences(svg, options);
+  const rootGeometry = resolveSvgRootGeometry(svg, fontSizePx, exPx);
+  const viewBox = rootGeometry.viewBox;
+  if (rootGeometry.fullViewportNestedSvg) {
+    svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
+  }
 
-  const unitsPerPx = 1000 / fontSizePx;
-  const paddingUnits = paddingPx * unitsPerPx;
+  const paddingUnits = paddingPx * rootGeometry.unitsPerPx;
   const padded = {
     x: viewBox.x - paddingUnits,
     y: viewBox.y - paddingUnits,
     width: viewBox.width + 2 * paddingUnits,
     height: viewBox.height + 2 * paddingUnits,
   };
-  const width = Math.max(1, padded.width / unitsPerPx);
-  const height = Math.max(1, padded.height / unitsPerPx);
-  const baseline = Math.max(0, Math.min(height, -padded.y / unitsPerPx));
+  const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
+  const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
+  const baseline =
+    rootGeometry.baselinePx === null
+      ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
+      : Math.max(0, Math.min(height, paddingPx + rootGeometry.baselinePx));
 
-  svg = svg
-    .replace(
-      /\bviewBox=["'][^"']+["']/,
-      `viewBox="${padded.x} ${padded.y} ${padded.width} ${padded.height}"`,
-    )
-    .replace(/^<svg\b([^>]*)>/, (_opening, rawAttributes: string) => {
-      const attributes = rawAttributes
-        .replace(
-          /\s(?:xmlns|width|height|role|focusable|style)=["'][^"']*["']/g,
-          "",
-        )
-        .trim();
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false"${
-        attributes ? ` ${attributes}` : ""
-      }>`;
-    })
-    .replaceAll("currentColor", "#111111");
+  svg = rewriteRootSvgOpening(svg, width, height, padded).replaceAll(
+    "currentColor",
+    "#111111",
+  );
 
   const openingEnd = svg.indexOf(">");
   if (options.background === "white") {
@@ -306,8 +515,11 @@ export async function svgToPng(
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Unable to create a PNG canvas context.");
-  if (options.background === "white") {
-    context.fillStyle = "#ffffff";
+  const requestedBackground = options.background ?? "transparent";
+  const opaqueBackground =
+    requestedBackground === "white" ? "#ffffff" : requestedBackground;
+  if (opaqueBackground !== "transparent") {
+    context.fillStyle = opaqueBackground;
     context.fillRect(0, 0, width, height);
   }
   context.drawImage(image, 0, 0, width, height);

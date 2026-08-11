@@ -6,6 +6,7 @@ import {
 } from "../src/export/runtime.ts";
 import { normalizeChineseLatex } from "../src/editor/normalizeChineseLatex.ts";
 import { EXTENDED_INTEGRAL_SYMBOLS } from "../src/math/extendedIntegralCompatibility.ts";
+import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 
 const matrixRows = Array.from({ length: 10 }, (_, row) =>
   Array.from({ length: 10 }, (_, column) => `a_{${row + 1}${column + 1}}`).join("&"),
@@ -20,6 +21,7 @@ const cases = [
   ["chinese", String.raw`\text{测试}+\alpha`],
   ["multiline", "a=b+c\nd=e-f\ng=h"],
   ["long", Array.from({ length: 25 }, (_, index) => `x_{${index + 1}}`).join("+")],
+  ["tagged-equation", String.raw`L^\dagger=p_2(x)\frac{d^2}{dx^2}+\bigl[2p_2(x)-p_1(x)\bigr]\frac{d}{dx}\tag{9.27}`],
   ["bm-single-token", String.raw`A\bm v=\lambda\bm v`],
   ["bm-group", String.raw`\nabla\cdot\bm{F}+\boldsymbol{\alpha}`],
   ["math-fonts", String.raw`\mathbf{x}+\mathrm{d}+\operatorname{rank}(A)+\mathbb{R}+\mathcal{L}+\mathfrak{g}`],
@@ -30,6 +32,13 @@ const cases = [
   ["matrix-family", String.raw`\begin{matrix}a&b\\c&d\end{matrix}+\begin{pmatrix}a&b\\c&d\end{pmatrix}+\begin{bmatrix}a&b\\c&d\end{bmatrix}+\begin{vmatrix}a&b\\c&d\end{vmatrix}+\begin{Vmatrix}a&b\\c&d\end{Vmatrix}`],
   ["scalable-delimiters", String.raw`\left(\frac{a}{b}\right)+\left\lVert\bm v\right\rVert`],
   ["vector-calculus", String.raw`\partial_x+\nabla f+\nabla\cdot\bm F+\nabla\times\bm F+\nabla^2 f`],
+  ["physics-package", String.raw`\qty(\frac{a}{b})+\dv{f}{x}+\pdv{g}{y}+\abs{x}+\norm{\bm v}`],
+  ["siunitx-package", String.raw`\SI{3}{\meter\per\second}+\si{\kilogram}+\unit{\joule}+\qty{5}{\tesla}`],
+  ["bbm-package", String.raw`\mathbbm{1}_{A}`],
+  ["physics-derivative-orders", String.raw`\dv{x}+\dv[2]{f}{x}+\pdv[3]{g}{y}+\fdv{S}{\phi}`],
+  ["physics-vectors-operators", String.raw`\vb{v}+\va{a}+\vu{n}+\pb{f}{g}+\order{x^2}+\Tr A+\rank A`],
+  ["physics-matrix-quantities", String.raw`\mqty{a&b\\c&d}+\pmqty{1&0\\0&1}+\vmqty{x&y\\z&w}`],
+  ["siunitx-options-ranges", String.raw`\SI[round-mode=places]{3.14}{\kilo\meter\per\second}+\qty[round-mode=figures]{5}{\tesla}+\qtyrange{1}{10}{\milli\second}+\ang{30}`],
 ];
 
 function assertNoUnknownMathCommand(mathMl, context) {
@@ -41,12 +50,29 @@ function assertNoUnknownMathCommand(mathMl, context) {
 }
 
 const extendedIntegralCases = Object.entries(EXTENDED_INTEGRAL_SYMBOLS).map(
-  ([command, character]) => [
-    command,
-    character,
-    character.codePointAt(0).toString(16).toUpperCase(),
-  ],
+  ([command, replacement]) => [command, replacement],
 );
+
+function assertExtendedIntegralMathMl(mathMl, command, replacement) {
+  if (replacement.startsWith("\\")) {
+    assert.ok(
+      (mathMl.match(/&#x222B;/gi) ?? []).length >= 2,
+      `${command} composite MathML keeps both integral operators`,
+    );
+    assert.match(mathMl, /&#x22EF;/i, `${command} composite MathML keeps its dots`);
+    return;
+  }
+
+  const expectedCounts = new Map();
+  for (const character of Array.from(replacement)) {
+    const codePoint = character.codePointAt(0).toString(16).toUpperCase();
+    expectedCounts.set(codePoint, (expectedCounts.get(codePoint) ?? 0) + 1);
+  }
+  for (const [codePoint, count] of expectedCounts) {
+    const actual = (mathMl.match(new RegExp(`&#x${codePoint};`, "gi")) ?? []).length;
+    assert.ok(actual >= count, `${command} MathML symbol U+${codePoint}`);
+  }
+}
 
 for (const [name, latex] of cases) {
   const result = await latexToSvg(latex, {
@@ -56,7 +82,8 @@ for (const [name, latex] of cases) {
     background: name === "root" ? "white" : "transparent",
   });
   assert.match(result.svg, /^<svg\b/);
-  assert.match(result.svg, /\bviewBox=/);
+  const rootOpening = result.svg.match(/^<svg\b[^>]*>/)?.[0] ?? "";
+  assert.match(rootOpening, /\bviewBox=/, `${name} root viewBox`);
   assert.ok(result.width > 0, `${name} width`);
   assert.ok(result.height > 0, `${name} height`);
   assert.ok((result.baseline ?? -1) >= 0, `${name} baseline`);
@@ -73,6 +100,19 @@ for (const [name, latex] of cases) {
       /<rect\b[^>]*fill-opacity="0\.001"/,
       `${name} transparent PowerPoint hit target`,
     );
+  }
+  if (name === "tagged-equation") {
+    assert.ok(result.width > 250, "tagged equation keeps its full intrinsic width");
+    const nestedViewports = [...result.svg.matchAll(
+      /<svg\b[^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*>/g,
+    )].map((match) => match[0]);
+    assert.equal(nestedViewports.length, 2, "tagged equation table and label viewports");
+    for (const viewport of nestedViewports) {
+      assert.match(viewport, /\bviewBox=["'][^"']+["']/);
+      assert.match(viewport, /\bwidth=["'][-+\d.eE]+["']/);
+      assert.match(viewport, /\bheight=["'][-+\d.eE]+["']/);
+      assert.match(viewport, /\boverflow=["']visible["']/);
+    }
   }
   const mathMl = latexToMathMl(latex, true);
   assert.match(mathMl, /^<math\b/);
@@ -94,7 +134,7 @@ for (const [name, latex] of cases) {
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
-for (const [command, character, codePoint] of extendedIntegralCases) {
+for (const [command, character] of extendedIntegralCases) {
   const latex = `\\${command}_{\\Sigma} a\\,\\mathrm{d}S`;
   const mathMl = latexToMathMl(latex, true);
   const svgResult = latexToSvg(latex, {
@@ -105,7 +145,7 @@ for (const [command, character, codePoint] of extendedIntegralCases) {
   });
   const svg = svgResult.svg;
 
-  assert.match(mathMl, new RegExp(`&#x${codePoint};`, "i"), `${command} MathML symbol`);
+  assertExtendedIntegralMathMl(mathMl, command, character);
   assert.match(mathMl, /<msub>/, `${command} keeps its lower limit`);
   assertNoUnknownMathCommand(mathMl, command);
   assert.doesNotMatch(mathMl, new RegExp(`\\\\${command}(?:<|$)`), `${command} is not literal text`);
@@ -123,25 +163,80 @@ for (const [command, character, codePoint] of extendedIntegralCases) {
   );
   assert.ok(svgResult.height > 30, `${command} display operator keeps large-integral height`);
 
-  const normalizedUnicode = normalizeChineseLatex(`${character}_{S}F`);
-  assert.match(
-    normalizedUnicode,
-    /^\\[A-Za-z]+\s*_\{S\}F$/,
-    `${command} Unicode serialization is restored to canonical LaTeX`,
-  );
-  const reopenedSvg = latexToSvg(normalizedUnicode, {
-    displayMode: true,
-    fontSizePt: 14,
-    paddingPx: 0,
-    background: "transparent",
-  }).svg;
-  assert.match(
-    reopenedSvg,
-    /data-visualtex-integral="[A-Za-z]+"/,
-    `${command} remains resolved after Unicode save/reopen normalization`,
-  );
+  if (!character.startsWith("\\")) {
+    const normalizedUnicode = normalizeChineseLatex(`${character}_{S}F`);
+    assert.match(
+      normalizedUnicode,
+      /^(?:\\[A-Za-z]+\s*)+_\{S\}F$/,
+      `${command} Unicode serialization is restored to canonical LaTeX`,
+    );
+    const reopenedSvg = latexToSvg(normalizedUnicode, {
+      displayMode: true,
+      fontSizePt: 14,
+      paddingPx: 0,
+      background: "transparent",
+    }).svg;
+    assert.match(
+      reopenedSvg,
+      /data-visualtex-integral="[A-Za-z]+"/,
+      `${command} remains resolved after Unicode save/reopen normalization`,
+    );
+  }
 }
 
+assert.equal(
+  isIncompleteLatexDraft(String.raw`x+\placeholder{}`),
+  true,
+  "structural placeholder is an incomplete editor draft",
+);
+assert.equal(
+  isIncompleteLatexDraft(
+    String.raw`x+\alp`,
+    new Error("MathJax did not resolve LaTeX command \\alp."),
+  ),
+  true,
+  "a trailing partial command is an incomplete editor draft",
+);
+assert.equal(
+  isIncompleteLatexDraft(String.raw`\frac{a}{`),
+  true,
+  "an unclosed group is an incomplete editor draft",
+);
+assert.equal(
+  isIncompleteLatexDraft(String.raw`\begin{matrix}a&b`),
+  true,
+  "an unclosed environment is an incomplete editor draft",
+);
+assert.equal(
+  isIncompleteLatexDraft(String.raw`x+\alpha`),
+  false,
+  "a complete command is not an incomplete draft",
+);
+assert.equal(
+  isIncompleteLatexDraft(
+    String.raw`x+\definitelyUnknownVisualTeXCommand+y`,
+    new Error(
+      "MathJax did not resolve LaTeX command \\definitelyUnknownVisualTeXCommand.",
+    ),
+  ),
+  false,
+  "a complete unknown command in the formula remains a real error",
+);
+assert.equal(
+  isIncompleteLatexDraft(
+    String.raw`x+\definitelyUnknownVisualTeXCommand+\alpha`,
+    new Error(
+      "MathJax did not resolve LaTeX command \\definitelyUnknownVisualTeXCommand.",
+    ),
+  ),
+  false,
+  "a valid trailing command must not hide an earlier unknown command",
+);
+
+assert.throws(
+  () => latexToSvg(String.raw`x+\placeholder{}`),
+  /empty VisualTeX placeholders/,
+);
 assert.throws(
   () =>
     assertNoUnknownMathCommand(

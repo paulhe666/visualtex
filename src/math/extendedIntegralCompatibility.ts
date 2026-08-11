@@ -23,11 +23,39 @@ export const RARE_INTEGRAL_SYMBOLS = {
   lowint: "⨜",
 } as const;
 
+export const ESINT_INTEGRAL_REPLACEMENTS = {
+  idotsint: "\\int\\!\\cdots\\!\\int",
+  dotsint: "\\int\\!\\cdots\\!\\int",
+  sqint: "⨖",
+  sqiint: "⨖⨖",
+  ointclockwise: "∱",
+  varointctrclockwise: "∳",
+  varoiint: "∯",
+  landupint: "⨛",
+  landdownint: "⨜",
+  iiiint: "⨌",
+  intclockwise: "∱",
+  ointctrclockwise: "∳",
+  varointclockwise: "∲",
+  fint: "⨏",
+} as const;
+
 export const EXTENDED_INTEGRAL_SYMBOLS = {
   oiint: "∯",
   oiiint: "∰",
   ...RARE_INTEGRAL_SYMBOLS,
+  ...ESINT_INTEGRAL_REPLACEMENTS,
 } as const;
+
+export const EXTENDED_INTEGRAL_COMMANDS = Object.freeze(
+  Object.keys(EXTENDED_INTEGRAL_SYMBOLS),
+);
+
+export const EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE = [
+  ...EXTENDED_INTEGRAL_COMMANDS,
+]
+  .sort((left, right) => right.length - left.length)
+  .join("|");
 
 const CANONICAL_COMMAND_BY_CHARACTER = new Map<string, string>([
   ["∯", "oiint"],
@@ -57,12 +85,6 @@ const CANONICAL_COMMAND_BY_CHARACTER = new Map<string, string>([
 
 const EXTENDED_INTEGRAL_CHARACTER_PATTERN = /[∯∰∱∲∳⨋-⨜]/gu;
 
-/**
- * MathLive and old OLE objects can serialize an integral as its Unicode glyph.
- * Convert it back to one canonical LaTeX command before it reaches the editor,
- * metadata store, MathJax, or Word. A trailing command terminator prevents the
- * restored control word from consuming a following Latin variable.
- */
 export function normalizeExtendedIntegralLatexCommands(source: string) {
   return source.replace(EXTENDED_INTEGRAL_CHARACTER_PATTERN, (character) => {
     const command = CANONICAL_COMMAND_BY_CHARACTER.get(character);
@@ -81,6 +103,33 @@ const RARE_INTEGRAL_SVG_MACROS = Object.fromEntries(
   ]),
 ) as Record<string, string>;
 
+const ESINT_SVG_PLACEHOLDERS: Record<
+  keyof typeof ESINT_INTEGRAL_REPLACEMENTS,
+  string
+> = {
+  idotsint: "\\iiint",
+  dotsint: "\\iiint",
+  sqint: "\\int",
+  sqiint: "\\iint",
+  ointclockwise: "\\oint",
+  varointctrclockwise: "\\oint",
+  varoiint: "\\iint",
+  landupint: "\\int",
+  landdownint: "\\int",
+  iiiint: "\\iiint",
+  intclockwise: "\\oint",
+  ointctrclockwise: "\\oint",
+  varointclockwise: "\\oint",
+  fint: "\\int",
+};
+
+const ESINT_INTEGRAL_SVG_MACROS = Object.fromEntries(
+  Object.entries(ESINT_SVG_PLACEHOLDERS).map(([command, placeholder]) => [
+    command,
+    svgMarker(command, placeholder),
+  ]),
+) as Record<keyof typeof ESINT_INTEGRAL_REPLACEMENTS, string>;
+
 export const EXTENDED_INTEGRAL_MATHML_MACROS = {
   ...EXTENDED_INTEGRAL_SYMBOLS,
 } as const;
@@ -89,4 +138,5 @@ export const EXTENDED_INTEGRAL_SVG_MACROS = {
   oiint: svgMarker("oiint", "\\iint"),
   oiiint: svgMarker("oiiint", "\\iiint"),
   ...RARE_INTEGRAL_SVG_MACROS,
+  ...ESINT_INTEGRAL_SVG_MACROS,
 } as const;

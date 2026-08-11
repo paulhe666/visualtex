@@ -323,7 +323,16 @@ export function nativeSuggestionPreviewHasVisibleInk(preview: HTMLElement) {
       ].some((width) => Number.parseFloat(width) > 0);
       if (hasVisibleBorder && style.borderStyle !== "none") return true;
       for (const pseudo of ["::before", "::after"] as const) {
-        const content = getComputedStyle(node, pseudo).content;
+        const pseudoStyle = getComputedStyle(node, pseudo);
+        const content = pseudoStyle.content;
+        const maskImage = pseudoStyle.maskImage;
+        const webkitMaskImage = pseudoStyle.getPropertyValue("-webkit-mask-image");
+        if (
+          (maskImage && maskImage !== "none") ||
+          (webkitMaskImage && webkitMaskImage !== "none")
+        ) {
+          return true;
+        }
         if (
           content &&
           content !== "none" &&

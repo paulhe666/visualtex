@@ -46,6 +46,7 @@ export interface EditorWorkspaceProps {
     target: MathEditorInsertionTarget,
   ) => Promise<void>;
   onCopy: () => Promise<void>;
+  onCopyPng?: () => Promise<void>;
   onReplaceDocument: (
     snapshot: DocumentSnapshot,
     source: ReplaceDocumentEntry["source"],

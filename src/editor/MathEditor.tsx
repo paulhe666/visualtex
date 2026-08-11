@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   forwardRef,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   type Style,
 } from "mathlive";
 import { flushSync } from "react-dom";
+import { ClipboardCopy } from "lucide-react";
 import type {
   CommandSource,
   CommandUsage,
@@ -22,6 +24,7 @@ import type {
   FormulaAlignment,
   FormulaLine,
   InputBehaviorSettingKey,
+  LatexCodeFormat,
   InputBehaviorSettings,
 } from "../types/formula";
 import type {
@@ -39,7 +42,10 @@ import {
 } from "../history/HistoryManager";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
 import { searchCommands } from "../autocomplete/CommandSearchEngine";
-import { commandRegistry } from "../autocomplete/commandRegistry";
+import {
+  findRuntimeCommandByCommand,
+  getRuntimeCommandRegistry,
+} from "../autocomplete/runtimeCommandRegistry";
 import { CommandSuggestionPopup } from "../autocomplete/CommandSuggestionPopup";
 import {
   createFormulaLine,
@@ -51,6 +57,10 @@ import {
   resolveFormulaHotkeyCommand,
 } from "../shortcuts/formulaHotkeys";
 import {
+  greekLetterHotkeyCommandFromEvent,
+  isGreekLetterHotkeyPrefix,
+} from "../shortcuts/greekLetterHotkeys";
+import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
   normalizeMathLiveCanonicalUprightCommands,
@@ -61,11 +71,35 @@ import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
+import { applyCustomSymbolMacrosToMathfield } from "../math/customSymbolRegistry";
+import {
+  installCustomSymbolGlobalStyle,
+  installCustomSymbolShadowStyle,
+  refreshCustomSymbolMathfield,
+} from "../math/customSymbolRendering";
+import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { ImeCompositionGuard } from "./imeCompositionGuard";
 import {
   nativeSuggestionPreviewHasVisibleInk,
   resolveNativeSuggestionPreview,
 } from "./nativeSuggestionPreviews";
+import {
+  toggleFormulaSelectionLatex,
+  type FormulaSelectionToggleKind,
+} from "./selectionStyleToggle";
+import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
+import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
+import {
+  formulaChineseFontFamily,
+  formulaLetterFontFamilies,
+  type FormulaChineseFont,
+  type FormulaLetterFont,
+} from "./formulaFontPreferences";
+import {
+  usesExplicitAlignmentPoints,
+  VISUALTEX_ALIGNMENT_MARKER_CLASS,
+  VISUALTEX_ALIGNMENT_MARKER_LATEX,
+} from "./alignmentMarkers";
 
 export interface MathEditorInsertionTarget {
   lineId: string;
@@ -88,6 +122,21 @@ export interface MathEditorFocusOptions {
   moveToEnd?: boolean;
 }
 
+const EDITOR_LAYOUT_REFRESH_EVENT = "visualtex-editor-layout-refresh";
+const VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE =
+  "application/x-visualtex-multiline-latex";
+const FORMULA_CONTEXT_COLORS = [
+  "#111827",
+  "#DC2626",
+  "#EA580C",
+  "#CA8A04",
+  "#16A34A",
+  "#0891B2",
+  "#2563EB",
+  "#7C3AED",
+  "#DB2777",
+] as const;
+
 export interface MathEditorHandle {
   insertCommand: (command: LatexCommand, source?: "toolbar" | "history" | "shortcut") => void;
   insertLatex: (latex: string, source?: FormulaEditSource) => void;
@@ -107,20 +156,27 @@ export interface MathEditorHandle {
     selection: MathSelectionSnapshot | null,
   ) => Promise<boolean>;
   captureSelectionTarget: () => MathEditorSelectionTarget | null;
+  captureInsertionTarget: () => MathEditorInsertionTarget | null;
   applySelectionStyle: (
     style: MathEditorSelectionStyle,
     target?: MathEditorSelectionTarget | null,
   ) => boolean;
+  refreshLayout: () => void;
 }
 
 interface Props {
   lines: FormulaLine[];
   activeLineId: string | null;
   formulaAlignment: FormulaAlignment;
+  latexCodeFormat: LatexCodeFormat;
   zoom: number;
+  reuseLineSlots?: boolean;
   readOnly?: boolean;
+  previewOnly?: boolean;
+  onPreviewActivate?: () => void;
   draftError?: string;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
+  onCopyPng?: () => Promise<void>;
   onHistoryBusyChange?: (busy: boolean) => void;
   overlay?: ReactNode;
 }
@@ -181,11 +237,18 @@ interface FormulaFieldProps {
   index: number;
   latex: string;
   zoom: number;
-  readOnly: boolean;
+  formulaRowVerticalInset: number;
   language: "cn" | "en";
+  formulaLetterFont: FormulaLetterFont;
+  formulaChineseFont: FormulaChineseFont;
   autoPairDelimiters: boolean;
   inputBehavior: InputBehaviorSettings;
-  register: (lineId: string, field: MathfieldElement | null) => void;
+  readOnly: boolean;
+  register: (
+    lineId: string,
+    field: MathfieldElement | null,
+    expectedField?: MathfieldElement,
+  ) => void;
   onEdit: (edit: FormulaFieldEdit, field: MathfieldElement) => void;
   onInputActivity: (field: MathfieldElement) => void;
   onSelectionChange: (
@@ -196,6 +259,13 @@ interface FormulaFieldProps {
   onCommitPending: () => void;
   onKeyDown: (index: number, event: KeyboardEvent, field: MathfieldElement) => void;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
+  onCopyPng?: () => Promise<void>;
+  onContextMenu?: (clientX: number, clientY: number) => void;
+  onPasteLatexLines?: (
+    lineId: string,
+    field: MathfieldElement,
+    lines: string[],
+  ) => void;
 }
 
 interface MultiLineSelectionPoint {
@@ -230,6 +300,23 @@ function rawLatexInput(field: MathfieldElement) {
     .filter((node) => !node.classList.contains("ML__suggestion"))
     .map((node) => node.textContent ?? "")
     .join("");
+}
+
+type MathLiveInternalField = {
+  _mathfield?: {
+    model?: {
+      parentEnvironment?: {
+        environmentName?: string;
+      } | null;
+    };
+  };
+};
+
+function activeMathLiveEnvironmentName(field: MathfieldElement) {
+  return (
+    (field as unknown as MathLiveInternalField)._mathfield?.model?.parentEnvironment
+      ?.environmentName ?? null
+  );
 }
 
 function structuralBoundaryOffsetFromPoint(
@@ -982,8 +1069,13 @@ const accentCommandTemplates = new Map<string, string>([
   ["\\overleftrightarrow", "\\overleftrightarrow{\\placeholder{}}"],
   ["\\mathring", "\\mathring{\\placeholder{}}"],
 ]);
+const CASES_ENVIRONMENT_COMMAND = "\\begin{cases}";
+const CASES_ENVIRONMENT_TEMPLATE =
+  "\\begin{cases}\\placeholder{} & \\placeholder{}\\end{cases}";
+
 const rawPlaceholderCommandTemplates = new Map<string, string>([
   ...accentCommandTemplates,
+  [CASES_ENVIRONMENT_COMMAND, CASES_ENVIRONMENT_TEMPLATE],
   ["\\sqrt", "\\sqrt{\\placeholder{}}"],
   ["\\frac", "\\frac{\\placeholder{}}{\\placeholder{}}"],
   ["\\dfrac", "\\dfrac{\\placeholder{}}{\\placeholder{}}"],
@@ -1033,6 +1125,8 @@ const wrapperCommandPreviews = new Map<string, string>([
   ["\\mathscr", "\\mathscr{gG}"],
   ["\\mathfrak", "\\mathfrak{ABC}"],
   ["\\boldsymbol", "\\boldsymbol{\\alpha A}"],
+  ["\\bm", "\\bm{\\alpha A}"],
+  ["\\mathbfit", "\\mathbfit{ABC}"],
   ["\\mathnormal", "\\mathnormal{ABC}"],
 ]);
 function visibleCommandSuggestions(
@@ -1046,7 +1140,7 @@ function visibleCommandSuggestions(
     rawQuery,
     usage,
     personalize,
-    commandRegistry.length,
+    getRuntimeCommandRegistry().length,
   )
     .filter((command) =>
       structuredSuggestionCommands.has(command.command)
@@ -1118,9 +1212,7 @@ function selectAdjacentAccentPlaceholder(
 function exactWrapperCommand(rawQuery: string) {
   const normalizedQuery = rawQuery.trim();
   if (!wrapperCommandPreviews.has(normalizedQuery)) return null;
-  return (
-    commandRegistry.find((command) => command.command === normalizedQuery) ?? null
-  );
+  return findRuntimeCommandByCommand(normalizedQuery);
 }
 
 function findAcceptedWrapperRange(
@@ -1211,15 +1303,90 @@ let observedNativeInputPopoverSource: HTMLElement | null = null;
 let nativeSuggestionUsageSnapshot: Record<string, CommandUsage> = {};
 let nativeSuggestionPersonalizeSnapshot = true;
 let nativeInputPopoverManualCommand = "";
+let nativeInputPopoverActiveField: MathfieldElement | null = null;
+
+function casesEnvironmentSuggestionQuery(field: MathfieldElement) {
+  const raw = rawLatexInput(field).replace(/\s+/g, "");
+  if (raw.length < "\\b".length) return "";
+  if (!CASES_ENVIRONMENT_COMMAND.startsWith(raw)) return "";
+  return raw;
+}
+
+function createCasesEnvironmentSuggestionItem() {
+  const preview = convertVisualTexLatexToMarkup(
+    "\\begin{cases}x & x>0\\\\0 & x=0\\end{cases}",
+    { defaultMode: "math" },
+  );
+  const item = document.createElement("li");
+  item.setAttribute("role", "button");
+  item.dataset.command = CASES_ENVIRONMENT_COMMAND;
+  item.dataset.visualtexEnvironmentSuggestion = "cases";
+  item.className = "has-visualtex-command-preview";
+  item.innerHTML = `<span class="ML__popover__latex">\\begin{cases}</span><span class="ML__popover__command">${preview}</span><span class="ML__popover__keybinding">Space</span>`;
+  return item;
+}
+
+function syncCasesEnvironmentSuggestionItem(
+  panel: HTMLElement,
+  field: MathfieldElement,
+) {
+  const query = casesEnvironmentSuggestionQuery(field);
+  const synthetic = panel.querySelector<HTMLElement>(
+    'li[data-visualtex-environment-suggestion="cases"]',
+  );
+  const nativeAlreadyProvidesCases = Array.from(
+    panel.querySelectorAll<HTMLElement>("li[data-command]"),
+  ).some(
+    (item) =>
+      item !== synthetic && item.dataset.command === CASES_ENVIRONMENT_COMMAND,
+  );
+  if (!query || nativeAlreadyProvidesCases) {
+    synthetic?.remove();
+    return;
+  }
+  if (synthetic) return;
+  const list = panel.querySelector("ul");
+  if (list) list.append(createCasesEnvironmentSuggestionItem());
+}
+
+function renderCasesEnvironmentSuggestion(
+  stable: HTMLElement,
+  field: MathfieldElement,
+) {
+  if (!casesEnvironmentSuggestionQuery(field)) return false;
+  const preview = convertVisualTexLatexToMarkup(
+    "\\begin{cases}x & x>0\\\\0 & x=0\\end{cases}",
+    { defaultMode: "math" },
+  );
+  stable.dataset.visualtexEnvironmentSuggestion = "cases";
+  stable.innerHTML = `<ul><li role="button" data-command="\\begin{cases}" class="ML__popover__current has-visualtex-command-preview"><span class="ML__popover__latex">\\begin{cases}</span><span class="ML__popover__command">${preview}</span><span class="ML__popover__keybinding">Space</span></li></ul>`;
+  const caret =
+    field.shadowRoot?.querySelector<HTMLElement>(
+      ".ML__latex-caret, .ML__caret, .ML__text-caret",
+    ) ?? null;
+  const anchor = caret?.getBoundingClientRect() ?? field.getBoundingClientRect();
+  const width = Math.min(380, Math.max(250, window.innerWidth - 24));
+  const left = Math.max(
+    12,
+    Math.min(window.innerWidth - width - 12, anchor.left - 40),
+  );
+  const roomBelow = window.innerHeight - anchor.bottom;
+  stable.classList.toggle("bottom-tip", roomBelow < 190);
+  stable.classList.toggle("top-tip", roomBelow >= 190);
+  stable.style.left = `${left}px`;
+  stable.style.top =
+    roomBelow < 190
+      ? `${Math.max(12, anchor.top - 92)}px`
+      : `${Math.min(window.innerHeight - 72, anchor.bottom + 12)}px`;
+  stable.classList.add("is-visible");
+  stable.setAttribute("aria-hidden", "false");
+  return true;
+}
 
 function nativeSuggestionUsageId(command: string) {
   const normalized = command.trim();
   return (
-    commandRegistry.find(
-      (candidate) =>
-        candidate.command === normalized ||
-        candidate.insertTemplate === normalized,
-    )?.id ?? `mathlive-native:${normalized}`
+    findRuntimeCommandByCommand(normalized)?.id ?? `mathlive-native:${normalized}`
   );
 }
 
@@ -1234,12 +1401,23 @@ function nativeSuggestionFrequency(command: string) {
 }
 
 function rankNativeSuggestionItems(panel: HTMLElement) {
-  const items = Array.from(
+  const allItems = Array.from(
     panel.querySelectorAll<HTMLElement>("li[data-command]"),
   );
-  if (!items.length) return;
-  const parent = items[0]?.parentElement;
-  if (!parent || items.some((item) => item.parentElement !== parent)) return;
+  if (!allItems.length) return;
+  const parent = allItems[0]?.parentElement;
+  if (!parent || allItems.some((item) => item.parentElement !== parent)) return;
+
+  const seenCommands = new Set<string>();
+  const items = allItems.filter((item) => {
+    const command = item.dataset.command?.trim() ?? "";
+    if (!command || !seenCommands.has(command)) {
+      if (command) seenCommands.add(command);
+      return true;
+    }
+    item.remove();
+    return false;
+  });
 
   const ranked = nativeSuggestionPersonalizeSnapshot
     ? items
@@ -1320,13 +1498,33 @@ function ensureStableNativeInputPopover() {
         "li[data-command]",
       ) ?? [],
     ).find((candidate) => candidate.dataset.command === command);
-    sourceItem?.dispatchEvent(
-      new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      }),
-    );
+    if (
+      sourceItem &&
+      sourceItem.dataset.visualtexEnvironmentSuggestion !== "cases"
+    ) {
+      sourceItem.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        }),
+      );
+      return;
+    }
+    if (
+      command === CASES_ENVIRONMENT_COMMAND &&
+      nativeInputPopoverActiveField?.isConnected
+    ) {
+      nativeInputPopoverActiveField.dataset.pendingNativeSuggestion = command;
+      nativeInputPopoverActiveField.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
   });
   document.body.append(panel);
   return panel;
@@ -1383,6 +1581,9 @@ function syncStableNativeInputPopoverSelection(command: string) {
 function syncStableNativeInputPopover() {
   bindNativeInputPopoverSource();
   const source = getNativeInputPopoverSource();
+  if (source && nativeInputPopoverActiveField?.isConnected) {
+    syncCasesEnvironmentSuggestionItem(source, nativeInputPopoverActiveField);
+  }
   const sourceVisible = Boolean(
     source?.classList.contains("is-visible") &&
       source.querySelector("li[data-command]"),
@@ -1390,6 +1591,14 @@ function syncStableNativeInputPopover() {
   const stable = ensureStableNativeInputPopover();
 
   if (!source || !sourceVisible) {
+    if (
+      nativeInputPopoverActiveField?.isConnected &&
+      renderCasesEnvironmentSuggestion(stable, nativeInputPopoverActiveField)
+    ) {
+      window.clearTimeout(stableNativeInputPopoverHideTimer);
+      return;
+    }
+    delete stable.dataset.visualtexEnvironmentSuggestion;
     window.clearTimeout(stableNativeInputPopoverHideTimer);
     stableNativeInputPopoverHideTimer = window.setTimeout(() => {
       const latest = getNativeInputPopoverSource();
@@ -1407,6 +1616,7 @@ function syncStableNativeInputPopover() {
   }
 
   window.clearTimeout(stableNativeInputPopoverHideTimer);
+  delete stable.dataset.visualtexEnvironmentSuggestion;
   source.dataset.visualtexInputPopoverSource = "true";
   rankNativeSuggestionItems(source);
   const nextHtml = source.innerHTML;
@@ -1437,15 +1647,25 @@ const MIN_FORMULA_FONT_SIZE = BASE_FORMULA_FONT_SIZE * 0.2;
 const formulaFontSize = (zoom: number) =>
   Math.max(MIN_FORMULA_FONT_SIZE, BASE_FORMULA_FONT_SIZE * zoom);
 
-function formulaRowHeightMetrics(latex: string, zoom: number) {
+function formulaRowHeightMetrics(
+  latex: string,
+  zoom: number,
+  formulaRowVerticalInset: number,
+) {
   const fontSize = formulaFontSize(zoom);
   const hasTallStructure = tallFormulaPattern.test(latex);
-  const baseHeight = hasTallStructure
-    ? Math.max(36, fontSize * 1.34 + 16)
-    : Math.max(30, fontSize * 1.12 + 8);
-  const verticalPadding = hasTallStructure
-    ? Math.max(10, fontSize * 0.44)
-    : Math.max(8, fontSize * 0.26);
+  const safeVerticalInset = Math.max(
+    0,
+    Math.min(24, Math.round(formulaRowVerticalInset)),
+  );
+  const verticalPadding = safeVerticalInset * 2;
+  const baseContentHeight = hasTallStructure
+    ? Math.max(20, fontSize * 1.34)
+    : Math.max(22, fontSize * 1.12);
+  const baseHeight = Math.max(
+    hasTallStructure ? 36 : 30,
+    baseContentHeight + verticalPadding,
+  );
   return {
     fontSize,
     hasTallStructure,
@@ -1457,9 +1677,14 @@ function formulaRowHeightMetrics(latex: string, zoom: number) {
 function predictedFormulaRowHeight(
   latex: string,
   zoom: number,
+  formulaRowVerticalInset: number,
   measurementHost?: HTMLElement | null,
 ) {
-  const metrics = formulaRowHeightMetrics(latex, zoom);
+  const metrics = formulaRowHeightMetrics(
+    latex,
+    zoom,
+    formulaRowVerticalInset,
+  );
   let renderedHeight = latex.trim() ? 0 : metrics.fontSize * 1.2;
 
   if (measurementHost && latex.trim()) {
@@ -1512,7 +1737,125 @@ function captureFieldSnapshot(field: MathfieldElement) {
   };
 }
 
+type StructuredCompositionAnchor = {
+  snapshot: ReturnType<typeof captureFieldSnapshot>;
+  modelPlaceholderIndex: number;
+  textualPlaceholderIndex: number;
+};
+
+function captureStructuredCompositionAnchor(
+  field: MathfieldElement,
+  snapshot: ReturnType<typeof captureFieldSnapshot>,
+): StructuredCompositionAnchor | null {
+  const activeRange = snapshot.selection.ranges.at(-1);
+  if (!activeRange) return null;
+  const normalizedRange: [number, number] = [
+    Math.min(activeRange[0], activeRange[1]),
+    Math.max(activeRange[0], activeRange[1]),
+  ];
+  if (
+    normalizedRange[0] === normalizedRange[1] ||
+    field.getValue(normalizedRange[0], normalizedRange[1], "latex").trim() !==
+      "\\placeholder{}"
+  ) {
+    return null;
+  }
+
+  const modelPlaceholderIndex = latexPlaceholderRanges(field).findIndex(
+    ([start, end]) =>
+      start === normalizedRange[0] && end === normalizedRange[1],
+  );
+  if (modelPlaceholderIndex < 0) return null;
+  const textualPlaceholderIndex =
+    textualPlaceholderIndexForRange(snapshot.latex, normalizedRange) ??
+    modelPlaceholderIndex;
+  return {
+    snapshot,
+    modelPlaceholderIndex,
+    textualPlaceholderIndex,
+  };
+}
+
+function restoreStructuredCompositionPlaceholder(
+  field: MathfieldElement,
+  anchor: StructuredCompositionAnchor,
+  committedText: string,
+) {
+  const replacement = normalizeChineseLatex(committedText);
+  if (!replacement) return false;
+
+  field.mode = "math";
+  field.setValue(anchor.snapshot.latex, {
+    mode: "math",
+    format: "latex",
+    insertionMode: "replaceAll",
+    selectionMode: "after",
+    silenceNotifications: true,
+  });
+  const targetRange =
+    modelRangeForTextualPlaceholder(
+      field,
+      anchor.snapshot.latex,
+      anchor.textualPlaceholderIndex,
+    ) ?? latexPlaceholderRanges(field)[anchor.modelPlaceholderIndex] ?? null;
+  if (!targetRange) {
+    const restoredLatex = replaceTextualPlaceholder(
+      anchor.snapshot.latex,
+      anchor.textualPlaceholderIndex,
+      replacement,
+    );
+    if (!restoredLatex) return false;
+    field.setValue(restoredLatex, {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceAll",
+      selectionMode: "after",
+      silenceNotifications: true,
+    });
+    return true;
+  }
+
+  field.selection = {
+    ranges: [targetRange],
+    direction: "none",
+  };
+  const inserted = field.insert(replacement, {
+    mode: "math",
+    format: "latex",
+    insertionMode: "replaceSelection",
+    selectionMode: "after",
+    focus: true,
+    scrollIntoView: false,
+  });
+  if (inserted) return true;
+
+  const restoredLatex = replaceTextualPlaceholder(
+    anchor.snapshot.latex,
+    anchor.textualPlaceholderIndex,
+    replacement,
+  );
+  if (!restoredLatex) return false;
+  field.setValue(restoredLatex, {
+    mode: "math",
+    format: "latex",
+    insertionMode: "replaceAll",
+    selectionMode: "after",
+    silenceNotifications: true,
+  });
+  return true;
+}
+
 const visualTexPlaceholderStyleId = "visualtex-structural-placeholder-style";
+const visualTexFormulaFontStyleId = "visualtex-formula-font-style";
+const visualTexFormulaUprightFontProperty =
+  "--visualtex-formula-upright-font-family";
+const visualTexFormulaItalicFontProperty =
+  "--visualtex-formula-italic-font-family";
+const visualTexFormulaChineseFontProperty =
+  "--visualtex-formula-chinese-font-family";
+const visualTexChineseGlyphClass = "visualtex-chinese-glyph";
+const visualTexChineseGlyphPattern =
+  /^[\p{Script=Han}㑇㑈㑉㑊㑋㑌㑍㑎㑏㑐㑑㑒㑓㑔㑕㑖㑗㑘㑙]+$/u;
 const visualTexPlaceholderClass = "visualtex-structural-placeholder";
 const visualTexAccentPlaceholderClass =
   "visualtex-accent-structural-placeholder";
@@ -2237,6 +2580,71 @@ function markVisualTexStructuralPlaceholders(field: MathfieldElement) {
   container?.classList.toggle(
     visualTexRawLatexClass,
     Boolean(shadowRoot.querySelector(".ML__raw-latex")),
+  );
+}
+
+function markVisualTexChineseGlyphs(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  if (!shadowRoot) return;
+  shadowRoot
+    .querySelectorAll<HTMLElement>(
+      ".ML__cmr, .ML__mathbf, .ML__mathit, .ML__mathbfit, .ML__text",
+    )
+    .forEach((node) => {
+      const text = (node.textContent ?? "").trim();
+      node.classList.toggle(
+        visualTexChineseGlyphClass,
+        Boolean(text) && visualTexChineseGlyphPattern.test(text),
+      );
+    });
+}
+
+function installVisualTexFormulaFontStyle(field: MathfieldElement) {
+  const shadowRoot = field.shadowRoot;
+  if (!shadowRoot) return;
+  if (shadowRoot.getElementById(visualTexFormulaFontStyleId)) return;
+
+  const style = document.createElement("style");
+  style.id = visualTexFormulaFontStyleId;
+  style.textContent = `
+    .ML__cmr,
+    .ML__mathbf {
+      font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
+    }
+
+    .ML__mathit,
+    .lcGreek.ML__mathbf,
+    .ML__mathbfit {
+      font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
+    }
+
+    .ML__text,
+    .${visualTexChineseGlyphClass} {
+      font-family: var(${visualTexFormulaChineseFontProperty}, var(--_text-font-family)) !important;
+    }
+  `;
+  shadowRoot.append(style);
+}
+
+function applyVisualTexFormulaFonts(
+  field: MathfieldElement,
+  letterFont: FormulaLetterFont,
+  chineseFont: FormulaChineseFont,
+) {
+  installVisualTexFormulaFontStyle(field);
+  markVisualTexChineseGlyphs(field);
+  const letterFamilies = formulaLetterFontFamilies(letterFont);
+  field.style.setProperty(
+    visualTexFormulaUprightFontProperty,
+    letterFamilies.upright,
+  );
+  field.style.setProperty(
+    visualTexFormulaItalicFontProperty,
+    letterFamilies.italic,
+  );
+  field.style.setProperty(
+    visualTexFormulaChineseFontProperty,
+    formulaChineseFontFamily(chineseFont),
   );
 }
 
@@ -3742,12 +4150,19 @@ function templateForSelection(
 function FormulaField(props: FormulaFieldProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<MathfieldElement | null>(null);
+  const registeredLineIdRef = useRef(props.lineId);
   const syncFrameSizeRef = useRef<(() => void) | null>(null);
   const defaultInlineShortcutsRef =
     useRef<VisualTexInlineShortcutDefinitions | null>(null);
   const lastSnapshotRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
+  const previousSelectionSnapshotRef =
+    useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
+  const lastSelectionChangeAtRef = useRef(0);
   const compositionStartRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
+  const structuredCompositionAnchorRef =
+    useRef<StructuredCompositionAnchor | null>(null);
   const sizingZoomRef = useRef(props.zoom);
+  const sizingRowVerticalInsetRef = useRef(props.formulaRowVerticalInset);
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -3755,7 +4170,9 @@ function FormulaField(props: FormulaFieldProps) {
     const host = hostRef.current;
     if (!host) return;
 
-    const lineId = propsRef.current.lineId;
+    const initialLineId = propsRef.current.lineId;
+    registeredLineIdRef.current = initialLineId;
+    const lineId = initialLineId;
     const field = new MathfieldElement();
     MathfieldElement.locale = propsRef.current.language === "en" ? "en" : "zh-cn";
     field.value = propsRef.current.latex;
@@ -3781,10 +4198,12 @@ function FormulaField(props: FormulaFieldProps) {
     const initialMetrics = formulaRowHeightMetrics(
       propsRef.current.latex,
       propsRef.current.zoom,
+      propsRef.current.formulaRowVerticalInset,
     );
     const initialRowHeight = predictedFormulaRowHeight(
       propsRef.current.latex,
       propsRef.current.zoom,
+      propsRef.current.formulaRowVerticalInset,
       host,
     );
     let initialHeightFloor = initialRowHeight;
@@ -3800,7 +4219,13 @@ function FormulaField(props: FormulaFieldProps) {
       initialRowHeight + "px",
     );
     installMathLiveContourIntegralShadowStyle(field);
+    installCustomSymbolShadowStyle(field);
     installVisualTexStructuralPlaceholderStyle(field);
+    applyVisualTexFormulaFonts(
+      field,
+      propsRef.current.formulaLetterFont,
+      propsRef.current.formulaChineseFont,
+    );
 
     let pointerPlaceholderFrame = 0;
     const schedulePointerPlaceholderSnapshotStyle = () => {
@@ -3822,6 +4247,7 @@ function FormulaField(props: FormulaFieldProps) {
       const metrics = formulaRowHeightMetrics(
         field.value,
         propsRef.current.zoom,
+        propsRef.current.formulaRowVerticalInset,
       );
       const { fontSize, hasTallStructure, baseHeight, verticalPadding } =
         metrics;
@@ -3863,6 +4289,13 @@ function FormulaField(props: FormulaFieldProps) {
       resizeFrame = window.requestAnimationFrame(measureFrameSize);
     };
     syncFrameSizeRef.current = syncFrameSize;
+    const handleLayoutRefresh = () => {
+      syncFrameSize();
+    };
+    window.addEventListener(
+      EDITOR_LAYOUT_REFRESH_EVENT,
+      handleLayoutRefresh,
+    );
 
     const imeGuard = new ImeCompositionGuard();
     let physicalBackslashGuard: {
@@ -4199,12 +4632,26 @@ function FormulaField(props: FormulaFieldProps) {
       capturePendingAutoExit();
       propsRef.current.onCommitPending();
       imeGuard.compositionStart();
-      compositionStartRef.current =
-        lastSnapshotRef.current ?? captureFieldSnapshot(field);
+      const liveCompositionStart = captureFieldSnapshot(field);
+      compositionStartRef.current = liveCompositionStart;
+      structuredCompositionAnchorRef.current =
+        captureStructuredCompositionAnchor(field, liveCompositionStart);
     };
     const handleCompositionEnd = (event: CompositionEvent) => {
       const cancelledByCompositionDelete =
         event.data === "" && compositionDeleteObserved;
+      const before =
+        compositionStartRef.current ??
+        lastSnapshotRef.current ??
+        captureFieldSnapshot(field);
+      const structuredAnchor = structuredCompositionAnchorRef.current;
+      if (event.data !== "" && structuredAnchor) {
+        restoreStructuredCompositionPlaceholder(
+          field,
+          structuredAnchor,
+          event.data,
+        );
+      }
       imeGuard.compositionEnd(event.timeStamp);
       suppressPostCompositionDeleteUntil = cancelledByCompositionDelete
         ? event.timeStamp + 160
@@ -4213,10 +4660,6 @@ function FormulaField(props: FormulaFieldProps) {
         event.data === "" ? event.timeStamp + 260 : 0;
       compositionDeleteObserved = false;
       normalizeGuardedBackslashInput(event.timeStamp);
-      const before =
-        compositionStartRef.current ??
-        lastSnapshotRef.current ??
-        captureFieldSnapshot(field);
 
       // Cancelling an uncommitted macOS IME candidate with Backspace can make
       // WKWebView/MathLive apply the same physical key to the confirmed formula.
@@ -4238,6 +4681,7 @@ function FormulaField(props: FormulaFieldProps) {
         lastSnapshotRef.current = captureFieldSnapshot(field);
         clearPendingAutoExit();
         compositionStartRef.current = null;
+        structuredCompositionAnchorRef.current = null;
         syncFrameSize();
         return;
       }
@@ -4254,6 +4698,7 @@ function FormulaField(props: FormulaFieldProps) {
       }
       clearPendingAutoExit();
       compositionStartRef.current = null;
+      structuredCompositionAnchorRef.current = null;
       emitEdit(before, after, "composition", "keyboard");
       syncFrameSize();
     };
@@ -4463,6 +4908,8 @@ function FormulaField(props: FormulaFieldProps) {
         return;
       }
       normalizeGuardedBackslashInput(event.timeStamp);
+      nativeInputPopoverActiveField = field;
+      scheduleStableNativeInputPopoverSync();
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
       const directInputSetting =
         event instanceof InputEvent && isSingleDirectInput(event, field)
@@ -4572,12 +5019,18 @@ function FormulaField(props: FormulaFieldProps) {
       };
     };
     const handleFocus = () => {
+      nativeInputPopoverActiveField = field;
+      scheduleStableNativeInputPopoverSync();
       propsRef.current.onFocus(propsRef.current.index, field);
       lastSnapshotRef.current = captureFieldSnapshot(field);
     };
     const handleBlur = () => {
       clearPendingWrapperInput();
       rawCommandAnchors.delete(field);
+      if (nativeInputPopoverActiveField === field) {
+        nativeInputPopoverActiveField = null;
+        scheduleStableNativeInputPopoverSync();
+      }
       propsRef.current.onCommitPending();
     };
     const confirmPendingWrapperInput = (event: KeyboardEvent) => {
@@ -5197,10 +5650,49 @@ function FormulaField(props: FormulaFieldProps) {
           onMenuSelect: () => applyContextMenuStyle(style),
         };
       });
+    const suppressMathLiveContextMenu = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const pointer = event as MouseEvent;
+      propsRef.current.onCommitPending();
+      propsRef.current.onFocus(propsRef.current.index, field);
+      propsRef.current.onContextMenu?.(pointer.clientX, pointer.clientY);
+    };
     const handlePaste = (event: ClipboardEvent) => {
       const clipboard = event.clipboardData;
-      if (!clipboard || !propsRef.current.onPasteImage) return;
+      if (!clipboard) return;
 
+      const multiLinePayload = clipboard.getData(
+        VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE,
+      );
+      if (multiLinePayload && propsRef.current.onPasteLatexLines) {
+        try {
+          const parsed = JSON.parse(multiLinePayload) as {
+            lines?: unknown;
+          };
+          const lines = Array.isArray(parsed.lines)
+            ? parsed.lines.filter(
+                (line): line is string => typeof line === "string",
+              )
+            : [];
+          if (lines.length > 1) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            propsRef.current.onCommitPending();
+            propsRef.current.onFocus(propsRef.current.index, field);
+            propsRef.current.onPasteLatexLines(
+              propsRef.current.lineId,
+              field,
+              lines,
+            );
+            return;
+          }
+        } catch {
+          // Ignore malformed custom clipboard data and fall back to MathLive.
+        }
+      }
+
+      if (!propsRef.current.onPasteImage) return;
       const item = Array.from(clipboard.items).find(
         (candidate) =>
           candidate.kind === "file" && candidate.type.startsWith("image/"),
@@ -5216,7 +5708,7 @@ function FormulaField(props: FormulaFieldProps) {
 
       const selection = field.selection;
       propsRef.current.onPasteImage(image, {
-        lineId,
+        lineId: propsRef.current.lineId,
         ranges: selection.ranges.map(
           ([start, end]) => [start, end] as [number, number],
         ),
@@ -5323,9 +5815,16 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onFocus(propsRef.current.index, field);
     };
     host.replaceChildren(field);
+    applyCustomSymbolMacrosToMathfield(field);
     field.menuItems = overrideContextStyleMenuItems(field.menuItems);
     installMathLiveContourIntegralShadowStyle(field);
+    installCustomSymbolShadowStyle(field);
     installVisualTexStructuralPlaceholderStyle(field);
+    applyVisualTexFormulaFonts(
+      field,
+      propsRef.current.formulaLetterFont,
+      propsRef.current.formulaChineseFont,
+    );
     defaultInlineShortcutsRef.current = { ...field.inlineShortcuts };
     field.inlineShortcuts = resolveVisualTexInlineShortcuts(
       defaultInlineShortcutsRef.current,
@@ -5408,6 +5907,10 @@ function FormulaField(props: FormulaFieldProps) {
 
     return () => {
       window.cancelAnimationFrame(resizeFrame);
+      window.removeEventListener(
+        EDITOR_LAYOUT_REFRESH_EVENT,
+        handleLayoutRefresh,
+      );
       window.cancelAnimationFrame(pointerPlaceholderFrame);
       window.cancelAnimationFrame(wrapperPlaceholderFrame);
       window.clearTimeout(backslashGuardTimer);
@@ -5446,11 +5949,12 @@ function FormulaField(props: FormulaFieldProps) {
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
         "--formula-row-height",
       );
-      propsRef.current.register(lineId, null);
+      propsRef.current.register(registeredLineIdRef.current, null, field);
       fieldRef.current = null;
       defaultInlineShortcutsRef.current = null;
       lastSnapshotRef.current = null;
       compositionStartRef.current = null;
+      structuredCompositionAnchorRef.current = null;
       clearPendingAutoExit();
       clearPendingWrapperInput();
       rawCommandAnchors.delete(field);
@@ -5466,10 +5970,26 @@ function FormulaField(props: FormulaFieldProps) {
 
   useLayoutEffect(() => {
     const field = fieldRef.current;
+    if (!field) return;
+    const previousLineId = registeredLineIdRef.current;
+    if (previousLineId === props.lineId) return;
+    propsRef.current.register(previousLineId, null, field);
+    propsRef.current.register(props.lineId, field);
+    registeredLineIdRef.current = props.lineId;
+  }, [props.lineId]);
+
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
     const host = hostRef.current;
     if (!field || !host) return;
     const zoomChanged = sizingZoomRef.current !== props.zoom;
+    const rowVerticalInsetChanged =
+      sizingRowVerticalInsetRef.current !== props.formulaRowVerticalInset;
     sizingZoomRef.current = props.zoom;
+    sizingRowVerticalInsetRef.current = props.formulaRowVerticalInset;
+
+    normalizeCompletedDifferentialDisplay(field);
+    installCustomSymbolShadowStyle(field);
 
     // 本地输入仅因中文规范化而与 store 等值时，不重建 MathLive 模型；
     // 只更新事务基准，保留当前光标、选区和删除键内部状态。
@@ -5478,7 +5998,7 @@ function FormulaField(props: FormulaFieldProps) {
         latex: props.latex,
         selection: captureSelection(field),
       };
-      if (!zoomChanged) return;
+      if (!zoomChanged && !rowVerticalInsetChanged) return;
     } else {
       field.setValue(props.latex, {
         mode: "math",
@@ -5487,13 +6007,19 @@ function FormulaField(props: FormulaFieldProps) {
         selectionMode: "after",
         silenceNotifications: true,
       });
+      installCustomSymbolShadowStyle(field);
       field.resetUndo();
     }
 
-    const metrics = formulaRowHeightMetrics(props.latex, props.zoom);
+    const metrics = formulaRowHeightMetrics(
+      props.latex,
+      props.zoom,
+      props.formulaRowVerticalInset,
+    );
     const predictedHeight = predictedFormulaRowHeight(
       props.latex,
       props.zoom,
+      props.formulaRowVerticalInset,
       host,
     );
     field.classList.toggle("is-simple-formula", !metrics.hasTallStructure);
@@ -5506,7 +6032,7 @@ function FormulaField(props: FormulaFieldProps) {
     );
     lastSnapshotRef.current = captureFieldSnapshot(field);
     syncFrameSizeRef.current?.();
-  }, [props.latex, props.zoom]);
+  }, [props.formulaRowVerticalInset, props.latex, props.zoom]);
 
   useEffect(() => {
     if (fieldRef.current) {
@@ -5531,6 +6057,22 @@ function FormulaField(props: FormulaFieldProps) {
   useEffect(() => {
     const field = fieldRef.current;
     if (!field) return;
+    applyVisualTexFormulaFonts(
+      field,
+      props.formulaLetterFont,
+      props.formulaChineseFont,
+    );
+    syncFrameSizeRef.current?.();
+    const frame = window.requestAnimationFrame(() => {
+      if (!field.isConnected) return;
+      syncFrameSizeRef.current?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [props.formulaChineseFont, props.formulaLetterFont]);
+
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
     MathfieldElement.locale = props.language === "en" ? "en" : "zh-cn";
     const isEn = props.language === "en";
     field.setAttribute(
@@ -5551,10 +6093,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines,
       activeLineId,
       formulaAlignment,
+      latexCodeFormat,
       zoom,
+      reuseLineSlots = false,
       readOnly = false,
+      previewOnly = false,
+      onPreviewActivate,
       draftError,
       onPasteImage,
+      onCopyPng,
       onHistoryBusyChange,
       overlay,
     },
@@ -5566,6 +6113,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const activeIndexRef = useRef(0);
     const activeLineIdRef = useRef<string | null>(activeLineId);
     const focusRequestRef = useRef(0);
+    const previewOnlyRef = useRef(previewOnly);
+    const greekLetterHotkeyLineIdRef = useRef<string | null>(null);
     const suppressedHistoryLineIdRef = useRef<string | null>(null);
     const multiLineSelectionRef = useRef<MultiLineSelectionState | null>(null);
     const lastSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
@@ -5583,6 +6132,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const [activeIndex, setActiveIndex] = useState(() =>
       Math.max(0, lines.findIndex((line) => line.id === activeLineId)),
     );
+    const [fieldRenderEpoch, setFieldRenderEpoch] = useState(0);
+    const [contextMenu, setContextMenu] = useState<{
+      x: number;
+      y: number;
+      target: MathEditorInsertionTarget | null;
+    } | null>(null);
+    const [contextMenuBusy, setContextMenuBusy] = useState(false);
     const [query, setQuery] = useState("");
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [popupPosition, setPopupPosition] = useState({ left: 72, top: 132 });
@@ -5597,19 +6153,140 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const suggestionCount = useEditorStore((state) => state.suggestionCount);
     const recordCommand = useEditorStore((state) => state.recordCommand);
     const language = useEditorStore((state) => state.language);
+    const pngExportBackground = useEditorStore(
+      (state) => state.pngExportBackground,
+    );
+    const visualTexCustomSymbolRevision = useCustomSymbolRevision();
     const autoPairDelimiters = useEditorStore(
       (state) => state.autoPairDelimiters,
     );
+    const showLineNumbers = useEditorStore((state) => state.showLineNumbers);
+    const formulaInsetLeft = useEditorStore((state) => state.formulaInsetLeft);
+    const formulaInsetRight = useEditorStore((state) => state.formulaInsetRight);
+    const formulaRowVerticalInset = useEditorStore(
+      (state) => state.formulaRowVerticalInset,
+    );
+    const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
+    const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
     const inputBehavior = useEditorStore((state) => state.inputBehavior);
     const formulaHotkeyBindings = useFormulaHotkeyStore(
       (state) => state.bindings,
     );
+    const customSymbolRevision = useCustomSymbolRevision();
     const isEn = language === "en";
+    const interactionReadOnly = readOnly || previewOnly;
+    previewOnlyRef.current = previewOnly;
+
+    useEffect(() => {
+      installCustomSymbolGlobalStyle();
+      fieldRefs.current.forEach((field) => refreshCustomSymbolMathfield(field));
+    }, [customSymbolRevision]);
 
     linesRef.current = lines;
     const resolvedActiveLineId =
       lines.find((line) => line.id === activeLineId)?.id ?? lines[0]?.id ?? null;
     activeLineIdRef.current = resolvedActiveLineId;
+
+    useEffect(() => {
+      installCustomSymbolGlobalStyle();
+      for (const field of fieldRefs.current.values()) {
+        if (!field.isConnected) continue;
+        refreshCustomSymbolMathfield(field);
+      }
+      window.dispatchEvent(new Event(EDITOR_LAYOUT_REFRESH_EVENT));
+    }, [visualTexCustomSymbolRevision]);
+
+    const refreshExplicitAlignmentLayout = () => {
+      const registered = Array.from(fieldRefs.current.values());
+      for (const field of registered) {
+        const host = field.closest<HTMLElement>(".mathfield-host");
+        host?.classList.remove("has-explicit-align-marker");
+        field.style.removeProperty("margin-left");
+      }
+      if (!usesExplicitAlignmentPoints(latexCodeFormat)) return;
+
+      const marked = linesRef.current.flatMap((line) => {
+        const field = fieldRefs.current.get(line.id);
+        if (!field?.isConnected) return [];
+        const host = field.closest<HTMLElement>(".mathfield-host");
+        const marker = field.shadowRoot?.querySelector<HTMLElement>(
+          `.${VISUALTEX_ALIGNMENT_MARKER_CLASS}`,
+        );
+        if (!host || !marker) return [];
+        const fieldBounds = field.getBoundingClientRect();
+        const markerBounds = marker.getBoundingClientRect();
+        return [
+          {
+            field,
+            host,
+            anchorOffset: markerBounds.left - fieldBounds.left,
+            leftExtent: markerBounds.left - fieldBounds.left,
+            rightExtent: fieldBounds.right - markerBounds.left,
+          },
+        ];
+      });
+      if (!marked.length) return;
+
+      const sharedLeftExtent = Math.max(
+        0,
+        ...marked.map((entry) => entry.leftExtent),
+      );
+      const sharedRightExtent = Math.max(
+        0,
+        ...marked.map((entry) => entry.rightExtent),
+      );
+      const alignedWidth = sharedLeftExtent + sharedRightExtent;
+
+      for (const entry of marked) {
+        const hostWidth = entry.host.getBoundingClientRect().width;
+        const groupStart =
+          formulaAlignment === "left"
+            ? 0
+            : formulaAlignment === "right"
+              ? Math.max(0, hostWidth - alignedWidth)
+              : Math.max(0, (hostWidth - alignedWidth) / 2);
+        const fieldOffset = Math.max(
+          0,
+          groupStart + sharedLeftExtent - entry.anchorOffset,
+        );
+        entry.host.classList.add("has-explicit-align-marker");
+        entry.field.style.marginLeft = `${fieldOffset}px`;
+      }
+    };
+
+    useLayoutEffect(() => {
+      let firstFrame = 0;
+      let secondFrame = 0;
+      const schedule = () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+        firstFrame = window.requestAnimationFrame(() => {
+          refreshExplicitAlignmentLayout();
+          secondFrame = window.requestAnimationFrame(
+            refreshExplicitAlignmentLayout,
+          );
+        });
+      };
+      schedule();
+      window.addEventListener("resize", schedule);
+      window.addEventListener(EDITOR_LAYOUT_REFRESH_EVENT, schedule);
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+        window.removeEventListener("resize", schedule);
+        window.removeEventListener(EDITOR_LAYOUT_REFRESH_EVENT, schedule);
+      };
+    }, [
+      fieldRenderEpoch,
+      formulaAlignment,
+      formulaInsetLeft,
+      formulaInsetRight,
+      formulaRowVerticalInset,
+      latexCodeFormat,
+      lines,
+      showLineNumbers,
+      zoom,
+    ]);
 
     const captureEditorScrollSnapshot = (
       preferredLineId?: string | null,
@@ -5860,9 +6537,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const registerField = (
       lineId: string,
       field: MathfieldElement | null,
+      expectedField?: MathfieldElement,
     ) => {
-      if (field) fieldRefs.current.set(lineId, field);
-      else fieldRefs.current.delete(lineId);
+      if (field) {
+        fieldRefs.current.set(lineId, field);
+      } else if (
+        !expectedField ||
+        fieldRefs.current.get(lineId) === expectedField
+      ) {
+        fieldRefs.current.delete(lineId);
+      }
 
       const pending = pendingFocusRef.current;
       if (field && pending?.lineId === lineId) {
@@ -6508,6 +7192,122 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       stabilizeEditorScroll(scrollSnapshot, line.id, false);
     };
 
+    const pasteLatexLines = (
+      lineId: string,
+      field: MathfieldElement,
+      pastedLines: string[],
+    ) => {
+      if (interactionReadOnly || pastedLines.length <= 1) return;
+      const state = useEditorStore.getState();
+      const currentIndex = state.lines.findIndex((line) => line.id === lineId);
+      const currentLine = state.lines[currentIndex];
+      if (currentIndex < 0 || !currentLine) return;
+
+      const activeRange = field.selection.ranges.at(-1) ?? [
+        field.position,
+        field.position,
+      ];
+      const selectionStart = Math.max(
+        0,
+        Math.min(activeRange[0], activeRange[1], field.lastOffset),
+      );
+      const selectionEnd = Math.max(
+        selectionStart,
+        Math.min(Math.max(activeRange[0], activeRange[1]), field.lastOffset),
+      );
+      const liveLatex = normalizeChineseLatex(field.value);
+      const leftLatex = normalizeChineseLatex(
+        field.getValue(0, selectionStart, "latex"),
+      );
+      const rightLatex = normalizeChineseLatex(
+        field.getValue(selectionEnd, field.lastOffset, "latex"),
+      );
+      const canonicalize = (latex: string) => {
+        const verifier = new MathfieldElement();
+        verifier.setValue(latex, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        return normalizeChineseLatex(verifier.value);
+      };
+      const concatenate = (left: string, right: string) => {
+        const separator =
+          /\\[A-Za-z]+$/.test(left) && /^[A-Za-z]/.test(right) ? " " : "";
+        return canonicalize(`${left}${separator}${right}`);
+      };
+      const normalizedLines = pastedLines.map(canonicalize);
+      const firstLatex = concatenate(leftLatex, normalizedLines[0] ?? "");
+      const lastPastedLatex = normalizedLines.at(-1) ?? "";
+      const lastLatex = concatenate(lastPastedLatex, rightLatex);
+      const insertedLines = normalizedLines.slice(1).map((latex, index, lines) =>
+        createFormulaLine(index === lines.length - 1 ? lastLatex : latex),
+      );
+      const lastLine = insertedLines.at(-1);
+      if (!lastLine) return;
+
+      historyManager.commitPendingTransaction();
+      const selectionByLineId = Object.fromEntries(
+        linesRef.current.flatMap((line) => {
+          const currentField = fieldRefs.current.get(line.id);
+          return currentField?.isConnected
+            ? [[line.id, captureSelection(currentField)] as const]
+            : [];
+        }),
+      );
+      const before = getEditorDocumentSnapshot(selectionByLineId);
+      before.lines = before.lines.map((line) =>
+        line.id === lineId ? { ...line, latex: liveLatex } : line,
+      );
+      const nextLines = before.lines.map((line) =>
+        line.id === lineId ? { ...line, latex: firstLatex } : { ...line },
+      );
+      nextLines.splice(currentIndex + 1, 0, ...insertedLines);
+
+      const afterSelection: MathSelectionSnapshot = {
+        ranges: [[Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]],
+        direction: "none",
+      };
+      const after: ReplaceDocumentEntry["after"] = {
+        title: before.title,
+        lines: nextLines,
+        activeLineId: lastLine.id,
+        formulaAlignment: before.formulaAlignment,
+        selectionByLineId: {
+          ...before.selectionByLineId,
+          [lineId]: {
+            ranges: [[Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]],
+            direction: "none",
+          },
+          [lastLine.id]: afterSelection,
+        },
+      };
+
+      const scrollSnapshot = captureEditorScrollSnapshot(lineId);
+      clearMultiLineSelection();
+      lastSelectionTargetRef.current = null;
+      flushSync(() => useEditorStore.getState().replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      setActiveLine(lastLine.id);
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: "paste-multi-line",
+        timestamp: Date.now(),
+      });
+      setQuery("");
+      selectSuggestionIndex(0);
+      focusLine(lastLine.id, {
+        latex: lastLatex,
+        moveToEnd: true,
+        deferredRepair: false,
+      });
+      stabilizeEditorScroll(scrollSnapshot, lastLine.id, false);
+    };
+
     const splitLineAtCaret = (
       index: number,
       lineId: string,
@@ -6957,6 +7757,47 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
+      if (isGreekLetterHotkeyPrefix(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        greekLetterHotkeyLineIdRef.current = lineId;
+        delete field.dataset.pendingNativeSuggestion;
+        suppressedSuggestionRef.current = null;
+        queryRef.current = "";
+        setQuery("");
+        selectSuggestionIndex(0);
+        return;
+      }
+
+      if (greekLetterHotkeyLineIdRef.current) {
+        if (greekLetterHotkeyLineIdRef.current !== lineId) {
+          greekLetterHotkeyLineIdRef.current = null;
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          greekLetterHotkeyLineIdRef.current = null;
+          return;
+        } else if (!event.ctrlKey && !event.altKey && !event.metaKey) {
+          if (event.key !== "Shift") {
+            greekLetterHotkeyLineIdRef.current = null;
+            const greekCommand = greekLetterHotkeyCommandFromEvent(event);
+            if (greekCommand) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              delete field.dataset.pendingNativeSuggestion;
+              suppressedSuggestionRef.current = null;
+              queryRef.current = "";
+              setQuery("");
+              selectSuggestionIndex(0);
+              insertCommand(greekCommand, "shortcut");
+              return;
+            }
+          }
+        } else if (event.key !== "Control" && event.key !== "Alt" && event.key !== "Meta") {
+          greekLetterHotkeyLineIdRef.current = null;
+        }
+      }
+
       const shortcutKey = event.key.toLocaleLowerCase();
       const primaryModifier = (event.metaKey || event.ctrlKey) && !event.altKey;
       const requestsUndo = primaryModifier && shortcutKey === "z" && !event.shiftKey;
@@ -7142,6 +7983,76 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           // MathLive can safely handle it itself.
           return;
         }
+      }
+
+      const alignmentCaretDepth =
+        field.getElementInfo(field.position)?.depth ??
+        field.getElementInfo(Math.max(0, field.position - 1))?.depth ??
+        0;
+      const insertsExplicitAlignmentPoint =
+        usesExplicitAlignmentPoints(latexCodeFormat) &&
+        alignmentCaretDepth === 0 &&
+        event.key === "&" &&
+        !event.isComposing &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        field.mode !== "latex" &&
+        !rawCommandActive &&
+        activeMathLiveEnvironmentName(field) === null;
+      if (insertsExplicitAlignmentPoint) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const inserted = applyDiscreteFormulaMutation(
+          lineId,
+          field,
+          "keyboard",
+          () =>
+            field.insert(VISUALTEX_ALIGNMENT_MARKER_LATEX, {
+              mode: "math",
+              format: "latex",
+              insertionMode: "replaceSelection",
+              selectionMode: "after",
+              focus: true,
+              scrollIntoView: false,
+            }),
+        );
+        if (inserted) {
+          suppressedSuggestionRef.current = null;
+          queryRef.current = "";
+          setQuery("");
+          selectSuggestionIndex(0);
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
+        }
+        return;
+      }
+
+      if (
+        event.key === "Enter" &&
+        activeMathLiveEnvironmentName(field) === "cases"
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const insertedRow = applyDiscreteFormulaMutation(
+          lineId,
+          field,
+          "keyboard",
+          () => field.executeCommand("addRowAfter"),
+        );
+        if (insertedRow) {
+          suppressedSuggestionRef.current = null;
+          queryRef.current = "";
+          setQuery("");
+          selectSuggestionIndex(0);
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
+        }
+        return;
       }
 
       if (event.key === "Enter") {
@@ -7376,6 +8287,17 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             : [];
         }),
       );
+
+    const captureInsertionTarget = (): MathEditorInsertionTarget | null => {
+      const target = resolveTargetField();
+      if (!target) return null;
+      const selection = captureSelection(target.field);
+      return {
+        lineId: target.lineId,
+        ranges: selection.ranges,
+        direction: selection.direction,
+      };
+    };
 
     const captureSelectionTarget = (): MathEditorSelectionTarget | null => {
       const selections = linesRef.current.flatMap((line) => {
@@ -7675,6 +8597,142 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       });
     };
 
+    const openEditorContextMenu = (
+      lineId: string,
+      field: MathfieldElement,
+      x: number,
+      y: number,
+    ) => {
+      const selection = captureSelection(field);
+      const target: MathEditorInsertionTarget = {
+        lineId,
+        ranges: selection.ranges.map(
+          ([start, end]) => [start, end] as [number, number],
+        ),
+        direction: selection.direction ?? "none",
+      };
+      lastSelectionTargetRef.current = { selections: [target] };
+      setContextMenu({ x, y, target });
+    };
+
+    const applyContextSelectionToggle = (
+      kind: FormulaSelectionToggleKind,
+    ) => {
+      const target = contextMenu?.target;
+      if (!target || interactionReadOnly) return false;
+      const field = fieldRefs.current.get(target.lineId);
+      const range = target.ranges.at(-1);
+      if (!field || !field.isConnected || !range || range[0] === range[1]) {
+        return false;
+      }
+      const start = Math.min(range[0], range[1]);
+      const end = Math.max(range[0], range[1]);
+      const source = field.getValue(start, end, "latex");
+      if (!source.trim()) return false;
+      const replacement = toggleFormulaSelectionLatex(source, kind, {
+        allBold: false,
+        allBoldItalic: false,
+        allItalic: false,
+        allUpright: false,
+      });
+      if (replacement === source) return false;
+      field.selection = {
+        ranges: [[start, end]],
+        direction: target.direction ?? "none",
+      };
+      const changed = applyDiscreteFormulaMutation(
+        target.lineId,
+        field,
+        "keyboard",
+        () =>
+          field.insert(replacement, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "item",
+            focus: true,
+            scrollIntoView: false,
+          }),
+      );
+      if (changed) {
+        focusLine(target.lineId, {
+          latex: normalizeChineseLatex(field.value),
+          selection: captureSelection(field),
+        });
+      }
+      return changed;
+    };
+
+    const applyContextFormulaColor = (color: string) => {
+      if (!isSafeFormulaStyleColor(color)) return false;
+      const target = contextMenu?.target;
+      return applySelectionStyle(
+        { kind: "color", value: color },
+        target ? { selections: [target] } : null,
+      );
+    };
+
+    const copyContextFormulaPng = async () => {
+      if (contextMenuBusy) return;
+      const targetLineId = contextMenu?.target?.lineId ?? activeLineIdRef.current;
+      const line = linesRef.current.find((candidate) => candidate.id === targetLineId);
+      if (!line?.latex.trim()) return;
+      setContextMenuBusy(true);
+      try {
+        if (onCopyPng) {
+          await onCopyPng();
+        } else {
+          await copyFormulaDocumentPngToClipboard([line.latex], {
+            background: pngExportBackground,
+            formulaLetterFont,
+            formulaChineseFont,
+          });
+        }
+      } finally {
+        setContextMenuBusy(false);
+      }
+    };
+
+    useEffect(() => {
+      if (!contextMenu) return;
+      const close = () => setContextMenu(null);
+      const keydown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") close();
+      };
+      window.addEventListener("pointerdown", close);
+      window.addEventListener("blur", close);
+      window.addEventListener("keydown", keydown);
+      return () => {
+        window.removeEventListener("pointerdown", close);
+        window.removeEventListener("blur", close);
+        window.removeEventListener("keydown", keydown);
+      };
+    }, [contextMenu]);
+
+    useEffect(() => {
+      const handleMultiLineCopy = (event: ClipboardEvent) => {
+        const selectedIds = multiLineSelectedIdsRef.current;
+        if (!selectedIds || selectedIds.size <= 1 || !event.clipboardData) return;
+        const activeElement = document.activeElement;
+        const editorOwnsFocus = Array.from(fieldRefs.current.values()).some(
+          (field) => field === activeElement || field.contains(activeElement),
+        );
+        if (!editorOwnsFocus) return;
+        const selectedLines = linesRef.current.filter((line) => selectedIds.has(line.id));
+        if (selectedLines.length <= 1) return;
+        const latexLines = selectedLines.map((line) => line.latex);
+        event.preventDefault();
+        event.stopPropagation();
+        event.clipboardData.setData(
+          VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE,
+          JSON.stringify({ lines: latexLines }),
+        );
+        event.clipboardData.setData("text/plain", latexLines.join("\n"));
+      };
+      window.addEventListener("copy", handleMultiLineCopy, true);
+      return () => window.removeEventListener("copy", handleMultiLineCopy, true);
+    }, []);
+
     useImperativeHandle(ref, () => ({
       insertCommand,
       insertLatex,
@@ -7699,7 +8757,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       getSelectionMap,
       restoreSelection,
       captureSelectionTarget,
+      captureInsertionTarget,
       applySelectionStyle,
+      refreshLayout: () => {
+        flushSync(() => setFieldRenderEpoch((epoch) => epoch + 1));
+        window.dispatchEvent(new Event(EDITOR_LAYOUT_REFRESH_EVENT));
+      },
     }));
 
     useEffect(() => {
@@ -7881,14 +8944,115 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         ref={surfaceRef}
         className={
           "editor-surface multi-line-editor" +
-          (readOnly ? " is-read-only-preview" : "")
+          (showLineNumbers ? " has-line-numbers" : "") +
+          (interactionReadOnly ? " is-read-only-preview" : "") +
+          (previewOnly ? " is-source-preview-only" : "")
         }
-        data-command-query={query}
+        style={
+          {
+            "--formula-area-inset-left": `${formulaInsetLeft}px`,
+            "--formula-area-inset-right": `${formulaInsetRight}px`,
+            "--formula-row-vertical-inset": `${formulaRowVerticalInset}px`,
+          } as CSSProperties
+        }
+        data-command-query={previewOnly ? "" : query}
         data-source-draft-error={draftError}
         data-active-line-id={activeLineIdRef.current ?? ""}
         data-formula-alignment={formulaAlignment}
       >
         {overlay}
+        {contextMenu ? (
+          <div
+            className="math-editor-context-menu"
+            style={
+              {
+                "--context-menu-x": `${contextMenu.x}px`,
+                "--context-menu-y": `${contextMenu.y}px`,
+              } as CSSProperties
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button
+              type="button"
+              disabled={contextMenuBusy}
+              onClick={() => {
+                void copyContextFormulaPng();
+                setContextMenu(null);
+              }}
+            >
+              <ClipboardCopy size={14} />
+              {language === "en" ? "Copy PNG" : "复制 PNG"}
+            </button>
+            <div className="math-editor-context-menu-divider" />
+            <div className="math-editor-context-format-row">
+              <button
+                type="button"
+                className="is-format-button"
+                disabled={interactionReadOnly}
+                onClick={() => {
+                  applyContextSelectionToggle("bold");
+                  setContextMenu(null);
+                }}
+                title={language === "en" ? "Toggle bold" : "切换粗体"}
+              >
+                <strong>B</strong>
+              </button>
+              <button
+                type="button"
+                className="is-format-button"
+                disabled={interactionReadOnly}
+                onClick={() => {
+                  applyContextSelectionToggle("italic");
+                  setContextMenu(null);
+                }}
+                title={language === "en" ? "Toggle italic" : "切换斜体"}
+              >
+                <em>I</em>
+              </button>
+              <button
+                type="button"
+                className="is-format-button"
+                disabled={interactionReadOnly}
+                onClick={() => {
+                  applyContextFormulaColor("#111827");
+                  setContextMenu(null);
+                }}
+                title={language === "en" ? "Reset color" : "恢复默认颜色"}
+              >
+                A
+              </button>
+            </div>
+            <div className="math-editor-context-color-grid">
+              {FORMULA_CONTEXT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className="math-editor-context-color"
+                  style={{ backgroundColor: color }}
+                  disabled={interactionReadOnly}
+                  aria-label={`${language === "en" ? "Formula color" : "公式颜色"} ${color}`}
+                  onClick={() => {
+                    applyContextFormulaColor(color);
+                    setContextMenu(null);
+                  }}
+                />
+              ))}
+              <label className="math-editor-context-custom-color">
+                <input
+                  type="color"
+                  defaultValue="#2563EB"
+                  disabled={interactionReadOnly}
+                  onChange={(event) => {
+                    applyContextFormulaColor(event.currentTarget.value);
+                    setContextMenu(null);
+                  }}
+                />
+                <span>{language === "en" ? "Custom" : "自定义"}</span>
+              </label>
+            </div>
+          </div>
+        ) : null}
         <div className="mathfield-stack">
           {lines.map((line, index) => {
             const lineId = line.id;
@@ -7898,15 +9062,21 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               data-line-id={lineId}
               key={lineId}
             >
-              <span className="formula-line-number">
-                {String(index + 1).padStart(2, "0")}
-              </span>
+              {showLineNumbers ? (
+                <span className="formula-line-number">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+              ) : null}
               <FormulaField
+                key={`${lineId}:${fieldRenderEpoch}`}
                 lineId={lineId}
                 index={index}
                 latex={line.latex}
                 zoom={zoom}
-                readOnly={readOnly}
+                formulaRowVerticalInset={formulaRowVerticalInset}
+                formulaLetterFont={formulaLetterFont}
+                formulaChineseFont={formulaChineseFont}
+                readOnly={interactionReadOnly}
                 language={language}
                 autoPairDelimiters={autoPairDelimiters}
                 inputBehavior={inputBehavior}
@@ -7935,6 +9105,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   handleKeyDown(lineIndex, lineId, event, field)
                 }
                 onPasteImage={onPasteImage}
+                onPasteLatexLines={pasteLatexLines}
+                onCopyPng={onCopyPng}
               />
             </div>
             );

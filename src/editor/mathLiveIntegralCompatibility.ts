@@ -1,4 +1,9 @@
 import { convertLatexToMarkup, type MathfieldElement } from "mathlive";
+import "../math/customSymbolRegistration.ts";
+import {
+  expandCustomSymbolsForMathLiveMarkup,
+  installCustomSymbolGlobalStyle,
+} from "../math/customSymbolRendering.ts";
 import {
   OIINT_SIZE1_OVAL_HEIGHT_EM,
   OIINT_SIZE1_OVAL_PATH,
@@ -128,7 +133,13 @@ export function convertVisualTexLatexToMarkup(
   ...args: Parameters<typeof convertLatexToMarkup>
 ) {
   installMathLiveContourIntegralGlobalStyle();
-  return convertLatexToMarkup(...args);
+  installCustomSymbolGlobalStyle();
+  const [text, options] = args;
+  return convertLatexToMarkup(
+    expandCustomSymbolsForMathLiveMarkup(text),
+    options,
+  );
 }
 
 installMathLiveContourIntegralGlobalStyle();
+installCustomSymbolGlobalStyle();

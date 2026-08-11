@@ -5,6 +5,17 @@ import {
   parseLatexSource,
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
+import { normalizeFormulaLinePhysicalWhitespace } from "../src/math/formulaLineLatex.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
+
+const importedAlignedSource = String.raw`\begin{aligned}
+  a&=b+c \\
+  d&=e-f
+\end{aligned}`;
+const normalizedImportedAligned = normalizeFormulaLinePhysicalWhitespace(importedAlignedSource);
+assert.doesNotMatch(normalizedImportedAligned, /\n/);
+assert.match(normalizedImportedAligned, /a&=b\+c \\\\ d&=e-f/);
+assert.match(normalizedImportedAligned, /\\end\{aligned\}$/);
 
 const formulas = [
   "a=b+c",
@@ -32,12 +43,42 @@ for (const format of latexCodeFormats) {
 
 const alignSource = formatLatex(latex, "align-star");
 assert.match(alignSource, /\\begin\{align\*\}/);
-assert.match(alignSource, /a&=b\+c \\\\/);
-assert.match(alignSource, /\\frac\{x\}\{y\}&=z \\\\/);
+assert.doesNotMatch(
+  alignSource,
+  /a&=b|\\frac\{x\}\{y\}&=z/,
+  "align formatting must not invent alignment points",
+);
 assert.match(
   alignSource,
+  /\\begin\{matrix\}a&b\\\\c&d\\end\{matrix\}=M/,
+  "nested matrix separators or row breaks were changed",
+);
+
+const explicitAlignFormulas = [
+  `a${VISUALTEX_ALIGNMENT_MARKER_LATEX}=b+c`,
+  `\\frac{x}{y}${VISUALTEX_ALIGNMENT_MARKER_LATEX}=z`,
+  `\\begin{matrix}a&b\\\\c&d\\end{matrix}${VISUALTEX_ALIGNMENT_MARKER_LATEX}=M`,
+];
+const explicitAlignSource = formatLatex(
+  explicitAlignFormulas.join("\n"),
+  "align-star",
+);
+assert.match(explicitAlignSource, /a&=b\+c \\\\/);
+assert.match(explicitAlignSource, /\\frac\{x\}\{y\}&=z \\\\/);
+assert.match(
+  explicitAlignSource,
   /\\begin\{matrix\}a&b\\\\c&d\\end\{matrix\}&=M/,
-  "matrix alignment markers or row breaks were changed",
+  "explicit alignment point after a nested matrix was not preserved",
+);
+assert.deepEqual(
+  parseLatexSource(explicitAlignSource, "align-star"),
+  explicitAlignFormulas,
+  "explicit alignment points failed format/parse round trip",
+);
+assert.doesNotMatch(
+  formatLatex(explicitAlignFormulas.join("\n"), "raw"),
+  /visualtex-align-marker|\\class/,
+  "VisualTeX alignment markers must not leak into non-align source formats",
 );
 
 assert.deepEqual(
@@ -45,8 +86,11 @@ assert.deepEqual(
     "\\begin{align*}\na &= b \\\\[4pt]\nc &= d\n\\end{align*}",
     "align-star",
   ),
-  ["a = b", "c = d"],
-  "optional row spacing was not parsed correctly",
+  [
+    `a ${VISUALTEX_ALIGNMENT_MARKER_LATEX}= b`,
+    `c ${VISUALTEX_ALIGNMENT_MARKER_LATEX}= d`,
+  ],
+  "optional row spacing or explicit alignment points were not parsed correctly",
 );
 
 assert.match(formatLatex("a=b", "equation"), /\\begin\{equation\}/);

@@ -6,6 +6,7 @@ import {
   OIIINT_SIZE2_OVAL_PATH,
 } from "./integralGlyphs.ts";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "./rareIntegralGlyphs.generatedData.ts";
+import { ESINT_INTEGRAL_GLYPHS } from "./esintGlyphs.ts";
 
 interface RareIntegralGlyphVariant {
   path: string;
@@ -40,6 +41,11 @@ function getRareIntegralGlyphs() {
   ) as RareIntegralGlyphPayload;
   const result = new Map<string, RareIntegralGlyphDefinition>();
   for (const definition of payload.glyphs) {
+    result.set(definition.command, definition);
+    for (const alias of definition.aliases) result.set(alias, definition);
+  }
+  // Official esint10 outlines override similarly named Unicode/STIX glyphs.
+  for (const definition of ESINT_INTEGRAL_GLYPHS) {
     result.set(definition.command, definition);
     for (const alias of definition.aliases) result.set(alias, definition);
   }

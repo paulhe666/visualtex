@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
 import {
   ArrowLeft,
@@ -27,10 +35,10 @@ interface InputBehaviorOption {
 const AUTO_ESCAPE_OPTIONS: InputBehaviorOption[] = [
   {
     key: "autoEscapeShortcuts",
-    titleZh: "常用数学输入自动转义",
-    titleEn: "Auto-convert common math input",
-    descriptionZh: "按项目内实际快捷转义表转换普通输入",
-    descriptionEn: "Convert plain input using the actual shortcut table",
+    titleZh: "常用数学快捷转义",
+    titleEn: "Common math shortcuts",
+    descriptionZh: "控制 alpha、>=、hat 等快捷映射；微分元、函数名等正体自动检测独立运行，不受此开关影响",
+    descriptionEn: "Controls shortcuts such as alpha, >= and hat; upright detection for differentials and function names remains independent",
   },
 ];
 
@@ -109,6 +117,14 @@ function readActiveInlineShortcuts(): VisualTexInlineShortcutDefinitions {
   return { ...visualTexAutoEscapeInlineShortcuts };
 }
 
+interface InputBehaviorPopoverLayout {
+  left: number;
+  top: number;
+  width: number;
+  maxHeight: number;
+  compact: boolean;
+}
+
 function ShortcutOutput({ definition }: { definition: VisualTexInlineShortcutDefinition }) {
   const latex = previewLatex(definition);
   const markup = useMemo(() => {
@@ -137,6 +153,10 @@ export function InputBehaviorMenu() {
       ...visualTexAutoEscapeInlineShortcuts,
     }));
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverLayout, setPopoverLayout] =
+    useState<InputBehaviorPopoverLayout | null>(null);
   const language = useEditorStore((state) => state.language);
   const inputBehavior = useEditorStore((state) => state.inputBehavior);
   const setInputBehavior = useEditorStore((state) => state.setInputBehavior);
@@ -189,7 +209,13 @@ export function InputBehaviorMenu() {
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -212,11 +238,105 @@ export function InputBehaviorMenu() {
     if (open) return;
     setPage("settings");
     setMappingQuery("");
+    setPopoverLayout(null);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    let frame = 0;
+    const updateLayout = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const triggerRect = trigger.getBoundingClientRect();
+        const workspace = trigger.closest<HTMLElement>(".workspace");
+        const visibleEditor = workspace?.classList.contains("is-classic-layout")
+          ? workspace.querySelector<HTMLElement>(".classic-editor-pane-body")
+          : workspace?.querySelector<HTMLElement>(".formula-workspace.editor-pane");
+        const editorRect = visibleEditor?.getBoundingClientRect();
+        const viewportMargin = 8;
+        const popoverGap = 6;
+        const viewportRight = Math.max(viewportMargin, window.innerWidth - viewportMargin);
+        const viewportBottom = Math.max(viewportMargin, window.innerHeight - viewportMargin);
+        const editorIsUsable = Boolean(
+          editorRect && editorRect.width >= 140 && editorRect.height >= 100,
+        );
+        const leftBound = editorIsUsable
+          ? Math.max(viewportMargin, editorRect!.left + viewportMargin)
+          : viewportMargin;
+        const rightBound = editorIsUsable
+          ? Math.min(viewportRight, editorRect!.right - viewportMargin)
+          : viewportRight;
+        const availableWidth = Math.max(120, rightBound - leftBound);
+        const preferredWidth = page === "mappings" ? 660 : 420;
+        const width = Math.min(preferredWidth, availableWidth);
+        const left = Math.min(
+          Math.max(triggerRect.right - width, leftBound),
+          Math.max(leftBound, rightBound - width),
+        );
+        const minimumTop = editorIsUsable
+          ? Math.max(viewportMargin, editorRect!.top + viewportMargin)
+          : viewportMargin;
+        const top = Math.min(
+          Math.max(triggerRect.bottom + popoverGap, minimumTop),
+          Math.max(viewportMargin, viewportBottom - 96),
+        );
+        const preferredMaxHeight = page === "mappings" ? 620 : 560;
+        const maxHeight = Math.max(
+          96,
+          Math.min(preferredMaxHeight, viewportBottom - top),
+        );
+        const next = {
+          left,
+          top,
+          width,
+          maxHeight,
+          compact: width < 360 || maxHeight < 420,
+        };
+        setPopoverLayout((current) =>
+          current &&
+          Math.abs(current.left - next.left) < 0.5 &&
+          Math.abs(current.top - next.top) < 0.5 &&
+          Math.abs(current.width - next.width) < 0.5 &&
+          Math.abs(current.maxHeight - next.maxHeight) < 0.5 &&
+          current.compact === next.compact
+            ? current
+            : next,
+        );
+      });
+    };
+
+    const resizeObserver = new ResizeObserver(updateLayout);
+    resizeObserver.observe(trigger);
+    const workspace = trigger.closest<HTMLElement>(".workspace");
+    if (workspace) resizeObserver.observe(workspace);
+    window.addEventListener("resize", updateLayout);
+    window.addEventListener("scroll", updateLayout, true);
+    updateLayout();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateLayout);
+      window.removeEventListener("scroll", updateLayout, true);
+    };
+  }, [open, page]);
+
+  const popoverStyle = popoverLayout
+    ? ({
+        left: `${popoverLayout.left}px`,
+        top: `${popoverLayout.top}px`,
+        width: `${popoverLayout.width}px`,
+        maxWidth: `${popoverLayout.width}px`,
+        maxHeight: `${popoverLayout.maxHeight}px`,
+      } as CSSProperties)
+    : undefined;
 
   return (
     <div ref={rootRef} className="input-behavior-menu">
       <button
+        ref={triggerRef}
         type="button"
         className={`canvas-input-behavior-trigger${open ? " is-active" : ""}`}
         aria-haspopup="dialog"
@@ -229,9 +349,16 @@ export function InputBehaviorMenu() {
         <ChevronDown size={13} aria-hidden="true" />
       </button>
 
-      {open && (
+      {open &&
+        popoverLayout &&
+        createPortal(
         <div
-          className={`input-behavior-popover${page === "mappings" ? " is-mapping-view" : ""}`}
+          ref={popoverRef}
+          className={
+            `input-behavior-popover${page === "mappings" ? " is-mapping-view" : ""}` +
+            (popoverLayout.compact ? " is-compact" : "")
+          }
+          style={popoverStyle}
           role="dialog"
           aria-label={
             page === "mappings"
@@ -334,11 +461,6 @@ export function InputBehaviorMenu() {
             <>
               <div className="input-behavior-heading">
                 <strong>{isEn ? "Automatic conversion" : "输入自动转义"}</strong>
-                <span>
-                  {isEn
-                    ? "Control whether plain math input uses shortcut conversion."
-                    : "控制普通数学输入是否使用快捷转义。"}
-                </span>
               </div>
 
               <div className="input-behavior-options">
@@ -346,7 +468,6 @@ export function InputBehaviorMenu() {
                   <div className="input-behavior-option has-secondary-action" key={option.key}>
                     <span>
                       <strong>{isEn ? option.titleEn : option.titleZh}</strong>
-                      <small>{isEn ? option.descriptionEn : option.descriptionZh}</small>
                       <button
                         type="button"
                         className="input-behavior-map-button"
@@ -379,11 +500,6 @@ export function InputBehaviorMenu() {
 
               <div className="input-behavior-heading input-behavior-section-heading">
                 <strong>{isEn ? "Caret auto-exit" : "光标自动跳出"}</strong>
-                <span>
-                  {isEn
-                    ? "Choose which one-slot structures return to the main formula after input."
-                    : "分别选择哪些单槽结构在输入完成后自动返回主公式区域。"}
-                </span>
               </div>
 
               <div className="input-behavior-options">
@@ -391,7 +507,6 @@ export function InputBehaviorMenu() {
                   <label className="input-behavior-option" key={option.key}>
                     <span>
                       <strong>{isEn ? option.titleEn : option.titleZh}</strong>
-                      <small>{isEn ? option.descriptionEn : option.descriptionZh}</small>
                     </span>
                     <input
                       type="checkbox"
@@ -405,11 +520,6 @@ export function InputBehaviorMenu() {
 
               <div className="input-behavior-heading input-behavior-section-heading">
                 <strong>{isEn ? "Command suggestion panels" : "命令候选框"}</strong>
-                <span>
-                  {isEn
-                    ? "These switches affect only VisualTeX's large command panel, not the compact MathLive panel shown while typing LaTeX commands."
-                    : "这里只控制 VisualTeX 的大型命令候选框，不控制输入 LaTeX 命令时出现的 MathLive 小型提示框。"}
-                </span>
               </div>
 
               <div className="input-behavior-options">
@@ -417,7 +527,6 @@ export function InputBehaviorMenu() {
                   <label className="input-behavior-option" key={option.key}>
                     <span>
                       <strong>{isEn ? option.titleEn : option.titleZh}</strong>
-                      <small>{isEn ? option.descriptionEn : option.descriptionZh}</small>
                     </span>
                     <input
                       type="checkbox"
@@ -430,7 +539,8 @@ export function InputBehaviorMenu() {
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
