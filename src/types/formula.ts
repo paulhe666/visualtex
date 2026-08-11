@@ -18,23 +18,7 @@ export type LatexCodeFormat =
   | "equation-star-split";
 
 export type FormulaAlignment = "left" | "center" | "right";
-export type Theme =
-  | "light"
-  | "beige"
-  | "dark"
-  | "purple"
-  | "green"
-  | "codex"
-  | "notion"
-  | "one"
-  | "proof"
-  | "raycast"
-  | "rose-pine"
-  | "solarized"
-  | "vercel"
-  | "vscode-plus"
-  | "xcode"
-  | "custom";
+export type Theme = "light" | "beige" | "dark" | "purple" | "green";
 
 export interface FormulaLine {
   id: string;
@@ -61,32 +45,6 @@ export interface FormulaDocument {
     zoom: number;
     formulaAlignment?: FormulaAlignment;
     latexCodeFormat?: LatexCodeFormat;
-    editorLayout?: "standard" | "classic";
-    language?: "cn" | "en";
-    sourceOpen?: boolean;
-    autoPairDelimiters?: boolean;
-    showLineNumbers?: boolean;
-    highlightActiveLine?: boolean;
-    formulaInsetLeft?: number;
-    formulaInsetRight?: number;
-    formulaToolButtonSize?: number;
-    formulaToolButtonPadding?: number;
-    formulaRowVerticalInset?: number;
-    pngExportBackground?: "transparent" | `#${string}`;
-    formulaLetterFont?:
-      | "katex"
-      | "times"
-      | "cambria"
-      | "stix"
-      | "palatino"
-      | "helvetica";
-    formulaChineseFont?: "system" | "pingfang" | "songti" | "kaiti" | "heiti";
-    inputBehavior?: InputBehaviorSettings;
-    personalize?: boolean;
-    suggestionCount?: number;
-    checkUpdatesOnStartup?: boolean;
-    classicTileWidth?: number;
-    classicDockHeight?: number;
   };
 }
 

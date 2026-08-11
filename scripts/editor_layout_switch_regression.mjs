@@ -2,17 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const offset = process.pid % 700;
 const previewPort = 8100 + offset;
 const debugPort = 15100 + offset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-editor-layout");
-const chromePath = resolveBrowserTestChromePath();
+const chromeProfile = `/tmp/visualtex-editor-layout-${process.pid}`;
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -367,12 +363,10 @@ async function main() {
       hasHeaderThemeToggle: Boolean(document.querySelector('.app-header .theme-toggle')),
     }))()`);
     assert.deepEqual(
-      themeChoiceState.ids.slice(0, Object.keys(themeExpectations).length),
+      themeChoiceState.ids,
       Object.keys(themeExpectations),
       JSON.stringify(themeChoiceState),
     );
-    assert.ok(themeChoiceState.ids.includes("custom"), JSON.stringify(themeChoiceState));
-    assert.ok(themeChoiceState.ids.length > Object.keys(themeExpectations).length, JSON.stringify(themeChoiceState));
     assert.equal(
       themeChoiceState.hasHeaderThemeToggle,
       false,
@@ -628,7 +622,7 @@ async function main() {
     assert.ok(matrixState.insertHeight <= 38, JSON.stringify(matrixState));
     assert.ok(matrixState.nextTemplateGap >= 0, JSON.stringify(matrixState));
     assert.ok(matrixState.nextTemplateGap <= 8, JSON.stringify(matrixState));
-    assert.equal(matrixState.delimiterCount, 6, JSON.stringify(matrixState));
+    assert.equal(matrixState.delimiterCount, 3, JSON.stringify(matrixState));
     assert.ok(
       matrixState.delimiterHeights.every((height) => height >= 58),
       JSON.stringify(matrixState),

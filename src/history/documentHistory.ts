@@ -1,5 +1,4 @@
 import type { FormulaLine } from "../types/formula";
-import { createUuid } from "../runtime/browserCompatibility";
 import {
   cloneFormulaLines,
   createFormulaLine,
@@ -70,7 +69,7 @@ export function reconcileFormulaLines(
 ): FormulaLine[] {
   const normalizedValues = values.length ? values : [""];
   return normalizedValues.map((latex, index) => ({
-    id: currentLines[index]?.id ?? createUuid(),
+    id: currentLines[index]?.id ?? crypto.randomUUID(),
     latex,
   }));
 }

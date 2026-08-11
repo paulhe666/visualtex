@@ -1,35 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 
 const portOffset = process.pid % 1000;
 const previewPort = 5300 + portOffset;
 const debugPort = 10300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor?visualtex-test-probe=1`;
-const chromeProfile = path.join(
-  os.tmpdir(),
-  `visualtex-editor-smoke-${process.pid}`,
-);
-const chromeCandidates =
-  process.platform === "win32"
-    ? [
-        "C:/Program Files/Google/Chrome/Application/chrome.exe",
-        "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-      ]
-    : process.platform === "darwin"
-      ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-      : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
-const chromePath =
-  process.env.VISUALTEX_CHROME_PATH ??
-  chromeCandidates.find((candidate) => existsSync(candidate));
-if (!chromePath) {
-  throw new Error(
-    "Google Chrome was not found. Set VISUALTEX_CHROME_PATH to run the editor regression smoke test.",
-  );
-}
+const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -263,86 +241,6 @@ async function main() {
       const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
       done();
     })`);
-
-    const originalWebGeometry = await evaluate(`(() => {
-      const workspace = document.querySelector(".workspace.is-classic-layout");
-      const tileToolbar = document.querySelector(".classic-tile-toolbar");
-      const editorBody = document.querySelector(".classic-editor-pane-body");
-      const bottomDock = document.querySelector(".classic-bottom-dock");
-      const tileResizer = document.querySelector(".classic-tile-resizer");
-      const dockResizer = document.querySelector(".classic-dock-resizer");
-      if (!workspace || !tileToolbar || !editorBody || !bottomDock) {
-        return { ready: false };
-      }
-      const workspaceStyle = getComputedStyle(workspace);
-      const editorBodyStyle = getComputedStyle(editorBody);
-      const tileStyle = tileResizer ? getComputedStyle(tileResizer) : null;
-      const dockStyle = dockResizer ? getComputedStyle(dockResizer) : null;
-      return {
-        ready: true,
-        gridColumns: workspaceStyle.gridTemplateColumns,
-        gridRows: editorBodyStyle.gridTemplateRows,
-        tileWidth: tileToolbar.getBoundingClientRect().width,
-        dockHeight: bottomDock.getBoundingClientRect().height,
-        tileResizerPosition: tileStyle?.position ?? "",
-        dockResizerPosition: dockStyle?.position ?? "",
-        tileResizerWidth: tileResizer?.getBoundingClientRect().width ?? 0,
-        dockResizerHeight: dockResizer?.getBoundingClientRect().height ?? 0,
-      };
-    })()`);
-    if (!originalWebGeometry.ready) {
-      throw new Error(`Classic Web layout did not mount: ${JSON.stringify(originalWebGeometry)}`);
-    }
-    const columnTracks = originalWebGeometry.gridColumns
-      .split(/\s+/)
-      .filter(Boolean);
-    const rowTracks = originalWebGeometry.gridRows
-      .split(/\s+/)
-      .filter(Boolean);
-    if (
-      columnTracks.length !== 2 ||
-      Math.abs(originalWebGeometry.tileWidth - 300) > 1.5 ||
-      rowTracks.length !== 2 ||
-      Math.abs(originalWebGeometry.dockHeight - 250) > 1.5 ||
-      originalWebGeometry.tileResizerPosition !== "absolute" ||
-      originalWebGeometry.dockResizerPosition !== "absolute"
-    ) {
-      throw new Error(
-        `Classic layout no longer preserves the original Web geometry: ${JSON.stringify(originalWebGeometry)}`,
-      );
-    }
-
-    await evaluate(`document.querySelector(".settings-toggle")?.click()`);
-    await waitForEvaluation(
-      `(() => ({ ready: Boolean(document.querySelector(".settings-dialog")) }))()`,
-      "original Web settings dialog",
-    );
-    await sleep(220);
-    const originalWebSettingsGeometry = await evaluate(`(() => {
-      const dialog = document.querySelector(".settings-dialog");
-      if (!dialog) return { ready: false };
-      const rect = dialog.getBoundingClientRect();
-      return {
-        ready: true,
-        width: rect.width,
-        usesOriginalDialog: dialog.classList.contains("settings-dialog"),
-        hasWindowsStyleNavigation: Boolean(document.querySelector(".web-settings-nav")),
-        sectionCount: dialog.querySelectorAll(".settings-section").length,
-        viewportWidth: window.innerWidth,
-      };
-    })()`);
-    if (
-      !originalWebSettingsGeometry.usesOriginalDialog ||
-      originalWebSettingsGeometry.hasWindowsStyleNavigation ||
-      Math.abs(originalWebSettingsGeometry.width - 570) > 1.5 ||
-      originalWebSettingsGeometry.sectionCount < 7
-    ) {
-      throw new Error(
-        `Settings no longer preserve the original Web dialog: ${JSON.stringify(originalWebSettingsGeometry)}`,
-      );
-    }
-    await evaluate(`document.querySelector(".settings-dialog .dialog-header .icon-button")?.click()`);
-    await sleep(100);
 
     const setFieldAt = async (index, latex) => {
       await evaluate(`(() => {
@@ -1107,8 +1005,8 @@ async function main() {
         viewportHeight: window.innerHeight,
       };
     })()`);
-    if (formatMenuState.count !== 17) {
-      throw new Error(`Expected 17 LaTeX code formats, found ${formatMenuState.count}`);
+    if (formatMenuState.count !== 16) {
+      throw new Error(`Expected 16 LaTeX code formats, found ${formatMenuState.count}`);
     }
     if (
       formatMenuState.visibleTitleCount !== 0 ||
@@ -1143,10 +1041,8 @@ async function main() {
     }
     if (
       !alignFormatState.source.includes("\\begin{align*}") ||
-      !alignFormatState.source.includes("a=b") ||
-      !alignFormatState.source.includes("c=d") ||
-      alignFormatState.source.includes("a&=b") ||
-      alignFormatState.source.includes("c&=d") ||
+      !alignFormatState.source.includes("a&=b") ||
+      !alignFormatState.source.includes("c&=d") ||
       !alignFormatState.source.includes("\\end{align*}")
     ) {
       throw new Error(`align* source was not generated correctly: ${alignFormatState.source}`);
@@ -1217,8 +1113,7 @@ async function main() {
     if (
       dirtyFormatSwitchState.dirty ||
       !dirtyFormatSwitchState.source.includes("\\begin{align*}") ||
-      !dirtyFormatSwitchState.source.includes("a=q") ||
-      dirtyFormatSwitchState.source.includes("a&=q") ||
+      !dirtyFormatSwitchState.source.includes("a&=q") ||
       dirtyFormatSwitchState.formulas[0] !== "a=q" ||
       dirtyFormatSwitchState.formulas[1] !== "c=d"
     ) {
@@ -1245,7 +1140,7 @@ async function main() {
       hasCustomTile: Boolean(document.querySelector(".onboarding-custom-tile-guide")),
     }))()`);
     if (
-      onboardingHotkeyStep.progressCount !== 9 ||
+      onboardingHotkeyStep.progressCount !== 8 ||
       !onboardingHotkeyStep.visible ||
       !onboardingHotkeyStep.hasCustomTile ||
       !onboardingHotkeyStep.title.includes("快捷")
@@ -1268,10 +1163,8 @@ async function main() {
       throw new Error(`The onboarding layout and theme step is incomplete: ${JSON.stringify(onboardingLayoutStep)}`);
     }
 
-    for (let index = 0; index < 3; index += 1) {
-      await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
-      await sleep(100);
-    }
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
     const onboardingFormatStep = await evaluate(`(() => ({
       progressCount: document.querySelectorAll(".onboarding-progress > span").length,
       visible: Boolean(document.querySelector(".onboarding-code-format-demo")),
@@ -1279,7 +1172,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount !== 9 ||
+      onboardingFormatStep.progressCount !== 8 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")

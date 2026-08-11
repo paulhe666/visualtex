@@ -55,7 +55,6 @@ interface Props {
     latex: string,
     sourceFormat: LatexCodeFormat,
   ) => LatexSourceDraftResult;
-  onFocusChange?: (focused: boolean) => void;
   onCopy: () => void;
 }
 
@@ -68,7 +67,6 @@ export function LatexSourceEditor({
   showCopyAction = true,
   compact = false,
   onLiveChange,
-  onFocusChange,
   onCopy,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -82,17 +80,12 @@ export function LatexSourceEditor({
   const suppressChangeRef = useRef(false);
   const formatRef = useRef(format);
   const onLiveChangeRef = useRef(onLiveChange);
-  const onFocusChangeRef = useRef(onFocusChange);
   const formatRefreshFrameRef = useRef<number | null>(null);
-  const focusReleaseFrameRef = useRef<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [hasLivePreview, setHasLivePreview] = useState(true);
-  const hasLivePreviewRef = useRef(true);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
-  onFocusChangeRef.current = onFocusChange;
 
   const updateDirty = (value: boolean) => {
     dirtyRef.current = value;
@@ -134,22 +127,10 @@ export function LatexSourceEditor({
         EditorView.updateListener.of((update) => {
           if (update.focusChanged) {
             sourceFocusedRef.current = update.view.hasFocus;
-            if (focusReleaseFrameRef.current !== null) {
-              window.cancelAnimationFrame(focusReleaseFrameRef.current);
-              focusReleaseFrameRef.current = null;
-            }
-            if (update.view.hasFocus) {
-              onFocusChangeRef.current?.(true);
-            } else {
-              focusReleaseFrameRef.current = window.requestAnimationFrame(() => {
-                focusReleaseFrameRef.current = null;
+            if (!update.view.hasFocus && !syncErrorRef.current) {
+              window.requestAnimationFrame(() => {
                 const view = viewRef.current;
-                if (!view || view.hasFocus) return;
-                sourceFocusedRef.current = false;
-                onFocusChangeRef.current?.(false);
-                if (!hasLivePreviewRef.current) return;
-                updateSyncError(null);
-                updateDirty(false);
+                if (!view || view.hasFocus || syncErrorRef.current) return;
                 const canonical = latestLatexRef.current;
                 const current = view.state.doc.toString();
                 if (current !== canonical) {
@@ -159,6 +140,7 @@ export function LatexSourceEditor({
                   });
                 }
                 draftRef.current = canonical;
+                updateDirty(false);
               });
             }
           }
@@ -174,16 +156,8 @@ export function LatexSourceEditor({
             draftRef.current,
             formatRef.current,
           );
-          const acceptedLivePreview = result.valid || result.values.length > 0;
-          hasLivePreviewRef.current = acceptedLivePreview;
-          setHasLivePreview(acceptedLivePreview);
           updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
-          if (acceptedLivePreview) {
-            sourceRef.current = draftRef.current;
-            updateDirty(false);
-          } else {
-            updateDirty(draftRef.current !== sourceRef.current);
-          }
+          updateDirty(draftRef.current !== sourceRef.current);
         }),
       ],
     });
@@ -193,44 +167,10 @@ export function LatexSourceEditor({
     draftRef.current = sourceRef.current;
     updateDirty(false);
 
-    type SourceEditorProbe = {
-      replaceDocument: (value: string) => void;
-      getDocument: () => string;
-    };
-    const probeWindow = window as Window & {
-      __visualtexSourceEditorProbe?: SourceEditorProbe;
-    };
-    const testProbeEnabled =
-      new URLSearchParams(window.location.search).get("visualtex-test-probe") ===
-      "1";
-    const sourceEditorProbe: SourceEditorProbe = {
-      replaceDocument: (value) => {
-        const current = view.state.doc.toString();
-        view.dispatch({
-          changes: { from: 0, to: current.length, insert: value },
-        });
-      },
-      getDocument: () => view.state.doc.toString(),
-    };
-    if (testProbeEnabled) {
-      probeWindow.__visualtexSourceEditorProbe = sourceEditorProbe;
-    }
-
     return () => {
-      if (probeWindow.__visualtexSourceEditorProbe === sourceEditorProbe) {
-        delete probeWindow.__visualtexSourceEditorProbe;
-      }
       if (formatRefreshFrameRef.current !== null) {
         window.cancelAnimationFrame(formatRefreshFrameRef.current);
         formatRefreshFrameRef.current = null;
-      }
-      if (focusReleaseFrameRef.current !== null) {
-        window.cancelAnimationFrame(focusReleaseFrameRef.current);
-        focusReleaseFrameRef.current = null;
-      }
-      if (sourceFocusedRef.current) {
-        sourceFocusedRef.current = false;
-        onFocusChangeRef.current?.(false);
       }
       view.destroy();
       viewRef.current = null;
@@ -290,11 +230,7 @@ export function LatexSourceEditor({
     view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     draftRef.current = value;
     const result = onLiveChangeRef.current(value, formatRef.current);
-    const acceptedLivePreview = result.valid || result.values.length > 0;
-    hasLivePreviewRef.current = acceptedLivePreview;
-    setHasLivePreview(acceptedLivePreview);
     updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
-    if (acceptedLivePreview) sourceRef.current = value;
     updateDirty(false);
   };
 
@@ -346,11 +282,10 @@ export function LatexSourceEditor({
             </span>
           )}
           <div className="source-actions">
-            {(dirty || (syncError && !hasLivePreview)) && (
+            {(dirty || syncError) && (
               <button
                 type="button"
                 className="text-button"
-                data-source-reset
                 onClick={() => replaceDraft(latex)}
               >
                 <RotateCcw size={14} /> {isEn ? "Reset" : "还原"}

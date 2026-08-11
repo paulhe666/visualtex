@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { createUuid } from "../runtime/browserCompatibility";
 import { loadRecentCheckpoints, persistCheckpoint } from "./checkpointStore";
 import type {
   ChangeTitleEntry,
@@ -478,7 +477,7 @@ export class HistoryManager {
     }
 
     const checkpoint: DocumentCheckpoint = {
-      id: createUuid(),
+      id: crypto.randomUUID(),
       createdAt: Date.now(),
       operationIndex: this.operationIndex,
       reason,

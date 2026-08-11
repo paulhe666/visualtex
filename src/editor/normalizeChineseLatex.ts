@@ -1,8 +1,4 @@
-import {
-  EXTENDED_INTEGRAL_COMMANDS,
-  EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE,
-  normalizeExtendedIntegralLatexCommands,
-} from "../math/extendedIntegralCompatibility.ts";
+import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 
 const chineseChar = /[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’]/;
 
@@ -433,19 +429,17 @@ const DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS = new Set([
 
 export function resolveVisualTexInlineShortcuts(
   mathLiveDefaults: Readonly<VisualTexInlineShortcutDefinitions>,
-  autoEscapeShortcuts: boolean,
+  enabled: boolean,
 ): VisualTexInlineShortcutDefinitions {
-  const shortcutMappings = autoEscapeShortcuts
-    ? Object.fromEntries(
-        Object.entries(mathLiveDefaults).filter(
-          ([shortcut]) => !DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS.has(shortcut),
-        ),
-      )
-    : {};
+  if (!enabled) return {};
+  const safeMathLiveDefaults = Object.fromEntries(
+    Object.entries(mathLiveDefaults).filter(
+      ([shortcut]) => !DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS.has(shortcut),
+    ),
+  );
   return {
-    ...shortcutMappings,
-    ...(autoEscapeShortcuts ? visualTexAutoEscapeInlineShortcuts : {}),
-    ...visualTexUprightInlineShortcuts,
+    ...safeMathLiveDefaults,
+    ...visualTexAutoEscapeInlineShortcuts,
   };
 }
 
@@ -469,16 +463,8 @@ function transformOutsideProtectedCommands(
       continue;
     }
 
-    const end = readBracedCommand(source, index);
-    const semanticUprightSymbol =
-      (commandMatch[1] === "mathrm" || commandMatch[1] === "textrm") &&
-      /^\\(?:mathrm|textrm)\{[dDeij]\}$/.test(source.slice(index, end));
-    if (semanticUprightSymbol) {
-      index = end;
-      continue;
-    }
-
     result += transform(source.slice(chunkStart, index));
+    const end = readBracedCommand(source, index);
     result += source.slice(index, end);
     index = end;
     chunkStart = end;
@@ -573,10 +559,8 @@ export function normalizeMathLiveCanonicalUprightCommands(
 }
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];
-const integralCommandPattern = new RegExp(
-  `\\\\(?:${EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE})(?![A-Za-z])`,
-  "g",
-);
+const integralCommandPattern =
+  /\\(?:oiiint|oiint|oint|iiint|iint|int)(?![A-Za-z])/g;
 const nonVariableCommands = new Set([
   "sin",
   "cos",
@@ -595,7 +579,12 @@ const nonVariableCommands = new Set([
   "min",
   "det",
   "gcd",
-  ...EXTENDED_INTEGRAL_COMMANDS,
+  "int",
+  "iint",
+  "iiint",
+  "oint",
+  "oiint",
+  "oiiint",
   "sum",
   "prod",
   "frac",

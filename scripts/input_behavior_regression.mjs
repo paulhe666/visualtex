@@ -2,17 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 6400 + portOffset;
 const debugPort = 11400 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-input-behavior");
-const chromePath = resolveBrowserTestChromePath();
+const chromeProfile = `/tmp/visualtex-input-behavior-${process.pid}`;
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -48,7 +44,6 @@ class CdpClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result);
     });
@@ -57,11 +52,7 @@ class CdpClient {
   send(method, params = {}) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Timed out waiting for CDP ${method}`));
-      }, 15000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -121,20 +112,11 @@ async function main() {
     await sleep(650);
 
     const evaluate = async (expression) => {
-      let result;
-      try {
-        result = await client.send("Runtime.evaluate", {
-          expression,
-          awaitPromise: true,
-          returnByValue: true,
-        });
-      } catch (error) {
-        const preview = String(expression).replace(/\s+/g, " ").slice(0, 160);
-        throw new Error(
-          `${error instanceof Error ? error.message : String(error)} while evaluating: ${preview}`,
-          { cause: error },
-        );
-      }
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
       if (result.exceptionDetails) {
         throw new Error(
           result.exceptionDetails.exception?.description ||
@@ -733,7 +715,7 @@ async function main() {
       }), 50);
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
-    assert.equal(menu.optionCount, 7);
+    assert.equal(menu.optionCount, 6);
     await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 
     const loadSingleFormulaLine = async (latex) => {
@@ -1002,28 +984,22 @@ async function main() {
       assert.ok(state.caretBottom > state.caretTop);
     };
 
-    // MathLive 0.109.2 reports atom bounds outside the visible field for this
-    // legacy pointer-gap probe in Windows headless Chrome. The same production
-    // code and test exist in the pre-migration Web baseline, while the Windows
-    // 1.2.5 regression suite does not use this geometry-dependent probe.
-    if (process.platform !== "win32") {
-      await clickStructuralGap(
-        "x_{i}^{2}\\int_{0}^{1}f(x)\\,\\mathrm{d}x",
-        "x_{i}^{2}",
-      );
-      await clickStructuralGap(
-        "A_{m}^{n}\\frac{p+q}{r-s}",
-        "A_{m}^{n}",
-      );
-      await clickStructuralGap(
-        "\\frac{a_i}{b^2}x_j^3\\sum_{k=0}^{N}c_k",
-        "\\frac{a_i}{b^2}x_j^3",
-      );
-      await clickStructuralGap(
-        "\\sqrt{\\frac{u}{v}}y_k^4\\prod_{r=1}^{M}d_r",
-        "\\sqrt{\\frac{u}{v}}y_k^4",
-      );
-    }
+    await clickStructuralGap(
+      "x_{i}^{2}\\int_{0}^{1}f(x)\\,\\mathrm{d}x",
+      "x_{i}^{2}",
+    );
+    await clickStructuralGap(
+      "A_{m}^{n}\\frac{p+q}{r-s}",
+      "A_{m}^{n}",
+    );
+    await clickStructuralGap(
+      "\\frac{a_i}{b^2}x_j^3\\sum_{k=0}^{N}c_k",
+      "\\frac{a_i}{b^2}x_j^3",
+    );
+    await clickStructuralGap(
+      "\\sqrt{\\frac{u}{v}}y_k^4\\prod_{r=1}^{M}d_r",
+      "\\sqrt{\\frac{u}{v}}y_k^4",
+    );
 
     const dragAcrossLines = async ({ reverse, fromFarRight = false }) => {
       await loadFormulaLines(["abcDEF", "m+\\frac{n}{d}", "UVWxyz"], reverse ? 2 : 0);
@@ -1048,14 +1024,11 @@ async function main() {
         };
         const first = pointForPrefix(fields[0], "abc");
         const third = pointForPrefix(fields[2], "UVW");
-        const thirdHostRect = fields[2].closest(".mathfield-host").getBoundingClientRect();
+        const thirdFieldRect = fields[2].getBoundingClientRect();
         const thirdContentRect = fields[2].shadowRoot.querySelector('[part="content"]').getBoundingClientRect();
         if (${fromFarRight}) {
           third.offset = fields[2].lastOffset;
-          third.x = Math.max(
-            thirdContentRect.right + 12,
-            thirdHostRect.right - 18,
-          );
+          third.x = Math.min(thirdFieldRect.right - 12, thirdContentRect.right + 100);
         }
         return { first, third, middleY: fields[1].getBoundingClientRect().y + fields[1].getBoundingClientRect().height / 2 };
       })()`);
@@ -1151,12 +1124,10 @@ async function main() {
     })`);
     assert.deepEqual(redoMultiLineDelete, ["abcxyz"]);
     assert.deepEqual(await dragAcrossLines({ reverse: true }), ["abcxyz"]);
-    if (process.platform !== "win32") {
-      assert.deepEqual(
-        await dragAcrossLines({ reverse: true, fromFarRight: true }),
-        ["abc"],
-      );
-    }
+    assert.deepEqual(
+      await dragAcrossLines({ reverse: true, fromFarRight: true }),
+      ["abc"],
+    );
 
     const mergeAtSecondLineStart = async () =>
       evaluate(`new Promise((resolve) => {

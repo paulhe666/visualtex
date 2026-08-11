@@ -41,7 +41,6 @@ import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
-  EDITOR_ZOOM_STEP,
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
@@ -69,14 +68,9 @@ import {
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import { buildMarkdownDocument } from "./export/markdownExport";
-import { latexToSvg } from "./export/runtime";
-import {
-  copyFormulaDocumentPngToClipboard,
-  renderFormulaDocumentPng,
-} from "./export/pngClipboard";
+import { latexToSvg, svgToPng } from "./export/runtime";
 import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
-import { publishSynchronizedTheme } from "./themeSync";
 import {
   OCR_MODELS,
   cancelOcrRecognition,
@@ -156,7 +150,6 @@ function App() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
-  const pngClipboardBusyRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
@@ -175,9 +168,6 @@ function App() {
   const setLatexCodeFormat = useEditorStore(
     (state) => state.setLatexCodeFormat,
   );
-  const pngExportBackground = useEditorStore((state) => state.pngExportBackground);
-  const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
-  const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
   const addHistory = useEditorStore((state) => state.addHistory);
   const loadDocument = useEditorStore((state) => state.loadDocument);
   const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
@@ -313,7 +303,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    publishSynchronizedTheme(theme);
+    document.documentElement.dataset.theme = theme;
   }, [theme]);
 
   useEffect(() => {
@@ -607,29 +597,6 @@ function App() {
     }
   };
 
-  const handleCopyPng = async () => {
-    if (pngClipboardBusyRef.current || !lines.some((line) => line.latex.trim())) return;
-    pngClipboardBusyRef.current = true;
-    try {
-      await copyFormulaDocumentPngToClipboard(
-        lines.map((line) => line.latex),
-        {
-          background: pngExportBackground,
-          formulaLetterFont,
-          formulaChineseFont,
-        },
-      );
-      setToast(isEn ? "PNG copied to Clipboard" : "PNG 已复制到剪贴板");
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setToast(
-        isEn ? `Unable to copy PNG: ${message}` : `复制 PNG 失败：${message}`,
-      );
-    } finally {
-      pngClipboardBusyRef.current = false;
-    }
-  };
-
   const getSafeDocumentTitle = () =>
     title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
     (isEn ? "Untitled Formula" : "未命名公式");
@@ -663,28 +630,17 @@ function App() {
           `${safeTitle}.md`,
         );
       } else {
+        const svg = latexToSvg(latex);
         if (format === "svg") {
-          const svg = latexToSvg(latex, {
-            displayMode: true,
-            fontSizePt: 12,
-            paddingPx: 8,
-            background: "transparent",
-            formulaLetterFont,
-            formulaChineseFont,
-          });
           downloadBlobFile(
             new Blob([svg.svg], { type: "image/svg+xml;charset=utf-8" }),
             `${safeTitle}.svg`,
           );
         } else {
-          const png = await renderFormulaDocumentPng(
-            lines.map((line) => line.latex),
-            {
-              background: pngExportBackground,
-              formulaLetterFont,
-              formulaChineseFont,
-            },
-          );
+          const png = await svgToPng(svg, {
+            scale: 2,
+            background: "transparent",
+          });
           downloadBlobFile(png.blob, `${safeTitle}.png`);
         }
       }
@@ -899,10 +855,10 @@ function App() {
         setZoom(1);
       } else if (key === "=" || key === "+") {
         event.preventDefault();
-        setZoom(zoom + EDITOR_ZOOM_STEP);
+        setZoom(zoom + 0.1);
       } else if (key === "-") {
         event.preventDefault();
-        setZoom(zoom - EDITOR_ZOOM_STEP);
+        setZoom(zoom - 0.1);
       }
     };
 
@@ -1280,7 +1236,6 @@ function App() {
         onHistoryBusyChange={setEditorHistoryBusy}
         onPasteImage={desktopRuntime ? handleEditorImagePaste : undefined}
         onCopy={handleCopy}
-        onCopyPng={handleCopyPng}
         onReplaceDocument={replaceDocumentWithHistory}
         ocrModel={ocrModel}
         ocrModels={OCR_MODELS}

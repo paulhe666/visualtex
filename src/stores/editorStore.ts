@@ -16,29 +16,8 @@ import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
 } from "../clipboard/LatexCopyService";
-import {
-  normalizeChineseLatex,
-  normalizeMultilineLatex,
-} from "../editor/normalizeChineseLatex";
-import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
-import { createUuid } from "../runtime/browserCompatibility";
-import { safeStorage } from "../runtime/safeStorage";
-import {
-  DEFAULT_PNG_EXPORT_BACKGROUND,
-  normalizePngExportBackground,
-  type PngExportBackground,
-} from "../export/pngBackground";
-import { isTheme } from "../themeCustomization";
-import {
-  DEFAULT_FORMULA_CHINESE_FONT,
-  DEFAULT_FORMULA_LETTER_FONT,
-  normalizeFormulaChineseFont,
-  normalizeFormulaLetterFont,
-  readFormulaFontPreferences,
-  writeFormulaFontPreferences,
-  type FormulaChineseFont,
-  type FormulaLetterFont,
-} from "../editor/formulaFontPreferences";
+import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 
 export type Language = "cn" | "en";
 export type EditorLayout = "standard" | "classic";
@@ -46,28 +25,6 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
 export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
-export const EDITOR_ZOOM_STEP = 0.05;
-export const DEFAULT_FORMULA_INSET = 34;
-export const MIN_FORMULA_INSET = 0;
-export const MAX_FORMULA_INSET = 96;
-export const DEFAULT_FORMULA_TOOL_BUTTON_SIZE = 52;
-export const MIN_FORMULA_TOOL_BUTTON_SIZE = 38;
-export const MAX_FORMULA_TOOL_BUTTON_SIZE = 72;
-export const DEFAULT_FORMULA_TOOL_BUTTON_PADDING = 2;
-export const MIN_FORMULA_TOOL_BUTTON_PADDING = 0;
-export const MAX_FORMULA_TOOL_BUTTON_PADDING = 12;
-export const DEFAULT_FORMULA_ROW_VERTICAL_INSET = 5;
-export const MIN_FORMULA_ROW_VERTICAL_INSET = 0;
-export const MAX_FORMULA_ROW_VERTICAL_INSET = 24;
-export const DEFAULT_CLASSIC_TILE_WIDTH = 300;
-export const MIN_CLASSIC_TILE_WIDTH = 220;
-export const MAX_CLASSIC_TILE_WIDTH = 2000;
-export const DEFAULT_CLASSIC_DOCK_HEIGHT = 240;
-export const MIN_CLASSIC_DOCK_HEIGHT = 132;
-export const MAX_CLASSIC_DOCK_HEIGHT = 2000;
-
-const legacyClassicTileWidthStorageKey = "visualtex-classic-tile-width";
-const legacyClassicDockHeightStorageKey = "visualtex-classic-dock-height";
 
 export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
   autoEscapeShortcuts: true,
@@ -127,117 +84,29 @@ export function normalizeEditorLayout(value: unknown): EditorLayout {
 }
 
 function normalizeTheme(value: unknown): Theme {
-  return isTheme(value) ? value : DEFAULT_THEME;
+  return value === "dark" ||
+    value === "beige" ||
+    value === "purple" ||
+    value === "green"
+    ? value
+    : DEFAULT_THEME;
 }
 
 function normalizeEditorZoom(value: unknown) {
   const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
-  const steppedZoom =
-    Math.round(Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100) /
-    100;
-  return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
-}
-
-function normalizeFormulaInset(value: unknown) {
-  const inset =
-    typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value)
-      : DEFAULT_FORMULA_INSET;
-  return Math.min(MAX_FORMULA_INSET, Math.max(MIN_FORMULA_INSET, inset));
-}
-
-function normalizeFormulaToolButtonSize(value: unknown) {
-  const size =
-    typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value)
-      : DEFAULT_FORMULA_TOOL_BUTTON_SIZE;
   return Math.min(
-    MAX_FORMULA_TOOL_BUTTON_SIZE,
-    Math.max(MIN_FORMULA_TOOL_BUTTON_SIZE, size),
+    MAX_EDITOR_ZOOM,
+    Math.max(MIN_EDITOR_ZOOM, Math.round(zoom * 10) / 10),
   );
-}
-
-function normalizeFormulaToolButtonPadding(value: unknown) {
-  const padding =
-    typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value)
-      : DEFAULT_FORMULA_TOOL_BUTTON_PADDING;
-  return Math.min(
-    MAX_FORMULA_TOOL_BUTTON_PADDING,
-    Math.max(MIN_FORMULA_TOOL_BUTTON_PADDING, padding),
-  );
-}
-
-function normalizeFormulaRowVerticalInset(value: unknown) {
-  const inset =
-    typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value)
-      : DEFAULT_FORMULA_ROW_VERTICAL_INSET;
-  return Math.min(
-    MAX_FORMULA_ROW_VERTICAL_INSET,
-    Math.max(MIN_FORMULA_ROW_VERTICAL_INSET, inset),
-  );
-}
-
-function normalizeClassicPanelSize(
-  value: unknown,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-) {
-  const size =
-    typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value)
-      : fallback;
-  return Math.min(maximum, Math.max(minimum, size));
-}
-
-function legacyClassicPanelSize(
-  storageKey: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-) {
-  const stored = Number.parseFloat(safeStorage.getItem(storageKey) ?? "");
-  return normalizeClassicPanelSize(
-    Number.isFinite(stored) ? stored : fallback,
-    fallback,
-    minimum,
-    maximum,
-  );
-}
-
-function normalizeClassicTileWidth(value: unknown) {
-  return normalizeClassicPanelSize(
-    value,
-    DEFAULT_CLASSIC_TILE_WIDTH,
-    MIN_CLASSIC_TILE_WIDTH,
-    MAX_CLASSIC_TILE_WIDTH,
-  );
-}
-
-function normalizeClassicDockHeight(value: unknown) {
-  return normalizeClassicPanelSize(
-    value,
-    DEFAULT_CLASSIC_DOCK_HEIGHT,
-    MIN_CLASSIC_DOCK_HEIGHT,
-    MAX_CLASSIC_DOCK_HEIGHT,
-  );
-}
-
-function normalizeFormulaLineLatex(latex: string) {
-  return normalizeChineseLatex(normalizeFormulaLinePhysicalWhitespace(latex));
 }
 
 export function createFormulaLine(
   latex = "",
-  id: string = createUuid(),
+  id: string = crypto.randomUUID(),
 ): FormulaLine {
   return {
     id,
-    latex: normalizeFormulaLineLatex(
-      latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? "",
-    ),
+    latex: normalizeChineseLatex(latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? ""),
   };
 }
 
@@ -247,8 +116,8 @@ function uniqueLineId(candidate: unknown, usedIds: Set<string>) {
     usedIds.add(normalized);
     return normalized;
   }
-  let nextId = createUuid();
-  while (usedIds.has(nextId)) nextId = createUuid();
+  let nextId: string = crypto.randomUUID();
+  while (usedIds.has(nextId)) nextId = crypto.randomUUID();
   usedIds.add(nextId);
   return nextId;
 }
@@ -265,7 +134,7 @@ export function normalizeFormulaLines(
         const candidate = item as Partial<FormulaLine>;
         return {
           id: uniqueLineId(candidate.id, usedIds),
-          latex: normalizeFormulaLineLatex(
+          latex: normalizeChineseLatex(
             typeof candidate.latex === "string"
               ? candidate.latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? ""
               : "",
@@ -318,18 +187,6 @@ interface EditorState {
   sourceOpen: boolean;
   latexCodeFormat: LatexCodeFormat;
   autoPairDelimiters: boolean;
-  showLineNumbers: boolean;
-  highlightActiveLine: boolean;
-  formulaInsetLeft: number;
-  formulaInsetRight: number;
-  formulaToolButtonSize: number;
-  formulaToolButtonPadding: number;
-  formulaRowVerticalInset: number;
-  pngExportBackground: PngExportBackground;
-  formulaLetterFont: FormulaLetterFont;
-  formulaChineseFont: FormulaChineseFont;
-  classicTileWidth: number;
-  classicDockHeight: number;
   inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
@@ -350,18 +207,6 @@ interface EditorState {
   setSourceOpen: (open: boolean) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
-  setShowLineNumbers: (enabled: boolean) => void;
-  setHighlightActiveLine: (enabled: boolean) => void;
-  setFormulaInsetLeft: (inset: number) => void;
-  setFormulaInsetRight: (inset: number) => void;
-  setFormulaToolButtonSize: (size: number) => void;
-  setFormulaToolButtonPadding: (padding: number) => void;
-  setFormulaRowVerticalInset: (inset: number) => void;
-  setPngExportBackground: (background: PngExportBackground) => void;
-  setFormulaLetterFont: (font: FormulaLetterFont) => void;
-  setFormulaChineseFont: (font: FormulaChineseFont) => void;
-  setClassicTileWidth: (width: number) => void;
-  setClassicDockHeight: (height: number) => void;
   setInputBehavior: (
     setting: InputBehaviorSettingKey,
     enabled: boolean,
@@ -390,32 +235,10 @@ export const useEditorStore = create<EditorState>()(
       editorLayout: DEFAULT_EDITOR_LAYOUT,
       theme: DEFAULT_THEME,
       language: "cn",
-      zoom: 0.6,
+      zoom: 1,
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       autoPairDelimiters: true,
-      showLineNumbers: false,
-      highlightActiveLine: false,
-      formulaInsetLeft: DEFAULT_FORMULA_INSET,
-      formulaInsetRight: DEFAULT_FORMULA_INSET,
-      formulaToolButtonSize: DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
-      formulaToolButtonPadding: DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
-      formulaRowVerticalInset: DEFAULT_FORMULA_ROW_VERTICAL_INSET,
-      pngExportBackground: DEFAULT_PNG_EXPORT_BACKGROUND,
-      formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
-      formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
-      classicTileWidth: legacyClassicPanelSize(
-        legacyClassicTileWidthStorageKey,
-        DEFAULT_CLASSIC_TILE_WIDTH,
-        MIN_CLASSIC_TILE_WIDTH,
-        MAX_CLASSIC_TILE_WIDTH,
-      ),
-      classicDockHeight: legacyClassicPanelSize(
-        legacyClassicDockHeightStorageKey,
-        DEFAULT_CLASSIC_DOCK_HEIGHT,
-        MIN_CLASSIC_DOCK_HEIGHT,
-        MAX_CLASSIC_DOCK_HEIGHT,
-      ),
       inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
@@ -431,7 +254,7 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           lines: state.lines.map((line) =>
             line.id === lineId
-              ? { ...line, latex: normalizeFormulaLineLatex(latex) }
+              ? { ...line, latex: normalizeChineseLatex(latex) }
               : line,
           ),
         })),
@@ -445,7 +268,7 @@ export const useEditorStore = create<EditorState>()(
           const targetIndex = Math.max(0, Math.min(index, nextLines.length));
           nextLines.splice(targetIndex, 0, {
             id: line.id,
-            latex: normalizeFormulaLineLatex(line.latex),
+            latex: normalizeChineseLatex(line.latex),
           });
           return {
             lines: nextLines,
@@ -468,7 +291,9 @@ export const useEditorStore = create<EditorState>()(
             title: snapshot.title,
             lines,
             activeLineId: validActiveLineId(lines, snapshot.activeLineId),
-            formulaAlignment: normalizeFormulaAlignment(snapshot.formulaAlignment),
+            formulaAlignment: normalizeFormulaAlignment(
+              snapshot.formulaAlignment,
+            ),
           };
         }),
       setTheme: (theme) => set({ theme: normalizeTheme(theme) }),
@@ -483,61 +308,6 @@ export const useEditorStore = create<EditorState>()(
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
-      setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
-      setHighlightActiveLine: (highlightActiveLine) =>
-        set({ highlightActiveLine }),
-      setFormulaInsetLeft: (formulaInsetLeft) =>
-        set({ formulaInsetLeft: normalizeFormulaInset(formulaInsetLeft) }),
-      setFormulaInsetRight: (formulaInsetRight) =>
-        set({ formulaInsetRight: normalizeFormulaInset(formulaInsetRight) }),
-      setFormulaToolButtonSize: (formulaToolButtonSize) =>
-        set({
-          formulaToolButtonSize: normalizeFormulaToolButtonSize(
-            formulaToolButtonSize,
-          ),
-        }),
-      setFormulaToolButtonPadding: (formulaToolButtonPadding) =>
-        set({
-          formulaToolButtonPadding: normalizeFormulaToolButtonPadding(
-            formulaToolButtonPadding,
-          ),
-        }),
-      setFormulaRowVerticalInset: (formulaRowVerticalInset) =>
-        set({
-          formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
-            formulaRowVerticalInset,
-          ),
-        }),
-      setPngExportBackground: (pngExportBackground) =>
-        set({
-          pngExportBackground: normalizePngExportBackground(pngExportBackground),
-        }),
-      setFormulaLetterFont: (formulaLetterFont) => {
-        const normalized = normalizeFormulaLetterFont(formulaLetterFont);
-        writeFormulaFontPreferences({
-          formulaLetterFont: normalized,
-          formulaChineseFont: get().formulaChineseFont,
-        });
-        set({ formulaLetterFont: normalized });
-      },
-      setFormulaChineseFont: (formulaChineseFont) => {
-        const normalized = normalizeFormulaChineseFont(formulaChineseFont);
-        writeFormulaFontPreferences({
-          formulaLetterFont: get().formulaLetterFont,
-          formulaChineseFont: normalized,
-        });
-        set({ formulaChineseFont: normalized });
-      },
-      setClassicTileWidth: (classicTileWidth) => {
-        const normalized = normalizeClassicTileWidth(classicTileWidth);
-        safeStorage.setItem(legacyClassicTileWidthStorageKey, String(normalized));
-        set({ classicTileWidth: normalized });
-      },
-      setClassicDockHeight: (classicDockHeight) => {
-        const normalized = normalizeClassicDockHeight(classicDockHeight);
-        safeStorage.setItem(legacyClassicDockHeightStorageKey, String(normalized));
-        set({ classicDockHeight: normalized });
-      },
       setInputBehavior: (setting, enabled) =>
         set((state) => ({
           inputBehavior: {
@@ -573,8 +343,7 @@ export const useEditorStore = create<EditorState>()(
                 recentUses: [...previous.recentUses, now].slice(-12),
                 acceptedPrefixes: {
                   ...previous.acceptedPrefixes,
-                  [normalizedPrefix]:
-                    (previous.acceptedPrefixes[normalizedPrefix] ?? 0) + 1,
+                  [normalizedPrefix]: (previous.acceptedPrefixes[normalizedPrefix] ?? 0) + 1,
                 },
                 contextCounts: {
                   ...(previous.contextCounts ?? {}),
@@ -592,7 +361,7 @@ export const useEditorStore = create<EditorState>()(
           );
           if (!latex.trim() || state.history[0]?.latex === latex) return state;
           const next: FormulaHistoryItem = {
-            id: createUuid(),
+            id: crypto.randomUUID(),
             latex,
             createdAt: Date.now(),
           };
@@ -600,127 +369,26 @@ export const useEditorStore = create<EditorState>()(
         }),
       clearHistory: () => set({ history: [] }),
       loadDocument: (document) =>
-        set((state) => {
+        set(() => {
           const lines = normalizeFormulaLines(
             document.formulas.map((formula) => ({
               id: formula.id,
               latex: formula.latex,
             })),
           );
-          const settings = document.settings ?? {};
-          const formulaLetterFont =
-            settings.formulaLetterFont === undefined
-              ? state.formulaLetterFont
-              : normalizeFormulaLetterFont(settings.formulaLetterFont);
-          const formulaChineseFont =
-            settings.formulaChineseFont === undefined
-              ? state.formulaChineseFont
-              : normalizeFormulaChineseFont(settings.formulaChineseFont);
-          if (
-            settings.formulaLetterFont !== undefined ||
-            settings.formulaChineseFont !== undefined
-          ) {
-            writeFormulaFontPreferences({
-              formulaLetterFont,
-              formulaChineseFont,
-            });
-          }
           return {
             title: document.title,
             lines,
             activeLineId: lines[0]?.id ?? null,
             formulaAlignment: normalizeFormulaAlignment(
-              settings.formulaAlignment ?? document.formulas[0]?.alignment,
+              document.settings.formulaAlignment ??
+                document.formulas[0]?.alignment,
             ),
-            editorLayout:
-              settings.editorLayout === undefined
-                ? state.editorLayout
-                : normalizeEditorLayout(settings.editorLayout),
-            theme:
-              settings.theme === undefined
-                ? state.theme
-                : normalizeTheme(settings.theme),
-            language:
-              settings.language === "en"
-                ? "en"
-                : settings.language === "cn"
-                  ? "cn"
-                  : state.language,
-            zoom:
-              settings.zoom === undefined
-                ? state.zoom
-                : normalizeEditorZoom(settings.zoom),
-            sourceOpen: state.sourceOpen,
-            latexCodeFormat: isLatexCodeFormat(settings.latexCodeFormat)
-              ? settings.latexCodeFormat
-              : state.latexCodeFormat,
-            autoPairDelimiters:
-              typeof settings.autoPairDelimiters === "boolean"
-                ? settings.autoPairDelimiters
-                : state.autoPairDelimiters,
-            showLineNumbers:
-              typeof settings.showLineNumbers === "boolean"
-                ? settings.showLineNumbers
-                : state.showLineNumbers,
-            highlightActiveLine:
-              typeof settings.highlightActiveLine === "boolean"
-                ? settings.highlightActiveLine
-                : state.highlightActiveLine,
-            formulaInsetLeft:
-              settings.formulaInsetLeft === undefined
-                ? state.formulaInsetLeft
-                : normalizeFormulaInset(settings.formulaInsetLeft),
-            formulaInsetRight:
-              settings.formulaInsetRight === undefined
-                ? state.formulaInsetRight
-                : normalizeFormulaInset(settings.formulaInsetRight),
-            formulaToolButtonSize:
-              settings.formulaToolButtonSize === undefined
-                ? state.formulaToolButtonSize
-                : normalizeFormulaToolButtonSize(settings.formulaToolButtonSize),
-            formulaToolButtonPadding:
-              settings.formulaToolButtonPadding === undefined
-                ? state.formulaToolButtonPadding
-                : normalizeFormulaToolButtonPadding(
-                    settings.formulaToolButtonPadding,
-                  ),
-            formulaRowVerticalInset:
-              settings.formulaRowVerticalInset === undefined
-                ? state.formulaRowVerticalInset
-                : normalizeFormulaRowVerticalInset(
-                    settings.formulaRowVerticalInset,
-                  ),
-            pngExportBackground:
-              settings.pngExportBackground === undefined
-                ? state.pngExportBackground
-                : normalizePngExportBackground(settings.pngExportBackground),
-            formulaLetterFont,
-            formulaChineseFont,
-            inputBehavior:
-              settings.inputBehavior === undefined
-                ? state.inputBehavior
-                : normalizeInputBehaviorSettings(settings.inputBehavior),
-            personalize:
-              typeof settings.personalize === "boolean"
-                ? settings.personalize
-                : state.personalize,
-            suggestionCount:
-              typeof settings.suggestionCount === "number" &&
-              Number.isFinite(settings.suggestionCount)
-                ? Math.min(10, Math.max(3, Math.round(settings.suggestionCount)))
-                : state.suggestionCount,
-            checkUpdatesOnStartup:
-              typeof settings.checkUpdatesOnStartup === "boolean"
-                ? settings.checkUpdatesOnStartup
-                : state.checkUpdatesOnStartup,
-            classicTileWidth:
-              settings.classicTileWidth === undefined
-                ? state.classicTileWidth
-                : normalizeClassicTileWidth(settings.classicTileWidth),
-            classicDockHeight:
-              settings.classicDockHeight === undefined
-                ? state.classicDockHeight
-                : normalizeClassicDockHeight(settings.classicDockHeight),
+            theme: normalizeTheme(document.settings.theme),
+            zoom: normalizeEditorZoom(document.settings.zoom),
+            latexCodeFormat: isLatexCodeFormat(document.settings.latexCodeFormat)
+              ? document.settings.latexCodeFormat
+              : DEFAULT_LATEX_CODE_FORMAT,
           };
         }),
       toDocument: () => {
@@ -744,33 +412,13 @@ export const useEditorStore = create<EditorState>()(
             zoom: state.zoom,
             formulaAlignment: state.formulaAlignment,
             latexCodeFormat: state.latexCodeFormat,
-            editorLayout: state.editorLayout,
-            language: state.language,
-            sourceOpen: state.sourceOpen,
-            autoPairDelimiters: state.autoPairDelimiters,
-            showLineNumbers: state.showLineNumbers,
-            highlightActiveLine: state.highlightActiveLine,
-            formulaInsetLeft: state.formulaInsetLeft,
-            formulaInsetRight: state.formulaInsetRight,
-            formulaToolButtonSize: state.formulaToolButtonSize,
-            formulaToolButtonPadding: state.formulaToolButtonPadding,
-            formulaRowVerticalInset: state.formulaRowVerticalInset,
-            pngExportBackground: state.pngExportBackground,
-            formulaLetterFont: state.formulaLetterFont,
-            formulaChineseFont: state.formulaChineseFont,
-            inputBehavior: { ...state.inputBehavior },
-            personalize: state.personalize,
-            suggestionCount: state.suggestionCount,
-            checkUpdatesOnStartup: state.checkUpdatesOnStartup,
-            classicTileWidth: state.classicTileWidth,
-            classicDockHeight: state.classicDockHeight,
           },
         };
       },
     }),
     {
       name: "visualtex-editor",
-      storage: createJSONStorage(() => safeStorage),
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,
@@ -783,18 +431,6 @@ export const useEditorStore = create<EditorState>()(
         sourceOpen: state.sourceOpen,
         latexCodeFormat: state.latexCodeFormat,
         autoPairDelimiters: state.autoPairDelimiters,
-        showLineNumbers: state.showLineNumbers,
-        highlightActiveLine: state.highlightActiveLine,
-        formulaInsetLeft: state.formulaInsetLeft,
-        formulaInsetRight: state.formulaInsetRight,
-        formulaToolButtonSize: state.formulaToolButtonSize,
-        formulaToolButtonPadding: state.formulaToolButtonPadding,
-        formulaRowVerticalInset: state.formulaRowVerticalInset,
-        pngExportBackground: state.pngExportBackground,
-        formulaLetterFont: state.formulaLetterFont,
-        formulaChineseFont: state.formulaChineseFont,
-        classicTileWidth: state.classicTileWidth,
-        classicDockHeight: state.classicDockHeight,
         inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
@@ -807,7 +443,6 @@ export const useEditorStore = create<EditorState>()(
           latex?: string;
         };
         const { latex: legacyLatex, ...currentPersisted } = persisted;
-        const storedFormulaFonts = readFormulaFontPreferences();
         const lines = normalizeFormulaLines(persisted.lines, legacyLatex);
         const legacyLineAlignment = Array.isArray(persisted.lines)
           ? (persisted.lines[0] as { alignment?: unknown } | undefined)?.alignment
@@ -830,49 +465,9 @@ export const useEditorStore = create<EditorState>()(
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters
               : true,
-          showLineNumbers:
-            typeof persisted.showLineNumbers === "boolean"
-              ? persisted.showLineNumbers
-              : false,
-          highlightActiveLine:
-            typeof persisted.highlightActiveLine === "boolean"
-              ? persisted.highlightActiveLine
-              : false,
-          formulaInsetLeft: normalizeFormulaInset(persisted.formulaInsetLeft),
-          formulaInsetRight: normalizeFormulaInset(persisted.formulaInsetRight),
-          formulaToolButtonSize: normalizeFormulaToolButtonSize(
-            persisted.formulaToolButtonSize,
+          inputBehavior: normalizeInputBehaviorSettings(
+            persisted.inputBehavior,
           ),
-          formulaToolButtonPadding: normalizeFormulaToolButtonPadding(
-            persisted.formulaToolButtonPadding,
-          ),
-          formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
-            persisted.formulaRowVerticalInset,
-          ),
-          pngExportBackground: normalizePngExportBackground(
-            persisted.pngExportBackground,
-          ),
-          formulaLetterFont: storedFormulaFonts.formulaLetterFont,
-          formulaChineseFont: storedFormulaFonts.formulaChineseFont,
-          classicTileWidth:
-            persisted.classicTileWidth === undefined
-              ? legacyClassicPanelSize(
-                  legacyClassicTileWidthStorageKey,
-                  DEFAULT_CLASSIC_TILE_WIDTH,
-                  MIN_CLASSIC_TILE_WIDTH,
-                  MAX_CLASSIC_TILE_WIDTH,
-                )
-              : normalizeClassicTileWidth(persisted.classicTileWidth),
-          classicDockHeight:
-            persisted.classicDockHeight === undefined
-              ? legacyClassicPanelSize(
-                  legacyClassicDockHeightStorageKey,
-                  DEFAULT_CLASSIC_DOCK_HEIGHT,
-                  MIN_CLASSIC_DOCK_HEIGHT,
-                  MAX_CLASSIC_DOCK_HEIGHT,
-                )
-              : normalizeClassicDockHeight(persisted.classicDockHeight),
-          inputBehavior: normalizeInputBehaviorSettings(persisted.inputBehavior),
         };
       },
     },

@@ -29,122 +29,6 @@ export interface FormulaHotkeyBinding {
   updatedAt: number;
 }
 
-function commandById(commandId: string) {
-  const command = commandRegistry.find((item) => item.id === commandId);
-  if (!command) throw new Error(`Missing formula hotkey command: ${commandId}`);
-  return command;
-}
-
-function defaultHotkeyCommand(
-  id: string,
-  command: string,
-  insertTemplate: string,
-  previewLatex: string,
-  labelZh: string,
-  labelEn: string,
-): LatexCommand {
-  return {
-    id,
-    command,
-    insertTemplate,
-    previewLatex,
-    labelZh,
-    labelEn,
-    aliases: [],
-    keywords: [],
-    category: "common",
-    defaultPriority: 0,
-    supportedInMathMode: true,
-  };
-}
-
-function controlChord(code: string, shiftKey = false): FormulaHotkeyChord {
-  return {
-    code,
-    key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
-    ctrlKey: true,
-    altKey: false,
-    shiftKey,
-    metaKey: false,
-  };
-}
-
-function altShiftChord(code: string): FormulaHotkeyChord {
-  return {
-    code,
-    key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
-    ctrlKey: false,
-    altKey: true,
-    shiftKey: true,
-    metaKey: false,
-  };
-}
-
-const partialSymbolCommand = defaultHotkeyCommand(
-  "default-partial-symbol",
-  "\\partial",
-  "\\partial",
-  "\\partial",
-  "偏微分符号",
-  "Partial differential symbol",
-);
-
-const boundedIntegralTemplateCommand = defaultHotkeyCommand(
-  "default-bounded-integral-template",
-  "\\int",
-  "\\int_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}",
-  "\\int_a^b f(x)",
-  "定积分模板",
-  "Definite integral template",
-);
-
-const underlinedXCommand = defaultHotkeyCommand(
-  "default-underlined-x",
-  "\\underline{X}",
-  "\\underline{X}",
-  "\\underline{X}",
-  "下划线 X",
-  "Underlined X",
-);
-
-const underlinedYCommand = defaultHotkeyCommand(
-  "default-underlined-y",
-  "\\underline{Y}",
-  "\\underline{Y}",
-  "\\underline{Y}",
-  "下划线 Y",
-  "Underlined Y",
-);
-
-const defaultFormulaHotkeyDefinitions: Array<{
-  command: LatexCommand;
-  chord: FormulaHotkeyChord;
-}> = [
-  { command: commandById("sqrt"), chord: controlChord("KeyR") },
-  { command: commandById("frac"), chord: controlChord("KeyF") },
-  { command: commandById("scripts"), chord: controlChord("KeyJ") },
-  { command: commandById("subscript"), chord: controlChord("KeyL") },
-  { command: commandById("degree"), chord: controlChord("KeyD") },
-  { command: partialSymbolCommand, chord: controlChord("KeyP", true) },
-  { command: boundedIntegralTemplateCommand, chord: controlChord("KeyI", true) },
-  { command: commandById("sum"), chord: controlChord("KeyS", true) },
-  { command: underlinedXCommand, chord: altShiftChord("KeyX") },
-  { command: underlinedYCommand, chord: altShiftChord("KeyY") },
-];
-
-export function createDefaultFormulaHotkeyBindings(): FormulaHotkeyBinding[] {
-  return defaultFormulaHotkeyDefinitions.map(({ command, chord }) => ({
-    id: `default:${command.id}`,
-    target: createFormulaHotkeyTarget(
-      formulaHotkeyTargetIdForCommand(command.id),
-      "command",
-      command,
-    ),
-    chord: { ...chord },
-    updatedAt: 0,
-  }));
-}
-
 const modifierCodes = new Set([
   "AltLeft",
   "AltRight",
@@ -362,7 +246,6 @@ export function protectedFormulaHotkeyAction(
         new: "New",
         open: "Open",
         save: "Save",
-        greekMode: "Greek letter mode",
         settings: "Settings",
         resetZoom: "Reset zoom",
         zoomIn: "Zoom in",
@@ -377,7 +260,6 @@ export function protectedFormulaHotkeyAction(
         new: "新建",
         open: "打开",
         save: "保存",
-        greekMode: "希腊字母输入",
         settings: "设置",
         resetZoom: "恢复缩放",
         zoomIn: "放大",
@@ -391,16 +273,7 @@ export function protectedFormulaHotkeyAction(
   if (!chord.shiftKey && key === "y") return labels.redo;
   if (key === "n") return labels.new;
   if (key === "o") return labels.open;
-  if (!chord.shiftKey && key === "s") return labels.save;
-  if (
-    chord.ctrlKey &&
-    !chord.metaKey &&
-    !chord.altKey &&
-    !chord.shiftKey &&
-    key === "g"
-  ) {
-    return labels.greekMode;
-  }
+  if (key === "s") return labels.save;
   if (key === ",") return labels.settings;
   if (key === "0") return labels.resetZoom;
   if (key === "=" || key === "+") return labels.zoomIn;

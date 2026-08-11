@@ -1,6 +1,5 @@
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
-import { useCustomSymbolRevision } from "../math/customSymbolReact";
 
 interface MathPreviewProps {
   latex: string;
@@ -17,7 +16,6 @@ interface MathPreviewProps {
   minimumFluidHeight?: number;
   maximumFluidHeight?: number;
   fluidVerticalPadding?: number;
-  staticLayout?: boolean;
   onMeasure?: (size: { width: number; height: number }) => void;
 }
 
@@ -26,21 +24,6 @@ const minimumFluidFitScale = 0.1;
 const defaultMaximumFitScale = 8;
 const visiblePlaceholderLatex =
   "\\htmlClass{visualtex-tile-placeholder}{\\phantom{\\rule{0.40em}{0.66em}}}";
-const mathPreviewMarkupCache = new Map<string, string>();
-const mathPreviewMarkupCacheLimit = 1024;
-
-function cachedPreviewMarkup(latex: string, customSymbolRevision: number) {
-  const cacheKey = `${customSymbolRevision}\u0000${latex}`;
-  const cached = mathPreviewMarkupCache.get(cacheKey);
-  if (cached !== undefined) return cached;
-  const markup = convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
-  if (mathPreviewMarkupCache.size >= mathPreviewMarkupCacheLimit) {
-    const oldestKey = mathPreviewMarkupCache.keys().next().value;
-    if (typeof oldestKey === "string") mathPreviewMarkupCache.delete(oldestKey);
-  }
-  mathPreviewMarkupCache.set(cacheKey, markup);
-  return markup;
-}
 
 export function latexWithVisiblePlaceholders(latex: string) {
   if (!latex.includes("\\placeholder")) return latex;
@@ -93,7 +76,7 @@ export function latexWithVisiblePlaceholders(latex: string) {
   return rendered;
 }
 
-function MathPreviewComponent({
+export function MathPreview({
   latex,
   className = "",
   showPlaceholders = false,
@@ -108,21 +91,19 @@ function MathPreviewComponent({
   minimumFluidHeight = 52,
   maximumFluidHeight = 168,
   fluidVerticalPadding = 20,
-  staticLayout = false,
   onMeasure,
 }: MathPreviewProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const onMeasureRef = useRef(onMeasure);
   onMeasureRef.current = onMeasure;
-  const customSymbolRevision = useCustomSymbolRevision();
   const previewLatex = useMemo(
     () => (showPlaceholders ? latexWithVisiblePlaceholders(latex) : latex),
     [latex, showPlaceholders],
   );
   const markup = useMemo(
-    () => cachedPreviewMarkup(previewLatex, customSymbolRevision),
-    [customSymbolRevision, previewLatex],
+    () => convertVisualTexLatexToMarkup(previewLatex, { defaultMode: "math" }),
+    [previewLatex],
   );
 
   useLayoutEffect(() => {
@@ -130,86 +111,12 @@ function MathPreviewComponent({
     const content = contentRef.current;
     if (!host || !content) return;
 
-    if (staticLayout) {
-      host.style.removeProperty("--math-preview-fluid-height");
-      host.style.removeProperty("--math-preview-intrinsic-width");
-      let staticAnimationFrame = 0;
-      let disposed = false;
-      const measureStatic = () => {
-        staticAnimationFrame = 0;
-        content.style.setProperty("--math-preview-fit-scale", "1");
-        let scale = 1;
-        if (fit) {
-          const visualRoot =
-            content.querySelector<HTMLElement>(".ML__latex") ?? content;
-          const visualRect = visualRoot.getBoundingClientRect();
-          const contentRect = content.getBoundingClientRect();
-          const naturalWidth = Math.max(
-            1,
-            content.scrollWidth,
-            contentRect.width,
-            visualRect.width,
-          );
-          const naturalHeight = Math.max(
-            1,
-            content.offsetHeight,
-            contentRect.height,
-            visualRect.height,
-          );
-          const containedScale = Math.min(
-            Math.max(1, host.clientWidth * fitInsetRatio) / naturalWidth,
-            Math.max(1, host.clientHeight * fitInsetRatio) / naturalHeight,
-          );
-          scale = Math.max(
-            Number.EPSILON,
-            Math.min(0.92, maximumFitScale, containedScale),
-          );
-        }
-        content.style.setProperty(
-          "--math-preview-fit-scale",
-          scale.toFixed(4),
-        );
-        host.dataset.fitReady = "static";
-        host.dataset.fitScale = scale.toFixed(4);
-      };
-      const scheduleStaticMeasure = () => {
-        if (disposed) return;
-        if (staticAnimationFrame) cancelAnimationFrame(staticAnimationFrame);
-        staticAnimationFrame = requestAnimationFrame(measureStatic);
-      };
-      measureStatic();
-      scheduleStaticMeasure();
-      void document.fonts?.ready.then(scheduleStaticMeasure);
-      return () => {
-        disposed = true;
-        if (staticAnimationFrame) cancelAnimationFrame(staticAnimationFrame);
-      };
-    }
-
     let animationFrame = 0;
     const measure = () => {
       animationFrame = 0;
-      content.style.setProperty("--math-preview-fit-scale", "1");
-      const visualRoot =
-        content.querySelector<HTMLElement>(".ML__latex") ?? content;
-      const visualRect = visualRoot.getBoundingClientRect();
-      const contentRect = content.getBoundingClientRect();
-      const naturalWidth = Math.max(
-        1,
-        content.scrollWidth,
-        contentRect.width,
-        visualRect.width,
-      );
-      const naturalHeight = Math.max(
-        1,
-        content.offsetHeight,
-        contentRect.height,
-        visualRect.height,
-      );
-      onMeasureRef.current?.({
-        width: Math.max(1, content.offsetWidth),
-        height: Math.max(1, content.offsetHeight),
-      });
+      const naturalWidth = Math.max(1, content.offsetWidth);
+      const naturalHeight = Math.max(1, content.offsetHeight);
+      onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
           intrinsicMaxWidth,
@@ -261,6 +168,10 @@ function MathPreviewComponent({
           availableWidth / naturalWidth,
           availableHeight / naturalHeight,
         );
+        // Non-fluid previews are strict contain boxes: never impose a visual
+        // minimum that could make a tall integral, sum, or matrix overflow.
+        // The caller may cap upscaling (the formula toolbar uses 1) while
+        // oversized content is always allowed to shrink as far as required.
         scale = Math.max(
           Number.EPSILON,
           Math.min(maximumFitScale, containedScale),
@@ -279,14 +190,10 @@ function MathPreviewComponent({
       animationFrame = requestAnimationFrame(measure);
     };
 
-    measure();
     scheduleMeasure();
     void document.fonts?.ready.then(scheduleMeasure);
     const resizeObserver = new ResizeObserver(scheduleMeasure);
     resizeObserver.observe(host);
-    resizeObserver.observe(content);
-    const observedVisualRoot = content.querySelector<HTMLElement>(".ML__latex");
-    if (observedVisualRoot) resizeObserver.observe(observedVisualRoot);
 
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
@@ -305,7 +212,6 @@ function MathPreviewComponent({
     fitInsetRatio,
     minimumFluidHeight,
     minimumFluidScale,
-    staticLayout,
   ]);
 
   return (
@@ -317,7 +223,6 @@ function MathPreviewComponent({
       data-show-placeholders={showPlaceholders ? "true" : "false"}
       data-fluid-height={fluidHeight ? "true" : "false"}
       data-intrinsic-width={intrinsicWidth ? "true" : "false"}
-      data-static-layout={staticLayout ? "true" : "false"}
     >
       <span
         ref={contentRef}
@@ -327,5 +232,3 @@ function MathPreviewComponent({
     </span>
   );
 }
-
-export const MathPreview = memo(MathPreviewComponent);

@@ -1,18 +1,13 @@
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 4300 + portOffset;
 const debugPort = 9300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-history-smoke");
-const chromePath = resolveBrowserTestChromePath();
-const primaryModifier = process.platform === "darwin" ? 4 : 2;
+const chromeProfile = `/tmp/visualtex-history-smoke-${process.pid}`;
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -48,7 +43,6 @@ class CdpClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result);
     });
@@ -57,11 +51,7 @@ class CdpClient {
   send(method, params = {}) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Timed out waiting for CDP ${method}`));
-      }, 15000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -125,20 +115,11 @@ async function main() {
     await client.send("Page.enable");
 
     const evaluate = async (expression) => {
-      let result;
-      try {
-        result = await client.send("Runtime.evaluate", {
-          expression,
-          awaitPromise: true,
-          returnByValue: true,
-        });
-      } catch (error) {
-        const preview = String(expression).replace(/\s+/g, " ").slice(0, 160);
-        throw new Error(
-          `${error instanceof Error ? error.message : String(error)} while evaluating: ${preview}`,
-          { cause: error },
-        );
-      }
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
       if (result.exceptionDetails) {
         throw new Error(
           result.exceptionDetails.exception?.description ||
@@ -666,27 +647,18 @@ async function main() {
     await evaluate(`document.querySelector(".cm-content").focus()`);
     await client.send("Input.insertText", { text: "c" });
     await sleep(150);
-    assertDeepEqual(
-      await values(),
-      ["ca=b"],
-      "CodeMirror edits should update the visual formula as a live preview",
-    );
-    await key("z", "KeyZ", 90, primaryModifier, false);
+    assertDeepEqual(await values(), ["a=b"], "CodeMirror draft must not update formulas");
+    await key("z", "KeyZ", 90, 4, false);
     await sleep(150);
     assertEqual(
       await evaluate(`document.querySelector(".cm-content").innerText`),
       "a=b",
       "CodeMirror should keep its own draft undo",
     );
-    assertDeepEqual(
-      await values(),
-      ["a=b"],
-      "CodeMirror draft undo should also restore the live formula preview",
-    );
     assertEqual(
       await evaluate(`document.querySelector('button[aria-label="撤销"]').disabled`),
       true,
-      "Returning the live source preview to its original value must not leave global history",
+      "CodeMirror draft undo must not create global history",
     );
 
     await evaluate(`(() => {
@@ -699,14 +671,10 @@ async function main() {
       selection.addRange(range);
     })()`);
     await client.send("Input.insertText", { text: "x=y\nz=w" });
-    await sleep(220);
-    assertDeepEqual(
-      await values(),
-      ["x=y", "z=w"],
-      "valid source edits should update the visual document live",
-    );
-    await evaluate(`document.querySelector(".document-title-area input")?.focus()`);
-    await sleep(1100);
+    await sleep(180);
+    await click(".source-panel .primary-small-button");
+    assertDeepEqual(await values(), ["x=y", "z=w"], "source apply should replace document");
+    await sleep(300);
     const checkpointCount = await evaluate(`new Promise((resolve, reject) => {
       const request = indexedDB.open("visualtex-history", 1);
       request.onerror = () => reject(request.error);
@@ -723,7 +691,7 @@ async function main() {
       };
     })`);
     if (checkpointCount < 1) {
-      throw new Error(`Source live edit did not persist an L3 checkpoint (${checkpointCount})`);
+      throw new Error(`Source apply did not persist an L3 checkpoint (${checkpointCount})`);
     }
     await undo();
     assertDeepEqual(await values(), ["a=b"], "global undo should restore pre-source document");
