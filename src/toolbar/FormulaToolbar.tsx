@@ -1629,11 +1629,7 @@ export function FormulaToolbar({
             }
             data-category={category}
             aria-pressed={activeCategory === category}
-            onClick={() =>
-              layout === "horizontal"
-                ? scrollToToolbarCategory(category)
-                : setActiveCategory(category)
-            }
+            onClick={() => setActiveCategory(category)}
           >
             {(isEn ? categoryLabelsEn : categoryLabels)[category]}
           </button>
@@ -1641,27 +1637,10 @@ export function FormulaToolbar({
       </nav>
 
       <div
-        className={
-          "template-strip" +
-          (layout === "horizontal" ? " is-continuous-categories" : "")
-        }
+        className="template-strip"
         data-active-category={activeCategory}
         aria-label={isEn ? "Formula templates" : "公式模板"}
       >
-        {layout === "horizontal" ? (
-          categories.map((category) => (
-            <section
-              key={category}
-              className="toolbar-category-section"
-              data-toolbar-category-section={category}
-              aria-label={(isEn ? categoryLabelsEn : categoryLabels)[category]}
-            >
-              {category === "matrix" && renderMatrixBuilder()}
-              {toolbarCommandsByCategory[category].map(renderToolbarCommandButton)}
-            </section>
-          ))
-        ) : (
-          <>
         {activeCategory === "matrix" && (
           <section className="matrix-builder" aria-label={isEn ? "Custom matrix" : "自定义矩阵"}>
             <div className="matrix-options-column">
@@ -1787,8 +1766,6 @@ export function FormulaToolbar({
         )}
 
         {visibleCommands.map(renderToolbarCommandButton)}
-          </>
-        )}
       </div>
         </>
       ) : (

@@ -1,41 +1,5 @@
 /* Web editor parity features synchronized from the post-1.2.4 Windows editor. */
 
-html[data-visualtex-show-line-numbers="true"] .math-editor,
-html[data-visualtex-show-line-numbers="true"] .formula-editor,
-html[data-visualtex-show-line-numbers="true"] .formula-list {
-  counter-reset: visualtex-formula-line;
-}
-
-html[data-visualtex-show-line-numbers="true"] .formula-line {
-  counter-increment: visualtex-formula-line;
-  position: relative;
-}
-
-html[data-visualtex-show-line-numbers="true"] .formula-line::before {
-  content: counter(visualtex-formula-line);
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  min-width: 22px;
-  transform: translateY(-50%);
-  text-align: right;
-  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--text-faint, #777);
-  opacity: 0.78;
-  pointer-events: none;
-  user-select: none;
-}
-
-html[data-visualtex-highlight-active-line="true"] .formula-line:focus-within {
-  background: var(--formula-active-line, var(--accent-soft, rgba(80, 120, 160, 0.08)));
-}
-
-.formula-line .mathfield-host {
-  box-sizing: border-box;
-  padding-left: var(--visualtex-formula-inset-left, 34px);
-  padding-right: var(--visualtex-formula-inset-right, 34px);
-}
-
 .mathfield-host.has-explicit-align-marker {
   overflow: visible;
 }
@@ -50,21 +14,6 @@ html[data-visualtex-highlight-active-line="true"] .formula-line:focus-within {
 .visualtex-align-marker .ML__rule {
   opacity: 0 !important;
   pointer-events: none !important;
-}
-
-.formula-toolbar button,
-.formula-tool-button,
-.formula-tool-tile,
-[data-formula-tool-button] {
-  --visualtex-tool-size: var(--visualtex-formula-tool-button-size, 52px);
-}
-
-.formula-toolbar .formula-tool-button,
-.formula-toolbar [data-formula-tool-button],
-.formula-tool-grid > button {
-  min-width: var(--visualtex-tool-size);
-  min-height: var(--visualtex-tool-size);
-  padding: var(--visualtex-formula-tool-button-padding, 2px);
 }
 
 .math-editor-context-menu {
@@ -156,72 +105,6 @@ html[data-visualtex-highlight-active-line="true"] .formula-line:focus-within {
   border: 1px solid var(--border-default, var(--border));
   border-radius: 6px;
   background: transparent;
-}
-
-html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="tile"] {
-  width: var(--visualtex-classic-tile-width, 320px) !important;
-  min-width: var(--visualtex-classic-tile-width, 320px) !important;
-  max-width: var(--visualtex-classic-tile-width, 320px) !important;
-  position: relative;
-}
-
-html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="dock"] {
-  height: var(--visualtex-classic-dock-height, 240px) !important;
-  min-height: var(--visualtex-classic-dock-height, 240px) !important;
-  position: relative;
-}
-
-.visualtex-classic-tile-resize-handle {
-  position: absolute;
-  z-index: 20;
-  top: 0;
-  right: -5px;
-  bottom: 0;
-  width: 10px;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.visualtex-classic-dock-resize-handle {
-  position: absolute;
-  z-index: 20;
-  left: 0;
-  right: 0;
-  top: -5px;
-  height: 10px;
-  cursor: row-resize;
-  touch-action: none;
-}
-
-.visualtex-classic-tile-resize-handle::after,
-.visualtex-classic-dock-resize-handle::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-  background: var(--accent-primary, var(--accent));
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.visualtex-classic-tile-resize-handle::after {
-  top: 8px;
-  bottom: 8px;
-  left: 4px;
-  width: 2px;
-}
-
-.visualtex-classic-dock-resize-handle::after {
-  left: 8px;
-  right: 8px;
-  top: 4px;
-  height: 2px;
-}
-
-.visualtex-classic-tile-resize-handle:hover::after,
-.visualtex-classic-tile-resize-handle:focus-visible::after,
-.visualtex-classic-dock-resize-handle:hover::after,
-.visualtex-classic-dock-resize-handle:focus-visible::after {
-  opacity: 0.8;
 }
 
 .visualtex-web-keypad-toast {
@@ -1078,102 +961,23 @@ html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="
   }
 }
 
-/* Windows editor parity: configurable formula toolbar sizing. */
-.formula-toolbar {
-  --formula-toolbar-button-size: 52px;
-  --formula-toolbar-button-padding: 2px;
+/* Classic layout resizers preserve the original Web geometry by using the
+   same 300px sidebar and 240px dock defaults. */
+.workspace.is-classic-layout.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) 7px var(--classic-tile-width, 300px);
 }
 
-.template-strip {
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(var(--formula-toolbar-button-size, 52px), 1fr)
-  );
+.classic-editor-pane-body:not(.is-dock-collapsed) {
+  grid-template-rows: minmax(0, 1fr) 7px var(--classic-dock-height, 240px);
 }
 
-.template-button,
-.template-button.is-symbol-large,
-.template-button.is-medium,
-.template-button.is-complex {
-  min-width: 0;
-  width: 100%;
-  height: calc(var(--formula-toolbar-button-size, 52px) - 2px);
-  min-height: calc(var(--formula-toolbar-button-size, 52px) - 2px);
-  padding: var(--formula-toolbar-button-padding, 2px);
-}
-
-.template-button .math-preview,
-.template-button.is-auto-fit .math-preview,
-.template-button.is-symbol-large .math-preview,
-.template-button.is-medium .math-preview,
-.template-button.is-complex .math-preview {
-  font-size: clamp(
-    16px,
-    calc(var(--formula-toolbar-button-size, 52px) * 0.46),
-    32px
-  );
-}
-
-.template-button.is-wide-preview {
-  grid-column: span 2;
-}
-
-.formula-toolbar.is-horizontal .template-strip {
-  grid-auto-columns: var(--formula-toolbar-button-size, 52px);
-  grid-template-rows: repeat(
-    var(--toolbar-row-count, 3),
-    minmax(max(30px, calc(var(--formula-toolbar-button-size, 52px) - 8px)), 1fr)
-  );
-}
-
-.formula-toolbar.is-horizontal .template-button {
-  padding: var(--formula-toolbar-button-padding, 2px);
-}
-
-/* Formula row visibility preferences. */
-.formula-line {
-  min-height: var(--formula-row-height, 69px);
-}
-
-.multi-line-editor.has-line-numbers .formula-line {
-  grid-template-columns: 50px minmax(0, 1fr);
-}
-
-.workspace:not(.has-active-line-highlight) .formula-line:hover,
-.workspace:not(.has-active-line-highlight) .formula-line.is-active,
-.workspace:not(.has-active-line-highlight) .formula-line.is-multi-line-selected,
-.workspace:not(.has-active-line-highlight)
-  .formula-line.is-multi-line-selected.is-active {
-  background: transparent;
-  box-shadow: none;
-}
-
-.workspace.has-active-line-highlight .formula-line:hover {
-  background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
-}
-
-.workspace.has-active-line-highlight .formula-line.is-active {
-  background: color-mix(in srgb, var(--accent-soft) 38%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.workspace.has-active-line-highlight .formula-line.is-multi-line-selected {
-  background: color-mix(in srgb, var(--accent-soft) 58%, transparent);
-}
-
-.editor-pane-scroll > .editor-surface.multi-line-editor {
-  padding-right: var(--formula-area-inset-right, 34px);
-  padding-left: var(--formula-area-inset-left, 34px);
-}
-
-/* Classic layout resize handles. */
 .workspace-panel-resizer {
   position: relative;
   z-index: 12;
   min-width: 0;
   min-height: 0;
   border: 0;
-  background: var(--bg-elevated);
+  background: transparent;
   touch-action: none;
   outline: none;
 }
@@ -1183,8 +987,7 @@ html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="
   position: absolute;
   border-radius: 999px;
   background: var(--border-strong);
-  opacity: 0.72;
-  transition: background-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+  opacity: 0.5;
 }
 
 .workspace-panel-resizer:hover::before,
@@ -1203,11 +1006,6 @@ html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="
   width: 3px;
 }
 
-.classic-tile-resizer:hover::before,
-.classic-tile-resizer:focus-visible::before {
-  transform: scaleX(1.35);
-}
-
 .classic-dock-resizer {
   height: 7px;
   cursor: row-resize;
@@ -1216,11 +1014,6 @@ html[data-visualtex-editor-layout="classic"] [data-visualtex-classic-resizable="
 .classic-dock-resizer::before {
   inset: 2px 10px;
   height: 3px;
-}
-
-.classic-dock-resizer:hover::before,
-.classic-dock-resizer:focus-visible::before {
-  transform: scaleY(1.35);
 }
 
 body[data-workspace-resize="tiles"],
@@ -1233,6 +1026,22 @@ body[data-workspace-resize="dock"],
 body[data-workspace-resize="dock"] * {
   cursor: row-resize !important;
   user-select: none !important;
+}
+
+@media (max-width: 980px) {
+  .workspace.is-classic-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr) 7px clamp(220px, 28vw, 260px);
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace.is-classic-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .classic-tile-resizer {
+    display: none;
+  }
 }
 
 /* Formula tile collapse + registered custom symbols. */
