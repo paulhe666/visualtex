@@ -48,7 +48,7 @@ const downloads: readonly DownloadOption[] = [
     icon: Monitor,
     title: "Windows",
     detail: "Windows 10/11 · x64",
-    href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
+    href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup%20%281%29.exe`,
     action: "下载安装程序",
   },
 ];

@@ -13,7 +13,7 @@ const checks = [
   [landing.includes('href="/editor"'), "The web editor call-to-action is missing"],
   [landing.includes('const VERSION = "1.2.5"'), "The current desktop version is not configured"],
   [landing.includes("_aarch64.dmg"), "The macOS download is missing"],
-  [landing.includes("_x64-setup.exe"), "The Windows download is missing"],
+  [landing.includes("_x64-setup%20%281%29.exe"), "The Windows download is missing"],
   [
     landing.includes("https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}"),
     "The R2 download base is not configured",
