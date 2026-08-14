@@ -1184,6 +1184,12 @@ async function main() {
       return true;
     })()`);
     await clickSelectorWithPointer(client, '[data-formula-selection-color]');
+    await waitForEvaluation(
+      client,
+      `(() => ({ ready: Boolean(document.querySelector('[data-formula-color-popover="color"]')) }))()`,
+      'Office formula color popover mounted',
+    );
+    await client.evaluate(`window.dispatchEvent(new Event('resize'))`);
     const colorPopoverLayout = await waitForEvaluation(
       client,
       `(() => {
@@ -1199,8 +1205,10 @@ async function main() {
           rect.right <= window.innerWidth + 1 &&
           rect.bottom <= window.innerHeight + 1;
         return {
-          ready: visible,
+          ready: visible && popover.dataset.visualtexAutoAvoidAdjusted === 'true',
           visible,
+          autoAdjusted: popover.dataset.visualtexAutoAvoidAdjusted === 'true',
+          matchesAutoSelector: popover.matches('[data-visualtex-floating-layer]'),
           rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
           dockOverflow: dock ? getComputedStyle(dock).overflow : '',
           bodyOverflow: body ? getComputedStyle(body).overflow : '',
@@ -1210,9 +1218,65 @@ async function main() {
       "unclipped Office formula color popover",
     );
     assert.equal(colorPopoverLayout.visible, true);
+    assert.equal(colorPopoverLayout.autoAdjusted, true);
     assert.equal(colorPopoverLayout.dockOverflow, 'visible');
     assert.equal(colorPopoverLayout.bodyOverflow, 'visible');
     assert.equal(colorPopoverLayout.tabsOverflow, 'visible');
+    await client.evaluate(`(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.querySelector('[data-classic-bottom-view="tools"]')?.click();
+      return true;
+    })()`);
+    const compactToolbarLayout = await waitForEvaluation(
+      client,
+      `(() => {
+        const toolbar = document.querySelector('.classic-bottom-toolbar');
+        const tile = toolbar?.querySelector('.template-button');
+        const tab = toolbar?.querySelector('.toolbar-tab');
+        if (!(toolbar instanceof HTMLElement) || !(tile instanceof HTMLElement) || !(tab instanceof HTMLElement)) {
+          return { ready: false };
+        }
+        const tileRect = tile.getBoundingClientRect();
+        const tabRect = tab.getBoundingClientRect();
+        const tabFontSize = Number.parseFloat(getComputedStyle(tab).fontSize || '0');
+        return {
+          ready: tileRect.width <= 46 && tabRect.height <= 26 && tabFontSize <= 11.5,
+          tileWidth: tileRect.width,
+          tileHeight: tileRect.height,
+          tabHeight: tabRect.height,
+          tabFontSize,
+        };
+      })()`,
+      'compact Office formula toolbar density',
+    );
+    assert.ok(compactToolbarLayout.tileWidth <= 46);
+    assert.ok(compactToolbarLayout.tabHeight <= 26);
+    assert.ok(compactToolbarLayout.tabFontSize <= 11.5);
+
+    await clickSelectorWithPointer(client, '.canvas-input-behavior-trigger');
+    const inputBehaviorLayout = await waitForEvaluation(
+      client,
+      `(() => {
+        const popover = document.querySelector('.input-behavior-popover');
+        const tabs = document.querySelector('.classic-bottom-tabs');
+        if (!(popover instanceof HTMLElement) || !(tabs instanceof HTMLElement)) {
+          return { ready: false };
+        }
+        const popoverRect = popover.getBoundingClientRect();
+        const tabsRect = tabs.getBoundingClientRect();
+        const noDockOverlap = popoverRect.bottom <= tabsRect.top - 4;
+        return {
+          ready: noDockOverlap,
+          noDockOverlap,
+          popoverBottom: popoverRect.bottom,
+          tabsTop: tabsRect.top,
+          popoverClientHeight: popover.clientHeight,
+          popoverScrollHeight: popover.scrollHeight,
+        };
+      })()`,
+      'input behavior popover avoids the Office bottom toolbar',
+    );
+    assert.equal(inputBehaviorLayout.noDockOverlap, true);
     await client.evaluate(`(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return true;
@@ -1228,6 +1292,8 @@ async function main() {
         firstToolbarVisual: commonBefore.firstVisual,
         formattingControls,
         colorPopoverLayout,
+        compactToolbarLayout,
+        inputBehaviorLayout,
       }, null, 2));
       console.log('Office editor layout, persistence, toolbar rendering and color-popover regression passed');
       return;

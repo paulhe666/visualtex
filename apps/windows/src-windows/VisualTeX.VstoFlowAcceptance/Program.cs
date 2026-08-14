@@ -403,6 +403,10 @@ internal static partial class Program
             {
                 RunWordFormulaFontAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-inline-fraction-line-grid", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInlineFractionLineGridAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "office-ole-formula-fonts", StringComparison.OrdinalIgnoreCase))
             {
                 RunOleFormulaFontAcceptance(artifactRoot);
@@ -515,6 +519,10 @@ internal static partial class Program
             {
                 RunWordOmmlBoundaryDigitDirect(artifactRoot);
             }
+            else if (string.Equals(mode, "word-omml-anchor-recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlAnchorRecovery(artifactRoot);
+            }
             else if (string.Equals(mode, "word-inline-ole-visual-baseline", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInlineOleVisualBaseline(client, artifactRoot);
@@ -592,6 +600,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-ole-copy-edit", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOleCopyEditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-copy-paste-reedit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordCopyPasteReeditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-copy-paste-reedit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlCopyPasteReeditAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-numbered-formula-performance", StringComparison.OrdinalIgnoreCase))
             {

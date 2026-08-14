@@ -60,44 +60,44 @@ internal static class WordOmmlFormulaStore
         var direct = FindAtRangeFast(document, selectionRange);
         if (direct is not null) return direct;
 
-        Bookmarks? bookmarks = null;
-        try
+        // Slow recovery is used only when the local bookmark probe failed. Work
+        // from a stable FormulaId snapshot instead of iterating the live Word
+        // Bookmarks collection: GetEquationRange may repair a drifted VTOMML by
+        // deleting/recreating that bookmark, which invalidates both collection
+        // indexes and the old Bookmark RCW.
+        var formulaIds = BookmarkedFormulaIds(document);
+        string? bestFormulaId = null;
+        var bestLength = int.MaxValue;
+        foreach (var formulaId in formulaIds)
         {
-            bookmarks = document.Bookmarks;
-            Bookmark? best = null;
-            var bestLength = int.MaxValue;
-            for (var index = 1; index <= bookmarks.Count; index++)
+            Bookmark? bookmark = null;
+            Range? equationRange = null;
+            try
             {
-                Bookmark? bookmark = null;
-                Range? equationRange = null;
-                try
-                {
-                    bookmark = bookmarks[index];
-                    if (!TryGetFormulaId(bookmark, out _)) continue;
-                    try { equationRange = GetEquationRange(bookmark); }
-                    catch { continue; }
-                    var containsCaret = selectionRange.Start == selectionRange.End
-                        && selectionRange.Start >= equationRange.Start
-                        && selectionRange.Start <= equationRange.End;
-                    var overlaps = selectionRange.Start < equationRange.End
-                        && selectionRange.End > equationRange.Start;
-                    if (!containsCaret && !overlaps) continue;
-                    var length = Math.Max(0, equationRange.End - equationRange.Start);
-                    if (length >= bestLength) continue;
-                    Release(best);
-                    best = bookmark;
-                    bookmark = null;
-                    bestLength = length;
-                }
-                finally
-                {
-                    Release(equationRange);
-                    Release(bookmark);
-                }
+                bookmark = FindByFormulaId(document, formulaId);
+                if (bookmark is null) continue;
+                try { equationRange = GetEquationRange(bookmark); }
+                catch { continue; }
+                var containsCaret = selectionRange.Start == selectionRange.End
+                    && selectionRange.Start >= equationRange.Start
+                    && selectionRange.Start <= equationRange.End;
+                var overlaps = selectionRange.Start < equationRange.End
+                    && selectionRange.End > equationRange.Start;
+                if (!containsCaret && !overlaps) continue;
+                var length = Math.Max(0, equationRange.End - equationRange.Start);
+                if (length >= bestLength) continue;
+                bestFormulaId = formulaId;
+                bestLength = length;
             }
-            return best;
+            finally
+            {
+                Release(equationRange);
+                Release(bookmark);
+            }
         }
-        finally { Release(bookmarks); }
+        return bestFormulaId is null
+            ? null
+            : FindByFormulaId(document, bestFormulaId);
     }
 
     private static Bookmark? FindAtRangeFast(
@@ -652,6 +652,20 @@ internal static class WordOmmlFormulaStore
         }
     }
 
+    internal static bool IsCanonicalAnchor(Bookmark? bookmark, Range equationRange)
+    {
+        if (bookmark is null) return false;
+        Range? anchorRange = null;
+        try
+        {
+            anchorRange = bookmark.Range;
+            return anchorRange.Start == equationRange.Start
+                || anchorRange.Start == equationRange.Start - 1;
+        }
+        catch { return false; }
+        finally { Release(anchorRange); }
+    }
+
     internal static Range GetEquationRange(Bookmark bookmark)
     {
         Range? bookmarkRange = null;
@@ -659,6 +673,7 @@ internal static class WordOmmlFormulaStore
         Range? content = null;
         OMaths? maths = null;
         Range? bestRange = null;
+        Bookmark? repairedBookmark = null;
         try
         {
             bookmarkRange = bookmark.Range;
@@ -688,6 +703,7 @@ internal static class WordOmmlFormulaStore
             var storedMetadata = bestRange is null
                 ? TryRead(document, bookmark)
                 : null;
+            var recoveredByFingerprint = false;
             if (bestRange is null
                 && !string.IsNullOrWhiteSpace(storedMetadata?.NativeOmmlFingerprint))
             {
@@ -695,18 +711,60 @@ internal static class WordOmmlFormulaStore
                     document,
                     anchor,
                     storedMetadata!.NativeOmmlFingerprint!);
+                recoveredByFingerprint = bestRange is not null;
+                if (bestRange is null)
+                {
+                    // A collapsed Word bookmark can drift much farther than the
+                    // local recovery window after table/field reconstruction or
+                    // other structural edits. Do not increase the distance and
+                    // guess by proximity: recover across the document only when
+                    // the durable native fingerprint identifies exactly one OMath.
+                    bestRange = FindUniqueEquationRangeByFingerprint(
+                        document,
+                        storedMetadata.NativeOmmlFingerprint!,
+                        requireDisplay: string.Equals(
+                            storedMetadata.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal));
+                    recoveredByFingerprint = bestRange is not null;
+                }
             }
 
             if (bestRange is null)
                 throw new InvalidDataException(
                     "The VisualTeX OMML anchor is no longer adjacent to a Word equation.");
-            ClampToInlineBaselineBookmark(document, bookmark, bestRange);
+
+            // Fingerprint recovery proves which physical OMath owns this logical
+            // formula. Rebind the durable VTOMML bookmark immediately so the next
+            // edit/open does not depend on the same recovery path again. Keep the
+            // repair best-effort for read-only/transient Word states; the verified
+            // equation range remains safe to use for the current operation.
+            if (recoveredByFingerprint
+                && storedMetadata is not null
+                && !document.ReadOnly)
+            {
+                try
+                {
+                    repairedBookmark = Wrap(
+                        document,
+                        bestRange,
+                        storedMetadata,
+                        replaceExisting: true);
+                }
+                catch { }
+            }
+
+            ClampToInlineBaselineBookmark(
+                document,
+                repairedBookmark ?? bookmark,
+                bestRange);
             var result = bestRange;
             bestRange = null;
             return result;
         }
         finally
         {
+            Release(repairedBookmark);
             Release(bestRange);
             Release(maths);
             Release(content);

@@ -260,6 +260,18 @@ export function InputBehaviorMenu() {
         const popoverGap = 6;
         const viewportRight = Math.max(viewportMargin, window.innerWidth - viewportMargin);
         const viewportBottom = Math.max(viewportMargin, window.innerHeight - viewportMargin);
+        const bottomTabs = workspace?.querySelector<HTMLElement>(".classic-bottom-tabs");
+        const bottomTabsRect = bottomTabs?.getBoundingClientRect();
+        const bottomTabsBlockPopover = Boolean(
+          bottomTabsRect &&
+            bottomTabsRect.width > 0 &&
+            bottomTabsRect.height > 0 &&
+            bottomTabsRect.top > triggerRect.bottom + popoverGap &&
+            bottomTabsRect.top < viewportBottom,
+        );
+        const verticalBottomBound = bottomTabsBlockPopover
+          ? Math.max(viewportMargin, bottomTabsRect!.top - popoverGap)
+          : viewportBottom;
         const editorIsUsable = Boolean(
           editorRect && editorRect.width >= 140 && editorRect.height >= 100,
         );
@@ -281,12 +293,12 @@ export function InputBehaviorMenu() {
           : viewportMargin;
         const top = Math.min(
           Math.max(triggerRect.bottom + popoverGap, minimumTop),
-          Math.max(viewportMargin, viewportBottom - 96),
+          Math.max(viewportMargin, verticalBottomBound - 72),
         );
         const preferredMaxHeight = page === "mappings" ? 620 : 560;
         const maxHeight = Math.max(
-          96,
-          Math.min(preferredMaxHeight, viewportBottom - top),
+          72,
+          Math.min(preferredMaxHeight, verticalBottomBound - top),
         );
         const next = {
           left,
@@ -312,6 +324,8 @@ export function InputBehaviorMenu() {
     resizeObserver.observe(trigger);
     const workspace = trigger.closest<HTMLElement>(".workspace");
     if (workspace) resizeObserver.observe(workspace);
+    const bottomDock = workspace?.querySelector<HTMLElement>(".classic-bottom-dock");
+    if (bottomDock) resizeObserver.observe(bottomDock);
     window.addEventListener("resize", updateLayout);
     window.addEventListener("scroll", updateLayout, true);
     updateLayout();

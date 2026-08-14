@@ -10,6 +10,7 @@ import "../../math/customSymbolRendering";
 import { configureOcrTransport } from "../../ocr/ocrService";
 import { officeOcrTransport } from "../api/ocrHttpTransport";
 import { OfficeDialogApp } from "./OfficeDialogApp";
+import { installFloatingLayerAutoAvoidance } from "../../runtime/floatingLayerAutoAvoidance";
 import { DocumentImportApp } from "../documentImport/DocumentImportApp";
 import {
   applyDocumentTheme,
@@ -22,6 +23,7 @@ import {
 } from "../../stores/editorStore";
 
 configureOcrTransport(officeOcrTransport);
+installFloatingLayerAutoAvoidance();
 const injectedTheme = document
   .querySelector<HTMLMetaElement>('meta[name="visualtex-theme"]')
   ?.content;

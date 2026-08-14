@@ -70,6 +70,7 @@ interface Props {
   layout?: ToolbarLayout;
   className?: string;
   stabilizeTileLayout?: boolean;
+  compactDensity?: boolean;
   onCollapseTiles?: () => void;
 }
 
@@ -830,6 +831,7 @@ export function FormulaToolbar({
   layout = "sidebar",
   className = "",
   stabilizeTileLayout = false,
+  compactDensity = false,
   onCollapseTiles,
 }: Props) {
   const [internalActiveView, setInternalActiveView] =
@@ -898,16 +900,22 @@ export function FormulaToolbar({
   const formulaToolButtonPadding = useEditorStore(
     (state) => state.formulaToolButtonPadding,
   );
+  const effectiveFormulaToolButtonSize = compactDensity
+    ? Math.max(34, formulaToolButtonSize - 8)
+    : formulaToolButtonSize;
+  const effectiveFormulaToolButtonPadding = compactDensity
+    ? Math.max(0, formulaToolButtonPadding - 1)
+    : formulaToolButtonPadding;
   const toolbarPreviewInsetRatio = Math.max(
     minimumToolbarPreviewInsetRatio,
     Math.min(
       maximumToolbarPreviewInsetRatio,
-      maximumToolbarPreviewInsetRatio - formulaToolButtonPadding * 0.03,
+      maximumToolbarPreviewInsetRatio - effectiveFormulaToolButtonPadding * 0.03,
     ),
   );
   const toolbarPreviewMaximumScale = Math.min(
     1.55,
-    Math.max(1, formulaToolButtonSize / 42),
+    Math.max(1, effectiveFormulaToolButtonSize / 42),
   );
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
@@ -1290,7 +1298,7 @@ export function FormulaToolbar({
           0,
           strip.clientHeight - paddingTop - paddingBottom,
         );
-        const targetRowHeight = Math.max(30, formulaToolButtonSize - 8);
+        const targetRowHeight = Math.max(26, effectiveFormulaToolButtonSize - 8);
         const nextRowCount = Math.max(
           1,
           Math.floor(
@@ -1318,7 +1326,7 @@ export function FormulaToolbar({
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [activeCategory, activeView, formulaToolButtonSize, layout]);
+  }, [activeCategory, activeView, effectiveFormulaToolButtonSize, layout]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1838,8 +1846,8 @@ export function FormulaToolbar({
       }
       style={
         {
-          "--formula-toolbar-button-size": `${formulaToolButtonSize}px`,
-          "--formula-toolbar-button-padding": `${formulaToolButtonPadding}px`,
+          "--formula-toolbar-button-size": `${effectiveFormulaToolButtonSize}px`,
+          "--formula-toolbar-button-padding": `${effectiveFormulaToolButtonPadding}px`,
           ...(layout === "horizontal"
             ? { "--toolbar-row-count": horizontalRowCount }
             : {}),

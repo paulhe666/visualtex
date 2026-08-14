@@ -223,6 +223,235 @@ internal static partial class Program
             + "typing baseline preserved for trailing prose and paragraph end.");
     }
 
+    private static void RunWordOmmlAnchorRecovery(string artifactRoot)
+    {
+        using var host = new WordSourceContextStressHost();
+        var service = new WordFormulaService(host.Application);
+        var formulaId = Guid.NewGuid().ToString("D");
+        var lineId = Guid.NewGuid().ToString("D");
+        Word.Selection? selection = null;
+        Word.Bookmark? bookmark = null;
+        Word.Bookmark? movedBookmark = null;
+        Word.Bookmark? repairedBookmark = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Range? equationRange = null;
+        Word.Range? driftAnchor = null;
+        Word.Range? repairedAnchor = null;
+        Word.Range? content = null;
+        try
+        {
+            host.Application.Visible = true;
+            RetryRejectedOfficeCall(() => host.Document.Activate());
+            selection = RetryRejectedOfficeCall(() => host.Application.Selection);
+            RetryRejectedOfficeCall(() => selection.SetRange(0, 0));
+
+            var insertSession = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                Host = "word",
+                Mode = "create",
+                FormulaId = formulaId,
+                Title = "Word Formula",
+                DisplayMode = "inline",
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                CodeFormat = "latex",
+                FontSizePt = 11,
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = lineId, Latex = "x^2+y^2=z^2" },
+                },
+            };
+            const string mathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+                + "<msup><mi>x</mi><mn>2</mn></msup><mo>+</mo>"
+                + "<msup><mi>y</mi><mn>2</mn></msup><mo>=</mo>"
+                + "<msup><mi>z</mi><mn>2</mn></msup></math>";
+            service.InsertOmml(insertSession, mathMl);
+
+            bookmark = WordOmmlFormulaStore.FindByFormulaId(host.Document, formulaId)
+                ?? throw new InvalidDataException("Anchor recovery acceptance lost the initial VTOMML bookmark.");
+            var stored = WordOmmlFormulaStore.TryRead(host.Document, bookmark)
+                ?? throw new InvalidDataException("Anchor recovery acceptance lost the initial OMML metadata.");
+            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            var expectedStart = equationRange.Start;
+            var expectedFingerprint = stored.NativeOmmlFingerprint
+                ?? throw new InvalidDataException("Anchor recovery acceptance has no native OMML fingerprint.");
+            var liveFingerprintBeforeDrift = WordOmmlConverter.ComputeOmmlFingerprint(
+                equationRange.WordOpenXML);
+            var initiallySynchronized = string.Equals(
+                expectedFingerprint,
+                liveFingerprintBeforeDrift,
+                StringComparison.OrdinalIgnoreCase);
+            Console.WriteLine(
+                "[Word OMML anchor] stored/live fingerprint equal before drift="
+                + initiallySynchronized);
+            if (!initiallySynchronized)
+                throw new InvalidDataException(
+                    "A newly inserted OMML formula persisted a provisional fingerprint instead of the final Word OMath fingerprint.");
+
+            // Reproduce a document created by an older build: its CustomXML
+            // metadata contains the converter-side fingerprint even though the
+            // VTOMML bookmark is still healthy. Opening that formula must migrate
+            // the metadata to the live Word fingerprint immediately.
+            var legacyMetadata = FormulaMetadataCodec.Decode(
+                FormulaMetadataCodec.Encode(stored))
+                ?? throw new InvalidDataException("Could not clone legacy OMML metadata.");
+            legacyMetadata.NativeOmmlFingerprint = new string('0', 64);
+            WordOmmlFormulaStore.Save(host.Document, legacyMetadata);
+            var sessionSnapshot = WordOmmlNativeSource.RefreshForVisualTeX(
+                host.Document,
+                bookmark,
+                legacyMetadata);
+            var migratedMetadata = WordOmmlFormulaStore.TryRead(host.Document, bookmark)
+                ?? throw new InvalidDataException("Legacy OMML fingerprint migration lost metadata.");
+            if (!string.Equals(
+                    migratedMetadata.NativeOmmlFingerprint,
+                    liveFingerprintBeforeDrift,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "Opening a legacy OMML formula did not persist its live Word fingerprint.");
+
+            // Capture the same immutable range/fingerprint that the real editor
+            // carries in its Session. Then deliberately stale the CustomXML again
+            // and move VTOMML far away before commit. This reproduces the reported
+            // case where the editor opened successfully but Apply later failed.
+            var sourceObjectId =
+                $"visualtex-word-vsto-range:{equationRange.Start}:{equationRange.End}";
+            var staleAfterOpen = FormulaMetadataCodec.Decode(
+                FormulaMetadataCodec.Encode(migratedMetadata))
+                ?? throw new InvalidDataException("Could not clone stale commit metadata.");
+            staleAfterOpen.NativeOmmlFingerprint = new string('f', 64);
+            WordOmmlFormulaStore.Save(host.Document, staleAfterOpen);
+
+            RetryRejectedOfficeCall(() => selection.SetRange(host.Document.Content.End - 1, host.Document.Content.End - 1));
+            RetryRejectedOfficeCall(() => selection.TypeText(new string('A', 1400)));
+
+            var bookmarkName = WordOmmlFormulaStore.BookmarkName(formulaId);
+            RetryRejectedOfficeCall(() => bookmark.Delete());
+            Release(bookmark);
+            bookmark = null;
+            content = RetryRejectedOfficeCall(() => host.Document.Content);
+            var driftPosition = Math.Max(content.Start, content.End - 2);
+            driftAnchor = RetryRejectedOfficeCall(() => host.Document.Range(driftPosition, driftPosition));
+            bookmarks = RetryRejectedOfficeCall(() => host.Document.Bookmarks);
+            movedBookmark = RetryRejectedOfficeCall(() => bookmarks.Add(bookmarkName, driftAnchor));
+            if (Math.Abs(driftAnchor.Start - expectedStart) <= 512)
+                throw new InvalidDataException("Anchor recovery acceptance did not move the VTOMML bookmark far enough.");
+
+            var staleLookupFailed = false;
+            try
+            {
+                Release(equationRange);
+                equationRange = WordOmmlFormulaStore.GetEquationRange(movedBookmark);
+            }
+            catch (InvalidDataException error) when (
+                error.Message.IndexOf("OMML anchor", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                staleLookupFailed = true;
+            }
+            if (!staleLookupFailed)
+                throw new InvalidDataException(
+                    "The legacy stale-fingerprint setup did not reproduce the OMML-anchor lookup failure.");
+
+            const string editedMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+                + "<msup><mi>x</mi><mn>2</mn></msup><mo>+</mo>"
+                + "<msup><mi>y</mi><mn>2</mn></msup><mo>=</mo>"
+                + "<msup><mi>z</mi><mn>2</mn></msup><mo>+</mo><mn>1</mn></math>";
+            var editSession = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                Host = "word",
+                Mode = "edit",
+                FormulaId = formulaId,
+                SourceObjectId = sourceObjectId,
+                Title = "Word Formula",
+                DisplayMode = "inline",
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                CodeFormat = "latex",
+                FontSizePt = 11,
+                OriginalMetadata = sessionSnapshot,
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = lineId, Latex = "x^2+y^2=z^2+1" },
+                },
+            };
+            service.ReplaceOmml(editSession, editedMathMl);
+
+            Release(movedBookmark);
+            movedBookmark = null;
+            repairedBookmark = WordOmmlFormulaStore.FindByFormulaId(host.Document, formulaId)
+                ?? throw new InvalidDataException("Commit-time OMML recovery lost the formula bookmark.");
+            Release(equationRange);
+            equationRange = WordOmmlFormulaStore.GetEquationRange(repairedBookmark);
+            var committedMetadata = WordOmmlFormulaStore.TryRead(host.Document, repairedBookmark)
+                ?? throw new InvalidDataException("Commit-time OMML recovery lost metadata.");
+            var committedFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                equationRange.WordOpenXML);
+            if (!string.Equals(
+                    committedMetadata.NativeOmmlFingerprint,
+                    committedFingerprint,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "OMML edit commit did not persist the final live Word fingerprint.");
+            repairedAnchor = repairedBookmark.Range;
+            if (Math.Abs(repairedAnchor.Start - equationRange.Start) > 1)
+                throw new InvalidDataException(
+                    "OMML edit commit did not rebind VTOMML to the final equation start.");
+
+            // Finally drift the now-correct anchor again beyond the local 512
+            // character recovery window. With a valid final fingerprint the
+            // generic lookup must recover the unique OMath across the document
+            // and permanently repair VTOMML without restarting Word.
+            RetryRejectedOfficeCall(() => repairedBookmark.Delete());
+            Release(repairedBookmark);
+            repairedBookmark = null;
+            Release(repairedAnchor);
+            repairedAnchor = null;
+            Release(driftAnchor);
+            driftAnchor = RetryRejectedOfficeCall(() => host.Document.Range(driftPosition, driftPosition));
+            movedBookmark = RetryRejectedOfficeCall(() => bookmarks.Add(bookmarkName, driftAnchor));
+            repairedBookmark = WordOmmlFormulaStore.FindAtRange(host.Document, equationRange)
+                ?? throw new InvalidDataException(
+                    "A drifted VTOMML formula could not be rediscovered from its visible OMath range.");
+            Release(movedBookmark);
+            movedBookmark = null;
+            Release(equationRange);
+            equationRange = WordOmmlFormulaStore.GetEquationRange(repairedBookmark);
+            var recoveredFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(equationRange.WordOpenXML);
+            if (!string.Equals(
+                    recoveredFingerprint,
+                    committedFingerprint,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Full-document anchor recovery resolved the wrong native equation.");
+
+            repairedAnchor = repairedBookmark.Range;
+            if (Math.Abs(repairedAnchor.Start - equationRange.Start) > 1)
+                throw new InvalidDataException(
+                    $"Full-document recovery returned the equation but left VTOMML drifted by {Math.Abs(repairedAnchor.Start - equationRange.Start)} characters.");
+
+            var artifactPath = Path.Combine(artifactRoot, "VisualTeX-Word-OMML-Anchor-Recovery.docx");
+            RetryRejectedOfficeCall(() => host.Document.SaveAs2(
+                artifactPath,
+                Word.WdSaveFormat.wdFormatXMLDocument));
+            Console.WriteLine(
+                "[Word OMML anchor] Drifted VTOMML bookmark recovered by native fingerprint and rebound to the equation.");
+            Console.WriteLine("[Word OMML anchor] Artifact: " + artifactPath);
+        }
+        finally
+        {
+            Release(repairedAnchor);
+            Release(content);
+            Release(driftAnchor);
+            Release(equationRange);
+            Release(repairedBookmark);
+            Release(movedBookmark);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(selection);
+        }
+    }
+
     private static void RunWordOmmlBoundaryDigitDirect(string artifactRoot)
     {
         using var host = new WordSourceContextStressHost();

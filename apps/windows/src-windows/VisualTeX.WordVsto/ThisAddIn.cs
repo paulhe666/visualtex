@@ -224,12 +224,14 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private WordDoubleClickHook? _doubleClickHook;
     private static readonly object BulkAcceptanceLogGate = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly object _activeSessionOperationGate = new();
     private readonly object _nativeOleTargetGate = new();
     private readonly object _mouseDoubleClickGate = new();
     private CancellationTokenSource? _lifetime;
     private string _lastDoubleClickFormulaId = string.Empty;
     private DateTimeOffset _lastDoubleClickAt;
     private string? _activeSessionId;
+    private CancellationTokenSource? _activeSessionCancellation;
     private bool _nativeOleTargetActive;
     private int _nativeOleTargetLeft;
     private int _nativeOleTargetTop;
@@ -820,14 +822,168 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         bool conversionOnly = false)
     {
         var lifetime = _lifetime;
-        if (lifetime is null || lifetime.IsCancellationRequested) return;
-        _ = RunSessionAsync(
+        if (lifetime is null || lifetime.IsCancellationRequested)
+        {
+            SetStatus("VisualTeX Word 插件正在重新初始化，请稍后再试。");
+            WordDoubleClickHook.TraceMessage("ribbon-session-rejected-addin-lifetime-unavailable");
+            return;
+        }
+        _ = ObserveRibbonSessionTaskAsync(RunSessionAsync(
             mode,
             displayMode,
             requestedObjectMode,
             capturedSelection,
             conversionOnly,
-            lifetime.Token);
+            lifetime.Token));
+    }
+
+    private async Task ObserveRibbonSessionTaskAsync(Task task)
+    {
+        try { await task.ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        {
+            // Add-in shutdown can cancel before RunSessionAsync acquires its gate.
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage($"ribbon-session-unobserved-failure: {error}");
+            SetStatus($"VisualTeX Word 插件操作失败：{error.Message}");
+        }
+    }
+
+    private void RegisterActiveSessionOperation(CancellationTokenSource operationCancellation)
+    {
+        lock (_activeSessionOperationGate)
+        {
+            _activeSessionCancellation = operationCancellation;
+            _activeSessionId = null;
+        }
+    }
+
+    private void SetActiveSessionOperationId(
+        CancellationTokenSource operationCancellation,
+        string sessionId)
+    {
+        lock (_activeSessionOperationGate)
+        {
+            if (!ReferenceEquals(_activeSessionCancellation, operationCancellation)) return;
+            _activeSessionId = sessionId;
+        }
+    }
+
+    private void ClearActiveSessionOperation(CancellationTokenSource operationCancellation)
+    {
+        lock (_activeSessionOperationGate)
+        {
+            if (!ReferenceEquals(_activeSessionCancellation, operationCancellation)) return;
+            _activeSessionCancellation = null;
+            _activeSessionId = null;
+        }
+    }
+
+    private bool CancelStaleActiveSessionOperation(string expectedSessionId)
+    {
+        CancellationTokenSource? cancellation = null;
+        lock (_activeSessionOperationGate)
+        {
+            if (!string.Equals(_activeSessionId, expectedSessionId, StringComparison.Ordinal)
+                || _activeSessionCancellation is null)
+                return false;
+            cancellation = _activeSessionCancellation;
+        }
+        try { cancellation.Cancel(); }
+        catch (ObjectDisposedException) { }
+        return true;
+    }
+
+    private static bool IsMissingSessionError(Exception error) =>
+        error.Message.IndexOf("(404)", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private async Task<bool> TryRecoverBusySessionAsync(CancellationToken cancellationToken)
+    {
+        string? activeSessionId;
+        lock (_activeSessionOperationGate) activeSessionId = _activeSessionId;
+        var client = _sessionClient;
+        if (string.IsNullOrWhiteSpace(activeSessionId) || client is null)
+        {
+            SetStatus("VisualTeX 正在准备编辑窗口，请稍候再试。");
+            return false;
+        }
+
+        OfficeSessionDocument? activeSession = null;
+        try
+        {
+            using var probeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            probeTimeout.CancelAfter(TimeSpan.FromSeconds(2));
+            activeSession = await client.GetSessionAsync(activeSessionId!, probeTimeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (IsMissingSessionError(error))
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"ribbon-stale-session-missing sessionId={activeSessionId}");
+            if (!CancelStaleActiveSessionOperation(activeSessionId!)) return false;
+            SetStatus("检测到已失效的 VisualTeX 编辑任务，正在自动恢复当前操作…");
+            return await _operationGate.WaitAsync(
+                    TimeSpan.FromSeconds(4),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            SetStatus("已有 VisualTeX 编辑任务正在响应，请稍候再试。");
+            return false;
+        }
+        catch (Exception error)
+        {
+            SetStatus($"已有 VisualTeX 编辑任务，但状态检查失败：{error.Message}");
+            return false;
+        }
+
+        if (activeSession.Status is "completed" or "cancelled" or "failed")
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"ribbon-stale-session-terminal sessionId={activeSessionId} status={activeSession.Status}");
+            if (!CancelStaleActiveSessionOperation(activeSessionId!)) return false;
+            SetStatus("检测到已结束但未释放的 VisualTeX 编辑任务，正在自动恢复当前操作…");
+            return await _operationGate.WaitAsync(
+                    TimeSpan.FromSeconds(4),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (string.Equals(activeSession.Status, "committing", StringComparison.Ordinal))
+        {
+            SetStatus("VisualTeX 正在把上一条公式写入 Word，请稍候再试。");
+            return false;
+        }
+
+        try
+        {
+            GrantVisualTeXForegroundActivation();
+            using var openTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            openTimeout.CancelAfter(TimeSpan.FromSeconds(3));
+            await client.OpenEditorAsync(activeSessionId!, openTimeout.Token).ConfigureAwait(false);
+            SetStatus("已有 VisualTeX 编辑任务，已将编辑窗口切换到前台。");
+        }
+        catch (Exception error) when (IsMissingSessionError(error))
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"ribbon-stale-session-disappeared-before-open sessionId={activeSessionId}");
+            if (!CancelStaleActiveSessionOperation(activeSessionId!)) return false;
+            SetStatus("检测到编辑任务已失效，正在自动恢复当前操作…");
+            return await _operationGate.WaitAsync(
+                    TimeSpan.FromSeconds(4),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            // The Session still exists, so never cancel it merely because its
+            // window failed to foreground: it may contain unsaved user edits.
+            SetStatus($"已有编辑任务，但无法置前窗口：{error.Message}");
+        }
+        return false;
     }
 
     private async Task RunSessionAsync(
@@ -838,31 +994,22 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         bool conversionOnly,
         CancellationToken cancellationToken)
     {
-        if (!await _operationGate.WaitAsync(
+        var lifetimeCancellationToken = cancellationToken;
+        var operationGateAcquired = await _operationGate.WaitAsync(
                 TimeSpan.FromSeconds(2),
-                cancellationToken).ConfigureAwait(false))
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!operationGateAcquired)
         {
-            var activeSessionId = Volatile.Read(ref _activeSessionId);
-            if (!string.IsNullOrWhiteSpace(activeSessionId) && _sessionClient is not null)
-            {
-                try
-                {
-                    GrantVisualTeXForegroundActivation();
-                    await _sessionClient.OpenEditorAsync(activeSessionId!, cancellationToken)
-                        .ConfigureAwait(false);
-                    SetStatus("已有 VisualTeX 编辑任务，已将编辑窗口切换到前台。");
-                }
-                catch (Exception error)
-                {
-                    SetStatus($"已有编辑任务，但无法置前窗口：{error.Message}");
-                }
-            }
-            else
-            {
-                SetStatus("VisualTeX 正在准备编辑窗口，请稍候再试。");
-            }
-            return;
+            operationGateAcquired = await TryRecoverBusySessionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!operationGateAcquired) return;
         }
+
+        var operationCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        RegisterActiveSessionOperation(operationCancellation);
+        cancellationToken = operationCancellation.Token;
 
         var openPerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
@@ -955,7 +1102,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var session = await client.CreateSessionAsync(request, cancellationToken).ConfigureAwait(false);
             TraceOpenPerformance("create-session");
             sessionId = session.Id;
-            Volatile.Write(ref _activeSessionId, session.Id);
+            SetActiveSessionOperationId(operationCancellation, session.Id);
             if (conversionOnly)
             {
                 await client.OpenConverterAsync(session.Id, cancellationToken)
@@ -1080,7 +1227,13 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         }
         catch (OperationCanceledException)
         {
-            SetStatus("VisualTeX 操作已取消。");
+            if (lifetimeCancellationToken.IsCancellationRequested)
+                SetStatus("VisualTeX 操作已取消。");
+            else if (operationCancellation.IsCancellationRequested)
+                WordDoubleClickHook.TraceMessage(
+                    $"ribbon-stale-session-local-waiter-cancelled sessionId={sessionId ?? "<pending>"}");
+            else
+                SetStatus("VisualTeX 操作已取消。");
         }
         catch (Exception error)
         {
@@ -1109,12 +1262,8 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             {
                 try { File.Delete(imagePath); } catch { }
             }
-            if (sessionId is not null
-                && string.Equals(
-                    Volatile.Read(ref _activeSessionId),
-                    sessionId,
-                    StringComparison.Ordinal))
-                Volatile.Write(ref _activeSessionId, null);
+            ClearActiveSessionOperation(operationCancellation);
+            operationCancellation.Dispose();
             _operationGate.Release();
         }
     }
@@ -2404,6 +2553,15 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private void Dispose()
     {
         _lifetime?.Cancel();
+        CancellationTokenSource? activeOperationCancellation = null;
+        lock (_activeSessionOperationGate)
+        {
+            activeOperationCancellation = _activeSessionCancellation;
+            _activeSessionCancellation = null;
+            _activeSessionId = null;
+        }
+        try { activeOperationCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
         if (_application is not null)
         {
             try { _application.WindowBeforeDoubleClick -= OnWindowBeforeDoubleClick; } catch { }
@@ -2420,7 +2578,6 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         _dispatcher = null;
         _formulaService = null;
         _lifetime = null;
-        Volatile.Write(ref _activeSessionId, null);
         _ribbonUi = null;
         if (_comAddIn is not null)
         {

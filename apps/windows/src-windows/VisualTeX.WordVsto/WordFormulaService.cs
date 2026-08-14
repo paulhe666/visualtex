@@ -309,6 +309,44 @@ internal sealed class WordFormulaService
         }
     }
 
+    private static void BindOleIdentityBookmark(InlineShape shape, string formulaId)
+    {
+        Range? shapeRange = null;
+        Document? document = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? existing = null;
+        Bookmark? bound = null;
+        try
+        {
+            shapeRange = shape.Range;
+            document = shapeRange.Document;
+            if (document.ReadOnly) return;
+            bookmarks = document.Bookmarks;
+            var name = WordFormulaMetadataReader.IdentityBookmarkName(formulaId);
+            if (bookmarks.Exists(name))
+            {
+                existing = bookmarks[name];
+                existing.Delete();
+                Release(existing);
+                existing = null;
+            }
+            bound = bookmarks.Add(name, shapeRange);
+        }
+        catch
+        {
+            // Embedded metadata remains the source of truth. If Word rejects the
+            // bookmark write, first read will retry the full duplicate-repair path.
+        }
+        finally
+        {
+            Release(bound);
+            Release(existing);
+            Release(bookmarks);
+            Release(document);
+            Release(shapeRange);
+        }
+    }
+
     private static FormulaMetadata RekeyCopiedInlineFormula(
         Document document,
         InlineShape shape,
@@ -325,6 +363,15 @@ internal sealed class WordFormulaService
             WordFormulaMetadataReader.IdentityBookmarkName(newFormulaId),
             shapeRange);
         Release(identityBookmark);
+
+        // A copied OLE object still contains the source object's embedded
+        // FormulaId. The identity bookmark makes the current Word session see
+        // the copy as independent, but relying on that bookmark alone is not
+        // durable enough: some Word paste/save paths can drop or move bookmarks.
+        // Persist the re-key into the embedded VisualTeX object as well, with the
+        // shape cache as a fallback if a dormant pasted OLE cannot be activated.
+        try { WordFormulaMetadataReader.Write(shape, rekeyed); }
+        catch { WordFormulaMetadataReader.CacheMetadata(shape, rekeyed); }
 
         if (rekeyed.Numbered
             && string.Equals(rekeyed.DisplayMode, "block", StringComparison.Ordinal))
@@ -1551,6 +1598,10 @@ internal sealed class WordFormulaService
                 }
                 finally { Release(shapeRange); }
             }
+            // Seed a durable identity bookmark before control returns to Word.
+            // This is a known-new object, so bind it directly in O(1) rather
+            // than running the duplicate-copy scan used for unknown pasted OLE.
+            BindOleIdentityBookmark(shape, metadata.FormulaId);
             return Result(session, document);
         }
         catch
@@ -1658,14 +1709,10 @@ internal sealed class WordFormulaService
                 ref performanceCheckpoint);
             ApplyOmmlTypography(equationRange, session.FontSizePt, metadata);
             metadata.NativeOmmlFingerprint = sourceFingerprint;
+            // The bookmark is needed by inline boundary cleanup, but metadata is
+            // intentionally not persisted yet: Word can still normalize the OMath
+            // while the surrounding layout is finalized.
             bookmark = WordOmmlFormulaStore.Wrap(document, equationRange, metadata);
-            WordOmmlFormulaStore.SaveNew(document, metadata);
-            metadataSaved = true;
-            TraceAcceptancePerformance(
-                "InsertOmml",
-                "save-new-metadata",
-                performanceWatch,
-                ref performanceCheckpoint);
             if (session.DisplayMode == "inline")
             {
                 FinalizeInlineOmmlBoundary(
@@ -1701,6 +1748,46 @@ internal sealed class WordFormulaService
                     MoveSelectionAfterDisplayFormula(selection, equationRange);
                 }
             }
+            TraceAcceptancePerformance(
+                "InsertOmml",
+                "post-reconcile-layout",
+                performanceWatch,
+                ref performanceCheckpoint);
+
+            // Word can normalize the imported OMML again while typography,
+            // inline-boundary cleanup, or numbered layout is finalized. The
+            // converter-side source fingerprint is therefore only provisional.
+            // Persist the fingerprint of the final native OMath and rebind the
+            // durable VTOMML anchor after every structural mutation has settled.
+            WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                metadata,
+                equationRange);
+            TraceAcceptancePerformance(
+                "InsertOmml",
+                "final-fingerprint",
+                performanceWatch,
+                ref performanceCheckpoint);
+            if (!WordOmmlFormulaStore.IsCanonicalAnchor(bookmark, equationRange))
+            {
+                Release(bookmark);
+                bookmark = WordOmmlFormulaStore.Wrap(
+                    document,
+                    equationRange,
+                    metadata,
+                    replaceExisting: true);
+            }
+            TraceAcceptancePerformance(
+                "InsertOmml",
+                "final-anchor",
+                performanceWatch,
+                ref performanceCheckpoint);
+            WordOmmlFormulaStore.SaveNew(document, metadata);
+            metadataSaved = true;
+            TraceAcceptancePerformance(
+                "InsertOmml",
+                "final-metadata",
+                performanceWatch,
+                ref performanceCheckpoint);
             return Result(session, document);
         }
         catch
@@ -4522,9 +4609,9 @@ internal sealed class WordFormulaService
                 TraceOmmlStage("wrap-bookmark");
                 if (ommlBatchSource is not null && deferredOmmlMetadata is not null)
                     deferredOmmlMetadata.Add(metadata);
-                else
-                    WordOmmlFormulaStore.Save(document, metadata);
-                TraceOmmlStage("metadata");
+                // Do not persist the converter-side fingerprint yet. The native
+                // OMath can still change during boundary/layout finalization.
+                TraceOmmlStage("metadata-deferred");
                 if (display)
                 {
                     TryReconcileOmml(document, bookmark, equationRange, metadata);
@@ -4547,6 +4634,27 @@ internal sealed class WordFormulaService
                         moveCaretOutsideMath: true);
                 }
                 TraceOmmlStage("finalize-boundary");
+
+                // The Word-native equation may be normalized after insertion by
+                // BuildUp, typography, boundary cleanup, or display layout. Stamp
+                // the live final OMath rather than retaining the converter's
+                // provisional source fingerprint, and repair the collapsed anchor
+                // to the equation's final start before the operation returns.
+                WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                    metadata,
+                    equationRange);
+                if (!WordOmmlFormulaStore.IsCanonicalAnchor(bookmark, equationRange))
+                {
+                    Release(bookmark);
+                    bookmark = WordOmmlFormulaStore.Wrap(
+                        document,
+                        equationRange,
+                        metadata,
+                        replaceExisting: true);
+                }
+                if (ommlBatchSource is null || deferredOmmlMetadata is null)
+                    WordOmmlFormulaStore.SaveNew(document, metadata);
+                TraceOmmlStage("finalize-identity");
                 return;
             }
 
@@ -4592,6 +4700,7 @@ internal sealed class WordFormulaService
             {
                 RestoreTypingBaselineAfter(shape);
             }
+            BindOleIdentityBookmark(shape, metadata.FormulaId);
         }
         catch
         {
@@ -5150,7 +5259,9 @@ internal sealed class WordFormulaService
                         document,
                         oldBookmark,
                         session.SourceObjectId,
-                        originalMetadata);
+                        PreferSessionOmmlResolutionMetadata(
+                            originalMetadata,
+                            session.OriginalMetadata));
                 }
                 else
                 {
@@ -5257,6 +5368,7 @@ internal sealed class WordFormulaService
                 // every InlineShape in a large document; duplicate the live
                 // object range directly instead.
                 finalSelection = oldShape.Range.Duplicate;
+                BindOleIdentityBookmark(oldShape, metadata.FormulaId);
                 TraceAcceptancePerformance(
                     "ReplaceOle",
                     "selection",
@@ -5336,6 +5448,7 @@ internal sealed class WordFormulaService
                     document,
                     metadata.FormulaId);
             }
+            BindOleIdentityBookmark(replacement, metadata.FormulaId);
             return Result(session, document);
         }
         catch
@@ -5508,7 +5621,9 @@ internal sealed class WordFormulaService
                         document,
                         oldBookmark,
                         session.SourceObjectId,
-                        originalOmmlMetadata);
+                        PreferSessionOmmlResolutionMetadata(
+                            originalOmmlMetadata,
+                            session.OriginalMetadata));
                 }
                 else
                 {
@@ -5606,11 +5721,18 @@ internal sealed class WordFormulaService
                 performanceWatch,
                 ref performanceCheckpoint);
             replacement = WordOmmlFormulaStore.Wrap(document, equationRange, metadata);
-            WordOmmlFormulaStore.Save(document, metadata);
-            metadataSaved = true;
+            // An OLE -> OMML conversion has no pre-existing CustomXML fallback,
+            // so persist provisional metadata before deleting the source OLE. A
+            // normal OMML edit keeps its old durable metadata until the final
+            // Word-normalized fingerprint is ready below.
+            if (oldShape is not null)
+            {
+                WordOmmlFormulaStore.Save(document, metadata);
+                metadataSaved = true;
+            }
             TraceAcceptancePerformance(
                 "ReplaceOmml",
-                "save-metadata",
+                "protect-source-metadata",
                 performanceWatch,
                 ref performanceCheckpoint);
 
@@ -5662,6 +5784,30 @@ internal sealed class WordFormulaService
             TraceAcceptancePerformance(
                 "ReplaceOmml",
                 "reconcile",
+                performanceWatch,
+                ref performanceCheckpoint);
+
+            // Save identity only after Word has finished its final OMath/layout
+            // normalization. Otherwise the stored fingerprint can already be
+            // stale before the editor is opened again, and a later bookmark
+            // drift becomes unrecoverable.
+            WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                metadata,
+                equationRange);
+            if (!WordOmmlFormulaStore.IsCanonicalAnchor(replacement, equationRange))
+            {
+                Release(replacement);
+                replacement = WordOmmlFormulaStore.Wrap(
+                    document,
+                    equationRange,
+                    metadata,
+                    replaceExisting: true);
+            }
+            WordOmmlFormulaStore.Save(document, metadata);
+            metadataSaved = true;
+            TraceAcceptancePerformance(
+                "ReplaceOmml",
+                "finalize-identity",
                 performanceWatch,
                 ref performanceCheckpoint);
             finalSelection = equationRange.Duplicate;
@@ -6325,6 +6471,88 @@ internal sealed class WordFormulaService
             try { font.NameFarEast = chineseFont; } catch { }
         }
         finally { Release(font); }
+
+        if (string.Equals(metadata.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase))
+            StabilizeInlineOmmlFractionLineGrid(equationRange);
+    }
+
+    private static void StabilizeInlineOmmlFractionLineGrid(Range equationRange)
+    {
+        OMaths? maths = null;
+        OMath? math = null;
+        Sections? sections = null;
+        Section? section = null;
+        PageSetup? pageSetup = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        ParagraphFormat? paragraphFormat = null;
+        try
+        {
+            maths = equationRange.OMaths;
+            if (maths.Count != 1) return;
+            math = maths[1];
+            if (math.Type != WdOMathType.wdOMathInline) return;
+
+            sections = equationRange.Sections;
+            if (sections.Count == 0) return;
+            section = sections[1];
+            pageSetup = section.PageSetup;
+            if (pageSetup.LayoutMode is not (
+                    WdLayoutMode.wdLayoutModeLineGrid
+                    or WdLayoutMode.wdLayoutModeGrid
+                    or WdLayoutMode.wdLayoutModeGenko))
+                return;
+            if (pageSetup.LinesPage <= 0) return;
+
+            var equationXml = WordOmmlConverter.ExtractSingleOMath(equationRange.WordOpenXML);
+            var equation = XDocument.Parse(equationXml, LoadOptions.None);
+            const string officeMathNamespace =
+                "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            if (!equation.Descendants(XName.Get("f", officeMathNamespace)).Any())
+                return;
+
+            paragraphs = equationRange.Paragraphs;
+            if (paragraphs.Count == 0) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            paragraphFormat = paragraphRange.ParagraphFormat;
+            if (paragraphFormat.DisableLineHeightGrid == -1) return;
+
+            // Word can quantize an inline stacked fraction to an extra document-
+            // grid row when a descender (for example lowercase p/g/q/y) crosses
+            // a line-grid threshold. The equation itself is still valid, but its
+            // line box can suddenly double. Disable only line-grid snapping for
+            // this paragraph; preserve its line-spacing rule, spacing before/
+            // after, indents and all other user formatting.
+            paragraphFormat.DisableLineHeightGrid = -1;
+        }
+        catch (COMException)
+        {
+            // Layout-grid compatibility is protective. Unsupported section/page
+            // settings must never invalidate an already inserted native OMath.
+        }
+        catch (InvalidDataException)
+        {
+            // If Word exposes incomplete OpenXML during a transient layout pass,
+            // keep the native equation rather than failing the Office operation.
+        }
+        catch (System.Xml.XmlException)
+        {
+            // A transient WordOpenXML snapshot must not invalidate the formula.
+        }
+        finally
+        {
+            Release(paragraphFormat);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(pageSetup);
+            Release(section);
+            Release(sections);
+            Release(math);
+            Release(maths);
+        }
     }
 
     private static string ResolveWordFormulaLetterFont(string? preference)
@@ -8027,6 +8255,21 @@ internal sealed class WordFormulaService
 
     private static string RangeReference(Range range) =>
         $"{RangeReferencePrefix}{range.Start}:{range.End}";
+
+    private static FormulaMetadata? PreferSessionOmmlResolutionMetadata(
+        FormulaMetadata? storedMetadata,
+        FormulaMetadata? sessionSnapshot)
+    {
+        if (sessionSnapshot is not null
+            && !string.IsNullOrWhiteSpace(sessionSnapshot.NativeOmmlFingerprint)
+            && (storedMetadata is null
+                || string.Equals(
+                    storedMetadata.FormulaId,
+                    sessionSnapshot.FormulaId,
+                    StringComparison.OrdinalIgnoreCase)))
+            return sessionSnapshot;
+        return storedMetadata ?? sessionSnapshot;
+    }
 
     private static Range ResolveOmmlEquationRange(
         Document document,

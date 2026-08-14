@@ -97,6 +97,23 @@ internal static class WordOmmlNativeSource
             refreshed.CodeFormat = "raw";
             refreshed.NativeOmmlFingerprint = fingerprint;
             refreshed.Validate();
+
+            // Older VisualTeX builds persisted the converter-side OMML
+            // fingerprint before Word finished normalizing the native equation.
+            // Once an explicit VisualTeX read has resolved the physical OMath,
+            // persist the live fingerprint so a later VTOMML bookmark drift can
+            // be recovered without relying on the old anchor coordinates.
+            if (!document.ReadOnly)
+            {
+                try { WordOmmlFormulaStore.Save(document, refreshed); }
+                catch
+                {
+                    // The current edit can still use the refreshed in-memory
+                    // metadata. Commit-time range resolution also prefers this
+                    // Session snapshot, so a transient CustomXML write refusal
+                    // must not make the editor unavailable.
+                }
+            }
             return refreshed;
         }
         finally
@@ -118,6 +135,19 @@ internal static class WordOmmlNativeSource
                     metadata.FormulaId));
         }
         finally { Release(document); }
+    }
+
+    internal static void StampFingerprintFromResolvedRange(
+        FormulaMetadata metadata,
+        Range equationRange)
+    {
+        // Callers use this only while they still own the complete live OMath
+        // Range returned by WordOmmlConverter/OMath.Range. Avoid constructing a
+        // second document probe and enumerating bookmarks merely to serialize the
+        // same equation again; this path runs after Word's final normalization and
+        // is important for large numbered/redraw workloads.
+        metadata.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+            equationRange.WordOpenXML);
     }
 
     internal static string ReadCompleteEquationWordOpenXml(

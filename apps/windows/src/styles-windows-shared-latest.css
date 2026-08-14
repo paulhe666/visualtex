@@ -2668,6 +2668,80 @@
   container-type: inline-size;
 }
 
+/* Keep the Office editor's bottom tools dock compact. At Windows display zoom
+   above 100%, the previous 36 px tabs and 52 px formula tiles became visually
+   oversized and consumed too much of the formula canvas. */
+.office-dialog-shell .classic-editor-pane-body.is-dock-collapsed {
+  grid-template-rows: minmax(0, 1fr) 30px;
+}
+
+.office-dialog-shell .classic-bottom-dock {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-dock.is-collapsed {
+  grid-template-rows: 30px;
+}
+
+.office-dialog-shell .classic-bottom-tabs {
+  min-height: 30px;
+  gap: 2px;
+  padding-inline: 6px;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot {
+  min-height: 30px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group {
+  gap: 2px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group button {
+  height: 30px;
+  min-width: 94px;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.office-dialog-shell .classic-bottom-actions .icon-button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal .toolbar-tabs {
+  gap: 2px;
+  padding: 2px 6px;
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal .toolbar-tab {
+  min-width: 64px;
+  height: 24px;
+  min-height: 24px;
+  padding-inline: 7px;
+  font-size: 11px;
+}
+
+.office-dialog-shell
+  .classic-bottom-toolbar.formula-toolbar.is-horizontal
+  .template-strip.is-continuous-categories {
+  gap: 8px;
+  padding: 3px 6px;
+}
+
 @media (max-width: 1180px) {
   .editor-pane-header.is-office-editor-header {
     gap: 4px;

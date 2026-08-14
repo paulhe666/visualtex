@@ -1,4 +1,5 @@
 import { installBrowserCompatibility } from "./runtime/browserCompatibility";
+import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
 import "mathlive/static.css";
 import "./styles.css";
 import "./styles-macos-main.css";
@@ -7,6 +8,7 @@ import "./styles-latest-macos-ui.css";
 import "./styles-windows-shared-latest.css";
 
 installBrowserCompatibility();
+installFloatingLayerAutoAvoidance();
 
 function describeBootError(value: unknown): string {
   if (value instanceof Error) return value.stack || value.message;

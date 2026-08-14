@@ -142,10 +142,16 @@ internal static partial class Program
             WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
             secondSessionId = null;
 
+            AssertStaleRibbonSessionRecovery(
+                client,
+                addIn,
+                document,
+                formulaId);
+
             Console.WriteLine(
                 "Word native editor close acceptance passed: WM_CLOSE finalized the first Session, "
-                + "released the Word operation gate, and the reused editor kept the second Session alive "
-                + "after the first Session's delayed close watcher expired.");
+                + "released the Word operation gate, the reused editor kept the second Session alive, "
+                + "and a Ribbon click recovered a stale/missing active Session without restarting Word.");
         }
         finally
         {
@@ -185,6 +191,111 @@ internal static partial class Program
             Release(document);
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertStaleRibbonSessionRecovery(
+        VisualTeXSessionClient client,
+        VisualTeX.WordVsto.ThisAddIn addIn,
+        Word.Document document,
+        string formulaId)
+    {
+        var flags = System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.NonPublic;
+        var gateField = addIn.GetType().GetField("_operationGate", flags)
+            ?? throw new MissingFieldException("Word add-in operation gate is missing.");
+        var idField = addIn.GetType().GetField("_activeSessionId", flags)
+            ?? throw new MissingFieldException("Word add-in active Session id field is missing.");
+        var cancellationField = addIn.GetType().GetField("_activeSessionCancellation", flags)
+            ?? throw new MissingFieldException("Word add-in active Session cancellation field is missing.");
+        var gate = gateField.GetValue(addIn) as SemaphoreSlim
+            ?? throw new InvalidOperationException("Word add-in operation gate is unavailable.");
+        using var staleCancellation = new CancellationTokenSource();
+        if (!gate.Wait(TimeSpan.FromSeconds(2)))
+            throw new InvalidOperationException("Could not reserve the Word operation gate for stale-session acceptance.");
+
+        var staleSessionId = Guid.NewGuid().ToString("D");
+        idField.SetValue(addIn, staleSessionId);
+        cancellationField.SetValue(addIn, staleCancellation);
+        var released = 0;
+        var staleUnwind = Task.Run(() =>
+        {
+            staleCancellation.Token.WaitHandle.WaitOne();
+            if (Interlocked.Exchange(ref released, 1) == 0)
+                gate.Release();
+        });
+
+        string? recoveredSessionId = null;
+        Word.Bookmark? bookmark = null;
+        Word.Range? equationRange = null;
+        try
+        {
+            SelectOmmlFormula(document, formulaId, ref bookmark, ref equationRange);
+            var before = SnapshotSessionIds();
+            addIn.OnEditSelected(new object());
+            recoveredSessionId = WaitForNewSession(before, "word", TimeSpan.FromSeconds(30));
+            AssertTrue(staleCancellation.IsCancellationRequested,
+                "Ribbon stale-session recovery did not cancel the missing local Session waiter.");
+            AssertTrue(!string.Equals(staleSessionId, recoveredSessionId, StringComparison.OrdinalIgnoreCase),
+                "Ribbon stale-session recovery reused the missing Session id.");
+            _ = WaitForVisibleOfficeEditorWindow(TimeSpan.FromSeconds(20));
+
+            client.PatchAsync(
+                    recoveredSessionId,
+                    new
+                    {
+                        status = "cancelled",
+                        explicitCancel = true,
+                        error = (string?)null,
+                    },
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            client.CloseEditorAsync(recoveredSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
+            recoveredSessionId = null;
+            AssertTrue(gate.CurrentCount == 1,
+                "Ribbon stale-session recovery did not restore the operation gate to idle.");
+            Console.WriteLine(
+                "    stale Ribbon Session recovery passed: missing Session was cancelled locally and the same click opened a fresh editor.");
+        }
+        finally
+        {
+            Release(equationRange);
+            Release(bookmark);
+            if (!string.IsNullOrWhiteSpace(recoveredSessionId))
+            {
+                try
+                {
+                    client.PatchAsync(
+                            recoveredSessionId!,
+                            new
+                            {
+                                status = "cancelled",
+                                explicitCancel = true,
+                                error = (string?)null,
+                            },
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    client.CloseEditorAsync(recoveredSessionId!, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+                catch { }
+            }
+            if (!staleCancellation.IsCancellationRequested)
+            {
+                try { staleCancellation.Cancel(); } catch { }
+            }
+            try { staleUnwind.Wait(TimeSpan.FromSeconds(3)); } catch { }
+            // If the recovery path failed before consuming the synthetic gate,
+            // restore the fixture to idle without touching a gate owned by a real
+            // RunSessionAsync task.
+            if (Interlocked.CompareExchange(ref released, 1, 1) == 0
+                && gate.CurrentCount == 0)
+            {
+                gate.Release();
+                Interlocked.Exchange(ref released, 1);
+            }
         }
     }
 
