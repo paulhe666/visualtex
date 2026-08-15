@@ -348,6 +348,21 @@ pub fn get_powerpoint_default_font_size(
 }
 
 #[tauri::command]
+pub fn get_mathtype_double_click_edit_enabled(
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> bool {
+    state.mathtype_double_click_edit_enabled()
+}
+
+#[tauri::command]
+pub fn set_mathtype_double_click_edit_enabled(
+    enabled: bool,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<bool, String> {
+    state.set_mathtype_double_click_edit_enabled(enabled)
+}
+
+#[tauri::command]
 pub fn get_office_companion_status(
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> OfficeCompanionStatus {

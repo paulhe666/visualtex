@@ -459,6 +459,74 @@ internal static partial class Program
             {
                 RunPowerPoint(client, artifactRoot);
             }
+            else if (string.Equals(mode, "word-native-omml-first-double-click", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNativeOmmlFirstDoubleClickAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-ole-interop", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleInteropAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-standalone-com", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeStandaloneComAcceptance();
+            }
+            else if (string.Equals(mode, "mathtype-set-format-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeSetFormatProbe();
+            }
+            else if (string.Equals(mode, "mathtype-ui-mathml-clipboard", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeUiMathMlClipboardAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-ole-copy-formats", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleCopyFormatsAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-embedded-storage-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeEmbeddedStorageProbe(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-offline-storage", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOfflineStorageAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-addole-from-cfb", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeAddOleFromCfbAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-openxml-clone", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOpenXmlCloneAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-window-inventory", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeWindowInventory();
+            }
+            else if (string.Equals(mode, "mathtype-clean-acceptance-windows", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeAcceptanceWindowCleanup();
+            }
+            else if (string.Equals(mode, "word-mathtype-ole-to-visualtex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleToVisualTeXAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-ole-product-roundtrip", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleProductRoundTripAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-native-editor", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeNativeEditorAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-direct-set-real-ole", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeDirectSetRealOleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-ole-real-double-click", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleRealDoubleClickAcceptance(client, artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-double-click-event-probe", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlDoubleClickEventProbe(client, artifactRoot);

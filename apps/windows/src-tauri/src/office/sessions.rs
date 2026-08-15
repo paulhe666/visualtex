@@ -461,10 +461,10 @@ impl SessionStore {
         let object_mode = input.object_mode.unwrap_or_else(default_object_mode);
         if !matches!(
             object_mode.as_str(),
-            "nativeOle" | "wordOmml" | "crossPlatformPicture"
+            "nativeOle" | "mathTypeOle" | "wordOmml" | "crossPlatformPicture"
         ) {
             return Err(SessionError::Invalid(
-                "Office Session objectMode must be nativeOle, wordOmml, or crossPlatformPicture"
+                "Office Session objectMode must be nativeOle, mathTypeOle, wordOmml, or crossPlatformPicture"
                     .to_string(),
             ));
         }
@@ -594,10 +594,10 @@ impl SessionStore {
         }
         if !matches!(
             next.object_mode.as_str(),
-            "nativeOle" | "wordOmml" | "crossPlatformPicture"
+            "nativeOle" | "mathTypeOle" | "wordOmml" | "crossPlatformPicture"
         ) {
             return Err(SessionError::Invalid(
-                "Office Session objectMode must be nativeOle, wordOmml, or crossPlatformPicture"
+                "Office Session objectMode must be nativeOle, mathTypeOle, wordOmml, or crossPlatformPicture"
                     .to_string(),
             ));
         }

@@ -67,6 +67,7 @@ import {
   type OfficeExportResult,
   type OfficeFormulaSession,
   type OfficeHost,
+  type OfficeObjectMode,
   type OfficePreferences,
 } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
@@ -137,7 +138,10 @@ function officeExportCanCommit(
 ) {
   if (!exportResult) return false;
   const hasSvg = Boolean(exportResult.svg?.trim() || exportResult.svgBase64?.trim());
-  if (session.objectMode === "wordOmml") {
+  if (
+    session.objectMode === "wordOmml" ||
+    session.objectMode === "mathTypeOle"
+  ) {
     return exportResult.mathMl?.trimStart().startsWith("<math") === true;
   }
   if (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT) {
@@ -343,6 +347,7 @@ function documentFingerprint(
   lines: Array<{ id: string; latex: string }>,
   codeFormat: string,
   displayMode: "inline" | "block",
+  objectMode: OfficeObjectMode,
   numbered: boolean,
   fontSizePt: number,
   formulaLetterFont: FormulaLetterFont,
@@ -358,6 +363,7 @@ function documentFingerprint(
     lines: lines.map((line) => normalizeChineseLatex(line.latex)),
     codeFormat,
     displayMode,
+    objectMode,
     numbered,
     fontSizePt: normalizeOfficeFontSizePt(fontSizePt, fontSizePt),
     formulaLetterFont,
@@ -390,6 +396,7 @@ export function OfficeDialogApp() {
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
+  const [objectMode, setObjectMode] = useState<OfficeObjectMode>("nativeOle");
   const [numbered, setNumbered] = useState(false);
   // This is only a pre-Session UI placeholder. Word never uses it as a
   // default: every Word Session must supply the font size read at the current
@@ -577,6 +584,7 @@ export function OfficeDialogApp() {
         lines,
         latexCodeFormat,
         displayMode,
+        objectMode,
         numbered,
         officeFontSizePt,
         formulaLetterFont,
@@ -587,6 +595,7 @@ export function OfficeDialogApp() {
       lines,
       latexCodeFormat,
       displayMode,
+      objectMode,
       numbered,
       officeFontSizePt,
       formulaLetterFont,
@@ -631,6 +640,7 @@ export function OfficeDialogApp() {
     useEditorStore.getState().setLatexCodeFormat(loadedCodeFormat);
     setAutoCommitOnClose(session.autoCommitOnClose);
     setDisplayMode(session.displayMode);
+    setObjectMode(session.objectMode);
     setNumbered(session.displayMode === "block" && Boolean(session.numbered));
     const loadedFontSizePt =
       session.host === "powerpoint" &&
@@ -650,6 +660,7 @@ export function OfficeDialogApp() {
       nextLines,
       loadedCodeFormat,
       session.displayMode,
+      session.objectMode,
       session.displayMode === "block" && Boolean(session.numbered),
       loadedFontSizePt,
       session.originalMetadata?.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
@@ -660,6 +671,7 @@ export function OfficeDialogApp() {
       nextLines,
       loadedCodeFormat,
       session.displayMode,
+      session.objectMode,
       session.displayMode === "block" && Boolean(session.numbered),
       loadedFontSizePt,
       formulaLetterFont,
@@ -1195,6 +1207,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        objectMode,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         dirty,
@@ -1234,6 +1247,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        objectMode,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         dirty,
@@ -1320,6 +1334,7 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    objectMode,
     numbered,
     officeFontSizePt,
     dirty,
@@ -1350,6 +1365,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        objectMode,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         dirty,
@@ -1399,7 +1415,11 @@ export function OfficeDialogApp() {
         const update = finalDraftUpdate("committing");
         if (
           !session ||
-          (!unchangedEdit && !officeExportCanCommit(session, update.exportResult))
+          (!unchangedEdit &&
+            !officeExportCanCommit(
+              { host: session.host, objectMode },
+              update.exportResult,
+            ))
         ) {
           cancelFinalDraft();
           return;
@@ -1438,6 +1458,7 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    objectMode,
     numbered,
     officeFontSizePt,
     dirty,
@@ -1721,7 +1742,8 @@ export function OfficeDialogApp() {
       const exportResult =
         status === "cancelled"
           ? session.exportResult
-          : session.objectMode === "wordOmml" ||
+          : objectMode === "wordOmml" ||
+              objectMode === "mathTypeOle" ||
               (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
             ? generateSvgExportResult()
             : await generateExportResult();
@@ -1734,6 +1756,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        objectMode,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         dirty,
@@ -1755,6 +1778,7 @@ export function OfficeDialogApp() {
       activeLineId,
       latexCodeFormat,
       displayMode,
+      objectMode,
       numbered,
       officeFontSizePt,
       dirty,
@@ -1942,6 +1966,41 @@ export function OfficeDialogApp() {
             {isEn ? "Display" : "行间"}
           </button>
         </div>
+      ) : null}
+      {session.host === "word" &&
+      session.mode === "edit" &&
+      (session.objectMode === "wordOmml" ||
+        session.objectMode === "mathTypeOle" ||
+        session.objectMode === "nativeOle") ? (
+        <label
+          className="office-font-size-setting office-object-mode-setting"
+          title={
+            session.objectMode === "mathTypeOle"
+              ? isEn
+                ? "Keep this equation as an editable MathType OLE object, or convert it to VisualTeX OLE"
+                : "本次编辑后继续保持可由 MathType 编辑的 OLE，或转换为 VisualTeX OLE"
+              : isEn
+                ? "Choose whether this edit stays as native Word OMML or becomes a VisualTeX OLE object"
+                : "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE"
+          }
+        >
+          <span>{isEn ? "Save as" : "保存为"}</span>
+          <select
+            value={objectMode}
+            data-office-object-mode
+            aria-label={isEn ? "Formula object format" : "公式对象格式"}
+            onChange={(event) =>
+              setObjectMode(event.target.value as OfficeObjectMode)
+            }
+          >
+            {session.objectMode === "mathTypeOle" ? (
+              <option value="mathTypeOle">MathType OLE</option>
+            ) : (
+              <option value="wordOmml">Word OMML</option>
+            )}
+            <option value="nativeOle">VisualTeX OLE</option>
+          </select>
+        </label>
       ) : null}
       <label
         className="office-font-size-setting"

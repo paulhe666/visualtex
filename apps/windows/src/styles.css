@@ -7356,6 +7356,41 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   overflow-wrap: anywhere;
 }
 
+.office-mathtype-double-click-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+}
+
+.office-mathtype-double-click-setting > div {
+  min-width: 0;
+}
+
+.office-mathtype-double-click-setting strong {
+  display: block;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.office-mathtype-double-click-setting p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.office-mathtype-double-click-toggle {
+  flex: 0 0 auto;
+  min-width: 86px;
+  justify-content: center;
+}
+
 .office-primary-actions,
 .office-secondary-actions {
   display: flex;

@@ -233,6 +233,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private string? _activeSessionId;
     private CancellationTokenSource? _activeSessionCancellation;
     private bool _nativeOleTargetActive;
+    private bool _nativeOleTargetIsMathType;
     private int _nativeOleTargetLeft;
     private int _nativeOleTargetTop;
     private int _nativeOleTargetRight;
@@ -577,22 +578,30 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
 
             // Do not inspect OMML metadata here. Word fires SelectionChange while
             // entering its native equation editor, and touching the OMath at that
-            // point can disturb the caret state. Only perform the heavier metadata
-            // read after the fast OLE type check succeeds.
-            if (!service.IsSelectedNativeOle())
+            // point can disturb the caret state. MathType is even more sensitive:
+            // activating its IDataObject on a single click can synchronously open
+            // the external OLE server. Cache MathType's rectangle using only its
+            // ProgID/CLSID and defer content import until the actual double-click.
+            var isMathTypeOle = MathTypeDoubleClickPreference.IsEnabled()
+                && service.IsSelectedMathTypeOle();
+            OfficeSelection? selected = null;
+            if (!isMathTypeOle)
             {
-                ClearNativeOleTarget();
-                return;
-            }
-            var selected = service.ReadSelection(selection);
-            if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected)
-                || !string.Equals(
-                    selected.ObjectMode,
-                    FormulaOleContract.NativeOleMode,
-                    StringComparison.Ordinal))
-            {
-                ClearNativeOleTarget();
-                return;
+                if (!service.IsSelectedNativeOle())
+                {
+                    ClearNativeOleTarget();
+                    return;
+                }
+                selected = service.ReadSelection(selection);
+                if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected)
+                    || !string.Equals(
+                        selected.ObjectMode,
+                        FormulaOleContract.NativeOleMode,
+                        StringComparison.Ordinal))
+                {
+                    ClearNativeOleTarget();
+                    return;
+                }
             }
 
             range = selection.Range;
@@ -615,10 +624,13 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                 _nativeOleTargetTop = top - padding;
                 _nativeOleTargetRight = left + width + padding;
                 _nativeOleTargetBottom = top + height + padding;
+                _nativeOleTargetIsMathType = isMathTypeOle;
                 _nativeOleTargetActive = true;
             }
             WordDoubleClickHook.TraceMessage(
-                $"cache-active formulaId={selected.FormulaId} rect={left - padding},{top - padding},{left + width + padding},{top + height + padding}");
+                $"cache-active formulaId={selected?.FormulaId ?? "<mathType-pending>"} "
+                + $"objectMode={(isMathTypeOle ? FormulaOleContract.MathTypeOleMode : selected?.ObjectMode)} "
+                + $"rect={left - padding},{top - padding},{left + width + padding},{top + height + padding}");
         }
         catch
         {
@@ -635,6 +647,28 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     {
         try
         {
+            // The low-level mouse hook owns MathType OLE double-click routing
+            // only while the user preference is enabled. When disabled, return
+            // before ReadSelection() so this Word event cannot cancel or activate
+            // the object indirectly; the complete native double-click must be
+            // released to Word/MathType unchanged.
+            var selectedMathTypeOle = _formulaService?.IsSelectedMathTypeOle() == true;
+            if (selectedMathTypeOle)
+            {
+                if (!MathTypeDoubleClickPreference.IsEnabled())
+                {
+                    cancel = false;
+                    ClearNativeOleTarget();
+                    WordDoubleClickHook.TraceMessage(
+                        "window-before-double-click-mathtype-released-to-native-editor");
+                    return;
+                }
+                if (_doubleClickHook is not null)
+                {
+                    cancel = true;
+                    return;
+                }
+            }
             var selected = _formulaService?.ReadSelection(selection);
             if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
                 return;
@@ -671,6 +705,13 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         RememberMouseDoubleClickPoint(screenX, screenY);
         lock (_nativeOleTargetGate)
         {
+            if (_nativeOleTargetIsMathType
+                && !MathTypeDoubleClickPreference.IsEnabled())
+            {
+                _nativeOleTargetActive = false;
+                _nativeOleTargetIsMathType = false;
+                return false;
+            }
             return _nativeOleTargetActive
                 && screenX >= _nativeOleTargetLeft
                 && screenX <= _nativeOleTargetRight
@@ -705,10 +746,15 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
 
                 if (interceptedNativeOle)
                 {
-                    if (!string.Equals(
+                    var supportedOleMode = string.Equals(
                             selected!.ObjectMode,
                             FormulaOleContract.NativeOleMode,
                             StringComparison.Ordinal)
+                        || string.Equals(
+                            selected.ObjectMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal);
+                    if (!supportedOleMode
                         || !service.IsFormulaAtScreenPoint(
                             selected,
                             screenX,
@@ -791,6 +837,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         lock (_nativeOleTargetGate)
         {
             _nativeOleTargetActive = false;
+            _nativeOleTargetIsMathType = false;
             _nativeOleTargetLeft = 0;
             _nativeOleTargetTop = 0;
             _nativeOleTargetRight = 0;
@@ -1146,14 +1193,29 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             if (string.Equals(
                     session.ObjectMode,
                     FormulaOleContract.WordOmmlMode,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    session.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
             {
                 var requiredMathMl = export.MathMl;
                 if (string.IsNullOrWhiteSpace(requiredMathMl)
                     || !requiredMathMl!.TrimStart().StartsWith("<math", StringComparison.Ordinal))
                     throw new InvalidDataException(
-                        "VisualTeX Session has no valid MathML result for Word OMML.");
+                        $"VisualTeX Session has no valid MathML result for {session.ObjectMode}.");
                 mathMl = requiredMathMl;
+                if (string.Equals(
+                        session.ObjectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal))
+                {
+                    svgPath = client.MaterializeSvg(session);
+                    emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+                        svgPath,
+                        export.Width,
+                        export.Height);
+                }
             }
             else
             {
@@ -1178,6 +1240,22 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                         session.SourceDocumentId,
                         StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("活动 Word 文档已切换，未写入公式。");
+                if (string.Equals(
+                        session.ObjectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal))
+                {
+                    if (session.Mode != "edit")
+                        throw new InvalidOperationException(
+                            "MathType OLE mode can only preserve an existing MathType equation.");
+                    if (mathMl is null)
+                        throw new InvalidOperationException(
+                            "VisualTeX MathType OLE MathML payload is unavailable.");
+                    if (emfPath is null)
+                        throw new InvalidOperationException(
+                            "VisualTeX MathType OLE vector preview is unavailable.");
+                    return service.ReplaceMathTypeOle(session, mathMl, emfPath);
+                }
                 if (string.Equals(
                         session.ObjectMode,
                         FormulaOleContract.WordOmmlMode,
@@ -1210,7 +1288,12 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     : service.Insert(session, imagePath);
             }).ConfigureAwait(false);
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
-            if (requiresObjectModeChange
+            if (string.Equals(
+                    session.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+                SetStatus("MathType OLE 公式已原位更新，仍可继续用 MathType 编辑。");
+            else if (requiresObjectModeChange
                 && string.Equals(
                     session.ObjectMode,
                     FormulaOleContract.WordOmmlMode,

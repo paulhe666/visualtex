@@ -2519,6 +2519,14 @@
   font-size: 10px;
 }
 
+.editor-pane-header.is-office-editor-header .office-object-mode-setting {
+  width: 164px;
+}
+
+.editor-pane-header.is-office-editor-header .office-object-mode-setting select {
+  width: 116px;
+}
+
 .editor-pane-header.is-office-editor-header .office-auto-commit-setting {
   flex: 0 0 auto;
   gap: 6px;

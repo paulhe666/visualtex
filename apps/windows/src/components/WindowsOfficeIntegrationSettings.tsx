@@ -90,16 +90,21 @@ export function WindowsOfficeIntegrationSettings() {
   const [confirmRuntimeTest, setConfirmRuntimeTest] = useState(false);
   const [forceCloseOffice, setForceCloseOffice] = useState(false);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const [mathTypeDoubleClickEditEnabled, setMathTypeDoubleClickEditEnabled] =
+    useState(true);
 
   const refresh = useCallback(async () => {
     setBusy((value) => value ?? "refresh");
     try {
-      const [nextStatus, nextCompanion] = await Promise.all([
-        invoke<OfficePlatformStatus>("get_office_platform_status"),
-        invoke<OfficeCompanionStatus>("get_office_companion_status"),
-      ]);
+      const [nextStatus, nextCompanion, nextMathTypeDoubleClickEditEnabled] =
+        await Promise.all([
+          invoke<OfficePlatformStatus>("get_office_platform_status"),
+          invoke<OfficeCompanionStatus>("get_office_companion_status"),
+          invoke<boolean>("get_mathtype_double_click_edit_enabled"),
+        ]);
       setStatus(nextStatus);
       setCompanion(nextCompanion);
+      setMathTypeDoubleClickEditEnabled(nextMathTypeDoubleClickEditEnabled);
       setMessage("");
     } catch (error) {
       setMessage(
@@ -324,6 +329,47 @@ export function WindowsOfficeIntegrationSettings() {
           <strong>{statusCopy.title}</strong>
           <p>{statusCopy.description}</p>
         </div>
+      </div>
+
+      <div className="office-mathtype-double-click-setting">
+        <div>
+          <strong>
+            {isEn
+              ? "Double-click MathType formulas with VisualTeX"
+              : "双击 MathType 公式时使用 VisualTeX 编辑"}
+          </strong>
+          <p>
+            {isEn
+              ? "When enabled, double-clicking a MathType OLE formula opens VisualTeX instead of the native MathType editor. Disable it to compare or edit the same object directly in MathType."
+              : "开启后，双击 MathType OLE 公式会优先进入 VisualTeX，而不是启动 MathType 原生编辑器；关闭后可直接用 MathType 验收或编辑同一个对象。"}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary-button office-mathtype-double-click-toggle"
+          disabled={busy !== null}
+          aria-pressed={mathTypeDoubleClickEditEnabled}
+          onClick={() =>
+            void run(
+              "mathtype-double-click",
+              "set_mathtype_double_click_edit_enabled",
+              { enabled: !mathTypeDoubleClickEditEnabled },
+            )
+          }
+        >
+          {mathTypeDoubleClickEditEnabled ? (
+            <ToggleRight size={16} />
+          ) : (
+            <ToggleLeft size={16} />
+          )}
+          {mathTypeDoubleClickEditEnabled
+            ? isEn
+              ? "Enabled"
+              : "已开启"
+            : isEn
+              ? "Disabled"
+              : "已关闭"}
+        </button>
       </div>
 
       {diagnosticMessage && (

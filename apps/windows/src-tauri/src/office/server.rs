@@ -509,7 +509,7 @@ fn office_session_export_is_committable(session: &OfficeFormulaSession) -> bool 
         return has_svg;
     }
     match session.object_mode.as_str() {
-        "wordOmml" => export
+        "wordOmml" | "mathTypeOle" => export
             .math_ml
             .as_deref()
             .map(str::trim)

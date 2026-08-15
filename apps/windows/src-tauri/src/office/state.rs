@@ -22,11 +22,18 @@ pub const OFFICE_PROTOCOL_VERSION: u32 = 1;
 pub const OFFICE_UI_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const MAX_OFFICE_REQUEST_BYTES: usize = 22 * 1024 * 1024;
 pub const DEFAULT_POWERPOINT_FORMULA_FONT_SIZE_PT: f64 = 20.0;
+pub const DEFAULT_MATHTYPE_DOUBLE_CLICK_EDIT_ENABLED: bool = true;
+
+fn default_mathtype_double_click_edit_enabled() -> bool {
+    DEFAULT_MATHTYPE_DOUBLE_CLICK_EDIT_ENABLED
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficePreferencesFile {
     powerpoint_default_font_size_pt: f64,
+    #[serde(default = "default_mathtype_double_click_edit_enabled")]
+    mathtype_double_click_edit_enabled: bool,
 }
 
 fn normalize_formula_font_size_pt(value: f64) -> f64 {
@@ -40,27 +47,31 @@ fn office_preferences_path(paths: &OfficePaths) -> PathBuf {
     paths.root.join("office-preferences.json")
 }
 
-fn load_powerpoint_default_font_size_pt(paths: &OfficePaths) -> f64 {
+fn load_office_preferences(paths: &OfficePaths) -> OfficePreferencesFile {
     fs::read_to_string(office_preferences_path(paths))
         .ok()
         .and_then(|source| serde_json::from_str::<OfficePreferencesFile>(&source).ok())
-        .map(|preferences| {
-            normalize_formula_font_size_pt(preferences.powerpoint_default_font_size_pt)
+        .map(|preferences| OfficePreferencesFile {
+            powerpoint_default_font_size_pt: normalize_formula_font_size_pt(
+                preferences.powerpoint_default_font_size_pt,
+            ),
+            mathtype_double_click_edit_enabled: preferences.mathtype_double_click_edit_enabled,
         })
-        .unwrap_or(DEFAULT_POWERPOINT_FORMULA_FONT_SIZE_PT)
+        .unwrap_or(OfficePreferencesFile {
+            powerpoint_default_font_size_pt: DEFAULT_POWERPOINT_FORMULA_FONT_SIZE_PT,
+            mathtype_double_click_edit_enabled: DEFAULT_MATHTYPE_DOUBLE_CLICK_EDIT_ENABLED,
+        })
 }
 
-fn persist_powerpoint_default_font_size_pt(
+fn persist_office_preferences(
     paths: &OfficePaths,
-    font_size_pt: f64,
+    preferences: &OfficePreferencesFile,
 ) -> Result<(), String> {
     fs::create_dir_all(&paths.root).map_err(|error| error.to_string())?;
     let target = office_preferences_path(paths);
     let temporary = target.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&OfficePreferencesFile {
-        powerpoint_default_font_size_pt: normalize_formula_font_size_pt(font_size_pt),
-    })
-    .map_err(|error| error.to_string())?;
+    let payload = serde_json::to_vec_pretty(preferences)
+        .map_err(|error| error.to_string())?;
     fs::write(&temporary, payload).map_err(|error| error.to_string())?;
     if target.exists() {
         fs::remove_file(&target).map_err(|error| error.to_string())?;
@@ -172,6 +183,7 @@ pub struct OfficeCompanionState {
     pub app_editor_layout: Arc<RwLock<String>>,
     pub app_editor_preferences: Arc<RwLock<serde_json::Value>>,
     pub powerpoint_default_font_size_pt: Arc<RwLock<f64>>,
+    pub mathtype_double_click_edit_enabled: Arc<RwLock<bool>>,
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
     pub session_store: SessionStore,
     pub formula_cache: FormulaMetadataCache,
@@ -196,8 +208,10 @@ impl OfficeCompanionState {
         ocr_available: bool,
     ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
-        let powerpoint_default_font_size_pt =
-            load_powerpoint_default_font_size_pt(&paths);
+        let office_preferences = load_office_preferences(&paths);
+        let powerpoint_default_font_size_pt = office_preferences.powerpoint_default_font_size_pt;
+        let mathtype_double_click_edit_enabled =
+            office_preferences.mathtype_double_click_edit_enabled;
         let platform_backend = platform::create_backend(app.as_ref(), &paths);
         Self {
             app,
@@ -210,6 +224,9 @@ impl OfficeCompanionState {
             app_editor_preferences: Arc::new(RwLock::new(serde_json::json!({}))),
             powerpoint_default_font_size_pt: Arc::new(RwLock::new(
                 powerpoint_default_font_size_pt,
+            )),
+            mathtype_double_click_edit_enabled: Arc::new(RwLock::new(
+                mathtype_double_click_edit_enabled,
             )),
             server_handle: Arc::new(Mutex::new(None)),
             session_store,
@@ -302,10 +319,36 @@ impl OfficeCompanionState {
         font_size_pt: f64,
     ) -> Result<f64, String> {
         let normalized = normalize_formula_font_size_pt(font_size_pt);
-        persist_powerpoint_default_font_size_pt(&self.paths, normalized)?;
+        let preferences = OfficePreferencesFile {
+            powerpoint_default_font_size_pt: normalized,
+            mathtype_double_click_edit_enabled: self.mathtype_double_click_edit_enabled(),
+        };
+        persist_office_preferences(&self.paths, &preferences)?;
         if let Ok(mut current) = self.powerpoint_default_font_size_pt.write() {
             *current = normalized;
         }
         Ok(normalized)
+    }
+
+    pub fn mathtype_double_click_edit_enabled(&self) -> bool {
+        self.mathtype_double_click_edit_enabled
+            .read()
+            .map(|value| *value)
+            .unwrap_or(DEFAULT_MATHTYPE_DOUBLE_CLICK_EDIT_ENABLED)
+    }
+
+    pub fn set_mathtype_double_click_edit_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<bool, String> {
+        let preferences = OfficePreferencesFile {
+            powerpoint_default_font_size_pt: self.powerpoint_default_font_size_pt(),
+            mathtype_double_click_edit_enabled: enabled,
+        };
+        persist_office_preferences(&self.paths, &preferences)?;
+        if let Ok(mut current) = self.mathtype_double_click_edit_enabled.write() {
+            *current = enabled;
+        }
+        Ok(enabled)
     }
 }

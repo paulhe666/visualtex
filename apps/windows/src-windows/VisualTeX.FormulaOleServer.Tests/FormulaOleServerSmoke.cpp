@@ -86,6 +86,74 @@ DWORD RunServerCommand(const std::filesystem::path& server, const wchar_t* argum
     return exitCode;
 }
 
+class EmbeddedServerProcess final
+{
+public:
+    explicit EmbeddedServerProcess(const std::filesystem::path& server)
+    {
+        std::wstring command = L"\"" + server.wstring() + L"\" -Embedding";
+        std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+        mutableCommand.push_back(L'\0');
+
+        STARTUPINFOW startup = {};
+        startup.cb = sizeof(startup);
+        if (!CreateProcessW(
+                nullptr,
+                mutableCommand.data(),
+                nullptr,
+                nullptr,
+                FALSE,
+                CREATE_NO_WINDOW,
+                nullptr,
+                server.parent_path().c_str(),
+                &startup,
+                &process_))
+            throw std::runtime_error("Unable to start acceptance-owned OLE LocalServer -Embedding process");
+
+        CloseHandle(process_.hThread);
+        process_.hThread = nullptr;
+
+        // ATL registers its class objects during PreMessageLoop. Give the
+        // explicitly-started test server a bounded startup window before any
+        // CoCreate/OleCreate call can fall back to a machine-installed server
+        // carrying the same production CLSID.
+        const DWORD deadline = GetTickCount() + 3000;
+        while (GetTickCount() < deadline)
+        {
+            if (WaitForSingleObject(process_.hProcess, 0) == WAIT_OBJECT_0)
+                throw std::runtime_error("Acceptance-owned OLE LocalServer exited before registering its class factory");
+            if (GetTickCount() + 500 >= deadline)
+                break;
+            Sleep(100);
+        }
+        Sleep(500);
+    }
+
+    ~EmbeddedServerProcess()
+    {
+        if (process_.hProcess == nullptr)
+            return;
+
+        // Once all COM references in RunSmoke have been released, the server
+        // should leave naturally after its bounded startup-grace lock. Wait for
+        // that normal ATL shutdown first. Only if the acceptance-owned process
+        // fails to exit do we terminate that exact process handle so it cannot
+        // contaminate the next architecture's same-CLSID smoke.
+        if (WaitForSingleObject(process_.hProcess, 20000) != WAIT_OBJECT_0)
+            TerminateProcess(process_.hProcess, ERROR_TIMEOUT);
+        CloseHandle(process_.hProcess);
+        process_.hProcess = nullptr;
+    }
+
+    DWORD ProcessId() const noexcept
+    {
+        return process_.dwProcessId;
+    }
+
+private:
+    PROCESS_INFORMATION process_ = {};
+};
+
 class ServerRegistration final
 {
 public:
@@ -265,51 +333,62 @@ void VerifyOleCreateProtocol(const std::filesystem::path& temp, const std::wstri
 void VerifyServerDpiAwareness(const std::filesystem::path& expectedServer)
 {
     const std::wstring expected = std::filesystem::weakly_canonical(expectedServer).wstring();
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("CreateToolhelp32Snapshot failed while checking OLE server DPI awareness");
-
     bool found = false;
-    PROCESSENTRY32W entry = {};
-    entry.dwSize = sizeof(entry);
-    if (Process32FirstW(snapshot, &entry))
+
+    // COM can return the LocalServer proxy just before the newly-created process
+    // becomes visible in a Toolhelp snapshot. Retry only the process-discovery
+    // portion for a short bounded interval; the DPI assertion itself remains
+    // strict once the expected server executable is observed.
+    for (int attempt = 0; attempt < 20 && !found; ++attempt)
     {
-        do
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE)
+            throw std::runtime_error("CreateToolhelp32Snapshot failed while checking OLE server DPI awareness");
+
+        PROCESSENTRY32W entry = {};
+        entry.dwSize = sizeof(entry);
+        if (Process32FirstW(snapshot, &entry))
         {
-            HANDLE process = OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION,
-                FALSE,
-                entry.th32ProcessID);
-            if (process == nullptr)
-                continue;
-            wchar_t pathBuffer[32768] = {};
-            DWORD pathLength = static_cast<DWORD>(std::size(pathBuffer));
-            if (QueryFullProcessImageNameW(process, 0, pathBuffer, &pathLength))
+            do
             {
-                std::error_code ignored;
-                const std::wstring candidate = std::filesystem::weakly_canonical(
-                    std::filesystem::path(std::wstring(pathBuffer, pathLength)),
-                    ignored).wstring();
-                if (!ignored && _wcsicmp(candidate.c_str(), expected.c_str()) == 0)
+                HANDLE process = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION,
+                    FALSE,
+                    entry.th32ProcessID);
+                if (process == nullptr)
+                    continue;
+                wchar_t pathBuffer[32768] = {};
+                DWORD pathLength = static_cast<DWORD>(std::size(pathBuffer));
+                if (QueryFullProcessImageNameW(process, 0, pathBuffer, &pathLength))
                 {
-                    PROCESS_DPI_AWARENESS awareness = PROCESS_DPI_UNAWARE;
-                    Check(GetProcessDpiAwareness(process, &awareness), "GetProcessDpiAwareness(OLE server)");
-                    if (awareness != PROCESS_PER_MONITOR_DPI_AWARE)
+                    std::error_code ignored;
+                    const std::wstring candidate = std::filesystem::weakly_canonical(
+                        std::filesystem::path(std::wstring(pathBuffer, pathLength)),
+                        ignored).wstring();
+                    if (!ignored && _wcsicmp(candidate.c_str(), expected.c_str()) == 0)
                     {
+                        PROCESS_DPI_AWARENESS awareness = PROCESS_DPI_UNAWARE;
+                        Check(GetProcessDpiAwareness(process, &awareness), "GetProcessDpiAwareness(OLE server)");
+                        if (awareness != PROCESS_PER_MONITOR_DPI_AWARE)
+                        {
+                            CloseHandle(process);
+                            CloseHandle(snapshot);
+                            throw std::runtime_error(
+                                "Formula OLE LocalServer is not per-monitor DPI aware; legacy MFPICT can shrink into the upper-left corner");
+                        }
+                        found = true;
                         CloseHandle(process);
-                        CloseHandle(snapshot);
-                        throw std::runtime_error(
-                            "Formula OLE LocalServer is not per-monitor DPI aware; legacy MFPICT can shrink into the upper-left corner");
+                        break;
                     }
-                    found = true;
-                    CloseHandle(process);
-                    break;
                 }
-            }
-            CloseHandle(process);
-        } while (Process32NextW(snapshot, &entry));
+                CloseHandle(process);
+            } while (Process32NextW(snapshot, &entry));
+        }
+        CloseHandle(snapshot);
+        if (!found)
+            Sleep(100);
     }
-    CloseHandle(snapshot);
+
     if (!found)
         throw std::runtime_error("Running Formula OLE LocalServer process was not found for DPI verification");
 }
@@ -632,6 +711,13 @@ void RunSmoke(const std::filesystem::path& server)
 {
     ServerRegistration registration(server);
     ComApartment apartment;
+    EmbeddedServerProcess embeddedServer(server);
+
+    // Keep the explicitly-started server locked for the full smoke so transient
+    // gaps between individual OleCreate/CoCreate calls cannot let SCM fall back
+    // to a machine-installed instance with the same CLSID.
+    CComPtr<IVisualTeXFormulaObject> serverKeepAlive = CreateFormulaObject();
+    VerifyServerDpiAwareness(server);
 
     const std::filesystem::path temp = OfficeTempDirectory();
     const std::wstring suffix = std::to_wstring(GetCurrentProcessId());
@@ -664,7 +750,6 @@ void RunSmoke(const std::filesystem::path& server)
         "StgCreateDocfile");
 
     CComPtr<IVisualTeXFormulaObject> formula = CreateFormulaObject();
-    VerifyServerDpiAwareness(server);
     CComQIPtr<IPersistStorage> persist(formula);
     if (persist == nullptr)
         throw std::runtime_error("IPersistStorage is unavailable");

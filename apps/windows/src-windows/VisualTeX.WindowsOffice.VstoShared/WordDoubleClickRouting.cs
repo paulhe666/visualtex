@@ -10,9 +10,10 @@ internal static class WordDoubleClickRouting
             || string.IsNullOrWhiteSpace(selection.FormulaId))
             return false;
 
-        // Every VisualTeX-managed formula reopens the same editor, including
-        // native Word OMML. Ordinary Word equations have no VisualTeX metadata
-        // and therefore continue to use Word's built-in double-click editor.
+        // At this point the selection carries VisualTeX metadata. Native Word
+        // OMML may receive that metadata during its first coordinate hit-test,
+        // so unmanaged OMath objects (including MathType-converted OMML) can
+        // open VisualTeX immediately on the first double-click.
         return true;
     }
 

@@ -23,8 +23,12 @@ internal static class MathMlToLatexConverter
             ["∑"] = @"\sum ",
             ["∏"] = @"\prod ",
             ["∐"] = @"\coprod ",
+            ["⋃"] = @"\bigcup ",
+            ["⋂"] = @"\bigcap ",
+            ["∗"] = @"\ast ",
             ["∂"] = @"\partial ",
             ["∇"] = @"\nabla ",
+            ["⁡"] = string.Empty,
             ["√"] = @"\sqrt{}",
             ["≠"] = @"\ne ",
             ["≈"] = @"\approx ",
@@ -196,16 +200,21 @@ internal static class MathMlToLatexConverter
     {
         var children = element.Elements().ToList();
         if (children.Count < 2) return ConvertChildren(element);
+        if (TryConvertAnnotatedHorizontalBrace(children[0], children[1], top: true, out var brace))
+            return brace;
         var body = ConvertElement(children[0]);
         var over = children[1].Value.Trim();
         return over switch
         {
             "¯" or "‾" => @"\overline{" + body + "}",
             "→" => @"\vec{" + body + "}",
+            "←" => @"\overleftarrow{" + body + "}",
+            "↔" => @"\overleftrightarrow{" + body + "}",
             "^" or "ˆ" => @"\hat{" + body + "}",
             "~" or "˜" => @"\tilde{" + body + "}",
             "." or "˙" => @"\dot{" + body + "}",
             "¨" => @"\ddot{" + body + "}",
+            "⏞" or "\uFE37" => @"\overbrace{" + body + "}",
             _ => @"\overset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };
     }
@@ -214,14 +223,65 @@ internal static class MathMlToLatexConverter
     {
         var children = element.Elements().ToList();
         if (children.Count < 2) return ConvertChildren(element);
-        return @"\underset{" + ConvertElement(children[1]) + "}{" + ConvertElement(children[0]) + "}";
+        if (TryConvertAnnotatedHorizontalBrace(children[0], children[1], top: false, out var brace))
+            return brace;
+        var body = ConvertElement(children[0]);
+        var under = children[1].Value.Trim();
+        return under switch
+        {
+            "_" or "¯" or "‾" => @"\underline{" + body + "}",
+            "⏟" or "\uFE38" => @"\underbrace{" + body + "}",
+            _ => @"\underset{" + ConvertElement(children[1]) + "}{" + body + "}",
+        };
+    }
+
+    private static bool TryConvertAnnotatedHorizontalBrace(
+        XElement baseElement,
+        XElement annotation,
+        bool top,
+        out string latex)
+    {
+        latex = string.Empty;
+        if (baseElement.Name.LocalName != (top ? "mover" : "munder")) return false;
+        var inner = baseElement.Elements().ToList();
+        if (inner.Count < 2) return false;
+        var expectedMark = top ? "⏞" : "⏟";
+        var presentationMark = top ? "\uFE37" : "\uFE38";
+        var marker = inner[1].Value.Trim();
+        var replacementOnly = marker.Length > 0
+            && marker.All(character => character == '\uFFFD');
+        var stretchy = string.Equals(
+            (string?)inner[1].Attribute("stretchy"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        // MathType 7 may export horizontal braces as the Unicode vertical
+        // presentation forms U+FE37/U+FE38, or as replacement glyphs on some
+        // machines. The nested mover/munder shape plus stretchy operator remains
+        // the stable signal for recovering an annotated brace.
+        if (marker != expectedMark
+            && marker != presentationMark
+            && !(replacementOnly && stretchy)) return false;
+        var body = ConvertElement(inner[0]);
+        var note = ConvertElement(annotation).TrimEnd();
+        latex = top
+            ? @"\overbrace{" + body + "}^{" + note + "}"
+            : @"\underbrace{" + body + "}_{" + note + "}";
+        return true;
     }
 
     private static string ConvertUnderOver(XElement element)
     {
         var children = element.Elements().ToList();
         if (children.Count < 3) return ConvertChildren(element);
-        return GroupBase(ConvertElement(children[0]))
+        var baseLatex = children[0].Name.LocalName == "mo"
+            ? children[0].Value.Trim() switch
+            {
+                "∪" => @"\bigcup ",
+                "∩" => @"\bigcap ",
+                _ => ConvertElement(children[0]),
+            }
+            : ConvertElement(children[0]);
+        return GroupBase(baseLatex)
             + "_{" + ScriptArgument(children[1]) + "}"
             + "^{" + ScriptArgument(children[2]) + "}";
     }
@@ -253,6 +313,11 @@ internal static class MathMlToLatexConverter
         var body = ConvertChildren(element);
         if (notation.Contains("box")) return @"\boxed{" + body + "}";
         if (notation.Contains("radical")) return @"\sqrt{" + body + "}";
+        var up = notation.Contains("updiagonalstrike");
+        var down = notation.Contains("downdiagonalstrike");
+        if (up && down) return @"\xcancel{" + body + "}";
+        if (up) return @"\cancel{" + body + "}";
+        if (down) return @"\bcancel{" + body + "}";
         return body;
     }
 
@@ -289,16 +354,94 @@ internal static class MathMlToLatexConverter
     {
         var token = element.Value.Trim();
         var variant = ((string?)element.Attribute("mathvariant") ?? string.Empty).Trim();
+        if (element.Name.LocalName is "mi" or "mo"
+            && TryConvertNamedOperator(token, out var namedOperator))
+            return namedOperator;
         var explicitlyUpright =
             variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
             || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
         if (element.Name.LocalName == "mi"
-            && explicitlyUpright
-            && IsLatinIdentifier(token))
+            && TryConvertLetterlikeIdentifier(token, out var letterlikeLatex))
+            return letterlikeLatex;
+        if (element.Name.LocalName == "mi" && IsLatinIdentifier(token))
         {
-            return @"\mathrm{" + EscapeMathIdentifier(token) + "}";
+            var escaped = EscapeMathIdentifier(token);
+            if (variant.IndexOf("double-struck", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbb{" + escaped + "}";
+            if (variant.IndexOf("fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathfrak{" + escaped + "}";
+            if (variant.IndexOf("script", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathcal{" + escaped + "}";
+            if (variant.IndexOf("monospace", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathtt{" + escaped + "}";
+            if (variant.IndexOf("sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathsf{" + escaped + "}";
+            if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbf{" + escaped + "}";
+            if (explicitlyUpright)
+                return @"\mathrm{" + escaped + "}";
         }
         return ConvertToken(token);
+    }
+
+    private static bool TryConvertNamedOperator(string token, out string latex)
+    {
+        latex = token switch
+        {
+            "lim" => @"\lim ",
+            "max" => @"\max ",
+            "min" => @"\min ",
+            "sup" => @"\sup ",
+            "inf" => @"\inf ",
+            "sin" => @"\sin ",
+            "cos" => @"\cos ",
+            "tan" => @"\tan ",
+            "cot" => @"\cot ",
+            "sec" => @"\sec ",
+            "csc" => @"\csc ",
+            "sinh" => @"\sinh ",
+            "cosh" => @"\cosh ",
+            "tanh" => @"\tanh ",
+            "log" => @"\log ",
+            "ln" => @"\ln ",
+            "exp" => @"\exp ",
+            "det" => @"\det ",
+            "gcd" => @"\gcd ",
+            _ => string.Empty,
+        };
+        return latex.Length > 0;
+    }
+
+    private static bool TryConvertLetterlikeIdentifier(
+        string token,
+        out string latex)
+    {
+        latex = token switch
+        {
+            "ℂ" => @"\mathbb{C}",
+            "ℍ" => @"\mathbb{H}",
+            "ℕ" => @"\mathbb{N}",
+            "ℙ" => @"\mathbb{P}",
+            "ℚ" => @"\mathbb{Q}",
+            "ℝ" => @"\mathbb{R}",
+            "ℤ" => @"\mathbb{Z}",
+            "ℋ" => @"\mathcal{H}",
+            "ℐ" => @"\mathcal{I}",
+            "ℒ" => @"\mathcal{L}",
+            "ℛ" => @"\mathcal{R}",
+            "ℬ" => @"\mathcal{B}",
+            "ℯ" => @"\mathcal{e}",
+            "ℰ" => @"\mathcal{E}",
+            "ℱ" => @"\mathcal{F}",
+            "ℳ" => @"\mathcal{M}",
+            "ℴ" => @"\mathcal{o}",
+            "ℌ" => @"\mathfrak{H}",
+            "ℑ" => @"\mathfrak{I}",
+            "ℜ" => @"\mathfrak{R}",
+            "ℭ" => @"\mathfrak{C}",
+            _ => string.Empty,
+        };
+        return latex.Length > 0;
     }
 
     private static bool IsLatinIdentifier(string token) =>
@@ -338,12 +481,17 @@ internal static class MathMlToLatexConverter
     {
         var escaped = value switch
         {
+            "" or "." => ".",
             "{" => @"\{",
             "}" => @"\}",
             "|" => @"\lvert",
             "‖" => @"\lVert",
             "〈" or "⟨" => @"\langle",
             "〉" or "⟩" => @"\rangle",
+            "⌊" => @"\lfloor",
+            "⌋" => @"\rfloor",
+            "⌈" => @"\lceil",
+            "⌉" => @"\rceil",
             _ => value,
         };
         return (left ? @"\left" : @"\right") + escaped + " ";

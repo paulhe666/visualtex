@@ -11,6 +11,7 @@ export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
 export type OfficeObjectMode =
   | "nativeOle"
+  | "mathTypeOle"
   | "wordOmml"
   | "crossPlatformPicture";
 

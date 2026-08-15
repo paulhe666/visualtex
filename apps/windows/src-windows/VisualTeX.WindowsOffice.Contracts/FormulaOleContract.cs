@@ -19,6 +19,7 @@ public static class FormulaOleContract
     public const string PngPreviewStream = "VisualTeX.Preview.png";
 
     public const string NativeOleMode = "nativeOle";
+    public const string MathTypeOleMode = "mathTypeOle";
     public const string WordOmmlMode = "wordOmml";
     public const string CrossPlatformPictureMode = "crossPlatformPicture";
 }

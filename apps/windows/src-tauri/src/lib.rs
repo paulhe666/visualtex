@@ -3941,6 +3941,8 @@ pub fn run() {
             office::lifecycle::set_app_editor_preferences,
             office::lifecycle::set_powerpoint_default_font_size,
             office::lifecycle::get_powerpoint_default_font_size,
+            office::lifecycle::get_mathtype_double_click_edit_enabled,
+            office::lifecycle::set_mathtype_double_click_edit_enabled,
             office::lifecycle::get_office_companion_status,
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
