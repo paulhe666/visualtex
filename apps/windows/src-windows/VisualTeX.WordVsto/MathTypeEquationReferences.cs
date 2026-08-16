@@ -19,6 +19,7 @@ internal static class MathTypeEquationReferences
 {
     private const string PlaceRefMarker = "MACROBUTTON MTPlaceRef";
     private const string EquationBookmarkPrefix = "ZEqnNum";
+    private const string MathTypeSectionStyleName = "MTEquationSection";
 
     internal static IReadOnlyList<EquationReferenceTarget> GetTargets(Document document)
     {
@@ -86,7 +87,8 @@ internal static class MathTypeEquationReferences
     internal static void InsertReference(
         Document document,
         Selection selection,
-        EquationReferenceTarget target)
+        EquationReferenceTarget target,
+        WdColor? preferredInsertionColor = null)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (selection is null) throw new ArgumentNullException(nameof(selection));
@@ -104,6 +106,19 @@ internal static class MathTypeEquationReferences
         Range? nestedInsertion = null;
         Field? refField = null;
         Range? goToResult = null;
+        Fields? finalNestedFields = null;
+        Field? finalRefField = null;
+        Range? finalRefCode = null;
+        Range? finalRefResult = null;
+        Microsoft.Office.Interop.Word.Font? insertionFont = null;
+        Microsoft.Office.Interop.Word.Font? goToCodeFont = null;
+        Microsoft.Office.Interop.Word.Font? refCodeFont = null;
+        Microsoft.Office.Interop.Word.Font? refResultFont = null;
+        Microsoft.Office.Interop.Word.Font? finalRefCodeFont = null;
+        Microsoft.Office.Interop.Word.Font? finalRefResultFont = null;
+        Microsoft.Office.Interop.Word.Font? selectionFont = null;
+        Range? selectionRange = null;
+        var insertionColor = WdColor.wdColorAutomatic;
         try
         {
             placeRef = ResolvePlaceRef(document, target)
@@ -117,6 +132,12 @@ internal static class MathTypeEquationReferences
 
             insertion = selection.Range;
             insertion.Collapse(WdCollapseDirection.wdCollapseStart);
+            insertionFont = insertion.Font;
+            var requestedColor = preferredInsertionColor ?? insertionFont.Color;
+            insertionColor = requestedColor == WdColor.wdColorAutomatic
+                || (int)requestedColor >= 0
+                ? requestedColor
+                : WdColor.wdColorAutomatic;
             goToField = document.Fields.Add(
                 insertion,
                 WdFieldType.wdFieldGoToButton,
@@ -127,23 +148,120 @@ internal static class MathTypeEquationReferences
             // Word then renders the nested REF result as the visible reference,
             // while double-clicking the outer field navigates back to the number.
             goToCode = goToField.Code;
+            // Word's built-in GOTOBUTTON field is created in red. MathType's own
+            // equation-reference command immediately normalizes that temporary
+            // field formatting before inserting its nested REF. Do the same here,
+            // otherwise \\* Charformat makes the visible equation reference red
+            // and leaves Word's typing color red after the field.
+            NormalizeMathTypeInternalReferenceStyle(goToCode);
+            goToCodeFont = goToCode.Font;
+            goToCodeFont.Color = insertionColor;
             nestedInsertion = document.Range(goToCode.End, goToCode.End);
             refField = document.Fields.Add(
                 nestedInsertion,
                 WdFieldType.wdFieldRef,
                 bookmarkName + " \\* Charformat \\!",
                 true);
+            var refCode = refField.Code;
+            try
+            {
+                NormalizeMathTypeInternalReferenceStyle(refCode);
+                refCodeFont = refCode.Font;
+                refCodeFont.Color = insertionColor;
+            }
+            finally { Release(refCode); }
             try { refField.Update(); } catch { }
+            var refResult = refField.Result;
+            try
+            {
+                NormalizeMathTypeInternalReferenceStyle(refResult);
+                refResultFont = refResult.Font;
+                refResultFont.Color = insertionColor;
+            }
+            finally { Release(refResult); }
             try { refField.ShowCodes = false; } catch { }
             try { goToField.ShowCodes = false; } catch { }
 
+            // Adding the nested REF causes Word to materialize the GOTOBUTTON
+            // field tree a second time. On desktop Word that second materialization
+            // reapplies GOTOBUTTON's built-in red character formatting, so any
+            // color written to the pre-nesting Code range above is stale. Re-open
+            // the *final* field tree after it is complete and normalize every
+            // visible/code range once more. This mirrors MathType's own macro and
+            // is required on real ribbon/dialog insertion, not just isolated tests.
+            Release(goToCodeFont);
+            goToCodeFont = null;
+            Release(goToCode);
+            goToCode = goToField.Code;
+            NormalizeMathTypeInternalReferenceStyle(goToCode);
+            goToCodeFont = goToCode.Font;
+            goToCodeFont.Color = insertionColor;
+
+            finalNestedFields = goToCode.Fields;
+            if (finalNestedFields.Count != 1)
+                throw new InvalidDataException(
+                    "MathType GOTOBUTTON reference did not retain exactly one nested REF field.");
+            finalRefField = finalNestedFields[1];
+            finalRefCode = finalRefField.Code;
+            NormalizeMathTypeInternalReferenceStyle(finalRefCode);
+            finalRefCodeFont = finalRefCode.Font;
+            finalRefCodeFont.Color = insertionColor;
+            try { finalRefField.Update(); } catch { }
+
+            // REF.Update() can recreate the result run and, on some Word builds,
+            // repaint the enclosing GOTOBUTTON code red yet again. Normalize the
+            // outer code after that final update, then the actual REF result.
+            Release(goToCodeFont);
+            goToCodeFont = null;
+            Release(goToCode);
+            goToCode = goToField.Code;
+            NormalizeMathTypeInternalReferenceStyle(goToCode);
+            goToCodeFont = goToCode.Font;
+            goToCodeFont.Color = insertionColor;
+
+            Release(finalRefResult);
+            finalRefResult = null;
+            Release(finalRefField);
+            finalRefField = null;
+            Release(finalNestedFields);
+            finalNestedFields = null;
+            finalNestedFields = goToCode.Fields;
+            finalRefField = finalNestedFields[1];
+            finalRefResult = finalRefField.Result;
+            NormalizeMathTypeInternalReferenceStyle(finalRefResult);
+            finalRefResultFont = finalRefResult.Font;
+            finalRefResultFont.Color = insertionColor;
+
             Release(goToResult);
             goToResult = goToField.Result;
-            var after = Math.Min(document.Content.End, goToResult.End + 1);
+            // GOTOBUTTON's Result is collapsed immediately before its outer field
+            // end. goToCode.End + 1 is still the red field boundary on desktop
+            // Word, so a caret placed there inherits the field's typing format.
+            // Advance past the outer field end and clamp to a legal document caret.
+            var after = Math.Max(goToResult.End + 1, goToCode.End + 2);
+            after = Math.Max(
+                document.Content.Start,
+                Math.Min(after, Math.Max(document.Content.Start, document.Content.End - 1)));
             selection.SetRange(after, after);
+            selectionRange = selection.Range;
+            NormalizeMathTypeInternalReferenceStyle(selectionRange);
+            selectionFont = selection.Font;
+            selectionFont.Color = insertionColor;
         }
         finally
         {
+            Release(selectionRange);
+            Release(selectionFont);
+            Release(finalRefResultFont);
+            Release(finalRefCodeFont);
+            Release(refResultFont);
+            Release(refCodeFont);
+            Release(goToCodeFont);
+            Release(insertionFont);
+            Release(finalRefResult);
+            Release(finalRefCode);
+            Release(finalRefField);
+            Release(finalNestedFields);
             Release(goToResult);
             Release(refField);
             Release(nestedInsertion);
@@ -153,6 +271,33 @@ internal static class MathTypeEquationReferences
             Release(numberRange);
             Release(placeRef);
         }
+    }
+
+    private static void NormalizeMathTypeInternalReferenceStyle(Range range)
+    {
+        Style? style = null;
+        try
+        {
+            try { style = range.get_Style() as Style; }
+            catch { }
+            var styleName = string.Empty;
+            try { styleName = style?.NameLocal ?? string.Empty; }
+            catch { }
+            if (!string.Equals(
+                    styleName,
+                    MathTypeSectionStyleName,
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // MTEquationSection is MathType's internal hidden/red character style.
+            // It must never escape onto a visible equation reference. Reset only
+            // this internal style; legitimate user character styles are preserved.
+            object defaultParagraphFont = WdBuiltinStyle.wdStyleDefaultParagraphFont;
+            try { range.set_Style(ref defaultParagraphFont); }
+            catch { }
+            try { range.Font.Hidden = 0; } catch { }
+        }
+        finally { Release(style); }
     }
 
     private static Field? ResolvePlaceRef(
@@ -210,7 +355,7 @@ internal static class MathTypeEquationReferences
         }
     }
 
-    private static bool TryGetVisibleNumberRange(
+    internal static bool TryGetVisibleNumberRange(
         Document document,
         Field placeRef,
         out Range? numberRange)
@@ -253,7 +398,7 @@ internal static class MathTypeEquationReferences
         }
     }
 
-    private static string ReadVisibleNumberText(Field placeRef)
+    internal static string ReadVisibleNumberText(Field placeRef)
     {
         Range? outerCode = null;
         Fields? nestedFields = null;
@@ -335,6 +480,12 @@ internal static class MathTypeEquationReferences
 
     private static bool TryFindMathTypeEquationLatex(Field placeRef, out string latex)
     {
+        // Equation-reference discovery must stay a lightweight Word-field query.
+        // Reading Equation Native here used to open every OLE storage merely to
+        // populate the picker preview; after save/reopen Word can synchronously
+        // block while materializing that OLE storage. A native reference only
+        // needs to prove that the MTPlaceRef belongs to an Equation.DSMT4 object.
+        // Keep the preview generic and leave MTEF reads to the explicit editor.
         latex = "MathType 公式";
         Range? code = null;
         Range? probe = null;
@@ -358,15 +509,7 @@ internal static class MathTypeEquationReferences
             {
                 Release(shape);
                 shape = shapes[index];
-                if (!MathTypeOleInterop.IsMathTypeOle(shape)) continue;
-                try
-                {
-                    var mathMl = MathTypeOleStorage.ReadMathMl(shape);
-                    var converted = MathMlToLatexConverter.Convert(mathMl).Trim();
-                    if (!string.IsNullOrWhiteSpace(converted)) latex = converted;
-                }
-                catch { }
-                return true;
+                if (MathTypeOleInterop.IsMathTypeOle(shape)) return true;
             }
             return false;
         }
@@ -427,11 +570,11 @@ internal static class MathTypeEquationReferences
         }
     }
 
-    private static bool IsMathTypePlaceRefCode(string? code) =>
+    internal static bool IsMathTypePlaceRefCode(string? code) =>
         !string.IsNullOrWhiteSpace(code)
         && code!.IndexOf(PlaceRefMarker, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private static bool IsHiddenMathTypeEquationIncrement(string? code)
+    internal static bool IsHiddenMathTypeEquationIncrement(string? code)
     {
         if (string.IsNullOrWhiteSpace(code)) return false;
         var normalized = " " + code!.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ') + " ";

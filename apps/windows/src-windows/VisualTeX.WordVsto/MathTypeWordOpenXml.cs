@@ -72,6 +72,38 @@ internal static class MathTypeWordOpenXml
         return template;
     }
 
+    /// <summary>
+    /// Maps VisualTeX's five document numbering presets onto MathType's own
+    /// MTChap/MTSec/MTEqn field model. The resulting MTPlaceRef is still a native
+    /// MathType number: MathType's Update/Insert Reference commands continue to
+    /// understand it and VisualTeX does not introduce a parallel sequence.
+    /// </summary>
+    internal static NumberTemplate CreateVisualTeXNumberTemplate(string? formatId)
+    {
+        var format = EquationNumberFormat.Resolve(formatId);
+        var template = new NumberTemplate();
+        template.Segments.Add(NumberSegment.Text(" \\* MERGEFORMAT "));
+        template.Segments.Add(NumberSegment.Field(" SEQ MTEqn \\h \\* MERGEFORMAT "));
+        template.Segments.Add(NumberSegment.Text("("));
+        if (format.HeadingLevel >= 1)
+        {
+            template.Segments.Add(NumberSegment.Field(
+                " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT "));
+            template.Segments.Add(NumberSegment.Text(
+                format.HeadingLevel == 1 ? format.Separator : "."));
+        }
+        if (format.HeadingLevel >= 2)
+        {
+            template.Segments.Add(NumberSegment.Field(
+                " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT "));
+            template.Segments.Add(NumberSegment.Text(format.Separator));
+        }
+        template.Segments.Add(NumberSegment.Field(
+            " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT "));
+        template.Segments.Add(NumberSegment.Text(")"));
+        return template;
+    }
+
     internal static Fragment Read(Word.InlineShape shape)
     {
         Word.Range? range = null;

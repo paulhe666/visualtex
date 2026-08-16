@@ -146,15 +146,15 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             <button id="VisualTeX.WordVsto.ExportPicture" label="导出所选为图片" imageMso="PictureInsertFromFile" onAction="OnExportSelectedAsPicture" />
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
-            <menu id="VisualTeX.WordVsto.NumberFormat" label="编号格式" screentip="设置当前文档的公式编号格式" supertip="选择后立即更新当前文档已有的 VisualTeX 公式编号，并应用于后续新插入的带编号公式。">
+            <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" screentip="更新 VisualTeX 与 MathType 公式编号" supertip="刷新当前文档中的 VisualTeX 编号，以及 MathType 原生 MTChap/MTSec/MTEqn 编号和对应公式引用。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
+            <menu id="VisualTeX.WordVsto.NumberFormat" label="编号格式" screentip="设置当前文档的公式编号格式" supertip="选择后同步更新当前文档已有的 VisualTeX 编号和 MathType 原生 MTPlaceRef 编号，并应用于后续新插入的带编号公式。">
               <toggleButton id="VisualTeX.WordVsto.NumberFormatContinuous" label="全文连续编号（1）" tag="continuous" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading1Dot" label="按章编号（1.1）" tag="heading1-dot" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading1Dash" label="按章编号（1-1）" tag="heading1-dash" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading2Dot" label="按节编号（1.1.1）" tag="heading2-dot" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading2Dash" label="按节编号（1.1-1）" tag="heading2-dash" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
             </menu>
-            <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="从当前文档的带编号公式中选择目标，并插入可自动更新的 Word REF 字段。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
+            <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="从当前文档的 VisualTeX 或 MathType 带编号公式中选择目标；VisualTeX 使用 Word REF，MathType 保留原生 ZEqnNum/GOTOBUTTON/REF 引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
@@ -2491,7 +2491,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         {
             var count = await dispatcher.InvokeAsync(service.UpdateEquationNumbers)
                 .ConfigureAwait(false);
-            SetStatus($"已更新 {count} 个 Word 公式编号。");
+            SetStatus($"已更新 {count} 个 VisualTeX / MathType 公式编号及相关引用。");
         }
         catch (Exception error)
         {
@@ -2511,18 +2511,14 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         WordEquationNumbering.SetDefaultEquationNumberFormatPreference(format.Id);
         try
         {
-            var current = await dispatcher.InvokeAsync(service.GetEquationNumberFormatId)
-                .ConfigureAwait(false);
-            if (string.Equals(current, format.Id, StringComparison.Ordinal))
-            {
-                SetStatus($"当前公式编号格式已是“{format.DisplayName}”。");
-                return;
-            }
-
+            // Always apply an explicit selection. Older documents may already
+            // store this VisualTeX format id while their native MathType
+            // MTPlaceRef fields still use a different template; short-circuiting
+            // here would make choosing the same menu item appear to do nothing.
             var count = await dispatcher.InvokeAsync(
                     () => service.SetEquationNumberFormat(format.Id))
                 .ConfigureAwait(false);
-            SetStatus($"公式编号格式已设置为“{format.DisplayName}”，并更新了 {count} 个带编号公式。");
+            SetStatus($"公式编号格式已设置为“{format.DisplayName}”，并同步更新了 {count} 个 VisualTeX / MathType 带编号公式。");
         }
         catch (Exception error)
         {
@@ -2549,6 +2545,14 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     selection = application.Selection;
                     if (document.ReadOnly)
                         throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
+                    // Freeze the real Word insertion state before the modal target
+                    // picker steals focus. Desktop Word can temporarily expose
+                    // GOTOBUTTON's built-in red typing format after that focus
+                    // transition; MathType references must inherit what the user
+                    // had at the insertion point before opening the picker.
+                    var referenceInsertionStart = selection.Start;
+                    var referenceInsertionEnd = selection.End;
+                    var referenceInsertionColor = selection.Font.Color;
                     var visualTexTargets = WordEquationNumbering.GetEquationReferenceTargets(document);
                     var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
                     if (visualTexTargets.Count == 0 && mathTypeTargets.Count == 0)
@@ -2592,7 +2596,12 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                         var target = targets[requestedIndex];
                         if (target.Source == EquationReferenceSource.MathType)
                         {
-                            MathTypeEquationReferences.InsertReference(document, selection, target);
+                            selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
+                            MathTypeEquationReferences.InsertReference(
+                                document,
+                                selection,
+                                target,
+                                referenceInsertionColor);
                         }
                         else
                         {
@@ -2623,10 +2632,12 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                         return string.Empty;
                     if (dialog.SelectedTarget.Source == EquationReferenceSource.MathType)
                     {
+                        selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
                         MathTypeEquationReferences.InsertReference(
                             document,
                             selection,
-                            dialog.SelectedTarget);
+                            dialog.SelectedTarget,
+                            referenceInsertionColor);
                     }
                     else
                     {

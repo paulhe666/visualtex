@@ -1355,7 +1355,9 @@ internal sealed class WordFormulaService
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
             undoRecord = BeginUndoRecord("VisualTeX Update Equation Numbers");
-            return WordEquationNumbering.UpdateEquationNumbers(document);
+            var visualTeXCount = WordEquationNumbering.UpdateEquationNumbers(document);
+            var mathTypeCount = MathTypeEquationNumbering.UpdateEquationNumbers(document);
+            return visualTeXCount + mathTypeCount;
         }
         finally
         {
@@ -1399,7 +1401,9 @@ internal sealed class WordFormulaService
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
             undoRecord = BeginUndoRecord("VisualTeX Set Equation Number Format");
-            return WordEquationNumbering.SetEquationNumberFormat(document, formatId);
+            var visualTeXCount = WordEquationNumbering.SetEquationNumberFormat(document, formatId);
+            var mathTypeCount = MathTypeEquationNumbering.SetEquationNumberFormat(document, formatId);
+            return visualTeXCount + mathTypeCount;
         }
         finally
         {
@@ -1921,11 +1925,29 @@ internal sealed class WordFormulaService
                         sourceNumberTemplateField);
                 else
                 {
-                    numberTemplate = MathTypeWordOpenXml.CreateDefaultNumberTemplate();
-                    if (!HasMathTypeSectionBreak(document))
+                    var documentNumberFormat = EquationNumberFormat.Resolve(
+                        WordEquationNumbering.GetEquationNumberFormatId(document));
+                    numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
+                        documentNumberFormat.Id);
+                    if (documentNumberFormat.UsesHeading
+                        && !HasMathTypeSectionBreak(document, insertion.Start))
                     {
-                        EnsureDefaultMathTypeSectionBreak(document);
-                        createdDefaultSectionBreak = true;
+                        var logicalInsertionStart = insertion.Start;
+                        var insertedSectionLength = EnsureDefaultMathTypeSectionBreak(
+                            document,
+                            logicalInsertionStart);
+                        if (insertedSectionLength > 0)
+                        {
+                            // The hidden native section state is inserted at the
+                            // document start.  Word keeps this collapsed Range at
+                            // the old coordinate, so shift it explicitly to the
+                            // same logical user position in the original content.
+                            var shiftedStart = Math.Min(
+                                document.Content.End,
+                                logicalInsertionStart + insertedSectionLength);
+                            insertion.SetRange(shiftedStart, shiftedStart);
+                            createdDefaultSectionBreak = true;
+                        }
                     }
                 }
             }
@@ -1954,6 +1976,9 @@ internal sealed class WordFormulaService
                 session.MathTypeNumberPosition);
 
             var sourceObjectCount = document.InlineShapes.Count;
+            var expectedNewShapeIndex = ResolveInlineShapeInsertionIndex(
+                document,
+                insertionStart);
             sourceParagraphCount = ReadDocumentParagraphCount(document);
             stage = "insert-flat-opc";
             insertion.InsertXML(wordOpenXml);
@@ -1971,9 +1996,10 @@ internal sealed class WordFormulaService
             if (document.InlineShapes.Count != sourceObjectCount + 1)
                 throw new InvalidOperationException(
                     "Word did not materialize exactly one standalone MathType OLE equation.");
-            shape = FindMathTypeOleByRange(
-                document,
-                $"{RangeReferencePrefix}{insertionStart}:{insertionStart + 1}")
+            shape = FindMathTypeOleAtIndex(document, expectedNewShapeIndex)
+                ?? FindMathTypeOleByRange(
+                    document,
+                    $"{RangeReferencePrefix}{insertionStart}:{insertionStart + 1}")
                 ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
                 ?? FindMathTypeOleNearPosition(document, insertionStart)
                 ?? throw new InvalidOperationException(
@@ -5612,13 +5638,37 @@ internal sealed class WordFormulaService
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
+        InlineShapes? paragraphShapes = null;
+        Fields? paragraphFields = null;
         try
         {
             paragraphs = anchor.Paragraphs;
             if (paragraphs.Count == 0) return anchor.Duplicate;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            if (!ContainsVisibleBodyText(paragraphRange.Text))
+            paragraphShapes = paragraphRange.InlineShapes;
+            paragraphFields = paragraphRange.Fields;
+            var hasInlineShapes = paragraphShapes.Count > 0;
+            var hasFields = paragraphFields.Count > 0;
+            if (IsMathTypeSectionStateParagraph(paragraphRange)
+                && !hasInlineShapes
+                && !ContainsVisibleBodyText(paragraphRange.Text))
+            {
+                // A collapsed Range exactly on a paragraph boundary is often
+                // reported by Word as belonging to the previous paragraph.  When
+                // that previous paragraph is MathType's hidden section state, the
+                // user caret is logically in the following paragraph, so never
+                // snap back to the hidden paragraph start.
+                var nextParagraphStart = Math.Max(
+                    document.Content.Start,
+                    Math.Min(
+                        paragraphRange.End,
+                        Math.Max(document.Content.Start, document.Content.End - 1)));
+                return document.Range(nextParagraphStart, nextParagraphStart);
+            }
+            if (!ContainsVisibleBodyText(paragraphRange.Text)
+                && !hasInlineShapes
+                && !hasFields)
                 return document.Range(paragraphRange.Start, paragraphRange.Start);
 
             // Flat OPC always carries its own <w:p>. Unlike AddOLEObject/Tables.Add,
@@ -5636,9 +5686,41 @@ internal sealed class WordFormulaService
         }
         finally
         {
+            Release(paragraphFields);
+            Release(paragraphShapes);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
+        }
+    }
+
+    private static bool IsMathTypeSectionStateParagraph(Range range)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            fields = range.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
         }
     }
 
@@ -8115,6 +8197,57 @@ internal sealed class WordFormulaService
         }
     }
 
+    private static int ResolveInlineShapeInsertionIndex(Document document, int position)
+    {
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? range = null;
+        try
+        {
+            shapes = document.InlineShapes;
+            var preceding = 0;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(range);
+                range = null;
+                Release(shape);
+                shape = shapes[index];
+                range = shape.Range;
+                if (range.Start >= position) break;
+                preceding++;
+            }
+            return preceding + 1;
+        }
+        finally
+        {
+            Release(range);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
+    private static InlineShape? FindMathTypeOleAtIndex(Document document, int index)
+    {
+        InlineShapes? shapes = null;
+        InlineShape? candidate = null;
+        try
+        {
+            shapes = document.InlineShapes;
+            if (index < 1 || index > shapes.Count) return null;
+            candidate = shapes[index];
+            if (!MathTypeOleInterop.IsMathTypeOle(candidate)) return null;
+            var result = candidate;
+            candidate = null;
+            return result;
+        }
+        catch { return null; }
+        finally
+        {
+            Release(candidate);
+            Release(shapes);
+        }
+    }
+
     private static InlineShape? FindMathTypeOleInParagraphAtPosition(
         Document document,
         int position)
@@ -8267,9 +8400,12 @@ internal sealed class WordFormulaService
                 throw new InvalidDataException(
                     "MathType equation number position must be left or right.");
 
-            placeRef = FindMathTypePlaceRefFieldInRange(paragraphRange)
+            placeRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft)
                 ?? throw new InvalidOperationException(
-                    "The numbered MathType display equation has no MTPlaceRef field.");
+                    "The numbered MathType display equation has no MTPlaceRef field on the requested side of its OLE object.");
             Range? placeRefCode = null;
             Range? placeRefResult = null;
             Range? separator = null;
@@ -8299,8 +8435,13 @@ internal sealed class WordFormulaService
                         throw new InvalidOperationException(
                             "The MathType right-numbered display equation has no tab between its equation and number.");
                     if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
+                    {
+                        var prefix = string.Join(
+                            ",",
+                            paragraphText.Take(12).Select(ch => $"U+{(int)ch:X4}"));
                         throw new InvalidOperationException(
-                            "The MathType right-numbered display equation does not begin with Word's native center tab + OLE sequence.");
+                            $"The MathType right-numbered display equation does not begin with Word's native center tab + OLE sequence. paragraph={paragraphRange.Start}-{paragraphRange.End}; shape={shapeRange.Start}-{shapeRange.End}; prefix={prefix}.");
+                    }
                 }
                 UpdateNestedMathTypeNumberFields(placeRef);
             }
@@ -8400,17 +8541,24 @@ internal sealed class WordFormulaService
         finally { Release(sourceCode); }
     }
 
-    private static Field? FindMathTypePlaceRefFieldInRange(Range range)
+    private static Field? FindMathTypePlaceRefFieldForShape(
+        Range range,
+        Range shapeRange,
+        bool numberOnLeft)
     {
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
-        Field? result = null;
+        Range? resultRange = null;
+        Field? best = null;
+        var bestDistance = int.MaxValue;
         try
         {
             fields = range.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {
+                Release(resultRange);
+                resultRange = null;
                 Release(code);
                 code = null;
                 Release(field);
@@ -8420,14 +8568,31 @@ internal sealed class WordFormulaService
                         "MACROBUTTON MTPlaceRef",
                         StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
-                result = field;
+                resultRange = field.Result;
+                var fieldStart = Math.Max(range.Start, code.Start - 1);
+                var fieldEnd = Math.Min(range.End, resultRange.End + 1);
+                int distance;
+                if (numberOnLeft)
+                {
+                    if (fieldEnd > shapeRange.Start) continue;
+                    distance = shapeRange.Start - fieldEnd;
+                }
+                else
+                {
+                    if (fieldStart < shapeRange.End) continue;
+                    distance = fieldStart - shapeRange.End;
+                }
+                if (distance >= bestDistance) continue;
+                Release(best);
+                best = field;
                 field = null;
-                break;
+                bestDistance = distance;
             }
-            return result;
+            return best;
         }
         finally
         {
+            Release(resultRange);
             Release(code);
             Release(field);
             Release(fields);
@@ -8478,7 +8643,9 @@ internal sealed class WordFormulaService
         }
     }
 
-    private static bool HasMathTypeSectionBreak(Document document)
+    internal static bool HasMathTypeSectionBreak(
+        Document document,
+        int beforePosition = int.MaxValue)
     {
         Fields? fields = null;
         Field? field = null;
@@ -8495,7 +8662,8 @@ internal sealed class WordFormulaService
                 code = field.Code;
                 if ((code.Text ?? string.Empty).IndexOf(
                         "MACROBUTTON MTEditEquationSection2",
-                        StringComparison.OrdinalIgnoreCase) >= 0)
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                    && code.Start <= beforePosition)
                     return true;
             }
             return false;
@@ -8508,11 +8676,14 @@ internal sealed class WordFormulaService
         }
     }
 
-    private static void EnsureDefaultMathTypeSectionBreak(Document document)
+    internal static int EnsureDefaultMathTypeSectionBreak(
+        Document document,
+        int beforePosition = int.MaxValue)
     {
-        if (HasMathTypeSectionBreak(document)) return;
+        if (HasMathTypeSectionBreak(document, beforePosition)) return 0;
         EnsureMathTypeNativeStyles(document);
 
+        var contentEndBefore = document.Content.End;
         var paragraphCountBefore = ReadDocumentParagraphCount(document);
         var label = string.Equals(
             System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
@@ -8530,9 +8701,17 @@ internal sealed class WordFormulaService
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
         Range? paragraphMark = null;
+        Range? sectionParagraphSplit = null;
         try
         {
-            insertion = document.Range(document.Content.Start, document.Content.Start);
+            var contentStart = document.Content.Start;
+            var contentEnd = document.Content.End;
+            var insertionPosition = beforePosition == int.MaxValue
+                ? contentStart
+                : Math.Max(
+                    contentStart,
+                    Math.Min(beforePosition, Math.Max(contentStart, contentEnd - 1)));
+            insertion = document.Range(insertionPosition, insertionPosition);
             insertion.InsertXML(breakXml);
             sectionBreak = FindFirstMathTypeSectionBreakField(document)
                 ?? throw new InvalidOperationException(
@@ -8542,35 +8721,60 @@ internal sealed class WordFormulaService
             sectionFull = document.Range(
                 Math.Max(document.Content.Start, sectionCode.Start - 1),
                 Math.Min(document.Content.End, sectionResult.End + 1));
-            object sectionStyle = "MTEquationSection";
-            sectionFull.set_Style(ref sectionStyle);
 
             var paragraphCountAfter = ReadDocumentParagraphCount(document);
-            if (paragraphCountAfter == paragraphCountBefore + 1)
+            if (paragraphCountAfter == paragraphCountBefore)
             {
-                paragraphs = sectionFull.Paragraphs;
-                if (paragraphs.Count != 1)
-                    throw new InvalidOperationException(
-                        "MathType chapter/section break materialized across multiple paragraphs.");
-                paragraph = paragraphs[1];
-                paragraphRange = paragraph.Range;
-                paragraphMark = document.Range(
-                    Math.Max(paragraphRange.Start, paragraphRange.End - 1),
-                    paragraphRange.End);
-                if (!string.Equals(paragraphMark.Text, "\r", StringComparison.Ordinal))
-                    throw new InvalidOperationException(
-                        "MathType chapter/section break has no paragraph mark to merge with the document start.");
-                paragraphMark.Delete();
+                // InsertXML often materializes this hidden field into Word's
+                // existing first paragraph. Split immediately after the outer
+                // field so MathType's hidden red character style can never become
+                // the typing format of the user's paragraph.
+                sectionParagraphSplit = document.Range(sectionFull.End, sectionFull.End);
+                sectionParagraphSplit.Text = "\r";
+                paragraphCountAfter = ReadDocumentParagraphCount(document);
             }
-            else if (paragraphCountAfter != paragraphCountBefore)
+            if (paragraphCountAfter != paragraphCountBefore + 1)
             {
                 throw new InvalidOperationException(
-                    $"Word changed paragraph count unexpectedly while inserting the MathType section break: before={paragraphCountBefore}, after={paragraphCountAfter}.");
+                    $"Word did not isolate the MathType section break in its own paragraph: before={paragraphCountBefore}, after={paragraphCountAfter}.");
             }
+
+            Release(sectionFull);
+            sectionFull = null;
+            Release(sectionResult);
+            sectionResult = null;
+            Release(sectionCode);
+            sectionCode = null;
+            sectionCode = sectionBreak.Code;
+            sectionResult = sectionBreak.Result;
+            sectionFull = document.Range(
+                Math.Max(document.Content.Start, sectionCode.Start - 1),
+                Math.Min(document.Content.End, sectionResult.End + 1));
+            paragraphs = sectionFull.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "MathType chapter/section break materialized across multiple paragraphs.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            paragraphMark = document.Range(
+                Math.Max(paragraphRange.Start, paragraphRange.End - 1),
+                paragraphRange.End);
+            if (!string.Equals(paragraphMark.Text, "\r", StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "MathType chapter/section break has no isolated paragraph mark.");
+
+            // MTEquationSection is a hidden red *character* style.  The paragraph
+            // mark must stay with the hidden field.  Deleting that mark merges the
+            // hidden character formatting into the following user paragraph, so
+            // the next field/text insertion inherits MathType's red state.
+            object sectionStyle = "MTEquationSection";
+            paragraphRange.set_Style(ref sectionStyle);
             UpdateNestedMathTypeNumberFields(sectionBreak);
+            return document.Content.End - contentEndBefore;
         }
         finally
         {
+            Release(sectionParagraphSplit);
             Release(paragraphMark);
             Release(paragraphRange);
             Release(paragraph);

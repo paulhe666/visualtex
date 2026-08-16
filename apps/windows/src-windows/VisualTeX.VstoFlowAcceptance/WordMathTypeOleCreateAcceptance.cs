@@ -1355,8 +1355,6 @@ internal static partial class Program
                     continue;
 
                 breakCount++;
-                AssertEqual(document.Content.Start, code.Start - 1,
-                    "The default MathType chapter/section break is not at the start of the document.");
                 var normalizedOuter = NormalizeFieldCodeForMathTypeAcceptance(codeText);
                 AssertTrue(normalizedOuter.IndexOf(
                         "MACROBUTTON MTEditEquationSection2",
@@ -1409,6 +1407,15 @@ internal static partial class Program
             }
             AssertEqual(expectedCount, breakCount,
                 "MathType create inserted the wrong number of chapter/section breaks.");
+            if (expectedCount > 0)
+            {
+                var firstPlaceRefStart = FindFirstMathTypePlaceRefStartForAcceptance(document);
+                var firstSectionBreakStart = FindFirstMathTypeSectionBreakStartForAcceptance(document);
+                AssertTrue(firstPlaceRefStart >= 0 && firstSectionBreakStart >= 0,
+                    "MathType create could not resolve the native section break / MTPlaceRef ordering.");
+                AssertTrue(firstSectionBreakStart < firstPlaceRefStart,
+                    "The default MathType chapter/section break must precede the first numbered equation.");
+            }
         }
         finally
         {
@@ -1417,6 +1424,66 @@ internal static partial class Program
             Release(nestedCode);
             Release(nestedField);
             Release(nestedFields);
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static int FindFirstMathTypePlaceRefStartForAcceptance(Word.Document document)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        var best = int.MaxValue;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code); code = null;
+                Release(field); field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTPlaceRef",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                best = Math.Min(best, Math.Max(document.Content.Start, code.Start - 1));
+            }
+            return best == int.MaxValue ? -1 : best;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static int FindFirstMathTypeSectionBreakStartForAcceptance(Word.Document document)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        var best = int.MaxValue;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code); code = null;
+                Release(field); field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                best = Math.Min(best, Math.Max(document.Content.Start, code.Start - 1));
+            }
+            return best == int.MaxValue ? -1 : best;
+        }
+        finally
+        {
             Release(code);
             Release(field);
             Release(fields);

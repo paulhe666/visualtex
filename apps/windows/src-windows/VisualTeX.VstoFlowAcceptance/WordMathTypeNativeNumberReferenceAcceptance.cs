@@ -137,20 +137,35 @@ internal static partial class Program
                 "VisualTeX did not discover the genuine MathType OLE after native MTPlaceRef numbering was attached.");
             AssertEqual(EquationReferenceSource.MathType, mathTypeTargets[0].Source,
                 "Genuine MathType equation was assigned the wrong reference source.");
-            AssertTrue(
-                NormalizeMathTypeLatex(mathTypeTargets[0].LatexPreview)
-                    == NormalizeMathTypeLatex(genuineLatex),
-                "Genuine MathType reference target preview does not come from the original MathType MTEF.");
+            AssertEqual(
+                "MathType 公式",
+                mathTypeTargets[0].LatexPreview,
+                "MathType reference discovery should not synchronously read the OLE/MTEF payload merely to populate the picker preview.");
 
             paragraph = document.Paragraphs.Add();
             paragraphRange = paragraph.Range;
             selection = application.Selection;
             selection.SetRange(paragraphRange.Start, paragraphRange.Start);
+            selection.Font.Color = Word.WdColor.wdColorAutomatic;
+            var preDialogInsertionColor = selection.Font.Color;
+            // Reproduce the real Ribbon path: Word can expose GOTOBUTTON's
+            // built-in red typing format while the modal reference picker owns
+            // focus. Production must use the color captured before the dialog,
+            // then normalize the final materialized field tree after nested REF.
+            selection.Font.Color = Word.WdColor.wdColorRed;
             MathTypeEquationReferences.InsertReference(
                 document,
                 selection,
-                mathTypeTargets[0]);
+                mathTypeTargets[0],
+                preDialogInsertionColor);
             AssertNativeMathTypeReference(document, mathTypeTargets[0].NumberText);
+            AssertNativeMathTypeReferenceColor(
+                document,
+                Word.WdColor.wdColorAutomatic);
+            AssertEqual(
+                Word.WdColor.wdColorAutomatic,
+                selection.Font.Color,
+                "VisualTeX MathType reference insertion left Word's typing color changed.");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -170,6 +185,9 @@ internal static partial class Program
             AssertEqual(1, reopenedTargets.Count,
                 "Genuine MathType reference target did not survive Word reopen.");
             AssertNativeMathTypeReference(document, mathTypeTargets[0].NumberText);
+            AssertNativeMathTypeReferenceColor(
+                document,
+                Word.WdColor.wdColorAutomatic);
             Console.WriteLine(
                 "[MathType native reference] Genuine MathType-created Equation.DSMT4 remained byte-identical, was discovered through MTPlaceRef without VisualTeX metadata, and accepted a native ZEqnNum/GOTOBUTTON/REF reference through save + reopen.");
         }
@@ -200,6 +218,95 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertNativeMathTypeReferenceColor(
+        Word.Document document,
+        Word.WdColor expectedColor)
+    {
+        Word.Fields? fields = null;
+        Word.Field? outer = null;
+        Word.Range? outerCode = null;
+        Word.Fields? nestedFields = null;
+        Word.Field? nested = null;
+        Word.Range? nestedCode = null;
+        Word.Range? nestedResult = null;
+        Word.Font? outerFont = null;
+        Word.Font? nestedCodeFont = null;
+        Word.Font? nestedResultFont = null;
+        Word.Style? outerStyle = null;
+        Word.Style? nestedCodeStyle = null;
+        Word.Style? nestedResultStyle = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(outerCode); outerCode = null;
+                Release(outer); outer = fields[index];
+                outerCode = outer.Code;
+                if ((outerCode.Text ?? string.Empty).IndexOf(
+                        "GOTOBUTTON ZEqnNum",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                outerFont = outerCode.Font;
+                AssertEqual(expectedColor, outerFont.Color,
+                    "VisualTeX MathType GOTOBUTTON field kept Word's default red field color.");
+                try { outerStyle = outerCode.get_Style() as Word.Style; } catch { }
+                AssertTrue(
+                    !string.Equals(
+                        outerStyle?.NameLocal,
+                        "MTEquationSection",
+                        StringComparison.OrdinalIgnoreCase),
+                    "VisualTeX MathType GOTOBUTTON retained MathType's internal MTEquationSection character style.");
+                nestedFields = outerCode.Fields;
+                AssertEqual(1, nestedFields.Count,
+                    "VisualTeX MathType reference must contain one nested REF field.");
+                nested = nestedFields[1];
+                nestedCode = nested.Code;
+                nestedCodeFont = nestedCode.Font;
+                AssertEqual(expectedColor, nestedCodeFont.Color,
+                    "VisualTeX MathType REF field code has the wrong character color.");
+                try { nestedCodeStyle = nestedCode.get_Style() as Word.Style; } catch { }
+                AssertTrue(
+                    !string.Equals(
+                        nestedCodeStyle?.NameLocal,
+                        "MTEquationSection",
+                        StringComparison.OrdinalIgnoreCase),
+                    "VisualTeX MathType REF code retained MathType's internal MTEquationSection character style.");
+                nestedResult = nested.Result;
+                nestedResultFont = nestedResult.Font;
+                AssertEqual(expectedColor, nestedResultFont.Color,
+                    "VisualTeX MathType REF result inherited Word's default red GOTOBUTTON color.");
+                try { nestedResultStyle = nestedResult.get_Style() as Word.Style; } catch { }
+                AssertTrue(
+                    !string.Equals(
+                        nestedResultStyle?.NameLocal,
+                        "MTEquationSection",
+                        StringComparison.OrdinalIgnoreCase),
+                    "VisualTeX MathType REF result retained MathType's internal MTEquationSection character style.");
+                return;
+            }
+            throw new InvalidDataException(
+                "No MathType GOTOBUTTON reference was available for color validation.");
+        }
+        finally
+        {
+            Release(nestedResultStyle);
+            Release(nestedCodeStyle);
+            Release(outerStyle);
+            Release(nestedResultFont);
+            Release(nestedCodeFont);
+            Release(outerFont);
+            Release(nestedResult);
+            Release(nestedCode);
+            Release(nested);
+            Release(nestedFields);
+            Release(outerCode);
+            Release(outer);
+            Release(fields);
         }
     }
 

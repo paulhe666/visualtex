@@ -546,6 +546,10 @@ internal static partial class Program
             {
                 RunWordMathTypeNativeNumberReferenceAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-number-format", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeNumberFormatAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "win32-thread-execution-probe", StringComparison.OrdinalIgnoreCase))
             {
                 RunWin32ThreadExecutionProbe();
