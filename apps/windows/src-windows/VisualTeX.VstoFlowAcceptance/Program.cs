@@ -515,6 +515,10 @@ internal static partial class Program
             {
                 RunWordMathTypeOleProductRoundTripAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-display-layout", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeDisplayLayoutAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-native-editor", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeNativeEditorAcceptance(artifactRoot);

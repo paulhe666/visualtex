@@ -15,11 +15,7 @@ internal static partial class Program
     private static void RunWordMathTypeOleProductRoundTripAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
-        var fixture = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..",
-            "artifacts", "mathtype-native-editor",
-            "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx"));
+        var fixture = ResolveMathTypeNativeEditorFixture();
         if (!File.Exists(fixture))
             throw new FileNotFoundException(
                 "A genuine MathType-generated Equation.DSMT4 fixture is required.", fixture);
@@ -442,6 +438,396 @@ internal static partial class Program
             Release(application);
             ForceComCleanup();
         }
+    }
+
+    private static void RunWordMathTypeDisplayLayoutAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var fixture = ResolveMathTypeNativeEditorFixture();
+        if (!File.Exists(fixture))
+            throw new FileNotFoundException("A genuine MathType display-layout fixture is required.", fixture);
+        var path = Path.Combine(artifactRoot, $"VisualTeX-MathType-Display-{Guid.NewGuid():N}.docx");
+        File.Copy(fixture, path, overwrite: false);
+        var previewSvg = Path.Combine(artifactRoot, "mathtype-display-preview.svg");
+        File.WriteAllText(
+            previewSvg,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"96\" viewBox=\"0 0 240 96\"><text x=\"4\" y=\"64\" font-size=\"48\">display</text></svg>");
+        var previewEmf = OfficeOlePreview.CreateVectorEmfFromSvg(previewSvg, 240, 96);
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.InlineShape? shape = null;
+        Word.Range? range = null;
+        Word.Range? insertion = null;
+        Word.Paragraph? paragraph = null;
+        Word.ParagraphFormat? format = null;
+        Word.TabStops? tabs = null;
+        Word.TabStop? tab = null;
+        Word.Field? mathTypeNumberField = null;
+        MathTypeNativePreviewRenderer.Result? sourceNative = null;
+        MathTypeNativePreviewRenderer.Result? targetNative = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Open(path, ReadOnly: false, Visible: false);
+            AssertEqual(1, document.InlineShapes.Count,
+                "MathType display fixture must begin with one Equation.DSMT4 OLE.");
+            shape = document.InlineShapes[1];
+
+            // The genuine fixture is intentionally inline and contains ordinary
+            // prose next to the OLE.  Remove only that surrounding prose in this
+            // temporary copy before constructing a true MathType display row.
+            paragraph = shape.Range.Paragraphs[1];
+            insertion = document.Range(shape.Range.End, paragraph.Range.End - 1);
+            if (insertion.End > insertion.Start) insertion.Delete();
+            Release(insertion); insertion = null;
+            Release(paragraph); paragraph = null;
+            Release(shape); shape = document.InlineShapes[1];
+            paragraph = shape.Range.Paragraphs[1];
+            insertion = document.Range(paragraph.Range.Start, shape.Range.Start);
+            if (insertion.End > insertion.Start) insertion.Delete();
+            Release(insertion); insertion = null;
+            Release(paragraph); paragraph = null;
+            Release(shape); shape = document.InlineShapes[1];
+
+            insertion = shape.Range.Duplicate;
+            insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+            insertion.Text = "\t";
+            Release(insertion); insertion = null;
+            Release(shape); shape = document.InlineShapes[1];
+            insertion = shape.Range.Duplicate;
+            insertion.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            insertion.Text = "\t";
+            insertion.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            // Reproduce MathType's real right-numbered Word structure.  The
+            // equation number is not ordinary "(2.4)" text: it is an empty-result
+            // MACROBUTTON MTPlaceRef field whose field code owns the number and
+            // nested MTEqn/MTSec fields.  Paragraph.Range.Text therefore exposes
+            // U+0015, which is the exact control character that previously caused
+            // VisualTeX to misclassify the row as inline.
+            mathTypeNumberField = document.Fields.Add(
+                insertion,
+                Word.WdFieldType.wdFieldEmpty,
+                " MACROBUTTON MTPlaceRef (2.4) \\* MERGEFORMAT ",
+                PreserveFormatting: false);
+            Release(insertion); insertion = null;
+            Release(shape); shape = document.InlineShapes[1];
+
+            paragraph = shape.Range.Paragraphs[1];
+            format = paragraph.Format;
+            // Genuine MathType numbered rows use center/right tab stops rather
+            // than paragraph-center alignment.  Keep that real layout model in
+            // the acceptance so a lost tab stop cannot be hidden by wdAlignCenter.
+            format.Alignment = Word.WdParagraphAlignment.wdAlignParagraphJustify;
+            format.LeftIndent = 11f;
+            format.RightIndent = 7f;
+            format.FirstLineIndent = 0f;
+            format.SpaceBefore = 5f;
+            format.SpaceAfter = 8f;
+            format.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceExactly;
+            format.LineSpacing = 24f;
+            format.KeepTogether = -1;
+            tabs = format.TabStops;
+            tabs.ClearAll();
+            tab = tabs.Add(208f, Word.WdTabAlignment.wdAlignTabCenter, Word.WdTabLeader.wdTabLeaderSpaces);
+            Release(tab); tab = null;
+            tab = tabs.Add(415f, Word.WdTabAlignment.wdAlignTabRight, Word.WdTabLeader.wdTabLeaderSpaces);
+            Release(tab); tab = null;
+
+            var sourceFragment = MathTypeWordOpenXml.Read(shape);
+            var sourceNativeBytes = MathTypeOleStorage.ReadEquationNative(sourceFragment.CompoundFile);
+            var sourceHeader = BitConverter.ToUInt16(sourceNativeBytes, 0);
+            var sourceLength = checked((int)BitConverter.ToUInt32(sourceNativeBytes, 8));
+            var sourceMtef = new byte[sourceLength];
+            Buffer.BlockCopy(sourceNativeBytes, sourceHeader, sourceMtef, 0, sourceLength);
+            AssertTrue(
+                MathTypeNativePreviewRenderer.TryRender(sourceMtef, artifactRoot, out sourceNative),
+                "MathType native renderer was unavailable for display source geometry.");
+            var sourceHeightScale = shape.Height / sourceNative!.HeightPt;
+
+            var displayProbeText = paragraph.Range.Text ?? string.Empty;
+            Console.WriteLine(
+                "[MathType display probe] paragraph codepoints="
+                + string.Join(",", displayProbeText.Select(character => $"U+{(int)character:X4}")));
+            var service = new WordFormulaService(application);
+            range = shape.Range.Duplicate;
+            range.Select();
+            var selection = service.ReadSelection();
+            AssertEqual("block", selection.Metadata?.DisplayMode,
+                "A MathType equation with only tab/number decoration was misclassified as inline.");
+            const string editedLatex = @"\frac{a+b}{c+d}";
+            const string editedMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mrow><mi>c</mi><mo>+</mo><mi>d</mi></mrow></mfrac></math>";
+            var session = CreateMathTypeProductSession(selection, editedLatex, 240, 96);
+            service.ReplaceMathTypeOle(session, editedMathMl, previewEmf);
+
+            Release(range); range = null;
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            AssertEqual(Word.WdParagraphAlignment.wdAlignParagraphJustify, format.Alignment,
+                "VisualTeX changed the original MathType numbered-row paragraph alignment.");
+            AssertNear(11f, format.LeftIndent, 0.1f, "MathType display left indent changed.");
+            AssertNear(7f, format.RightIndent, 0.1f, "MathType display right indent changed.");
+            AssertNear(5f, format.SpaceBefore, 0.1f, "MathType display SpaceBefore changed.");
+            AssertNear(8f, format.SpaceAfter, 0.1f, "MathType display SpaceAfter changed.");
+            AssertEqual(Word.WdLineSpacing.wdLineSpaceExactly, format.LineSpacingRule,
+                "MathType display line-spacing rule changed.");
+            AssertNear(24f, format.LineSpacing, 0.1f, "MathType display exact line spacing changed.");
+            var postEditParagraphText = paragraph.Range.Text ?? string.Empty;
+            var postEditDocumentText = document.Content.Text ?? string.Empty;
+            Console.WriteLine(
+                "[MathType display post-edit] paragraph="
+                + string.Join(",", postEditParagraphText.Select(character => $"U+{(int)character:X4}"))
+                + " document="
+                + string.Join(",", postEditDocumentText.Select(character => $"U+{(int)character:X4}")));
+            var postEditHasMathTypeNumber = false;
+            for (var fieldIndex = 1; fieldIndex <= paragraph.Range.Fields.Count; fieldIndex++)
+            {
+                Word.Field? field = null;
+                Word.Range? fieldCode = null;
+                try
+                {
+                    field = paragraph.Range.Fields[fieldIndex];
+                    fieldCode = field.Code;
+                    postEditHasMathTypeNumber |= (fieldCode.Text ?? string.Empty)
+                        .IndexOf("MACROBUTTON MTPlaceRef", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                finally
+                {
+                    Release(fieldCode);
+                    Release(field);
+                }
+            }
+            AssertTrue(postEditHasMathTypeNumber,
+                "VisualTeX removed or detached MathType's MTPlaceRef equation-number field.");
+
+            var sawCenterTab = false;
+            var sawRightTab = false;
+            Release(tabs); tabs = format.TabStops;
+            for (var index = 1; index <= tabs.Count; index++)
+            {
+                Release(tab); tab = tabs[index];
+                sawCenterTab |= Math.Abs(tab.Position - 208f) <= 0.5f
+                    && tab.Alignment == Word.WdTabAlignment.wdAlignTabCenter;
+                sawRightTab |= Math.Abs(tab.Position - 415f) <= 0.5f
+                    && tab.Alignment == Word.WdTabAlignment.wdAlignTabRight;
+            }
+            AssertTrue(sawCenterTab && sawRightTab,
+                "VisualTeX lost MathType display equation center/right tab stops.");
+
+            var targetFragment = MathTypeWordOpenXml.Read(shape);
+            var targetNativeBytes = MathTypeOleStorage.ReadEquationNative(targetFragment.CompoundFile);
+            var targetHeader = BitConverter.ToUInt16(targetNativeBytes, 0);
+            var targetLength = checked((int)BitConverter.ToUInt32(targetNativeBytes, 8));
+            var targetMtef = new byte[targetLength];
+            Buffer.BlockCopy(targetNativeBytes, targetHeader, targetMtef, 0, targetLength);
+            AssertTrue(
+                MathTypeNativePreviewRenderer.TryRender(targetMtef, artifactRoot, out targetNative),
+                "MathType native renderer was unavailable for edited display geometry.");
+            AssertNear(
+                targetNative!.HeightPt * sourceHeightScale,
+                shape.Height,
+                0.75f,
+                "Edited display OLE did not preserve the source MathType presentation scale.");
+            var expectedPosition = (int)Math.Round(
+                targetNative.WordPosition * sourceHeightScale,
+                MidpointRounding.AwayFromZero);
+            AssertNear(
+                expectedPosition,
+                ReadInlineOlePositionForAcceptance(shape),
+                1f,
+                "Edited display OLE baseline does not match the new native MathType preview.");
+
+            document.Save();
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = application.Documents.Open(path, ReadOnly: false, Visible: false);
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            AssertEqual(Word.WdParagraphAlignment.wdAlignParagraphJustify, format.Alignment,
+                "MathType numbered-row alignment did not survive Word save/reopen.");
+            AssertNear(24f, format.LineSpacing, 0.1f,
+                "MathType display line spacing did not survive Word save/reopen.");
+            var reopenedHasMathTypeNumber = false;
+            for (var fieldIndex = 1; fieldIndex <= paragraph.Range.Fields.Count; fieldIndex++)
+            {
+                Word.Field? field = null;
+                Word.Range? fieldCode = null;
+                try
+                {
+                    field = paragraph.Range.Fields[fieldIndex];
+                    fieldCode = field.Code;
+                    reopenedHasMathTypeNumber |= (fieldCode.Text ?? string.Empty)
+                        .IndexOf("MACROBUTTON MTPlaceRef", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                finally
+                {
+                    Release(fieldCode);
+                    Release(field);
+                }
+            }
+            AssertTrue(reopenedHasMathTypeNumber,
+                "MathType MTPlaceRef equation number did not survive Word save/reopen in the formula paragraph.");
+
+            // Reproduce the exact damaged state created by older VisualTeX builds:
+            // the MathType OLE remains in one paragraph while the trailing tab +
+            // MTPlaceRef field is pushed to the immediately following paragraph,
+            // and the formula paragraph loses the center/right MathType tab stops.
+            var healthyParagraphCount = document.Paragraphs.Count;
+            insertion = document.Range(shape.Range.End, shape.Range.End);
+            insertion.Text = "\r";
+            Release(insertion); insertion = null;
+            AssertEqual(healthyParagraphCount + 1, document.Paragraphs.Count,
+                "Acceptance could not reproduce the legacy detached MTPlaceRef paragraph.");
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            Release(tabs); tabs = format.TabStops;
+            tabs.ClearAll();
+
+            var recoveryService = new WordFormulaService(application);
+            Release(range); range = shape.Range.Duplicate;
+            range.Select();
+            var recoverySelection = recoveryService.ReadSelection();
+            AssertEqual("block", recoverySelection.Metadata?.DisplayMode,
+                "A legacy split MathType display equation was not recognized as block layout.");
+            const string recoveryLatex = @"x^2+y^2";
+            const string recoveryMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup></math>";
+            recoveryService.ReplaceMathTypeOle(
+                CreateMathTypeProductSession(recoverySelection, recoveryLatex, 200, 72),
+                recoveryMathMl,
+                previewEmf);
+            AssertEqual(healthyParagraphCount, document.Paragraphs.Count,
+                "VisualTeX did not merge a legacy detached MathType MTPlaceRef number paragraph back into the formula row.");
+            Release(range); range = null;
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            var recoveredPlaceRef = false;
+            for (var fieldIndex = 1; fieldIndex <= paragraph.Range.Fields.Count; fieldIndex++)
+            {
+                Word.Field? field = null;
+                Word.Range? fieldCode = null;
+                try
+                {
+                    field = paragraph.Range.Fields[fieldIndex];
+                    fieldCode = field.Code;
+                    recoveredPlaceRef |= (fieldCode.Text ?? string.Empty)
+                        .IndexOf("MACROBUTTON MTPlaceRef", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                finally
+                {
+                    Release(fieldCode);
+                    Release(field);
+                }
+            }
+            AssertTrue(recoveredPlaceRef,
+                "Legacy MathType MTPlaceRef field was not restored to the equation paragraph.");
+            sawCenterTab = false;
+            sawRightTab = false;
+            Release(tabs); tabs = format.TabStops;
+            for (var index = 1; index <= tabs.Count; index++)
+            {
+                Release(tab); tab = tabs[index];
+                sawCenterTab |= Math.Abs(tab.Position - 208f) <= 0.5f
+                    && tab.Alignment == Word.WdTabAlignment.wdAlignTabCenter;
+                sawRightTab |= Math.Abs(tab.Position - 415f) <= 0.5f
+                    && tab.Alignment == Word.WdTabAlignment.wdAlignTabRight;
+            }
+            AssertTrue(sawCenterTab && sawRightTab,
+                "Legacy split-row recovery did not restore MathType's center/right tab stops.");
+
+            // Repeat with a pure, unnumbered display row.  MathType commonly leaves
+            // a leading centering tab even when no equation number is present; the
+            // Flat OPC insertion must not leave an extra empty paragraph behind.
+            insertion = document.Range(shape.Range.End, paragraph.Range.End - 1);
+            if (insertion.End > insertion.Start) insertion.Delete();
+            Release(insertion); insertion = null;
+            var paragraphCountBeforeUnnumberedEdit = document.Paragraphs.Count;
+            var unnumberedService = new WordFormulaService(application);
+            Release(range); range = shape.Range.Duplicate;
+            range.Select();
+            var unnumberedSelection = unnumberedService.ReadSelection();
+            AssertEqual("block", unnumberedSelection.Metadata?.DisplayMode,
+                "A pure MathType display equation with only positioning tabs was misclassified as inline.");
+            const string unnumberedLatex = @"x+y";
+            const string unnumberedMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>+</mo><mi>y</mi></math>";
+            unnumberedService.ReplaceMathTypeOle(
+                CreateMathTypeProductSession(unnumberedSelection, unnumberedLatex, 160, 64),
+                unnumberedMathMl,
+                previewEmf);
+            Release(range); range = null;
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            AssertEqual(paragraphCountBeforeUnnumberedEdit, document.Paragraphs.Count,
+                "Editing an unnumbered MathType display equation left an extra paragraph behind.");
+            AssertEqual(Word.WdParagraphAlignment.wdAlignParagraphJustify, format.Alignment,
+                "Unnumbered MathType display alignment changed after VisualTeX edit.");
+            AssertNear(24f, format.LineSpacing, 0.1f,
+                "Unnumbered MathType display line spacing changed after VisualTeX edit.");
+            AssertEqual(1, paragraph.Range.Fields.Count,
+                "The MathType MTPlaceRef number field leaked into the unnumbered display row.");
+
+            document.Save();
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = application.Documents.Open(path, ReadOnly: false, Visible: false);
+            Release(shape); shape = document.InlineShapes[1];
+            Release(paragraph); paragraph = shape.Range.Paragraphs[1];
+            Release(format); format = paragraph.Format;
+            AssertEqual(Word.WdParagraphAlignment.wdAlignParagraphJustify, format.Alignment,
+                "Unnumbered MathType display alignment did not survive Word reopen.");
+            AssertNear(24f, format.LineSpacing, 0.1f,
+                "Unnumbered MathType display line spacing did not survive Word reopen.");
+            Console.WriteLine(
+                "[MathType display] numbered and unnumbered rows preserved centering, spacing, tabs, native geometry/baseline and numbering ownership through edit + reopen.");
+        }
+        finally
+        {
+            sourceNative?.Dispose();
+            targetNative?.Dispose();
+            Release(mathTypeNumberField);
+            Release(tab);
+            Release(tabs);
+            Release(format);
+            Release(paragraph);
+            Release(insertion);
+            Release(range);
+            Release(shape);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static string ResolveMathTypeNativeEditorFixture()
+    {
+        const string fixtureName =
+            "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx";
+        foreach (var parentDepth in new[] { 5, 6 })
+        {
+            var parts = new List<string> { AppContext.BaseDirectory };
+            for (var index = 0; index < parentDepth; index++) parts.Add("..");
+            parts.Add("artifacts");
+            parts.Add("mathtype-native-editor");
+            parts.Add(fixtureName);
+            var candidate = Path.GetFullPath(Path.Combine(parts.ToArray()));
+            if (File.Exists(candidate)) return candidate;
+        }
+        return Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "artifacts", "mathtype-native-editor", fixtureName));
     }
 
     private static OfficeSelection ReadMathTypeProductSelection(

@@ -641,7 +641,11 @@ export function OfficeDialogApp() {
     setAutoCommitOnClose(session.autoCommitOnClose);
     setDisplayMode(session.displayMode);
     setObjectMode(session.objectMode);
-    setNumbered(session.displayMode === "block" && Boolean(session.numbered));
+    const loadedNumbered =
+      session.objectMode !== "mathTypeOle" &&
+      session.displayMode === "block" &&
+      Boolean(session.numbered);
+    setNumbered(loadedNumbered);
     const loadedFontSizePt =
       session.host === "powerpoint" &&
       session.mode === "create" &&
@@ -661,7 +665,7 @@ export function OfficeDialogApp() {
       loadedCodeFormat,
       session.displayMode,
       session.objectMode,
-      session.displayMode === "block" && Boolean(session.numbered),
+      loadedNumbered,
       loadedFontSizePt,
       session.originalMetadata?.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
       session.originalMetadata?.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
@@ -672,7 +676,7 @@ export function OfficeDialogApp() {
       loadedCodeFormat,
       session.displayMode,
       session.objectMode,
-      session.displayMode === "block" && Boolean(session.numbered),
+      loadedNumbered,
       loadedFontSizePt,
       formulaLetterFont,
       formulaChineseFont,
@@ -1989,9 +1993,15 @@ export function OfficeDialogApp() {
             value={objectMode}
             data-office-object-mode
             aria-label={isEn ? "Formula object format" : "公式对象格式"}
-            onChange={(event) =>
-              setObjectMode(event.target.value as OfficeObjectMode)
-            }
+            onChange={(event) => {
+              const nextMode = event.target.value as OfficeObjectMode;
+              setObjectMode(nextMode);
+              // Numbering surrounding a MathType source belongs to MathType/Word,
+              // not to VisualTeX.  Do not create a second VisualTeX numbering
+              // owner during the same edit or conversion.  After conversion, a
+              // later VisualTeX edit can opt into VisualTeX numbering normally.
+              if (session.objectMode === "mathTypeOle") setNumbered(false);
+            }}
           >
             {session.objectMode === "mathTypeOle" ? (
               <option value="mathTypeOle">MathType OLE</option>
@@ -2044,10 +2054,20 @@ export function OfficeDialogApp() {
         </select>
       </label>
       {session.host === "word" && displayMode === "block" ? (
-        <label className="office-auto-commit-setting">
+        <label
+          className="office-auto-commit-setting"
+          title={
+            session.objectMode === "mathTypeOle"
+              ? isEn
+                ? "This MathType equation keeps its existing MathType/Word numbering. VisualTeX will not add a second number during this edit."
+                : "此 MathType 公式保留现有的 MathType/Word 编号；本次编辑不会再叠加一套 VisualTeX 编号。"
+              : undefined
+          }
+        >
           <input
             type="checkbox"
-            checked={numbered}
+            checked={session.objectMode === "mathTypeOle" ? false : numbered}
+            disabled={session.objectMode === "mathTypeOle"}
             onChange={(event) => setNumbered(event.target.checked)}
           />
           <span>{isEn ? "Number" : "编号"}</span>

@@ -1292,13 +1292,33 @@ internal static class MathTypeOleInterop
             if (paragraphs.Count != 1) return "inline";
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
+            // MathType's right-numbered display equation does not expose the
+            // equation number as ordinary paragraph text.  The number is owned by
+            // a MACROBUTTON MTPlaceRef field (with nested SEQ MTEqn/MTSec fields),
+            // and Word commonly exposes only the field-end control character
+            // U+0015 in Paragraph.Range.Text.  If that field shares the paragraph
+            // with the MathType OLE, this is unambiguously a display equation.
+            if (ContainsMathTypeDisplayNumberField(paragraphRange)) return "block";
+
             var text = (paragraphRange.Text ?? string.Empty)
                 .Replace("\r", string.Empty)
                 .Replace("\a", string.Empty)
                 .Replace("\u0001", string.Empty)
                 .Replace("\uFFFC", string.Empty)
+                // Word field begin/separator/end controls are structural, not
+                // visible prose.  In particular U+0015 is what made genuine
+                // MathType MTPlaceRef rows look non-empty and therefore inline.
+                .Replace("\u0013", string.Empty)
+                .Replace("\u0014", string.Empty)
+                .Replace("\u0015", string.Empty)
                 .Trim();
-            return text.Length == 0 ? "block" : "inline";
+            if (text.Length == 0) return "block";
+
+            // Some MathType/Word combinations materialize the display number as
+            // visible numeric decoration instead of an empty MTPlaceRef result.
+            // Keep supporting those forms without treating ordinary prose as a
+            // display equation.
+            return LooksLikeDisplayEquationDecoration(text) ? "block" : "inline";
         }
         catch { return "inline"; }
         finally
@@ -1307,6 +1327,76 @@ internal static class MathTypeOleInterop
             Release(paragraph);
             Release(paragraphs);
         }
+    }
+
+    private static bool ContainsMathTypeDisplayNumberField(Range paragraphRange)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var instruction = code.Text ?? string.Empty;
+                if (instruction.IndexOf("MACROBUTTON MTPlaceRef", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static bool LooksLikeDisplayEquationDecoration(string text)
+    {
+        var sawNumber = false;
+        foreach (var character in text)
+        {
+            if (char.IsWhiteSpace(character)) continue;
+            if (char.IsDigit(character))
+            {
+                sawNumber = true;
+                continue;
+            }
+
+            switch (character)
+            {
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case '.':
+                case ',':
+                case ':':
+                case ';':
+                case '-':
+                case '–':
+                case '—':
+                case '/':
+                case '\\':
+                    continue;
+                default:
+                    return false;
+            }
+        }
+        return sawNumber;
     }
 
     private static string? ReadDefaultString(RegistryKey parent, string subKeyName)
