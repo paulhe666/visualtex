@@ -132,6 +132,77 @@ internal static class MathTypeMtefCodec
         return new XDocument(math).ToString(SaveOptions.DisableFormatting);
     }
 
+    private const string StandaloneMtefPrefixBase64 =
+        "BQEABwhEU01UNwAAE1dpbkFsbEJhc2ljQ29kZVBhZ2VzABEFVGltZXMgTmV3IFJvbWFuABEDU3ltYm9sABEFQ291cmllciBOZXcAEQRNVCBFeHRyYQATV2luQWxsQ29kZVBhZ2VzABEGy87M5QASAAghL0WPRC9BUPQQD0dfQVDyHx5BUPQVD0EA9EX0JfSPQl9BAPQQD0NfQQD0j0X0Kl9I9I9BAPQQD0D0j0F/SPQQD0EqX0RfRfRfRfRfQQ8MAQABAAECAgICAAIAAQEBAAMAAQAEAAUACg==";
+
+    private static readonly byte[] StandaloneEquationNativeHeader =
+    {
+        0x1C, 0x00,             // EQNOLEFILEHDR.cbHdr = 28
+        0x00, 0x00, 0x02, 0x00, // Equation Native format version
+        0x42, 0xC2,             // MathType native clipboard format used by DSMT7
+        0x00, 0x00, 0x00, 0x00, // cbObject, filled below
+        0x00, 0x00, 0x00, 0x00,
+        0xFC, 0xDE, 0x56, 0x0A,
+        0x2D, 0xDF, 0xD4, 0x00,
+        0x0C, 0x00, 0x85, 0x09,
+    };
+
+    internal static RewriteResult CreateEquationNative(
+        string mathMl,
+        bool inline)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl))
+            throw new InvalidDataException("MathType creation requires MathML.");
+
+        var prefix = Convert.FromBase64String(StandaloneMtefPrefixBase64);
+        var seedMtef = new byte[prefix.Length + 4];
+        Buffer.BlockCopy(prefix, 0, seedMtef, 0, prefix.Length);
+        seedMtef[prefix.Length] = RecordLine;
+        seedMtef[prefix.Length + 1] = 0;
+        seedMtef[prefix.Length + 2] = RecordEnd;
+        seedMtef[prefix.Length + 3] = RecordEnd;
+        if (FindRootStructureOffset(seedMtef) != prefix.Length)
+            throw new InvalidDataException(
+                "VisualTeX's standalone MathType MTEF prefix is internally inconsistent.");
+
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var math = document.Root?.DescendantsAndSelf()
+            .FirstOrDefault(element => element.Name.LocalName == "math")
+            ?? throw new InvalidDataException("MathML has no <math> root.");
+        var generated = BuildRootStructure(math, seedMtef);
+        var mtef = new byte[prefix.Length + generated.Length];
+        Buffer.BlockCopy(prefix, 0, mtef, 0, prefix.Length);
+        Buffer.BlockCopy(generated, 0, mtef, prefix.Length, generated.Length);
+
+        var equationNative = new byte[StandaloneEquationNativeHeader.Length + mtef.Length];
+        Buffer.BlockCopy(
+            StandaloneEquationNativeHeader,
+            0,
+            equationNative,
+            0,
+            StandaloneEquationNativeHeader.Length);
+        Buffer.BlockCopy(
+            BitConverter.GetBytes((uint)mtef.Length),
+            0,
+            equationNative,
+            8,
+            sizeof(uint));
+        Buffer.BlockCopy(
+            mtef,
+            0,
+            equationNative,
+            StandaloneEquationNativeHeader.Length,
+            mtef.Length);
+
+        _ = inline; // Word paragraph/layout owns inline vs display positioning.
+        return new RewriteResult
+        {
+            EquationNative = equationNative,
+            Mtef = mtef,
+            StructureOffset = prefix.Length,
+        };
+    }
+
     internal static RewriteResult RewriteEquationNative(
         byte[] equationNative,
         string mathMl,

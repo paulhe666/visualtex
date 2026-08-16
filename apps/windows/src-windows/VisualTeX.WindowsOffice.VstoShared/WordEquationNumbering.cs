@@ -94,6 +94,7 @@ internal static class WordEquationNumbering
     private const string UserPreferenceRegistryPath = @"Software\VisualTeX\Word";
     private const string DefaultNumberedPreferenceName = "DefaultDisplayEquationNumbered";
     private const string DefaultNumberFormatPreferenceName = "DefaultEquationNumberFormat";
+    private const string DefaultCreateObjectModePreferenceName = "DefaultCreateFormulaObjectMode";
 
     internal static bool GetDefaultDisplayEquationNumbered()
     {
@@ -112,6 +113,22 @@ internal static class WordEquationNumbering
             DefaultNumberedPreferenceName,
             numbered ? 1 : 0,
             RegistryValueKind.DWord);
+
+    internal static string GetDefaultCreateObjectMode()
+    {
+        var value = ReadUserPreference(DefaultCreateObjectModePreferenceName) as string;
+        return string.Equals(value, FormulaOleContract.MathTypeOleMode, StringComparison.Ordinal)
+            ? FormulaOleContract.MathTypeOleMode
+            : FormulaOleContract.NativeOleMode;
+    }
+
+    internal static void SetDefaultCreateObjectMode(string? objectMode) =>
+        WriteUserPreference(
+            DefaultCreateObjectModePreferenceName,
+            string.Equals(objectMode, FormulaOleContract.MathTypeOleMode, StringComparison.Ordinal)
+                ? FormulaOleContract.MathTypeOleMode
+                : FormulaOleContract.NativeOleMode,
+            RegistryValueKind.String);
 
     internal static string GetDefaultEquationNumberFormatId() =>
         EquationNumberFormat.Resolve(

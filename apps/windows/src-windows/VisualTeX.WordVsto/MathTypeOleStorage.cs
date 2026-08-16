@@ -17,6 +17,7 @@ internal static class MathTypeOleStorage
     private const int StgmWrite = 0x00000001;
     private const int StgmReadWrite = 0x00000002;
     private const int StgmShareExclusive = 0x00000010;
+    private const int StgmCreate = 0x00001000;
     private const int StatFlagNoName = 1;
     private const int AdvfNoData = 1;
 
@@ -114,6 +115,79 @@ internal static class MathTypeOleStorage
 
     internal static ClipboardTransaction BeginClipboardTransaction(InlineShape shape) =>
         new(shape);
+
+    internal static byte[] CreateStandaloneCompoundFile(string mathMl, bool inline) =>
+        CreateStandaloneCompoundFile(MathTypeMtefCodec.CreateEquationNative(mathMl, inline));
+
+    internal static byte[] CreateStandaloneCompoundFile(
+        MathTypeMtefCodec.RewriteResult equation)
+    {
+        if (equation is null
+            || equation.EquationNative.Length == 0
+            || equation.Mtef.Length == 0)
+            throw new InvalidDataException(
+                "Standalone MathType OLE creation requires generated Equation Native data.");
+        var root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp");
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, $"mathtype-create-{Guid.NewGuid():N}.ole");
+        IStorageNative? storage = null;
+        try
+        {
+            var result = StgCreateDocfile(
+                path,
+                StgmCreate | StgmReadWrite | StgmShareExclusive,
+                0,
+                out storage);
+            if (result < 0) Marshal.ThrowExceptionForHR(result);
+            var clsid = MathTypeEquationClsid;
+            storage.SetClass(ref clsid);
+            var mathTypeFormat = RegisterClipboardFormatW("MathType EF");
+            if (mathTypeFormat == 0)
+                throw new InvalidOperationException(
+                    "Could not register the MathType EF clipboard format.");
+            result = WriteFmtUserTypeStg(
+                storage,
+                checked((ushort)mathTypeFormat),
+                "MathType 7.0 Equation");
+            if (result < 0) Marshal.ThrowExceptionForHR(result);
+            // These are the standard OLE2 containment metadata streams written by
+            // MathType 7 for an Equation.DSMT4 embedded object.  They contain no
+            // formula/vendor document payload; CompObj is generated above by the
+            // Windows OLE API from the registered class/user type/clipboard format.
+            CreateAndWriteStream(
+                storage,
+                "\u0001Ole",
+                new byte[]
+                {
+                    0x01, 0x00, 0x00, 0x02,
+                    0x08, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00,
+                });
+            CreateAndWriteStream(
+                storage,
+                "\u0003ObjInfo",
+                new byte[] { 0x00, 0x00, 0x03, 0x00, 0x04, 0x00 });
+            CreateAndWriteStream(storage, "Equation Native", equation.EquationNative);
+            storage.Commit(0);
+            Release(storage);
+            storage = null;
+            var bytes = File.ReadAllBytes(path);
+            ValidateCompoundFile(bytes);
+            _ = ReadMathMl(bytes);
+            return bytes;
+        }
+        finally
+        {
+            Release(storage);
+            TryDelete(path);
+        }
+    }
 
     internal static byte[] CaptureCompoundFile(InlineShape shape)
     {
@@ -660,6 +734,36 @@ internal static class MathTypeOleStorage
         finally { Release(stream); }
     }
 
+    private static void CreateAndWriteStream(
+        IStorageNative storage,
+        string name,
+        byte[] data)
+    {
+        storage.CreateStream(
+            name,
+            StgmCreate | StgmReadWrite | StgmShareExclusive,
+            0,
+            0,
+            out var stream);
+        try
+        {
+            stream.SetSize(data.LongLength);
+            stream.Seek(0, 0, IntPtr.Zero);
+            var writtenPointer = Marshal.AllocHGlobal(sizeof(int));
+            try
+            {
+                stream.Write(data, data.Length, writtenPointer);
+                var written = Marshal.ReadInt32(writtenPointer);
+                if (written != data.Length)
+                    throw new IOException(
+                        $"MathType stream '{name}' expected to write {data.Length} bytes, wrote {written}.");
+            }
+            finally { Marshal.FreeHGlobal(writtenPointer); }
+            stream.Commit(0);
+        }
+        finally { Release(stream); }
+    }
+
     private static void WriteStream(
         IStorageNative storage,
         string name,
@@ -830,6 +934,19 @@ internal static class MathTypeOleStorage
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterClipboardFormatW(string format);
+
+    [DllImport("ole32.dll", CharSet = CharSet.Unicode)]
+    private static extern int WriteFmtUserTypeStg(
+        IStorageNative storage,
+        ushort clipboardFormat,
+        string userType);
+
+    [DllImport("ole32.dll", CharSet = CharSet.Unicode)]
+    private static extern int StgCreateDocfile(
+        string name,
+        int mode,
+        int reserved,
+        out IStorageNative storage);
 
     [DllImport("ole32.dll", CharSet = CharSet.Unicode)]
     private static extern int StgOpenStorage(

@@ -642,9 +642,9 @@ export function OfficeDialogApp() {
     setDisplayMode(session.displayMode);
     setObjectMode(session.objectMode);
     const loadedNumbered =
-      session.objectMode !== "mathTypeOle" &&
       session.displayMode === "block" &&
-      Boolean(session.numbered);
+      Boolean(session.numbered) &&
+      !(session.mode === "edit" && session.objectMode === "mathTypeOle");
     setNumbered(loadedNumbered);
     const loadedFontSizePt =
       session.host === "powerpoint" &&
@@ -1972,20 +1972,25 @@ export function OfficeDialogApp() {
         </div>
       ) : null}
       {session.host === "word" &&
-      session.mode === "edit" &&
-      (session.objectMode === "wordOmml" ||
-        session.objectMode === "mathTypeOle" ||
-        session.objectMode === "nativeOle") ? (
+      ((session.mode === "create" && session.objectMode !== "wordOmml") ||
+        (session.mode === "edit" &&
+          (session.objectMode === "wordOmml" ||
+            session.objectMode === "mathTypeOle" ||
+            session.objectMode === "nativeOle"))) ? (
         <label
           className="office-font-size-setting office-object-mode-setting"
           title={
-            session.objectMode === "mathTypeOle"
+            session.mode === "create"
               ? isEn
-                ? "Keep this equation as an editable MathType OLE object, or convert it to VisualTeX OLE"
-                : "本次编辑后继续保持可由 MathType 编辑的 OLE，或转换为 VisualTeX OLE"
-              : isEn
-                ? "Choose whether this edit stays as native Word OMML or becomes a VisualTeX OLE object"
-                : "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE"
+                ? "Choose whether to insert a VisualTeX OLE or a native MathType OLE equation"
+                : "选择插入 VisualTeX OLE 或原生 MathType OLE 公式"
+              : session.objectMode === "mathTypeOle"
+                ? isEn
+                  ? "Keep this equation as an editable MathType OLE object, or convert it to VisualTeX OLE"
+                  : "本次编辑后继续保持可由 MathType 编辑的 OLE，或转换为 VisualTeX OLE"
+                : isEn
+                  ? "Choose whether this edit stays as native Word OMML or becomes a VisualTeX OLE object"
+                  : "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE"
           }
         >
           <span>{isEn ? "Save as" : "保存为"}</span>
@@ -2003,12 +2008,19 @@ export function OfficeDialogApp() {
               if (session.objectMode === "mathTypeOle") setNumbered(false);
             }}
           >
-            {session.objectMode === "mathTypeOle" ? (
+            {session.mode === "create" ? (
+              <>
+                <option value="nativeOle">VisualTeX OLE</option>
+                <option value="mathTypeOle">MathType OLE</option>
+              </>
+            ) : session.objectMode === "mathTypeOle" ? (
               <option value="mathTypeOle">MathType OLE</option>
             ) : (
               <option value="wordOmml">Word OMML</option>
             )}
-            <option value="nativeOle">VisualTeX OLE</option>
+            {session.mode === "edit" ? (
+              <option value="nativeOle">VisualTeX OLE</option>
+            ) : null}
           </select>
         </label>
       ) : null}
@@ -2057,7 +2069,7 @@ export function OfficeDialogApp() {
         <label
           className="office-auto-commit-setting"
           title={
-            session.objectMode === "mathTypeOle"
+            session.mode === "edit" && session.objectMode === "mathTypeOle"
               ? isEn
                 ? "This MathType equation keeps its existing MathType/Word numbering. VisualTeX will not add a second number during this edit."
                 : "此 MathType 公式保留现有的 MathType/Word 编号；本次编辑不会再叠加一套 VisualTeX 编号。"
@@ -2066,8 +2078,12 @@ export function OfficeDialogApp() {
         >
           <input
             type="checkbox"
-            checked={session.objectMode === "mathTypeOle" ? false : numbered}
-            disabled={session.objectMode === "mathTypeOle"}
+            checked={
+              session.mode === "edit" && session.objectMode === "mathTypeOle"
+                ? false
+                : numbered
+            }
+            disabled={session.mode === "edit" && session.objectMode === "mathTypeOle"}
             onChange={(event) => setNumbered(event.target.checked)}
           />
           <span>{isEn ? "Number" : "编号"}</span>

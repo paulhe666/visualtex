@@ -357,9 +357,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         catch (Exception error) { SetStatus($"无法设置公式字号：{error.Message}"); }
     }
     public void OnInsertInline(object control) =>
-        BeginSession("create", "inline", FormulaOleContract.NativeOleMode);
+        BeginSession("create", "inline", null);
     public void OnInsertDisplay(object control) =>
-        BeginSession("create", "block", FormulaOleContract.NativeOleMode);
+        BeginSession("create", "block", null);
     public void OnInsertInlineOmml(object control) =>
         BeginSession("create", "inline", FormulaOleContract.WordOmmlMode);
     public void OnInsertDisplayOmml(object control) =>
@@ -1103,7 +1103,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                 ? NormalizeEditableMetadata(selection.Metadata)
                 : null;
             var targetObjectMode = requestedObjectMode
-                ?? (mode == "create" ? FormulaOleContract.NativeOleMode : selection.ObjectMode)
+                ?? (mode == "create"
+                    ? WordEquationNumbering.GetDefaultCreateObjectMode()
+                    : selection.ObjectMode)
                 ?? FormulaOleContract.NativeOleMode;
             var requiresObjectModeChange = mode == "edit"
                 && !string.Equals(
@@ -1170,6 +1172,16 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                 cancellationToken).ConfigureAwait(false);
             if (session.Mode == "create" && session.DisplayMode == "block")
                 WordEquationNumbering.SetDefaultDisplayEquationNumbered(session.Numbered);
+            if (session.Mode == "create"
+                && (string.Equals(
+                        session.ObjectMode,
+                        FormulaOleContract.NativeOleMode,
+                        StringComparison.Ordinal)
+                    || string.Equals(
+                        session.ObjectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal)))
+                WordEquationNumbering.SetDefaultCreateObjectMode(session.ObjectMode);
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
                 SetStatus("已取消，Word 文档未修改。");
@@ -1245,16 +1257,15 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal))
                 {
-                    if (session.Mode != "edit")
-                        throw new InvalidOperationException(
-                            "MathType OLE mode can only preserve an existing MathType equation.");
                     if (mathMl is null)
                         throw new InvalidOperationException(
                             "VisualTeX MathType OLE MathML payload is unavailable.");
                     if (emfPath is null)
                         throw new InvalidOperationException(
                             "VisualTeX MathType OLE vector preview is unavailable.");
-                    return service.ReplaceMathTypeOle(session, mathMl, emfPath);
+                    return session.Mode == "edit"
+                        ? service.ReplaceMathTypeOle(session, mathMl, emfPath)
+                        : service.InsertMathTypeOle(session, mathMl, emfPath);
                 }
                 if (string.Equals(
                         session.ObjectMode,
@@ -1292,7 +1303,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     session.ObjectMode,
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
-                SetStatus("MathType OLE 公式已原位更新，仍可继续用 MathType 编辑。");
+                SetStatus(session.Mode == "edit"
+                    ? "MathType OLE 公式已原位更新，仍可继续用 MathType 编辑。"
+                    : "MathType OLE 公式已插入，可继续用 MathType 或 VisualTeX 编辑。");
             else if (requiresObjectModeChange
                 && string.Equals(
                     session.ObjectMode,
