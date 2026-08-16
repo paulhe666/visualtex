@@ -113,8 +113,98 @@ internal static class MathTypeOleStorage
         }
     }
 
+    internal sealed class StandaloneClipboardTransaction : IDisposable
+    {
+        private MathTypeOleClipboardProxy? _replacementProxy;
+        private readonly bool _oleInitializedHere;
+        private bool _disposed;
+
+        internal StandaloneClipboardTransaction(
+            byte[] compoundFile,
+            string? emfPath,
+            float widthPt,
+            float heightPt)
+        {
+            ValidateCompoundFile(compoundFile);
+            var oleResult = OleInitialize(IntPtr.Zero);
+            if (oleResult == 0 || oleResult == 1)
+                _oleInitializedHere = true;
+            else if (oleResult < 0)
+                Marshal.ThrowExceptionForHR(oleResult);
+
+            try
+            {
+                var descriptor = MathTypeOleClipboardProxy.CreateStandaloneObjectDescriptor(
+                    widthPt,
+                    heightPt);
+                _replacementProxy = new MathTypeOleClipboardProxy(
+                    compoundFile,
+                    emfPath,
+                    descriptor);
+                var result = OleSetClipboard(_replacementProxy);
+                if (result < 0) Marshal.ThrowExceptionForHR(result);
+            }
+            catch
+            {
+                // Never try to restore an IDataObject obtained from the previous
+                // OLE clipboard here. OleSetClipboard does not clone that object;
+                // re-registering a live Word/MathType provider can re-enter Word's
+                // UI thread after the formula operation has already completed.
+                try { OleSetClipboard(null); } catch { }
+                if (_oleInitializedHere) OleUninitialize();
+                throw;
+            }
+        }
+
+        internal int ReplacementStorageWriteCount =>
+            _replacementProxy?.StorageWriteCount ?? 0;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try
+            {
+                if (_replacementProxy is not null
+                    && OleIsCurrentClipboard(_replacementProxy) == 0)
+                {
+                    // PasteSpecial has already consumed the live IDataObject. Flush
+                    // it while the proxy is still strongly alive so OLE owns static
+                    // rendered clipboard data before this transaction unwinds.
+                    // This is critical in real Word + MathType: re-registering the
+                    // previous live IDataObject here can create an ole32/USER32
+                    // re-entrancy loop on Word's UI thread after the Session is
+                    // already marked completed.
+                    var flushResult = OleFlushClipboard();
+                    if (flushResult < 0)
+                    {
+                        // Stability is more important than retaining a live proxy.
+                        // Detach it explicitly if OLE could not render the formats.
+                        try { OleSetClipboard(null); } catch { }
+                    }
+                }
+            }
+            catch
+            {
+                try { OleSetClipboard(null); } catch { }
+            }
+            finally
+            {
+                _replacementProxy = null;
+                if (_oleInitializedHere) OleUninitialize();
+            }
+        }
+    }
+
     internal static ClipboardTransaction BeginClipboardTransaction(InlineShape shape) =>
         new(shape);
+
+    internal static StandaloneClipboardTransaction BeginStandaloneClipboardTransaction(
+        byte[] compoundFile,
+        string? emfPath,
+        float widthPt,
+        float heightPt) =>
+        new(compoundFile, emfPath, widthPt, heightPt);
 
     internal static byte[] CreateStandaloneCompoundFile(string mathMl, bool inline) =>
         CreateStandaloneCompoundFile(MathTypeMtefCodec.CreateEquationNative(mathMl, inline));
@@ -189,23 +279,35 @@ internal static class MathTypeOleStorage
         }
     }
 
-    internal static byte[] CaptureCompoundFile(InlineShape shape)
+    internal static bool TryCaptureCompoundFileFromWordOpenXml(
+        InlineShape shape,
+        out byte[] compoundFile)
     {
         if (shape is null) throw new ArgumentNullException(nameof(shape));
         try
         {
-            // Preferred path: Word's Flat OPC snapshot already contains the full
-            // embedded OLE Compound File. Reading it here avoids clipboard ownership,
-            // OLE activation and any dependency on a registered MathType server.
-            return MathTypeWordOpenXml.Read(shape).CompoundFile;
+            compoundFile = MathTypeWordOpenXml.Read(shape).CompoundFile;
+            ValidateCompoundFile(compoundFile);
+            return true;
         }
         catch
         {
-            // Compatibility fallback for unusual legacy Word containers whose
-            // Range.WordOpenXML does not expose the OLE package parts.
-            using var transaction = BeginClipboardTransaction(shape);
-            return transaction.CompoundFile;
+            compoundFile = Array.Empty<byte>();
+            return false;
         }
+    }
+
+    internal static byte[] CaptureCompoundFile(InlineShape shape)
+    {
+        if (shape is null) throw new ArgumentNullException(nameof(shape));
+        if (TryCaptureCompoundFileFromWordOpenXml(shape, out var compoundFile))
+            return compoundFile;
+
+        // Compatibility fallback for existing/legacy Word containers whose
+        // Range.WordOpenXML does not expose the OLE package parts. New VisualTeX
+        // MathType creation deliberately does not use this clipboard fallback.
+        using var transaction = BeginClipboardTransaction(shape);
+        return transaction.CompoundFile;
     }
 
     internal static string ReadMathMl(InlineShape shape) =>
@@ -931,6 +1033,14 @@ internal static class MathTypeOleStorage
     private static extern int OleSetClipboard(
         [MarshalAs(UnmanagedType.Interface)]
         System.Runtime.InteropServices.ComTypes.IDataObject? dataObject);
+
+    [DllImport("ole32.dll")]
+    private static extern int OleFlushClipboard();
+
+    [DllImport("ole32.dll")]
+    private static extern int OleIsCurrentClipboard(
+        [MarshalAs(UnmanagedType.Interface)]
+        System.Runtime.InteropServices.ComTypes.IDataObject dataObject);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterClipboardFormatW(string format);

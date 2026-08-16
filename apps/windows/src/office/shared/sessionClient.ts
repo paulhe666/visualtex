@@ -9,6 +9,7 @@ import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
 
 export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
+export type MathTypeNumberPosition = "left" | "right";
 export type OfficeObjectMode =
   | "nativeOle"
   | "mathTypeOle"
@@ -82,6 +83,7 @@ export interface OfficeFormulaSession {
   displayMode: "inline" | "block";
   objectMode: OfficeObjectMode;
   numbered: boolean;
+  mathTypeNumberPosition: MathTypeNumberPosition;
   fontSizePt: number;
   exportWidth: number;
   exportHeight: number;
@@ -110,6 +112,7 @@ export interface CreateOfficeSessionInput {
   displayMode?: "inline" | "block";
   objectMode?: OfficeObjectMode;
   numbered?: boolean;
+  mathTypeNumberPosition?: MathTypeNumberPosition;
   fontSizePt?: number;
   exportWidth?: number;
   exportHeight?: number;

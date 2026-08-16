@@ -814,7 +814,7 @@ internal static partial class Program
     {
         const string fixtureName =
             "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx";
-        foreach (var parentDepth in new[] { 5, 6 })
+        foreach (var parentDepth in new[] { 5, 6, 7 })
         {
             var parts = new List<string> { AppContext.BaseDirectory };
             for (var index = 0; index < parentDepth; index++) parts.Add("..");

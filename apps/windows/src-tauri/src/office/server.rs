@@ -2771,6 +2771,7 @@ mod tests {
             display_mode: "inline".to_string(),
             object_mode: object_mode.to_string(),
             numbered: false,
+            math_type_number_position: "right".to_string(),
             font_size_pt: 11.0,
             export_width: 120.0,
             export_height: 30.0,

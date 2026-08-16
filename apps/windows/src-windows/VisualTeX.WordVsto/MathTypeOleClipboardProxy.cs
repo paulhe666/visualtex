@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 
 namespace VisualTeX.WordVsto;
 
@@ -20,7 +21,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
     private const int MmAnisotropic = 8;
     private const uint GmemZeroInit = 0x0040;
 
-    private readonly System.Runtime.InteropServices.ComTypes.IDataObject _source;
+    private readonly System.Runtime.InteropServices.ComTypes.IDataObject? _source;
     private readonly byte[] _compoundFile;
     private readonly string? _emfPath;
     private readonly short _embeddedObjectFormat;
@@ -39,8 +40,41 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         string? emfPath,
         bool preferEmbedSource = false,
         bool standaloneExternal = false)
+        : this(
+            source ?? throw new ArgumentNullException(nameof(source)),
+            compoundFile,
+            emfPath,
+            preferEmbedSource,
+            standaloneExternal,
+            objectDescriptorBytes: null)
     {
-        _source = source ?? throw new ArgumentNullException(nameof(source));
+    }
+
+    internal MathTypeOleClipboardProxy(
+        byte[] compoundFile,
+        string? emfPath,
+        byte[] objectDescriptorBytes)
+        : this(
+            source: null,
+            compoundFile,
+            emfPath,
+            preferEmbedSource: false,
+            standaloneExternal: true,
+            objectDescriptorBytes)
+    {
+    }
+
+    private MathTypeOleClipboardProxy(
+        System.Runtime.InteropServices.ComTypes.IDataObject? source,
+        byte[] compoundFile,
+        string? emfPath,
+        bool preferEmbedSource,
+        bool standaloneExternal,
+        byte[]? objectDescriptorBytes)
+    {
+        if (!standaloneExternal && source is null)
+            throw new ArgumentNullException(nameof(source));
+        _source = source;
         _compoundFile = compoundFile ?? throw new ArgumentNullException(nameof(compoundFile));
         _emfPath = string.IsNullOrWhiteSpace(emfPath) ? null : emfPath;
         _embeddedObjectFormat = RegisterOleFormat("Embedded Object");
@@ -50,11 +84,53 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         _preferEmbedSource = preferEmbedSource;
         _standaloneExternal = standaloneExternal;
         _objectDescriptorBytes = standaloneExternal
-            ? TryReadHGlobalFormat(_source, _objectDescriptorFormat)
+            ? objectDescriptorBytes
+                ?? (source is not null
+                    ? TryReadHGlobalFormat(source, _objectDescriptorFormat)
+                    : null)
             : null;
         if (standaloneExternal && (_objectDescriptorBytes is null || _objectDescriptorBytes.Length == 0))
             throw new InvalidDataException(
-                "Word did not expose an Object Descriptor for the standalone MathType OLE replacement.");
+                "Standalone MathType OLE data requires an Object Descriptor.");
+    }
+
+    internal static byte[] CreateStandaloneObjectDescriptor(
+        float widthPt,
+        float heightPt)
+    {
+        const int fixedDescriptorBytes = 52;
+        const uint contentAspect = 1;
+        var fullUserType = Encoding.Unicode.GetBytes("MathType 7.0 Equation\0");
+        var sourceOfCopy = Encoding.Unicode.GetBytes("VisualTeX\0");
+        var fullUserTypeOffset = fixedDescriptorBytes;
+        var sourceOfCopyOffset = fixedDescriptorBytes + fullUserType.Length;
+        var totalBytes = sourceOfCopyOffset + sourceOfCopy.Length;
+
+        using var stream = new MemoryStream(totalBytes);
+        using var writer = new BinaryWriter(stream, Encoding.Unicode, leaveOpen: true);
+        writer.Write((uint)totalBytes);
+        writer.Write(MathTypeOleStorage.MathTypeEquationClsid.ToByteArray());
+        writer.Write(contentAspect);
+        writer.Write(PointsToHimetric(widthPt));
+        writer.Write(PointsToHimetric(heightPt));
+        writer.Write(0);
+        writer.Write(0);
+        writer.Write(0u);
+        writer.Write((uint)fullUserTypeOffset);
+        writer.Write((uint)sourceOfCopyOffset);
+        if (stream.Position != fixedDescriptorBytes)
+            throw new InvalidOperationException(
+                $"VisualTeX built an invalid OBJECTDESCRIPTOR header size: {stream.Position}.");
+        writer.Write(fullUserType);
+        writer.Write(sourceOfCopy);
+        writer.Flush();
+        return stream.ToArray();
+    }
+
+    private static int PointsToHimetric(float points)
+    {
+        var safePoints = Math.Max(1d / 72d, points);
+        return Math.Max(1, checked((int)Math.Round(safePoints * 2540d / 72d)));
     }
 
     public void GetData(ref FORMATETC format, out STGMEDIUM medium)
@@ -86,7 +162,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         }
         if (_standaloneExternal)
             Marshal.ThrowExceptionForHR(DV_E_FORMATETC);
-        _source.GetData(ref format, out medium);
+        _source!.GetData(ref format, out medium);
     }
 
     public void GetDataHere(ref FORMATETC format, ref STGMEDIUM medium)
@@ -107,7 +183,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         }
         if (_standaloneExternal)
             Marshal.ThrowExceptionForHR(DV_E_FORMATETC);
-        _source.GetDataHere(ref format, ref medium);
+        _source!.GetDataHere(ref format, ref medium);
     }
 
     [PreserveSig]
@@ -130,7 +206,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             return (format.tymed & TYMED.TYMED_MFPICT) != 0 ? S_OK : DV_E_FORMATETC;
         return _standaloneExternal
             ? DV_E_FORMATETC
-            : _source.QueryGetData(ref format);
+            : _source!.QueryGetData(ref format);
     }
 
     [PreserveSig]
@@ -142,13 +218,13 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             formatOut.ptd = IntPtr.Zero;
             return E_NOTIMPL;
         }
-        return _source.GetCanonicalFormatEtc(ref formatIn, out formatOut);
+        return _source!.GetCanonicalFormatEtc(ref formatIn, out formatOut);
     }
 
     public void SetData(ref FORMATETC formatIn, ref STGMEDIUM medium, bool release)
     {
         if (_standaloneExternal) Marshal.ThrowExceptionForHR(E_NOTIMPL);
-        _source.SetData(ref formatIn, ref medium, release);
+        _source!.SetData(ref formatIn, ref medium, release);
     }
 
     public IEnumFORMATETC EnumFormatEtc(DATADIR direction)
@@ -175,9 +251,9 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         }
 
         if (!_preferEmbedSource || direction != DATADIR.DATADIR_GET)
-            return _source.EnumFormatEtc(direction);
+            return _source!.EnumFormatEtc(direction);
 
-        var formats = ReadFormats(_source.EnumFormatEtc(direction));
+        var formats = ReadFormats(_source!.EnumFormatEtc(direction));
         formats.RemoveAll(format => format.cfFormat == _embeddedObjectFormat);
         EnsureFormat(
             formats,
@@ -210,7 +286,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
                 connection = 0;
                 return E_NOTIMPL;
             }
-            return _source.DAdvise(ref pFormatetc, advf, adviseSink, out connection);
+            return _source!.DAdvise(ref pFormatetc, advf, adviseSink, out connection);
         }
         catch (COMException error)
         {
@@ -227,7 +303,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
     public void DUnadvise(int connection)
     {
         if (_standaloneExternal) Marshal.ThrowExceptionForHR(E_NOTIMPL);
-        _source.DUnadvise(connection);
+        _source!.DUnadvise(connection);
     }
 
     [PreserveSig]
@@ -240,7 +316,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
                 enumAdvise = null;
                 return E_NOTIMPL;
             }
-            return _source.EnumDAdvise(out enumAdvise);
+            return _source!.EnumDAdvise(out enumAdvise);
         }
         catch (COMException error)
         {

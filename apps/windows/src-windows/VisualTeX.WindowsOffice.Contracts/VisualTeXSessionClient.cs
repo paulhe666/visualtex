@@ -1305,6 +1305,9 @@ public sealed class CreateVstoSessionRequest
     [JsonPropertyName("numbered")]
     public bool Numbered { get; set; }
 
+    [JsonPropertyName("mathTypeNumberPosition")]
+    public string MathTypeNumberPosition { get; set; } = "right";
+
     [JsonPropertyName("fontSizePt")]
     public double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;
 
@@ -1352,6 +1355,9 @@ public sealed class OfficeSessionDocument
 
     [JsonPropertyName("numbered")]
     public bool Numbered { get; set; }
+
+    [JsonPropertyName("mathTypeNumberPosition")]
+    public string MathTypeNumberPosition { get; set; } = "right";
 
     [JsonPropertyName("fontSizePt")]
     public double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;

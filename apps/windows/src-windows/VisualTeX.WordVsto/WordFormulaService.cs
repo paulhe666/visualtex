@@ -1724,6 +1724,51 @@ internal sealed class WordFormulaService
         }
     }
 
+    internal string GetMathTypeNumberPositionPreference()
+    {
+        var saved = WordEquationNumbering.TryGetDefaultMathTypeNumberPosition();
+        if (saved is not null) return saved;
+
+        Document? document = null;
+        try
+        {
+            // MathType stores its own document-wide default in
+            // MTEqnNumsOnRight. VisualTeX may read that value once when no
+            // VisualTeX preference exists, but must never write it while a Word
+            // formula transaction is active: changing MathType's global document
+            // state can make the MathType add-in re-enter Word layout/field code
+            // while VisualTeX is still materializing an OLE object.
+            document = _application.ActiveDocument;
+            return document is null
+                ? "right"
+                : ReadMathTypeNumberPositionPreference(document);
+        }
+        catch { return "right"; }
+        finally { Release(document); }
+    }
+
+    internal string GetMathTypeNumberPositionForRange(string? sourceObjectId)
+    {
+        Document? document = null;
+        InlineShape? shape = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            if (document is null) return "right";
+            shape = FindMathTypeOleByRange(document, sourceObjectId);
+            if (shape is not null
+                && MathTypeOleInterop.TryReadDisplayNumberPosition(shape, out var position))
+                return position;
+            return GetMathTypeNumberPositionPreference();
+        }
+        catch { return "right"; }
+        finally
+        {
+            Release(shape);
+            Release(document);
+        }
+    }
+
     public OfficeObjectResult InsertMathTypeOle(
         OfficeSessionDocument session,
         string mathMl,
@@ -1820,10 +1865,15 @@ internal sealed class WordFormulaService
         Document? document = null;
         Selection? selection = null;
         Range? insertion = null;
+        Range? displaySpacingAnchor = null;
         InlineShape? shape = null;
         Field? sourceNumberTemplateField = null;
         UndoRecord? undoRecord = null;
         var sourceParagraphCount = -1;
+        var paragraphCountBeforeDisplayPreparation = -1;
+        var insertionStart = -1;
+        var createdDefaultSectionBreak = false;
+        var stage = "initialize";
         try
         {
             undoRecord = BeginUndoRecord(
@@ -1838,12 +1888,31 @@ internal sealed class WordFormulaService
             EnsureSourceDocument(document, session.SourceDocumentId);
             selection = _application.Selection;
 
+            // Resolve the captured Session insertion point before consulting any
+            // MathType numbering state. The live Word Selection can move while the
+            // external editor owns focus and must never decide which MTPlaceRef
+            // template a create operation inherits.
+            stage = "resolve-captured-insertion";
+            insertion = ResolveSessionInsertionRange(document, session, selection);
+            insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
+
+            // Older failed builds could leave a number-only MTDisplayEquation row
+            // at the exact captured caret. Clear only that structurally incomplete
+            // row so a retry does not clone its orphan MTPlaceRef or increment the
+            // native MathType sequence twice.
+            if (!inline && session.Numbered)
+            {
+                stage = "repair-incomplete-number-row";
+                ClearIncompleteMathTypeNumberRowAtInsertion(document, insertion);
+            }
+
             MathTypeWordOpenXml.NumberTemplate? numberTemplate = null;
             if (!inline && session.Numbered)
             {
+                stage = "resolve-number-template";
                 sourceNumberTemplateField = FindNearestMathTypePlaceRefField(
                     document,
-                    selection.Start,
+                    insertion.Start,
                     excludeStart: -1,
                     excludeEnd: -1);
                 if (sourceNumberTemplateField is not null)
@@ -1854,15 +1923,18 @@ internal sealed class WordFormulaService
                 {
                     numberTemplate = MathTypeWordOpenXml.CreateDefaultNumberTemplate();
                     if (!HasMathTypeSectionBreak(document))
+                    {
                         EnsureDefaultMathTypeSectionBreak(document);
+                        createdDefaultSectionBreak = true;
+                    }
                 }
             }
 
-            insertion = ResolveSessionInsertionRange(document, session, selection);
-            insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
             if (!inline)
             {
-                CompactParagraphBeforeOleDisplayFormula(document, insertion);
+                stage = "prepare-display-row";
+                paragraphCountBeforeDisplayPreparation = ReadDocumentParagraphCount(document);
+                displaySpacingAnchor = insertion.Duplicate;
                 var displayInsertion = ResolveStandaloneMathTypeDisplayInsertionRange(
                     document,
                     insertion);
@@ -1870,46 +1942,71 @@ internal sealed class WordFormulaService
                 insertion = displayInsertion;
             }
 
+            insertionStart = insertion.Start;
+            stage = "build-flat-opc";
             var wordOpenXml = MathTypeWordOpenXml.CreateWithPlaceableWmf(
                 compoundFile,
                 previewWmf,
                 widthPt,
                 heightPt,
                 display: !inline,
-                numberTemplate);
+                numberTemplate,
+                session.MathTypeNumberPosition);
 
-            var insertionStart = insertion.Start;
             var sourceObjectCount = document.InlineShapes.Count;
             sourceParagraphCount = ReadDocumentParagraphCount(document);
+            stage = "insert-flat-opc";
             insertion.InsertXML(wordOpenXml);
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_MATHTYPE_FAIL_STAGE"),
+                    "after-flat-opc",
+                    StringComparison.Ordinal))
+                throw new COMException(
+                    "Injected MathType Flat OPC failure for rollback acceptance.",
+                    unchecked((int)0x8007000E));
             if (document.InlineShapes.Count != sourceObjectCount + 1)
                 throw new InvalidOperationException(
                     "Word did not materialize exactly one standalone MathType OLE equation.");
             shape = FindMathTypeOleByRange(
                 document,
                 $"{RangeReferencePrefix}{insertionStart}:{insertionStart + 1}")
+                ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
                 ?? FindMathTypeOleNearPosition(document, insertionStart)
                 ?? throw new InvalidOperationException(
                     "Word inserted the MathType OLE data but VisualTeX could not resolve the new equation.");
             if (!MathTypeOleInterop.IsMathTypeOle(shape))
                 throw new InvalidOperationException(
                     "Word did not materialize the standalone equation as Equation.DSMT4.");
-            // Validate the embedded storage before adding/updating adjacent
-            // MathType numbering fields. Word can transiently suppress OLE
-            // clipboard/WordOpenXML formats while nested MTPlaceRef fields are
-            // being recalculated, even though the object itself is unchanged.
-            var materializedMathMl = MathTypeOleStorage.ReadMathMl(shape);
-            if (!MathTypeMathMlRoundTripMatches(expectedSignature, materializedMathMl))
-                throw new InvalidDataException(
-                    "Word materialized a different MathType equation than VisualTeX generated.");
+            // If Word exposes the Flat OPC package part immediately, validate it.
+            // Some real Word + MathType add-in configurations deliberately defer
+            // the embedded OLE package from Range.WordOpenXML. Do not fall back to
+            // Range.Copy/OLE clipboard here: the CFB was generated and validated by
+            // VisualTeX immediately before InsertXML, and touching the live Word
+            // clipboard is exactly what makes repeated MathType creation unstable.
+            stage = "validate-flat-opc-storage";
+            if (MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
+                    shape,
+                    out var materializedCompoundFile))
+            {
+                var materializedMathMl = MathTypeOleStorage.ReadMathMl(
+                    materializedCompoundFile);
+                if (!MathTypeMathMlRoundTripMatches(expectedSignature, materializedMathMl))
+                    throw new InvalidDataException(
+                        "Word materialized a different MathType equation than VisualTeX generated.");
+            }
 
             // InsertXML creates a valid Equation.DSMT4 package but Word does not
             // populate its live OLE presentation IDataObject; the object can be
             // opened by MathType yet renders as an empty rectangle. Re-materialize
-            // the exact same storage once through Word's native OLE PasteSpecial
-            // path while supplying an explicit vector presentation. This uses the
-            // temporary InsertXML object only as the Object Descriptor source and
-            // does not activate MathType.
+            // the exact same VisualTeX-owned CFB once through Word's native OLE
+            // PasteSpecial path while supplying an explicit vector presentation.
+            // The standalone IDataObject is synthesized entirely by VisualTeX and
+            // never copies the temporary Word object or reads the user's clipboard.
+            stage = "materialize-native-ole-presentation";
             var presentedShape = RematerializeStandaloneMathTypeOlePresentation(
                 document,
                 shape,
@@ -1919,10 +2016,17 @@ internal sealed class WordFormulaService
                 heightPt);
             Release(shape);
             shape = presentedShape;
-            var presentedMathMl = MathTypeOleStorage.ReadMathMl(shape);
-            if (!MathTypeMathMlRoundTripMatches(expectedSignature, presentedMathMl))
-                throw new InvalidDataException(
-                    "Word changed the standalone MathType equation while materializing its visible OLE presentation.");
+            stage = "validate-native-ole-presentation";
+            if (MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
+                    shape,
+                    out var presentedCompoundFile))
+            {
+                var presentedMathMl = MathTypeOleStorage.ReadMathMl(
+                    presentedCompoundFile);
+                if (!MathTypeMathMlRoundTripMatches(expectedSignature, presentedMathMl))
+                    throw new InvalidDataException(
+                        "Word changed the standalone MathType equation while materializing its visible OLE presentation.");
+            }
 
             if (inline && sourceParagraphCount >= 0)
                 RepairMathTypeInsertXmlParagraphSplit(
@@ -1930,6 +2034,7 @@ internal sealed class WordFormulaService
                     shape,
                     sourceParagraphCount);
 
+            stage = "apply-native-baseline";
             SetInlineOleWordPosition(shape, wordPosition);
             if (inline)
             {
@@ -1940,7 +2045,12 @@ internal sealed class WordFormulaService
             }
             else
             {
-                ConfigureNewMathTypeDisplayEquation(document, shape, session.Numbered);
+                stage = "configure-display-numbering";
+                ConfigureNewMathTypeDisplayEquation(
+                    document,
+                    shape,
+                    session.Numbered,
+                    session.MathTypeNumberPosition);
                 var shapeRange = shape.Range;
                 try
                 {
@@ -1952,12 +2062,35 @@ internal sealed class WordFormulaService
                 finally { Release(shapeRange); }
             }
 
+            if (!inline && displaySpacingAnchor is not null)
+            {
+                stage = "finalize-display-spacing";
+                CompactParagraphBeforeOleDisplayFormula(document, displaySpacingAnchor);
+            }
+            stage = "complete";
             return Result(session, document);
         }
-        catch
+        catch (Exception error)
         {
-            TryDelete(shape);
-            throw;
+            if (!inline && document is not null && insertionStart >= 0)
+            {
+                RollbackStandaloneMathTypeDisplayInsertion(
+                    document,
+                    insertionStart,
+                    paragraphCountBeforeDisplayPreparation);
+            }
+            else
+            {
+                TryDelete(shape);
+            }
+            if (createdDefaultSectionBreak && document is not null)
+                RemoveFirstMathTypeSectionBreakField(document);
+            var hresult = error is COMException
+                ? $" HRESULT=0x{error.HResult:X8}."
+                : string.Empty;
+            throw new InvalidOperationException(
+                $"MathType OLE insertion failed at stage '{stage}'.{hresult} {error.Message}",
+                error);
         }
         finally
         {
@@ -1970,6 +2103,7 @@ internal sealed class WordFormulaService
             Release(undoRecord);
             Release(sourceNumberTemplateField);
             Release(shape);
+            Release(displaySpacingAnchor);
             Release(insertion);
             Release(selection);
             Release(document);
@@ -1998,12 +2132,11 @@ internal sealed class WordFormulaService
             {
                 try
                 {
-                    using var transaction = MathTypeOleStorage.BeginClipboardTransaction(sourceShape);
-                    transaction.SetReplacementClipboard(
+                    using var transaction = MathTypeOleStorage.BeginStandaloneClipboardTransaction(
                         compoundFile,
                         emfPath,
-                        preferEmbedSource: false,
-                        standaloneExternal: false);
+                        widthPt,
+                        heightPt);
                     Release(insertion);
                     insertion = document.Range(start, start);
                     insertion.PasteSpecial(
@@ -2014,6 +2147,9 @@ internal sealed class WordFormulaService
                     if (document.InlineShapes.Count != sourceCount + 1)
                         throw new InvalidOperationException(
                             "Word did not create exactly one replacement MathType OLE presentation.");
+                    if (transaction.ReplacementStorageWriteCount <= 0)
+                        throw new InvalidOperationException(
+                            "Word created an OLE object without requesting the VisualTeX MathType CFB storage.");
                     pasted = true;
                 }
                 catch (COMException error) when (attempt < 3)
@@ -5290,6 +5426,185 @@ internal sealed class WordFormulaService
         }
     }
 
+    private static bool IsIncompleteMathTypeNumberRow(Range paragraphRange)
+    {
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var placeRefCount = 0;
+        try
+        {
+            shapes = paragraphRange.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(shape);
+                shape = shapes[index];
+                if (MathTypeOleInterop.IsMathTypeOle(shape)) return false;
+            }
+
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTPlaceRef",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    placeRefCount++;
+            }
+            if (placeRefCount != 1) return false;
+
+            var text = paragraphRange.Text ?? string.Empty;
+            foreach (var character in text)
+            {
+                if (character == '\r' || character == '\t'
+                    || character == '\u0013' || character == '\u0014' || character == '\u0015'
+                    || character == '\u0001' || character == '\uFFFC'
+                    || char.IsWhiteSpace(character))
+                    continue;
+                return false;
+            }
+            return true;
+        }
+        catch { return false; }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
+    private static bool ClearIncompleteMathTypeNumberRowAtInsertion(
+        Document document,
+        Range insertion)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? body = null;
+        try
+        {
+            paragraphs = insertion.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (insertion.Start < paragraphRange.Start || insertion.Start > paragraphRange.End)
+                return false;
+            if (!IsIncompleteMathTypeNumberRow(paragraphRange)) return false;
+
+            var start = paragraphRange.Start;
+            var bodyEnd = Math.Max(start, paragraphRange.End - 1);
+            body = document.Range(start, bodyEnd);
+            body.Delete();
+            insertion.SetRange(start, start);
+            return true;
+        }
+        finally
+        {
+            Release(body);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static void RollbackStandaloneMathTypeDisplayInsertion(
+        Document document,
+        int insertionStart,
+        int paragraphCountBeforePreparation)
+    {
+        Range? anchor = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? body = null;
+        Range? paragraphMark = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        try
+        {
+            var contentStart = document.Content.Start;
+            var contentEnd = Math.Max(contentStart, document.Content.End - 1);
+            var position = Math.Max(contentStart, Math.Min(insertionStart, contentEnd));
+            anchor = document.Range(position, position);
+            paragraphs = anchor.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+
+            // A failed standalone MathType insertion owns the whole generated
+            // display row. Delete every MathType OLE in that row first so a
+            // partially completed PasteSpecial cannot survive the rollback.
+            shapes = paragraphRange.InlineShapes;
+            for (var index = shapes.Count; index >= 1; index--)
+            {
+                Release(shape);
+                shape = shapes[index];
+                if (MathTypeOleInterop.IsMathTypeOle(shape))
+                    shape.Delete();
+            }
+            Release(shape);
+            shape = null;
+            Release(shapes);
+            shapes = null;
+
+            // Remove the MTPlaceRef/tabs left by the Flat OPC row.  Only clear a
+            // row that is now structurally empty or a native number-only row;
+            // never delete arbitrary user prose on an exception path.
+            if (IsIncompleteMathTypeNumberRow(paragraphRange)
+                || !ContainsVisibleBodyText(paragraphRange.Text))
+            {
+                var start = paragraphRange.Start;
+                var end = Math.Max(start, paragraphRange.End - 1);
+                body = document.Range(start, end);
+                body.Delete();
+            }
+
+            // ResolveStandaloneMathTypeDisplayInsertionRange may have created one
+            // dedicated blank paragraph before InsertXML. Restore the original
+            // paragraph count when that paragraph was created solely for the failed
+            // transaction; preserve a blank paragraph that already existed.
+            if (paragraphCountBeforePreparation >= 0
+                && ReadDocumentParagraphCount(document) > paragraphCountBeforePreparation)
+            {
+                Release(paragraphRange);
+                paragraphRange = paragraph.Range;
+                if (!ContainsVisibleBodyText(paragraphRange.Text))
+                {
+                    paragraphMark = document.Range(
+                        Math.Max(paragraphRange.Start, paragraphRange.End - 1),
+                        paragraphRange.End);
+                    if (string.Equals(paragraphMark.Text, "\r", StringComparison.Ordinal))
+                        paragraphMark.Delete();
+                }
+            }
+        }
+        catch
+        {
+            // Rollback is best-effort and must never mask the original Word/OLE
+            // failure. The caller rethrows the original exception with stage data.
+        }
+        finally
+        {
+            Release(shape);
+            Release(shapes);
+            Release(paragraphMark);
+            Release(body);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(anchor);
+        }
+    }
+
     private static Range ResolveStandaloneMathTypeDisplayInsertionRange(
         Document document,
         Range anchor)
@@ -7800,6 +8115,57 @@ internal sealed class WordFormulaService
         }
     }
 
+    private static InlineShape? FindMathTypeOleInParagraphAtPosition(
+        Document document,
+        int position)
+    {
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        InlineShapes? shapes = null;
+        try
+        {
+            var safePosition = Math.Max(
+                document.Content.Start,
+                Math.Min(document.Content.End - 1, position));
+            probe = document.Range(safePosition, safePosition);
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count != 1) return null;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            shapes = paragraphRange.InlineShapes;
+            InlineShape? match = null;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                InlineShape? candidate = null;
+                try
+                {
+                    candidate = shapes[index];
+                    if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                    if (match is not null)
+                    {
+                        Release(match);
+                        return null;
+                    }
+                    match = candidate;
+                    candidate = null;
+                }
+                finally { Release(candidate); }
+            }
+            return match;
+        }
+        catch { return null; }
+        finally
+        {
+            Release(shapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+        }
+    }
+
     private static InlineShape? FindMathTypeOleNearPosition(
         Document document,
         int position)
@@ -7841,7 +8207,8 @@ internal sealed class WordFormulaService
     private static void ConfigureNewMathTypeDisplayEquation(
         Document document,
         InlineShape shape,
-        bool numbered)
+        bool numbered,
+        string mathTypeNumberPosition)
     {
         Range? shapeRange = null;
         Paragraphs? paragraphs = null;
@@ -7880,18 +8247,69 @@ internal sealed class WordFormulaService
             try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
 
             var paragraphText = paragraphRange.Text ?? string.Empty;
-            if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    "The MathType display equation does not begin with Word's native tab + OLE sequence.");
+            if (!numbered)
+            {
+                if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "The unnumbered MathType display equation does not begin with Word's native tab + OLE sequence.");
+                return;
+            }
 
-            if (!numbered) return;
-            if (paragraphText.IndexOf("\u0001\t", StringComparison.Ordinal) < 0)
-                throw new InvalidOperationException(
-                    "The numbered MathType display equation has no trailing number-positioning tab.");
+            var numberOnLeft = string.Equals(
+                mathTypeNumberPosition,
+                "left",
+                StringComparison.OrdinalIgnoreCase);
+            var numberOnRight = string.Equals(
+                mathTypeNumberPosition,
+                "right",
+                StringComparison.OrdinalIgnoreCase);
+            if (!numberOnLeft && !numberOnRight)
+                throw new InvalidDataException(
+                    "MathType equation number position must be left or right.");
+
             placeRef = FindMathTypePlaceRefFieldInRange(paragraphRange)
                 ?? throw new InvalidOperationException(
                     "The numbered MathType display equation has no MTPlaceRef field.");
-            UpdateNestedMathTypeNumberFields(placeRef);
+            Range? placeRefCode = null;
+            Range? placeRefResult = null;
+            Range? separator = null;
+            try
+            {
+                placeRefCode = placeRef.Code;
+                placeRefResult = placeRef.Result;
+                var fieldStart = Math.Max(paragraphRange.Start, placeRefCode.Start - 1);
+                var fieldEnd = Math.Min(paragraphRange.End, placeRefResult.End + 1);
+                if (numberOnLeft)
+                {
+                    if (fieldEnd > shapeRange.Start)
+                        throw new InvalidOperationException(
+                            "The MathType left equation number is not positioned before the equation object.");
+                    separator = document.Range(fieldEnd, shapeRange.Start);
+                    if ((separator.Text ?? string.Empty).IndexOf('\t') < 0)
+                        throw new InvalidOperationException(
+                            "The MathType left-numbered display equation has no tab between its number and equation.");
+                }
+                else
+                {
+                    if (fieldStart < shapeRange.End)
+                        throw new InvalidOperationException(
+                            "The MathType right equation number is not positioned after the equation object.");
+                    separator = document.Range(shapeRange.End, fieldStart);
+                    if ((separator.Text ?? string.Empty).IndexOf('\t') < 0)
+                        throw new InvalidOperationException(
+                            "The MathType right-numbered display equation has no tab between its equation and number.");
+                    if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
+                        throw new InvalidOperationException(
+                            "The MathType right-numbered display equation does not begin with Word's native center tab + OLE sequence.");
+                }
+                UpdateNestedMathTypeNumberFields(placeRef);
+            }
+            finally
+            {
+                Release(separator);
+                Release(placeRefResult);
+                Release(placeRefCode);
+            }
         }
         finally
         {
@@ -8199,6 +8617,46 @@ internal sealed class WordFormulaService
         }
     }
 
+    private static void RemoveFirstMathTypeSectionBreakField(Document document)
+    {
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        Range? full = null;
+        try
+        {
+            field = FindFirstMathTypeSectionBreakField(document);
+            if (field is null) return;
+
+            // Delete the Word Field object itself first. Reconstructing the outer
+            // field range from Code/Result coordinates is fragile for MathType's
+            // nested hidden SEQ fields because Word can expose the outer Result as
+            // a collapsed range after those nested fields have been updated.
+            try
+            {
+                field.Delete();
+                return;
+            }
+            catch { }
+
+            // Conservative fallback for Word builds that reject Field.Delete().
+            code = field.Code;
+            result = field.Result;
+            var start = Math.Max(document.Content.Start, code.Start - 1);
+            var end = Math.Min(document.Content.End, Math.Max(code.End, result.End) + 1);
+            full = document.Range(start, end);
+            full.Delete();
+        }
+        catch { }
+        finally
+        {
+            Release(full);
+            Release(result);
+            Release(code);
+            Release(field);
+        }
+    }
+
     private static void EnsureMathTypeNativeStyles(Document document)
     {
         Styles? styles = null;
@@ -8263,6 +8721,36 @@ internal sealed class WordFormulaService
             Release(sectionStyle);
             Release(displayStyle);
             Release(styles);
+        }
+    }
+
+    private static string ReadMathTypeNumberPositionPreference(Document document)
+    {
+        object? propertiesObject = null;
+        object? propertyObject = null;
+        try
+        {
+            propertiesObject = document.CustomDocumentProperties;
+            if (propertiesObject is null) return "right";
+            dynamic properties = propertiesObject;
+            try
+            {
+                propertyObject = properties["MTEqnNumsOnRight"];
+                dynamic property = propertyObject;
+                var value = property.Value;
+                if (value is bool right) return right ? "right" : "left";
+                if (value is int integer) return integer != 0 ? "right" : "left";
+                var text = Convert.ToString((object)value);
+                if (bool.TryParse(text, out bool parsed))
+                    return parsed ? "right" : "left";
+            }
+            catch { }
+            return "right";
+        }
+        finally
+        {
+            Release(propertyObject);
+            Release(propertiesObject);
         }
     }
 

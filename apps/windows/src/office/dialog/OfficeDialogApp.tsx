@@ -349,6 +349,7 @@ function documentFingerprint(
   displayMode: "inline" | "block",
   objectMode: OfficeObjectMode,
   numbered: boolean,
+  mathTypeNumberPosition: "left" | "right",
   fontSizePt: number,
   formulaLetterFont: FormulaLetterFont,
   formulaChineseFont: FormulaChineseFont,
@@ -365,6 +366,7 @@ function documentFingerprint(
     displayMode,
     objectMode,
     numbered,
+    mathTypeNumberPosition,
     fontSizePt: normalizeOfficeFontSizePt(fontSizePt, fontSizePt),
     formulaLetterFont,
     formulaChineseFont,
@@ -398,6 +400,7 @@ export function OfficeDialogApp() {
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
   const [objectMode, setObjectMode] = useState<OfficeObjectMode>("nativeOle");
   const [numbered, setNumbered] = useState(false);
+  const [mathTypeNumberPosition, setMathTypeNumberPosition] = useState<"left" | "right">("right");
   // This is only a pre-Session UI placeholder. Word never uses it as a
   // default: every Word Session must supply the font size read at the current
   // document insertion point. PowerPoint's configured default is stored in a
@@ -586,6 +589,7 @@ export function OfficeDialogApp() {
         displayMode,
         objectMode,
         numbered,
+        mathTypeNumberPosition,
         officeFontSizePt,
         formulaLetterFont,
         formulaChineseFont,
@@ -597,6 +601,7 @@ export function OfficeDialogApp() {
       displayMode,
       objectMode,
       numbered,
+      mathTypeNumberPosition,
       officeFontSizePt,
       formulaLetterFont,
       formulaChineseFont,
@@ -642,10 +647,11 @@ export function OfficeDialogApp() {
     setDisplayMode(session.displayMode);
     setObjectMode(session.objectMode);
     const loadedNumbered =
-      session.displayMode === "block" &&
-      Boolean(session.numbered) &&
-      !(session.mode === "edit" && session.objectMode === "mathTypeOle");
+      session.displayMode === "block" && Boolean(session.numbered);
     setNumbered(loadedNumbered);
+    const loadedMathTypeNumberPosition =
+      session.mathTypeNumberPosition === "left" ? "left" : "right";
+    setMathTypeNumberPosition(loadedMathTypeNumberPosition);
     const loadedFontSizePt =
       session.host === "powerpoint" &&
       session.mode === "create" &&
@@ -666,6 +672,7 @@ export function OfficeDialogApp() {
       session.displayMode,
       session.objectMode,
       loadedNumbered,
+      loadedMathTypeNumberPosition,
       loadedFontSizePt,
       session.originalMetadata?.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
       session.originalMetadata?.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
@@ -677,6 +684,7 @@ export function OfficeDialogApp() {
       session.displayMode,
       session.objectMode,
       loadedNumbered,
+      loadedMathTypeNumberPosition,
       loadedFontSizePt,
       formulaLetterFont,
       formulaChineseFont,
@@ -1213,6 +1221,7 @@ export function OfficeDialogApp() {
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
+        mathTypeNumberPosition,
         fontSizePt: officeFontSizePt,
         dirty,
         status: "editing",
@@ -1253,6 +1262,7 @@ export function OfficeDialogApp() {
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
+        mathTypeNumberPosition,
         fontSizePt: officeFontSizePt,
         dirty,
         status: "editing",
@@ -1340,6 +1350,7 @@ export function OfficeDialogApp() {
     displayMode,
     objectMode,
     numbered,
+    mathTypeNumberPosition,
     officeFontSizePt,
     dirty,
     autoCommitOnClose,
@@ -1371,6 +1382,7 @@ export function OfficeDialogApp() {
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
+        mathTypeNumberPosition,
         fontSizePt: officeFontSizePt,
         dirty,
         status,
@@ -1464,6 +1476,7 @@ export function OfficeDialogApp() {
     displayMode,
     objectMode,
     numbered,
+    mathTypeNumberPosition,
     officeFontSizePt,
     dirty,
     autoCommitOnClose,
@@ -1762,6 +1775,7 @@ export function OfficeDialogApp() {
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
+        mathTypeNumberPosition,
         fontSizePt: officeFontSizePt,
         dirty,
         status,
@@ -1784,6 +1798,7 @@ export function OfficeDialogApp() {
       displayMode,
       objectMode,
       numbered,
+      mathTypeNumberPosition,
       officeFontSizePt,
       dirty,
       autoCommitOnClose,
@@ -2078,15 +2093,40 @@ export function OfficeDialogApp() {
         >
           <input
             type="checkbox"
-            checked={
-              session.mode === "edit" && session.objectMode === "mathTypeOle"
-                ? false
-                : numbered
-            }
+            checked={numbered}
             disabled={session.mode === "edit" && session.objectMode === "mathTypeOle"}
             onChange={(event) => setNumbered(event.target.checked)}
           />
           <span>{isEn ? "Number" : "编号"}</span>
+        </label>
+      ) : null}
+      {session.host === "word" &&
+      displayMode === "block" &&
+      objectMode === "mathTypeOle" &&
+      numbered ? (
+        <label
+          className="office-font-size-setting office-object-mode-setting"
+          title={
+            isEn
+              ? "Choose the native MathType equation-number side"
+              : "选择 MathType 原生公式编号位于公式左侧或右侧"
+          }
+        >
+          <span>{isEn ? "Number side" : "编号位置"}</span>
+          <select
+            value={mathTypeNumberPosition}
+            data-office-mathtype-number-position
+            aria-label={isEn ? "MathType equation number side" : "MathType 公式编号位置"}
+            disabled={session.mode === "edit"}
+            onChange={(event) =>
+              setMathTypeNumberPosition(
+                event.target.value === "left" ? "left" : "right",
+              )
+            }
+          >
+            <option value="left">{isEn ? "Left" : "左侧"}</option>
+            <option value="right">{isEn ? "Right" : "右侧"}</option>
+          </select>
         </label>
       ) : null}
     </>

@@ -139,7 +139,8 @@ internal static class MathTypeWordOpenXml
         float widthPt,
         float heightPt,
         bool display = false,
-        NumberTemplate? numberTemplate = null)
+        NumberTemplate? numberTemplate = null,
+        string mathTypeNumberPosition = "right")
     {
         if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compoundFile))
             throw new InvalidDataException(
@@ -233,16 +234,37 @@ internal static class MathTypeWordOpenXml
             shape,
             oleObject);
         var paragraph = new XElement(WordNamespace + "p");
-        if (display)
-            paragraph.Add(new XElement(
-                WordNamespace + "r",
-                new XElement(WordNamespace + "tab")));
-        paragraph.Add(new XElement(WordNamespace + "r", wordObject));
         if (numberTemplate is not null)
         {
             if (!display)
                 throw new InvalidDataException(
                     "MathType equation numbering is valid only for display equations.");
+            if (!string.Equals(mathTypeNumberPosition, "left", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(mathTypeNumberPosition, "right", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "MathType equation number position must be left or right.");
+        }
+
+        var numberOnLeft = numberTemplate is not null
+            && string.Equals(mathTypeNumberPosition, "left", StringComparison.OrdinalIgnoreCase);
+        if (numberOnLeft)
+        {
+            foreach (var node in BuildMathTypePlaceRef(numberTemplate!))
+                paragraph.Add(node);
+            paragraph.Add(new XElement(
+                WordNamespace + "r",
+                new XElement(WordNamespace + "tab")));
+        }
+        else if (display)
+        {
+            paragraph.Add(new XElement(
+                WordNamespace + "r",
+                new XElement(WordNamespace + "tab")));
+        }
+
+        paragraph.Add(new XElement(WordNamespace + "r", wordObject));
+        if (numberTemplate is not null && !numberOnLeft)
+        {
             paragraph.Add(new XElement(
                 WordNamespace + "r",
                 new XElement(WordNamespace + "tab")));

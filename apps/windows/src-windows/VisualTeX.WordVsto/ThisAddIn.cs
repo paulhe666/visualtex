@@ -1121,6 +1121,17 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     .ConfigureAwait(false);
             var effectiveDisplayMode =
                 requestedDisplayMode ?? metadata?.DisplayMode ?? "inline";
+            var mathTypeNumberPosition = mode == "create"
+                ? await dispatcher.InvokeAsync(service.GetMathTypeNumberPositionPreference)
+                    .ConfigureAwait(false)
+                : string.Equals(
+                        selection.ObjectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal)
+                    ? await dispatcher.InvokeAsync(
+                            () => service.GetMathTypeNumberPositionForRange(selection.ObjectId))
+                        .ConfigureAwait(false)
+                    : "right";
             var request = new CreateVstoSessionRequest
             {
                 Mode = mode,
@@ -1143,6 +1154,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     && (mode == "create"
                         ? WordEquationNumbering.GetDefaultDisplayEquationNumbered()
                         : metadata?.Numbered ?? false),
+                MathTypeNumberPosition = mathTypeNumberPosition,
                 FontSizePt = FormulaFontSize.Normalize(fontSizePt),
                 OriginalMetadata = metadata,
                 AutoCommitOnClose = true,
@@ -1182,6 +1194,15 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal)))
                 WordEquationNumbering.SetDefaultCreateObjectMode(session.ObjectMode);
+            if (session.Mode == "create"
+                && session.Numbered
+                && string.Equals(session.DisplayMode, "block", StringComparison.Ordinal)
+                && string.Equals(
+                    session.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+                WordEquationNumbering.SetDefaultMathTypeNumberPosition(
+                    session.MathTypeNumberPosition);
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
                 SetStatus("已取消，Word 文档未修改。");
@@ -2528,37 +2549,65 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     selection = application.Selection;
                     if (document.ReadOnly)
                         throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
-                    var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
-                    if (targets.Count == 0)
+                    var visualTexTargets = WordEquationNumbering.GetEquationReferenceTargets(document);
+                    var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
+                    if (visualTexTargets.Count == 0 && mathTypeTargets.Count == 0)
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            "当前文档没有带编号的 VisualTeX 行间公式。请先插入行间公式并勾选“添加公式编号”。",
+                            "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
                             "VisualTeX",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Information);
                         return string.Empty;
                     }
 
+                    static string DescribeReferenceTarget(EquationReferenceTarget target) =>
+                        target.Source == EquationReferenceSource.MathType
+                            ? $"MathType 公式 {target.NumberText}"
+                            : $"VisualTeX 公式 ({target.NumberText})";
+
                     if (string.Equals(
                             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                             "1",
                             StringComparison.Ordinal))
                     {
+                        var requestedSource = Environment.GetEnvironmentVariable(
+                            "VISUALTEX_VSTO_REFERENCE_SOURCE");
+                        var targets = string.Equals(
+                                requestedSource,
+                                "mathtype",
+                                StringComparison.OrdinalIgnoreCase)
+                            ? mathTypeTargets
+                            : visualTexTargets.Count > 0
+                                ? visualTexTargets
+                                : mathTypeTargets;
+                        if (targets.Count == 0)
+                            throw new InvalidOperationException(
+                                $"Acceptance requested equation-reference source '{requestedSource}' but that source has no targets.");
                         var requestedIndex = 0;
                         _ = int.TryParse(
                             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_REFERENCE_TARGET_INDEX"),
                             out requestedIndex);
                         requestedIndex = Math.Max(0, Math.Min(targets.Count - 1, requestedIndex));
                         var target = targets[requestedIndex];
-                        WordEquationNumbering.InsertEquationReference(
-                            document,
-                            selection,
-                            target,
-                            EquationReferenceStyle.Parenthesized);
-                        return target.NumberText;
+                        if (target.Source == EquationReferenceSource.MathType)
+                        {
+                            MathTypeEquationReferences.InsertReference(document, selection, target);
+                        }
+                        else
+                        {
+                            WordEquationNumbering.InsertEquationReference(
+                                document,
+                                selection,
+                                target,
+                                EquationReferenceStyle.Parenthesized);
+                        }
+                        return DescribeReferenceTarget(target);
                     }
 
-                    using var dialog = new EquationReferenceDialog(targets);
+                    using var dialog = new EquationReferenceDialog(
+                        visualTexTargets,
+                        mathTypeTargets);
                     System.Windows.Forms.DialogResult result;
                     try
                     {
@@ -2572,12 +2621,22 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                     if (result != System.Windows.Forms.DialogResult.OK
                         || dialog.SelectedTarget is null)
                         return string.Empty;
-                    WordEquationNumbering.InsertEquationReference(
-                        document,
-                        selection,
-                        dialog.SelectedTarget,
-                        dialog.SelectedStyle);
-                    return dialog.SelectedTarget.NumberText;
+                    if (dialog.SelectedTarget.Source == EquationReferenceSource.MathType)
+                    {
+                        MathTypeEquationReferences.InsertReference(
+                            document,
+                            selection,
+                            dialog.SelectedTarget);
+                    }
+                    else
+                    {
+                        WordEquationNumbering.InsertEquationReference(
+                            document,
+                            selection,
+                            dialog.SelectedTarget,
+                            dialog.SelectedStyle);
+                    }
+                    return DescribeReferenceTarget(dialog.SelectedTarget);
                 }
                 finally
                 {
@@ -2587,7 +2646,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
                 }
             }).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(inserted))
-                SetStatus($"已插入公式 ({inserted}) 的交叉引用；更新编号时引用会同步刷新。");
+                SetStatus($"已插入 {inserted} 的交叉引用；更新编号时引用会同步刷新。");
         }
         catch (Exception error)
         {

@@ -366,8 +366,13 @@ internal static partial class Program
         Console.WriteLine($"Acceptance mode: {mode}");
 
         using var officeMessageFilter = OfficeComMessageFilter.Register();
-        using var installedWordAutoLoadSuppression =
-            UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
+        var exerciseInstalledWordAddIn = string.Equals(
+            mode,
+            "word-mathtype-left-right-stability",
+            StringComparison.OrdinalIgnoreCase);
+        using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
+            ? null
+            : UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
         var exerciseInstalledPowerPointAddIn = string.Equals(
             mode,
             "powerpoint-installed-ole-presentation",
@@ -375,9 +380,11 @@ internal static partial class Program
         using var installedPowerPointAutoLoadSuppression = exerciseInstalledPowerPointAddIn
             ? null
             : UserOfficeAddInAutoLoadSuppression.Create("PowerPoint", "VisualTeX.PowerPointVsto");
-        Console.WriteLine(exerciseInstalledPowerPointAddIn
-            ? "Installed Word add-in auto-load is suppressed; installed PowerPoint add-in remains enabled for this acceptance."
-            : "Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.");
+        Console.WriteLine(exerciseInstalledWordAddIn
+            ? "Installed Word add-in remains enabled for this MathType real-environment stability acceptance."
+            : exerciseInstalledPowerPointAddIn
+                ? "Installed Word add-in auto-load is suppressed; installed PowerPoint add-in remains enabled for this acceptance."
+                : "Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.");
 
         try
         {
@@ -390,6 +397,10 @@ internal static partial class Program
                 // callback may not run again for an already-authenticated socket.
                 client.EnsureHealthyAsync(CancellationToken.None).GetAwaiter().GetResult();
                 Console.WriteLine("VisualTeX .NET Framework companion health acceptance passed twice on one pooled client.");
+            }
+            else if (string.Equals(mode, "office-session-mathtype-number-position", StringComparison.OrdinalIgnoreCase))
+            {
+                RunOfficeSessionMathTypeNumberPositionAcceptance(client);
             }
             else if (string.Equals(mode, "word-native-crossref-probe", StringComparison.OrdinalIgnoreCase))
             {
@@ -522,6 +533,26 @@ internal static partial class Program
             else if (string.Equals(mode, "word-mathtype-ole-create", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeOleCreateAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-right-left-live", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeRightThenLeftLiveAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-left-right-stability", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeLeftThenRightStabilityAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-native-number-reference", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeNativeNumberReferenceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "win32-thread-execution-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWin32ThreadExecutionProbe();
+            }
+            else if (string.Equals(mode, "ole-clipboard-flush-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunOleClipboardFlushProbe();
             }
             else if (string.Equals(mode, "word-mathtype-native-editor", StringComparison.OrdinalIgnoreCase))
             {

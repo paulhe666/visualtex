@@ -155,6 +155,8 @@ pub struct OfficeFormulaSession {
     pub object_mode: String,
     #[serde(default)]
     pub numbered: bool,
+    #[serde(default = "default_math_type_number_position")]
+    pub math_type_number_position: String,
     #[serde(default = "default_font_size_pt")]
     pub font_size_pt: f64,
     pub export_width: f64,
@@ -186,6 +188,7 @@ pub struct CreateOfficeSessionInput {
     pub display_mode: Option<String>,
     pub object_mode: Option<String>,
     pub numbered: Option<bool>,
+    pub math_type_number_position: Option<String>,
     pub font_size_pt: Option<f64>,
     pub export_width: Option<f64>,
     pub export_height: Option<f64>,
@@ -198,6 +201,10 @@ pub struct SessionStore {
     sessions_root: PathBuf,
     recovery_root: PathBuf,
     lock: Arc<Mutex<()>>,
+}
+
+fn default_math_type_number_position() -> String {
+    "right".to_string()
 }
 
 fn default_font_size_pt() -> f64 {
@@ -474,6 +481,14 @@ impl SessionStore {
                 "Only Word display formulas can use equation numbering".to_string(),
             ));
         }
+        let math_type_number_position = input
+            .math_type_number_position
+            .unwrap_or_else(default_math_type_number_position);
+        if !matches!(math_type_number_position.as_str(), "left" | "right") {
+            return Err(SessionError::Invalid(
+                "Office Session mathTypeNumberPosition must be left or right".to_string(),
+            ));
+        }
         let font_size_pt = normalize_font_size_pt(input.font_size_pt)?;
         let session = OfficeFormulaSession {
             id,
@@ -489,6 +504,7 @@ impl SessionStore {
             display_mode,
             object_mode,
             numbered,
+            math_type_number_position,
             font_size_pt,
             export_width: input.export_width.unwrap_or_default(),
             export_height: input.export_height.unwrap_or_default(),
@@ -534,6 +550,7 @@ impl SessionStore {
             "displayMode",
             "objectMode",
             "numbered",
+            "mathTypeNumberPosition",
             "fontSizePt",
             "exportWidth",
             "exportHeight",
@@ -604,6 +621,11 @@ impl SessionStore {
         if next.numbered && (next.host != OfficeHost::Word || next.display_mode != "block") {
             return Err(SessionError::Invalid(
                 "Only Word display formulas can use equation numbering".to_string(),
+            ));
+        }
+        if !matches!(next.math_type_number_position.as_str(), "left" | "right") {
+            return Err(SessionError::Invalid(
+                "Office Session mathTypeNumberPosition must be left or right".to_string(),
             ));
         }
         next.font_size_pt = normalize_font_size_pt(Some(next.font_size_pt))?;
@@ -782,6 +804,7 @@ mod tests {
             display_mode: None,
             object_mode: None,
             numbered: None,
+            math_type_number_position: None,
             font_size_pt: None,
             export_width: None,
             export_height: None,
@@ -810,6 +833,7 @@ mod tests {
             display_mode: Some("inline".to_string()),
             object_mode: Some("nativeOle".to_string()),
             numbered: Some(false),
+            math_type_number_position: Some("right".to_string()),
             font_size_pt: Some(14.0),
             export_width: Some(100.0),
             export_height: Some(20.0),
@@ -966,6 +990,52 @@ mod tests {
         powerpoint.numbered = Some(true);
         let powerpoint_error = store.create(powerpoint).unwrap_err();
         assert!(matches!(powerpoint_error, SessionError::Invalid(_)));
+    }
+
+    #[test]
+    fn math_type_number_position_can_be_changed_during_editor_autosave() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let mut input = create_input();
+        input.display_mode = Some("block".to_string());
+        input.object_mode = Some("mathTypeOle".to_string());
+        input.numbered = Some(true);
+        input.math_type_number_position = Some("right".to_string());
+        let session = store.create(input).unwrap();
+        assert_eq!(session.math_type_number_position, "right");
+
+        let autosaved = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "mathTypeNumberPosition": "left",
+                    "status": "editing"
+                }),
+            )
+            .unwrap();
+        assert_eq!(autosaved.math_type_number_position, "left");
+
+        let committed = store
+            .patch(
+                &session.id,
+                serde_json::json!({
+                    "mathTypeNumberPosition": "left",
+                    "status": "committing",
+                    "dirty": true,
+                    "exportResult": export_result()
+                }),
+            )
+            .unwrap();
+        assert_eq!(committed.math_type_number_position, "left");
+        assert_eq!(committed.status, OfficeSessionStatus::Committing);
+
+        let invalid = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "mathTypeNumberPosition": "center" }),
+            )
+            .unwrap_err();
+        assert!(matches!(invalid, SessionError::Invalid(_)));
     }
 
     #[test]

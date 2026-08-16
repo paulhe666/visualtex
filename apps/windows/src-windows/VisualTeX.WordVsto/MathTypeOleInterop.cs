@@ -236,11 +236,13 @@ internal static class MathTypeOleInterop
         Range? range = null;
         Microsoft.Office.Interop.Word.Font? font = null;
         var displayMode = "inline";
+        var numbered = false;
         var fontSizePt = FormulaFontSize.DefaultPt;
         try
         {
             range = shape.Range;
             displayMode = InferDisplayMode(range);
+            numbered = ContainsMathTypeDisplayNumberFieldAtRange(range);
             font = range.Font;
             if (font.Size > 0 && font.Size <= 200)
                 fontSizePt = FormulaFontSize.Normalize(font.Size);
@@ -264,7 +266,7 @@ internal static class MathTypeOleInterop
             },
             CodeFormat = "raw",
             DisplayMode = displayMode,
-            Numbered = false,
+            Numbered = numbered,
             FontSizePt = fontSizePt,
             RenderFontSizePt = fontSizePt,
             CreatedWithVersion = "1.2.5",
@@ -1321,6 +1323,93 @@ internal static class MathTypeOleInterop
             return LooksLikeDisplayEquationDecoration(text) ? "block" : "inline";
         }
         catch { return "inline"; }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    internal static bool TryReadDisplayNumberPosition(
+        InlineShape shape,
+        out string numberPosition)
+    {
+        numberPosition = "right";
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTPlaceRef",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                result = field.Result;
+                var fieldStart = Math.Max(paragraphRange.Start, code.Start - 1);
+                var fieldEnd = Math.Min(paragraphRange.End, result.End + 1);
+                if (fieldEnd <= shapeRange.Start)
+                    numberPosition = "left";
+                else if (fieldStart >= shapeRange.End)
+                    numberPosition = "right";
+                else
+                    numberPosition = code.Start < shapeRange.Start ? "left" : "right";
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            numberPosition = "right";
+            return false;
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    private static bool ContainsMathTypeDisplayNumberFieldAtRange(Range range)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            paragraphs = range.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            return ContainsMathTypeDisplayNumberField(paragraphRange);
+        }
+        catch { return false; }
         finally
         {
             Release(paragraphRange);

@@ -7,6 +7,12 @@ using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
 
+internal enum EquationReferenceSource
+{
+    VisualTeX,
+    MathType,
+}
+
 internal sealed class EquationReferenceTarget
 {
     public EquationReferenceTarget(
@@ -14,13 +20,15 @@ internal sealed class EquationReferenceTarget
         int nativeReferenceItem,
         string numberText,
         string latexPreview,
-        int position)
+        int position,
+        EquationReferenceSource source = EquationReferenceSource.VisualTeX)
     {
         FormulaId = formulaId;
         NativeReferenceItem = nativeReferenceItem;
         NumberText = numberText;
         LatexPreview = latexPreview;
         Position = position;
+        Source = source;
     }
 
     public string FormulaId { get; }
@@ -28,8 +36,11 @@ internal sealed class EquationReferenceTarget
     public string NumberText { get; }
     public string LatexPreview { get; }
     public int Position { get; }
+    public EquationReferenceSource Source { get; }
 
-    public override string ToString() => $"({NumberText})    {LatexPreview}";
+    public override string ToString() => Source == EquationReferenceSource.MathType
+        ? $"{NumberText}    {LatexPreview}"
+        : $"({NumberText})    {LatexPreview}";
 }
 
 internal enum EquationReferenceStyle
@@ -95,6 +106,7 @@ internal static class WordEquationNumbering
     private const string DefaultNumberedPreferenceName = "DefaultDisplayEquationNumbered";
     private const string DefaultNumberFormatPreferenceName = "DefaultEquationNumberFormat";
     private const string DefaultCreateObjectModePreferenceName = "DefaultCreateFormulaObjectMode";
+    private const string DefaultMathTypeNumberPositionPreferenceName = "DefaultMathTypeNumberPosition";
 
     internal static bool GetDefaultDisplayEquationNumbered()
     {
@@ -128,6 +140,25 @@ internal static class WordEquationNumbering
             string.Equals(objectMode, FormulaOleContract.MathTypeOleMode, StringComparison.Ordinal)
                 ? FormulaOleContract.MathTypeOleMode
                 : FormulaOleContract.NativeOleMode,
+            RegistryValueKind.String);
+
+    internal static string? TryGetDefaultMathTypeNumberPosition()
+    {
+        var value = ReadUserPreference(DefaultMathTypeNumberPositionPreferenceName) as string;
+        if (string.Equals(value, "left", StringComparison.OrdinalIgnoreCase)) return "left";
+        if (string.Equals(value, "right", StringComparison.OrdinalIgnoreCase)) return "right";
+        return null;
+    }
+
+    internal static string GetDefaultMathTypeNumberPosition() =>
+        TryGetDefaultMathTypeNumberPosition() ?? "right";
+
+    internal static void SetDefaultMathTypeNumberPosition(string? position) =>
+        WriteUserPreference(
+            DefaultMathTypeNumberPositionPreferenceName,
+            string.Equals(position, "left", StringComparison.OrdinalIgnoreCase)
+                ? "left"
+                : "right",
             RegistryValueKind.String);
 
     internal static string GetDefaultEquationNumberFormatId() =>
