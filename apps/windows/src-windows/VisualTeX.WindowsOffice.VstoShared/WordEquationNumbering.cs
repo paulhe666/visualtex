@@ -1080,6 +1080,29 @@ internal static class WordEquationNumbering
         }
     }
 
+    internal static void BuildFormulaNumberingScaffoldForConversion(
+        Document document,
+        Range formulaRange,
+        float formulaHeightPoints,
+        FormulaMetadata metadata,
+        Table? knownNumberedTable = null)
+    {
+        if (!metadata.Numbered
+            || !string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
+            return;
+        EnsureDocumentEquationNumberFormatPreference(document);
+        var formulaFontSizePoints = (float)FormulaFontSize.ResolveSemanticFontSize(metadata);
+        ConfigureNumberedDisplayFormula(
+            document,
+            formulaRange,
+            formulaHeightPoints,
+            formulaFontSizePoints,
+            metadata.FormulaId,
+            reuseExistingScaffold: knownNumberedTable is not null,
+            knownNumberedTable: knownNumberedTable,
+            useConversionSafeVisibleNumber: true);
+    }
+
     internal static void ReconcileFormula(
         Document document,
         Range formulaRange,
@@ -2215,7 +2238,8 @@ internal static class WordEquationNumbering
         float formulaFontSizePoints,
         string formulaId,
         bool reuseExistingScaffold = false,
-        Table? knownNumberedTable = null)
+        Table? knownNumberedTable = null,
+        bool useConversionSafeVisibleNumber = false)
     {
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
@@ -2266,9 +2290,101 @@ internal static class WordEquationNumbering
             formulaId,
             adoptExistingTableReference:
                 reuseExistingScaffold && knownNumberedTable is null,
-            knownNumberedTable);
+            knownNumberedTable,
+            useConversionSafeVisibleNumber);
         TraceStage("visible-ref");
+        TrimBenignEmptyRowsFromNumberedTable(document, formulaRange, formulaId);
+        TraceStage("trim-empty-rows");
         return visibleNumberCreated;
+    }
+
+    private static void TrimBenignEmptyRowsFromNumberedTable(
+        Document document,
+        Range formulaRange,
+        string formulaId)
+    {
+        Table? table = null;
+        Rows? rows = null;
+        Columns? columns = null;
+        Row? row = null;
+        Range? rowRange = null;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            table = FindNumberedEquationTable(document, formulaId);
+            if (table is null) return;
+            columns = table.Columns;
+            rows = table.Rows;
+            if (columns.Count != 3 || rows.Count <= 1) return;
+
+            var formulaRow = 0;
+            for (var index = 1; index <= rows.Count; index++)
+            {
+                Release(rowRange);
+                rowRange = null;
+                Release(row);
+                row = rows[index];
+                rowRange = row.Range;
+                if (formulaRange.Start >= rowRange.Start
+                    && formulaRange.Start < rowRange.End)
+                {
+                    if (formulaRow != 0) return;
+                    formulaRow = index;
+                    continue;
+                }
+
+                Release(shapes);
+                shapes = rowRange.InlineShapes;
+                if (shapes.Count != 0) return;
+                Release(maths);
+                maths = rowRange.OMaths;
+                if (maths.Count != 0) return;
+                Release(fields);
+                fields = rowRange.Fields;
+                if (fields.Count != 0) return;
+                Release(bookmarks);
+                bookmarks = rowRange.Bookmarks;
+                if (bookmarks.Count != 0) return;
+                foreach (var character in rowRange.Text ?? string.Empty)
+                {
+                    if (character is '\r' or '\a' or '\n' or '\v'
+                        or '\u200b' or '\u200c' or '\u200d' or '\ufeff'
+                        || char.IsWhiteSpace(character))
+                        continue;
+                    return;
+                }
+            }
+            if (formulaRow == 0) return;
+
+            for (var index = rows.Count; index >= 1; index--)
+            {
+                if (index == formulaRow) continue;
+                Release(row);
+                row = rows[index];
+                row.Delete();
+            }
+        }
+        catch
+        {
+            // This is a defensive cleanup for a Word table-conversion quirk.
+            // Numbering itself is already durable, so never make formula creation
+            // fail solely because an extra empty row could not be trimmed.
+        }
+        finally
+        {
+            Release(bookmarks);
+            Release(fields);
+            Release(maths);
+            Release(shapes);
+            Release(rowRange);
+            Release(row);
+            Release(columns);
+            Release(rows);
+            Release(table);
+        }
     }
 
     private static void EnsureStandardNumberedEquationTable(
@@ -3554,7 +3670,8 @@ internal static class WordEquationNumbering
         float formulaFontSizePoints,
         string formulaId,
         bool adoptExistingTableReference = false,
-        Table? knownNumberedTable = null)
+        Table? knownNumberedTable = null,
+        bool useConversionSafeVisibleNumber = false)
     {
         var targetBookmarkName = NativeNumberBookmarkName(formulaId);
         if (HasVisibleEquationNumber(
@@ -3579,7 +3696,8 @@ internal static class WordEquationNumbering
             formulaFontSizePoints,
             formulaId,
             targetBookmarkName,
-            knownNumberedTable);
+            knownNumberedTable,
+            useConversionSafeVisibleNumber);
         return true;
     }
 
@@ -3793,7 +3911,8 @@ internal static class WordEquationNumbering
         float formulaFontSizePoints,
         string formulaId,
         string targetBookmarkName,
-        Table? knownNumberedTable = null)
+        Table? knownNumberedTable = null,
+        bool useConversionSafeVisibleNumber = false)
     {
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
@@ -3825,11 +3944,20 @@ internal static class WordEquationNumbering
             var suffixStart = PrepareEquationNumberInsertionPosition(
                 formulaRange,
                 knownNumberedTable);
-            var scaffold = tableLayout ? (Text: "()", FieldOffset: 1) : EquationNumberScaffold();
+            // Normal VisualTeX insertion/edit keeps the long-standing stable
+            // "()" scaffold. Only MathType/OMML -> VisualTeX conversion uses the
+            // isolated REF-first path because migrated MathType paragraphs can
+            // make Word consume a pre-seeded parenthesis while the field is born.
+            var scaffold = tableLayout
+                ? useConversionSafeVisibleNumber
+                    ? (Text: string.Empty, FieldOffset: 0)
+                    : (Text: "()", FieldOffset: 1)
+                : EquationNumberScaffold();
             object suffixStartObject = suffixStart;
             object suffixEndObject = suffixStart;
             scaffoldRange = document.Range(ref suffixStartObject, ref suffixEndObject);
-            scaffoldRange.Text = scaffold.Text;
+            if (scaffold.Text.Length > 0)
+                scaffoldRange.Text = scaffold.Text;
             TraceStage("scaffold");
 
             var fieldStart = suffixStart + scaffold.FieldOffset;
@@ -3861,12 +3989,20 @@ internal static class WordEquationNumbering
             // inserted field differently. Resolve the actual closing parenthesis
             // from the document text so the bookmark always contains the tab,
             // both brackets and the complete REF field.
-            bookmarkRange = ResolveEquationNumberLabelRangeFast(
-                document,
-                suffixStart,
-                scaffoldRange,
-                fieldResult,
-                tableLayout);
+            bookmarkRange = tableLayout && useConversionSafeVisibleNumber
+                ? CompleteTableEquationNumberLabelAfterField(
+                    document,
+                    formulaRange,
+                    field,
+                    knownNumberedTable)
+                : ResolveEquationNumberLabelRangeFast(
+                    document,
+                    formulaRange,
+                    suffixStart,
+                    scaffoldRange,
+                    fieldResult,
+                    tableLayout,
+                    knownNumberedTable);
             bookmarks = document.Bookmarks;
             bookmarks.Add(EquationBookmarkName(formulaId), bookmarkRange);
             if (tableLayout)
@@ -3898,12 +4034,96 @@ internal static class WordEquationNumbering
         }
     }
 
+    private static Range CompleteTableEquationNumberLabelAfterField(
+        Document document,
+        Range formulaRange,
+        Field field,
+        Table? knownNumberedTable)
+    {
+        Table? discoveredTable = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Range? prefix = null;
+        Range? suffix = null;
+        Range? candidate = null;
+        try
+        {
+            discoveredTable = knownNumberedTable is null
+                && formulaRange.Tables.Count > 0
+                    ? formulaRange.Tables[1]
+                    : null;
+            var table = knownNumberedTable ?? discoveredTable
+                ?? throw new InvalidOperationException(
+                    "VisualTeX could not resolve the numbered equation table after creating its REF field.");
+            cell = table.Cell(1, 3);
+
+            // Prefix: insert at the cell's first editable position, which is now
+            // guaranteed to be before the already-materialized REF field.
+            cellRange = cell.Range;
+            prefix = document.Range(cellRange.Start, cellRange.Start);
+            prefix.Text = "(";
+            Release(cellRange);
+            cellRange = null;
+
+            // Prefix insertion shifts the REF field. Re-read its live Result and
+            // insert ')' *after the field-end control*, not at Result.End itself.
+            // Inserting at Result.End is exactly what made Word absorb ')' into
+            // Field.Result; the next field update then erased the parenthesis.
+            Release(cellRange);
+            cellRange = null;
+            Release(candidate);
+            candidate = null;
+            Range? liveResult = null;
+            try
+            {
+                liveResult = field.Result;
+                cellRange = cell.Range;
+                var suffixPosition = Math.Min(
+                    Math.Max(cellRange.Start + 1, liveResult.End + 1),
+                    Math.Max(cellRange.Start + 1, cellRange.End - 1));
+                suffix = document.Range(suffixPosition, suffixPosition);
+                suffix.Text = ")";
+
+                Release(liveResult);
+                liveResult = field.Result;
+                if ((liveResult.Text ?? string.Empty).EndsWith(")", StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "Word absorbed the VisualTeX closing parenthesis into the REF field result.");
+            }
+            finally { Release(liveResult); }
+
+            Release(cellRange);
+            cellRange = cell.Range;
+            var editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
+            candidate = document.Range(cellRange.Start, editableEnd);
+            var text = candidate.Text ?? string.Empty;
+            if (!text.StartsWith("(", StringComparison.Ordinal)
+                || !text.EndsWith(")", StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "Word did not materialize the complete VisualTeX equation-number label after the REF field was finalized.");
+            var result = candidate;
+            candidate = null;
+            return result;
+        }
+        finally
+        {
+            Release(candidate);
+            Release(suffix);
+            Release(prefix);
+            Release(cellRange);
+            Release(cell);
+            Release(discoveredTable);
+        }
+    }
+
     private static Range ResolveEquationNumberLabelRangeFast(
         Document document,
+        Range formulaRange,
         int labelStart,
         Range scaffoldRange,
         Range fieldResult,
-        bool tableLayout)
+        bool tableLayout,
+        Table? knownNumberedTable)
     {
         Range? candidate = null;
         try
@@ -3930,16 +4150,22 @@ internal static class WordEquationNumbering
         // Result.End outside the scaffold in a different way.
         return ResolveEquationNumberLabelRange(
             document,
+            formulaRange,
             labelStart,
             scaffoldRange,
-            tableLayout);
+            fieldResult,
+            tableLayout,
+            knownNumberedTable);
     }
 
     private static Range ResolveEquationNumberLabelRange(
         Document document,
+        Range formulaRange,
         int labelStart,
         Range scaffoldRange,
-        bool tableLayout)
+        Range fieldResult,
+        bool tableLayout,
+        Table? knownNumberedTable)
     {
         Range? character = null;
         Range? candidate = null;
@@ -3981,18 +4207,171 @@ internal static class WordEquationNumbering
             candidate = document.Range(ref fallbackStart, ref fallbackEnd);
             var fallbackText = candidate.Text ?? string.Empty;
             var fallbackPrefix = tableLayout ? "(" : "\t(";
-            if (!fallbackText.StartsWith(fallbackPrefix, StringComparison.Ordinal)
-                || !fallbackText.EndsWith(")", StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    "Word did not preserve the complete VisualTeX equation-number label.");
-            var fallback = candidate;
+            if (fallbackText.StartsWith(fallbackPrefix, StringComparison.Ordinal)
+                && fallbackText.EndsWith(")", StringComparison.Ordinal))
+            {
+                var fallback = candidate;
+                candidate = null;
+                return fallback;
+            }
+
+            // Some Word builds consume the literal ')' that was placed after the
+            // zero-width REF insertion point while materializing/updating the
+            // field.  A numbered equation table reserves cell (1,3) exclusively
+            // for VisualTeX, so repair only that missing suffix locally instead of
+            // failing the whole MathType/OMML conversion or running a document-wide
+            // rebuild.  The opening parenthesis and field must already be intact.
+            Release(candidate);
             candidate = null;
-            return fallback;
+            if (tableLayout)
+            {
+                var repaired = TryRepairEquationNumberClosingParenthesis(
+                    document,
+                    formulaRange,
+                    labelStart,
+                    fieldResult,
+                    knownNumberedTable);
+                if (repaired is not null) return repaired;
+            }
+
+            var diagnostic = string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                ? DescribeEquationNumberLabelFailure(
+                    document,
+                    formulaRange,
+                    labelStart,
+                    scaffoldRange,
+                    fieldResult,
+                    knownNumberedTable)
+                : string.Empty;
+            throw new InvalidOperationException(
+                "Word did not preserve the complete VisualTeX equation-number label."
+                + diagnostic);
         }
         finally
         {
             Release(candidate);
             Release(character);
+        }
+    }
+
+    private static string DescribeEquationNumberLabelFailure(
+        Document document,
+        Range formulaRange,
+        int labelStart,
+        Range scaffoldRange,
+        Range fieldResult,
+        Table? knownNumberedTable)
+    {
+        Table? table = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Range? probe = null;
+        try
+        {
+            table = knownNumberedTable is null
+                && formulaRange.Tables.Count > 0
+                    ? formulaRange.Tables[1]
+                    : null;
+            var owner = knownNumberedTable ?? table;
+            if (owner is null)
+            {
+                return $" [labelStart={labelStart}; scaffold=[{scaffoldRange.Start},{scaffoldRange.End}]; fieldResult=[{fieldResult.Start},{fieldResult.End}]; no-number-table]";
+            }
+            cell = owner.Cell(1, 3);
+            cellRange = cell.Range;
+            var probeStart = Math.Max(cellRange.Start, Math.Min(labelStart, cellRange.End - 1));
+            var probeEnd = Math.Min(cellRange.End, Math.Max(probeStart, cellRange.End));
+            probe = document.Range(probeStart, probeEnd);
+            var text = (probe.Text ?? string.Empty)
+                .Replace("\r", "<P>")
+                .Replace("\a", "<CELL>")
+                .Replace("\t", "<TAB>")
+                .Replace("\v", "<BR>");
+            return $" [labelStart={labelStart}; scaffold=[{scaffoldRange.Start},{scaffoldRange.End}]; fieldResult=[{fieldResult.Start},{fieldResult.End}]; cell=[{cellRange.Start},{cellRange.End}]; text='{text}']";
+        }
+        catch (Exception error)
+        {
+            return $" [label diagnostic failed: {error.GetType().Name}: {error.Message}]";
+        }
+        finally
+        {
+            Release(probe);
+            Release(cellRange);
+            Release(cell);
+            Release(table);
+        }
+    }
+
+    private static Range? TryRepairEquationNumberClosingParenthesis(
+        Document document,
+        Range formulaRange,
+        int labelStart,
+        Range fieldResult,
+        Table? knownNumberedTable)
+    {
+        Tables? tables = null;
+        Table? table = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Range? prefix = null;
+        Range? insertion = null;
+        Range? candidate = null;
+        try
+        {
+            if (knownNumberedTable is null)
+            {
+                tables = formulaRange.Tables;
+                if (tables.Count == 0) return null;
+                table = tables[1];
+            }
+            var owner = knownNumberedTable ?? table;
+            if (owner is null) return null;
+            cell = owner.Cell(1, 3);
+            cellRange = cell.Range;
+            if (labelStart < cellRange.Start || labelStart >= cellRange.End)
+                return null;
+
+            var prefixEnd = Math.Min(cellRange.End, labelStart + 1);
+            prefix = document.Range(labelStart, prefixEnd);
+            if (!string.Equals(prefix.Text, "(", StringComparison.Ordinal))
+                return null;
+
+            // field.Result excludes Word's field-end control character; +1 is the
+            // first legal character position after the complete REF field. Clamp
+            // it to this reserved number cell so a malformed field can never make
+            // the repair touch adjacent document content.
+            var editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
+            var insertionPosition = Math.Max(labelStart + 1, fieldResult.End + 1);
+            insertionPosition = Math.Min(insertionPosition, editableEnd);
+            if (insertionPosition <= labelStart) return null;
+
+            insertion = document.Range(insertionPosition, insertionPosition);
+            insertion.Text = ")";
+            candidate = document.Range(labelStart, insertionPosition + 1);
+            var text = candidate.Text ?? string.Empty;
+            if (!text.StartsWith("(", StringComparison.Ordinal)
+                || !text.EndsWith(")", StringComparison.Ordinal))
+                return null;
+            var result = candidate;
+            candidate = null;
+            return result;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(candidate);
+            Release(insertion);
+            Release(prefix);
+            Release(cellRange);
+            Release(cell);
+            Release(table);
+            Release(tables);
         }
     }
 

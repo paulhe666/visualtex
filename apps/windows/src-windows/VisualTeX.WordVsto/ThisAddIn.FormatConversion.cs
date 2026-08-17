@@ -95,6 +95,10 @@ public sealed partial class ThisAddIn
                 && !string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE"),
+                    "1",
                     StringComparison.Ordinal))
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
@@ -209,9 +213,18 @@ public sealed partial class ThisAddIn
             }
 
             SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");
-            var result = await dispatcher.InvokeAsync(
-                    () => service.ApplyFormulaFormatConversionPlan(plan, prepared))
-                .ConfigureAwait(false);
+            BeginFormulaFormatMutation();
+            WordFormulaFormatConversionResult result;
+            try
+            {
+                result = await dispatcher.InvokeAsync(
+                        () => service.ApplyFormulaFormatConversionPlan(plan, prepared))
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                EndFormulaFormatMutation();
+            }
 
             foreach (var sessionId in converterSessionIds)
             {
@@ -224,12 +237,16 @@ public sealed partial class ThisAddIn
 
             if (result.FailedFormulaCount == 0)
             {
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} failed=0");
                 SetStatus(
                     $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。");
             }
             else
             {
                 var detail = result.Failures.FirstOrDefault() ?? "未知 Word 写入错误。";
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-stopped source={sourceName} target={targetName} converted={result.FormulaCount} failed={result.FailedFormulaCount} detail={detail}");
                 SetStatus(
                     $"已转换 {result.FormulaCount} 个公式，随后停止：{detail}");
                 if (!string.Equals(
@@ -255,6 +272,8 @@ public sealed partial class ThisAddIn
         }
         catch (Exception error)
         {
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={error}");
             SetStatus($"公式格式转换失败：{error.Message}");
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),

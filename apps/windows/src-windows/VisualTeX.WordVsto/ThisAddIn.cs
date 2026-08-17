@@ -267,6 +267,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _formulaFontInvalidationPending;
     private int _normalizingTypingCaret;
     private int _typingCaretNormalizationPending;
+    private int _typingCaretNormalizationGeneration;
+    private int _formulaFormatMutationDepth;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
 
@@ -532,9 +534,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (dispatcher is null
             || Interlocked.Exchange(ref _typingCaretNormalizationPending, 1) != 0)
             return;
+        var generation = Volatile.Read(ref _typingCaretNormalizationGeneration);
         dispatcher.Post(() =>
         {
             Interlocked.Exchange(ref _typingCaretNormalizationPending, 0);
+            if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
+                || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+                return;
             var service = _formulaService;
             var application = _application;
             if (service is null || application is null) return;
@@ -550,6 +556,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             catch { }
             finally { ReleaseComObject(currentSelection); }
         });
+    }
+
+    private void BeginFormulaFormatMutation()
+    {
+        Interlocked.Increment(ref _typingCaretNormalizationGeneration);
+        Interlocked.Increment(ref _formulaFormatMutationDepth);
+    }
+
+    private void EndFormulaFormatMutation()
+    {
+        if (Interlocked.Decrement(ref _formulaFormatMutationDepth) < 0)
+            Interlocked.Exchange(ref _formulaFormatMutationDepth, 0);
     }
 
     private void OnDocumentBeforeSave(
@@ -575,6 +593,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         // Defer Ribbon callbacks until Word finishes entering/leaving a native
         // math zone. Synchronous OMML inspection here can disturb its caret.
         ScheduleFormulaFontControlsInvalidation();
+        if (Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+        {
+            ClearNativeOleTarget();
+            return;
+        }
         var service = _formulaService;
         var application = _application;
         if (service is null || application is null)
