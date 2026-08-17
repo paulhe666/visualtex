@@ -302,6 +302,9 @@ internal sealed partial class WordFormulaService
                     if (table.Rows.Count != 1 || table.Columns.Count != 3)
                         throw new InvalidOperationException(
                             "The VisualTeX numbering table is not a normal 1x3 formula host.");
+                    if (table.Range.InlineShapes.Count != 1)
+                        throw new InvalidOperationException(
+                            "The VisualTeX numbering table contains more than one formula object; conversion was refused before modifying the document.");
                 }
                 return;
             }
@@ -378,6 +381,9 @@ internal sealed partial class WordFormulaService
                     tableRange = table.Range.Duplicate;
                     start = tableRange.Start;
                     table.Delete();
+                    TryDeleteBookmark(
+                        document,
+                        WordEquationNumbering.EquationBookmarkName(target.SourceFormulaId));
                     RemoveDetachedVisualTeXNumberingArtifacts(
                         document,
                         target.SourceFormulaId);
