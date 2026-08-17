@@ -370,10 +370,20 @@ internal static class MathTypeWordOpenXml
         return xmlText;
     }
 
-    internal static string CreateDefaultSectionBreakFlatOpc(string displayLabel)
+    internal static string CreateDefaultSectionBreakFlatOpc(string displayLabel) =>
+        CreateSectionBreakFlatOpc(displayLabel, chapter: 1, section: 1);
+
+    internal static string CreateSectionBreakFlatOpc(
+        string displayLabel,
+        int chapter,
+        int section)
     {
         if (string.IsNullOrWhiteSpace(displayLabel))
             throw new InvalidDataException("MathType chapter/section break label is empty.");
+        if (chapter < 0 || section < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(chapter),
+                "MathType chapter/section state cannot be negative.");
 
         var rootRelationships = new XElement(
             RelationshipNamespace + "Relationships",
@@ -386,7 +396,7 @@ internal static class MathTypeWordOpenXml
                 new XAttribute("Target", "word/document.xml")));
         var documentRelationships = new XElement(RelationshipNamespace + "Relationships");
         var paragraph = new XElement(WordNamespace + "p");
-        foreach (var run in BuildMathTypeSectionBreak(displayLabel))
+        foreach (var run in BuildMathTypeSectionBreak(displayLabel, chapter, section))
             paragraph.Add(run);
         var wordDocument = new XElement(
             WordNamespace + "document",
@@ -421,15 +431,20 @@ internal static class MathTypeWordOpenXml
         return package.ToString(SaveOptions.DisableFormatting);
     }
 
-    private static IEnumerable<XElement> BuildMathTypeSectionBreak(string displayLabel)
+    private static IEnumerable<XElement> BuildMathTypeSectionBreak(
+        string displayLabel,
+        int chapter,
+        int section)
     {
         yield return FieldCharRun("begin");
         yield return InstructionRun($" MACROBUTTON MTEditEquationSection2 {displayLabel}");
         foreach (var run in BuildSimpleComplexField(" SEQ MTEqn \\r \\h \\* MERGEFORMAT "))
             yield return run;
-        foreach (var run in BuildSimpleComplexField(" SEQ MTSec \\r 1 \\h \\* MERGEFORMAT "))
+        foreach (var run in BuildSimpleComplexField(
+                     $" SEQ MTSec \\r {section} \\h \\* MERGEFORMAT "))
             yield return run;
-        foreach (var run in BuildSimpleComplexField(" SEQ MTChap \\r 1 \\h \\* MERGEFORMAT "))
+        foreach (var run in BuildSimpleComplexField(
+                     $" SEQ MTChap \\r {chapter} \\h \\* MERGEFORMAT "))
             yield return run;
         yield return FieldCharRun("separate");
         yield return FieldCharRun("end");

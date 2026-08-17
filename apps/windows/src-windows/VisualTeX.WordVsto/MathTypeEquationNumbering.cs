@@ -72,18 +72,34 @@ internal static class MathTypeEquationNumbering
         var starts = CollectPlaceRefCodeStarts(document);
         if (starts.Count == 0) return 0;
 
-        // MathType's chapter and section counters are independent of Word Heading
-        // styles. If a chapter/section-aware format is requested, make sure there
-        // is a native MathType break before the first numbered equation so the
-        // prefix starts at 1 rather than 0.
+        // VisualTeX heading-aware numbering follows real Word Heading paragraphs.
+        // Rebuild MathType's hidden MTChap/MTSec state from those headings whenever
+        // the user explicitly changes the numbering preset. A headingless document
+        // therefore remains in chapter/section zero instead of manufacturing 1/1.
+        WordFormulaService.RemoveAllMathTypeSectionBreakFields(document);
         if (format.UsesHeading)
         {
-            var firstStart = starts.Min();
-            WordFormulaService.EnsureDefaultMathTypeSectionBreak(
-                document,
-                Math.Max(document.Content.Start, firstStart - 1));
-            // Inserting the hidden break before the first MathType equation shifts
-            // every existing field position, so resolve the equation positions again.
+            var guard = 0;
+            while (guard++ < Math.Max(1, starts.Count))
+            {
+                var inserted = false;
+                var currentStarts = CollectPlaceRefCodeStarts(document);
+                foreach (var start in currentStarts)
+                {
+                    if (WordFormulaService.EnsureMathTypeHeadingScopeState(
+                            document,
+                            Math.Max(document.Content.Start, start - 1),
+                            format) <= 0)
+                        continue;
+                    inserted = true;
+                    break;
+                }
+                if (!inserted) break;
+            }
+            starts = CollectPlaceRefCodeStarts(document);
+        }
+        else
+        {
             starts = CollectPlaceRefCodeStarts(document);
         }
 

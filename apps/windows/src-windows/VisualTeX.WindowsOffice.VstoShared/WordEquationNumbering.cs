@@ -6046,6 +6046,48 @@ internal static class WordEquationNumbering
         return string.Join(".", parts);
     }
 
+    internal static (int ScopeStart, int ScopeEnd, string NumberText) ResolveHeadingScopeAtPosition(
+        Document document,
+        int formulaPosition,
+        string? formatId)
+    {
+        var format = EquationNumberFormat.Resolve(formatId);
+        if (!format.UsesHeading)
+            return (int.MinValue, int.MinValue, string.Empty);
+
+        var anchors = GetHeadingNumberAnchors(document, format.HeadingLevel);
+        var scope = ResolveEquationNumberScope(formulaPosition, format, anchors);
+        var numberText = scope.Prefix;
+        if (!string.IsNullOrEmpty(format.Separator)
+            && numberText.EndsWith(format.Separator, StringComparison.Ordinal))
+            numberText = numberText.Substring(0, numberText.Length - format.Separator.Length);
+
+        if (scope.ScopePosition == int.MinValue)
+            return (int.MinValue, int.MinValue, numberText);
+
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            probe = document.Range(scope.ScopePosition, scope.ScopePosition);
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count == 0)
+                return (scope.ScopePosition, scope.ScopePosition, numberText);
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            return (scope.ScopePosition, paragraphRange.End, numberText);
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+        }
+    }
+
     private static (int ScopePosition, string Prefix) ResolveEquationNumberScope(
         int formulaPosition,
         EquationNumberFormat format,

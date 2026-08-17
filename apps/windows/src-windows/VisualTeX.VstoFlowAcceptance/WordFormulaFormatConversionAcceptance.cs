@@ -299,6 +299,11 @@ internal static partial class Program
                 "Simple VisualTeX -> MathType conversion left old VTEq/VTEqCap/VTEqNum bookmarks behind.");
             AssertEqual(expectedMathTypeObjectsAfterConversion, CountMathTypePlaceRefFields(document),
                 "Consecutive-numbered VisualTeX -> MathType conversion produced the wrong MTPlaceRef field count.");
+            if (includeExistingMathType)
+                AssertMathTypeNumberTexts(document, "(0.1)", "(0.2)", "(0.3)", "(0.4)");
+            else
+                AssertMathTypeNumberTexts(document, "(0.1)", "(0.2)", "(0.3)");
+            AssertNativeMathTypeSectionBreak(document, 0);
 
             for (var index = 1; index <= document.InlineShapes.Count; index++)
             {

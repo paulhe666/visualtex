@@ -24,8 +24,10 @@ internal static partial class Program
         try
         {
             application = CreateWordApplication(visible: false);
+            AssertFreshNoHeadingMathTypeZeroPrefix(application, emfPath);
+            Console.WriteLine("[MathType number formats] fresh no-heading zero-prefix complete.");
             AssertFreshHeadingMathTypeReferenceIsolation(application, emfPath);
-            Console.WriteLine("[MathType number formats] fresh-heading isolation complete.");
+            Console.WriteLine("[MathType number formats] real-heading isolation complete.");
             document = application.Documents.Add();
             document.Activate();
             document.Content.Text = "MathType numbering acceptance\r";
@@ -78,10 +80,10 @@ internal static partial class Program
             var formats = new[]
             {
                 (EquationNumberFormat.ContinuousId, new[] { "(1)", "(2)" }),
-                (EquationNumberFormat.Heading1DotId, new[] { "(1.1)", "(1.2)" }),
-                (EquationNumberFormat.Heading1DashId, new[] { "(1-1)", "(1-2)" }),
-                (EquationNumberFormat.Heading2DotId, new[] { "(1.1.1)", "(1.1.2)" }),
-                (EquationNumberFormat.Heading2DashId, new[] { "(1.1-1)", "(1.1-2)" }),
+                (EquationNumberFormat.Heading1DotId, new[] { "(0.1)", "(0.2)" }),
+                (EquationNumberFormat.Heading1DashId, new[] { "(0-1)", "(0-2)" }),
+                (EquationNumberFormat.Heading2DotId, new[] { "(0.0.1)", "(0.0.2)" }),
+                (EquationNumberFormat.Heading2DashId, new[] { "(0.0-1)", "(0.0-2)" }),
             };
 
             foreach (var (formatId, expected) in formats)
@@ -118,8 +120,8 @@ internal static partial class Program
                 FirstNumberedMathMl,
                 emfPath);
             Release(insertion); insertion = null;
-            AssertMathTypeNumberTexts(document, "(1.1-1)", "(1.1-2)", "(1.1-3)");
-            AssertNativeMathTypeReference(document, "(1.1-1)");
+            AssertMathTypeNumberTexts(document, "(0.0-1)", "(0.0-2)", "(0.0-3)");
+            AssertNativeMathTypeReference(document, "(0.0-1)");
             Console.WriteLine("[MathType number formats] third equation complete; saving...");
 
             var path = Path.Combine(
@@ -134,9 +136,9 @@ internal static partial class Program
             Console.WriteLine("[MathType number formats] reopen complete; validating...");
             document.Activate();
             Console.WriteLine("[MathType number formats] validating reopened number texts...");
-            AssertMathTypeNumberTexts(document, "(1.1-1)", "(1.1-2)", "(1.1-3)");
+            AssertMathTypeNumberTexts(document, "(0.0-1)", "(0.0-2)", "(0.0-3)");
             Console.WriteLine("[MathType number formats] reopened number texts ok; validating reference text...");
-            AssertNativeMathTypeReference(document, "(1.1-1)");
+            AssertNativeMathTypeReference(document, "(0.0-1)");
             Console.WriteLine("[MathType number formats] reopened reference text ok; validating reference style/color...");
             AssertNativeMathTypeReferenceColor(document, Word.WdColor.wdColorAutomatic);
             Console.WriteLine("[MathType number formats] reopened reference style/color ok.");
@@ -158,6 +160,49 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertFreshNoHeadingMathTypeZeroPrefix(
+        Word.Application application,
+        string emfPath)
+    {
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            var service = new WordFormulaService(application);
+            AssertEqual(
+                0,
+                service.SetEquationNumberFormat(EquationNumberFormat.Heading1DotId),
+                "Fresh no-heading document should not report existing numbered equations.");
+
+            insertion = document.Range(document.Content.Start, document.Content.Start);
+            insertion.Select();
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: true,
+                    latex: @"a+b",
+                    mathTypeNumberPosition: "right"),
+                FirstNumberedMathMl,
+                emfPath);
+
+            AssertMathTypeNumberTexts(document, "(0.1)");
+            AssertNativeMathTypeSectionBreak(document, 0);
+            Console.WriteLine(
+                "[MathType no-heading] Heading1 format kept native MathType chapter state at zero; first equation is (0.1) and no synthetic MTEquationSection was created.");
+        }
+        finally
+        {
+            Release(insertion);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
         }
     }
 
@@ -184,7 +229,28 @@ internal static partial class Program
                 service.SetEquationNumberFormat(EquationNumberFormat.Heading2DashId),
                 "Fresh heading-format document should not report existing numbered equations.");
 
-            insertion = document.Range(document.Content.Start, document.Content.Start);
+            document.Content.Text = "Chapter\rSection\r";
+            for (var headingIndex = 1; headingIndex <= 2; headingIndex++)
+            {
+                Word.Paragraph? headingParagraph = null;
+                Word.Range? headingRange = null;
+                try
+                {
+                    headingParagraph = document.Paragraphs[headingIndex];
+                    headingRange = headingParagraph.Range;
+                    object headingStyle = headingIndex == 1
+                        ? Word.WdBuiltinStyle.wdStyleHeading1
+                        : Word.WdBuiltinStyle.wdStyleHeading2;
+                    headingRange.set_Style(ref headingStyle);
+                }
+                finally
+                {
+                    Release(headingRange);
+                    Release(headingParagraph);
+                }
+            }
+
+            insertion = document.Range(document.Content.End - 1, document.Content.End - 1);
             insertion.Select();
             service.InsertMathTypeOle(
                 CreateMathTypeCreateSession(

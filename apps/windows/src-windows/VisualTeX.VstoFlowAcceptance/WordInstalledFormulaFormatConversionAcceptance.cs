@@ -244,6 +244,19 @@ internal static partial class Program
                 "Installed add-in left old VisualTeX VTEq/VTEqCap/VTEqNum bookmarks behind.");
             AssertEqual(0, CountInstalledTemporaryMathTypeBookmarks(document),
                 "Installed add-in left temporary VTMT MathType identity bookmarks behind.");
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_EXPECT_ZERO_HEADING_PREFIX"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                var expectedNumbers = Enumerable.Range(1, finalMathTypeCount)
+                    .Select(index => $"(0.{index})")
+                    .ToArray();
+                AssertMathTypeNumberTexts(document, expectedNumbers);
+                AssertNativeMathTypeSectionBreak(document, 0);
+                Console.WriteLine(
+                    $"[INSTALLED ADD-IN NUMBERING] headingless heading1 format preserved zero prefix: {string.Join(", ", expectedNumbers)}; MTEquationSection=0.");
+            }
 
             Console.WriteLine(
                 $"[INSTALLED ADD-IN] Real VisualTeX.WordVsto COM callback converted a real VisualTeX document fixture: formulas={sourceFormulaCount}, numbered={sourceNumberedCount}; all sources became MathType, old VisualTeX numbering artifacts were removed, and numbered state was recreated as fresh MTPlaceRef fields.");

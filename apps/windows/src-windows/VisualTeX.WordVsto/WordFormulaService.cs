@@ -1880,7 +1880,7 @@ internal sealed partial class WordFormulaService
         var sourceParagraphCount = -1;
         var paragraphCountBeforeDisplayPreparation = -1;
         var insertionStart = -1;
-        var createdDefaultSectionBreak = false;
+        var createdSectionBreakCodeStart = -1;
         var stage = "initialize";
         try
         {
@@ -1925,20 +1925,20 @@ internal sealed partial class WordFormulaService
                         WordEquationNumbering.GetEquationNumberFormatId(document));
                     numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
                         documentNumberFormat.Id);
-                    if (documentNumberFormat.UsesHeading
-                        && !HasMathTypeSectionBreak(document, insertion.Start))
+                    if (documentNumberFormat.UsesHeading)
                     {
                         var logicalInsertionStart = insertion.Start;
-                        var insertedSectionLength = EnsureDefaultMathTypeSectionBreak(
+                        var insertedSectionLength = EnsureMathTypeHeadingScopeState(
                             document,
-                            logicalInsertionStart);
+                            logicalInsertionStart,
+                            documentNumberFormat,
+                            out createdSectionBreakCodeStart);
                         if (insertedSectionLength > 0)
                         {
                             var shiftedStart = Math.Min(
                                 document.Content.End,
                                 logicalInsertionStart + insertedSectionLength);
                             insertion.SetRange(shiftedStart, shiftedStart);
-                            createdDefaultSectionBreak = true;
                         }
                     }
                 }
@@ -2116,8 +2116,10 @@ internal sealed partial class WordFormulaService
             {
                 TryDelete(shape);
             }
-            if (createdDefaultSectionBreak && document is not null)
-                RemoveFirstMathTypeSectionBreakField(document);
+            if (createdSectionBreakCodeStart >= 0 && document is not null)
+                RemoveMathTypeSectionBreakFieldAtCodeStart(
+                    document,
+                    createdSectionBreakCodeStart);
             var hresult = error is COMException
                 ? $" HRESULT=0x{error.HResult:X8}."
                 : string.Empty;
@@ -2256,7 +2258,7 @@ internal sealed partial class WordFormulaService
         var sourceParagraphCount = -1;
         var paragraphCountBeforeDisplayPreparation = -1;
         var insertionStart = -1;
-        var createdDefaultSectionBreak = false;
+        var createdSectionBreakCodeStart = -1;
         var stage = "initialize";
         try
         {
@@ -2310,24 +2312,24 @@ internal sealed partial class WordFormulaService
                     numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
                         documentNumberFormat.Id);
                     if (!numberingSectionStatePrepared
-                        && documentNumberFormat.UsesHeading
-                        && !HasMathTypeSectionBreak(document, insertion.Start))
+                        && documentNumberFormat.UsesHeading)
                     {
                         var logicalInsertionStart = insertion.Start;
-                        var insertedSectionLength = EnsureDefaultMathTypeSectionBreak(
+                        var insertedSectionLength = EnsureMathTypeHeadingScopeState(
                             document,
-                            logicalInsertionStart);
+                            logicalInsertionStart,
+                            documentNumberFormat,
+                            out createdSectionBreakCodeStart);
                         if (insertedSectionLength > 0)
                         {
-                            // The hidden native section state is inserted at the
-                            // document start.  Word keeps this collapsed Range at
-                            // the old coordinate, so shift it explicitly to the
-                            // same logical user position in the original content.
+                            // The hidden native section state is inserted immediately
+                            // after the real Word heading that owns this equation.
+                            // Shift the captured logical formula position by the exact
+                            // amount Word inserted before it.
                             var shiftedStart = Math.Min(
                                 document.Content.End,
                                 logicalInsertionStart + insertedSectionLength);
                             insertion.SetRange(shiftedStart, shiftedStart);
-                            createdDefaultSectionBreak = true;
                         }
                     }
                 }
@@ -2594,8 +2596,10 @@ internal sealed partial class WordFormulaService
             {
                 TryDelete(shape);
             }
-            if (createdDefaultSectionBreak && document is not null)
-                RemoveFirstMathTypeSectionBreakField(document);
+            if (createdSectionBreakCodeStart >= 0 && document is not null)
+                RemoveMathTypeSectionBreakFieldAtCodeStart(
+                    document,
+                    createdSectionBreakCodeStart);
             var hresult = error is COMException
                 ? $" HRESULT=0x{error.HResult:X8}."
                 : string.Empty;
@@ -2758,7 +2762,7 @@ internal sealed partial class WordFormulaService
         var sourceParagraphCount = -1;
         var paragraphCountBeforeDisplayPreparation = -1;
         var insertionStart = -1;
-        var createdDefaultSectionBreak = false;
+        var createdSectionBreakCodeStart = -1;
         var stage = "initialize";
         try
         {
@@ -2804,20 +2808,20 @@ internal sealed partial class WordFormulaService
                     numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
                         documentNumberFormat.Id);
                     if (!numberingSectionStatePrepared
-                        && documentNumberFormat.UsesHeading
-                        && !HasMathTypeSectionBreak(document, insertion.Start))
+                        && documentNumberFormat.UsesHeading)
                     {
                         var logicalInsertionStart = insertion.Start;
-                        var insertedSectionLength = EnsureDefaultMathTypeSectionBreak(
+                        var insertedSectionLength = EnsureMathTypeHeadingScopeState(
                             document,
-                            logicalInsertionStart);
+                            logicalInsertionStart,
+                            documentNumberFormat,
+                            out createdSectionBreakCodeStart);
                         if (insertedSectionLength > 0)
                         {
                             var shiftedStart = Math.Min(
                                 document.Content.End,
                                 logicalInsertionStart + insertedSectionLength);
                             insertion.SetRange(shiftedStart, shiftedStart);
-                            createdDefaultSectionBreak = true;
                         }
                     }
                 }
@@ -2985,8 +2989,10 @@ internal sealed partial class WordFormulaService
             {
                 TryDelete(shape);
             }
-            if (createdDefaultSectionBreak && document is not null)
-                RemoveFirstMathTypeSectionBreakField(document);
+            if (createdSectionBreakCodeStart >= 0 && document is not null)
+                RemoveMathTypeSectionBreakFieldAtCodeStart(
+                    document,
+                    createdSectionBreakCodeStart);
             var hresult = error is COMException
                 ? $" HRESULT=0x{error.HResult:X8}."
                 : string.Empty;
@@ -9864,6 +9870,158 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static bool HasMathTypeSectionBreakBetween(
+        Document document,
+        int afterPosition,
+        int beforePosition)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            var start = Math.Min(afterPosition, beforePosition);
+            var end = Math.Max(afterPosition, beforePosition);
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.Start < start || code.Start > end) continue;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    internal static int EnsureMathTypeHeadingScopeState(
+        Document document,
+        int formulaPosition,
+        EquationNumberFormat format) =>
+        EnsureMathTypeHeadingScopeState(
+            document,
+            formulaPosition,
+            format,
+            out _);
+
+    private static int EnsureMathTypeHeadingScopeState(
+        Document document,
+        int formulaPosition,
+        EquationNumberFormat format,
+        out int createdSectionBreakCodeStart)
+    {
+        createdSectionBreakCodeStart = -1;
+        if (!format.UsesHeading) return 0;
+
+        var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(
+            document,
+            formulaPosition,
+            format.Id);
+        // No real Heading paragraph exists before this equation. VisualTeX's
+        // heading-aware numbering intentionally uses a zero prefix in that scope
+        // (0.1 / 0.0-1). Do not manufacture MathType chapter 1 state.
+        if (scope.ScopeStart == int.MinValue || scope.ScopeEnd == int.MinValue)
+            return 0;
+        if (scope.ScopeEnd > formulaPosition)
+            return 0;
+
+        var parts = (scope.NumberText ?? string.Empty)
+            .Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0
+            || !int.TryParse(
+                parts[0],
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var chapter))
+            return 0;
+        var section = 0;
+        if (format.HeadingLevel >= 2
+            && parts.Length >= 2
+            && !int.TryParse(
+                parts[1],
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out section))
+            return 0;
+        if (chapter == 0 && section == 0)
+            return 0;
+
+        // Scope state belongs immediately after the real Word heading, not before
+        // whichever equation happens to be converted first. This is crucial for
+        // descending whole-document conversion: every equation in the same scope
+        // must remain after the same native MathType section state.
+        if (HasMathTypeSectionBreakBetween(document, scope.ScopeEnd, formulaPosition))
+            return 0;
+
+        WordDoubleClickHook.TraceMessage(
+            $"mathtype-heading-scope-state chapter={chapter} section={section} heading={scope.ScopeStart}:{scope.ScopeEnd} formula={formulaPosition}");
+        var insertedLength = InsertMathTypeSectionBreakState(
+            document,
+            scope.ScopeEnd,
+            chapter,
+            section);
+        if (insertedLength <= 0) return insertedLength;
+
+        createdSectionBreakCodeStart = FindMathTypeSectionBreakCodeStartBetween(
+            document,
+            scope.ScopeEnd,
+            Math.Min(document.Content.End, formulaPosition + insertedLength));
+        if (createdSectionBreakCodeStart < 0)
+            throw new InvalidOperationException(
+                "VisualTeX inserted MathType heading state but could not identify the new section field for transactional rollback.");
+        return insertedLength;
+    }
+
+    private static int FindMathTypeSectionBreakCodeStartBetween(
+        Document document,
+        int afterPosition,
+        int beforePosition)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var best = int.MaxValue;
+        try
+        {
+            var start = Math.Min(afterPosition, beforePosition);
+            var end = Math.Max(afterPosition, beforePosition);
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.Start < start || code.Start > end) continue;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                best = Math.Min(best, code.Start);
+            }
+            return best == int.MaxValue ? -1 : best;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
     private static void InsertIsolatedMathTypeSectionParagraph(
         Document targetDocument,
         int insertionPosition,
@@ -9955,6 +10113,19 @@ internal sealed partial class WordFormulaService
         int beforePosition = int.MaxValue)
     {
         if (HasMathTypeSectionBreak(document, beforePosition)) return 0;
+        return InsertMathTypeSectionBreakState(
+            document,
+            beforePosition,
+            chapter: 1,
+            section: 1);
+    }
+
+    private static int InsertMathTypeSectionBreakState(
+        Document document,
+        int beforePosition,
+        int chapter,
+        int section)
+    {
         EnsureMathTypeNativeStyles(document);
 
         var contentEndBefore = document.Content.End;
@@ -9963,9 +10134,12 @@ internal sealed partial class WordFormulaService
             System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
             "zh",
             StringComparison.OrdinalIgnoreCase)
-            ? "公式章 1 节 1"
-            : "Equation Chapter 1 Section 1";
-        var breakXml = MathTypeWordOpenXml.CreateDefaultSectionBreakFlatOpc(label);
+            ? $"公式章 {chapter} 节 {section}"
+            : $"Equation Chapter {chapter} Section {section}";
+        var breakXml = MathTypeWordOpenXml.CreateSectionBreakFlatOpc(
+            label,
+            chapter,
+            section);
         Range? insertion = null;
         Field? sectionBreak = null;
         Range? sectionCode = null;
@@ -10153,43 +10327,115 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private static void RemoveFirstMathTypeSectionBreakField(Document document)
+    internal static void RemoveAllMathTypeSectionBreakFields(Document document)
     {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var starts = new List<int>();
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    starts.Add(code.Start);
+            }
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+
+        foreach (var start in starts.OrderByDescending(value => value))
+            RemoveMathTypeSectionBreakFieldAtCodeStart(document, start);
+    }
+
+    private static void RemoveMathTypeSectionBreakFieldAtCodeStart(
+        Document document,
+        int codeStart)
+    {
+        Fields? fields = null;
         Field? field = null;
         Range? code = null;
         Range? result = null;
         Range? full = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
         try
         {
-            field = FindFirstMathTypeSectionBreakField(document);
-            if (field is null) return;
-
-            // Delete the Word Field object itself first. Reconstructing the outer
-            // field range from Code/Result coordinates is fragile for MathType's
-            // nested hidden SEQ fields because Word can expose the outer Result as
-            // a collapsed range after those nested fields have been updated.
-            try
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
             {
-                field.Delete();
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.Start != codeStart
+                    || (code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                paragraphs = code.Paragraphs;
+                if (paragraphs.Count == 1)
+                {
+                    paragraph = paragraphs[1];
+                    paragraphRange = paragraph.Range.Duplicate;
+                }
+
+                // Delete the exact section field created by this operation. Never
+                // delete "the first" MathType section field: later-chapter failures
+                // must not destroy an earlier chapter's valid native state.
+                try { field.Delete(); }
+                catch
+                {
+                    result = field.Result;
+                    var start = Math.Max(document.Content.Start, code.Start - 1);
+                    var end = Math.Min(
+                        document.Content.End,
+                        Math.Max(code.End, result.End) + 1);
+                    full = document.Range(start, end);
+                    full.Delete();
+                }
+
+                if (paragraphRange is not null
+                    && paragraphRange.InlineShapes.Count == 0)
+                {
+                    try
+                    {
+                        object normalStyle = WdBuiltinStyle.wdStyleNormal;
+                        paragraphRange.set_Style(ref normalStyle);
+                        paragraphRange.Font.Hidden = 0;
+                        paragraphRange.Delete();
+                    }
+                    catch { }
+                }
                 return;
             }
-            catch { }
-
-            // Conservative fallback for Word builds that reject Field.Delete().
-            code = field.Code;
-            result = field.Result;
-            var start = Math.Max(document.Content.Start, code.Start - 1);
-            var end = Math.Min(document.Content.End, Math.Max(code.End, result.End) + 1);
-            full = document.Range(start, end);
-            full.Delete();
         }
         catch { }
         finally
         {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
             Release(full);
             Release(result);
             Release(code);
             Release(field);
+            Release(fields);
         }
     }
 
