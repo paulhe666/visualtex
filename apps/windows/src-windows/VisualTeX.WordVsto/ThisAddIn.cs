@@ -106,6 +106,18 @@ public interface IWordRibbonCallbacks
     [DispId(30)]
     void OnRedrawDocumentOmmlToLatex(object control);
 
+    [DispId(31)]
+    void OnConvertVisualTeXToMathTypeSelection(object control);
+
+    [DispId(32)]
+    void OnConvertVisualTeXToMathTypeDocument(object control);
+
+    [DispId(33)]
+    void OnConvertMathTypeToVisualTeXSelection(object control);
+
+    [DispId(34)]
+    void OnConvertMathTypeToVisualTeXDocument(object control);
+
 }
 
 [ComVisible(true)]
@@ -113,7 +125,7 @@ public interface IWordRibbonCallbacks
 [ProgId("VisualTeX.WordVsto")]
 [ClassInterface(ClassInterfaceType.None)]
 [ComDefaultInterface(typeof(IWordRibbonCallbacks))]
-public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, IWordRibbonCallbacks
+public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, IWordRibbonCallbacks
 {
     private const int AllowAnyProcessToSetForeground = -1;
 
@@ -144,6 +156,16 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             <button id="VisualTeX.WordVsto.ConvertSelected" label="转为原生 OLE" screentip="转为可嵌入编辑的原生 OLE" supertip="转换后对象随 Word 文档保存，并可通过 VisualTeX 双击重新编辑。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
             <button id="VisualTeX.WordVsto.ConvertSelectedToOmml" label="转为 Word OMML" screentip="转为 Word 原生公式" supertip="将所选 VisualTeX 公式转换为 Word 原生 OMML；可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。" tag="convertToOmml" getImage="GetRibbonImage" onAction="OnConvertSelectedToOmml" />
             <button id="VisualTeX.WordVsto.ExportPicture" label="导出所选为图片" imageMso="PictureInsertFromFile" onAction="OnExportSelectedAsPicture" />
+          </box>
+          <box id="VisualTeX.WordVsto.FormatConversionBox" boxStyle="vertical">
+            <menu id="VisualTeX.WordVsto.VisualTeXToMathType" label="VisualTeX → MathType" screentip="重新绘制为 MathType OLE" supertip="删除原 VisualTeX 宿主与旧编号，再用正常新建 MathType 公式的同一条成熟路径重新绘制。">
+              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeSelection" label="转换选中部分" onAction="OnConvertVisualTeXToMathTypeSelection" />
+              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDocument" label="全文批量转换" onAction="OnConvertVisualTeXToMathTypeDocument" />
+            </menu>
+            <menu id="VisualTeX.WordVsto.MathTypeToVisualTeX" label="MathType → VisualTeX" screentip="重新绘制为 VisualTeX OLE" supertip="删除原 MathType 宿主与旧编号，再用正常新建 VisualTeX OLE 的同一条成熟路径重新绘制。">
+              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXSelection" label="转换选中部分" onAction="OnConvertMathTypeToVisualTeXSelection" />
+              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDocument" label="全文批量转换" onAction="OnConvertMathTypeToVisualTeXDocument" />
+            </menu>
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
             <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" screentip="更新 VisualTeX 与 MathType 公式编号" supertip="刷新当前文档中的 VisualTeX 编号，以及 MathType 原生 MTChap/MTSec/MTEqn 编号和对应公式引用。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
@@ -2342,12 +2364,21 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             Session = session,
             MathMl = export.MathMl,
         };
-        if (string.Equals(
+        var needsVectorPreview = string.Equals(
                 objectMode,
                 FormulaOleContract.NativeOleMode,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)
+            || string.Equals(
+                objectMode,
+                FormulaOleContract.MathTypeOleMode,
+                StringComparison.Ordinal);
+        if (needsVectorPreview)
         {
-            template.PngPath = client.MaterializePng(session);
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.NativeOleMode,
+                    StringComparison.Ordinal))
+                template.PngPath = client.MaterializePng(session);
             template.SvgPath = client.MaterializeSvg(session);
             try
             {
