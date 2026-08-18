@@ -118,6 +118,18 @@ public interface IWordRibbonCallbacks
     [DispId(34)]
     void OnConvertMathTypeToVisualTeXDocument(object control);
 
+    [DispId(35)]
+    void OnConvertOmmlToMathTypeSelection(object control);
+
+    [DispId(36)]
+    void OnConvertOmmlToMathTypeDocument(object control);
+
+    [DispId(37)]
+    void OnConvertMathTypeToOmmlSelection(object control);
+
+    [DispId(38)]
+    void OnConvertMathTypeToOmmlDocument(object control);
+
 }
 
 [ComVisible(true)]
@@ -165,6 +177,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <menu id="VisualTeX.WordVsto.MathTypeToVisualTeX" label="MathType → VisualTeX" screentip="重新绘制为 VisualTeX OLE" supertip="删除原 MathType 宿主与旧编号，再用正常新建 VisualTeX OLE 的同一条成熟路径重新绘制。">
               <button id="VisualTeX.WordVsto.MathTypeToVisualTeXSelection" label="转换选中部分" onAction="OnConvertMathTypeToVisualTeXSelection" />
               <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDocument" label="全文批量转换" onAction="OnConvertMathTypeToVisualTeXDocument" />
+            </menu>
+            <menu id="VisualTeX.WordVsto.OmmlToMathType" label="OMML → MathType" screentip="将 Word 原生公式转换为 MathType OLE" supertip="读取 Word 原生 OMath/OMathPara 的真实 MathML，删除原 OMML 宿主与旧编号，再用 VisualTeX 自包含 MathType Equation.DSMT4 路径原位重绘。">
+              <button id="VisualTeX.WordVsto.OmmlToMathTypeSelection" label="转换选中部分" onAction="OnConvertOmmlToMathTypeSelection" />
+              <button id="VisualTeX.WordVsto.OmmlToMathTypeDocument" label="全文批量转换" onAction="OnConvertOmmlToMathTypeDocument" />
+            </menu>
+            <menu id="VisualTeX.WordVsto.MathTypeToOmml" label="MathType → OMML" screentip="将 MathType OLE 转换为 Word 原生公式" supertip="直接读取 Equation Native 中的 MathML，不启动 MathType，再用 VisualTeX 现有 Word OMML 插入与编号路径原位重绘。">
+              <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="转换选中部分" onAction="OnConvertMathTypeToOmmlSelection" />
+              <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="全文批量转换" onAction="OnConvertMathTypeToOmmlDocument" />
             </menu>
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
@@ -1443,6 +1463,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ClearActiveSessionOperation(operationCancellation);
             operationCancellation.Dispose();
             _operationGate.Release();
+            WordDoubleClickHook.TraceMessage(
+                $"ribbon-session-operation-released sessionId={sessionId ?? "<pending>"}");
         }
     }
 

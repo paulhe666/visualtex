@@ -81,8 +81,12 @@ internal static class MathMlToLatexConverter
             ["β"] = @"\beta ",
             ["γ"] = @"\gamma ",
             ["δ"] = @"\delta ",
-            ["ε"] = @"\epsilon ",
-            ["ϵ"] = @"\varepsilon ",
+            // MathJax follows TeX glyph naming rather than Unicode's character
+            // names: \epsilon is U+03F5 (ϵ) while \varepsilon is U+03B5 (ε).
+            // Keep this mapping inverse-exact so MathType -> VisualTeX ->
+            // MathType cannot silently swap the two epsilon forms.
+            ["ε"] = @"\varepsilon ",
+            ["ϵ"] = @"\epsilon ",
             ["ζ"] = @"\zeta ",
             ["η"] = @"\eta ",
             ["θ"] = @"\theta ",
@@ -101,8 +105,9 @@ internal static class MathMlToLatexConverter
             ["ς"] = @"\varsigma ",
             ["τ"] = @"\tau ",
             ["υ"] = @"\upsilon ",
-            ["φ"] = @"\phi ",
-            ["ϕ"] = @"\varphi ",
+            // Likewise TeX \phi is U+03D5 (ϕ) and \varphi is U+03C6 (φ).
+            ["φ"] = @"\varphi ",
+            ["ϕ"] = @"\phi ",
             ["χ"] = @"\chi ",
             ["ψ"] = @"\psi ",
             ["ω"] = @"\omega ",
@@ -304,12 +309,49 @@ internal static class MathMlToLatexConverter
     {
         var open = (string?)element.Attribute("open") ?? "(";
         var close = (string?)element.Attribute("close") ?? ")";
+        if (TryConvertMathTypeBinomialPile(element, open, close, out var binomial))
+            return binomial;
         var separators = (string?)element.Attribute("separators") ?? ",";
         var parts = element.Elements().Select(ConvertElement).ToList();
         var separator = separators.Length > 0 ? separators[0].ToString() : ",";
         return Delimiter(open, left: true)
             + string.Join(separator, parts)
             + Delimiter(close, left: false);
+    }
+
+    private static bool TryConvertMathTypeBinomialPile(
+        XElement fenced,
+        string open,
+        string close,
+        out string latex)
+    {
+        latex = string.Empty;
+        if (open != "(" || close != ")") return false;
+        var table = fenced.Elements().SingleOrDefault();
+        if (table is not null && table.Name.LocalName == "mrow")
+        {
+            var nested = table.Elements().ToArray();
+            if (nested.Length == 1 && nested[0].Name.LocalName == "mtable")
+                table = nested[0];
+        }
+        if (table is null || table.Name.LocalName != "mtable") return false;
+        if (!string.Equals(
+                (string?)table.Attribute("data-mtef-pile"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        var rows = table.Elements()
+            .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
+            .ToArray();
+        if (rows.Length != 2) return false;
+        var cells = rows.Select(row => row.Elements()
+                .Where(cell => cell.Name.LocalName == "mtd")
+                .ToArray())
+            .ToArray();
+        if (cells.Any(row => row.Length != 1)) return false;
+        latex = @"\binom{" + ConvertElement(cells[0][0]) + "}{"
+            + ConvertElement(cells[1][0]) + "}";
+        return true;
     }
 
     private static string ConvertTable(XElement element)

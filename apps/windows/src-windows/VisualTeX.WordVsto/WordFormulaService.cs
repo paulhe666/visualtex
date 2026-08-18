@@ -7018,10 +7018,7 @@ internal sealed partial class WordFormulaService
         var previousScreenUpdating = true;
         var screenUpdatingSuspended = false;
         var oldDeleted = false;
-        MathTypeNativePreviewRenderer.Result? nativePreview = null;
-        MathTypeNativePreviewRenderer.Result? sourceNativePreview = null;
         MathTypeDisplayParagraphLayout? displayParagraphLayout = null;
-        int? nativeTargetWordPosition = null;
         var sourceParagraphCount = -1;
         var alignInline = string.Equals(
             session.DisplayMode,
@@ -7043,6 +7040,8 @@ internal sealed partial class WordFormulaService
             }
             catch { }
 
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=resolve-source formulaId={session.FormulaId}");
             oldShape = FindMathTypeOleByRange(document, session.SourceObjectId)
                 ?? throw new InvalidOperationException(
                     "The MathType OLE equation no longer exists at the captured Word location.");
@@ -7053,49 +7052,49 @@ internal sealed partial class WordFormulaService
             oldRange = oldShape.Range.Duplicate;
             var oldStart = oldRange.Start;
             var sourceCount = document.InlineShapes.Count;
-            var oldWidth = oldShape.Width;
-            var oldHeight = oldShape.Height;
-            var oldFontPosition = ReadInlineOleWordPosition(oldShape);
-            var sourcePreviewMetrics = TryMeasureInlineOlePreview(oldShape);
-            var editedPreviewMetrics = TryMeasureMetafilePreview(emfPath);
             if (!alignInline)
             {
                 displayParagraphLayout = CaptureMathTypeDisplayParagraphLayout(oldShape);
                 sourceParagraphCount = ReadDocumentParagraphCount(document);
             }
 
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=read-source-flat-opc formulaId={session.FormulaId}");
             var sourceFragment = MathTypeWordOpenXml.Read(oldShape);
             var originalProgId = sourceFragment.ProgId;
-            TryRenderMathTypeNativePreviewFromCompoundFile(
-                sourceFragment.CompoundFile,
-                Path.GetDirectoryName(emfPath) ?? Path.GetTempPath(),
-                out sourceNativePreview);
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=read-source-flat-opc-complete formulaId={session.FormulaId}");
 
-            // MathType OLE has its own presentation scale, which is often larger
-            // than the surrounding Word text even when Word reports the same run
-            // font size. Preserve that physical MathType scale across VisualTeX
-            // edits: keep the existing object height as the scale reference and
-            // let only the width/aspect ratio follow the newly rendered equation.
-            // This avoids both failure modes seen in earlier implementations:
-            // forcing the new formula into the old width (glyphs shrink), or using
-            // VisualTeX NaturalSize directly (a large native MathType inline OLE
-            // suddenly becomes a small VisualTeX-style inline equation).
-            var editedSize = CalculateMathTypeEditedPresentationSize(
-                oldWidth,
-                oldHeight,
-                sourcePreviewMetrics,
-                editedPreviewMetrics,
-                session.ExportResult?.Width,
-                session.ExportResult?.Height,
-                session.OriginalMetadata?.RenderWidthPx,
-                session.OriginalMetadata?.RenderHeightPx,
-                session.OriginalMetadata?.FontSizePt,
-                session.OriginalMetadata?.RenderFontSizePt);
+            // Existing MathType equations must use exactly the same offline
+            // presentation model as newly inserted MathType equations. Do not
+            // preserve the old OLE extent, do not run MathType's renderer, and do
+            // not route the edit through VisualTeX's generic inline-size logic.
+            // The Office companion already exported this MathType Session using
+            // the dedicated 12 pt Full-Size geometry for both inline and display.
+            var targetWidthPt = (float)Math.Max(
+                1d,
+                (session.ExportResult?.Width ?? 200d) * 0.75d);
+            var targetHeightPt = (float)Math.Max(
+                1d,
+                (session.ExportResult?.Height ?? 60d) * 0.75d);
+            var alignToWordTextBaseline = alignInline || session.Numbered;
+            var targetWordPosition = alignToWordTextBaseline
+                ? CalculateMathTypeOleWordPosition(
+                    targetHeightPt,
+                    session.ExportResult?.Height ?? 0f,
+                    session.ExportResult?.Baseline)
+                : 0;
+            var previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
+                emfPath,
+                targetWidthPt,
+                targetHeightPt);
 
             // Preserve the original Equation.DSMT4 CFB, replace only its MTEF
             // structure, and seed a fresh OLE presentation cache from VisualTeX's
             // current EMF. The source and result are serialized data; no MathType
             // COM server is needed for the semantic or visual update.
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=rewrite-cfb formulaId={session.FormulaId}");
             var rewritten = MathTypeOleStorage.RewriteMathTypeCompoundFile(
                 sourceFragment.CompoundFile,
                 mathMl,
@@ -7106,49 +7105,21 @@ internal sealed partial class WordFormulaService
             if (!MathTypeMathMlRoundTripMatches(expectedMathTypeSignature, generatedMathMl))
                 throw new InvalidDataException(
                     $"VisualTeX generated invalid MathType MTEF. Expected '{metadata.Latex}', actual '{generatedLatex}'.");
-            // Keep the semantic update fully offline, but when MathType's own
-            // renderer is installed use it to create the presentation WMF from
-            // the rewritten MTEF. This preserves MathType's native Full Size,
-            // fonts, script sizing, spacing and baseline instead of showing a
-            // MathJax/VisualTeX-styled preview for a MathType object.
-            string replacementWordOpenXml;
-            if (MathTypeNativePreviewRenderer.TryRender(
-                    rewritten.Mtef,
-                    Path.GetDirectoryName(emfPath) ?? Path.GetTempPath(),
-                    out var renderedNativePreview))
-            {
-                nativePreview = renderedNativePreview;
-                var nativeScaleX = CalculateMathTypeNativePresentationScale(
-                    oldWidth,
-                    sourceNativePreview?.WidthPt);
-                var nativeScaleY = CalculateMathTypeNativePresentationScale(
-                    oldHeight,
-                    sourceNativePreview?.HeightPt);
-                var targetWidth = nativePreview.WidthPt * nativeScaleX;
-                var targetHeight = nativePreview.HeightPt * nativeScaleY;
-                nativeTargetWordPosition = Math.Max(
-                    -256,
-                    Math.Min(
-                        256,
-                        (int)Math.Round(
-                            nativePreview.WordPosition * nativeScaleY,
-                            MidpointRounding.AwayFromZero)));
-                replacementWordOpenXml = MathTypeWordOpenXml.RewriteWithPlaceableWmf(
-                    sourceFragment.WordOpenXml,
-                    rewritten.CompoundFile,
-                    File.ReadAllBytes(nativePreview.WmfPath),
-                    targetWidth,
-                    targetHeight);
-            }
-            else
-            {
-                replacementWordOpenXml = MathTypeWordOpenXml.Rewrite(
-                    sourceFragment.WordOpenXml,
-                    rewritten.CompoundFile,
-                    emfPath,
-                    editedSize.Width,
-                    editedSize.Height);
-            }
+            // Rewrite the existing Equation.DSMT4 CFB and its external Word WMF
+            // presentation in one offline Flat OPC transaction. This is the same
+            // EMF -> placeable-WMF path used by InsertMathTypeOle, so re-editing an
+            // equation cannot silently switch to MathType.exe or a second geometry
+            // model.
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=rewrite-flat-opc formulaId={session.FormulaId}");
+            var replacementWordOpenXml = MathTypeWordOpenXml.RewriteWithPlaceableWmf(
+                sourceFragment.WordOpenXml,
+                rewritten.CompoundFile,
+                previewWmf,
+                targetWidthPt,
+                targetHeightPt);
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=rewrite-flat-opc-complete formulaId={session.FormulaId}");
             var rewrittenFragment = MathTypeWordOpenXml.Read(replacementWordOpenXml);
             var rewrittenMathMl = MathTypeOleStorage.ReadMathMl(rewrittenFragment.CompoundFile);
             var rewrittenLatex = MathMlToLatexConverter.Convert(rewrittenMathMl);
@@ -7163,10 +7134,16 @@ internal sealed partial class WordFormulaService
             // that character, then materialize the rewritten Flat OPC at the same
             // insertion point. Surrounding prose is untouched. If InsertXML fails,
             // the catch block restores the original serialized object.
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=delete-source formulaId={session.FormulaId}");
             oldShape.Delete();
             oldDeleted = true;
             insertion = document.Range(oldStart, oldStart);
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=insert-rewritten-flat-opc formulaId={session.FormulaId}");
             insertion.InsertXML(replacementWordOpenXml);
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=insert-rewritten-flat-opc-complete formulaId={session.FormulaId}");
 
             if (document.InlineShapes.Count != sourceCount)
                 throw new InvalidOperationException(
@@ -7196,22 +7173,16 @@ internal sealed partial class WordFormulaService
             if (!alignInline && displayLayoutToRestore is not null)
                 RestoreMathTypeDisplayParagraphLayout(replacement, displayLayoutToRestore);
 
-            // MathType's cached metafile and its U+0001 result-character baseline
-            // are one presentation model.  Use the new native baseline for both
-            // inline and display equations; keeping the old display Font.Position
-            // after changing the native WMF is what makes an edited row appear to
-            // jump vertically or acquire different line spacing.
-            var targetFontPosition = nativeTargetWordPosition
-                ?? CalculateMathTypeInlineWordPosition(
-                    oldFontPosition,
-                    oldHeight,
-                    replacement.Height,
-                    sourcePreviewMetrics,
-                    editedPreviewMetrics);
-            SetInlineOleWordPosition(replacement, targetFontPosition);
+            // Keep the U+0001 object-result baseline synchronized with the exact
+            // same exported MathType geometry used to build the WMF. Reusing the
+            // old object baseline after replacing the preview is what previously
+            // let re-edited formulas acquire a second, incompatible layout model.
+            SetInlineOleWordPosition(replacement, targetWordPosition);
             if (alignInline)
                 RestoreTypingBaselineAfter(replacement);
 
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=validate-replacement formulaId={session.FormulaId}");
             var replacementFragment = MathTypeWordOpenXml.Read(replacement);
             if (!string.IsNullOrWhiteSpace(originalProgId)
                 && !string.Equals(
@@ -7227,6 +7198,8 @@ internal sealed partial class WordFormulaService
                     $"Word materialized the wrong MathType formula. Expected '{metadata.Latex}', actual '{replacementLatex}'.");
 
             finalSelection = replacement.Range.Duplicate;
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-replace-stage stage=complete formulaId={session.FormulaId}");
             return Result(session, document);
         }
         catch
@@ -7277,8 +7250,6 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
-            nativePreview?.Dispose();
-            sourceNativePreview?.Dispose();
             if (screenUpdatingSuspended)
             {
                 try { _application.ScreenUpdating = previousScreenUpdating; } catch { }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WordVsto;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -96,7 +97,9 @@ internal static partial class Program
         public bool Inline { get; set; } = true;
     }
 
-    private static void RunWordMathTypeOfflineStorageAcceptance(string artifactRoot)
+    private static void RunWordMathTypeOfflineStorageAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
         var workspaceArtifacts = Path.GetFullPath(Path.Combine(
@@ -233,6 +236,42 @@ internal static partial class Program
                     + "<msubsup><mo>∑</mo><mi>c</mi><mi>a</mi></msubsup><mi>b</mi>"),
                 ValidateWithMathType = true,
             },
+            new MathTypeOfflineCase
+            {
+                Name = "document1-quadratic",
+                MathMl = M(
+                    "<mi>x</mi><mo>=</mo><mfrac>"
+                    + "<mrow><mo>−</mo><mi>b</mi><mo>±</mo><msqrt>"
+                    + "<msup><mi>b</mi><mrow><mn>2</mn></mrow></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi>"
+                    + "</msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "document1-binomial-matrix",
+                MathMl = M(
+                    "<mo stretchy=\"false\">(</mo><mi>a</mi><mo>+</mo><mi>b</mi>"
+                    + "<msup><mo stretchy=\"false\">)</mo><mrow><mi>n</mi></mrow></msup><mo>=</mo>"
+                    + "<munderover><mo data-mjx-texclass=\"OP\">∑</mo>"
+                    + "<mrow><mi>k</mi><mo>=</mo><mn>0</mn></mrow><mrow><mi>n</mi></mrow></munderover>"
+                    + "<mrow data-mjx-texclass=\"INNER\"><mo data-mjx-texclass=\"OPEN\">(</mo>"
+                    + "<mtable><mtr><mtd><mi>n</mi></mtd></mtr><mtr><mtd><mi>k</mi></mtd></mtr></mtable>"
+                    + "<mo data-mjx-texclass=\"CLOSE\">)</mo></mrow>"
+                    + "<msup><mi>a</mi><mrow><mi>n</mi><mo>−</mo><mi>k</mi></mrow></msup>"
+                    + "<msup><mi>b</mi><mrow><mi>k</mi></mrow></msup>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "document1-limit-chain",
+                MathMl = M(
+                    "<msub><mi mathvariant=\"normal\">lim</mi><mrow><mi>a</mi><mo>→</mo><mi>b</mi></mrow></msub>"
+                    + "<mi>c</mi><mo>=</mo><mi>d</mi><msup><mi>a</mi><mn>2</mn></msup>"
+                    + "<mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "document1-cos-theta",
+                MathMl = M("<mi mathvariant=\"normal\">cos</mi><mi>θ</mi><mo>=</mo><mn>1</mn>"),
+            },
             new MathTypeOfflineCase { Name = "double-integral", MathMl = M("<msubsup><mo>∬</mo><mi>D</mi><mrow></mrow></msubsup><mi>f</mi><mi mathvariant=\"normal\">d</mi><mi>A</mi>") },
             new MathTypeOfflineCase { Name = "limit", MathMl = M("<msub><mi mathvariant=\"normal\">lim</mi><mrow><mi>x</mi><mo>→</mo><mn>0</mn></mrow></msub><mfrac><mrow><mi>sin</mi><mi>x</mi></mrow><mi>x</mi></mfrac>") },
             new MathTypeOfflineCase { Name = "bar-macron", MathMl = M("<mover accent=\"true\"><mi>a</mi><mo>¯</mo></mover>"), ValidateWithMathType = true },
@@ -247,6 +286,7 @@ internal static partial class Program
             new MathTypeOfflineCase { Name = "ddot", MathMl = M("<mover accent=\"true\"><mi>x</mi><mo>¨</mo></mover>") },
             new MathTypeOfflineCase { Name = "boxed", MathMl = M("<menclose notation=\"box\"><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></menclose>"), ValidateWithMathType = true },
             new MathTypeOfflineCase { Name = "greek", MathMl = M("<mi>α</mi><mo>+</mo><mi>β</mi><mo>=</mo><mi>Γ</mi><mo>+</mo><mi>Ω</mi>") },
+            new MathTypeOfflineCase { Name = "greek-epsilon-phi-variants", MathMl = M("<mi>ε</mi><mo>+</mo><mi>ϵ</mi><mo>+</mo><mi>φ</mi><mo>+</mo><mi>ϕ</mi>") },
             new MathTypeOfflineCase { Name = "sets-relations", MathMl = M("<mi>x</mi><mo>∈</mo><mi>A</mi><mo>⊆</mo><mi>B</mi><mo>∪</mo><mi>C</mi><mo>∩</mo><mi>D</mi>") },
             new MathTypeOfflineCase { Name = "relations", MathMl = M("<mi>a</mi><mo>≤</mo><mi>b</mi><mo>≠</mo><mi>c</mi><mo>≈</mo><mi>d</mi><mo>≥</mo><mi>e</mi>") },
             new MathTypeOfflineCase { Name = "arrows", MathMl = M("<mi>A</mi><mo>→</mo><mi>B</mi><mo>↔</mo><mi>C</mi><mo>⇒</mo><mi>D</mi>") },
@@ -389,6 +429,7 @@ internal static partial class Program
         Console.WriteLine(
             $"[MathType offline 2/4] Rewriting {cases.Length} real Equation.DSMT4 documents without MathType...");
         var targets = new List<(MathTypeOfflineCase TestCase, string Path)>();
+        var recoveredLatex = new List<(MathTypeOfflineCase TestCase, string Latex)>();
         foreach (var testCase in cases)
         {
             var target = Path.Combine(
@@ -432,13 +473,115 @@ internal static partial class Program
             Console.WriteLine(
                 $"  {testCase.Name}: rewritten root offset={rewritten.StructureOffset}; offline read={offlineReadLatex}; no MathType process started.");
             targets.Add((testCase, target));
+            recoveredLatex.Add((testCase, offlineReadLatex));
+        }
+
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_MATHTYPE_VALIDATE_VISUALTEX_ROUNDTRIP"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            Console.WriteLine(
+                $"[MathType offline 2b/4] Re-parsing {recoveredLatex.Count} MTEF-recovered LaTeX formulas through the production VisualTeX MathJax converter...");
+            client.PrewarmConverterAsync(CancellationToken.None).GetAwaiter().GetResult();
+            var sessions = new List<(MathTypeOfflineCase TestCase, string Latex, string SessionId)>();
+            try
+            {
+                foreach (var item in recoveredLatex)
+                {
+                    var line = new FormulaLine
+                    {
+                        Id = Guid.NewGuid().ToString("D"),
+                        Latex = item.Latex,
+                    };
+                    var session = client.CreateSessionAsync(
+                            new CreateVstoSessionRequest
+                            {
+                                Mode = "create",
+                                Host = "word",
+                                Title = "MathType semantic round-trip acceptance",
+                                Lines = new List<FormulaLine> { line },
+                                ActiveLineId = line.Id,
+                                CodeFormat = "latex",
+                                DisplayMode = item.TestCase.Inline ? "inline" : "block",
+                                ObjectMode = FormulaOleContract.MathTypeOleMode,
+                                Numbered = false,
+                                FontSizePt = 12d,
+                                AutoCommitOnClose = false,
+                            },
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    sessions.Add((item.TestCase, item.Latex, session.Id));
+                }
+
+                client.OpenConverterBatchAsync(
+                        sessions.Select(item => item.SessionId).ToArray(),
+                        CancellationToken.None)
+                    .GetAwaiter().GetResult();
+
+                foreach (var item in sessions)
+                {
+                    var session = client.WaitForCommitAsync(
+                            item.SessionId,
+                            TimeSpan.FromMinutes(3),
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    if (string.Equals(session.Status, "failed", StringComparison.Ordinal))
+                        throw new InvalidDataException(
+                            $"VisualTeX MathJax could not re-parse MathType-recovered LaTeX for '{item.TestCase.Name}': {item.Latex}. {session.Error}");
+                    var reparsedMathMl = session.ExportResult?.MathMl;
+                    if (string.IsNullOrWhiteSpace(reparsedMathMl))
+                        throw new InvalidDataException(
+                            $"VisualTeX MathJax returned no MathML while re-parsing '{item.TestCase.Name}': {item.Latex}");
+                    var expectedSignature = MathTypeMtefCodec.SemanticSignature(item.TestCase.MathMl);
+                    var reparsedSignature = MathTypeMtefCodec.SemanticSignature(reparsedMathMl!);
+                    AssertEqual(
+                        expectedSignature,
+                        reparsedSignature,
+                        $"MathType -> VisualTeX LaTeX -> MathJax semantic mismatch for '{item.TestCase.Name}'. recoveredLatex='{item.Latex}', reparsedMathMl='{reparsedMathMl}'");
+
+                    var regenerated = MathTypeMtefCodec.CreateEquationNative(
+                        reparsedMathMl!,
+                        item.TestCase.Inline);
+                    var regeneratedCompound = MathTypeOleStorage.CreateStandaloneCompoundFile(regenerated);
+                    var secondReadMathMl = MathTypeOleStorage.ReadMathMl(regeneratedCompound);
+                    AssertEqual(
+                        expectedSignature,
+                        MathTypeMtefCodec.SemanticSignature(secondReadMathMl),
+                        $"Second VisualTeX -> MathType MTEF semantic mismatch for '{item.TestCase.Name}'. recoveredLatex='{item.Latex}', secondReadMathMl='{secondReadMathMl}'");
+                    Console.WriteLine(
+                        $"  {item.TestCase.Name}: MTEF -> LaTeX -> MathJax -> MTEF semantic round-trip passed.");
+                }
+            }
+            finally
+            {
+                foreach (var item in sessions)
+                {
+                    try
+                    {
+                        client.CompleteAsync(item.SessionId, CancellationToken.None)
+                            .GetAwaiter().GetResult();
+                        client.CloseEditorAsync(item.SessionId, CancellationToken.None)
+                            .GetAwaiter().GetResult();
+                    }
+                    catch { }
+                }
+            }
         }
 
         Console.WriteLine(
             "[MathType offline 3/4] Letting installed MathType 7 validate each VisualTeX-generated MTEF...");
         var validationCaseFilter = Environment.GetEnvironmentVariable(
             "VISUALTEX_MATHTYPE_VALIDATION_CASE");
-        var validationTargets = targets.Where(item => item.TestCase.ValidateWithMathType);
+        var skipInstalledValidation = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_MATHTYPE_SKIP_INSTALLED_VALIDATION"),
+            "1",
+            StringComparison.Ordinal);
+        var validationTargets = skipInstalledValidation
+            ? Enumerable.Empty<(MathTypeOfflineCase TestCase, string Path)>()
+            : targets.Where(item => item.TestCase.ValidateWithMathType);
+        if (skipInstalledValidation)
+            Console.WriteLine("  Installed MathType validation skipped; offline semantic corpus remains authoritative for this run.");
         if (!string.IsNullOrWhiteSpace(validationCaseFilter))
         {
             validationTargets = validationTargets.Where(item => string.Equals(

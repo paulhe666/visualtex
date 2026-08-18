@@ -381,6 +381,18 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-installed-visualtex-number-toggle-close",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-omml-mathtype-format-conversion",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-mathtype-native-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-mathtype-reedit-regression",
                 StringComparison.OrdinalIgnoreCase);
         using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
             ? null
@@ -512,7 +524,7 @@ internal static partial class Program
             }
             else if (string.Equals(mode, "word-mathtype-offline-storage", StringComparison.OrdinalIgnoreCase))
             {
-                RunWordMathTypeOfflineStorageAcceptance(artifactRoot);
+                RunWordMathTypeOfflineStorageAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-standalone-codec", StringComparison.OrdinalIgnoreCase))
             {
@@ -566,6 +578,10 @@ internal static partial class Program
             {
                 RunWordLiveFormatConversionFixtureCapture(artifactRoot);
             }
+            else if (string.Equals(mode, "word-format-conversion-rollback-residual-fixture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormatConversionRollbackResidualFixtureAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-live-mathtype-dump", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordLiveMathTypeDump(artifactRoot);
@@ -577,6 +593,22 @@ internal static partial class Program
             else if (string.Equals(mode, "word-simple-format-conversion-numbering", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordSimpleFormatConversionNumberingAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlMathTypeFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledOmmlMathTypeFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-mathtype-native-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledMathTypeNativeRegressionAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledMathTypeReeditRegressionAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-right-left-live", StringComparison.OrdinalIgnoreCase))
             {

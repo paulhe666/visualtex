@@ -18,6 +18,8 @@ internal sealed class WordFormulaFormatConversionTarget
     internal string SourceObjectId { get; set; } = string.Empty;
     internal int SourceStart { get; set; }
     internal string Latex { get; set; } = string.Empty;
+    internal string? SourceMathMl { get; set; }
+    internal bool SourceIsManagedOmml { get; set; }
     internal string DisplayMode { get; set; } = "inline";
     internal bool Numbered { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";

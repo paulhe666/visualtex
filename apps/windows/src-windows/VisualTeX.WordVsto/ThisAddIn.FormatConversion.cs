@@ -29,6 +29,30 @@ public sealed partial class ThisAddIn
             FormulaOleContract.MathTypeOleMode,
             FormulaOleContract.NativeOleMode);
 
+    public void OnConvertOmmlToMathTypeSelection(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: false,
+            FormulaOleContract.WordOmmlMode,
+            FormulaOleContract.MathTypeOleMode);
+
+    public void OnConvertOmmlToMathTypeDocument(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: true,
+            FormulaOleContract.WordOmmlMode,
+            FormulaOleContract.MathTypeOleMode);
+
+    public void OnConvertMathTypeToOmmlSelection(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: false,
+            FormulaOleContract.MathTypeOleMode,
+            FormulaOleContract.WordOmmlMode);
+
+    public void OnConvertMathTypeToOmmlDocument(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: true,
+            FormulaOleContract.MathTypeOleMode,
+            FormulaOleContract.WordOmmlMode);
+
     private async Task ConvertFormulaFormatAsync(
         bool wholeDocument,
         string sourceMode,
@@ -49,9 +73,13 @@ public sealed partial class ThisAddIn
                 TimeSpan.FromSeconds(2),
                 lifetime.Token).ConfigureAwait(false))
         {
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-gate-timeout sourceMode={sourceMode} targetMode={targetMode} wholeDocument={wholeDocument}");
             SetStatus("VisualTeX 正在执行其他 Word 操作，请稍候再试。");
             return;
         }
+        WordDoubleClickHook.TraceMessage(
+            $"format-conversion-start sourceMode={sourceMode} targetMode={targetMode} wholeDocument={wholeDocument}");
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
@@ -64,32 +92,19 @@ public sealed partial class ThisAddIn
                         sourceMode,
                         targetMode))
                 .ConfigureAwait(false);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-plan sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
             if (plan.Targets.Count == 0)
             {
-                var sourceLabel = string.Equals(
-                    sourceMode,
-                    FormulaOleContract.MathTypeOleMode,
-                    StringComparison.Ordinal)
-                    ? "MathType"
-                    : "VisualTeX";
+                var sourceLabel = FormatConversionModeLabel(sourceMode);
                 throw new InvalidDataException(
                     wholeDocument
                         ? $"当前 Word 文档中没有找到可转换的 {sourceLabel} 公式。"
                         : $"所选范围中没有找到可转换的 {sourceLabel} 公式。");
             }
 
-            var sourceName = string.Equals(
-                sourceMode,
-                FormulaOleContract.MathTypeOleMode,
-                StringComparison.Ordinal)
-                ? "MathType"
-                : "VisualTeX";
-            var targetName = string.Equals(
-                targetMode,
-                FormulaOleContract.MathTypeOleMode,
-                StringComparison.Ordinal)
-                ? "MathType"
-                : "VisualTeX";
+            var sourceName = FormatConversionModeLabel(sourceMode);
+            var targetName = FormatConversionModeLabel(targetMode);
 
             if (wholeDocument
                 && !string.Equals(
@@ -161,6 +176,8 @@ public sealed partial class ThisAddIn
 
             if (pending.Count > 0)
             {
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-render-start sourceMode={sourceMode} targetMode={targetMode} sessions={pending.Count}");
                 await client.OpenConverterBatchAsync(
                         pending.Select(item => item.Session.Id).ToList(),
                         lifetime.Token)
@@ -177,6 +194,8 @@ public sealed partial class ThisAddIn
                         item.Run,
                         targetMode,
                         completed);
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} sessionId={item.Session.Id} status={completed.Status}");
                 }
             }
 
@@ -206,13 +225,17 @@ public sealed partial class ThisAddIn
                 {
                     Run = run,
                     Session = session,
-                    MathMl = template.MathMl,
+                    MathMl = string.IsNullOrWhiteSpace(target.SourceMathMl)
+                        ? template.MathMl
+                        : target.SourceMathMl,
                     PngPath = template.PngPath,
                     EmfPath = template.EmfPath,
                 };
             }
 
             SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-word-apply-start sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
             BeginFormulaFormatMutation();
             WordFormulaFormatConversionResult result;
             try
@@ -225,6 +248,8 @@ public sealed partial class ThisAddIn
             {
                 EndFormulaFormatMutation();
             }
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
 
             foreach (var sessionId in converterSessionIds)
             {
@@ -306,5 +331,20 @@ public sealed partial class ThisAddIn
             }
             _operationGate.Release();
         }
+    }
+
+    private static string FormatConversionModeLabel(string mode)
+    {
+        if (string.Equals(
+                mode,
+                FormulaOleContract.MathTypeOleMode,
+                StringComparison.Ordinal))
+            return "MathType";
+        if (string.Equals(
+                mode,
+                FormulaOleContract.WordOmmlMode,
+                StringComparison.Ordinal))
+            return "OMML";
+        return "VisualTeX";
     }
 }

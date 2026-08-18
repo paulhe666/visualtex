@@ -347,6 +347,8 @@ internal static class MathTypeMtefCodec
             {
                 var value = element.Value.Trim();
                 if (value.Length == 0) return string.Empty;
+                var primeSignature = CanonicalPrimeSignature(value);
+                if (primeSignature is not null) return primeSignature;
                 // MathType 7 sometimes exports standalone mathematical glyphs
                 // such as infinity as <mi> even though MathJax/VisualTeX uses
                 // <mo>.  That token-tag difference is not a semantic change.
@@ -365,6 +367,8 @@ internal static class MathTypeMtefCodec
                 // function and its argument. It has no visible glyph and should
                 // never become a literal MathType character or a fake '?'.
                 if (value == "⁡") return string.Empty;
+                var primeSignature = CanonicalPrimeSignature(value);
+                if (primeSignature is not null) return primeSignature;
                 if (value.Length > 1 && value.All(char.IsLetter))
                     return CanonicalToken("mi", value, "normal");
                 return "o(" + NormalizeOperatorToken(value) + ")";
@@ -515,6 +519,15 @@ internal static class MathTypeMtefCodec
         }
     }
 
+    private static string? CanonicalPrimeSignature(string value) => value switch
+    {
+        "′" => "o(′)",
+        "″" => "o(′)o(′)",
+        "‴" => "o(′)o(′)o(′)",
+        "⁗" => "o(′)o(′)o(′)o(′)",
+        _ => null,
+    };
+
     private static bool IsReplacementGlyphOnly(string value) =>
         value.Length > 0 && value.All(character => character == '\uFFFD');
 
@@ -632,6 +645,10 @@ internal static class MathTypeMtefCodec
                 case 'ℛ': token = "R"; variant = "script"; break;
             }
         }
+        if (kind == "mi" && variant.Length == 0
+            && token.Length == 1
+            && IsUpperGreek(token[0]))
+            variant = "normal";
         if (kind == "mi" && variant.Length == 0
             && token.Length > 1 && token.All(char.IsLetter))
             variant = "normal";
@@ -917,6 +934,17 @@ internal static class MathTypeMtefCodec
                 table = nested[0];
         }
         if (table is null || table.Name.LocalName != "mtable") return false;
+        // A genuine MathType binomial reaches us through a PILE record. An
+        // explicit 2x1 matrix inside parentheses is visually similar, but is a
+        // MATRIX record and must remain a matrix. The old shape-only heuristic
+        // collapsed both into binom(...), which made strict VisualTeX→MathType
+        // round-trip validation reject explicit column matrices such as the
+        // binomial-theorem formula from 文档1.
+        if (!string.Equals(
+                (string?)table.Attribute("data-mtef-pile"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
         var rows = table.Elements()
             .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
             .ToArray();
@@ -1703,7 +1731,7 @@ internal static class MathTypeMtefCodec
             return;
         }
         var under = children[1].Value.Trim();
-        if (under is "_" or "¯" or "‾")
+        if (under is "_" or "¯" or "‾" or "―" or "ˉ" or "̅" or "̲")
         {
             EmitSingleSlotTemplate(TemplateUnderbar, 0, children[0], output);
             return;
@@ -3167,7 +3195,16 @@ internal static class MathTypeMtefCodec
             SkipNudge(options);
             Skip(2); // horizontal and vertical alignment
             if ((options & 0x02) != 0) SkipRuler();
-            var table = new XElement("mtable");
+            // Preserve the MTEF container kind. Both PILE and MATRIX map well
+            // to MathML <mtable>, but a two-row/one-column PILE inside ordinary
+            // parentheses is MathType's native binomial representation whereas
+            // a MATRIX with the same visible shape is an explicit column matrix.
+            // Keeping this private data marker lets semantic round-trip logic and
+            // MathML→LaTeX conversion distinguish the two without changing the
+            // visible MathML structure.
+            var table = new XElement(
+                "mtable",
+                new XAttribute("data-mtef-pile", "true"));
             while (true)
             {
                 SkipFormattingRecords();
