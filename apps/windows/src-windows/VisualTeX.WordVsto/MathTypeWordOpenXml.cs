@@ -272,10 +272,10 @@ internal static class MathTypeWordOpenXml
             WordNamespace + "object",
             new XAttribute(
                 WordNamespace + "dxaOrig",
-                Math.Max(1, (int)Math.Round(widthPt * 20d))),
+                MathTypeOriginalTwips(widthPt)),
             new XAttribute(
                 WordNamespace + "dyaOrig",
-                Math.Max(1, (int)Math.Round(heightPt * 20d))),
+                MathTypeOriginalTwips(heightPt)),
             shapeType,
             shape,
             oleObject);
@@ -653,12 +653,18 @@ internal static class MathTypeWordOpenXml
                 throw new InvalidDataException(
                     $"Windows returned an incomplete WMF preview: {written}/{rawLength} bytes.");
 
+            // Genuine MathType WMFs use whole-point picture bounds (the same
+            // dimensions later written to Word's dxaOrig/dyaOrig).  Preserve the
+            // visual VML size separately, but make the embedded WMF's original
+            // coordinate extent match MathType's native object format.
+            var originalWidthPt = MathTypeOriginalPoints(widthPt);
+            var originalHeightPt = MathTypeOriginalPoints(heightPt);
             var right = checked((short)Math.Max(
                 1,
-                Math.Min(short.MaxValue, (int)Math.Round(widthPt * PlaceableInch / 72d))));
+                Math.Min(short.MaxValue, (int)Math.Round(originalWidthPt * PlaceableInch / 72d))));
             var bottom = checked((short)Math.Max(
                 1,
-                Math.Min(short.MaxValue, (int)Math.Round(heightPt * PlaceableInch / 72d))));
+                Math.Min(short.MaxValue, (int)Math.Round(originalHeightPt * PlaceableInch / 72d))));
             var placeable = BuildPlaceableHeader(right, bottom);
             var result = new byte[placeable.Length + rawWmf.Length];
             Buffer.BlockCopy(placeable, 0, result, 0, placeable.Length);
@@ -837,12 +843,18 @@ internal static class MathTypeWordOpenXml
         {
             wordObject.SetAttributeValue(
                 WordNamespace + "dxaOrig",
-                Math.Max(1, (int)Math.Round(widthPt * 20d)));
+                MathTypeOriginalTwips(widthPt));
             wordObject.SetAttributeValue(
                 WordNamespace + "dyaOrig",
-                Math.Max(1, (int)Math.Round(heightPt * 20d)));
+                MathTypeOriginalTwips(heightPt));
         }
     }
+
+    private static int MathTypeOriginalPoints(float valuePt) =>
+        Math.Max(1, (int)Math.Round(valuePt, MidpointRounding.AwayFromZero));
+
+    private static int MathTypeOriginalTwips(float valuePt) =>
+        checked(MathTypeOriginalPoints(valuePt) * 20);
 
     private static string ReplaceStylePoints(string style, string property, float valuePt)
     {

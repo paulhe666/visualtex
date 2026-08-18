@@ -380,7 +380,11 @@ function applyVisualTexSvgFontPreferences(
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}" transform="scale(1,-1)" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']*)["']/i)?.[1]?.trim();
+    const placement = `${originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""}${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""} transform="${originalTransform ? `${escapeSvgAttribute(originalTransform)} ` : ""}scale(1,-1)"`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${placement} font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
   return output;
 }
@@ -420,6 +424,8 @@ export function latexToSvg(
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
+  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
+  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
   const exPx = fontSizePx * 0.442;
 
@@ -439,18 +445,19 @@ export function latexToSvg(
     svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
   }
 
-  const paddingUnits = paddingPx * rootGeometry.unitsPerPx;
+  const paddingXUnits = paddingXPx * rootGeometry.unitsPerPx;
+  const paddingYUnits = paddingYPx * rootGeometry.unitsPerPx;
   const padded = {
-    x: viewBox.x - paddingUnits,
-    y: viewBox.y - paddingUnits,
-    width: viewBox.width + 2 * paddingUnits,
-    height: viewBox.height + 2 * paddingUnits,
+    x: viewBox.x - paddingXUnits,
+    y: viewBox.y - paddingYUnits,
+    width: viewBox.width + 2 * paddingXUnits,
+    height: viewBox.height + 2 * paddingYUnits,
   };
   const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
   const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
   const baseline = rootGeometry.baselinePx === null
     ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
-    : Math.max(0, Math.min(height, paddingPx + rootGeometry.baselinePx));
+    : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
 
   svg = rewriteRootSvgOpening(svg, width, height, padded)
     .replaceAll("currentColor", "#111111");

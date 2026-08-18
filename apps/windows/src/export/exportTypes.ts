@@ -7,6 +7,10 @@ export interface SvgExportOptions {
   displayMode: boolean;
   fontSizePt: number;
   paddingPx: number;
+  /** Optional horizontal padding override. Defaults to paddingPx. */
+  paddingXPx?: number;
+  /** Optional vertical padding override. Defaults to paddingPx. */
+  paddingYPx?: number;
   background: "transparent" | "white";
   forceExplicitBlack?: boolean;
   formulaLetterFont?: FormulaLetterFont;

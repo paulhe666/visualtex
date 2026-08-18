@@ -1812,27 +1812,28 @@ internal sealed partial class WordFormulaService
             throw new InvalidDataException(
                 $"VisualTeX generated invalid standalone MathType MTEF for '{metadata.Latex}'.");
 
-        // Standalone MathType conversion must be fully self-contained. The OLE
-        // payload comes from VisualTeX's MTEF/CFB writer and the visible cache
-        // comes from VisualTeX's own EMF export; do not probe MathPage.WLL or a
-        // running/installed MathType process for geometry or preview rendering.
+        // MathType preview geometry is prepared by the frontend's dedicated
+        // MathType export path.  That path uses one Full Size equation geometry
+        // for both Word inline and display placement, so this production writer
+        // must never call MathType.exe/MathPage or reinterpret the object using
+        // VisualTeX's ordinary inline/display sizing rules.
         var widthPt = (float)Math.Max(1d, (session.ExportResult?.Width ?? 200d) * 0.75d);
         var heightPt = (float)Math.Max(1d, (session.ExportResult?.Height ?? 60d) * 0.75d);
-        var wordPosition = inline
-            ? WordInlineAlignment.CalculateFontPosition(
+        var alignToWordTextBaseline = inline || session.Numbered;
+        var wordPosition = alignToWordTextBaseline
+            ? CalculateMathTypeOleWordPosition(
                 heightPt,
                 session.ExportResult?.Height ?? 0f,
                 session.ExportResult?.Baseline)
             : 0;
-        // Match a genuine MathType Equation.DSMT4 storage: MathType keeps the
-        // native CFB free of OLE presentation-cache streams and lets Word own the
-        // companion WMF presentation in the DOCX package. Adding an OlePres stream
-        // here makes Word prefer that cache over its VML image and can leave the
-        // newly inserted equation visually blank even though Equation Native is valid.
         var previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
             emfPath,
             widthPt,
             heightPt);
+
+        // Keep genuine MathType storage free of OlePres. Word owns the external
+        // WMF presentation in the DOCX package, avoiding the blank-object
+        // regression that prompted the visibility change in 6a43aec.
 
         Document? document = null;
         Selection? selection = null;
@@ -1876,6 +1877,8 @@ internal sealed partial class WordFormulaService
             if (!inline && session.Numbered)
             {
                 stage = "resolve-number-template";
+                var documentNumberFormat = EquationNumberFormat.Resolve(
+                    WordEquationNumbering.GetEquationNumberFormatId(document));
                 sourceNumberTemplateField = FindNearestMathTypePlaceRefField(
                     document,
                     insertion.Start,
@@ -1886,26 +1889,31 @@ internal sealed partial class WordFormulaService
                         document,
                         sourceNumberTemplateField);
                 else
-                {
-                    var documentNumberFormat = EquationNumberFormat.Resolve(
-                        WordEquationNumbering.GetEquationNumberFormatId(document));
                     numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
                         documentNumberFormat.Id);
-                    if (documentNumberFormat.UsesHeading)
+
+                // Number formatting and chapter/section state are two separate
+                // pieces of MathType's native model.  The old code stopped here
+                // whenever *any* nearby MTPlaceRef existed, so subsequent direct
+                // insertions/conversions cloned the field template but never
+                // established MTChap/MTSec state for their own Word heading scope.
+                // Always reconcile the native heading state when this MTPlaceRef
+                // actually uses chapter/section sequences.
+                if (documentNumberFormat.UsesHeading
+                    && MathTypeNumberTemplateUsesHeading(numberTemplate))
+                {
+                    var logicalInsertionStart = insertion.Start;
+                    var insertedSectionLength = EnsureMathTypeHeadingScopeState(
+                        document,
+                        logicalInsertionStart,
+                        documentNumberFormat,
+                        out createdSectionBreakCodeStart);
+                    if (insertedSectionLength > 0)
                     {
-                        var logicalInsertionStart = insertion.Start;
-                        var insertedSectionLength = EnsureMathTypeHeadingScopeState(
-                            document,
-                            logicalInsertionStart,
-                            documentNumberFormat,
-                            out createdSectionBreakCodeStart);
-                        if (insertedSectionLength > 0)
-                        {
-                            var shiftedStart = Math.Min(
-                                document.Content.End,
-                                logicalInsertionStart + insertedSectionLength);
-                            insertion.SetRange(shiftedStart, shiftedStart);
-                        }
+                        var shiftedStart = Math.Min(
+                            document.Content.End,
+                            logicalInsertionStart + insertedSectionLength);
+                        insertion.SetRange(shiftedStart, shiftedStart);
                     }
                 }
             }
@@ -2009,10 +2017,10 @@ internal sealed partial class WordFormulaService
             Release(shape);
             shape = refreshedShape;
 
-            stage = "apply-native-baseline";
-            SetInlineOleWordPosition(shape, wordPosition);
             if (inline)
             {
+                stage = "apply-native-baseline";
+                SetInlineOleWordPosition(shape, wordPosition);
                 RestoreTypingBaselineAfter(shape);
                 var shapeRange = shape.Range;
                 try { selection.SetRange(shapeRange.End, shapeRange.End); }
@@ -2026,6 +2034,12 @@ internal sealed partial class WordFormulaService
                     shape,
                     session.Numbered,
                     session.MathTypeNumberPosition);
+                // MTDisplayEquation setup resets direct character formatting on
+                // the OLE run. Apply the exported math baseline after numbering
+                // and paragraph style are final so the adjacent number stays
+                // vertically aligned with tall display formulas.
+                stage = "apply-native-display-baseline";
+                SetInlineOleWordPosition(shape, wordPosition);
                 var shapeRange = shape.Range;
                 try
                 {
@@ -9507,12 +9521,12 @@ internal sealed partial class WordFormulaService
             paragraphRange = paragraph.Range;
             EnsureMathTypeNativeStyles(document);
             object displayStyle = "MTDisplayEquation";
+            // Clear direct formatting inherited from the source/blank paragraph
+            // first, then apply MathType's native paragraph style. Paragraph.Reset
+            // can itself restore Normal, so applying MTDisplayEquation before Reset
+            // silently lost the native style in real Word.
+            try { paragraph.Reset(); } catch { }
             paragraphRange.set_Style(ref displayStyle);
-            // Word can preserve direct paragraph formatting from the deleted
-            // VisualTeX table even after applying MTDisplayEquation. Normalize the
-            // live paragraph itself so every converted display row has the exact
-            // center/right tab geometry MathType expects.
-            NormalizeMathTypeDisplayParagraphFormat(document, paragraph);
             format = paragraph.Format;
             tabs = format.TabStops;
             var hasCenter = false;
@@ -9524,9 +9538,9 @@ internal sealed partial class WordFormulaService
                 hasCenter |= tab.Alignment == WdTabAlignment.wdAlignTabCenter;
                 hasRight |= tab.Alignment == WdTabAlignment.wdAlignTabRight;
             }
-            if (!hasCenter || !hasRight || tabs.Count != 2)
+            if (!hasCenter || !hasRight)
                 throw new InvalidOperationException(
-                    $"MTDisplayEquation must contain exactly MathType's center/right tab stops; actual count={tabs.Count}.");
+                    "MTDisplayEquation does not contain MathType's center/right tab stops.");
             try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
 
             var paragraphText = paragraphRange.Text ?? string.Empty;
@@ -9690,6 +9704,13 @@ internal sealed partial class WordFormulaService
         }
         finally { Release(sourceCode); }
     }
+
+    private static bool MathTypeNumberTemplateUsesHeading(
+        MathTypeWordOpenXml.NumberTemplate template) =>
+        template.Segments.Any(segment =>
+            segment.IsField
+            && (segment.Value.IndexOf("SEQ MTChap", StringComparison.OrdinalIgnoreCase) >= 0
+                || segment.Value.IndexOf("SEQ MTSec", StringComparison.OrdinalIgnoreCase) >= 0));
 
     private static Field? FindMathTypePlaceRefFieldForShape(
         Range range,
@@ -10414,34 +10435,33 @@ internal sealed partial class WordFormulaService
             {
                 object paragraphType = WdStyleType.wdStyleTypeParagraph;
                 displayStyle = styles.Add("MTDisplayEquation", ref paragraphType);
+                // Match MathType's own behavior: create the style only when the
+                // document does not already have it. Never overwrite an existing
+                // native MathType style, because its tab geometry may have been
+                // adapted by MathType for the current document/template.
+                displayFormat = displayStyle.ParagraphFormat;
+                displayFormat.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
+                displayFormat.SpaceBefore = 0;
+                displayFormat.SpaceAfter = 0;
+                displayFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                displayTabs = displayFormat.TabStops;
+                displayTabs.ClearAll();
+                pageSetup = document.PageSetup;
+                var usableWidth = Math.Max(
+                    72f,
+                    pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin);
+                tab = displayTabs.Add(
+                    usableWidth / 2f,
+                    WdTabAlignment.wdAlignTabCenter,
+                    WdTabLeader.wdTabLeaderSpaces);
+                Release(tab);
+                tab = displayTabs.Add(
+                    usableWidth,
+                    WdTabAlignment.wdAlignTabRight,
+                    WdTabLeader.wdTabLeaderSpaces);
+                Release(tab);
+                tab = null;
             }
-
-            // Existing documents can already contain a stale/corrupted
-            // MTDisplayEquation style (for example 19 inherited tab stops). Do not
-            // normalize only on style creation: every format conversion must make
-            // the native MathType display style deterministic.
-            displayFormat = displayStyle.ParagraphFormat;
-            displayFormat.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
-            displayFormat.SpaceBefore = 0;
-            displayFormat.SpaceAfter = 0;
-            displayFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            displayTabs = displayFormat.TabStops;
-            displayTabs.ClearAll();
-            pageSetup = document.PageSetup;
-            var usableWidth = Math.Max(
-                72f,
-                pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin);
-            tab = displayTabs.Add(
-                usableWidth / 2f,
-                WdTabAlignment.wdAlignTabCenter,
-                WdTabLeader.wdTabLeaderSpaces);
-            Release(tab);
-            tab = displayTabs.Add(
-                usableWidth,
-                WdTabAlignment.wdAlignTabRight,
-                WdTabLeader.wdTabLeaderSpaces);
-            Release(tab);
-            tab = null;
 
             object sectionName = "MTEquationSection";
             try { sectionStyle = styles.get_Item(ref sectionName); }
@@ -10965,6 +10985,38 @@ internal sealed partial class WordFormulaService
             Release(document);
         }
         return (int)Math.Round(ReadDefinedShapeFontPosition(shape) ?? 0f);
+    }
+
+    private static int CalculateMathTypeOleWordPosition(
+        float actualHeightPoints,
+        float exportedHeight,
+        float? exportedBaseline)
+    {
+        if (!(actualHeightPoints > 0)
+            || !(exportedHeight > 0)
+            || !exportedBaseline.HasValue
+            || float.IsNaN(exportedBaseline.Value)
+            || float.IsInfinity(exportedBaseline.Value)
+            || exportedBaseline.Value < 0
+            || exportedBaseline.Value >= exportedHeight)
+            return 0;
+
+        // MathType's Word integration stores the OLE object's character position
+        // from the equation baseline toward the bottom of the picture. Keep this
+        // calculation local to MathType instead of sharing VisualTeX's ordinary
+        // inline-OLE optical alignment code; changes to VisualTeX inline layout must
+        // never alter Equation.DSMT4 placement again.
+        var baselineFromBottomPoints =
+            actualHeightPoints * (exportedHeight - exportedBaseline.Value) / exportedHeight;
+        var rounded = Math.Max(
+            0,
+            (int)Math.Round(baselineFromBottomPoints, MidpointRounding.AwayFromZero));
+
+        // The offline WMF presentation includes Word's one-point character-box
+        // allowance. Native MathType samples (ordinary fractions, radicals and
+        // mixed inline equations) place the U+0001 object one point above the raw
+        // picture descent, while the WMF/dxaOrig dimensions retain the full bound.
+        return -Math.Max(0, rounded - 1);
     }
 
     private static void SetInlineOleWordPosition(InlineShape shape, int position)

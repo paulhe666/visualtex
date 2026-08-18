@@ -837,24 +837,47 @@ export function OfficeDialogApp() {
     sourceFontSizePt: number = officeFontSizePt,
     sourceFormulaLetterFont: FormulaLetterFont = formulaLetterFont,
     sourceFormulaChineseFont: FormulaChineseFont = formulaChineseFont,
+    sourceObjectMode: OfficeObjectMode = objectMode,
   ): OfficeExportResult | null => {
     if (!sourceLatex.trim()) return null;
+    // A MathType OLE's Word preview represents MathType, not VisualTeX's editor
+    // theme.  The standalone Equation Native prefix uses MathType's Times-based
+    // native text/variable styles; rendering the companion WMF with the user's
+    // KaTeX/Cambria/etc. VisualTeX preference makes the same OLE visibly change
+    // font before it is even opened in MathType. Keep the preview typography on
+    // MathType's native Times family while leaving every non-MathType export
+    // preference untouched.
+    const isMathTypeOle = sourceObjectMode === "mathTypeOle";
+    const outputLetterFont: FormulaLetterFont =
+      isMathTypeOle ? "times" : sourceFormulaLetterFont;
+    // Equation Native created by VisualTeX carries MathType's Full Size equation
+    // preferences.  Its own equation geometry is independent of whether Word later
+    // places the OLE inline or in an MTDisplayEquation paragraph.  Do not feed
+    // Word's inline/block choice back into MathJax, because that changes fraction,
+    // limit and operator sizing and was the source of the 6a43aec inline-height
+    // regression.  The current standalone MathType preferences are 12 pt, matching
+    // the Equation Native prefix; Word placement is handled later by the VSTO.
+    const outputFontSizePt = isMathTypeOle ? 12 : sourceFontSizePt;
+    const outputDisplayMode = isMathTypeOle || sourceDisplayMode === "block";
+    const mathTypeVerticalPaddingPx = outputFontSizePt * 0.5;
     const svg = latexToSvg(sourceLatex, {
-      displayMode: sourceDisplayMode === "block",
-      fontSizePt: sourceFontSizePt,
-      paddingPx: sourceDisplayMode === "inline" ? 1 : 10,
+      displayMode: outputDisplayMode,
+      fontSizePt: outputFontSizePt,
+      paddingPx: isMathTypeOle ? 0 : sourceDisplayMode === "inline" ? 1 : 10,
+      paddingXPx: isMathTypeOle ? 0 : undefined,
+      paddingYPx: isMathTypeOle ? mathTypeVerticalPaddingPx : undefined,
       background: "transparent",
-      formulaLetterFont: sourceFormulaLetterFont,
+      formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
     });
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
-      mathMl: latexToMathMl(sourceLatex, sourceDisplayMode === "block"),
+      mathMl: latexToMathMl(sourceLatex, outputDisplayMode),
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,
-      formulaLetterFont: sourceFormulaLetterFont,
+      formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
     };
   }, [
@@ -863,6 +886,7 @@ export function OfficeDialogApp() {
     officeFontSizePt,
     formulaLetterFont,
     formulaChineseFont,
+    objectMode,
   ]);
 
   const rasterizeSvgExportResult = useCallback(async (
@@ -966,6 +990,7 @@ export function OfficeDialogApp() {
       conversionFontSizePt,
       sourceFormulaLetterFont,
       sourceFormulaChineseFont,
+      sourceSession.objectMode,
     );
     if (!base?.mathMl) {
       throw new Error("Unable to generate MathML for Office conversion.");
