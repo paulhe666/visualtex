@@ -1310,9 +1310,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         export.Height);
                 }
             }
-            await dispatcher.InvokeAsync(() =>
+            // Word can fire WindowSelectionChange synchronously while an edit moves
+            // an OLE formula into/out of the numbered 1x3 host.  SelectionChange
+            // performs formula-identity repair, which is correct for user copy/paste
+            // but must not inspect a formula in the middle of this structural write:
+            // the VTO_ identity bookmark and the live InlineShape can temporarily
+            // occupy different ranges while ConvertToTable is committing.  Reuse
+            // the same mutation guard as format conversion so event callbacks stay
+            // read-free until the formula write has fully settled.
+            BeginFormulaFormatMutation();
+            try
             {
-                var activeDocumentId = service.ReadActiveDocumentId();
+                await dispatcher.InvokeAsync(() =>
+                {
+                    var activeDocumentId = service.ReadActiveDocumentId();
                 if (!string.Equals(
                         activeDocumentId,
                         session.SourceDocumentId,
@@ -1360,10 +1371,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 if (imagePath is null)
                     throw new InvalidOperationException(
                         "VisualTeX picture preview is unavailable.");
-                return session.Mode == "edit"
-                    ? service.Replace(session, imagePath)
-                    : service.Insert(session, imagePath);
-            }).ConfigureAwait(false);
+                    return session.Mode == "edit"
+                        ? service.Replace(session, imagePath)
+                        : service.Insert(session, imagePath);
+                }).ConfigureAwait(false);
+            }
+            finally
+            {
+                EndFormulaFormatMutation();
+            }
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
             if (string.Equals(
                     session.ObjectMode,

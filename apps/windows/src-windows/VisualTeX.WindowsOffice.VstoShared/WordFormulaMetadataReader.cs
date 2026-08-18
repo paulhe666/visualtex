@@ -14,9 +14,18 @@ internal static class WordFormulaMetadataReader
         if (shape is null) return null;
         var cached = TryReadCached(shape);
         if (cached is not null) return cached;
-        return IsNativeOle(shape)
-            ? ApplyIdentityBookmark(shape, TryReadNativeOle(shape))
-            : null;
+        return TryReadAuthoritative(shape);
+    }
+
+    internal static FormulaMetadata? TryReadAuthoritative(InlineShape shape)
+    {
+        if (shape is null || !IsNativeOle(shape)) return null;
+        // AlternativeText/Title are only a Word-side cache. They can survive a
+        // copy, numbering-host migration or an older failed conversion after the
+        // native OLE object itself has different current metadata. Operations that
+        // change formula format must use the VisualTeX OLE object's authoritative
+        // IVisualTeXFormulaObject payload, never a potentially stale cache.
+        return ApplyIdentityBookmark(shape, TryReadNativeOle(shape));
     }
 
     internal static FormulaMetadata? TryReadCached(InlineShape shape) =>

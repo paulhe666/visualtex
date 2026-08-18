@@ -1080,6 +1080,11 @@ internal static class WordOmmlConverter
             ["~"] = "\u0303",
             ["→"] = "\u20D7",
             ["←"] = "\u20D6",
+            ["↔"] = "\u20E1",
+            ["¯"] = "\u0305",
+            ["‾"] = "\u0305",
+            ["―"] = "\u0305",
+            ["ˉ"] = "\u0305",
             ["˙"] = "\u0307",
             ["¨"] = "\u0308",
             ["ˇ"] = "\u030C",
@@ -1785,8 +1790,105 @@ internal static class WordOmmlConverter
             : document.Descendants().FirstOrDefault(element => element.Name.LocalName == "math");
         if (root is null)
             throw new InvalidDataException("Office OMML conversion did not produce a MathML math node.");
-        root.SetAttributeValue("display", display ? "block" : "inline");
-        return root.ToString(SaveOptions.DisableFormatting);
+
+        // MML2OMML's reverse stylesheet may serialize the result as <mml:math>.
+        // That is XML-equivalent MathML, but VisualTeX's existing MathType bridge
+        // intentionally accepts the canonical <math xmlns="..."> contract used by
+        // the renderer. Rebuild the presentation tree with one default MathML
+        // namespace so OMML -> MathType can use the exact same validated path.
+        var canonicalRoot = CanonicalizeMathMlElement(root);
+        RestoreOmmlAccentSemantics(omml, canonicalRoot);
+        canonicalRoot.SetAttributeValue("display", display ? "block" : "inline");
+        return canonicalRoot.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static void RestoreOmmlAccentSemantics(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var sourceAccents = source.Descendants(officeMath + "acc").ToArray();
+        if (sourceAccents.Length == 0) return;
+
+        // Office's bundled OMML->MathML stylesheet still contains legacy symbol
+        // mappings for m:acc. In current Word documents that can turn a perfectly
+        // valid Unicode combining accent (for example U+0305/U+20D7/U+0307) into
+        // '-', '?' or mojibake. The OMML itself is the authoritative source, so
+        // restore the accent mark after the XSL transform before MathType/LaTeX
+        // consumers see it.
+        var targetAccents = mathMlRoot
+            .DescendantsAndSelf(mathMl + "mover")
+            .Where(element => string.Equals(
+                (string?)element.Attribute("accent"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var count = Math.Min(sourceAccents.Length, targetAccents.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var sourceAccent = sourceAccents[index];
+            var officeCharacter = sourceAccent
+                .Element(officeMath + "accPr")?
+                .Element(officeMath + "chr")?
+                .Attribute(officeMath + "val")?
+                .Value;
+            var canonicalCharacter = CanonicalMathMlAccentCharacter(officeCharacter);
+            var targetAccent = targetAccents[index];
+            var children = targetAccent.Elements().ToArray();
+            if (children.Length < 2) continue;
+            children[1].ReplaceWith(
+                new XElement(
+                    mathMl + "mo",
+                    new XAttribute("accent", "true"),
+                    canonicalCharacter));
+        }
+    }
+
+    private static string CanonicalMathMlAccentCharacter(string? officeCharacter) =>
+        officeCharacter switch
+        {
+            null or "" => "^", // OMML's omitted m:chr means the default hat.
+            "\u0302" => "^",
+            "\u0303" => "~",
+            "\u20D7" => "→",
+            "\u20D6" => "←",
+            "\u20E1" => "↔",
+            "\u0305" => "¯",
+            "\u0307" => "˙",
+            "\u0308" => "¨",
+            "\u030C" => "ˇ",
+            "\u0306" => "˘",
+            "\u0301" => "´",
+            "\u0300" => "`",
+            "\u030A" => "˚",
+            _ => officeCharacter,
+        };
+
+    private static XElement CanonicalizeMathMlElement(XElement source)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var result = new XElement(mathMl + source.Name.LocalName);
+        foreach (var attribute in source.Attributes())
+        {
+            if (attribute.IsNamespaceDeclaration) continue;
+            result.SetAttributeValue(attribute.Name, attribute.Value);
+        }
+        foreach (var node in source.Nodes())
+        {
+            switch (node)
+            {
+                case XElement child:
+                    result.Add(CanonicalizeMathMlElement(child));
+                    break;
+                case XCData cdata:
+                    result.Add(new XCData(cdata.Value));
+                    break;
+                case XText text:
+                    result.Add(new XText(text.Value));
+                    break;
+            }
+        }
+        return result;
     }
 
     internal static string ComputeOmmlFingerprint(string wordOpenXml)

@@ -66,6 +66,29 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
+    public void OmmlRoundTripKeepsOrdinaryEulerLettersAsMathIdentifiers()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<msup><mi>e</mi><mrow><mi>i</mi><mi>π</mi></mrow></msup>"
+            + "<mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var identifiers = document.Descendants(presentationMath + "mi")
+            .Select(element => element.Value)
+            .ToArray();
+
+        Assert.Contains("e", identifiers);
+        Assert.Contains("i", identifiers);
+        Assert.Contains("π", identifiers);
+        Assert.DoesNotContain(document.Descendants(presentationMath + "mtext"),
+            element => element.Value is "e" or "i");
+    }
+
+    [Fact]
     public void OfficeMathMlTransformProducesNativeFractionAndSuperscript()
     {
         var transformPath = WordOmmlConverter.ResolveTransformPath();
@@ -571,6 +594,11 @@ public sealed class WordOmmlTests
     [InlineData("~", "\u0303")]
     [InlineData("→", "\u20D7")]
     [InlineData("←", "\u20D6")]
+    [InlineData("↔", "\u20E1")]
+    [InlineData("¯", "\u0305")]
+    [InlineData("‾", "\u0305")]
+    [InlineData("―", "\u0305")]
+    [InlineData("ˉ", "\u0305")]
     [InlineData("˙", "\u0307")]
     [InlineData("¨", "\u0308")]
     [InlineData("ˇ", "\u030C")]

@@ -122,9 +122,23 @@ internal static class MathTypeMtefCodec
         var structureOffset = FindRootStructureOffset(mtef);
         var parser = new MtefStructureReader(mtef, structureOffset);
         var content = parser.ReadRoot();
+        XNamespace mathMlNamespace = "http://www.w3.org/1998/Math/MathML";
         var math = new XElement(
-            XName.Get("math", "http://www.w3.org/1998/Math/MathML"),
+            mathMlNamespace + "math",
             content);
+
+        // MtefStructureReader deliberately builds compact XElement trees using
+        // local names (mi/mo/mrow/...). Once those nodes are attached below a
+        // namespaced <math>, LINQ to XML serializes them with xmlns="" unless we
+        // promote their XName as well. That produced visually plausible MathML
+        // which our LaTeX reader tolerated, but standards-based MathML->OMML XSLT
+        // saw an empty equation. Normalize every parser-owned descendant into the
+        // MathML namespace at the direct MTEF read boundary.
+        foreach (var element in math.Descendants().ToArray())
+        {
+            if (element.Name.Namespace == XNamespace.None)
+                element.Name = mathMlNamespace + element.Name.LocalName;
+        }
         foreach (var marker in math.DescendantsAndSelf()
                      .Attributes("data-mtef-run")
                      .ToArray())
@@ -292,11 +306,26 @@ internal static class MathTypeMtefCodec
         {
             case "math":
             case "mpadded":
+            {
+                if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
+                    return splitFencedSuperscript;
                 return Children();
+            }
             case "mrow":
             {
+                if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
+                    return splitFencedSuperscript;
+                if (TryCanonicalizeMathJaxFencedSuperscriptRow(element, variant, out var fencedSuperscript))
+                    return fencedSuperscript;
                 if (TryGetMathJaxFenceRow(element, out var open, out var close, out var fenceChildren))
                 {
+                    if (TryCanonicalizeMathJaxBinomialFence(
+                            open,
+                            close,
+                            fenceChildren,
+                            variant,
+                            out var binomial))
+                        return binomial;
                     return "fence(" + NormalizeFence(open) + "," + NormalizeFence(close) + ","
                         + string.Concat(fenceChildren.Select(child => CanonicalizeMathMl(child, variant))) + ")";
                 }
@@ -323,7 +352,8 @@ internal static class MathTypeMtefCodec
                 // <mo>.  That token-tag difference is not a semantic change.
                 // Keep mtext distinct so an actual Symbol -> Text regression is
                 // still rejected by the round-trip validator.
-                if (IsMathematicalSymbolToken(value)) return "o(" + value + ")";
+                if (IsMathematicalSymbolToken(value))
+                    return "o(" + NormalizeOperatorToken(value) + ")";
                 return CanonicalToken("mi", value, variant);
             }
             case "mn":
@@ -337,12 +367,20 @@ internal static class MathTypeMtefCodec
                 if (value == "⁡") return string.Empty;
                 if (value.Length > 1 && value.All(char.IsLetter))
                     return CanonicalToken("mi", value, "normal");
-                return "o(" + value + ")";
+                return "o(" + NormalizeOperatorToken(value) + ")";
             }
             case "mtext":
             {
                 var value = element.Value.Trim();
-                if (value.Length > 0 && value.All(char.IsLetter))
+                // MathJax may serialize TeX spacing commands as whitespace-only
+                // <mtext> (commonly NBSP), while MathType normalizes the same
+                // presentation-only gap to <mspace> on MTEF read-back. Neither
+                // carries mathematical semantics, so treating empty/whitespace
+                // mtext as text() makes an otherwise exact equation fail the
+                // standalone-MTEF round-trip gate. Keep real textual content
+                // strict, but canonicalize pure spacing exactly like mspace.
+                if (value.Length == 0) return string.Empty;
+                if (value.All(char.IsLetter))
                     return CanonicalToken("mi", value, "normal");
                 return "text(" + value + ")";
             }
@@ -383,7 +421,7 @@ internal static class MathTypeMtefCodec
                 if (children.Length >= 2)
                 {
                     var under = children[1].Value.Trim();
-                    if (under is "_" or "¯" or "‾")
+                    if (under is "_" or "\u00AF" or "\u203E" or "\u2015" or "\u02C9")
                         return "underbar(" + CanonicalizeMathMl(children[0], variant) + ")";
                     if (IsHorizontalBraceMarker(under, top: false))
                         return "hbrace-bottom(" + CanonicalizeMathMl(children[0], variant) + ")";
@@ -400,12 +438,14 @@ internal static class MathTypeMtefCodec
                     return CanonicalizeMathMl(children[0], variant);
                 }
                 if (children.Length < 2) return Children();
-                var over = children[1].Value.Trim();
+                var over = NormalizeAccentMark(children[1].Value.Trim());
                 if (IsHorizontalBraceMarker(over, top: true))
                     return "hbrace-top(" + CanonicalizeMathMl(children[0], variant) + ")";
-                var accent = over is "¯" or "‾" or "→" or "←" or "↔"
-                    or "^" or "ˆ" or "~" or "˜" or "." or "˙" or "¨"
-                    or "⌢" or "⏜";
+                if (over == "¯")
+                    return "accent(overbar," + CanonicalizeMathMl(children[0], variant) + ")";
+                var accent = over is "→" or "←" or "↔"
+                    or "^" or "~" or "." or "˙" or "¨"
+                    or "⌢" or "⏜" or "ˇ" or "˘" or "´" or "`" or "˚";
                 return accent
                     ? "accent(" + over + "," + CanonicalizeMathMl(children[0], variant) + ")"
                     : CanonicalBinary("sup", children, variant);
@@ -414,6 +454,8 @@ internal static class MathTypeMtefCodec
                 return CanonicalTernary("subsup", children, variant);
             case "mfenced":
             {
+                if (TryCanonicalizeMathTypeBinomialFence(element, variant, out var binomial))
+                    return binomial;
                 var open = NormalizeFence((string?)element.Attribute("open") ?? "(");
                 var close = NormalizeFence((string?)element.Attribute("close") ?? ")");
                 return "fence(" + open + "," + close + "," + Children() + ")";
@@ -838,6 +880,159 @@ internal static class MathTypeMtefCodec
         }
     }
 
+    private static bool TryCanonicalizeMathJaxBinomialFence(
+        string open,
+        string close,
+        XElement[] children,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (NormalizeFence(open) != "(" || NormalizeFence(close) != ")") return false;
+        if (children.Length != 1 || children[0].Name.LocalName != "mfrac") return false;
+        var lineThickness = (children[0].Attribute("linethickness")?.Value ?? string.Empty).Trim();
+        if (lineThickness.Length == 0 || !lineThickness.StartsWith("0", StringComparison.Ordinal)) return false;
+        var fractionChildren = children[0].Elements().ToArray();
+        if (fractionChildren.Length != 2) return false;
+        var top = CanonicalizeMathMl(fractionChildren[0], variant);
+        var bottom = CanonicalizeMathMl(fractionChildren[1], variant);
+        signature = "binom(" + top + "," + bottom + ")";
+        return true;
+    }
+
+    private static bool TryCanonicalizeMathTypeBinomialFence(
+        XElement fenced,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        var open = NormalizeFence((string?)fenced.Attribute("open") ?? "(");
+        var close = NormalizeFence((string?)fenced.Attribute("close") ?? ")");
+        if (open != "(" || close != ")") return false;
+        var table = fenced.Elements().SingleOrDefault();
+        if (table is not null && table.Name.LocalName == "mrow")
+        {
+            var nested = table.Elements().ToArray();
+            if (nested.Length == 1 && nested[0].Name.LocalName == "mtable")
+                table = nested[0];
+        }
+        if (table is null || table.Name.LocalName != "mtable") return false;
+        var rows = table.Elements()
+            .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
+            .ToArray();
+        if (rows.Length != 2) return false;
+        var cells = rows.Select(row => row.Elements()
+                .Where(cell => cell.Name.LocalName == "mtd")
+                .ToArray())
+            .ToArray();
+        if (cells.Any(row => row.Length != 1)) return false;
+        var top = string.Concat(cells[0][0].Elements()
+            .Select(child => CanonicalizeMathMl(child, variant)));
+        var bottom = string.Concat(cells[1][0].Elements()
+            .Select(child => CanonicalizeMathMl(child, variant)));
+        signature = "binom(" + top + "," + bottom + ")";
+        return true;
+    }
+
+    private static bool TryCanonicalizeSplitFencedSuperscriptSequence(
+        XElement[] elements,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (elements.Length < 3) return false;
+        if (!TryGetLooseFenceToken(elements[0], out var open)) return false;
+
+        for (var scriptIndex = 2; scriptIndex < elements.Length; scriptIndex++)
+        {
+            var script = elements[scriptIndex];
+            if (script.Name.LocalName != "msup") continue;
+            var scriptChildren = script.Elements().ToArray();
+            if (scriptChildren.Length < 2) continue;
+            if (!TryGetLooseFenceToken(scriptChildren[0], out var close)) continue;
+            if (!AreMatchingFences(open, close)) continue;
+
+            var inner = string.Concat(elements
+                .Skip(1)
+                .Take(scriptIndex - 1)
+                .Select(child => CanonicalizeMathMl(child, variant)));
+            if (inner.Length == 0) continue;
+            var exponentSignature = CanonicalizeMathMl(scriptChildren[1], variant);
+            if (exponentSignature.Length == 0) continue;
+
+            var baseSignature = "o(" + NormalizeFence(open) + ")"
+                + inner
+                + "o(" + NormalizeFence(close) + ")";
+            var tail = string.Concat(elements
+                .Skip(scriptIndex + 1)
+                .Select(child => CanonicalizeMathMl(child, variant)));
+            signature = "sup(" + baseSignature + "," + exponentSignature + ")" + tail;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryGetLooseFenceToken(XElement candidate, out string fence)
+    {
+        fence = string.Empty;
+        XElement? token = candidate.Name.LocalName == "mo" ? candidate : null;
+        if (token is null && candidate.Name.LocalName == "mrow")
+        {
+            var nested = candidate.Elements().ToArray();
+            if (nested.Length == 1 && nested[0].Name.LocalName == "mo")
+                token = nested[0];
+        }
+        if (token is null) return false;
+        fence = NormalizeFence(token.Value.Trim());
+        return fence is "(" or ")" or "[" or "]" or "{" or "}"
+            or "⟨" or "⟩" or "⌈" or "⌉" or "⌊" or "⌋" or "|" or "‖";
+    }
+
+    private static bool AreMatchingFences(string open, string close) =>
+        (NormalizeFence(open), NormalizeFence(close)) switch
+        {
+            ("(", ")") => true,
+            ("[", "]") => true,
+            ("{", "}") => true,
+            ("⟨", "⟩") => true,
+            ("⌈", "⌉") => true,
+            ("⌊", "⌋") => true,
+            ("|", "|") => true,
+            ("‖", "‖") => true,
+            _ => false,
+        };
+
+    private static bool TryCanonicalizeMathJaxFencedSuperscriptRow(
+        XElement row,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (row.Name.LocalName != "mrow") return false;
+        var elements = row.Elements().ToArray();
+        if (elements.Length < 3) return false;
+        if (!TryGetMathJaxFenceToken(elements[0], "OPEN", out var open)) return false;
+
+        var script = elements[elements.Length - 1];
+        if (script.Name.LocalName != "msup") return false;
+        var scriptChildren = script.Elements().ToArray();
+        if (scriptChildren.Length < 2) return false;
+        if (!TryGetMathJaxFenceToken(scriptChildren[0], "CLOSE", out var close)) return false;
+
+        var inner = string.Concat(elements
+            .Skip(1)
+            .Take(elements.Length - 2)
+            .Select(child => CanonicalizeMathMl(child, variant)));
+        var baseSignature = "o(" + NormalizeFence(open) + ")"
+            + inner
+            + "o(" + NormalizeFence(close) + ")";
+        var exponentSignature = CanonicalizeMathMl(scriptChildren[1], variant);
+        signature = exponentSignature.Length == 0
+            ? baseSignature
+            : "sup(" + baseSignature + "," + exponentSignature + ")";
+        return true;
+    }
+
     private static bool TryGetMathJaxFenceRow(
         XElement row,
         out string open,
@@ -1026,6 +1221,8 @@ internal static class MathTypeMtefCodec
                     EmitIntegralTemplate(integral, main: null, lower: null, upper: null, output);
                 else if (TryResolveNativeBigOperator(element, out var standaloneBigOperator))
                     EmitBigOperatorTemplate(standaloneBigOperator, main: null, lower: null, upper: null, output);
+                else if (IsNamedLimitOperator(element))
+                    EmitFunctionRun(element.Value.Trim(), output);
                 else
                     EmitOperator(element.Value, output);
                 break;
@@ -1272,6 +1469,26 @@ internal static class MathTypeMtefCodec
         var children = element.Elements().ToArray();
         if (children.Length < 2)
             throw new InvalidDataException("MathML mfrac requires numerator and denominator.");
+
+        var lineThickness = ((string?)element.Attribute("linethickness") ?? string.Empty).Trim();
+        if (lineThickness.Length > 0 && lineThickness.StartsWith("0", StringComparison.Ordinal))
+        {
+            // MathJax represents \binom and related stacked expressions as an
+            // mfrac with a zero rule. MathType's native equivalent is a centered
+            // PILE, not the ordinary fraction template (which always draws a rule).
+            output.AddRange(new byte[]
+            {
+                RecordPile,
+                0,
+                2, // horizontal alignment: centered
+                1, // vertical alignment: centered
+            });
+            EmitLine(children[0], output);
+            EmitLine(children[1], output);
+            output.Add(RecordEnd);
+            return;
+        }
+
         output.AddRange(new byte[] { RecordTemplate, 0, TemplateFraction, 0, 0 });
         EmitLine(children[0], output);
         EmitLine(children[1], output);
@@ -1398,22 +1615,26 @@ internal static class MathTypeMtefCodec
                 output);
             return;
         }
-        var over = children[1].Value.Trim();
-        if (TryEmitSingleCharacterEmbellishment(children[0], over, output)) return;
+        var over = NormalizeAccentMark(children[1].Value.Trim());
+        var embellishmentBody = UnwrapSingleTokenAccentBody(children[0]);
+        if (embellishmentBody is not null
+            && TryEmitSingleCharacterEmbellishment(embellishmentBody, over, output)) return;
         switch (over)
         {
-            case "¯":
-            case "‾":
+            case "\u00AF":
+            case "\u203E":
+            case "\u2015":
+            case "\u02C9":
                 EmitSingleSlotTemplate(TemplateOverbar, 0, children[0], output);
                 return;
             case "→":
-                EmitSingleSlotTemplate(TemplateVector, 0x02, children[0], output);
+                EmitVectorTemplate(0x02, 0x20D7, children[0], output);
                 return;
             case "←":
-                EmitSingleSlotTemplate(TemplateVector, 0x01, children[0], output);
+                EmitVectorTemplate(0x01, 0x20D6, children[0], output);
                 return;
             case "↔":
-                EmitSingleSlotTemplate(TemplateVector, 0x03, children[0], output);
+                EmitVectorTemplate(0x03, 0x20E1, children[0], output);
                 return;
             case "^":
             case "ˆ":
@@ -1734,15 +1955,7 @@ internal static class MathTypeMtefCodec
         // template. Writing selector 23 (tmLIM) here produced Equation Native
         // streams that our parser accepted but MathType could hang while opening.
         var name = operatorElement.Value.Trim();
-        var functionScalars = EnumerateBmpScalars(name).ToArray();
-        for (var index = 0; index < functionScalars.Length; index++)
-        {
-            EmitScalar(
-                functionScalars[index],
-                TypefaceFunction,
-                output,
-                functionStart: index == 0);
-        }
+        EmitFunctionRun(name, output);
         if (lower is null && upper is null) return;
 
         var selector = lower is not null && upper is not null
@@ -1769,6 +1982,19 @@ internal static class MathTypeMtefCodec
             EmitLine(upper, output);
         output.Add(RecordEnd);
         output.Add(RecordFull);
+    }
+
+    private static void EmitFunctionRun(string name, List<byte> output)
+    {
+        var functionScalars = EnumerateBmpScalars(name).ToArray();
+        for (var index = 0; index < functionScalars.Length; index++)
+        {
+            EmitScalar(
+                functionScalars[index],
+                TypefaceFunction,
+                output,
+                functionStart: index == 0);
+        }
     }
 
     private static void EmitTrailingScript(
@@ -1807,6 +2033,30 @@ internal static class MathTypeMtefCodec
     {
         EmitTemplateHeader(selector, variation, output);
         EmitLine(body, output);
+        output.Add(RecordEnd);
+        output.Add(RecordFull);
+    }
+
+    private static void EmitVectorTemplate(
+        int variation,
+        int combiningArrow,
+        XElement body,
+        List<byte> output)
+    {
+        // Genuine MathType 7 tmVEC HatBox records are not a generic one-slot
+        // template. After the body line MathType persists the selected combining
+        // arrow as an explicit MTCode character using its expanding-glyph
+        // typeface. Omitting this trailing character makes Word accept the CFB
+        // initially but reject/rematerialize its OLE presentation for multi-token
+        // vectors such as \overrightarrow{AB} / \overleftrightarrow{AB}.
+        EmitTemplateHeader(TemplateVector, variation, output);
+        EmitColor(0, output);
+        EmitLine(body, output);
+        EmitScalar(
+            combiningArrow,
+            TypefaceFence,
+            output,
+            includeEncoded8: false);
         output.Add(RecordEnd);
         output.Add(RecordFull);
     }
@@ -1883,12 +2133,42 @@ internal static class MathTypeMtefCodec
         output.Add(0);
     }
 
+    private static XElement? UnwrapSingleTokenAccentBody(XElement body)
+    {
+        var current = body;
+        while (current.Name.LocalName == "mrow")
+        {
+            var children = current.Elements().ToArray();
+            if (children.Length != 1) break;
+            current = children[0];
+        }
+        return current.Name.LocalName is "mi" or "mn" or "mo" ? current : null;
+    }
+
+    private static string NormalizeAccentMark(string mark) => mark switch
+    {
+        "\u0305" or "\u203E" or "\u2015" or "\u02C9" => "¯",
+        "\u0302" or "ˆ" => "^",
+        "\u0303" or "˜" => "~",
+        "\u20D7" => "→",
+        "\u20D6" => "←",
+        "\u20E1" => "↔",
+        "." or "\u0307" => "˙",
+        "\u0308" => "¨",
+        "\u030C" => "ˇ",
+        "\u0306" => "˘",
+        "\u0301" => "´",
+        "\u0300" => "`",
+        "\u030A" => "˚",
+        _ => mark,
+    };
+
     private static bool TryEmitSingleCharacterEmbellishment(
         XElement body,
         string over,
         List<byte> output)
     {
-        var code = over switch
+        var code = NormalizeAccentMark(over) switch
         {
             "." or "˙" => EmbellDot,
             "¨" => EmbellDoubleDot,
@@ -1897,7 +2177,7 @@ internal static class MathTypeMtefCodec
             "→" => EmbellRightArrow,
             "←" => EmbellLeftArrow,
             "↔" => EmbellBothArrow,
-            "¯" or "‾" => EmbellOverbar,
+            "\u00AF" or "\u203E" or "\u2015" or "\u02C9" => EmbellOverbar,
             _ => (byte)0,
         };
         if (code == 0 || body.Name.LocalName is not ("mi" or "mn" or "mo"))
@@ -2084,8 +2364,13 @@ internal static class MathTypeMtefCodec
             EmitScalar(scalar, TypefaceFence, output, includeEncoded8: false);
     }
 
-    private static string NormalizeFence(string value) =>
-        value == "." ? string.Empty : value;
+    private static string NormalizeFence(string value) => value switch
+    {
+        "." => string.Empty,
+        "〈" or "〈" or "⟨" => "⟨",
+        "〉" or "〉" or "⟩" => "⟩",
+        _ => value,
+    };
 
     private static byte? SelectFenceTemplate(string open, string close)
     {
@@ -2159,6 +2444,24 @@ internal static class MathTypeMtefCodec
                 effectiveVariant = normalizedVariant;
             }
 
+            if (scalar == 0x210F)
+            {
+                // Genuine MathType 7 persists \hbar / U+210F as an MT Extra
+                // character, with the legacy 8-bit position 'h'. Writing the
+                // same MTCode using Variable/Text typeface leaves MathType with
+                // no glyph in that font and it renders an unknown-symbol box.
+                // Keep this before mathvariant handling: MathJax commonly marks
+                // the hbar <mi> as normal/upright, but MathType's native MTEF
+                // representation is still fnMTEXTRA + encoded8 0x68.
+                EmitScalar(
+                    0x210F,
+                    TypefaceMtExtra,
+                    output,
+                    includeEncoded8: true,
+                    encoded8Override: 0x68);
+                continue;
+            }
+
             if (effectiveVariant.Contains("double-struck")
                 && TryMtExtraDoubleStruck(scalar, out var mtExtraCode, out var mtExtraPosition))
             {
@@ -2171,6 +2474,41 @@ internal static class MathTypeMtefCodec
                     output,
                     includeEncoded8: true,
                     encoded8Override: mtExtraPosition);
+                continue;
+            }
+
+            if (explicitTypeface is null
+                && !effectiveVariant.Contains("bold")
+                && !effectiveVariant.Contains("double-struck")
+                && !effectiveVariant.Contains("script")
+                && !effectiveVariant.Contains("fraktur")
+                && TryResolveLegacyMathTypeGlyph(
+                    scalar,
+                    out var nativeMtCode,
+                    out var nativeTypeface,
+                    out var nativeEncoded8))
+            {
+                EmitScalar(
+                    nativeMtCode,
+                    nativeTypeface,
+                    output,
+                    includeEncoded8: true,
+                    encoded8Override: nativeEncoded8);
+                continue;
+            }
+
+            if (explicitTypeface is null
+                && IsMathematicalSymbolScalar(scalar))
+            {
+                // MathType's built-in Symbol style is an 8-bit Adobe Symbol
+                // encoding, not a generic Unicode font.  If a mathematical
+                // symbol has no legacy Symbol position, keep its Unicode MTCode
+                // in the text font instead of emitting a non-existent Symbol
+                // glyph (which MathType renders as '?'/unknown-symbol).
+                EmitScalar(
+                    NormalizeMathTypeMtCode(scalar),
+                    TypefaceText,
+                    output);
                 continue;
             }
 
@@ -2355,6 +2693,11 @@ internal static class MathTypeMtefCodec
     private static bool IsMathematicalSymbolScalar(int scalar)
     {
         if (scalar < 0 || scalar > char.MaxValue) return false;
+        if (scalar is 0x2020 or 0x2021
+            or 0x2032 or 0x2033 or 0x2034
+            or 0x2329 or 0x232A
+            or 0x27E8 or 0x27E9)
+            return true;
         var character = (char)scalar;
         var category = char.GetUnicodeCategory(character);
         return category == System.Globalization.UnicodeCategory.MathSymbol
@@ -2363,13 +2706,228 @@ internal static class MathTypeMtefCodec
             || category == System.Globalization.UnicodeCategory.OtherSymbol;
     }
 
+    private static string NormalizeOperatorToken(string value) => value switch
+    {
+        "〈" or "〈" or "⟨" => "⟨",
+        "〉" or "〉" or "⟩" => "⟩",
+        _ => value,
+    };
+
+    private static int NormalizeMathTypeMtCode(int scalar) => scalar switch
+    {
+        // MathType 7/Adobe Symbol use the historical angle-bracket MTCode pair.
+        0x27E8 => 0x2329,
+        0x27E9 => 0x232A,
+        _ => scalar,
+    };
+
+    private static bool TryResolveLegacyMathTypeGlyph(
+        int scalar,
+        out int mtCode,
+        out int typeface,
+        out byte encoded8)
+    {
+        mtCode = NormalizeMathTypeMtCode(scalar);
+        typeface = TypefaceSymbol;
+        encoded8 = 0;
+
+        if (mtCode == 0x2223)
+        {
+            // \mid uses the ordinary vertical-bar position in Symbol while its
+            // MTCode remains U+2223 so semantic readback is not degraded to '|'.
+            encoded8 = 0x7C;
+            return true;
+        }
+
+        if (!TryGetAdobeSymbolEncoded8(mtCode, out encoded8)) return false;
+        if (IsLowerGreek(mtCode)) typeface = TypefaceLowerGreek;
+        else if (IsUpperGreek(mtCode)) typeface = TypefaceUpperGreek;
+        return true;
+    }
+
+    private static bool TryGetAdobeSymbolEncoded8(int scalar, out byte encoded8)
+    {
+        // Static Adobe Symbol encoding used by MathType's built-in Lower Greek,
+        // Upper Greek and Symbol styles.  Keeping this table in VisualTeX makes
+        // standalone MTEF generation independent of MathType/MathPage at runtime.
+        switch (scalar)
+        {
+            case 0x00AC: encoded8 = 0xD8; return true;
+            case 0x00B0: encoded8 = 0xB0; return true;
+            case 0x00B1: encoded8 = 0xB1; return true;
+            case 0x00B5: encoded8 = 0x6D; return true;
+            case 0x00D7: encoded8 = 0xB4; return true;
+            case 0x00F7: encoded8 = 0xB8; return true;
+            case 0x0192: encoded8 = 0xA6; return true;
+            case 0x0391: encoded8 = 0x41; return true;
+            case 0x0392: encoded8 = 0x42; return true;
+            case 0x0393: encoded8 = 0x47; return true;
+            case 0x0394: encoded8 = 0x44; return true;
+            case 0x0395: encoded8 = 0x45; return true;
+            case 0x0396: encoded8 = 0x5A; return true;
+            case 0x0397: encoded8 = 0x48; return true;
+            case 0x0398: encoded8 = 0x51; return true;
+            case 0x0399: encoded8 = 0x49; return true;
+            case 0x039A: encoded8 = 0x4B; return true;
+            case 0x039B: encoded8 = 0x4C; return true;
+            case 0x039C: encoded8 = 0x4D; return true;
+            case 0x039D: encoded8 = 0x4E; return true;
+            case 0x039E: encoded8 = 0x58; return true;
+            case 0x039F: encoded8 = 0x4F; return true;
+            case 0x03A0: encoded8 = 0x50; return true;
+            case 0x03A1: encoded8 = 0x52; return true;
+            case 0x03A3: encoded8 = 0x53; return true;
+            case 0x03A4: encoded8 = 0x54; return true;
+            case 0x03A5: encoded8 = 0x55; return true;
+            case 0x03A6: encoded8 = 0x46; return true;
+            case 0x03A7: encoded8 = 0x43; return true;
+            case 0x03A8: encoded8 = 0x59; return true;
+            case 0x03A9: encoded8 = 0x57; return true;
+            case 0x03B1: encoded8 = 0x61; return true;
+            case 0x03B2: encoded8 = 0x62; return true;
+            case 0x03B3: encoded8 = 0x67; return true;
+            case 0x03B4: encoded8 = 0x64; return true;
+            case 0x03B5: encoded8 = 0x65; return true;
+            case 0x03B6: encoded8 = 0x7A; return true;
+            case 0x03B7: encoded8 = 0x68; return true;
+            case 0x03B8: encoded8 = 0x71; return true;
+            case 0x03B9: encoded8 = 0x69; return true;
+            case 0x03BA: encoded8 = 0x6B; return true;
+            case 0x03BB: encoded8 = 0x6C; return true;
+            case 0x03BC: encoded8 = 0x6D; return true;
+            case 0x03BD: encoded8 = 0x6E; return true;
+            case 0x03BE: encoded8 = 0x78; return true;
+            case 0x03BF: encoded8 = 0x6F; return true;
+            case 0x03C0: encoded8 = 0x70; return true;
+            case 0x03C1: encoded8 = 0x72; return true;
+            case 0x03C2: encoded8 = 0x56; return true;
+            case 0x03C3: encoded8 = 0x73; return true;
+            case 0x03C4: encoded8 = 0x74; return true;
+            case 0x03C5: encoded8 = 0x75; return true;
+            case 0x03C6: encoded8 = 0x66; return true;
+            case 0x03C7: encoded8 = 0x63; return true;
+            case 0x03C8: encoded8 = 0x79; return true;
+            case 0x03C9: encoded8 = 0x77; return true;
+            case 0x03D1: encoded8 = 0x4A; return true;
+            case 0x03D2: encoded8 = 0xA1; return true;
+            case 0x03D5: encoded8 = 0x6A; return true;
+            case 0x03D6: encoded8 = 0x76; return true;
+            case 0x2022: encoded8 = 0xB7; return true;
+            case 0x2026: encoded8 = 0xBC; return true;
+            case 0x2032: encoded8 = 0xA2; return true;
+            case 0x2033: encoded8 = 0xB2; return true;
+            case 0x2044: encoded8 = 0xA4; return true;
+            case 0x2111: encoded8 = 0xC1; return true;
+            case 0x2118: encoded8 = 0xC3; return true;
+            case 0x211C: encoded8 = 0xC2; return true;
+            case 0x2126: encoded8 = 0x57; return true;
+            case 0x2135: encoded8 = 0xC0; return true;
+            case 0x2190: encoded8 = 0xAC; return true;
+            case 0x2191: encoded8 = 0xAD; return true;
+            case 0x2192: encoded8 = 0xAE; return true;
+            case 0x2193: encoded8 = 0xAF; return true;
+            case 0x2194: encoded8 = 0xAB; return true;
+            case 0x21B5: encoded8 = 0xBF; return true;
+            case 0x21D0: encoded8 = 0xDC; return true;
+            case 0x21D1: encoded8 = 0xDD; return true;
+            case 0x21D2: encoded8 = 0xDE; return true;
+            case 0x21D3: encoded8 = 0xDF; return true;
+            case 0x21D4: encoded8 = 0xDB; return true;
+            case 0x2200: encoded8 = 0x22; return true;
+            case 0x2202: encoded8 = 0xB6; return true;
+            case 0x2203: encoded8 = 0x24; return true;
+            case 0x2205: encoded8 = 0xC6; return true;
+            case 0x2206: encoded8 = 0x44; return true;
+            case 0x2207: encoded8 = 0xD1; return true;
+            case 0x2208: encoded8 = 0xCE; return true;
+            case 0x2209: encoded8 = 0xCF; return true;
+            case 0x220B: encoded8 = 0x27; return true;
+            case 0x220F: encoded8 = 0xD5; return true;
+            case 0x2211: encoded8 = 0xE5; return true;
+            case 0x2212: encoded8 = 0x2D; return true;
+            case 0x2217: encoded8 = 0x2A; return true;
+            case 0x221A: encoded8 = 0xD6; return true;
+            case 0x221D: encoded8 = 0xB5; return true;
+            case 0x221E: encoded8 = 0xA5; return true;
+            case 0x2220: encoded8 = 0xD0; return true;
+            case 0x2227: encoded8 = 0xD9; return true;
+            case 0x2228: encoded8 = 0xDA; return true;
+            case 0x2229: encoded8 = 0xC7; return true;
+            case 0x222A: encoded8 = 0xC8; return true;
+            case 0x222B: encoded8 = 0xF2; return true;
+            case 0x2234: encoded8 = 0x5C; return true;
+            case 0x223C: encoded8 = 0x7E; return true;
+            case 0x2245: encoded8 = 0x40; return true;
+            case 0x2248: encoded8 = 0xBB; return true;
+            case 0x2260: encoded8 = 0xB9; return true;
+            case 0x2261: encoded8 = 0xBA; return true;
+            case 0x2264: encoded8 = 0xA3; return true;
+            case 0x2265: encoded8 = 0xB3; return true;
+            case 0x2282: encoded8 = 0xCC; return true;
+            case 0x2283: encoded8 = 0xC9; return true;
+            case 0x2284: encoded8 = 0xCB; return true;
+            case 0x2286: encoded8 = 0xCD; return true;
+            case 0x2287: encoded8 = 0xCA; return true;
+            case 0x2295: encoded8 = 0xC5; return true;
+            case 0x2297: encoded8 = 0xC4; return true;
+            case 0x22A5: encoded8 = 0x5E; return true;
+            case 0x22C5: encoded8 = 0xD7; return true;
+            case 0x2320: encoded8 = 0xF3; return true;
+            case 0x2321: encoded8 = 0xF5; return true;
+            case 0x2329: encoded8 = 0xE1; return true;
+            case 0x232A: encoded8 = 0xF1; return true;
+            case 0x25CA: encoded8 = 0xE0; return true;
+            case 0x2660: encoded8 = 0xAA; return true;
+            case 0x2663: encoded8 = 0xA7; return true;
+            case 0x2665: encoded8 = 0xA9; return true;
+            case 0x2666: encoded8 = 0xA8; return true;
+            default:
+                encoded8 = 0;
+                return false;
+        }
+    }
+
     private static void EmitOperator(string value, List<byte> output)
     {
         if (value == "⁡") return;
         foreach (var scalar in EnumerateBmpScalars(value))
         {
-            if (IsWhiteSpaceScalar(scalar)) EmitScalar(scalar, TypefaceSpace, output);
-            else EmitScalar(scalar, TypefaceSymbol, output, includeEncoded8: scalar <= 0xFF);
+            if (IsWhiteSpaceScalar(scalar))
+            {
+                EmitScalar(scalar, TypefaceSpace, output);
+                continue;
+            }
+
+            if (TryResolveLegacyMathTypeGlyph(
+                    scalar,
+                    out var mtCode,
+                    out var typeface,
+                    out var encoded8))
+            {
+                EmitScalar(
+                    mtCode,
+                    typeface,
+                    output,
+                    includeEncoded8: true,
+                    encoded8Override: encoded8);
+                continue;
+            }
+
+            if (scalar <= 0xFF)
+            {
+                EmitScalar(
+                    scalar,
+                    TypefaceSymbol,
+                    output,
+                    includeEncoded8: true,
+                    encoded8Override: (byte)scalar);
+                continue;
+            }
+
+            // Do not pretend every Unicode operator lives in Adobe Symbol.
+            // Times New Roman/MathType Text is Unicode-capable and is the safe
+            // fallback for symbols not present in the legacy Symbol encoding.
+            EmitScalar(NormalizeMathTypeMtCode(scalar), TypefaceText, output);
         }
     }
 
@@ -2783,7 +3341,9 @@ internal static class MathTypeMtefCodec
             else if (typeface == TypefaceSymbol)
                 token = new XElement("mo", text);
             else if (typeface == TypefaceText)
-                token = new XElement("mtext", text);
+                token = IsMathematicalSymbolScalar(scalar)
+                    ? new XElement("mo", text)
+                    : new XElement("mtext", text);
             else if (typeface == TypefaceFunction)
             {
                 if (text.All(char.IsLetter))

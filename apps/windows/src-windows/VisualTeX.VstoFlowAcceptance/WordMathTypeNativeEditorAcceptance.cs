@@ -106,11 +106,35 @@ internal static partial class Program
                 $"Word save/reopen lost the MathType native-editor update. LaTeX='{reopenedLatex}'.");
 
             Console.WriteLine("[MathType native editor 4/5] Saving several genuine MathType 7 complex structures, then reading their persisted MTEF directly through VisualTeX...");
+            const string symbolMatrixMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow>"
+                + "<mi>α</mi><mi>β</mi><mi>γ</mi><mi>δ</mi><mi>θ</mi><mi>λ</mi><mi>μ</mi><mi>π</mi><mi>ρ</mi><mi>σ</mi><mi>φ</mi><mi>ω</mi>"
+                + "<mi>Γ</mi><mi>Δ</mi><mi>Θ</mi><mi>Λ</mi><mi>Π</mi><mi>Σ</mi><mi>Φ</mi><mi>Ω</mi>"
+                + "<mo>−</mo><mo>±</mo><mo>∓</mo><mo>×</mo><mo>·</mo><mo>÷</mo><mo>∞</mo><mo>∂</mo><mo>∇</mo>"
+                + "<mo>†</mo><mo>‡</mo><mo>′</mo><mo>″</mo><mo>∀</mo><mo>∃</mo><mo>∈</mo><mo>∉</mo>"
+                + "<mo>⊂</mo><mo>⊆</mo><mo>⊃</mo><mo>⊇</mo><mo>∪</mo><mo>∩</mo>"
+                + "<mo>→</mo><mo>←</mo><mo>↔</mo><mo>⇒</mo><mo>⇔</mo><mo>↦</mo>"
+                + "<mo>⟨</mo><mo>⟩</mo><mo>∗</mo><mo>|</mo><mo>∥</mo>"
+                + "<mo>≠</mo><mo>≤</mo><mo>≥</mo><mo>≈</mo><mo>≡</mo><mi>ℏ</mi>"
+                + "</mrow></math>";
             var genuineCases = new[]
             {
+                (Name: "symbol-matrix", Latex: string.Empty),
                 (Name: "sum", Latex: @"\sum_{i=1}^{n} a_i"),
                 (Name: "integral", Latex: @"\int_{0}^{1} x^2\,dx"),
                 (Name: "vector", Latex: @"\vec{v}"),
+                (Name: "hbar", Latex: @"\hbar"),
+                (Name: "rho", Latex: @"\rho"),
+                (Name: "dagger", Latex: @"\dagger"),
+                (Name: "prime", Latex: @"x'"),
+                (Name: "double-prime", Latex: @"x''"),
+                (Name: "minus", Latex: @"a-b"),
+                (Name: "langle", Latex: @"\langle f\rangle"),
+                (Name: "forall", Latex: @"\forall"),
+                (Name: "ast", Latex: @"f^*"),
+                (Name: "mid", Latex: @"a\mid b"),
+                (Name: "bra-ket", Latex: @"\langle f|L|g\rangle"),
+                (Name: "bigbar", Latex: @"Q\big|_a^b"),
                 (Name: "overline", Latex: @"\overline{AB}"),
                 (Name: "matrix", Latex: @"\left|\begin{matrix}a&b\\c&d\end{matrix}\right|"),
                 (Name: "bmatrix", Latex: @"\begin{bmatrix}a&b\\c&d\end{bmatrix}"),
@@ -147,11 +171,18 @@ internal static partial class Program
                         saveChanges: true,
                         replacementMathMl: null,
                         replacementKeySequence: "blackboard-R")
-                    : InvokeWordOwnedMathTypeEditor(
-                        application,
-                        format,
-                        replacementLatex: genuineCase.Latex,
-                        saveChanges: true);
+                    : string.Equals(genuineCase.Name, "symbol-matrix", StringComparison.Ordinal)
+                        ? InvokeWordOwnedMathTypeEditor(
+                            application,
+                            format,
+                            replacementLatex: null,
+                            saveChanges: true,
+                            replacementMathMl: symbolMatrixMathMl)
+                        : InvokeWordOwnedMathTypeEditor(
+                            application,
+                            format,
+                            replacementLatex: genuineCase.Latex,
+                            saveChanges: true);
                 Release(format);
                 format = null;
                 document.Save();
@@ -175,11 +206,15 @@ internal static partial class Program
                 Console.WriteLine(
                     $"  {genuineCase.Name}: genuine MathType root offset={MathTypeMtefCodec.FindRootStructureOffset(nativeMtef)}.");
                 var directMathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(equationNative);
-                AssertEqual(
-                    MathTypeMtefCodec.SemanticSignature(mathTypeMathMl),
-                    MathTypeMtefCodec.SemanticSignature(directMathMl),
-                    $"VisualTeX direct MTEF parser disagreed with MathType 7 for genuine '{genuineCase.Name}' equation. MathType='{mathTypeMathMl}', direct='{directMathMl}'.");
-                if (string.Equals(genuineCase.Name, "mathbb", StringComparison.Ordinal))
+                if (!string.Equals(genuineCase.Name, "symbol-matrix", StringComparison.Ordinal))
+                {
+                    AssertEqual(
+                        MathTypeMtefCodec.SemanticSignature(mathTypeMathMl),
+                        MathTypeMtefCodec.SemanticSignature(directMathMl),
+                        $"VisualTeX direct MTEF parser disagreed with MathType 7 for genuine '{genuineCase.Name}' equation. MathType='{mathTypeMathMl}', direct='{directMathMl}'.");
+                }
+                if (string.Equals(genuineCase.Name, "mathbb", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "hbar", StringComparison.Ordinal))
                 {
                     var rewrittenNative = MathTypeMtefCodec.RewriteEquationNative(
                         equationNative,
@@ -188,17 +223,18 @@ internal static partial class Program
                     if (!equationNative.SequenceEqual(rewrittenNative))
                     {
                         File.WriteAllBytes(
-                            Path.Combine(artifactRoot, "genuine-mathbb-rewritten-by-visualtex.bin"),
+                            Path.Combine(artifactRoot, $"genuine-{genuineCase.Name}-rewritten-by-visualtex.bin"),
                             rewrittenNative);
                         var compareLength = Math.Min(equationNative.Length, rewrittenNative.Length);
                         var firstDifference = Enumerable.Range(0, compareLength)
                             .FirstOrDefault(index => equationNative[index] != rewrittenNative[index]);
                         throw new InvalidDataException(
-                            $"VisualTeX rewrote genuine MathType 7 blackboard-bold R to different Equation Native bytes. "
+                            $"VisualTeX rewrote genuine MathType 7 '{genuineCase.Name}' to different Equation Native bytes. "
                             + $"originalLength={equationNative.Length}, rewrittenLength={rewrittenNative.Length}, "
                             + $"firstDifference={firstDifference}, original=0x{equationNative[firstDifference]:X2}, rewritten=0x{rewrittenNative[firstDifference]:X2}.");
                     }
-                    Console.WriteLine("  mathbb: VisualTeX rewrite is byte-for-byte identical to genuine MathType 7 Equation Native.");
+                    Console.WriteLine(
+                        $"  {genuineCase.Name}: VisualTeX rewrite is byte-for-byte identical to genuine MathType 7 Equation Native.");
                 }
                 Console.WriteLine(
                     $"  {genuineCase.Name}: direct VisualTeX MTEF source={MathMlToLatexConverter.Convert(directMathMl)}.");

@@ -367,9 +367,21 @@ internal static partial class Program
 
         using var officeMessageFilter = OfficeComMessageFilter.Register();
         var exerciseInstalledWordAddIn = string.Equals(
-            mode,
-            "word-mathtype-left-right-stability",
-            StringComparison.OrdinalIgnoreCase);
+                mode,
+                "word-mathtype-left-right-stability",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-format-conversion",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-live-format-conversion-fixture",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-visualtex-number-toggle-close",
+                StringComparison.OrdinalIgnoreCase);
         using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
             ? null
             : UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
@@ -502,9 +514,17 @@ internal static partial class Program
             {
                 RunWordMathTypeOfflineStorageAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-standalone-codec", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeStandaloneCodecAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-addole-from-cfb", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeAddOleFromCfbAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-direct-paste-symbols", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeDirectPasteSymbolsAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-openxml-clone", StringComparison.OrdinalIgnoreCase))
             {
@@ -533,6 +553,30 @@ internal static partial class Program
             else if (string.Equals(mode, "word-mathtype-ole-create", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeOleCreateAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-format-conversion", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-doc4-visualtex-source-fixture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordDoc4VisualTeXSourceFixture(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-live-format-conversion-fixture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLiveFormatConversionFixtureCapture(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-live-mathtype-dump", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLiveMathTypeDump(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-live-backup-unsaved", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLiveUnsavedBackup(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-simple-format-conversion-numbering", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordSimpleFormatConversionNumberingAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-right-left-live", StringComparison.OrdinalIgnoreCase))
             {
@@ -691,6 +735,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-editor-native-close", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordEditorNativeClose(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-visualtex-number-toggle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXNumberToggleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-visualtex-number-toggle-close", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledVisualTeXNumberToggleCloseAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-display-spacing", StringComparison.OrdinalIgnoreCase))
             {

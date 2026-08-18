@@ -13,7 +13,7 @@ internal static partial class Program
         Directory.CreateDirectory(artifactRoot);
         var sourceDocx = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..",
+            "..", "..", "..", "..", "..",
             "artifacts", "mathtype-native-editor",
             "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx"));
         if (!File.Exists(sourceDocx))
@@ -95,6 +95,11 @@ internal static partial class Program
                 .Trim();
             AssertMathTypeLatexEquivalent(sourceLatex, clonedLatex,
                 "WordOpenXML clone changed the embedded MathType MTEF.");
+            var clonedPreview = ReadInlineShapeEnhancedMetafile(cloneShape);
+            var clonedInk = DescribeEmfInkBounds(clonedPreview);
+            AssertTrue(!string.Equals(clonedInk, "empty", StringComparison.Ordinal),
+                "Unmodified genuine MathType Flat OPC InsertXML created a visually blank live OLE.");
+            Console.WriteLine($"  cloned live preview={clonedInk}; bytes={clonedPreview.Length}.");
 
             Console.WriteLine("[MathType WordOpenXML 4/5] Rewriting CFB + WMF preview + size entirely inside Flat OPC...");
             var previewSvg = Path.Combine(artifactRoot, "flat-opc-preview.svg");
@@ -169,6 +174,11 @@ internal static partial class Program
             AssertTrue(
                 materializedPreviewDifference < 0.08,
                 "Word did not preserve the VisualTeX WMF preview from rewritten Flat OPC.");
+            var rewrittenLivePreview = ReadInlineShapeEnhancedMetafile(rewrittenShape);
+            var rewrittenLiveInk = DescribeEmfInkBounds(rewrittenLivePreview);
+            AssertTrue(!string.Equals(rewrittenLiveInk, "empty", StringComparison.Ordinal),
+                "Rewritten genuine MathType Flat OPC InsertXML created a visually blank live OLE.");
+            Console.WriteLine($"  rewritten live preview={rewrittenLiveInk}; bytes={rewrittenLivePreview.Length}.");
 
             Console.WriteLine("[MathType WordOpenXML inline] Replacing one inline OLE between ordinary prose through hidden staging + FormattedText...");
             Word.Range? leftTextRange = null;

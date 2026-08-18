@@ -1812,61 +1812,27 @@ internal sealed partial class WordFormulaService
             throw new InvalidDataException(
                 $"VisualTeX generated invalid standalone MathType MTEF for '{metadata.Latex}'.");
 
-        MathTypeNativePreviewRenderer.Result? nativePreview = null;
-        byte[] previewWmf;
-        float widthPt;
-        float heightPt;
-        var wordPosition = 0;
-        var renderRoot = Path.GetDirectoryName(emfPath) ?? Path.GetTempPath();
-        var presentationEmfPath = emfPath;
-        var ownsPresentationEmfPath = false;
-        try
-        {
-            if (MathTypeNativePreviewRenderer.TryRender(
-                    generated.Mtef,
-                    renderRoot,
-                    out var renderedNativePreview))
-            {
-                nativePreview = renderedNativePreview;
-                widthPt = nativePreview.WidthPt;
-                heightPt = nativePreview.HeightPt;
-                wordPosition = nativePreview.WordPosition;
-                previewWmf = File.ReadAllBytes(nativePreview.WmfPath);
-                presentationEmfPath = MathTypeWordOpenXml.ConvertPlaceableWmfToEnhancedMetafile(
-                    nativePreview.WmfPath,
-                    widthPt,
-                    heightPt,
-                    renderRoot);
-                ownsPresentationEmfPath = true;
-            }
-            else
-            {
-                widthPt = (float)Math.Max(1d, (session.ExportResult?.Width ?? 200d) * 0.75d);
-                heightPt = (float)Math.Max(1d, (session.ExportResult?.Height ?? 60d) * 0.75d);
-                previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
-                    emfPath,
-                    widthPt,
-                    heightPt);
-            }
-
-            compoundFile = MathTypeOleStorage.AddEnhancedMetafilePresentationCache(
-                compoundFile,
-                presentationEmfPath);
-            var cachedMathMl = MathTypeOleStorage.ReadMathMl(compoundFile);
-            if (!MathTypeMathMlRoundTripMatches(expectedSignature, cachedMathMl))
-                throw new InvalidDataException(
-                    "MathType OLE presentation caching changed the generated formula semantics.");
-        }
-        catch
-        {
-            nativePreview?.Dispose();
-            nativePreview = null;
-            if (ownsPresentationEmfPath)
-            {
-                try { File.Delete(presentationEmfPath); } catch { }
-            }
-            throw;
-        }
+        // Standalone MathType conversion must be fully self-contained. The OLE
+        // payload comes from VisualTeX's MTEF/CFB writer and the visible cache
+        // comes from VisualTeX's own EMF export; do not probe MathPage.WLL or a
+        // running/installed MathType process for geometry or preview rendering.
+        var widthPt = (float)Math.Max(1d, (session.ExportResult?.Width ?? 200d) * 0.75d);
+        var heightPt = (float)Math.Max(1d, (session.ExportResult?.Height ?? 60d) * 0.75d);
+        var wordPosition = inline
+            ? WordInlineAlignment.CalculateFontPosition(
+                heightPt,
+                session.ExportResult?.Height ?? 0f,
+                session.ExportResult?.Baseline)
+            : 0;
+        // Match a genuine MathType Equation.DSMT4 storage: MathType keeps the
+        // native CFB free of OLE presentation-cache streams and lets Word own the
+        // companion WMF presentation in the DOCX package. Adding an OlePres stream
+        // here makes Word prefer that cache over its VML image and can leave the
+        // newly inserted equation visually blank even though Equation Native is valid.
+        var previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
+            emfPath,
+            widthPt,
+            heightPt);
 
         Document? document = null;
         Selection? selection = null;
@@ -2011,28 +1977,17 @@ internal sealed partial class WordFormulaService
                         "Word materialized a different MathType equation than VisualTeX generated.");
             }
 
-            stage = "materialize-native-ole-presentation";
-            var presentedShape = RematerializeStandaloneMathTypeOlePresentation(
-                document,
-                shape,
-                compoundFile,
-                presentationEmfPath,
-                widthPt,
-                heightPt);
-            Release(shape);
-            shape = presentedShape;
-            stage = "validate-native-ole-presentation";
-            if (MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
-                    shape,
-                    out var presentedCompoundFile))
-            {
-                // Presentation materialization can rewrite MathType's native font
-                // tables and make its lossy MathML reader emit U+FFFD for private
-                // fence/symbol glyphs. The formula semantics were already verified
-                // from the Flat OPC storage immediately before this step. Here only
-                // require that Word still exposes a valid, readable MathType CFB.
-                _ = MathTypeOleStorage.ReadMathMl(presentedCompoundFile);
-            }
+            // The Flat OPC already contains both VisualTeX's standalone MathType
+            // CFB and its WMF/EMF presentation cache.  Do not round-trip the object
+            // through Word PasteSpecial here: wdPasteOLEObject asks Windows to
+            // instantiate the Equation.DSMT4 CLSID and therefore launches an
+            // installed MathType OLE server.  Keeping this original InlineShape is
+            // both sufficient for Word display and makes conversion fully offline.
+            stage = "use-flat-opc-presentation";
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
+            shape.Width = widthPt;
+            shape.Height = heightPt;
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
 
             if (inline && sourceParagraphCount >= 0)
                 RepairMathTypeInsertXmlParagraphSplit(
@@ -2040,11 +1995,9 @@ internal sealed partial class WordFormulaService
                     shape,
                     sourceParagraphCount);
 
-            // Rematerializing the OLE presentation can invalidate the InlineShape
-            // RCW even though the Equation.DSMT4 object is still present in Word.
-            // Re-resolve the live object from the insertion position before the
-            // final baseline/numbering work instead of carrying a stale COM handle
-            // through several structural edits.
+            // Word structural edits can move the InlineShape range. Re-resolve it
+            // before the final baseline/numbering work without activating its OLE
+            // server.
             stage = "refresh-native-shape";
             var refreshedShape = FindMathTypeOleByRange(
                     document,
@@ -2129,11 +2082,6 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
-            nativePreview?.Dispose();
-            if (ownsPresentationEmfPath)
-            {
-                try { File.Delete(presentationEmfPath); } catch { }
-            }
             EndUndoRecord(undoRecord);
             Release(undoRecord);
             Release(createdObjectBookmarkRange);
@@ -2731,13 +2679,10 @@ internal sealed partial class WordFormulaService
                     heightPt);
             }
 
-            compoundFile = MathTypeOleStorage.AddEnhancedMetafilePresentationCache(
-                compoundFile,
-                presentationEmfPath);
-            var cachedMathMl = MathTypeOleStorage.ReadMathMl(compoundFile);
-            if (!MathTypeMathMlRoundTripMatches(expectedSignature, cachedMathMl))
-                throw new InvalidDataException(
-                    "MathType OLE presentation caching changed the generated formula semantics.");
+            // Do not add a Windows OlePres stream to Equation.DSMT4. Genuine
+            // MathType storage carries Equation Native while Word owns the external
+            // WMF presentation; an injected OlePres stream can override that visible
+            // preview with an incompatible blank cache.
         }
         catch
         {
@@ -7687,6 +7632,8 @@ internal sealed partial class WordFormulaService
                     "configure",
                     performanceWatch,
                     ref performanceCheckpoint);
+                var numberingHostMayHaveChanged =
+                    NumberingOrderMayHaveChanged(originalMetadata, metadata);
                 if (session.DisplayMode == "inline")
                     RestoreTypingBaselineAfter(oldShape);
                 else
@@ -7694,7 +7641,7 @@ internal sealed partial class WordFormulaService
                         document,
                         oldShape,
                         metadata,
-                        NumberingOrderMayHaveChanged(originalMetadata, metadata),
+                        numberingHostMayHaveChanged,
                         reuseExistingNumberedTableFormatting: numberedTable is not null,
                         knownNumberedTable: numberedTable);
                 TraceAcceptancePerformance(
@@ -7702,10 +7649,19 @@ internal sealed partial class WordFormulaService
                     "reconcile",
                     performanceWatch,
                     ref performanceCheckpoint);
-                // The in-place OLE update keeps this exact InlineShape alive.
-                // Re-finding the same FormulaId after the update can enumerate
-                // every InlineShape in a large document; duplicate the live
-                // object range directly instead.
+                // Ordinary in-place edits keep this exact InlineShape alive and
+                // must retain the fast direct-range path.  Changing Numbered or
+                // display mode is different: Word can migrate the OLE into/out of
+                // the 1x3 numbering host and invalidate the pre-reconcile RCW even
+                // though the formula itself survived.  Re-resolve only for that
+                // structural case before touching Range or the identity bookmark.
+                if (numberingHostMayHaveChanged)
+                {
+                    Release(oldShape);
+                    oldShape = FindByFormulaId(document, metadata.FormulaId)
+                        ?? throw new InvalidOperationException(
+                            "Word lost the updated VisualTeX OLE formula while changing its numbering host.");
+                }
                 finalSelection = oldShape.Range.Duplicate;
                 BindOleIdentityBookmark(oldShape, metadata.FormulaId);
                 TraceAcceptancePerformance(

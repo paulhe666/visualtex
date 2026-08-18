@@ -17,6 +17,9 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <ProjectReference Include="..\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj" />
     <ProjectReference Include="..\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj" />

@@ -7,6 +7,87 @@ namespace VisualTeX.VstoFlowAcceptance;
 
 internal static partial class Program
 {
+    private static void RunWordMathTypeStandaloneCodecAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        string M(string body) =>
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        var mathMl = M(
+            "<mi>\u03C1</mi><mo>=</mo><mn>1</mn><mo>;</mo>"
+            + "<msup><mi>L</mi><mo>\u2020</mo></msup><mo>;</mo>"
+            + "<msubsup><mi>p</mi><mn>2</mn><mo>\u2032</mo></msubsup><mo>;</mo>"
+            + "<msubsup><mi>p</mi><mn>2</mn><mo>\u2033</mo></msubsup><mo>;</mo>"
+            + "<mo>\u27E8</mo><mi>f</mi><mo>\u27E9</mo><mo>;</mo>"
+            + "<mo>\u2200</mo><mo>\u27E8</mo><mi>f</mi><mo>|</mo><mi>L</mi><mo>|</mo><mi>g</mi><mo>\u27E9</mo>"
+            + "<mo>\u2212</mo><mo>\u27E8</mo><mi>g</mi><mo>|</mo><msup><mi>L</mi><mo>\u2020</mo></msup><mo>|</mo><mi>f</mi><mo>\u27E9</mo>"
+            + "<mo>=</mo><mi>Q</mi><mo>[</mo><msup><mi>f</mi><mo>\u2217</mo></msup><mo>,</mo><mi>g</mi><mo>]</mo>"
+            + "<msubsup><mo>|</mo><mi>a</mi><mi>b</mi></msubsup><mo>;</mo>"
+            + "<mi>a</mi><mo>\u2223</mo><mi>b</mi><mo>;</mo><mi>\u210F</mi><mo>;</mo><mi>L</mi><mo>\u2261</mo><mi>R</mi>");
+
+        var before = SnapshotMathTypeProcessIds();
+        var generated = MathTypeMtefCodec.CreateEquationNative(mathMl, inline: false);
+        var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
+        var readBack = MathTypeOleStorage.ReadMathMl(compound);
+        var after = SnapshotMathTypeProcessIds();
+        var started = after.Except(before).ToArray();
+        if (started.Length > 0)
+            throw new InvalidDataException(
+                "Standalone VisualTeX MTEF generation unexpectedly started MathType process(es): "
+                + string.Join(", ", started));
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(mathMl),
+            MathTypeMtefCodec.SemanticSignature(readBack),
+            $"Standalone VisualTeX MTEF semantic mismatch. actual='{readBack}'");
+        AssertTrue(MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compound),
+            "Standalone VisualTeX CFB does not look like Equation.DSMT4 storage.");
+
+        static bool Contains(byte[] data, params byte[] pattern)
+        {
+            if (pattern.Length == 0 || data.Length < pattern.Length) return false;
+            for (var start = 0; start <= data.Length - pattern.Length; start++)
+            {
+                var match = true;
+                for (var offset = 0; offset < pattern.Length; offset++)
+                {
+                    if (data[start + offset] == pattern[offset]) continue;
+                    match = false;
+                    break;
+                }
+                if (match) return true;
+            }
+            return false;
+        }
+
+        var mtef = generated.Mtef;
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x84, 0xC1, 0x03, 0x72),
+            "rho was not emitted as LowerGreek/U+03C1/Adobe-Symbol 0x72.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x32, 0x20, 0xA2),
+            "prime was not emitted as Symbol/U+2032/Adobe-Symbol 0xA2.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x33, 0x20, 0xB2),
+            "double-prime was not emitted as Symbol/U+2033/Adobe-Symbol 0xB2.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x12, 0x22, 0x2D),
+            "minus was not emitted as Symbol/U+2212/Adobe-Symbol 0x2D.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x00, 0x22, 0x22),
+            "forall was not emitted as Symbol/U+2200/Adobe-Symbol 0x22.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x61, 0x22, 0xBA),
+            "equivalence was not emitted as Symbol/U+2261/Adobe-Symbol 0xBA.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x86, 0x29, 0x23, 0xE1)
+                   && Contains(mtef, 0x02, 0x04, 0x86, 0x2A, 0x23, 0xF1),
+            "angle brackets were not emitted with MathType's historical MTCode and Adobe-Symbol positions.");
+        AssertTrue(Contains(mtef, 0x02, 0x04, 0x8B, 0x0F, 0x21, 0x68),
+            "hbar was not emitted as MT Extra/U+210F/0x68.");
+        AssertTrue(Contains(mtef, 0x02, 0x00, 0x81, 0x20, 0x20),
+            "dagger was not emitted as a Unicode-capable non-Symbol CHAR.");
+
+        File.WriteAllBytes(Path.Combine(artifactRoot, "visualtex-standalone-doc4-equation-native.bin"), generated.EquationNative);
+        File.WriteAllBytes(Path.Combine(artifactRoot, "visualtex-standalone-doc4.cfb"), compound);
+        File.WriteAllText(Path.Combine(artifactRoot, "visualtex-standalone-doc4-readback.xml"), readBack);
+        Console.WriteLine(
+            "[STANDALONE MTEF] VisualTeX created Equation Native + CFB from scratch, "
+            + "round-tripped the doc4 symbol family, matched all representative CHAR encodings, "
+            + "and started no MathType process.");
+    }
+
     private sealed class MathTypeOfflineCase
     {
         public string Name { get; set; } = string.Empty;
@@ -35,6 +116,22 @@ internal static partial class Program
         var cases = new[]
         {
             new MathTypeOfflineCase { Name = "a-plus-b", MathMl = M("<mi>a</mi><mo>+</mo><mi>b</mi>"), ValidateWithMathType = true },
+            new MathTypeOfflineCase { Name = "hbar", MathMl = M("<mi>ℏ</mi>"), ValidateWithMathType = true },
+            new MathTypeOfflineCase
+            {
+                Name = "doc4-operator-symbol-family",
+                MathMl = M(
+                    "<mi>\u03C1</mi><mo>=</mo><mn>1</mn><mo>;</mo>"
+                    + "<msup><mi>L</mi><mo>\u2020</mo></msup><mo>;</mo>"
+                    + "<msubsup><mi>p</mi><mn>2</mn><mo>\u2032</mo></msubsup><mo>;</mo>"
+                    + "<msubsup><mi>p</mi><mn>2</mn><mo>\u2033</mo></msubsup><mo>;</mo>"
+                    + "<mo>\u27E8</mo><mi>f</mi><mo>\u27E9</mo><mo>;</mo>"
+                    + "<mo>\u2200</mo><mo>\u27E8</mo><mi>f</mi><mo>|</mo><mi>L</mi><mo>|</mo><mi>g</mi><mo>\u27E9</mo>"
+                    + "<mo>\u2212</mo><mo>\u27E8</mo><mi>g</mi><mo>|</mo><msup><mi>L</mi><mo>\u2020</mo></msup><mo>|</mo><mi>f</mi><mo>\u27E9</mo>"
+                    + "<mo>=</mo><mi>Q</mi><mo>[</mo><msup><mi>f</mi><mo>\u2217</mo></msup><mo>,</mo><mi>g</mi><mo>]</mo>"
+                    + "<msubsup><mo>|</mo><mi>a</mi><mi>b</mi></msubsup><mo>;</mo>"
+                    + "<mi>a</mi><mo>\u2223</mo><mi>b</mi><mo>;</mo><mi>\u210F</mi><mo>;</mo><mi>L</mi><mo>\u2261</mo><mi>R</mi>"),
+            },
             new MathTypeOfflineCase
             {
                 Name = "upright-euler",
@@ -77,6 +174,12 @@ internal static partial class Program
             {
                 Name = "determinant",
                 MathMl = M("<mfenced open=\"|\" close=\"|\"><mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr></mtable></mfenced>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "mathjax-det-characteristic",
+                MathMl = M("<mo data-mjx-texclass=\"OP\" movablelimits=\"true\">det</mo><mo stretchy=\"false\">(</mo><mi>A</mi><mo>−</mo><mi>λ</mi><mi>I</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mn>0</mn>"),
                 ValidateWithMathType = true,
             },
             new MathTypeOfflineCase
@@ -132,9 +235,12 @@ internal static partial class Program
             },
             new MathTypeOfflineCase { Name = "double-integral", MathMl = M("<msubsup><mo>∬</mo><mi>D</mi><mrow></mrow></msubsup><mi>f</mi><mi mathvariant=\"normal\">d</mi><mi>A</mi>") },
             new MathTypeOfflineCase { Name = "limit", MathMl = M("<msub><mi mathvariant=\"normal\">lim</mi><mrow><mi>x</mi><mo>→</mo><mn>0</mn></mrow></msub><mfrac><mrow><mi>sin</mi><mi>x</mi></mrow><mi>x</mi></mfrac>") },
+            new MathTypeOfflineCase { Name = "bar-macron", MathMl = M("<mover accent=\"true\"><mi>a</mi><mo>¯</mo></mover>"), ValidateWithMathType = true },
             new MathTypeOfflineCase { Name = "overline", MathMl = M("<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo>¯</mo></mover>"), ValidateWithMathType = true },
+            new MathTypeOfflineCase { Name = "overline-horizontal-bar", MathMl = M("<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo>&#x2015;</mo></mover>"), ValidateWithMathType = true },
             new MathTypeOfflineCase { Name = "underline", MathMl = M("<munder accentunder=\"true\"><mi>x</mi><mo>¯</mo></munder>") },
             new MathTypeOfflineCase { Name = "vector", MathMl = M("<mover accent=\"true\"><mi>v</mi><mo>→</mo></mover>"), ValidateWithMathType = true },
+            new MathTypeOfflineCase { Name = "overleftrightarrow", MathMl = M("<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo>↔</mo></mover>"), ValidateWithMathType = true },
             new MathTypeOfflineCase { Name = "hat", MathMl = M("<mover accent=\"true\"><mi>x</mi><mo>^</mo></mover>") },
             new MathTypeOfflineCase { Name = "tilde", MathMl = M("<mover accent=\"true\"><mi>x</mi><mo>~</mo></mover>") },
             new MathTypeOfflineCase { Name = "dot", MathMl = M("<mover accent=\"true\"><mi>x</mi><mo>.</mo></mover>") },
@@ -210,6 +316,18 @@ internal static partial class Program
             new MathTypeOfflineCase { Name = "mathjax-overset", MathMl = M("<mover><mi>x</mi><mo>∗</mo></mover>") },
             new MathTypeOfflineCase { Name = "mathjax-underset", MathMl = M("<munder><mi>x</mi><mi>n</mi></munder>") },
             new MathTypeOfflineCase { Name = "mathjax-overrightarrow", MathMl = M("<mover><mrow><mi>A</mi><mi>B</mi></mrow><mo>→</mo></mover>") },
+            new MathTypeOfflineCase
+            {
+                Name = "doc5-angular-momentum",
+                MathMl = M(
+                    "<mi>L</mi><mo>=</mo><mo>−</mo><mtext> </mtext><mi>i</mi><mi>ℏ</mi>"
+                    + "<mrow><mo>(</mo>"
+                    + "<mover><msub><mi>e</mi><mrow><mi>φ</mi></mrow></msub><mo>→</mo></mover>"
+                    + "<mfrac><mi>∂</mi><mrow><mi>∂</mi><mi>θ</mi></mrow></mfrac><mo>−</mo>"
+                    + "<mover><msub><mi>e</mi><mrow><mi>θ</mi></mrow></msub><mo>→</mo></mover>"
+                    + "<mfrac><mn>1</mn><mrow><mi>s</mi><mi>i</mi><mi>n</mi><mi>θ</mi></mrow></mfrac>"
+                    + "<mfrac><mi>∂</mi><mrow><mi>∂</mi><mi>φ</mi></mrow></mfrac><mo>)</mo></mrow>"),
+            },
             new MathTypeOfflineCase { Name = "mathjax-overleftarrow", MathMl = M("<mover><mrow><mi>A</mi><mi>B</mi></mrow><mo>←</mo></mover>") },
             new MathTypeOfflineCase { Name = "mathjax-widehat", MathMl = M("<mrow><mover><mrow><mi>A</mi><mi>B</mi><mi>C</mi></mrow><mo>^</mo></mover></mrow>") },
             new MathTypeOfflineCase { Name = "mathjax-widetilde", MathMl = M("<mrow><mover><mrow><mi>A</mi><mi>B</mi><mi>C</mi></mrow><mo>~</mo></mover></mrow>") },
