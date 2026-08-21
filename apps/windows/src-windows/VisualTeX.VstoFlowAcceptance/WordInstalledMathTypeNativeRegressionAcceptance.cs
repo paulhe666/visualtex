@@ -732,7 +732,8 @@ internal static partial class Program
             throw new InvalidDataException(context + ": MathType function preview is empty.");
         var coverage = (maxX - minX + 1d) / bitmap.Width;
         Console.WriteLine(
-            $"[installed MathType function spacing] {context}: shape={shape.Width:0.###}x{shape.Height:0.###}pt, inkX={minX}-{maxX}, coverage={coverage:0.000}, ink={ink}.");
+            $"[installed MathType function spacing] {context}: shape={shape.Width:0.###}x{shape.Height:0.###}pt, inkX={minX}-{maxX}, coverage={coverage:0.000}, ink={ink}, "
+            + $"left/right={MeasureLeftWhiteMargin(bitmap)}/{MeasureRightWhiteMargin(bitmap)}, edge={DescribeEdgeInk(bitmap)}.");
         AssertTrue(
             coverage >= 0.70,
             context + $": multi-letter function glyphs collapsed/overlapped horizontally; ink coverage={coverage:0.000}.");
@@ -792,7 +793,8 @@ internal static partial class Program
         string latex,
         OfficeExportDocument export,
         int expectedMathTypeCount,
-        IReadOnlyCollection<int> mathTypeBaseline)
+        IReadOnlyCollection<int> mathTypeBaseline,
+        bool allowTransientMathType = false)
     {
         SelectDocumentEnd(document);
         var existing = SnapshotSessionIds();
@@ -836,7 +838,8 @@ internal static partial class Program
         {
             System.Windows.Forms.Application.DoEvents();
             Thread.Sleep(100);
-            AssertNoNewMathTypeProcess(mathTypeBaseline, "installed Ribbon direct inline MathType commit");
+            if (!allowTransientMathType)
+                AssertNoNewMathTypeProcess(mathTypeBaseline, "installed Ribbon direct inline MathType commit");
             var current = client.GetSessionAsync(sessionId, CancellationToken.None)
                 .GetAwaiter().GetResult();
             if (string.Equals(current.Status, "failed", StringComparison.OrdinalIgnoreCase))

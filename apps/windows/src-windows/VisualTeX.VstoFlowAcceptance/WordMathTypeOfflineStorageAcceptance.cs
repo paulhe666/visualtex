@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -83,6 +84,51 @@ internal static partial class Program
         File.WriteAllBytes(Path.Combine(artifactRoot, "visualtex-standalone-doc4-equation-native.bin"), generated.EquationNative);
         File.WriteAllBytes(Path.Combine(artifactRoot, "visualtex-standalone-doc4.cfb"), compound);
         File.WriteAllText(Path.Combine(artifactRoot, "visualtex-standalone-doc4-readback.xml"), readBack);
+
+        var workspaceArtifacts = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..", "..",
+            "artifacts"));
+        var genuineInlineMixedPath = Path.Combine(
+            workspaceArtifacts,
+            "mathtype-inline-mixed-native",
+            "genuine-inline-mixed-equation-native.bin");
+        if (File.Exists(genuineInlineMixedPath))
+        {
+            var genuineNative = File.ReadAllBytes(genuineInlineMixedPath);
+            var genuineMathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(genuineNative);
+            var standaloneInline = MathTypeMtefCodec.CreateEquationNative(
+                genuineMathMl,
+                inline: true);
+            var genuineMtefLength = checked((int)BitConverter.ToUInt32(genuineNative, 8));
+            var genuineMtef = new byte[genuineMtefLength];
+            Buffer.BlockCopy(genuineNative, 28, genuineMtef, 0, genuineMtefLength);
+            if (MathTypeNativePreviewRenderer.TryRender(
+                    genuineMtef,
+                    artifactRoot,
+                    out var genuinePreview)
+                && MathTypeNativePreviewRenderer.TryRender(
+                    standaloneInline.Mtef,
+                    artifactRoot,
+                    out var standalonePreview))
+            {
+                using (genuinePreview)
+                using (standalonePreview)
+                {
+                    var genuineWmf = File.ReadAllBytes(genuinePreview.WmfPath);
+                    var standaloneWmf = File.ReadAllBytes(standalonePreview.WmfPath);
+                    var pixelDifference = MeasureEmfPixelDifference(genuineWmf, standaloneWmf);
+                    Console.WriteLine(
+                        $"[STANDALONE VS GENUINE] inline-mixed genuine={genuinePreview.WidthPt:0.##}x{genuinePreview.HeightPt:0.##} pos={genuinePreview.WordPosition}; "
+                        + $"standalone={standalonePreview.WidthPt:0.##}x{standalonePreview.HeightPt:0.##} pos={standalonePreview.WordPosition}; diff={pixelDifference:0.0000}; "
+                        + $"genuineRoot={MathTypeMtefCodec.FindRootStructureOffset(genuineMtef)} standaloneRoot={MathTypeMtefCodec.FindRootStructureOffset(standaloneInline.Mtef)}.");
+                    File.WriteAllBytes(
+                        Path.Combine(artifactRoot, "visualtex-standalone-inline-mixed-equation-native.bin"),
+                        standaloneInline.EquationNative);
+                }
+            }
+        }
+
         Console.WriteLine(
             "[STANDALONE MTEF] VisualTeX created Equation Native + CFB from scratch, "
             + "round-tripped the doc4 symbol family, matched all representative CHAR encodings, "
@@ -305,6 +351,16 @@ internal static partial class Program
             {
                 Name = "mathjax-binom",
                 MathMl = M("<mrow data-mjx-texclass=\"ORD\"><mrow data-mjx-texclass=\"OPEN\"><mo minsize=\"2.047em\" maxsize=\"2.047em\">(</mo></mrow><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac><mrow data-mjx-texclass=\"CLOSE\"><mo minsize=\"2.047em\" maxsize=\"2.047em\">)</mo></mrow></mrow>"),
+            },
+            new MathTypeOfflineCase
+            {
+                // Word's OMML -> MathML XSLT emits a no-bar fraction between
+                // ordinary parenthesis tokens, without MathJax OPEN/CLOSE tags,
+                // and keeps numerator/denominator content inside mrow wrappers.
+                // The MTEF writer turns the no-bar fraction into a native PILE;
+                // the reader must still recognize that loose PILE fence as binom.
+                Name = "omml-loose-binom",
+                MathMl = M("<mo>(</mo><mfrac linethickness=\"0\"><mrow><mi>n</mi></mrow><mrow><mi>k</mi></mrow></mfrac><mo>)</mo><mo>=</mo><mn>1</mn>"),
             },
             new MathTypeOfflineCase
             {
@@ -731,6 +787,699 @@ internal static partial class Program
                 .Replace("}", string.Empty);
         AssertEqual(Normalize(expected), Normalize(actual),
             $"{message} expected='{expected}', actual='{actual}'");
+    }
+
+    private static void RunWordCaptionFrameRepairAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? numberRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? captionRange = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? numberBookmark = null;
+        Word.Bookmark? captionBookmark = null;
+        Word.Frames? frames = null;
+        Word.Frame? frame = null;
+        Word.Range? bodyProbe = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            document.Content.Text = "BODY_AFTER_CAPTION\r";
+
+            insertion = document.Range(0, 0);
+            fields = insertion.Fields;
+            object fieldType = Word.WdFieldType.wdFieldEmpty;
+            object fieldCode = "SEQ Equation \\r 10 \\* ARABIC";
+            object preserveFormatting = true;
+            field = fields.Add(
+                insertion,
+                ref fieldType,
+                ref fieldCode,
+                ref preserveFormatting);
+            field.Update();
+            numberRange = field.Result.Duplicate;
+            paragraphs = numberRange.Paragraphs;
+            paragraph = paragraphs[1];
+            captionRange = paragraph.Range.Duplicate;
+
+            var formulaId = Guid.NewGuid().ToString("D");
+            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(formulaId);
+            bookmarks = document.Bookmarks;
+            numberBookmark = bookmarks.Add(numberName, numberRange);
+            captionBookmark = bookmarks.Add(captionName, captionRange);
+
+            frames = captionRange.Frames;
+            frame = frames.Add(captionRange);
+            frame.WidthRule = Word.WdFrameSizeRule.wdFrameExact;
+            frame.HeightRule = Word.WdFrameSizeRule.wdFrameExact;
+            frame.Width = 0.1f;
+            frame.Height = 0.1f;
+            frame.RelativeHorizontalPosition =
+                Word.WdRelativeHorizontalPosition.wdRelativeHorizontalPositionPage;
+            frame.RelativeVerticalPosition =
+                Word.WdRelativeVerticalPosition.wdRelativeVerticalPositionPage;
+            frame.HorizontalPosition = (float)Word.WdFramePosition.wdFrameRight;
+            frame.VerticalPosition = (float)Word.WdFramePosition.wdFrameBottom;
+            frame.TextWrap = false;
+            frame.LockAnchor = true;
+
+            var damagedCaptionText = captionRange.Text ?? string.Empty;
+            Console.WriteLine(
+                $"[CAPTION FIXTURE] caption={captionRange.Start}:{captionRange.End} number={numberRange.Start}:{numberRange.End} "
+                + $"frame={frame.Range.Start}:{frame.Range.End} width={frame.Width} height={frame.Height} "
+                + $"widthRule={frame.WidthRule} heightRule={frame.HeightRule} wrap={frame.TextWrap} lock={frame.LockAnchor} "
+                + $"text='{damagedCaptionText.Replace("\r", "<CR>")}'");
+            AssertTrue(
+                damagedCaptionText.IndexOf("BODY_AFTER_CAPTION", StringComparison.Ordinal) >= 0,
+                "The damaged caption fixture did not reproduce a caption Frame containing the following body paragraph.");
+
+            Release(frame);
+            frame = null;
+            Release(frames);
+            frames = null;
+            Release(captionBookmark);
+            captionBookmark = null;
+            Release(numberBookmark);
+            numberBookmark = null;
+            Release(bookmarks);
+            bookmarks = null;
+            Release(captionRange);
+            captionRange = null;
+            Release(paragraph);
+            paragraph = null;
+            Release(paragraphs);
+            paragraphs = null;
+            Release(numberRange);
+            numberRange = null;
+            Release(field);
+            field = null;
+            Release(fields);
+            fields = null;
+            Release(insertion);
+            insertion = null;
+
+            var repaired = WordEquationNumbering.RepairLeakedNativeCaptionFrames(document);
+            AssertEqual(1, repaired,
+                "VisualTeX did not repair exactly one leaked native caption Frame.");
+
+            bookmarks = document.Bookmarks;
+            AssertTrue(bookmarks.Exists(numberName),
+                "Caption repair deleted the durable VTEqNum bookmark.");
+            AssertTrue(bookmarks.Exists(captionName),
+                "Caption repair deleted the durable VTEqCap bookmark.");
+            numberBookmark = bookmarks[numberName];
+            captionBookmark = bookmarks[captionName];
+            numberRange = numberBookmark.Range;
+            captionRange = captionBookmark.Range;
+            var repairedCaptionText = captionRange.Text ?? string.Empty;
+            AssertTrue(
+                repairedCaptionText.IndexOf("BODY_AFTER_CAPTION", StringComparison.Ordinal) < 0,
+                "Caption repair still leaves the following body paragraph inside VTEqCap.");
+            AssertTrue(captionRange.Fields.Count == 1,
+                "Caption repair lost or duplicated the native SEQ field.");
+            frames = captionRange.Frames;
+            AssertEqual(1, frames.Count,
+                "Caption repair did not leave exactly one clipped native caption Frame.");
+
+            Release(paragraph);
+            paragraph = null;
+            Release(paragraphs);
+            paragraphs = captionRange.Paragraphs;
+            paragraph = paragraphs[1];
+            var captionParagraphEnd = paragraph.Range.End;
+            var contentEnd = document.Content.End;
+            AssertTrue(captionParagraphEnd < contentEnd,
+                "Caption repair did not leave any following body paragraph.");
+            bodyProbe = document.Range(
+                captionParagraphEnd,
+                Math.Min(contentEnd, captionParagraphEnd + 1));
+            AssertEqual(0, bodyProbe.Frames.Count,
+                "Caption repair still leaves the following body text inside the hidden Frame.");
+            AssertTrue(bodyProbe.Paragraphs.Count > 0,
+                "Caption repair did not preserve a standalone body paragraph.");
+            var followingParagraphText = bodyProbe.Paragraphs[1].Range.Text ?? string.Empty;
+            AssertTrue(
+                followingParagraphText.IndexOf("BODY_AFTER_CAPTION", StringComparison.Ordinal) >= 0,
+                "Caption repair deleted or displaced the following body text.");
+
+            var outputPath = Path.Combine(artifactRoot, "word-caption-frame-repaired.docx");
+            document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                "[CAPTION FRAME REPAIR PASS] legacy VTEqCap/VTEqNum Frame was split without losing the SEQ field or following body content.");
+            Console.WriteLine($"Artifact: {outputPath}");
+        }
+        finally
+        {
+            Release(bodyProbe);
+            Release(frame);
+            Release(frames);
+            Release(captionBookmark);
+            Release(numberBookmark);
+            Release(bookmarks);
+            Release(captionRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(numberRange);
+            Release(field);
+            Release(fields);
+            Release(insertion);
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunWordVisualTeXMathTypeAdjacentFrameAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var genuineFlatOpcPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..", "..",
+            "artifacts", "mathtype-openxml-unregistered", "source-wordopenxml.xml"));
+        if (File.Exists(genuineFlatOpcPath))
+        {
+            var genuine = MathTypeWordOpenXml.Read(File.ReadAllText(genuineFlatOpcPath));
+            var genuineWmfPath = Path.Combine(artifactRoot, "genuine-mathtype-preview.wmf");
+            File.WriteAllBytes(genuineWmfPath, genuine.PreviewWmf);
+            var genuineEmfPath = MathTypeWordOpenXml.ConvertPlaceableWmfToEnhancedMetafile(
+                genuineWmfPath,
+                genuine.WidthPt,
+                genuine.HeightPt,
+                artifactRoot);
+            using var genuineBitmap = RenderEmf(
+                File.ReadAllBytes(genuineEmfPath),
+                Math.Max(240, (int)Math.Ceiling(genuine.WidthPt * 6d)),
+                Math.Max(96, (int)Math.Ceiling(genuine.HeightPt * 6d)));
+            Console.WriteLine(
+                $"[GENUINE MATHTYPE PREVIEW] size={genuine.WidthPt:0.###}x{genuine.HeightPt:0.###}pt; "
+                + $"left/right={MeasureLeftWhiteMargin(genuineBitmap)}/{MeasureRightWhiteMargin(genuineBitmap)}; "
+                + $"edge-ink={DescribeEdgeInk(genuineBitmap)}");
+        }
+        var sourcePath = Path.Combine(artifactRoot, "adjacent-numbered-inline.tex");
+        var bulkLogPath = Path.Combine(artifactRoot, "adjacent-numbered-inline.bulk.log");
+        var tracePath = Path.Combine(artifactRoot, "adjacent-numbered-inline.conversion.trace.log");
+        var outputPath = Path.Combine(artifactRoot, "adjacent-numbered-inline-mathtype.docx");
+        const string firstLatex = @"\vec{a}\cdot\vec{b}=|\vec a||\vec b|\cos\theta";
+        const string secondLatex = @"\vec{a}\times\vec{b}";
+        var source = "$$" + firstLatex + "$$\r\n正文，$" + secondLatex + "$。\r\n";
+        File.WriteAllText(sourcePath, source, new System.Text.UTF8Encoding(false));
+        DeleteBulkPerformanceArtifact(bulkLogPath);
+        DeleteBulkPerformanceArtifact(tracePath);
+        DeleteBulkPerformanceArtifact(outputPath);
+
+        var previousBulkSource = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_BULK_SOURCE_PATH");
+        var previousBulkFormat = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_BULK_FORMAT");
+        var previousBulkMode = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_BULK_OBJECT_MODE");
+        var previousBulkLog = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_BULK_ACCEPTANCE_LOG");
+        var previousFormatAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
+        var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+        Word.Application? application = null;
+        Word.Document? document = null;
+        VisualTeX.WordVsto.ThisAddIn? addIn = null;
+        Word.InlineShape? firstShape = null;
+        Word.InlineShape? secondShape = null;
+        Word.Range? firstRange = null;
+        Word.Range? secondRange = null;
+        Word.Frames? secondFrames = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? captionBookmark = null;
+        Word.Range? captionRange = null;
+        Array custom = Array.Empty<object>();
+        try
+        {
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_SOURCE_PATH", sourcePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_FORMAT", "latex");
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_OBJECT_MODE", "ole");
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_ACCEPTANCE_LOG", bulkLogPath);
+            Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", "1");
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
+
+            var mathTypeBaseline = SnapshotMathTypeProcessIds();
+            if (mathTypeBaseline.Count != 0)
+                throw new InvalidOperationException(
+                    "Adjacent numbered-inline acceptance requires MathType.exe to be closed before Word starts.");
+
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            document.Activate();
+            addIn = new VisualTeX.WordVsto.ThisAddIn();
+            addIn.OnConnection(
+                application,
+                Extensibility.ext_ConnectMode.ext_cm_AfterStartup,
+                addIn,
+                ref custom);
+
+            addIn.OnBulkImport(new object());
+            WaitForBulkImportCompletion(bulkLogPath, TimeSpan.FromMinutes(3));
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
+            AssertEqual(2, document.InlineShapes.Count,
+                "Adjacent fixture bulk import did not create exactly two VisualTeX OLE formulas.");
+
+            firstShape = document.InlineShapes[1];
+            secondShape = document.InlineShapes[2];
+            var firstMetadata = WordFormulaMetadataReader.TryRead(firstShape)
+                ?? throw new InvalidDataException("First adjacent VisualTeX OLE lost metadata after bulk import.");
+            var secondMetadata = WordFormulaMetadataReader.TryRead(secondShape)
+                ?? throw new InvalidDataException("Second adjacent VisualTeX OLE lost metadata after bulk import.");
+            AssertEqual(firstLatex, firstMetadata.Latex,
+                "First bulk-imported OLE changed the source formula before numbering.");
+            AssertEqual(secondLatex, secondMetadata.Latex,
+                "Second bulk-imported OLE already contains the previous formula tail before numbering.");
+
+            // Reproduce the user's structure exactly: a numbered display formula
+            // immediately followed by an ordinary inline VisualTeX formula.
+            firstMetadata.Numbered = true;
+            firstMetadata.DisplayMode = "block";
+            firstRange = firstShape.Range.Duplicate;
+            WordEquationNumbering.ReconcileFormula(
+                document,
+                firstRange,
+                firstShape.Height,
+                firstMetadata);
+
+            Release(firstRange);
+            firstRange = null;
+            Release(firstShape);
+            firstShape = null;
+            Release(secondShape);
+            secondShape = null;
+
+            AssertEqual(2, document.InlineShapes.Count,
+                "Numbering the first formula lost or duplicated an adjacent formula.");
+            secondShape = document.InlineShapes[2];
+            secondMetadata = WordFormulaMetadataReader.TryRead(secondShape)
+                ?? throw new InvalidDataException("Second VisualTeX OLE lost metadata after numbering its predecessor.");
+            AssertEqual(secondLatex, secondMetadata.Latex,
+                "Numbering the preceding display formula changed the following inline formula metadata.");
+            secondRange = secondShape.Range.Duplicate;
+            secondFrames = secondRange.Frames;
+            AssertEqual(0, secondFrames.Count,
+                "New numbered-caption creation still leaks its hidden Frame into the following inline formula.");
+
+            bookmarks = document.Bookmarks;
+            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(firstMetadata.FormulaId);
+            AssertTrue(bookmarks.Exists(captionName),
+                "Numbered display fixture did not create its native caption bookmark.");
+            captionBookmark = bookmarks[captionName];
+            captionRange = captionBookmark.Range;
+            AssertTrue(captionRange.End <= secondRange.Start,
+                $"Native caption overlaps the following inline formula: caption={captionRange.Start}:{captionRange.End}, inline={secondRange.Start}:{secondRange.End}.");
+
+            Release(captionRange);
+            captionRange = null;
+            Release(captionBookmark);
+            captionBookmark = null;
+            Release(bookmarks);
+            bookmarks = null;
+            Release(secondFrames);
+            secondFrames = null;
+            Release(secondRange);
+            secondRange = null;
+            Release(secondShape);
+            secondShape = null;
+
+            ResetInstalledFormatConversionTrace(tracePath);
+            addIn.OnConvertVisualTeXToMathTypeDocument(new object());
+            WaitForInstalledOmmlMathTypeConversion(
+                tracePath,
+                "source=VisualTeX target=MathType",
+                mathTypeBaseline);
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
+            AssertEqual(2, CountMathTypeOleShapes(document),
+                "VisualTeX→MathType adjacent conversion did not create exactly two MathType OLE formulas.");
+            AssertEqual(2, document.InlineShapes.Count,
+                "VisualTeX→MathType adjacent conversion changed the formula object count.");
+
+            firstShape = document.InlineShapes[1];
+            secondShape = document.InlineShapes[2];
+            var firstMathMl = MathTypeOleStorage.ReadMathMl(firstShape);
+            var secondMathMl = MathTypeOleStorage.ReadMathMl(secondShape);
+            var firstAfter = MathMlToLatexConverter.Convert(firstMathMl).Trim();
+            var secondAfter = MathMlToLatexConverter.Convert(secondMathMl).Trim();
+            AssertTrue(firstAfter.IndexOf("\\theta", StringComparison.Ordinal) >= 0,
+                $"Converted first MathType formula lost theta: '{firstAfter}'.");
+            AssertTrue(secondAfter.IndexOf("\\theta", StringComparison.Ordinal) < 0,
+                $"Converted following inline MathType formula inherited theta from its predecessor: '{secondAfter}'.");
+            AssertTrue(secondAfter.IndexOf("\\times", StringComparison.Ordinal) >= 0,
+                $"Converted following inline MathType formula lost its multiplication operator: '{secondAfter}'.");
+
+            var firstFragment = MathTypeWordOpenXml.Read(firstShape);
+            var secondFragment = MathTypeWordOpenXml.Read(secondShape);
+            var firstWmfPath = Path.Combine(artifactRoot, "adjacent-first-preview.wmf");
+            var secondWmfPath = Path.Combine(artifactRoot, "adjacent-second-preview.wmf");
+            File.WriteAllBytes(firstWmfPath, firstFragment.PreviewWmf);
+            File.WriteAllBytes(secondWmfPath, secondFragment.PreviewWmf);
+            var firstWmfEmfPath = MathTypeWordOpenXml.ConvertPlaceableWmfToEnhancedMetafile(
+                firstWmfPath,
+                firstShape.Width,
+                firstShape.Height,
+                artifactRoot);
+            var secondWmfEmfPath = MathTypeWordOpenXml.ConvertPlaceableWmfToEnhancedMetafile(
+                secondWmfPath,
+                secondShape.Width,
+                secondShape.Height,
+                artifactRoot);
+            var firstWmfEmf = File.ReadAllBytes(firstWmfEmfPath);
+            var secondWmfEmf = File.ReadAllBytes(secondWmfEmfPath);
+            var firstPreview = ReadInlineShapeEnhancedMetafile(firstShape);
+            var secondPreview = ReadInlineShapeEnhancedMetafile(secondShape);
+            var firstRenderWidth = Math.Max(240, (int)Math.Ceiling(firstShape.Width * 6d));
+            var firstRenderHeight = Math.Max(96, (int)Math.Ceiling(firstShape.Height * 6d));
+            var secondRenderWidth = Math.Max(180, (int)Math.Ceiling(secondShape.Width * 6d));
+            var secondRenderHeight = Math.Max(72, (int)Math.Ceiling(secondShape.Height * 6d));
+            using (var firstWmfBitmap = RenderEmf(firstWmfEmf, firstRenderWidth, firstRenderHeight))
+            using (var secondWmfBitmap = RenderEmf(secondWmfEmf, secondRenderWidth, secondRenderHeight))
+            using (var firstBitmap = RenderEmf(firstPreview, firstRenderWidth, firstRenderHeight))
+            using (var secondBitmap = RenderEmf(secondPreview, secondRenderWidth, secondRenderHeight))
+            {
+                Console.WriteLine(
+                    $"[ADJACENT WMF] first-left/right={MeasureLeftWhiteMargin(firstWmfBitmap)}/{MeasureRightWhiteMargin(firstWmfBitmap)}; "
+                    + $"second-left/right={MeasureLeftWhiteMargin(secondWmfBitmap)}/{MeasureRightWhiteMargin(secondWmfBitmap)}; "
+                    + $"first-edge-ink={DescribeEdgeInk(firstWmfBitmap)}; second-edge-ink={DescribeEdgeInk(secondWmfBitmap)}");
+                var firstLeftMargin = MeasureLeftWhiteMargin(firstBitmap);
+                var firstRightMargin = MeasureRightWhiteMargin(firstBitmap);
+                var secondLeftMargin = MeasureLeftWhiteMargin(secondBitmap);
+                var secondRightMargin = MeasureRightWhiteMargin(secondBitmap);
+                AssertTrue(firstLeftMargin >= 4 && firstRightMargin >= 4,
+                    $"Converted theta formula still touches the MathType preview edge: left/right={firstLeftMargin}/{firstRightMargin}px.");
+                AssertTrue(secondLeftMargin >= 4 && secondRightMargin >= 4,
+                    $"Converted adjacent inline formula still touches the MathType preview edge: left/right={secondLeftMargin}/{secondRightMargin}px.");
+                Console.WriteLine(
+                    $"[ADJACENT PREVIEW] first-left/right={firstLeftMargin}/{firstRightMargin}px/{firstBitmap.Width}px; "
+                    + $"second-left/right={secondLeftMargin}/{secondRightMargin}px/{secondBitmap.Width}px; "
+                    + $"first-edge-ink={DescribeEdgeInk(firstBitmap)}; second-edge-ink={DescribeEdgeInk(secondBitmap)}");
+            }
+            AssertNoNewMathTypeProcess(mathTypeBaseline,
+                "adjacent numbered VisualTeX→MathType conversion");
+
+            document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                $"[ADJACENT WORD FLOW PASS] caption Frame stayed local and MathType semantics stayed isolated: first='{firstAfter}', second='{secondAfter}'.");
+            Console.WriteLine($"Artifact: {outputPath}");
+        }
+        finally
+        {
+            Release(captionRange);
+            Release(captionBookmark);
+            Release(bookmarks);
+            Release(secondFrames);
+            Release(secondRange);
+            Release(firstRange);
+            Release(secondShape);
+            Release(firstShape);
+            if (addIn is not null)
+            {
+                try
+                {
+                    addIn.OnDisconnection(
+                        Extensibility.ext_DisconnectMode.ext_dm_UserClosed,
+                        ref custom);
+                }
+                catch { }
+            }
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_SOURCE_PATH", previousBulkSource);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_FORMAT", previousBulkFormat);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_OBJECT_MODE", previousBulkMode);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_BULK_ACCEPTANCE_LOG", previousBulkLog);
+            Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", previousFormatAcceptance);
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", previousTracePath);
+        }
+    }
+
+    private static string DescribeEdgeInk(System.Drawing.Bitmap bitmap)
+    {
+        var left = new List<int>();
+        var right = new List<int>();
+        var count = Math.Min(8, bitmap.Width);
+        for (var offset = 0; offset < count; offset++)
+        {
+            left.Add(CountDarkPixelsInColumn(bitmap, offset));
+            right.Add(CountDarkPixelsInColumn(bitmap, bitmap.Width - 1 - offset));
+        }
+        return "L[" + string.Join(",", left) + "] R[" + string.Join(",", right) + "]";
+    }
+
+    private static int CountDarkPixelsInColumn(System.Drawing.Bitmap bitmap, int x)
+    {
+        var count = 0;
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            var pixel = bitmap.GetPixel(x, y);
+            if (pixel.R <= 245 || pixel.G <= 245 || pixel.B <= 245)
+                count++;
+        }
+        return count;
+    }
+
+    private static int MeasureLeftWhiteMargin(System.Drawing.Bitmap bitmap)
+    {
+        var minInkX = bitmap.Width;
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.R > 245 && pixel.G > 245 && pixel.B > 245) continue;
+                minInkX = Math.Min(minInkX, x);
+                break;
+            }
+        }
+        return minInkX == bitmap.Width ? bitmap.Width : minInkX;
+    }
+
+    private static int MeasureRightWhiteMargin(System.Drawing.Bitmap bitmap)
+    {
+        var maxInkX = -1;
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = bitmap.Width - 1; x >= 0; x--)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.R > 245 && pixel.G > 245 && pixel.B > 245) continue;
+                maxInkX = Math.Max(maxInkX, x);
+                break;
+            }
+        }
+        return maxInkX < 0 ? bitmap.Width : bitmap.Width - 1 - maxInkX;
+    }
+
+    private static void RunMathTypeAdjacentBatchIsolationAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var formulas = new[]
+        {
+            (Latex: @"\vec{a}\cdot\vec{b}=|\vec a||\vec b|\cos\theta", Display: "block"),
+            (Latex: @"\vec{a}\times\vec{b}", Display: "inline"),
+        };
+        var parsed = WordBulkImportParser.Parse(
+            "$$" + formulas[0].Latex + "$$\n正文，$" + formulas[1].Latex + "$。",
+            WordBulkSourceFormat.Latex,
+            WordBulkFormulaObjectMode.Ole);
+        var parsedFormulas = parsed.Blocks
+            .SelectMany(block => block.Runs)
+            .Where(run => run.IsFormula)
+            .ToArray();
+        AssertEqual(2, parsedFormulas.Length,
+            "Adjacent LaTeX parser fixture did not produce exactly two formulas.");
+        AssertEqual(formulas[0].Latex, parsedFormulas[0].Latex,
+            "Bulk-import parser changed the first adjacent formula.");
+        AssertEqual(formulas[1].Latex, parsedFormulas[1].Latex,
+            "Bulk-import parser leaked the first formula tail into the second formula.");
+        var sessions = new List<(string Latex, string SessionId)>();
+        try
+        {
+            client.PrewarmConverterAsync(CancellationToken.None).GetAwaiter().GetResult();
+            foreach (var formula in formulas)
+            {
+                var line = new FormulaLine
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    Latex = formula.Latex,
+                };
+                var session = client.CreateSessionAsync(
+                        new CreateVstoSessionRequest
+                        {
+                            Mode = "create",
+                            Host = "word",
+                            Title = "Adjacent batch isolation acceptance",
+                            Lines = new List<FormulaLine> { line },
+                            ActiveLineId = line.Id,
+                            CodeFormat = "latex",
+                            DisplayMode = formula.Display,
+                            ObjectMode = FormulaOleContract.MathTypeOleMode,
+                            Numbered = false,
+                            FontSizePt = 12d,
+                            AutoCommitOnClose = false,
+                        },
+                        CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                sessions.Add((formula.Latex, session.Id));
+            }
+
+            client.OpenConverterBatchAsync(
+                    sessions.Select(item => item.SessionId).ToArray(),
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            var exported = new List<string>();
+            foreach (var item in sessions)
+            {
+                var session = client.WaitForCommitAsync(
+                        item.SessionId,
+                        TimeSpan.FromMinutes(3),
+                        CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                if (string.Equals(session.Status, "failed", StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        $"Adjacent batch converter failed for '{item.Latex}': {session.Error}");
+                var mathMl = session.ExportResult?.MathMl;
+                if (string.IsNullOrWhiteSpace(mathMl))
+                    throw new InvalidDataException(
+                        $"Adjacent batch converter returned no MathML for '{item.Latex}'.");
+                exported.Add(mathMl!);
+            }
+
+            var firstLatex = MathMlToLatexConverter.Convert(exported[0]).Trim();
+            var secondLatex = MathMlToLatexConverter.Convert(exported[1]).Trim();
+            AssertTrue(firstLatex.IndexOf("\\theta", StringComparison.Ordinal) >= 0,
+                $"First adjacent formula lost its theta tail: '{firstLatex}'.");
+            AssertTrue(secondLatex.IndexOf("\\theta", StringComparison.Ordinal) < 0,
+                $"Second adjacent formula inherited theta from the previous converter session: '{secondLatex}'.");
+
+            var equationNative = MathTypeMtefCodec.CreateEquationNative(exported[1], inline: true);
+            var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(equationNative);
+            var rereadMathMl = MathTypeOleStorage.ReadMathMl(compound);
+            var rereadLatex = MathMlToLatexConverter.Convert(rereadMathMl).Trim();
+            AssertTrue(rereadLatex.IndexOf("\\theta", StringComparison.Ordinal) < 0,
+                $"MathType MTEF encoder appended theta to the second adjacent formula: '{rereadLatex}'.");
+            Console.WriteLine(
+                $"[ADJACENT BATCH PASS] first='{firstLatex}' second='{secondLatex}' MTEF-second='{rereadLatex}'.");
+
+            var previewSvg = Path.Combine(artifactRoot, "adjacent-word-preview.svg");
+            File.WriteAllText(
+                previewSvg,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"96\" viewBox=\"0 0 240 96\"><text x=\"4\" y=\"64\" font-family=\"Times New Roman\" font-size=\"48\">x+1</text></svg>");
+            var previewEmf = OfficeOlePreview.CreateVectorEmfFromSvg(previewSvg, 240, 96);
+            Word.Application? application = null;
+            Word.Document? document = null;
+            Word.Range? range = null;
+            try
+            {
+                application = CreateWordApplication(visible: false);
+                document = application.Documents.Add();
+                var service = new WordFormulaService(application);
+
+                range = document.Range(document.Content.End - 1, document.Content.End - 1);
+                range.Select();
+                service.InsertMathTypeOle(
+                    CreateMathTypeCreateSession(
+                        displayMode: "block",
+                        numbered: false,
+                        latex: formulas[0].Latex),
+                    exported[0],
+                    previewEmf,
+                    createdObjectBookmarkName: "VTMT_ADJACENT_FIRST");
+
+                Release(range);
+                range = document.Range(document.Content.End - 1, document.Content.End - 1);
+                range.Text = "正文，";
+                range.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                range.Select();
+                service.InsertMathTypeOle(
+                    CreateMathTypeCreateSession(
+                        displayMode: "inline",
+                        numbered: false,
+                        latex: formulas[1].Latex),
+                    exported[1],
+                    previewEmf,
+                    createdObjectBookmarkName: "VTMT_ADJACENT_SECOND");
+
+                AssertEqual(2, document.InlineShapes.Count,
+                    "Adjacent Word insertion did not retain exactly two MathType OLE objects.");
+                var immediateMathMl = new List<string>();
+                for (var index = 1; index <= 2; index++)
+                {
+                    Word.InlineShape? shape = null;
+                    try
+                    {
+                        shape = document.InlineShapes[index];
+                        immediateMathMl.Add(MathTypeOleStorage.ReadMathMl(shape));
+                    }
+                    finally { Release(shape); }
+                }
+                var immediateSecondLatex = MathMlToLatexConverter.Convert(immediateMathMl[1]).Trim();
+                AssertTrue(immediateSecondLatex.IndexOf("\\theta", StringComparison.Ordinal) < 0,
+                    $"Word InsertXML leaked theta into the second adjacent MathType OLE before save: '{immediateSecondLatex}'.");
+
+                var wordPath = Path.Combine(artifactRoot, "adjacent-word-insert.docx");
+                document.SaveAs2(wordPath, Word.WdSaveFormat.wdFormatXMLDocument);
+                document.Close(Word.WdSaveOptions.wdSaveChanges);
+                Release(document);
+                document = application.Documents.Open(
+                    wordPath,
+                    ReadOnly: false,
+                    AddToRecentFiles: false);
+                AssertEqual(2, document.InlineShapes.Count,
+                    "Adjacent Word insertion lost a MathType OLE after save/reopen.");
+                Word.InlineShape? reopenedSecond = null;
+                try
+                {
+                    reopenedSecond = document.InlineShapes[2];
+                    var reopenedSecondMathMl = MathTypeOleStorage.ReadMathMl(reopenedSecond);
+                    var reopenedSecondLatex = MathMlToLatexConverter.Convert(reopenedSecondMathMl).Trim();
+                    AssertTrue(reopenedSecondLatex.IndexOf("\\theta", StringComparison.Ordinal) < 0,
+                        $"Word save/reopen leaked theta into the second adjacent MathType OLE: '{reopenedSecondLatex}'.");
+                    Console.WriteLine(
+                        $"[ADJACENT WORD PASS] immediate-second='{immediateSecondLatex}' reopened-second='{reopenedSecondLatex}'.");
+                }
+                finally { Release(reopenedSecond); }
+            }
+            finally
+            {
+                Release(range);
+                if (document is not null)
+                {
+                    try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                }
+                Release(document);
+                try { QuitWordApplicationIfOwned(application); } catch { }
+                Release(application);
+                ForceComCleanup();
+            }
+        }
+        finally
+        {
+            foreach (var item in sessions)
+            {
+                try
+                {
+                    client.CompleteAsync(item.SessionId, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    client.CloseEditorAsync(item.SessionId, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+                catch { }
+            }
+        }
     }
 
     private static HashSet<int> SnapshotMathTypeProcessIds() =>

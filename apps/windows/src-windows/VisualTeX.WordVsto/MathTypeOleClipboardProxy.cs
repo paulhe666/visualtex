@@ -150,12 +150,16 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             medium = CreateHGlobalMedium(_objectDescriptorBytes!);
             return;
         }
-        if (format.cfFormat == CfEnhMetafile && _emfPath is not null)
+        if (format.cfFormat == CfEnhMetafile
+            && _emfPath is not null
+            && ShouldExposeEnhancedMetafile())
         {
             medium = CreateEnhancedMetafileMedium();
             return;
         }
-        if (format.cfFormat == CfMetafilePict && _emfPath is not null)
+        if (format.cfFormat == CfMetafilePict
+            && _emfPath is not null
+            && ShouldExposeMetafilePicture())
         {
             medium = CreateMetafilePictureMedium();
             return;
@@ -200,9 +204,13 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         }
         if (_standaloneExternal && format.cfFormat == _objectDescriptorFormat)
             return (format.tymed & TYMED.TYMED_HGLOBAL) != 0 ? S_OK : DV_E_FORMATETC;
-        if (format.cfFormat == CfEnhMetafile && _emfPath is not null)
+        if (format.cfFormat == CfEnhMetafile
+            && _emfPath is not null
+            && ShouldExposeEnhancedMetafile())
             return (format.tymed & TYMED.TYMED_ENHMF) != 0 ? S_OK : DV_E_FORMATETC;
-        if (format.cfFormat == CfMetafilePict && _emfPath is not null)
+        if (format.cfFormat == CfMetafilePict
+            && _emfPath is not null
+            && ShouldExposeMetafilePicture())
             return (format.tymed & TYMED.TYMED_MFPICT) != 0 ? S_OK : DV_E_FORMATETC;
         return _standaloneExternal
             ? DV_E_FORMATETC
@@ -241,8 +249,10 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             EnsureFormat(standaloneFormats, _objectDescriptorFormat, TYMED.TYMED_HGLOBAL);
             if (_emfPath is not null)
             {
-                EnsureFormat(standaloneFormats, CfEnhMetafile, TYMED.TYMED_ENHMF);
-                EnsureFormat(standaloneFormats, CfMetafilePict, TYMED.TYMED_MFPICT);
+                if (ShouldExposeEnhancedMetafile())
+                    EnsureFormat(standaloneFormats, CfEnhMetafile, TYMED.TYMED_ENHMF);
+                if (ShouldExposeMetafilePicture())
+                    EnsureFormat(standaloneFormats, CfMetafilePict, TYMED.TYMED_MFPICT);
             }
             Trace(
                 "EnumFormatEtc standalone formats="
@@ -328,6 +338,20 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             enumAdvise = null;
             return E_NOTIMPL;
         }
+    }
+
+    private static bool ShouldExposeEnhancedMetafile()
+    {
+        var mode = Environment.GetEnvironmentVariable(
+            "VISUALTEX_ACCEPTANCE_MATHTYPE_PREVIEW_FORMAT");
+        return !string.Equals(mode, "wmf-only", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldExposeMetafilePicture()
+    {
+        var mode = Environment.GetEnvironmentVariable(
+            "VISUALTEX_ACCEPTANCE_MATHTYPE_PREVIEW_FORMAT");
+        return !string.Equals(mode, "emf-only", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void Trace(string message)

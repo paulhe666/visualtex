@@ -703,6 +703,34 @@ impl SessionStore {
         sync_directory(&self.sessions_root)
     }
 
+    pub fn delete_many(&self, ids: &[String]) -> Result<usize, SessionError> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| SessionError::Io("Session store lock is unavailable".to_string()))?;
+        let mut deleted = 0usize;
+        for id in ids {
+            let directory = self.session_directory(id)?;
+            if !directory.exists() {
+                continue;
+            }
+            fs::remove_dir_all(&directory).map_err(|error| {
+                SessionError::Io(format!(
+                    "Unable to delete Session directory {}: {error}",
+                    directory.display()
+                ))
+            })?;
+            deleted += 1;
+        }
+        // Converter sessions are temporary. One durability barrier after the
+        // whole batch is sufficient and avoids 50 serialized root-directory
+        // fsyncs under the SessionStore global mutex.
+        if deleted > 0 {
+            sync_directory(&self.sessions_root)?;
+        }
+        Ok(deleted)
+    }
+
     pub fn cleanup_expired(&self, now: u64) -> Result<(), SessionError> {
         let _guard = self
             .lock

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -44,6 +45,98 @@ internal static class WordOmmlConverter
             _document = document;
             _path = path;
             _entries = entries;
+        }
+
+        internal string GetSourceFingerprint(string formulaId)
+        {
+            if (!_entries.TryGetValue(formulaId, out var entry))
+                throw new InvalidDataException(
+                    $"The OMML batch source does not contain formula {formulaId}.");
+            return entry.SourceFingerprint;
+        }
+
+        internal IReadOnlyList<Range> InsertAdjacentInlineGroup(
+            Application application,
+            Document targetDocument,
+            Range targetRange,
+            IReadOnlyList<string> formulaIds)
+        {
+            if (formulaIds is null || formulaIds.Count < 2)
+                throw new ArgumentOutOfRangeException(
+                    nameof(formulaIds),
+                    "An adjacent OMML group requires at least two formulas.");
+            var groupEntries = new List<BatchEntry>(formulaIds.Count);
+            foreach (var formulaId in formulaIds)
+            {
+                if (!_entries.TryGetValue(formulaId, out var entry))
+                    throw new InvalidDataException(
+                        $"The OMML batch source does not contain formula {formulaId}.");
+                groupEntries.Add(entry);
+            }
+
+            var path = CreateTemporaryAdjacentInlineGroupDocx(groupEntries);
+            Document? sourceDocument = null;
+            Range? sourceRange = null;
+            Range? target = null;
+            OMaths? maths = null;
+            OMath? math = null;
+            Range? mathRange = null;
+            var results = new List<Range>(formulaIds.Count);
+            try
+            {
+                sourceDocument = application.Documents.Open(
+                    FileName: path,
+                    ConfirmConversions: false,
+                    ReadOnly: true,
+                    AddToRecentFiles: false,
+                    Visible: false,
+                    OpenAndRepair: false);
+                sourceRange = sourceDocument.Content.Duplicate;
+                if (sourceRange.End > sourceRange.Start)
+                    sourceRange.End--;
+                target = targetRange.Duplicate;
+                var insertionStart = target.Start;
+                target.FormattedText = sourceRange.FormattedText;
+                var insertionEnd = target.End;
+
+                maths = targetDocument.OMaths;
+                var candidates = new List<(int Start, int End)>();
+                for (var index = 1; index <= maths.Count; index++)
+                {
+                    Release(mathRange); mathRange = null;
+                    Release(math); math = maths[index];
+                    mathRange = math.Range;
+                    if (mathRange.Start < insertionStart || mathRange.End > insertionEnd)
+                        continue;
+                    candidates.Add((mathRange.Start, mathRange.End));
+                }
+                candidates.Sort((left, right) => left.Start.CompareTo(right.Start));
+                if (candidates.Count != formulaIds.Count)
+                    throw new InvalidOperationException(
+                        $"Word materialized {candidates.Count} OMath objects for an adjacent group of {formulaIds.Count} formulas.");
+                foreach (var candidate in candidates)
+                    results.Add(targetDocument.Range(candidate.Start, candidate.End));
+                return results;
+            }
+            catch
+            {
+                foreach (var result in results) Release(result);
+                throw;
+            }
+            finally
+            {
+                Release(mathRange);
+                Release(math);
+                Release(maths);
+                Release(target);
+                Release(sourceRange);
+                if (sourceDocument is not null)
+                {
+                    try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                }
+                Release(sourceDocument);
+                try { File.Delete(path); } catch { }
+            }
         }
 
         internal Range Insert(
@@ -704,6 +797,7 @@ internal static class WordOmmlConverter
             throw new InvalidDataException("VisualTeX did not provide MathML for the Word OMML formula.");
         mathMl = RemoveVisualTeXBoundaryArtifactsFromMathMl(mathMl);
         ValidateMathMlForOmml(mathMl);
+        mathMl = NormalizeMathTypeBinomialPiles(mathMl);
         mathMl = NormalizeFencedMathMlTables(mathMl);
         mathMl = NormalizeNestedEmptyBaseScripts(mathMl);
         mathMl = NormalizeMathMlAccents(mathMl);
@@ -805,6 +899,50 @@ internal static class WordOmmlConverter
         if (document.Descendants(presentationMath + "merror").Any())
             throw new InvalidDataException(
                 "MathML contains an error node and cannot be inserted as OMML.");
+    }
+
+    internal static string NormalizeMathTypeBinomialPiles(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl)
+            || mathMl.IndexOf("data-mtef-pile", StringComparison.OrdinalIgnoreCase) < 0)
+            return mathMl;
+
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        foreach (var table in document.Descendants(presentationMath + "mtable").ToList())
+        {
+            if (!string.Equals(
+                    table.Attribute("data-mtef-pile")?.Value,
+                    "true",
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var rows = table.Elements(presentationMath + "mtr").ToArray();
+            if (rows.Length != 2) continue;
+            var cells = rows
+                .Select(row => row.Elements(presentationMath + "mtd").ToArray())
+                .ToArray();
+            if (cells.Any(row => row.Length != 1)) continue;
+
+            // MTEF uses a two-row, one-column PILE inside parentheses for its
+            // native binomial template. Leaving that PILE as <mtable> makes the
+            // Office XSLT materialize a 2x1 matrix, which is visually similar but
+            // semantically different from Word's native no-bar fraction. The
+            // private decoder marker distinguishes this from a genuine MATRIX,
+            // so explicit column matrices must not enter this path.
+            XElement CopyCellAsRow(XElement cell) =>
+                new(
+                    presentationMath + "mrow",
+                    new XElement(cell).Nodes());
+
+            table.ReplaceWith(
+                new XElement(
+                    presentationMath + "mfrac",
+                    new XAttribute("linethickness", "0"),
+                    CopyCellAsRow(cells[0][0]),
+                    CopyCellAsRow(cells[1][0])));
+        }
+        return document.ToString(SaveOptions.DisableFormatting);
     }
 
     internal static string NormalizeFencedMathMlTables(string mathMl)
@@ -1540,6 +1678,16 @@ internal static class WordOmmlConverter
                         .Attribute(math + "val")?
                         .Value,
                     "1",
+                    StringComparison.Ordinal)
+                || slot.Name == math + "e"
+                && parent?.Name == math + "mr"
+                && parent.Parent?.Name == math + "m"
+                && string.Equals(
+                    parent.Parent.Element(math + "mPr")?
+                        .Element(math + "plcHide")?
+                        .Attribute(math + "val")?
+                        .Value,
+                    "1",
                     StringComparison.Ordinal);
             if (hidden) continue;
 
@@ -1797,7 +1945,13 @@ internal static class WordOmmlConverter
         // the renderer. Rebuild the presentation tree with one default MathML
         // namespace so OMML -> MathType can use the exact same validated path.
         var canonicalRoot = CanonicalizeMathMlElement(root);
+        RestoreMergedNumericPunctuationTokens(canonicalRoot);
+        RestoreMathSymbolTextTokens(canonicalRoot);
+        RestoreOmmlNoBarFractionSemantics(omml, canonicalRoot);
         RestoreOmmlAccentSemantics(omml, canonicalRoot);
+        RestoreOmmlLimitBaseSemantics(omml, canonicalRoot);
+        RestoreOmmlScriptBaseRunSemantics(omml, canonicalRoot);
+        RestoreOmmlFunctionApplicationRuns(omml, canonicalRoot);
         canonicalRoot.SetAttributeValue("display", display ? "block" : "inline");
         return canonicalRoot.ToString(SaveOptions.DisableFormatting);
     }
@@ -1842,6 +1996,331 @@ internal static class WordOmmlConverter
                     new XAttribute("accent", "true"),
                     canonicalCharacter));
         }
+    }
+
+    private static void RestoreOmmlNoBarFractionSemantics(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var sourceFractions = source.Descendants(officeMath + "f").ToArray();
+        var targetFractions = mathMlRoot.DescendantsAndSelf(mathMl + "mfrac").ToArray();
+        if (sourceFractions.Length == 0 || sourceFractions.Length != targetFractions.Length)
+            return;
+
+        for (var index = 0; index < sourceFractions.Length; index++)
+        {
+            var type = sourceFractions[index]
+                .Element(officeMath + "fPr")?
+                .Element(officeMath + "type")?
+                .Attribute(officeMath + "val")?
+                .Value;
+            if (!string.Equals(type, "noBar", StringComparison.OrdinalIgnoreCase)) continue;
+            targetFractions[index].SetAttributeValue("linethickness", "0");
+        }
+    }
+
+    private static void RestoreMergedNumericPunctuationTokens(XElement mathMlRoot)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        foreach (var number in mathMlRoot.DescendantsAndSelf(mathMl + "mn").ToArray())
+        {
+            var value = number.Value;
+            if (string.IsNullOrWhiteSpace(value)
+                || (value.IndexOf(',') < 0 && value.IndexOf(';') < 0))
+                continue;
+            if (!value.All(character => char.IsDigit(character)
+                    || character == ','
+                    || character == ';'))
+                continue;
+
+            var tokens = new List<XElement>();
+            var start = 0;
+            for (var index = 0; index <= value.Length; index++)
+            {
+                var atEnd = index == value.Length;
+                var punctuation = !atEnd && (value[index] == ',' || value[index] == ';');
+                if (!atEnd && !punctuation) continue;
+                if (index > start)
+                    tokens.Add(new XElement(mathMl + "mn", value.Substring(start, index - start)));
+                if (punctuation)
+                    tokens.Add(new XElement(mathMl + "mo", value[index].ToString()));
+                start = index + 1;
+            }
+            if (tokens.Count <= 1) continue;
+
+            if (number.Parent?.Name == mathMl + "mrow")
+                number.ReplaceWith(tokens.Cast<object>().ToArray());
+            else
+                number.ReplaceWith(new XElement(mathMl + "mrow", tokens));
+        }
+    }
+
+    private static void RestoreMathSymbolTextTokens(XElement mathMlRoot)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        foreach (var text in mathMlRoot.DescendantsAndSelf(mathMl + "mtext").ToArray())
+        {
+            var value = text.Value;
+            if (string.IsNullOrEmpty(value) || !ContainsOnlyMathSymbols(value)) continue;
+            text.Name = mathMl + "mo";
+        }
+    }
+
+    private static bool ContainsOnlyMathSymbols(string value)
+    {
+        var sawSymbol = false;
+        for (var index = 0; index < value.Length;)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(value, index);
+            var scalarLength = char.IsHighSurrogate(value[index])
+                && index + 1 < value.Length
+                && char.IsLowSurrogate(value[index + 1])
+                ? 2
+                : 1;
+            if (category != UnicodeCategory.MathSymbol) return false;
+            sawSymbol = true;
+            index += scalarLength;
+        }
+        return sawSymbol;
+    }
+
+    private static void RestoreOmmlLimitBaseSemantics(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var limits = source
+            .Descendants()
+            .Where(element => element.Name == officeMath + "limLow"
+                || element.Name == officeMath + "limUpp")
+            .ToArray();
+        if (limits.Length == 0) return;
+
+        var usedTargets = new HashSet<XElement>();
+        foreach (var limit in limits)
+        {
+            var baseSlot = limit.Element(officeMath + "e");
+            if (baseSlot is null) continue;
+            var visibleRuns = baseSlot
+                .Descendants(officeMath + "r")
+                .Where(run => run.Elements(officeMath + "t")
+                    .Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+                .ToArray();
+            if (visibleRuns.Length == 0) continue;
+
+            var baseText = string.Concat(
+                visibleRuns.SelectMany(run => run.Elements(officeMath + "t"))
+                    .Select(text => text.Value));
+            if (string.IsNullOrWhiteSpace(baseText)) continue;
+
+            // Word's BuildUp/save materialization can discard m:nor from the base
+            // run of m:limLow/m:limUpp even though the visible operator is still a
+            // native limit operator. Preserve explicit m:nor whenever it survives;
+            // when it does not, only infer upright grouping for TeX's standard
+            // named operators. This restores lim/max/min/sup/inf/limsup/... without
+            // ever joining an arbitrary italic variable sequence such as l*i*m.
+            var explicitlyNormal = visibleRuns.All(run =>
+                run.Element(officeMath + "rPr")?
+                    .Element(officeMath + "nor") is not null);
+            if (!explicitlyNormal && !IsStandardTexOperatorName(baseText))
+                continue;
+
+            var lower = limit.Name == officeMath + "limLow";
+            var targetNames = lower
+                ? new HashSet<XName> { mathMl + "msub", mathMl + "munder" }
+                : new HashSet<XName> { mathMl + "msup", mathMl + "mover" };
+            var target = mathMlRoot
+                .DescendantsAndSelf()
+                .Where(element => targetNames.Contains(element.Name)
+                    && !usedTargets.Contains(element))
+                .FirstOrDefault(element =>
+                {
+                    var children = element.Elements().ToArray();
+                    return children.Length >= 2
+                        && string.Equals(
+                            FlattenMathMlTokenText(children[0]),
+                            baseText,
+                            StringComparison.Ordinal);
+                });
+            if (target is null) continue;
+
+            var targetChildren = target.Elements().ToArray();
+            targetChildren[0].ReplaceWith(
+                new XElement(
+                    mathMl + "mi",
+                    new XAttribute("mathvariant", "normal"),
+                    baseText));
+            usedTargets.Add(target);
+        }
+    }
+
+    private static void RestoreOmmlScriptBaseRunSemantics(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var scripts = source
+            .Descendants()
+            .Where(element => element.Name == officeMath + "sSub"
+                || element.Name == officeMath + "sSup"
+                || element.Name == officeMath + "sSubSup")
+            .ToArray();
+        if (scripts.Length == 0) return;
+
+        var usedTargets = new HashSet<XElement>();
+        foreach (var script in scripts)
+        {
+            var baseSlot = script.Element(officeMath + "e");
+            if (baseSlot is null) continue;
+            var visibleRuns = baseSlot
+                .Descendants(officeMath + "r")
+                .Where(run => run.Elements(officeMath + "t")
+                    .Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+                .ToArray();
+            if (visibleRuns.Length != 1) continue;
+            var run = visibleRuns[0];
+            var properties = run.Element(officeMath + "rPr");
+            var style = properties?
+                .Element(officeMath + "sty")?
+                .Attribute(officeMath + "val")?
+                .Value;
+            var explicitNormal = properties?.Element(officeMath + "nor") is not null
+                || string.Equals(style, "p", StringComparison.OrdinalIgnoreCase);
+            if (!explicitNormal) continue;
+
+            var baseText = string.Concat(
+                run.Elements(officeMath + "t").Select(text => text.Value));
+            if (string.IsNullOrWhiteSpace(baseText)) continue;
+
+            XName targetName;
+            if (script.Name == officeMath + "sSub") targetName = mathMl + "msub";
+            else if (script.Name == officeMath + "sSup") targetName = mathMl + "msup";
+            else targetName = mathMl + "msubsup";
+
+            var target = mathMlRoot
+                .DescendantsAndSelf(targetName)
+                .Where(element => !usedTargets.Contains(element))
+                .FirstOrDefault(element =>
+                {
+                    var children = element.Elements().ToArray();
+                    return children.Length >= 2
+                        && string.Equals(
+                            FlattenMathMlTokenText(children[0]),
+                            baseText,
+                            StringComparison.Ordinal);
+                });
+            if (target is null) continue;
+
+            var targetChildren = target.Elements().ToArray();
+            targetChildren[0].ReplaceWith(
+                new XElement(
+                    mathMl + "mi",
+                    new XAttribute("mathvariant", "normal"),
+                    baseText));
+            usedTargets.Add(target);
+        }
+    }
+
+    private static void RestoreOmmlFunctionApplicationRuns(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var sourceRuns = source.Descendants(officeMath + "r").ToArray();
+        for (var index = 0; index + 1 < sourceRuns.Length; index++)
+        {
+            var run = sourceRuns[index];
+            var properties = run.Element(officeMath + "rPr");
+            var style = properties?
+                .Element(officeMath + "sty")?
+                .Attribute(officeMath + "val")?
+                .Value;
+            var explicitNormal = properties?.Element(officeMath + "nor") is not null
+                || string.Equals(style, "p", StringComparison.OrdinalIgnoreCase);
+            if (!explicitNormal) continue;
+
+            var functionName = string.Concat(
+                run.Elements(officeMath + "t").Select(text => text.Value));
+            if (string.IsNullOrWhiteSpace(functionName)) continue;
+
+            var nextRun = sourceRuns[index + 1];
+            var nextText = string.Concat(
+                nextRun.Elements(officeMath + "t").Select(text => text.Value));
+            if (nextText.Length == 0 || nextText[0] != '\u2061') continue;
+
+            CollapseMathMlUprightSequence(mathMlRoot, mathMl, functionName);
+        }
+    }
+
+    private static bool CollapseMathMlUprightSequence(
+        XElement root,
+        XNamespace mathMl,
+        string expectedText)
+    {
+        foreach (var parent in root.DescendantsAndSelf().ToArray())
+        {
+            var children = parent.Elements().ToArray();
+            for (var start = 0; start < children.Length; start++)
+            {
+                var matched = new List<XElement>();
+                var builder = new StringBuilder();
+                for (var cursor = start; cursor < children.Length; cursor++)
+                {
+                    var child = children[cursor];
+                    if (child.Name != mathMl + "mi") break;
+                    var variant = child.Attribute("mathvariant")?.Value ?? string.Empty;
+                    if (variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) < 0
+                        && variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) < 0)
+                        break;
+                    matched.Add(child);
+                    builder.Append(child.Value);
+                    var candidate = builder.ToString();
+                    if (!expectedText.StartsWith(candidate, StringComparison.Ordinal)) break;
+                    if (!string.Equals(candidate, expectedText, StringComparison.Ordinal)) continue;
+
+                    var replacement = new XElement(
+                        mathMl + "mi",
+                        new XAttribute("mathvariant", "normal"),
+                        expectedText);
+                    matched[0].AddBeforeSelf(replacement);
+                    foreach (var element in matched) element.Remove();
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool IsStandardTexOperatorName(string value)
+    {
+        // Plain TeX/LaTeX operator names whose conventional math presentation is
+        // upright. Keep this intentionally finite; arbitrary alphabetic runs must
+        // remain variables even when Word happens to place them in a limit object.
+        return value is "arccos" or "arcsin" or "arctan" or "arg"
+            or "cos" or "cosh" or "cot" or "coth" or "csc"
+            or "deg" or "det" or "dim" or "exp" or "gcd" or "hom"
+            or "inf" or "ker" or "lg" or "lim" or "liminf" or "limsup"
+            or "ln" or "log" or "max" or "min" or "Pr" or "sec"
+            or "sin" or "sinh" or "sup" or "tan" or "tanh";
+    }
+
+    private static string FlattenMathMlTokenText(XElement element)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        if (element.Name.Namespace != mathMl) return string.Empty;
+        if (element.Name.LocalName is "mi" or "mn" or "mo" or "mtext")
+            return element.Value;
+        if (element.Name.LocalName is not ("mrow" or "mstyle" or "mpadded" or "semantics"))
+            return string.Empty;
+        var builder = new StringBuilder();
+        foreach (var child in element.Elements())
+        {
+            var value = FlattenMathMlTokenText(child);
+            if (value.Length == 0 && child.HasElements) return string.Empty;
+            builder.Append(value);
+        }
+        return builder.ToString();
     }
 
     private static string CanonicalMathMlAccentCharacter(string? officeCharacter) =>
@@ -2099,6 +2578,31 @@ internal static class WordOmmlConverter
             + "</Relationships>");
         WriteEntry(archive, "word/document.xml", documentXml);
         return path;
+    }
+
+    private static string CreateTemporaryAdjacentInlineGroupDocx(
+        IReadOnlyList<BatchEntry> entries)
+    {
+        var body = new StringBuilder("<w:p>");
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            body.Append(ExtractSingleOMath(entry.Omml));
+            if (index + 1 < entries.Count)
+            {
+                // Keep an explicit ordinary Word run between sibling OMath nodes.
+                // It is hidden and contains a zero-width non-joiner, so it has no
+                // visible layout footprint while still being structurally outside
+                // both math zones in the source OpenXML.
+                body.Append("<w:r><w:rPr><w:vanish/></w:rPr><w:t>‌</w:t></w:r>");
+            }
+        }
+        body.Append("</w:p>");
+        var documentXml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + $"<w:document xmlns:w=\"{WordNamespace}\" xmlns:m=\"{MathNamespace}\">"
+            + $"<w:body>{body}<w:sectPr/></w:body></w:document>";
+        return CreateTemporaryDocumentDocx(documentXml);
     }
 
     private static string CreateTemporaryBatchDocx(

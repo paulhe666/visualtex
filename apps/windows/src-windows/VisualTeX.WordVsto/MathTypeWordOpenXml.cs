@@ -39,6 +39,12 @@ internal static class MathTypeWordOpenXml
         internal float HeightPt { get; set; }
     }
 
+    internal sealed class OleSnapshot
+    {
+        internal string ProgId { get; set; } = string.Empty;
+        internal byte[] CompoundFile { get; set; } = Array.Empty<byte>();
+    }
+
     internal sealed class NumberTemplate
     {
         internal List<NumberSegment> Segments { get; } = new();
@@ -113,6 +119,78 @@ internal static class MathTypeWordOpenXml
             return Read(range.WordOpenXML);
         }
         finally { Release(range); }
+    }
+
+    internal static IReadOnlyList<OleSnapshot> ReadOleSnapshots(Word.Range range)
+    {
+        if (range is null) throw new ArgumentNullException(nameof(range));
+        return ReadOleSnapshots(range.WordOpenXML);
+    }
+
+    internal static IReadOnlyList<OleSnapshot> ReadOleSnapshots(string wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml))
+            return Array.Empty<OleSnapshot>();
+
+        var package = XDocument.Parse(wordOpenXml, LoadOptions.PreserveWhitespace);
+        var documentPart = FindPart(package, "/word/document.xml");
+        var relationshipsPart = FindPart(package, "/word/_rels/document.xml.rels");
+        var relationships = relationshipsPart
+            .Descendants(RelationshipNamespace + "Relationship")
+            .Where(item => item.Attribute("Id") is not null)
+            .ToDictionary(
+                item => item.Attribute("Id")!.Value,
+                item => item,
+                StringComparer.Ordinal);
+        var parts = package
+            .Descendants(PackageNamespace + "part")
+            .Where(part => part.Attribute(PackageNamespace + "name") is not null)
+            .GroupBy(
+                part => part.Attribute(PackageNamespace + "name")!.Value,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<OleSnapshot>();
+        foreach (var oleObject in documentPart.Descendants(OfficeNamespace + "OLEObject"))
+        {
+            var snapshot = new OleSnapshot
+            {
+                ProgId = (string?)oleObject.Attribute("ProgID") ?? string.Empty,
+            };
+            var relationshipId =
+                (string?)oleObject.Attribute(OfficeRelationshipNamespace + "id");
+            if (!string.IsNullOrWhiteSpace(relationshipId)
+                && relationships.TryGetValue(relationshipId!, out var relationship)
+                && !string.Equals(
+                    (string?)relationship.Attribute("TargetMode"),
+                    "External",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var target = (string?)relationship.Attribute("Target");
+                if (!string.IsNullOrWhiteSpace(target))
+                {
+                    var partName = ResolveWordPartName(target!);
+                    if (parts.TryGetValue(partName, out var part))
+                    {
+                        var binary = part.Element(PackageNamespace + "binaryData");
+                        if (binary is not null)
+                        {
+                            var encoded = new string(
+                                binary.Value
+                                    .Where(character => !char.IsWhiteSpace(character))
+                                    .ToArray());
+                            try { snapshot.CompoundFile = Convert.FromBase64String(encoded); }
+                            catch (FormatException) { snapshot.CompoundFile = Array.Empty<byte>(); }
+                        }
+                    }
+                }
+            }
+            result.Add(snapshot);
+        }
+        return result;
     }
 
     internal static Fragment Read(string wordOpenXml)
@@ -812,16 +890,39 @@ internal static class MathTypeWordOpenXml
             if (parts.Length != 2
                 || !string.Equals(parts[0].Trim(), property, StringComparison.OrdinalIgnoreCase))
                 continue;
+
             var value = parts[1].Trim();
-            if (value.EndsWith("pt", StringComparison.OrdinalIgnoreCase))
-                value = value.Substring(0, value.Length - 2);
-            if (float.TryParse(
+            var pointsPerUnit = 1d;
+            var units = new[]
+            {
+                (Suffix: "pt", Points: 1d),
+                (Suffix: "in", Points: 72d),
+                (Suffix: "pc", Points: 12d),
+                (Suffix: "cm", Points: 72d / 2.54d),
+                (Suffix: "mm", Points: 72d / 25.4d),
+                // VML/CSS pixels use the Office/CSS 96 dpi convention.
+                (Suffix: "px", Points: 72d / 96d),
+            };
+            foreach (var unit in units)
+            {
+                if (!value.EndsWith(unit.Suffix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                value = value.Substring(0, value.Length - unit.Suffix.Length).Trim();
+                pointsPerUnit = unit.Points;
+                break;
+            }
+
+            if (double.TryParse(
                     value,
                     System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture,
-                    out var points)
-                && points > 0)
-                return points;
+                    out var numericValue)
+                && numericValue > 0)
+            {
+                var points = numericValue * pointsPerUnit;
+                if (points > 0 && points <= float.MaxValue)
+                    return (float)points;
+            }
         }
         throw new InvalidDataException(
             $"Flat OPC MathType VML shape has no valid {property} in '{style}'.");

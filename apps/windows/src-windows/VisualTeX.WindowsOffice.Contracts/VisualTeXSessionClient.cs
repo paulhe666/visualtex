@@ -469,6 +469,22 @@ public sealed class VisualTeXSessionClient : IDisposable
         CancellationToken cancellationToken) =>
         PatchAsync(sessionId, new { status = "failed", error }, cancellationToken);
 
+    public async Task DeleteSessionsBatchAsync(
+        IReadOnlyCollection<string> sessionIds,
+        CancellationToken cancellationToken)
+    {
+        if (sessionIds.Count == 0) return;
+        EnsureAuthorizationHeader();
+        var json = JsonSerializer.Serialize(
+            new { sessionIds = sessionIds.ToArray() },
+            JsonOptions.Default);
+        using var response = await SendTrackedAsync(() => _http.PostAsync(
+            "/api/v1/sessions/batch-delete",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            cancellationToken)).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
     public async Task<OfficeSessionDocument> PatchAsync(
         string sessionId,
         object update,

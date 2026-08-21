@@ -269,7 +269,13 @@ visualtex_vsto_runtime_install:
 
 visualtex_vsto_runtime_failed:
     DetailPrint "Microsoft VSTO Runtime installation failed or the UAC prompt was cancelled. Native Office integration was skipped."
-    IfSilent visualtex_office_done 0
+    IfSilent 0 visualtex_vsto_runtime_failed_interactive
+    ; An unattended native-Office install must never report success when the
+    ; requested Office integration was not installed. Preserve the desktop
+    ; payload, but return a non-zero process exit code to the caller.
+    SetErrorLevel 1
+    Goto visualtex_office_done
+visualtex_vsto_runtime_failed_interactive:
     MessageBox MB_ICONEXCLAMATION "Microsoft VSTO Runtime 安装失败，或管理员权限确认被取消。VisualTeX 主程序已经安装，但本次将跳过 Word/PowerPoint 原生插件。$\r$\n$\r$\n请查看 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-runtime 日志。"
     Goto visualtex_office_done
 
@@ -295,7 +301,13 @@ visualtex_office_static_installed:
 visualtex_office_failed:
     SetDetailsView show
     DetailPrint "VisualTeX main application installed, but the machine-wide Office files, registry entries, COM classes or OLE server failed static installation verification. See the newest vsto-bootstrap and vsto-diagnostic reports under %LOCALAPPDATA%\VisualTeX\office\install-logs."
-    IfSilent visualtex_office_done 0
+    IfSilent 0 visualtex_office_failed_interactive
+    ; /S with native Office integration is used by deployment/acceptance too.
+    ; Returning 0 here previously made a stale VSTO DLL look like a successful
+    ; installer update whenever Word/PowerPoint was still running.
+    SetErrorLevel 1
+    Goto visualtex_office_done
+visualtex_office_failed_interactive:
     MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但 Office 插件的文件、注册信息、COM 类或 OLE 服务未通过静态安装验证。请查看安装详情，以及 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-bootstrap 和 vsto-diagnostic 报告。"
     Goto visualtex_office_done
   ${ElseIf} $VisualTeXOfficeChoice == "none"

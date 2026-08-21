@@ -393,6 +393,22 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-installed-mathtype-reedit-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-mathtype-50-edit-stress",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-format-50-batch-stress",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-vt-omml-50-direct-stress",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-user-100-mathtype-conversion",
                 StringComparison.OrdinalIgnoreCase);
         using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
             ? null
@@ -526,6 +542,42 @@ internal static partial class Program
             {
                 RunWordMathTypeOfflineStorageAcceptance(client, artifactRoot);
             }
+            else if (string.Equals(mode, "mathtype-adjacent-batch-isolation", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeAdjacentBatchIsolationAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-adjacent-format-conversion", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeAdjacentFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-caption-frame-repair", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordCaptionFrameRepairAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-visualtex-mathtype-adjacent-frame", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXMathTypeAdjacentFrameAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-active-user-100-failure-inspect", StringComparison.OrdinalIgnoreCase))
+            {
+                RunActiveUserHundredFailureInspection();
+            }
+            else if (string.Equals(mode, "word-user-100-mathtype-source-audit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserHundredMathTypeSourceAudit();
+            }
+            else if (string.Equals(mode, "word-user-100-mathtype-reverse", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserHundredMathTypeReverseAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-user-100-mathtype-conversion", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordUserHundredMathTypeConversionAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-user-100-mathtype-preview-scan", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserHundredMathTypePreviewScan(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-standalone-codec", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeStandaloneCodecAcceptance(artifactRoot);
@@ -537,6 +589,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-mathtype-direct-paste-symbols", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeDirectPasteSymbolsAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-native-preview-complex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeNativePreviewComplexAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-openxml-clone", StringComparison.OrdinalIgnoreCase))
             {
@@ -609,6 +665,18 @@ internal static partial class Program
             else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledMathTypeReeditRegressionAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-mathtype-50-edit-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledMathTypeFiftyEditStressAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-format-50-batch-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledFormatFiftyBatchStressAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-vt-omml-50-direct-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledVisualTeXOmmlFiftyDirectStressAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-right-left-live", StringComparison.OrdinalIgnoreCase))
             {
@@ -807,6 +875,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-numbered-formula-performance", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordNumberedFormulaPerformanceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbered-middle-artifact-dump", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberedMiddleArtifactDump(artifactRoot);
             }
             else if (string.Equals(mode, "word-numbered-omml-performance", StringComparison.OrdinalIgnoreCase))
             {

@@ -39,7 +39,8 @@ internal static class OfficeOlePreview
         string svgPath,
         float widthPixels,
         float heightPixels,
-        bool usePowerPointStablePhysicalFrame = false)
+        bool usePowerPointStablePhysicalFrame = false,
+        float horizontalSafetyInsetPixels = 0f)
     {
         if (string.IsNullOrWhiteSpace(svgPath))
             throw new ArgumentException("SVG preview path is required.", nameof(svgPath));
@@ -50,6 +51,10 @@ internal static class OfficeOlePreview
             throw new InvalidDataException("SVG preview size is invalid.");
         if (!IsPositiveFinite(widthPixels) || !IsPositiveFinite(heightPixels))
             throw new InvalidDataException("SVG preview dimensions are invalid.");
+        if (float.IsNaN(horizontalSafetyInsetPixels)
+            || float.IsInfinity(horizontalSafetyInsetPixels)
+            || horizontalSafetyInsetPixels < 0f)
+            throw new InvalidDataException("SVG preview safety inset is invalid.");
 
         var directory = Path.GetDirectoryName(svgPath)
             ?? throw new InvalidOperationException("SVG preview has no parent directory.");
@@ -61,7 +66,8 @@ internal static class OfficeOlePreview
                 emfPath,
                 widthPixels,
                 heightPixels,
-                usePowerPointStablePhysicalFrame);
+                usePowerPointStablePhysicalFrame,
+                horizontalSafetyInsetPixels);
             ValidateVectorEmf(emfPath);
             return emfPath;
         }
@@ -208,7 +214,8 @@ internal static class OfficeOlePreview
             string emfPath,
             float widthPixels,
             float heightPixels,
-            bool usePowerPointStablePhysicalFrame)
+            bool usePowerPointStablePhysicalFrame,
+            float horizontalSafetyInsetPixels)
         {
             // Use a real display DC as the EMF reference device. A memory DC
             // obtained from a 1x1 Bitmap records a mismatched physical-device
@@ -313,12 +320,26 @@ internal static class OfficeOlePreview
                     : deviceScaleY;
                 var recordingWidth = widthPixels * coordinateScaleX;
                 var recordingHeight = heightPixels * coordinateScaleY;
+                // MathJax's tight formula viewBox can place italic/Greek glyph ink
+                // exactly on both horizontal edges. Word then replays the EMF/WMF
+                // into an equally tight OLE rectangle and clips the antialiased edge
+                // pixels. Keep the Office object dimensions unchanged, but reserve a
+                // tiny caller-controlled inset inside the same recording frame. This
+                // preserves MathType's native external geometry while preventing the
+                // first/last glyph from touching the metafile clip boundary.
+                var adaptiveInsetPixels = Math.Min(
+                    horizontalSafetyInsetPixels,
+                    widthPixels * 0.12f);
+                var requestedInsetX = adaptiveInsetPixels * coordinateScaleX;
+                var maxInsetX = Math.Max(0d, (recordingWidth - 1d) / 2d);
+                var insetX = Math.Min(requestedInsetX, maxInsetX);
+                var contentRecordingWidth = Math.Max(1d, recordingWidth - 2d * insetX);
                 var rootTransform = new SvgMatrix(
-                    recordingWidth / _viewBox.Width,
+                    contentRecordingWidth / _viewBox.Width,
                     0,
                     0,
                     recordingHeight / _viewBox.Height,
-                    -_viewBox.X * recordingWidth / _viewBox.Width,
+                    insetX - _viewBox.X * contentRecordingWidth / _viewBox.Width,
                     -_viewBox.Y * recordingHeight / _viewBox.Height);
                 var style = SvgStyle.Default;
                 foreach (var child in _root.Elements())

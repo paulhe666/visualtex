@@ -348,7 +348,7 @@ internal static partial class Program
             document.SaveAs2(
                 baseDocumentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument);
-            if (targetFormulaCount >= 100)
+            if (targetFormulaCount == 100)
             {
                 RunHundredFormulaStructuralPerformanceScenarios(
                     application,
@@ -945,6 +945,95 @@ internal static partial class Program
             Release(insertionRange);
             try { document?.Close(Word.WdSaveOptions.wdSaveChanges); } catch { }
             Release(document);
+        }
+    }
+
+    private static void RunWordNumberedMiddleArtifactDump(string artifactRoot)
+    {
+        var path = Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_MIDDLE_ARTIFACT");
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            throw new FileNotFoundException(
+                "Numbered middle-artifact dump requires VISUALTEX_NUMBERED_MIDDLE_ARTIFACT.",
+                path);
+        Directory.CreateDirectory(artifactRoot);
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Open(
+                Path.GetFullPath(path),
+                ReadOnly: true,
+                AddToRecentFiles: false,
+                Visible: false);
+            Console.WriteLine(
+                $"[MIDDLE DUMP] tables={document.Tables.Count} shapes={document.InlineShapes.Count} "
+                + $"frames={document.Frames.Count} bookmarks={document.Bookmarks.Count}");
+            for (var index = 1; index <= Math.Min(25, document.InlineShapes.Count); index++)
+            {
+                Word.InlineShape? shape = null;
+                Word.Range? range = null;
+                Word.Table? table = null;
+                Word.Range? tableRange = null;
+                try
+                {
+                    shape = document.InlineShapes[index];
+                    range = shape.Range;
+                    var metadata = WordFormulaMetadataReader.TryRead(shape);
+                    var tableStart = -1;
+                    var tableEnd = -1;
+                    if (range.Tables.Count > 0)
+                    {
+                        table = range.Tables[1];
+                        tableRange = table.Range;
+                        tableStart = tableRange.Start;
+                        tableEnd = tableRange.End;
+                    }
+                    Console.WriteLine(
+                        $"SHAPE|{index}|range={range.Start}:{range.End}|table={tableStart}:{tableEnd}|" +
+                        $"formulaId={metadata?.FormulaId}|latex={metadata?.Latex}|numbered={metadata?.Numbered}");
+                }
+                finally
+                {
+                    Release(tableRange);
+                    Release(table);
+                    Release(range);
+                    Release(shape);
+                }
+            }
+
+            for (var index = 1; index <= document.Bookmarks.Count; index++)
+            {
+                Word.Bookmark? bookmark = null;
+                Word.Range? range = null;
+                try
+                {
+                    bookmark = document.Bookmarks[index];
+                    var name = bookmark.Name ?? string.Empty;
+                    if (!name.StartsWith("VTO_", StringComparison.Ordinal)
+                        && !name.StartsWith("VTEq_", StringComparison.Ordinal)
+                        && !name.StartsWith("VTEqCap_", StringComparison.Ordinal)
+                        && !name.StartsWith("VTEqNum_", StringComparison.Ordinal))
+                        continue;
+                    range = bookmark.Range;
+                    if (range.Start < 2500 || range.Start > 3400) continue;
+                    Console.WriteLine(
+                        $"BM|{name}|{range.Start}:{range.End}|text={(range.Text ?? string.Empty).Replace("\r", "<CR>").Replace("\a", "<CELL>")}");
+                }
+                finally
+                {
+                    Release(range);
+                    Release(bookmark);
+                }
+            }
+        }
+        finally
+        {
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
         }
     }
 

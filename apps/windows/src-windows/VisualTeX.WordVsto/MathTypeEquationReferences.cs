@@ -273,6 +273,132 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    internal static int RefreshReferences(
+        Document document,
+        ISet<string> bookmarkAliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (bookmarkAliases is null || bookmarkAliases.Count == 0) return 0;
+
+        Fields? fields = null;
+        Field? outer = null;
+        Range? outerCode = null;
+        Fields? nestedFields = null;
+        Field? nested = null;
+        Range? nestedCode = null;
+        Range? nestedResult = null;
+        Microsoft.Office.Interop.Word.Font? resultFont = null;
+        Microsoft.Office.Interop.Word.Font? codeFont = null;
+        Microsoft.Office.Interop.Word.Font? outerCodeFont = null;
+        var updated = 0;
+        try
+        {
+            fields = document.Fields;
+            for (var outerIndex = 1; outerIndex <= fields.Count; outerIndex++)
+            {
+                Release(outerCodeFont);
+                outerCodeFont = null;
+                Release(nestedResult);
+                nestedResult = null;
+                Release(nestedCode);
+                nestedCode = null;
+                Release(nested);
+                nested = null;
+                Release(nestedFields);
+                nestedFields = null;
+                Release(outerCode);
+                outerCode = null;
+                Release(outer);
+                outer = fields[outerIndex];
+                outerCode = outer.Code;
+                nestedFields = outerCode.Fields;
+                if (nestedFields.Count == 0) continue;
+
+                for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                {
+                    Release(codeFont);
+                    codeFont = null;
+                    Release(resultFont);
+                    resultFont = null;
+                    Release(nestedResult);
+                    nestedResult = null;
+                    Release(nestedCode);
+                    nestedCode = null;
+                    Release(nested);
+                    nested = nestedFields[nestedIndex];
+                    nestedCode = nested.Code;
+                    var nestedText = nestedCode.Text ?? string.Empty;
+                    if (!bookmarkAliases.Any(alias =>
+                            nestedText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                        continue;
+
+                    var preferredColor = WdColor.wdColorAutomatic;
+                    try
+                    {
+                        nestedResult = nested.Result;
+                        resultFont = nestedResult.Font;
+                        var current = resultFont.Color;
+                        if (current == WdColor.wdColorAutomatic || (int)current >= 0)
+                            preferredColor = current;
+                    }
+                    catch { }
+
+                    NormalizeMathTypeInternalReferenceStyle(nestedCode);
+                    try
+                    {
+                        codeFont = nestedCode.Font;
+                        codeFont.Color = preferredColor;
+                    }
+                    catch { }
+                    try { nested.Update(); } catch { }
+
+                    Release(nestedResult);
+                    nestedResult = null;
+                    Release(resultFont);
+                    resultFont = null;
+                    try
+                    {
+                        nestedResult = nested.Result;
+                        NormalizeMathTypeInternalReferenceStyle(nestedResult);
+                        resultFont = nestedResult.Font;
+                        resultFont.Color = preferredColor;
+                    }
+                    catch { }
+
+                    // Updating a nested REF can rematerialize the enclosing
+                    // GOTOBUTTON code and reapply Word's built-in red style. Reopen
+                    // that final outer code and normalize it after every update.
+                    Release(outerCodeFont);
+                    outerCodeFont = null;
+                    Release(outerCode);
+                    outerCode = outer.Code;
+                    NormalizeMathTypeInternalReferenceStyle(outerCode);
+                    try
+                    {
+                        outerCodeFont = outerCode.Font;
+                        outerCodeFont.Color = preferredColor;
+                    }
+                    catch { }
+                    updated++;
+                }
+            }
+            return updated;
+        }
+        finally
+        {
+            Release(outerCodeFont);
+            Release(codeFont);
+            Release(resultFont);
+            Release(nestedResult);
+            Release(nestedCode);
+            Release(nested);
+            Release(nestedFields);
+            Release(outerCode);
+            Release(outer);
+            Release(fields);
+        }
+    }
+
     private static void NormalizeMathTypeInternalReferenceStyle(Range range)
     {
         Style? style = null;

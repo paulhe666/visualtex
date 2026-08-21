@@ -309,12 +309,16 @@ internal static class MathTypeMtefCodec
             {
                 if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
                     return splitFencedSuperscript;
+                if (TryCanonicalizeLooseBinomialSequence(children, variant, out var looseBinomialSequence))
+                    return looseBinomialSequence;
                 return Children();
             }
             case "mrow":
             {
                 if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
                     return splitFencedSuperscript;
+                if (TryCanonicalizeLooseBinomialSequence(children, variant, out var looseBinomialSequence))
+                    return looseBinomialSequence;
                 if (TryCanonicalizeMathJaxFencedSuperscriptRow(element, variant, out var fencedSuperscript))
                     return fencedSuperscript;
                 if (TryGetMathJaxFenceRow(element, out var open, out var close, out var fenceChildren))
@@ -521,6 +525,7 @@ internal static class MathTypeMtefCodec
 
     private static string? CanonicalPrimeSignature(string value) => value switch
     {
+        "'" => "o(′)",
         "′" => "o(′)",
         "″" => "o(′)o(′)",
         "‴" => "o(′)o(′)o(′)",
@@ -897,6 +902,98 @@ internal static class MathTypeMtefCodec
         }
     }
 
+    private static bool TryCanonicalizeLooseBinomialSequence(
+        XElement[] elements,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (elements.Length < 3) return false;
+        var builder = new StringBuilder();
+        var replaced = false;
+        for (var index = 0; index < elements.Length;)
+        {
+            if (index + 2 < elements.Length
+                && TryGetLooseFenceToken(elements[index], out var open)
+                && TryGetLooseFenceToken(elements[index + 2], out var close)
+                && NormalizeFence(open) == "("
+                && NormalizeFence(close) == ")")
+            {
+                if (TryCanonicalizeLooseBinomialBody(
+                        elements[index + 1],
+                        variant,
+                        out var binomialBody))
+                {
+                    builder.Append(binomialBody);
+                    index += 3;
+                    replaced = true;
+                    continue;
+                }
+            }
+            builder.Append(CanonicalizeMathMl(elements[index], variant));
+            index++;
+        }
+        if (!replaced) return false;
+        signature = builder.ToString();
+        return true;
+    }
+
+    private static bool TryCanonicalizeLooseBinomialBody(
+        XElement body,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (body.Name.LocalName == "mfrac")
+        {
+            var thickness = ((string?)body.Attribute("linethickness") ?? string.Empty).Trim();
+            var fractionChildren = body.Elements().ToArray();
+            if (!thickness.StartsWith("0", StringComparison.Ordinal)
+                || fractionChildren.Length != 2)
+                return false;
+            signature = "binom("
+                + CanonicalizeMathMl(fractionChildren[0], variant)
+                + ","
+                + CanonicalizeMathMl(fractionChildren[1], variant)
+                + ")";
+            return true;
+        }
+
+        body = UnwrapSingleTransparentContainer(body);
+        if (body.Name.LocalName != "mtable"
+            || !string.Equals(
+                (string?)body.Attribute("data-mtef-pile"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        var rows = body.Elements()
+            .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
+            .ToArray();
+        if (rows.Length != 2) return false;
+        var cells = rows.Select(row => row.Elements()
+                .Where(cell => cell.Name.LocalName == "mtd")
+                .ToArray())
+            .ToArray();
+        if (cells.Any(row => row.Length != 1)) return false;
+        var top = string.Concat(cells[0][0].Elements()
+            .Select(child => CanonicalizeMathMl(child, variant)));
+        var bottom = string.Concat(cells[1][0].Elements()
+            .Select(child => CanonicalizeMathMl(child, variant)));
+        signature = "binom(" + top + "," + bottom + ")";
+        return true;
+    }
+
+    private static XElement UnwrapSingleTransparentContainer(XElement element)
+    {
+        while (element.Name.LocalName is "mrow" or "mstyle" or "mpadded")
+        {
+            var children = element.Elements().ToArray();
+            if (children.Length != 1) break;
+            element = children[0];
+        }
+        return element;
+    }
+
     private static bool TryCanonicalizeMathJaxBinomialFence(
         string open,
         string close,
@@ -927,12 +1024,21 @@ internal static class MathTypeMtefCodec
         var close = NormalizeFence((string?)fenced.Attribute("close") ?? ")");
         if (open != "(" || close != ")") return false;
         var table = fenced.Elements().SingleOrDefault();
-        if (table is not null && table.Name.LocalName == "mrow")
-        {
-            var nested = table.Elements().ToArray();
-            if (nested.Length == 1 && nested[0].Name.LocalName == "mtable")
-                table = nested[0];
-        }
+        // Word's OMML round-trip commonly materializes a native no-bar
+        // fraction as mfenced -> mrow -> mfrac(linethickness=0). Treat that
+        // as the same binomial semantics before checking MathType's PILE form.
+        if (table is not null
+            && TryCanonicalizeLooseBinomialBody(table, variant, out signature))
+            return true;
+        if (table is not null)
+            table = UnwrapSingleTransparentContainer(table);
+        if (table?.Name.LocalName == "mfrac")
+            return TryCanonicalizeMathJaxBinomialFence(
+                open,
+                close,
+                new[] { table },
+                variant,
+                out signature);
         if (table is null || table.Name.LocalName != "mtable") return false;
         // A genuine MathType binomial reaches us through a PILE record. An
         // explicit 2x1 matrix inside parentheses is visually similar, but is a
@@ -1817,7 +1923,7 @@ internal static class MathTypeMtefCodec
             "∫" => new NativeIntegral(0x01, 1),
             "∬" => new NativeIntegral(0x02, 2),
             "∭" => new NativeIntegral(0x03, 3),
-            "∮" => new NativeIntegral(0x04, 1),
+            "∮" => new NativeIntegral(0x05, 1),
             "∲" => new NativeIntegral(0x08, 1),
             "∳" => new NativeIntegral(0x0C, 1),
             _ => default,
@@ -1834,7 +1940,10 @@ internal static class MathTypeMtefCodec
     {
         // MathType 7 uses selector 15 for the integral family. Genuine native
         // equations encode lower/upper presence in 0x10/0x20 and the integral
-        // kind in the low nibble (1=single, 2=double, 3=triple, 4=contour).
+        // kind in the low nibble (1=single, 2=double, 3=triple, 5=contour).
+        // A contour template also requires MathType Extra's loop adornment
+        // character before the ordinary integral glyph. Variation 4 with only
+        // the integral character makes MathPage access invalid native state.
         var variation = integral.VariationKind
             | (lower is null ? 0 : 0x10)
             | (upper is null ? 0 : 0x20);
@@ -1851,6 +1960,17 @@ internal static class MathTypeMtefCodec
         if (upper is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(upper, output);
         output.Add(RecordSym);
+        if (integral.VariationKind == 0x05)
+        {
+            // Exact bytes emitted by genuine MathType 7 for the closed-loop
+            // adornment: fnMTEXTRA, MTCode U+EE11, legacy position 0xD1.
+            EmitScalar(
+                0xEE11,
+                TypefaceMtExtra,
+                output,
+                includeEncoded8: true,
+                encoded8Override: 0xD1);
+        }
         for (var index = 0; index < integral.IntegralCount; index++)
         {
             EmitScalar(
@@ -2460,7 +2580,12 @@ internal static class MathTypeMtefCodec
             : (int?)null;
         foreach (var originalScalar in scalars)
         {
-            var scalar = originalScalar;
+            // Word's OMML reverse transform represents a single prime in a
+            // superscript as ASCII apostrophe, while MathJax/MathType use the
+            // mathematical prime U+2032. Normalize before typeface/glyph lookup
+            // so OMML→MathType writes MathType's native Symbol prime rather than
+            // an italic variable apostrophe.
+            var scalar = originalScalar == '\'' ? 0x2032 : originalScalar;
             var effectiveVariant = variant;
             if (string.IsNullOrWhiteSpace(effectiveVariant)
                 && TryNormalizeLetterlikeForWrite(
@@ -2723,6 +2848,13 @@ internal static class MathTypeMtefCodec
         if (scalar < 0 || scalar > char.MaxValue) return false;
         if (scalar is 0x2020 or 0x2021
             or 0x2032 or 0x2033 or 0x2034
+            // Unicode classifies floor/ceiling as opening/closing punctuation,
+            // not MathSymbol. MathJax emits the common shorthand
+            // \lfloor x\rfloor / \lceil x\rceil as standalone <mo> tokens, so
+            // an MTEF Text-font fallback must still read them back as operators.
+            // Otherwise they become mtext and semantic round-trip validation
+            // rejects an otherwise valid MathType equation.
+            or 0x2308 or 0x2309 or 0x230A or 0x230B
             or 0x2329 or 0x232A
             or 0x27E8 or 0x27E9)
             return true;
@@ -2738,6 +2870,11 @@ internal static class MathTypeMtefCodec
     {
         "〈" or "〈" or "⟨" => "⟨",
         "〉" or "〉" or "⟩" => "⟩",
+        // MathJax emits the mathematical minus U+2212 while Word OMML commonly
+        // serializes the same binary subtraction operator as ASCII hyphen-minus.
+        // They are semantically identical in an <mo> token and must compare equal
+        // across VisualTeX/OMML/MathType round trips.
+        "−" => "-",
         _ => value,
     };
 
@@ -3797,7 +3934,11 @@ internal static class MathTypeMtefCodec
         {
             0x02 => "∬",
             0x03 => "∭",
+            // MathType 7 persists the contour-integral BigOp as kind 5:
+            // an MT Extra contour adornment followed by the ordinary integral.
+            // Keep kind 4 readable for documents produced by older VisualTeX builds.
             0x04 => "∮",
+            0x05 => "∮",
             0x08 => "∲",
             0x0C => "∳",
             _ => "∫",

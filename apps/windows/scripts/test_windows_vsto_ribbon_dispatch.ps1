@@ -114,6 +114,19 @@ function Test-RibbonComDispatch(
         if ($isWordAddIn -and $missingBulkImport) {
             throw "$ClassName Ribbon XML is missing the bulk import callback or high-DPI icon tag."
         }
+        if ($isWordAddIn) {
+            foreach ($requiredFormatControl in @(
+                'VisualTeX.WordVsto.VisualTeXToMathType',
+                'VisualTeX.WordVsto.MathTypeToVisualTeX',
+                'VisualTeX.WordVsto.OmmlToMathType',
+                'VisualTeX.WordVsto.MathTypeToOmml'
+            )) {
+                $controlMarker = 'id="{0}"' -f $requiredFormatControl
+                if ($ribbonXml -notmatch [regex]::Escape($controlMarker)) {
+                    throw "$ClassName Ribbon XML is missing format conversion control $requiredFormatControl."
+                }
+            }
+        }
 
         $unknown = [Runtime.InteropServices.Marshal]::GetIUnknownForObject($instance)
         $callbackPointer = [IntPtr]::Zero
@@ -165,7 +178,15 @@ Test-RibbonComDispatch `
         "OnRedrawSelectionOleToLatex",
         "OnRedrawSelectionOmmlToLatex",
         "OnRedrawDocumentOleToLatex",
-        "OnRedrawDocumentOmmlToLatex"
+        "OnRedrawDocumentOmmlToLatex",
+        "OnConvertVisualTeXToMathTypeSelection",
+        "OnConvertVisualTeXToMathTypeDocument",
+        "OnConvertMathTypeToVisualTeXSelection",
+        "OnConvertMathTypeToVisualTeXDocument",
+        "OnConvertOmmlToMathTypeSelection",
+        "OnConvertOmmlToMathTypeDocument",
+        "OnConvertMathTypeToOmmlSelection",
+        "OnConvertMathTypeToOmmlDocument"
     )
 
 Test-RibbonComDispatch `

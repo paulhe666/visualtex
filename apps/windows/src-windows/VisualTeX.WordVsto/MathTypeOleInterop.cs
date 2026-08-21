@@ -202,15 +202,18 @@ internal static class MathTypeOleInterop
 
     internal static FormulaMetadata ReadMetadata(
         Microsoft.Office.Interop.Word.Application application,
-        InlineShape shape)
+        InlineShape shape,
+        string? knownMathMl = null)
     {
         string mathMl;
         try
         {
-            // Preferred path: Word already owns the complete Equation.DSMT4 CFB.
-            // Parse Equation Native/MTEF directly so VisualTeX works even when
-            // MathType is not installed on this machine.
-            mathMl = MathTypeOleStorage.ReadMathMl(shape);
+            // Batch format conversion captures the CFB once and passes the parsed
+            // MathML here. Avoid reading Equation Native a second time for every
+            // MathType object in a large document.
+            mathMl = !string.IsNullOrWhiteSpace(knownMathMl)
+                ? knownMathMl!
+                : MathTypeOleStorage.ReadMathMl(shape);
         }
         catch (Exception directError)
         {
@@ -560,6 +563,151 @@ internal static class MathTypeOleInterop
         }
     }
 
+    internal static byte[] CreateServerBackedCompoundFileFromText(
+        string text,
+        string progId = "Equation.DSMT4")
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            throw new InvalidDataException(
+                "MathType server-backed storage creation requires formula text.");
+
+        object? oleObject = null;
+        IntPtr lockBytes = IntPtr.Zero;
+        IntPtr storage = IntPtr.Zero;
+        IntPtr globalMemory = IntPtr.Zero;
+        IntPtr locked = IntPtr.Zero;
+        try
+        {
+            oleObject = CreateContainedMathTypeOleObject(
+                progId,
+                out lockBytes,
+                out storage,
+                out var clientSite);
+            if (oleObject is not System.Runtime.InteropServices.ComTypes.IDataObject dataObject)
+                throw new InvalidOperationException(
+                    "OleCreate MathType object does not expose IDataObject.");
+
+            ConvertContainedMathTypeOleObject(oleObject, clientSite);
+            var request = CreateFormatEtc(1); // CF_TEXT; MathType 7 advertises this for DATADIR_SET.
+            var textGlobal = Marshal.StringToHGlobalAnsi(text + "\0");
+            if (textGlobal == IntPtr.Zero)
+                throw new OutOfMemoryException(
+                    "Unable to allocate MathType text transfer memory.");
+            try
+            {
+                var medium = new STGMEDIUM
+                {
+                    tymed = TYMED.TYMED_HGLOBAL,
+                    unionmember = textGlobal,
+                    pUnkForRelease = null,
+                };
+                dataObject.SetData(ref request, ref medium, false);
+            }
+            finally { Marshal.FreeHGlobal(textGlobal); }
+            SaveContainedMathTypeOleObject(oleObject, storage);
+
+            var hr = GetHGlobalFromILockBytes(lockBytes, out globalMemory);
+            if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+            if (globalMemory == IntPtr.Zero)
+                throw new InvalidOperationException(
+                    "MathType OleCreate storage did not expose its backing HGLOBAL.");
+            var size = GlobalSize(globalMemory).ToUInt64();
+            if (size == 0 || size > 64UL * 1024UL * 1024UL)
+                throw new InvalidDataException(
+                    $"MathType OleCreate produced an unexpected storage size of {size} bytes.");
+            locked = GlobalLock(globalMemory);
+            if (locked == IntPtr.Zero)
+                throw new InvalidOperationException(
+                    "Windows could not lock the MathType OleCreate storage HGLOBAL.");
+            var bytes = new byte[checked((int)size)];
+            Marshal.Copy(locked, bytes, 0, bytes.Length);
+            if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(bytes))
+                throw new InvalidDataException(
+                    "MathType OleCreate did not persist a valid Equation.DSMT4 Compound File.");
+            _ = MathTypeOleStorage.ReadMathMl(bytes);
+            return bytes;
+        }
+        finally
+        {
+            if (locked != IntPtr.Zero && globalMemory != IntPtr.Zero)
+            {
+                try { GlobalUnlock(globalMemory); } catch { }
+            }
+            CloseOleObject(oleObject);
+            ReleaseRawComPointer(ref storage);
+            ReleaseRawComPointer(ref lockBytes);
+            Release(oleObject);
+        }
+    }
+
+    internal static byte[] CreateServerBackedCompoundFile(
+        string mathMl,
+        string progId = "Equation.DSMT4")
+    {
+        if (string.IsNullOrWhiteSpace(mathMl)
+            || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "MathType server-backed storage creation requires valid MathML.");
+
+        object? oleObject = null;
+        IntPtr lockBytes = IntPtr.Zero;
+        IntPtr storage = IntPtr.Zero;
+        IntPtr globalMemory = IntPtr.Zero;
+        IntPtr locked = IntPtr.Zero;
+        try
+        {
+            oleObject = CreateContainedMathTypeOleObject(
+                progId,
+                out lockBytes,
+                out storage,
+                out var clientSite);
+            if (oleObject is not System.Runtime.InteropServices.ComTypes.IDataObject dataObject)
+                throw new InvalidOperationException(
+                    "OleCreate MathType object does not expose IDataObject.");
+
+            // MathType's OLE contract requires the client item to enter its
+            // RunForConversion verb before accepting programmatic MathML SetData.
+            // A dormant OleCreate object otherwise returns DV_E_FORMATETC.
+            ConvertContainedMathTypeOleObject(oleObject, clientSite);
+            WriteMathMlToDataObject(dataObject, mathMl);
+            SaveContainedMathTypeOleObject(oleObject, storage);
+
+            var hr = GetHGlobalFromILockBytes(lockBytes, out globalMemory);
+            if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+            if (globalMemory == IntPtr.Zero)
+                throw new InvalidOperationException(
+                    "MathType OleCreate storage did not expose its backing HGLOBAL.");
+
+            var size = GlobalSize(globalMemory).ToUInt64();
+            if (size == 0 || size > 64UL * 1024UL * 1024UL)
+                throw new InvalidDataException(
+                    $"MathType OleCreate produced an unexpected storage size of {size} bytes.");
+            locked = GlobalLock(globalMemory);
+            if (locked == IntPtr.Zero)
+                throw new InvalidOperationException(
+                    "Windows could not lock the MathType OleCreate storage HGLOBAL.");
+
+            var bytes = new byte[checked((int)size)];
+            Marshal.Copy(locked, bytes, 0, bytes.Length);
+            if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(bytes))
+                throw new InvalidDataException(
+                    "MathType OleCreate did not persist a valid Equation.DSMT4 Compound File.");
+            _ = MathTypeOleStorage.ReadMathMl(bytes);
+            return bytes;
+        }
+        finally
+        {
+            if (locked != IntPtr.Zero && globalMemory != IntPtr.Zero)
+            {
+                try { GlobalUnlock(globalMemory); } catch { }
+            }
+            CloseOleObject(oleObject);
+            ReleaseRawComPointer(ref storage);
+            ReleaseRawComPointer(ref lockBytes);
+            Release(oleObject);
+        }
+    }
+
     internal static string DescribeInitializedStandaloneServerFormats(
         string progId = "Equation.DSMT4")
     {
@@ -827,14 +975,6 @@ internal static class MathTypeOleInterop
 
     private static object GetRunningMathTypeObject(OLEFormat format, Capabilities capabilities)
     {
-        if (TryDescribeVisibleStandaloneMathType(out var activeWindow))
-        {
-            throw new InvalidOperationException(
-                "MathType currently has an interactive equation window open. "
-                + "Finish or close that MathType editing window before VisualTeX accesses this OLE equation. "
-                + $"Active MathType window: {activeWindow}");
-        }
-
         // MathType's documented IDataObject contract requires the OLE server to
         // be started with its custom RunForConversion verb before Object is
         // queried. Word can expose a dormant OLE proxy through format.Object
@@ -943,6 +1083,8 @@ internal static class MathTypeOleInterop
             if (oleObjectPointer == IntPtr.Zero)
                 throw new COMException("OleCreate returned no MathType IOleObject pointer.");
             var oleObject = Marshal.GetObjectForIUnknown(oleObjectPointer);
+            hr = OleSetContainedObject(oleObject, true);
+            if (hr < 0) Marshal.ThrowExceptionForHR(hr);
             hr = OleRun(oleObject);
             if (hr < 0) Marshal.ThrowExceptionForHR(hr);
             return oleObject;
@@ -1084,7 +1226,7 @@ internal static class MathTypeOleInterop
         // SetData path explicitly uses the CLR Marshal allocator for the HGLOBAL
         // payload instead of constructing a movable GlobalAlloc block manually.
         // Keep ownership in the caller (release=false) and free it after SetData.
-        var global = Marshal.StringToHGlobalAnsi(mathMl);
+        var global = Marshal.StringToHGlobalAnsi(ToAsciiMathMlPayload(mathMl));
         if (global == IntPtr.Zero)
             throw new OutOfMemoryException("Unable to allocate MathType MathML transfer memory.");
         try
@@ -1263,7 +1405,7 @@ internal static class MathTypeOleInterop
                 || !string.Equals(root.Name.LocalName, "math", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException(
                     "MathType returned XML whose root element is not MathML <math>.");
-            return root.ToString(SaveOptions.DisableFormatting);
+            return NormalizeMathMlRoot(root);
         }
         catch (System.Xml.XmlException error)
         {
@@ -1271,6 +1413,62 @@ internal static class MathTypeOleInterop
                 "MathType returned malformed MathML XML.",
                 error);
         }
+    }
+
+    private static string ToAsciiMathMlPayload(string mathMl)
+    {
+        var builder = new StringBuilder(mathMl.Length + 64);
+        for (var index = 0; index < mathMl.Length; index++)
+        {
+            var value = mathMl[index];
+            if (value <= 0x7F)
+            {
+                builder.Append(value);
+                continue;
+            }
+
+            int codePoint;
+            if (char.IsHighSurrogate(value)
+                && index + 1 < mathMl.Length
+                && char.IsLowSurrogate(mathMl[index + 1]))
+            {
+                codePoint = char.ConvertToUtf32(value, mathMl[++index]);
+            }
+            else
+            {
+                codePoint = value;
+            }
+            builder.Append("&#x")
+                .Append(codePoint.ToString("X", System.Globalization.CultureInfo.InvariantCulture))
+                .Append(';');
+        }
+        return builder.ToString();
+    }
+
+    private static string NormalizeMathMlRoot(XElement root)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+
+        XNode CloneNode(XNode node)
+        {
+            if (node is XElement element)
+            {
+                return new XElement(
+                    mathMl + element.Name.LocalName,
+                    element.Attributes()
+                        .Where(attribute => !attribute.IsNamespaceDeclaration)
+                        .Select(attribute =>
+                            attribute.Name.Namespace == XNamespace.Xml
+                                ? new XAttribute(XNamespace.Xml + attribute.Name.LocalName, attribute.Value)
+                                : new XAttribute(attribute.Name.LocalName, attribute.Value)),
+                    element.Nodes().Select(CloneNode));
+            }
+            if (node is XText text) return new XText(text.Value);
+            if (node is XCData cdata) return new XCData(cdata.Value);
+            return new XText(string.Empty);
+        }
+
+        return ((XElement)CloneNode(root)).ToString(SaveOptions.DisableFormatting);
     }
 
     private static int FindUtf16Terminator(byte[] bytes, int start)
@@ -1288,6 +1486,7 @@ internal static class MathTypeOleInterop
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
+        InlineShapes? paragraphShapes = null;
         try
         {
             paragraphs = range.Paragraphs;
@@ -1301,6 +1500,14 @@ internal static class MathTypeOleInterop
             // U+0015 in Paragraph.Range.Text.  If that field shares the paragraph
             // with the MathType OLE, this is unambiguously a display equation.
             if (ContainsMathTypeDisplayNumberField(paragraphRange)) return "block";
+
+            // An unnumbered MathType display equation is a single equation object
+            // occupying its paragraph. A paragraph containing multiple inline
+            // objects is an inline formula run even when there is no prose between
+            // them. Otherwise zero-gap OLE+OLE is misclassified as display math
+            // and the conversion safety check refuses the neighboring object.
+            paragraphShapes = paragraphRange.InlineShapes;
+            if (paragraphShapes.Count != 1) return "inline";
 
             var text = (paragraphRange.Text ?? string.Empty)
                 .Replace("\r", string.Empty)
@@ -1325,6 +1532,7 @@ internal static class MathTypeOleInterop
         catch { return "inline"; }
         finally
         {
+            Release(paragraphShapes);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
@@ -1600,6 +1808,11 @@ internal static class MathTypeOleInterop
         out IntPtr lockBytes);
 
     [DllImport("ole32.dll")]
+    private static extern int GetHGlobalFromILockBytes(
+        IntPtr lockBytes,
+        out IntPtr globalMemory);
+
+    [DllImport("ole32.dll")]
     private static extern int StgCreateDocfileOnILockBytes(
         IntPtr lockBytes,
         uint mode,
@@ -1608,6 +1821,11 @@ internal static class MathTypeOleInterop
 
     [DllImport("ole32.dll")]
     private static extern int OleRun([MarshalAs(UnmanagedType.IUnknown)] object unknown);
+
+    [DllImport("ole32.dll")]
+    private static extern int OleSetContainedObject(
+        [MarshalAs(UnmanagedType.IUnknown)] object unknown,
+        [MarshalAs(UnmanagedType.Bool)] bool contained);
 
     [DllImport("ole32.dll")]
     private static extern int OleGetAutoConvert(ref Guid clsidOld, out Guid clsidNew);

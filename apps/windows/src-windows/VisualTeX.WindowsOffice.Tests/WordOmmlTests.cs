@@ -88,6 +88,255 @@ public sealed class WordOmmlTests
             element => element.Value is "e" or "i");
     }
 
+    [Theory]
+    [InlineData("lim")]
+    [InlineData("max")]
+    [InlineData("min")]
+    [InlineData("sup")]
+    [InlineData("inf")]
+    [InlineData("limsup")]
+    [InlineData("liminf")]
+    public void WordMaterializedLimitOperatorKeepsUprightBaseGrouped(string functionName)
+    {
+        // This fixture mirrors the actual Word-saved structure produced after
+        // OMath.BuildUp(): Word stores a standard operator in m:limLow but may
+        // discard the original m:nor flag from its base run.
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:limLow><m:limLowPr/><m:e><m:r>"
+            + $"<m:t>{functionName}</m:t>"
+            + "</m:r></m:e><m:lim><m:r><m:t>x→0</m:t></m:r></m:lim></m:limLow>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: true);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var script = document
+            .Descendants()
+            .First(element => element.Name == presentationMath + "msub"
+                || element.Name == presentationMath + "munder");
+        var baseToken = script.Elements().First();
+
+        Assert.Equal(presentationMath + "mi", baseToken.Name);
+        Assert.Equal(functionName, baseToken.Value);
+        Assert.Equal("normal", baseToken.Attribute("mathvariant")?.Value);
+    }
+
+    [Theory]
+    [InlineData("sin")]
+    [InlineData("cos")]
+    [InlineData("log")]
+    [InlineData("abc")]
+    public void WordMaterializedPlainScriptBaseKeepsSingleUprightToken(string baseText)
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:sSup><m:e><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr>"
+            + $"<m:t>{baseText}</m:t></m:r></m:e>"
+            + "<m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var baseToken = document.Descendants(presentationMath + "msup").First().Elements().First();
+
+        Assert.Equal(presentationMath + "mi", baseToken.Name);
+        Assert.Equal(baseText, baseToken.Value);
+        Assert.Equal("normal", baseToken.Attribute("mathvariant")?.Value);
+    }
+
+    [Theory]
+    [InlineData("log")]
+    [InlineData("ln")]
+    [InlineData("exp")]
+    [InlineData("sin")]
+    public void WordMaterializedFunctionApplicationKeepsPlainRunGrouped(string functionName)
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr>"
+            + $"<m:t>{functionName}</m:t></m:r>"
+            + "<m:r><m:t>⁡x</m:t></m:r>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.Contains(
+            document.Descendants(presentationMath + "mi"),
+            token => token.Value == functionName
+                && token.Attribute("mathvariant")?.Value == "normal");
+    }
+
+    [Fact]
+    public void WordMaterializedPlainRunWithoutFunctionApplicationIsNotForcedIntoFunctionToken()
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>abc</m:t></m:r>"
+            + "<m:r><m:t>+x</m:t></m:r>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.DoesNotContain(
+            document.Descendants(presentationMath + "mi"),
+            token => token.Value == "abc"
+                && token.Attribute("mathvariant")?.Value == "normal");
+    }
+
+    [Theory]
+    [InlineData("∀")]
+    [InlineData("∃")]
+    [InlineData("¬")]
+    public void OmmlReverseRestoresPureMathSymbolTextAsOperator(string symbol)
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:rPr><m:nor/></m:rPr>"
+            + $"<m:t>{symbol}</m:t></m:r>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.Contains(
+            document.Descendants(presentationMath + "mo"),
+            token => token.Value == symbol);
+        Assert.DoesNotContain(
+            document.Descendants(presentationMath + "mtext"),
+            token => token.Value == symbol);
+    }
+
+    [Fact]
+    public void OmmlReverseDoesNotReclassifyOrdinaryTextAsOperator()
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:rPr><m:nor/></m:rPr><m:t>if</m:t></m:r>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.DoesNotContain(
+            document.Descendants(presentationMath + "mo"),
+            token => token.Value == "if");
+    }
+
+    [Fact]
+    public void MathTypePileBinomialTransformsToNativeNoBarFractionOmml()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\" separators=\"\"><mrow>"
+            + "<mtable data-mtef-pile=\"true\">"
+            + "<mtr><mtd><mi>n</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>k</mi></mtd></mtr>"
+            + "</mtable></mrow></mfenced></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace officeMath = MathNamespace;
+        var fraction = document.Descendants(officeMath + "f").Single();
+
+        Assert.Equal(
+            "noBar",
+            fraction.Element(officeMath + "fPr")?
+                .Element(officeMath + "type")?
+                .Attribute(officeMath + "val")?
+                .Value);
+        Assert.Empty(document.Descendants(officeMath + "m"));
+    }
+
+    [Fact]
+    public void ExplicitColumnMatrixDoesNotUseMathTypePileBinomialNormalization()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\" separators=\"\"><mrow>"
+            + "<mtable><mtr><mtd><mi>n</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>k</mi></mtd></mtr></mtable>"
+            + "</mrow></mfenced></math>";
+
+        var normalized = WordOmmlConverter.NormalizeMathTypeBinomialPiles(mathMl);
+        var document = XDocument.Parse(normalized);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.Single(document.Descendants(presentationMath + "mtable"));
+        Assert.Empty(document.Descendants(presentationMath + "mfrac"));
+    }
+
+    [Fact]
+    public void OmmlReverseRestoresNoBarFractionThicknessForBinomialSemantics()
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:t>(</m:t></m:r>"
+            + "<m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr>"
+            + "<m:num><m:r><m:t>n</m:t></m:r></m:num>"
+            + "<m:den><m:r><m:t>k</m:t></m:r></m:den></m:f>"
+            + "<m:r><m:t>)</m:t></m:r>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var fraction = document.Descendants(presentationMath + "mfrac").Single();
+        var children = document.Root!.Elements().ToArray();
+
+        Assert.Equal("0", fraction.Attribute("linethickness")?.Value);
+        Assert.Equal(3, children.Length);
+        Assert.Equal("mo", children[0].Name.LocalName);
+        Assert.Equal("(", children[0].Value);
+        Assert.Same(fraction, children[1]);
+        Assert.Equal("mo", children[2].Name.LocalName);
+        Assert.Equal(")", children[2].Value);
+    }
+
+    [Fact]
+    public void OmmlReverseDoesNotZeroOrdinaryFractionThickness()
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:f><m:fPr/>"
+            + "<m:num><m:r><m:t>a</m:t></m:r></m:num>"
+            + "<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var fraction = document.Descendants(presentationMath + "mfrac").Single();
+
+        Assert.Null(fraction.Attribute("linethickness"));
+    }
+
+    [Fact]
+    public void WordMaterializedLimitDoesNotJoinArbitraryVariableName()
+    {
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:limLow><m:limLowPr/><m:e><m:r><m:t>abc</m:t></m:r></m:e>"
+            + "<m:lim><m:r><m:t>n</m:t></m:r></m:lim></m:limLow>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: false);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        Assert.DoesNotContain(
+            document.Descendants(presentationMath + "mi"),
+            token => token.Value == "abc"
+                && token.Attribute("mathvariant")?.Value == "normal");
+    }
+
     [Fact]
     public void OfficeMathMlTransformProducesNativeFractionAndSuperscript()
     {

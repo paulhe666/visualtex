@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
@@ -148,6 +149,81 @@ internal static class WordOmmlNativeSource
         // is important for large numbered/redraw workloads.
         metadata.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
             equationRange.WordOpenXML);
+    }
+
+    internal static int RefreshFingerprintsFromDocumentOpenXml(
+        Document document,
+        IReadOnlyCollection<string> formulaIds)
+    {
+        if (formulaIds is null || formulaIds.Count == 0) return 0;
+        Range? content = null;
+        try
+        {
+            content = document.Content;
+            var wordOpenXml = content.WordOpenXML ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(wordOpenXml))
+                throw new InvalidDataException(
+                    "Word returned empty document XML while finalizing OMML fingerprints.");
+
+            var package = XDocument.Parse(wordOpenXml, LoadOptions.PreserveWhitespace);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            XNamespace math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            var formulaByBookmark = formulaIds
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    WordOmmlFormulaStore.BookmarkName,
+                    formulaId => formulaId,
+                    StringComparer.OrdinalIgnoreCase);
+            var fingerprints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? pendingFormulaId = null;
+
+            foreach (var element in package.Descendants())
+            {
+                if (element.Name == word + "bookmarkStart")
+                {
+                    var name = (string?)element.Attribute(word + "name") ?? string.Empty;
+                    if (name.StartsWith("VTOMML_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pendingFormulaId = formulaByBookmark.TryGetValue(name, out var formulaId)
+                            ? formulaId
+                            : null;
+                    }
+                    continue;
+                }
+                if (pendingFormulaId is null || element.Name != math + "oMath")
+                    continue;
+
+                fingerprints[pendingFormulaId] =
+                    WordOmmlConverter.ComputeOmmlFingerprint(
+                        element.ToString(SaveOptions.DisableFormatting));
+                pendingFormulaId = null;
+                if (fingerprints.Count == formulaByBookmark.Count)
+                    break;
+            }
+
+            if (fingerprints.Count != formulaByBookmark.Count)
+            {
+                var missing = formulaByBookmark.Values
+                    .Where(formulaId => !fingerprints.ContainsKey(formulaId))
+                    .Take(5)
+                    .ToArray();
+                throw new InvalidDataException(
+                    $"Word document XML exposed {fingerprints.Count}/{formulaByBookmark.Count} converted OMML formulas while finalizing fingerprints. Missing: {string.Join(", ", missing)}");
+            }
+
+            var updated = 0;
+            foreach (var pair in fingerprints)
+            {
+                var metadata = WordOmmlFormulaStore.TryRead(document, pair.Key)
+                    ?? throw new InvalidDataException(
+                        $"Converted OMML metadata '{pair.Key}' disappeared before fingerprint finalization.");
+                metadata.NativeOmmlFingerprint = pair.Value;
+                WordOmmlFormulaStore.Save(document, metadata);
+                updated++;
+            }
+            return updated;
+        }
+        finally { Release(content); }
     }
 
     internal static string ReadCompleteEquationWordOpenXml(

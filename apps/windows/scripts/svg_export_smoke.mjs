@@ -134,6 +134,95 @@ for (const [name, latex] of cases) {
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
+const timesFunctionRuns = [
+  ["lim", String.raw`\lim_{x\to0}`],
+  ["sin", String.raw`\sin x`],
+  ["cos", String.raw`\cos x`],
+  ["log", String.raw`\log x`],
+  ["max", String.raw`\max_{i} a_i`],
+  ["min", String.raw`\min_{i} a_i`],
+  ["operatorname-rank", String.raw`\operatorname{rank}(A)`],
+];
+for (const displayMode of [false, true]) {
+  for (const [name, latex] of timesFunctionRuns) {
+    const svg = latexToSvg(latex, {
+      displayMode,
+      fontSizePt: 12,
+      paddingPx: 0,
+      background: "transparent",
+      formulaLetterFont: "times",
+    }).svg;
+    const groups = svg.match(/<g\b[^>]*data-mml-node=["'](?:mi|mo)["'][^>]*>[\s\S]*?<\/g>/gi) ?? [];
+    const functionGroup = groups.find((group) => {
+      const characters = [...group.matchAll(/<text\b[^>]*>([^<]*)<\/text>/gi)]
+        .map((match) => match[1])
+        .join("");
+      return name === "operatorname-rank" ? characters === "rank" : characters === name;
+    });
+    assert.ok(functionGroup, `${name} Times function run is present (${displayMode ? "display" : "inline"})`);
+    const glyphTransforms = [...functionGroup.matchAll(/<text\b[^>]*\btransform=["']([^"']+)["'][^>]*>/gi)]
+      .map((match) => match[1]);
+    const expectedLength = name === "operatorname-rank" ? 4 : name.length;
+    assert.equal(glyphTransforms.length, expectedLength, `${name} Times function glyph count`);
+    for (let index = 1; index < glyphTransforms.length; index += 1) {
+      assert.match(
+        glyphTransforms[index],
+        /translate\s*\(/i,
+        `${name} Times function glyph ${index + 1} preserves MathJax horizontal placement`,
+      );
+    }
+  }
+}
+
+const accentCommands = [
+  ["bar", String.raw`\bar{a}`],
+  ["overline", String.raw`\overline{abc}`],
+  ["hat", String.raw`\hat{a}`],
+  ["widehat", String.raw`\widehat{abc}`],
+  ["vec", String.raw`\vec{a}`],
+  ["overleftrightarrow", String.raw`\overleftrightarrow{AB}`],
+  ["dot", String.raw`\dot{a}`],
+  ["ddot", String.raw`\ddot{a}`],
+  ["tilde", String.raw`\tilde{a}`],
+  ["widetilde", String.raw`\widetilde{abc}`],
+];
+
+for (const [name, latex] of accentCommands) {
+  const mathMl = latexToMathMl(latex, false);
+  assert.match(mathMl, /<mover(?:\s|>)/, `${name} remains a MathML over-accent`);
+  assertNoUnknownMathCommand(mathMl, `${name} accent`);
+  const svg = latexToSvg(latex, {
+    displayMode: false,
+    fontSizePt: 14,
+    paddingPx: 8,
+    background: "transparent",
+  }).svg;
+  assert.match(svg, /data-mml-node="mover"/, `${name} remains an SVG over-accent`);
+}
+assert.doesNotMatch(
+  latexToMathMl(String.raw`\bar{a}`, false),
+  />bar</i,
+  "native \\bar must never be rewritten to the siunitx unit text 'bar'",
+);
+assert.match(
+  latexToMathMl(String.raw`\square`, false),
+  /&#x25FB;/i,
+  "native \\square must remain the white-square relation symbol",
+);
+const nativeUnitCommands = latexToMathMl(String.raw`\ohm+\degree+\micro`, false);
+assert.match(nativeUnitCommands, /&#x2126;/i, "native \\ohm unit symbol");
+assert.match(nativeUnitCommands, /&#xB0;/i, "native \\degree unit symbol");
+assert.match(nativeUnitCommands, /&#xB5;/i, "native \\micro unit symbol");
+const siunitxBar = latexToMathMl(String.raw`\SI{3}{\bar}`, false);
+assert.match(siunitxBar, />bar</i, "siunitx \\bar still means the bar pressure unit");
+assertNoUnknownMathCommand(siunitxBar, "siunitx bar unit");
+const siunitxSquare = latexToMathMl(
+  String.raw`\SI{3}{\meter\per\second\square}`,
+  false,
+);
+assert.match(siunitxSquare, /<msup>/, "siunitx \\square still means a squared unit");
+assertNoUnknownMathCommand(siunitxSquare, "siunitx square unit");
+
 for (const [command, character] of extendedIntegralCases) {
   const latex = `\\${command}_{\\Sigma} a\\,\\mathrm{d}S`;
   const mathMl = latexToMathMl(latex, true);

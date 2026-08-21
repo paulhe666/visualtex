@@ -165,22 +165,41 @@ internal static class MathTypeOleStorage
             _disposed = true;
             try
             {
-                if (_replacementProxy is not null
-                    && OleIsCurrentClipboard(_replacementProxy) == 0)
+                if (_replacementProxy is not null)
                 {
-                    // PasteSpecial has already consumed the live IDataObject. Flush
-                    // it while the proxy is still strongly alive so OLE owns static
-                    // rendered clipboard data before this transaction unwinds.
-                    // This is critical in real Word + MathType: re-registering the
-                    // previous live IDataObject here can create an ole32/USER32
-                    // re-entrancy loop on Word's UI thread after the Session is
-                    // already marked completed.
-                    var flushResult = OleFlushClipboard();
-                    if (flushResult < 0)
+                    var currentResult = OleIsCurrentClipboard(_replacementProxy);
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                            "1",
+                            StringComparison.Ordinal))
                     {
-                        // Stability is more important than retaining a live proxy.
-                        // Detach it explicitly if OLE could not render the formats.
-                        try { OleSetClipboard(null); } catch { }
+                        Console.WriteLine(
+                            $"    [MathType clipboard transaction] OleIsCurrentClipboard=0x{currentResult:X8}");
+                    }
+                    if (currentResult == 0)
+                    {
+                        // PasteSpecial has already consumed the live IDataObject. Flush
+                        // it while the proxy is still strongly alive so OLE owns static
+                        // rendered clipboard data before this transaction unwinds.
+                        // This is critical in real Word + MathType: re-registering the
+                        // previous live IDataObject here can create an ole32/USER32
+                        // re-entrancy loop on Word's UI thread after the Session is
+                        // already marked completed.
+                        var flushResult = OleFlushClipboard();
+                        if (string.Equals(
+                                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                                "1",
+                                StringComparison.Ordinal))
+                        {
+                            Console.WriteLine(
+                                $"    [MathType clipboard transaction] OleFlushClipboard=0x{flushResult:X8}");
+                        }
+                        if (flushResult < 0)
+                        {
+                            // Stability is more important than retaining a live proxy.
+                            // Detach it explicitly if OLE could not render the formats.
+                            try { OleSetClipboard(null); } catch { }
+                        }
                     }
                 }
             }

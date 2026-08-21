@@ -29,6 +29,7 @@ internal static class MathMlToLatexConverter
             ["∗"] = @"\ast ",
             ["†"] = @"\dagger ",
             ["‡"] = @"\ddagger ",
+            ["'"] = @"\prime ",
             ["′"] = @"\prime ",
             ["″"] = @"\prime\prime ",
             ["∀"] = @"\forall ",
@@ -176,8 +177,72 @@ internal static class MathMlToLatexConverter
         };
     }
 
-    private static string ConvertChildren(XElement element) =>
-        string.Concat(element.Elements().Select(ConvertElement));
+    private static string ConvertChildren(XElement element)
+    {
+        var children = element.Elements().ToArray();
+        if (children.Length < 3)
+            return string.Concat(children.Select(ConvertElement));
+
+        var builder = new StringBuilder();
+        for (var index = 0; index < children.Length;)
+        {
+            if (index + 2 < children.Length
+                && IsSimpleOperator(children[index], "(")
+                && IsSimpleOperator(children[index + 2], ")")
+                && TryConvertLooseBinomialBody(children[index + 1], out var binomial))
+            {
+                builder.Append(binomial);
+                index += 3;
+                continue;
+            }
+            builder.Append(ConvertElement(children[index]));
+            index++;
+        }
+        return builder.ToString();
+    }
+
+    private static bool TryConvertLooseBinomialBody(XElement body, out string latex)
+    {
+        latex = string.Empty;
+        body = UnwrapSingleTransparentMathMlContainer(body);
+        if (body.Name.LocalName == "mfrac")
+        {
+            var lineThickness = ((string?)body.Attribute("linethickness") ?? string.Empty).Trim();
+            var fractionChildren = body.Elements().ToArray();
+            if (!lineThickness.StartsWith("0", StringComparison.Ordinal)
+                || fractionChildren.Length < 2)
+                return false;
+            latex = @"\binom{" + ConvertElement(fractionChildren[0]) + "}{"
+                + ConvertElement(fractionChildren[1]) + "}";
+            return true;
+        }
+
+        if (body.Name.LocalName != "mtable"
+            || !string.Equals(
+                (string?)body.Attribute("data-mtef-pile"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        var rows = body.Elements()
+            .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
+            .ToArray();
+        if (rows.Length != 2) return false;
+        var cells = rows.Select(row => row.Elements()
+                .Where(cell => cell.Name.LocalName == "mtd")
+                .ToArray())
+            .ToArray();
+        if (cells.Any(row => row.Length != 1)) return false;
+        latex = @"\binom{" + ConvertElement(cells[0][0]) + "}{"
+            + ConvertElement(cells[1][0]) + "}";
+        return true;
+    }
+
+    private static bool IsSimpleOperator(XElement element, string value)
+    {
+        element = UnwrapSingleTransparentMathMlContainer(element);
+        return element.Name.LocalName == "mo"
+            && string.Equals(element.Value.Trim(), value, StringComparison.Ordinal);
+    }
 
     private static string ConvertFraction(XElement element)
     {
@@ -225,7 +290,7 @@ internal static class MathMlToLatexConverter
         var over = children[1].Value.Trim();
         return over switch
         {
-            "¯" or "‾" => @"\overline{" + body + "}",
+            "¯" or "‾" or "―" => @"\overline{" + body + "}",
             "→" => @"\vec{" + body + "}",
             "←" => @"\overleftarrow{" + body + "}",
             "↔" => @"\overleftrightarrow{" + body + "}",
@@ -246,9 +311,11 @@ internal static class MathMlToLatexConverter
             return brace;
         var body = ConvertElement(children[0]);
         var under = children[1].Value.Trim();
+        if (IsLimitLikeOperatorLatex(body))
+            return GroupBase(body) + "_{" + ScriptArgument(children[1]) + "}";
         return under switch
         {
-            "_" or "¯" or "‾" => @"\underline{" + body + "}",
+            "_" or "¯" or "‾" or "―" => @"\underline{" + body + "}",
             "⏟" or "\uFE38" => @"\underbrace{" + body + "}",
             _ => @"\underset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };
@@ -261,6 +328,7 @@ internal static class MathMlToLatexConverter
         out string latex)
     {
         latex = string.Empty;
+        baseElement = UnwrapSingleTransparentMathMlContainer(baseElement);
         if (baseElement.Name.LocalName != (top ? "mover" : "munder")) return false;
         var inner = baseElement.Elements().ToList();
         if (inner.Count < 2) return false;
@@ -288,6 +356,18 @@ internal static class MathMlToLatexConverter
         return true;
     }
 
+    private static XElement UnwrapSingleTransparentMathMlContainer(XElement element)
+    {
+        var current = element;
+        while (current.Name.LocalName is "mrow" or "mstyle" or "mpadded")
+        {
+            var children = current.Elements().ToArray();
+            if (children.Length != 1) break;
+            current = children[0];
+        }
+        return current;
+    }
+
     private static string ConvertUnderOver(XElement element)
     {
         var children = element.Elements().ToList();
@@ -309,6 +389,8 @@ internal static class MathMlToLatexConverter
     {
         var open = (string?)element.Attribute("open") ?? "(";
         var close = (string?)element.Attribute("close") ?? ")";
+        if (TryConvertFencedNoBarFractionToBinomial(element, open, close, out var noBarBinomial))
+            return noBarBinomial;
         if (TryConvertMathTypeBinomialPile(element, open, close, out var binomial))
             return binomial;
         var separators = (string?)element.Attribute("separators") ?? ",";
@@ -317,6 +399,27 @@ internal static class MathMlToLatexConverter
         return Delimiter(open, left: true)
             + string.Join(separator, parts)
             + Delimiter(close, left: false);
+    }
+
+    private static bool TryConvertFencedNoBarFractionToBinomial(
+        XElement fenced,
+        string open,
+        string close,
+        out string latex)
+    {
+        latex = string.Empty;
+        if (open != "(" || close != ")") return false;
+        var child = fenced.Elements().SingleOrDefault();
+        if (child is null) return false;
+        child = UnwrapSingleTransparentMathMlContainer(child);
+        if (child.Name.LocalName != "mfrac") return false;
+        var lineThickness = ((string?)child.Attribute("linethickness") ?? string.Empty).Trim();
+        if (!lineThickness.StartsWith("0", StringComparison.Ordinal)) return false;
+        var fractionChildren = child.Elements().ToArray();
+        if (fractionChildren.Length < 2) return false;
+        latex = @"\binom{" + ConvertElement(fractionChildren[0]) + "}{"
+            + ConvertElement(fractionChildren[1]) + "}";
+        return true;
     }
 
     private static bool TryConvertMathTypeBinomialPile(
@@ -449,6 +552,8 @@ internal static class MathMlToLatexConverter
             "min" => @"\min ",
             "sup" => @"\sup ",
             "inf" => @"\inf ",
+            "limsup" => @"\limsup ",
+            "liminf" => @"\liminf ",
             "sin" => @"\sin ",
             "cos" => @"\cos ",
             "tan" => @"\tan ",
@@ -466,6 +571,16 @@ internal static class MathMlToLatexConverter
             _ => string.Empty,
         };
         return latex.Length > 0;
+    }
+
+    private static bool IsLimitLikeOperatorLatex(string value)
+    {
+        return value.Trim() switch
+        {
+            @"\lim" or @"\max" or @"\min" or @"\sup" or @"\inf"
+                or @"\limsup" or @"\liminf" => true,
+            _ => false,
+        };
     }
 
     private static bool TryConvertLetterlikeIdentifier(
@@ -540,8 +655,8 @@ internal static class MathMlToLatexConverter
             "" or "." => ".",
             "{" => @"\{",
             "}" => @"\}",
-            "|" => @"\lvert",
-            "‖" => @"\lVert",
+            "|" => "|",
+            "‖" => @"\|",
             "〈" or "⟨" => @"\langle",
             "〉" or "⟩" => @"\rangle",
             "⌊" => @"\lfloor",

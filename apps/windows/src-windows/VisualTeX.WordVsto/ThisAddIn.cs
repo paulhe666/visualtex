@@ -140,6 +140,7 @@ public interface IWordRibbonCallbacks
 public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, IWordRibbonCallbacks
 {
     private const int AllowAnyProcessToSetForeground = -1;
+    private const float MathTypePreviewHorizontalSafetyInsetPixels = 4.0f;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -1312,7 +1313,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
                         svgPath,
                         export.Width,
-                        export.Height);
+                        export.Height,
+                        horizontalSafetyInsetPixels:
+                            MathTypePreviewHorizontalSafetyInsetPixels);
                 }
             }
             else
@@ -2446,7 +2449,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 template.EmfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
                     template.SvgPath,
                     export.Width,
-                    export.Height);
+                    export.Height,
+                    horizontalSafetyInsetPixels: string.Equals(
+                            objectMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal)
+                        ? MathTypePreviewHorizontalSafetyInsetPixels
+                        : 0f);
             }
             catch (Exception error)
             {

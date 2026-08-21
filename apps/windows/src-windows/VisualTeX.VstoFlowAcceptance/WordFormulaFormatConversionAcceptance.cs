@@ -122,6 +122,12 @@ internal static partial class Program
                 Console.WriteLine($"[CONSECUTIVE NUMBERED] inherited equation-number format '{sourceNumberFormat}'.");
             }
             var service = new WordFormulaService(application);
+            RunSimpleFormatConversionRollbackBridgeAcceptance(
+                application,
+                service,
+                pngPath,
+                emfPath,
+                artifactRoot);
             if (includeExistingMathType)
             {
                 var existingInsertion = document.Range(
@@ -342,6 +348,112 @@ internal static partial class Program
             }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void RunSimpleFormatConversionRollbackBridgeAcceptance(
+        Word.Application application,
+        WordFormulaService service,
+        string pngPath,
+        string emfPath,
+        string artifactRoot)
+    {
+        const string latex = @"(a+b)^{n}=\sum_{k=0}^{n}\left( \begin{matrix}n \\ k\end{matrix}\right) a^{n-k}b^{k}";
+        const string mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo stretchy=\"false\">(</mo><mi>a</mi><mo>+</mo><mi>b</mi>"
+            + "<msup><mo stretchy=\"false\">)</mo><mi>n</mi></msup><mo>=</mo>"
+            + "<munderover><mo data-mjx-texclass=\"OP\">∑</mo><mrow><mi>k</mi><mo>=</mo><mn>0</mn></mrow><mi>n</mi></munderover>"
+            + "<mrow data-mjx-texclass=\"INNER\"><mo data-mjx-texclass=\"OPEN\">(</mo>"
+            + "<mtable><mtr><mtd><mi>n</mi></mtd></mtr><mtr><mtd><mi>k</mi></mtd></mtr></mtable>"
+            + "<mo data-mjx-texclass=\"CLOSE\">)</mo></mrow>"
+            + "<msup><mi>a</mi><mrow><mi>n</mi><mo>−</mo><mi>k</mi></mrow></msup>"
+            + "<msup><mi>b</mi><mi>k</mi></msup></math>";
+
+        Word.Document? rollbackDocument = null;
+        Word.Range? insertion = null;
+        var oldAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
+        var oldFailure = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
+        try
+        {
+            rollbackDocument = application.Documents.Add();
+            rollbackDocument.Content.Text = "before rollback\r";
+            insertion = rollbackDocument.Range(
+                rollbackDocument.Content.End - 1,
+                rollbackDocument.Content.End - 1);
+            insertion.Select();
+            Release(insertion);
+            insertion = null;
+            service.InsertOle(
+                CreateSimpleVisualTeXSourceSession(latex, numbered: false),
+                pngPath,
+                emfPath);
+            AssertEqual(1, CountVisualTeXNativeOleShapes(rollbackDocument),
+                "Rollback bridge setup did not create exactly one VisualTeX source formula.");
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.NativeOleMode,
+                FormulaOleContract.MathTypeOleMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Rollback bridge setup did not capture exactly one VisualTeX source formula.");
+            var target = plan.Targets[0];
+            var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal)
+            {
+                [target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleMathTypeTargetSession(target, mathMl),
+                    MathMl = mathMl,
+                    EmfPath = emfPath,
+                },
+            };
+
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", "1");
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                target.SourceFormulaId);
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            AssertEqual(0, result.FormulaCount,
+                "Injected rollback conversion unexpectedly reported a converted formula.");
+            AssertEqual(1, result.FailedFormulaCount,
+                "Injected rollback conversion did not report exactly one failure.");
+            AssertEqual(1, CountVisualTeXNativeOleShapes(rollbackDocument),
+                "Injected rollback did not restore exactly one VisualTeX source formula.");
+            AssertEqual(0, CountMathTypeOleShapes(rollbackDocument),
+                "Injected rollback left a MathType target behind.");
+            var bridge = "$" + latex + "$";
+            AssertTrue(
+                (rollbackDocument.Content.Text ?? string.Empty).IndexOf(
+                    bridge,
+                    StringComparison.Ordinal) < 0,
+                "Injected rollback restored the source formula but left the temporary LaTeX bridge in Word text.");
+
+            var path = Path.Combine(
+                artifactRoot,
+                "VisualTeX-Format-Conversion-Rollback-No-Bridge.docx");
+            rollbackDocument.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                "[FORMAT CONVERSION ROLLBACK] Injected post-delete failure restored the VisualTeX OLE and left no temporary LaTeX bridge.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", oldAcceptance);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                oldFailure);
+            Release(insertion);
+            if (rollbackDocument is not null)
+            {
+                try { rollbackDocument.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(rollbackDocument);
         }
     }
 

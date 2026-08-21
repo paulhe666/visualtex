@@ -10,6 +10,8 @@ internal sealed class PreparedWordBulkFormula
     internal string? MathMl { get; set; }
     internal string? PngPath { get; set; }
     internal string? EmfPath { get; set; }
+    internal bool MathTypeNativePreviewAttempted { get; set; }
+    internal MathTypeNativePreviewRenderer.Result? MathTypeNativePreview { get; set; }
 }
 
 internal sealed class RenderedWordBulkFormulaTemplate

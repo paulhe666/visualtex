@@ -177,16 +177,31 @@ internal static class WordFormulaMetadataReader
         Range? range = null;
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
         try
         {
             range = shape.Range;
             bookmarks = range.Bookmarks;
             for (var index = 1; index <= bookmarks.Count; index++)
             {
+                Release(bookmarkRange);
+                bookmarkRange = null;
                 Release(bookmark);
                 bookmark = bookmarks[index];
                 if (!TryFormulaIdFromIdentityBookmark(bookmark.Name, out var formulaId))
                     continue;
+
+                // Word may expose a bookmark that begins exactly at the right
+                // boundary of this InlineShape through shape.Range.Bookmarks.
+                // That bookmark belongs to an adjacent formula and must never
+                // override the current OLE's embedded FormulaId.  Accept only an
+                // identity bookmark whose own range actually identifies/contains
+                // this InlineShape (including Word's collapsed-at-start repair
+                // form used after object replacement).
+                bookmarkRange = bookmark.Range;
+                if (!IdentityBookmarkOwnsInlineShape(bookmarkRange, range))
+                    continue;
+
                 if (string.Equals(
                         metadata.FormulaId,
                         formulaId,
@@ -202,11 +217,21 @@ internal static class WordFormulaMetadataReader
         }
         finally
         {
+            Release(bookmarkRange);
             Release(bookmark);
             Release(bookmarks);
             Release(range);
         }
         return metadata;
+    }
+
+    private static bool IdentityBookmarkOwnsInlineShape(Range owner, Range candidate)
+    {
+        if (owner.Start == candidate.Start && owner.End == candidate.End)
+            return true;
+        if (owner.Start == owner.End && owner.Start == candidate.Start)
+            return true;
+        return owner.Start <= candidate.Start && owner.End >= candidate.End;
     }
 
     private static void Release(object? value)

@@ -2342,6 +2342,28 @@ async fn put_formula_metadata(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteSessionsBatchInput {
+    session_ids: Vec<String>,
+}
+
+async fn delete_sessions_batch(
+    State(context): State<ServerContext>,
+    Json(input): Json<DeleteSessionsBatchInput>,
+) -> Response {
+    if input.session_ids.len() > 512 {
+        return session_error_response(SessionError::Invalid(
+            "Too many Office Sessions in one batch cleanup request".to_string(),
+        ));
+    }
+    let store = context.companion.session_store.clone();
+    match run_session_operation(move || store.delete_many(&input.session_ids)).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+
 async fn delete_session(
     AxumPath(session_id): AxumPath<String>,
     State(context): State<ServerContext>,
@@ -2467,6 +2489,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             post(close_desktop_session),
         )
         .route("/sessions", post(create_session))
+        .route("/sessions/batch-delete", post(delete_sessions_batch))
         .route(
             "/sessions/{session_id}",
             get(get_session).patch(patch_session).delete(delete_session),

@@ -69,31 +69,32 @@ internal static partial class Program
                 client,
                 latex,
                 FormulaOleContract.MathTypeOleMode,
-                displayMode: "block",
+                displayMode: "inline",
                 numbered: false);
 
             document = application.Documents.Add();
             document.Activate();
-            CommitInstalledMathTypeDisplayFromRibbon(
+            CommitInstalledMathTypeInlineFromRibbon(
                 client,
                 callbacks,
                 document,
                 latex,
                 export,
-                "right",
                 1,
                 mathTypeBaseline,
-                numbered: false);
+                allowTransientMathType: true);
 
             shape = document.InlineShapes[1];
             AssertInstalledMathTypeFunctionRunExpanded(shape, "before VisualTeX re-edit lim-with-limits");
             var beforeWidth = shape.Width;
             var beforeHeight = shape.Height;
             AssertTrue(beforeWidth > 35f,
-                $"The pre-edit lim fixture is unexpectedly narrow ({beforeWidth:0.###} pt), so it cannot detect the overlap regression.");
+                $"The pre-edit inline lim fixture is unexpectedly narrow ({beforeWidth:0.###} pt), so it cannot detect the overlap regression.");
             AssertTrue(beforeHeight > 18f,
-                $"The pre-edit lim fixture is unexpectedly short ({beforeHeight:0.###} pt), so it cannot detect the overlap regression.");
-            AssertNoNewMathTypeProcess(mathTypeBaseline, "pre-edit MathType lim fixture");
+                $"The pre-edit inline lim fixture is unexpectedly short ({beforeHeight:0.###} pt), so it cannot detect the overlap regression.");
+            WaitForInstalledMathTypeSidecarExit(
+                mathTypeBaseline,
+                "pre-edit inline MathType fixture");
 
             var path = Path.Combine(artifactRoot, "Installed-MathType-Reedit-Lim.docx");
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
@@ -102,7 +103,26 @@ internal static partial class Program
             document = application.Documents.Open(path, ReadOnly: false, AddToRecentFiles: false, Visible: true);
             document.Activate();
             Release(shape); shape = document.InlineShapes[1];
-            AssertInstalledMathTypeFunctionRunExpanded(shape, "reopened before VisualTeX re-edit lim-with-limits");
+            AssertInstalledMathTypeFunctionRunExpanded(shape, "reopened before VisualTeX re-edit inline lim-with-limits");
+            beforeWidth = shape.Width;
+            beforeHeight = shape.Height;
+            var beforeNativeGeometry = SnapshotInstalledMathTypeNativeGeometry(
+                shape,
+                artifactRoot,
+                "before VisualTeX inline MathType re-edit");
+            var beforeObjectFormat = SnapshotInstalledMathTypeObjectFormat(
+                document,
+                shape,
+                "before VisualTeX inline MathType re-edit");
+            AssertNear(beforeNativeGeometry.WidthPt, beforeWidth, 0.6f,
+                "Pre-edit inline OLE width does not match its MathType native WMF.");
+            AssertNear(beforeNativeGeometry.HeightPt, beforeHeight, 0.6f,
+                "Pre-edit inline OLE height does not match its MathType native WMF.");
+            AssertEqual(beforeNativeGeometry.WordPosition, beforeObjectFormat.Position,
+                "Pre-edit inline OLE baseline does not match its MathType native WMF.");
+            WaitForInstalledMathTypeSidecarExit(
+                mathTypeBaseline,
+                "pre-edit native WMF verification");
 
             Release(range); range = shape.Range;
             range.Select();
@@ -175,7 +195,7 @@ internal static partial class Program
                 client,
                 latex,
                 FormulaOleContract.MathTypeOleMode,
-                displayMode: "block",
+                displayMode: "inline",
                 numbered: false);
             var lineId = editSession.Lines.FirstOrDefault()?.Id
                 ?? throw new InvalidDataException("MathType re-edit Session has no formula line.");
@@ -193,7 +213,7 @@ internal static partial class Program
                         },
                         ["activeLineId"] = lineId,
                         ["codeFormat"] = "latex",
-                        ["displayMode"] = "block",
+                        ["displayMode"] = "inline",
                         ["objectMode"] = FormulaOleContract.MathTypeOleMode,
                         ["numbered"] = false,
                         ["fontSizePt"] = 12d,
@@ -213,7 +233,6 @@ internal static partial class Program
             {
                 System.Windows.Forms.Application.DoEvents();
                 Thread.Sleep(100);
-                AssertNoNewMathTypeProcess(mathTypeBaseline, "committing VisualTeX MathType re-edit");
                 terminal = client.GetSessionAsync(editSessionId, CancellationToken.None)
                     .GetAwaiter().GetResult();
                 if (string.Equals(terminal.Status, "failed", StringComparison.OrdinalIgnoreCase))
@@ -227,15 +246,49 @@ internal static partial class Program
                 || !string.Equals(terminal.Status, "completed", StringComparison.OrdinalIgnoreCase))
                 throw new TimeoutException("Installed MathType re-edit did not reach completed state.");
             WaitForInstalledRibbonSessionRelease(editSessionId);
+            WaitForInstalledMathTypeSidecarExit(
+                mathTypeBaseline,
+                "committing VisualTeX inline MathType re-edit");
 
             Release(shape); shape = document.InlineShapes[1];
-            AssertInstalledMathTypeFunctionRunExpanded(shape, "after VisualTeX re-edit lim-with-limits");
+            AssertInstalledMathTypeFunctionRunExpanded(shape, "after VisualTeX re-edit inline lim-with-limits");
             var afterWidth = shape.Width;
             var afterHeight = shape.Height;
-            AssertTrue(afterWidth >= beforeWidth * 0.90f,
-                $"VisualTeX MathType re-edit collapsed the formula width: before={beforeWidth:0.###} pt, after={afterWidth:0.###} pt.");
-            AssertTrue(afterHeight >= beforeHeight * 0.90f,
-                $"VisualTeX MathType re-edit collapsed the formula height: before={beforeHeight:0.###} pt, after={afterHeight:0.###} pt.");
+            var afterNativeGeometry = SnapshotInstalledMathTypeNativeGeometry(
+                shape,
+                artifactRoot,
+                "after VisualTeX inline MathType re-edit");
+            var afterObjectFormat = SnapshotInstalledMathTypeObjectFormat(
+                document,
+                shape,
+                "after VisualTeX inline MathType re-edit");
+            AssertNear(beforeWidth, afterWidth, 0.05f,
+                "VisualTeX changed the inline MathType OLE width while recommitting unchanged MTEF.");
+            AssertNear(beforeHeight, afterHeight, 0.05f,
+                "VisualTeX changed the inline MathType OLE height while recommitting unchanged MTEF.");
+            AssertNear(beforeNativeGeometry.WidthPt, afterNativeGeometry.WidthPt, 0.01f,
+                "VisualTeX changed MathType native WMF width while recommitting unchanged MTEF.");
+            AssertNear(beforeNativeGeometry.HeightPt, afterNativeGeometry.HeightPt, 0.01f,
+                "VisualTeX changed MathType native WMF height while recommitting unchanged MTEF.");
+            AssertEqual(beforeNativeGeometry.WordPosition, afterNativeGeometry.WordPosition,
+                "VisualTeX changed MathType native WMF WordPosition while recommitting unchanged MTEF.");
+            AssertEqual(beforeNativeGeometry.Signature, afterNativeGeometry.Signature,
+                "VisualTeX changed Equation Native semantics while recommitting unchanged MTEF.");
+            AssertNear(afterNativeGeometry.WidthPt, afterWidth, 0.6f,
+                "Re-edited inline OLE width does not match its MathType native WMF.");
+            AssertNear(afterNativeGeometry.HeightPt, afterHeight, 0.6f,
+                "Re-edited inline OLE height does not match its MathType native WMF.");
+            AssertEqual(afterNativeGeometry.WordPosition, afterObjectFormat.Position,
+                "Re-edited inline OLE baseline does not match its MathType native WMF.");
+            AssertEqual(beforeObjectFormat.Position, afterObjectFormat.Position,
+                "VisualTeX changed the inline MathType Word baseline.");
+            AssertEqual(beforeObjectFormat.FontName, afterObjectFormat.FontName,
+                "VisualTeX changed the inline MathType object-character font.");
+            AssertNear(beforeObjectFormat.FontSizePt, afterObjectFormat.FontSizePt, 0.01f,
+                "VisualTeX changed the inline MathType object-character font size.");
+            WaitForInstalledMathTypeSidecarExit(
+                mathTypeBaseline,
+                "post-edit native WMF verification");
             var readBackMathMl = MathTypeOleStorage.ReadMathMl(shape);
             var readBackLatex = MathMlToLatexConverter.Convert(readBackMathMl)
                 .Replace(" ", string.Empty);
@@ -250,15 +303,40 @@ internal static partial class Program
             Release(document); document = null;
             document = application.Documents.Open(path, ReadOnly: false, AddToRecentFiles: false, Visible: true);
             Release(shape); shape = document.InlineShapes[1];
-            AssertInstalledMathTypeFunctionRunExpanded(shape, "reopened after VisualTeX re-edit lim-with-limits");
-            AssertTrue(shape.Width >= beforeWidth * 0.90f,
-                $"Save/reopen collapsed the re-edited MathType formula width: before={beforeWidth:0.###} pt, reopened={shape.Width:0.###} pt.");
-            AssertTrue(shape.Height >= beforeHeight * 0.90f,
-                $"Save/reopen collapsed the re-edited MathType formula height: before={beforeHeight:0.###} pt, reopened={shape.Height:0.###} pt.");
-            AssertNoNewMathTypeProcess(mathTypeBaseline, "save/reopen VisualTeX MathType re-edit");
+            AssertInstalledMathTypeFunctionRunExpanded(shape, "reopened after VisualTeX re-edit inline lim-with-limits");
+            var reopenedNativeGeometry = SnapshotInstalledMathTypeNativeGeometry(
+                shape,
+                artifactRoot,
+                "reopened after VisualTeX inline MathType re-edit");
+            var reopenedObjectFormat = SnapshotInstalledMathTypeObjectFormat(
+                document,
+                shape,
+                "reopened after VisualTeX inline MathType re-edit");
+            AssertNear(beforeWidth, shape.Width, 0.05f,
+                "Save/reopen changed the re-edited inline MathType OLE width.");
+            AssertNear(beforeHeight, shape.Height, 0.05f,
+                "Save/reopen changed the re-edited inline MathType OLE height.");
+            AssertNear(beforeNativeGeometry.WidthPt, reopenedNativeGeometry.WidthPt, 0.01f,
+                "Save/reopen changed the MathType native WMF width.");
+            AssertNear(beforeNativeGeometry.HeightPt, reopenedNativeGeometry.HeightPt, 0.01f,
+                "Save/reopen changed the MathType native WMF height.");
+            AssertEqual(beforeNativeGeometry.WordPosition, reopenedNativeGeometry.WordPosition,
+                "Save/reopen changed the MathType native WMF WordPosition.");
+            AssertEqual(beforeObjectFormat.Position, reopenedObjectFormat.Position,
+                "Save/reopen changed the inline MathType Word baseline.");
+            AssertEqual(beforeObjectFormat.FontName, reopenedObjectFormat.FontName,
+                "Save/reopen changed the inline MathType object-character font.");
+            AssertNear(beforeObjectFormat.FontSizePt, reopenedObjectFormat.FontSizePt, 0.01f,
+                "Save/reopen changed the inline MathType object-character font size.");
+            WaitForInstalledMathTypeSidecarExit(
+                mathTypeBaseline,
+                "save/reopen VisualTeX inline MathType re-edit");
 
             Console.WriteLine(
-                $"[MATHTYPE REEDIT REGRESSION] Real installed add-in double-clicked and recommitted {latex}; geometry before={beforeWidth:0.###}x{beforeHeight:0.###} pt, after={afterWidth:0.###}x{afterHeight:0.###} pt, reopened={shape.Width:0.###}x{shape.Height:0.###} pt; MathTypeProcessCount=0. Artifact={path}");
+                $"[MATHTYPE INLINE REEDIT REGRESSION] Real installed add-in double-clicked and recommitted {latex}; "
+                + $"OLE before={beforeWidth:0.###}x{beforeHeight:0.###} pt, after={afterWidth:0.###}x{afterHeight:0.###} pt, reopened={shape.Width:0.###}x{shape.Height:0.###} pt; "
+                + $"native={beforeNativeGeometry.WidthPt:0.###}x{beforeNativeGeometry.HeightPt:0.###} pt, WordPosition={beforeNativeGeometry.WordPosition}; "
+                + $"font={beforeObjectFormat.FontName} {beforeObjectFormat.FontSizePt:0.###} pt; MathTypeProcessCount=0. Artifact={path}");
 
             // Finish the first-document lifecycle before exercising a second
             // installed Ribbon document. VisualTeX intentionally refuses to
@@ -353,7 +431,8 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline);
+                mathTypeBaseline,
+                allowTransientMathTypeProcess: true);
             AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
                 "Document1 VisualTeX→MathType left the source VisualTeX object behind.");
             AssertEqual(1, CountMathTypeOleShapes(document),
@@ -401,7 +480,8 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline);
+                mathTypeBaseline,
+                allowTransientMathTypeProcess: true);
             AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
                 "Document1 second VisualTeX→MathType left the VisualTeX source object behind.");
             AssertEqual(1, CountMathTypeOleShapes(document),
@@ -459,6 +539,78 @@ internal static partial class Program
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(document);
+        }
+    }
+
+    private static void WaitForInstalledMathTypeSidecarExit(
+        IReadOnlyCollection<int> baseline,
+        string context)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            var started = SnapshotMathTypeProcessIds().Except(baseline).ToArray();
+            if (started.Length == 0) return;
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(100);
+        }
+        var remaining = SnapshotMathTypeProcessIds().Except(baseline).ToArray();
+        throw new InvalidOperationException(
+            context + ": MathType native-preview sidecar process did not exit: "
+            + string.Join(",", remaining));
+    }
+
+    private static (float WidthPt, float HeightPt, int WordPosition, string Signature)
+        SnapshotInstalledMathTypeNativeGeometry(
+            Word.InlineShape shape,
+            string artifactRoot,
+            string context)
+    {
+        var compoundFile = MathTypeOleStorage.CaptureCompoundFile(shape);
+        var equationNative = MathTypeOleStorage.ReadEquationNative(compoundFile);
+        var headerLength = BitConverter.ToUInt16(equationNative, 0);
+        var mtefLength = checked((int)BitConverter.ToUInt32(equationNative, 8));
+        var mtef = new byte[mtefLength];
+        Buffer.BlockCopy(equationNative, headerLength, mtef, 0, mtefLength);
+        AssertTrue(
+            MathTypeNativePreviewRenderer.TryRender(mtef, artifactRoot, out var preview),
+            context + ": MathType native preview renderer was unavailable.");
+        using (preview)
+        {
+            var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(equationNative);
+            return (
+                preview.WidthPt,
+                preview.HeightPt,
+                preview.WordPosition,
+                MathTypeMtefCodec.SemanticSignature(mathMl));
+        }
+    }
+
+    private static (string FontName, float FontSizePt, int Position)
+        SnapshotInstalledMathTypeObjectFormat(
+            Word.Document document,
+            Word.InlineShape shape,
+            string context)
+    {
+        Word.Range? shapeRange = null;
+        Word.Font? font = null;
+        try
+        {
+            shapeRange = shape.Range;
+            font = shapeRange.Font;
+            var fontSize = font.Size;
+            if (fontSize == (float)Word.WdConstants.wdUndefined)
+                throw new InvalidOperationException(
+                    context + ": MathType object-character font size is undefined.");
+            return (
+                font.Name ?? string.Empty,
+                fontSize,
+                ReadInstalledMathTypeObjectCharacterPosition(document, shapeRange, context));
+        }
+        finally
+        {
+            Release(font);
+            Release(shapeRange);
         }
     }
 

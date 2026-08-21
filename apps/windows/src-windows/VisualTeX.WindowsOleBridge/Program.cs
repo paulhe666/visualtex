@@ -9,6 +9,9 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         var options = ParseArguments(args);
+        if (options.TryGetValue("mathtype-preview-manifest", out var previewManifest))
+            return MathTypeNativePreviewCommand.Run(previewManifest);
+
         var logRoot = Required(options, "log-root");
         var logger = new FileLogger(logRoot);
         try

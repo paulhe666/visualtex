@@ -133,8 +133,21 @@ public sealed partial class ThisAddIn
             }
 
             SetStatus($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…");
-            await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
-            await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
+            var allTargetsHaveDirectOmml = string.Equals(
+                    targetMode,
+                    FormulaOleContract.WordOmmlMode,
+                    StringComparison.Ordinal)
+                && plan.Targets.All(target => !string.IsNullOrWhiteSpace(target.SourceMathMl));
+            if (!allTargetsHaveDirectOmml)
+            {
+                await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
+                await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-render-bypass sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count} reason=source-mathml-ready");
+            }
 
             var targetKeys = new Dictionary<string, string>(StringComparer.Ordinal);
             var pendingKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -160,6 +173,12 @@ public sealed partial class ThisAddIn
                     target.FontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     target.Latex);
                 targetKeys[target.Id] = key;
+                if (string.Equals(
+                        targetMode,
+                        FormulaOleContract.WordOmmlMode,
+                        StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(target.SourceMathMl))
+                    continue;
                 if (!pendingKeys.Add(key)) continue;
 
                 var conversionSession = await CreateBulkFormulaConversionSessionAsync(
@@ -202,9 +221,6 @@ public sealed partial class ThisAddIn
             foreach (var target in plan.Targets)
             {
                 var key = targetKeys[target.Id];
-                if (!rendered.TryGetValue(key, out var template))
-                    throw new InvalidDataException(
-                        $"缺少公式“{target.Latex}”的重绘结果。");
                 var run = new WordBulkRun
                 {
                     Id = target.Id,
@@ -212,6 +228,33 @@ public sealed partial class ThisAddIn
                     Latex = target.Latex,
                     DisplayMode = target.DisplayMode,
                 };
+                if (string.Equals(
+                        targetMode,
+                        FormulaOleContract.WordOmmlMode,
+                        StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(target.SourceMathMl))
+                {
+                    var directSession = CloneBulkFormulaSession(
+                        new OfficeSessionDocument(),
+                        run,
+                        plan.DocumentId,
+                        target.FontSizePt,
+                        targetMode);
+                    directSession.Numbered = target.Numbered;
+                    directSession.MathTypeNumberPosition = target.MathTypeNumberPosition;
+                    directSession.OriginalMetadata = target.Metadata;
+                    prepared[target.Id] = new PreparedWordBulkFormula
+                    {
+                        Run = run,
+                        Session = directSession,
+                        MathMl = target.SourceMathMl,
+                    };
+                    continue;
+                }
+
+                if (!rendered.TryGetValue(key, out var template))
+                    throw new InvalidDataException(
+                        $"缺少公式“{target.Latex}”的重绘结果。");
                 var session = CloneBulkFormulaSession(
                     template.Session,
                     run,
@@ -233,6 +276,65 @@ public sealed partial class ThisAddIn
                 };
             }
 
+            if (string.Equals(
+                    targetMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
+                var nativePreviewInputs =
+                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                foreach (var target in plan.Targets)
+                {
+                    var formula = prepared[target.Id];
+                    var mathMl = formula.MathMl
+                        ?? throw new InvalidDataException(
+                            $"缺少公式“{target.Latex}”的 MathType MathML。");
+                    var inline = string.Equals(
+                        target.DisplayMode,
+                        "inline",
+                        StringComparison.OrdinalIgnoreCase);
+                    var generated = MathTypeMtefCodec.CreateEquationNative(
+                        mathMl,
+                        inline);
+                    nativePreviewInputs[target.Id] = generated.Mtef;
+                    // Once the batch is attempted, InsertMathTypeOle must never
+                    // start one MathPage sidecar per formula or silently switch
+                    // the visible result back to frontend/MathJax geometry.
+                    formula.MathTypeNativePreviewAttempted = true;
+                }
+
+                var nativePreviewRoot = prepared.Values
+                    .Select(formula => Path.GetDirectoryName(formula.EmfPath))
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                    ?? Path.GetTempPath();
+                var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
+                var renderedAllNativePreviews =
+                    MathTypeNativePreviewRenderer.TryRenderBatch(
+                        nativePreviewInputs,
+                        nativePreviewRoot,
+                        out var nativePreviews);
+                var missingNativePreviewIds = plan.Targets
+                    .Where(target => !nativePreviews.ContainsKey(target.Id))
+                    .Select(target => target.Id)
+                    .ToArray();
+                if (!renderedAllNativePreviews
+                    || missingNativePreviewIds.Length > 0)
+                {
+                    foreach (var preview in nativePreviews.Values)
+                        preview.Dispose();
+                    throw new InvalidOperationException(
+                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{plan.Targets.Count}）。"
+                        + "为避免回退到 VisualTeX 前端几何，Word 文档尚未开始转换。");
+                }
+
+                foreach (var target in plan.Targets)
+                    prepared[target.Id].MathTypeNativePreview =
+                        nativePreviews[target.Id];
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+            }
+
             SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-start sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
@@ -251,14 +353,13 @@ public sealed partial class ThisAddIn
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
 
-            foreach (var sessionId in converterSessionIds)
-            {
-                try
-                {
-                    await client.CompleteAsync(sessionId, lifetime.Token).ConfigureAwait(false);
-                }
-                catch { }
-            }
+            // Converter sessions are disposable render workspaces. Word has already
+            // committed the document result, so SessionStore cleanup must not keep
+            // the Ribbon operation/gate blocked if the Companion mutex is busy.
+            _ = CleanupConverterSessionsBestEffortAsync(
+                client,
+                converterSessionIds.ToArray(),
+                lifetime.Token);
 
             if (result.FailedFormulaCount == 0)
             {
@@ -329,7 +430,38 @@ public sealed partial class ThisAddIn
                 TryDeleteFile(template.SvgPath);
                 TryDeleteFile(template.PngPath);
             }
+            foreach (var preview in prepared.Values
+                         .Select(formula => formula.MathTypeNativePreview)
+                         .Where(preview => preview is not null)
+                         .Distinct())
+                preview!.Dispose();
             _operationGate.Release();
+        }
+    }
+
+    private static async Task CleanupConverterSessionsBestEffortAsync(
+        VisualTeXSessionClient client,
+        IReadOnlyCollection<string> sessionIds,
+        CancellationToken lifetimeToken)
+    {
+        if (sessionIds.Count == 0) return;
+        try
+        {
+            using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken);
+            cleanupCts.CancelAfter(TimeSpan.FromSeconds(5));
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-session-cleanup-start sessions={sessionIds.Count}");
+            await client.DeleteSessionsBatchAsync(
+                    sessionIds,
+                    cleanupCts.Token)
+                .ConfigureAwait(false);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-session-cleanup-complete sessions={sessionIds.Count}");
+        }
+        catch (Exception cleanupError)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-session-cleanup-skipped sessions={sessionIds.Count} error={cleanupError.GetType().Name}");
         }
     }
 

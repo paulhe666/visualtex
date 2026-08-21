@@ -221,14 +221,16 @@ internal static partial class Program
         try { File.Delete(tracePath); } catch { }
     }
 
-    private static void WaitForInstalledOmmlMathTypeConversion(
+    private static int WaitForInstalledOmmlMathTypeConversion(
         string tracePath,
         string directionMarker,
-        IReadOnlyCollection<int> mathTypeBaseline)
+        IReadOnlyCollection<int> mathTypeBaseline,
+        bool allowTransientMathTypeProcess = false)
     {
         var deadline = DateTime.UtcNow.AddSeconds(120);
         var completionMarker = "format-conversion-complete " + directionMarker;
         var stoppedMarker = "format-conversion-stopped " + directionMarker;
+        var peakAdditionalMathTypeProcesses = 0;
         while (DateTime.UtcNow < deadline)
         {
             System.Windows.Forms.Application.DoEvents();
@@ -236,7 +238,10 @@ internal static partial class Program
             var startedMathType = SnapshotMathTypeProcessIds()
                 .Except(mathTypeBaseline)
                 .ToArray();
-            if (startedMathType.Length > 0)
+            peakAdditionalMathTypeProcesses = Math.Max(
+                peakAdditionalMathTypeProcesses,
+                startedMathType.Length);
+            if (!allowTransientMathTypeProcess && startedMathType.Length > 0)
                 throw new InvalidOperationException(
                     "Installed OMML↔MathType conversion started MathType.exe: "
                     + string.Join(", ", startedMathType));
@@ -251,12 +256,25 @@ internal static partial class Program
                     + trace.Substring(stoppedIndex).Trim());
             if (trace.IndexOf(completionMarker, StringComparison.Ordinal) < 0)
                 continue;
-            for (var settle = 0; settle < 8; settle++)
+            for (var settle = 0; settle < 50; settle++)
             {
                 System.Windows.Forms.Application.DoEvents();
                 Thread.Sleep(100);
+                var remainingMathType = SnapshotMathTypeProcessIds()
+                    .Except(mathTypeBaseline)
+                    .ToArray();
+                peakAdditionalMathTypeProcesses = Math.Max(
+                    peakAdditionalMathTypeProcesses,
+                    remainingMathType.Length);
+                if (remainingMathType.Length == 0)
+                    return peakAdditionalMathTypeProcesses;
+                if (!allowTransientMathTypeProcess)
+                    throw new InvalidOperationException(
+                        "Installed OMML↔MathType conversion left MathType.exe running: "
+                        + string.Join(", ", remainingMathType));
             }
-            return;
+            throw new InvalidOperationException(
+                "Installed Ribbon conversion completed but its transient MathType native-preview helper did not exit.");
         }
         throw new TimeoutException(
             $"Installed Ribbon conversion did not report '{completionMarker}' within the acceptance deadline.");
