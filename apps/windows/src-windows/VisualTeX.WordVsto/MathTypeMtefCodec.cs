@@ -657,6 +657,14 @@ internal static class MathTypeMtefCodec
         if (kind == "mi" && variant.Length == 0
             && token.Length > 1 && token.All(char.IsLetter))
             variant = "normal";
+        // MathType coalesces consecutive upright identifier runs (for example
+        // <mi mathvariant="normal">R</mi><mi mathvariant="normal">e</mi>) into
+        // one <mtext>Re</mtext> token on MTEF read-back. Token boundaries inside
+        // the same upright alphabetic run are presentational, not semantic.
+        if (kind == "mi" && variant == "normal"
+            && token.Length > 1 && token.All(char.IsLetter))
+            return string.Concat(token.Select(character =>
+                "mi[normal](" + character + ")"));
         return kind + "[" + variant + "](" + token + ")";
     }
 

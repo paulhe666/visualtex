@@ -3206,7 +3206,8 @@ internal sealed partial class WordFormulaService
         bool deferNumberingLayout = false,
         bool numberingScaffoldOnly = false,
         bool deferFinalFingerprint = false,
-        WordOmmlConverter.BatchSource? ommlBatchSource = null)
+        WordOmmlConverter.BatchSource? ommlBatchSource = null,
+        bool preserveExistingDisplayParagraphBoundary = false)
     {
         var metadata = session.ToMetadata();
         metadata.Validate();
@@ -3356,6 +3357,16 @@ internal sealed partial class WordFormulaService
                         "move-numbered-caret",
                         performanceWatch,
                         ref performanceCheckpoint);
+                }
+                else if (preserveExistingDisplayParagraphBoundary)
+                {
+                    // Display OMML owns a paragraph of its own. InsertXML leaves the
+                    // now-empty source paragraph immediately behind it; remove exactly
+                    // that empty paragraph instead of adding another typing paragraph.
+                    RemoveEmptyParagraphImmediatelyAfterDisplayFormula(
+                        document,
+                        equationRange);
+                    selection.SetRange(equationRange.End, equationRange.End);
                 }
                 else
                 {
@@ -6988,6 +6999,60 @@ internal sealed partial class WordFormulaService
             ResetSelectionTransientFormatting(selection);
         }
         finally { Release(typingRange); }
+    }
+
+    private static void RemoveEmptyParagraphImmediatelyAfterDisplayFormula(
+        Document document,
+        Range formulaRange)
+    {
+        Paragraphs? formulaParagraphs = null;
+        Paragraph? formulaParagraph = null;
+        Range? formulaParagraphRange = null;
+        Range? content = null;
+        Range? probe = null;
+        Paragraphs? candidateParagraphs = null;
+        Paragraph? candidateParagraph = null;
+        Range? candidateRange = null;
+        OMaths? candidateMaths = null;
+        InlineShapes? candidateShapes = null;
+        try
+        {
+            formulaParagraphs = formulaRange.Paragraphs;
+            if (formulaParagraphs.Count == 0) return;
+            formulaParagraph = formulaParagraphs[1];
+            formulaParagraphRange = formulaParagraph.Range;
+            content = document.Content;
+            if (formulaParagraphRange.End >= content.End) return;
+
+            object nextStart = formulaParagraphRange.End;
+            object nextEnd = formulaParagraphRange.End;
+            probe = document.Range(ref nextStart, ref nextEnd);
+            candidateParagraphs = probe.Paragraphs;
+            if (candidateParagraphs.Count == 0) return;
+            candidateParagraph = candidateParagraphs[1];
+            candidateRange = candidateParagraph.Range;
+            candidateMaths = candidateRange.OMaths;
+            candidateShapes = candidateRange.InlineShapes;
+            var text = (candidateRange.Text ?? string.Empty)
+                .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+            if (text.Length == 0
+                && candidateMaths.Count == 0
+                && candidateShapes.Count == 0)
+                candidateRange.Delete();
+        }
+        finally
+        {
+            Release(candidateShapes);
+            Release(candidateMaths);
+            Release(candidateRange);
+            Release(candidateParagraph);
+            Release(candidateParagraphs);
+            Release(probe);
+            Release(content);
+            Release(formulaParagraphRange);
+            Release(formulaParagraph);
+            Release(formulaParagraphs);
+        }
     }
 
     private static void MoveSelectionAfterDisplayFormula(

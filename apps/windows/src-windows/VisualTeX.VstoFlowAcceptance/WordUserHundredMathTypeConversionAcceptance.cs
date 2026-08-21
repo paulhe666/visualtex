@@ -239,11 +239,17 @@ internal static partial class Program
         if (!File.Exists(sourcePath))
             throw new FileNotFoundException("The clean user-100 MathType source fixture is missing.", sourcePath);
 
-        RunUserHundredMathTypeReverseDirection(
-            sourcePath,
-            Path.Combine(artifactRoot, "user-100-mathtype-to-visualtex.docx"),
-            Path.Combine(artifactRoot, "user-100-mathtype-to-visualtex.trace.log"),
-            targetVisualTeX: true);
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_USER100_REVERSE_DIRECTION"),
+                "omml",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            RunUserHundredMathTypeReverseDirection(
+                sourcePath,
+                Path.Combine(artifactRoot, "user-100-mathtype-to-visualtex.docx"),
+                Path.Combine(artifactRoot, "user-100-mathtype-to-visualtex.trace.log"),
+                targetVisualTeX: true);
+        }
         RunUserHundredMathTypeReverseDirection(
             sourcePath,
             Path.Combine(artifactRoot, "user-100-mathtype-to-omml.docx"),
@@ -262,14 +268,17 @@ internal static partial class Program
         try { File.Delete(tracePath); } catch { }
         var previousFormatAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
         var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
         Word.Application? application = null;
         Word.Document? document = null;
-        VisualTeX.WordVsto.ThisAddIn? addIn = null;
-        Array custom = Array.Empty<object>();
+        Microsoft.Office.Core.COMAddIns? addIns = null;
+        Microsoft.Office.Core.COMAddIn? installedAddIn = null;
+        object? callbacksObject = null;
         try
         {
             Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", "1");
             Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", null);
             var mathTypeBaseline = SnapshotMathTypeProcessIds();
             application = CreateWordApplication(visible: false);
             document = application.Documents.Open(
@@ -278,6 +287,13 @@ internal static partial class Program
                 AddToRecentFiles: false,
                 Visible: false);
             document.Activate();
+            callbacksObject = GetInstalledStressCallbacks(
+                application,
+                out addIns,
+                out installedAddIn);
+            dynamic callbacks = callbacksObject;
+            var sourceParagraphCount = document.Paragraphs.Count;
+            var sourceBlankParagraphCount = CountStructurallyBlankParagraphs(document);
 
             var sourceService = new WordFormulaService(application);
             var targetMode = targetVisualTeX
@@ -303,24 +319,17 @@ internal static partial class Program
             AssertEqual(100, expected.Length,
                 "User-100 reverse acceptance did not capture exactly 100 MathType source formulas.");
 
-            addIn = new VisualTeX.WordVsto.ThisAddIn();
-            addIn.OnConnection(
-                application,
-                Extensibility.ext_ConnectMode.ext_cm_AfterStartup,
-                addIn,
-                ref custom);
             var watch = Stopwatch.StartNew();
             if (targetVisualTeX)
-                addIn.OnConvertMathTypeToVisualTeXDocument(new object());
+                callbacks.OnConvertMathTypeToVisualTeXDocument(new object());
             else
-                addIn.OnConvertMathTypeToOmmlDocument(new object());
+                callbacks.OnConvertMathTypeToOmmlDocument(new object());
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 targetVisualTeX
                     ? "source=MathType target=VisualTeX"
                     : "source=MathType target=OMML",
                 mathTypeBaseline);
-            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
             watch.Stop();
 
             if (targetVisualTeX)
@@ -358,6 +367,19 @@ internal static partial class Program
             {
                 AssertEqual(100, document.OMaths.Count,
                     "MT→OMML did not create exactly 100 OMML formulas.");
+                var targetParagraphCount = document.Paragraphs.Count;
+                var targetBlankParagraphCount = CountStructurallyBlankParagraphs(document);
+                var numberedTargetCount = expected.Count(item => item.Numbered);
+                Console.WriteLine(
+                    $"[USER100 MT→OMML PARAGRAPHS] total={sourceParagraphCount}->{targetParagraphCount}; "
+                    + $"blank={sourceBlankParagraphCount}->{targetBlankParagraphCount}; "
+                    + $"numberedTargets={numberedTargetCount}.");
+                AssertTrue(targetBlankParagraphCount <= sourceBlankParagraphCount,
+                    $"MT→OMML introduced structurally blank paragraphs ({sourceBlankParagraphCount} -> {targetBlankParagraphCount}).");
+                AssertTrue(sourceBlankParagraphCount - targetBlankParagraphCount <= numberedTargetCount,
+                    $"MT→OMML removed non-numbering blank paragraphs ({sourceBlankParagraphCount} -> {targetBlankParagraphCount}; numbered={numberedTargetCount}).");
+                AssertTrue(targetParagraphCount <= sourceParagraphCount + numberedTargetCount,
+                    $"MT→OMML added non-numbering paragraphs ({sourceParagraphCount} -> {targetParagraphCount}; numbered={numberedTargetCount}).");
                 for (var index = 0; index < expected.Length; index++)
                 {
                     Word.OMath? math = null;
@@ -394,16 +416,9 @@ internal static partial class Program
         }
         finally
         {
-            if (addIn is not null)
-            {
-                try
-                {
-                    addIn.OnDisconnection(
-                        Extensibility.ext_DisconnectMode.ext_dm_UserClosed,
-                        ref custom);
-                }
-                catch { }
-            }
+            Release(callbacksObject);
+            Release(installedAddIn);
+            Release(addIns);
             try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(document);
@@ -411,6 +426,7 @@ internal static partial class Program
             ForceComCleanup();
             Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", previousFormatAcceptance);
             Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", previousTracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", previousAcceptance);
         }
     }
 

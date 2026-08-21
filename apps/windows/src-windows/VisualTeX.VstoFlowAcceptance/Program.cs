@@ -409,6 +409,14 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-user-100-mathtype-conversion",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-user-100-mathtype-reverse",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-user-100-omml-to-mathtype",
                 StringComparison.OrdinalIgnoreCase);
         using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
             ? null
@@ -565,6 +573,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-user-100-mathtype-source-audit", StringComparison.OrdinalIgnoreCase))
             {
                 RunUserHundredMathTypeSourceAudit();
+            }
+            else if (string.Equals(mode, "word-user-omml-mathtype-source-audit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserOmmlMathTypeSourceAudit();
+            }
+            else if (string.Equals(mode, "word-user-100-omml-to-mathtype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserOmmlMathTypeConversionAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-user-100-mathtype-reverse", StringComparison.OrdinalIgnoreCase))
             {

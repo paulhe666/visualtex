@@ -26,6 +26,20 @@ internal static partial class Program
             + "<msubsup><mo>|</mo><mi>a</mi><mi>b</mi></msubsup><mo>;</mo>"
             + "<mi>a</mi><mo>\u2223</mo><mi>b</mi><mo>;</mo><mi>\u210F</mi><mo>;</mo><mi>L</mi><mo>\u2261</mo><mi>R</mi>");
 
+        var uprightReMathMl = M(
+            "<mi mathvariant=\"normal\">R</mi><mi mathvariant=\"normal\">e</mi>"
+            + "<mo>(</mo><mi>z</mi><mo>)</mo><mo>=</mo>"
+            + "<mfrac><mrow><mi>z</mi><mo>+</mo><mover accent=\"true\"><mi>z</mi><mo>¯</mo></mover></mrow><mn>2</mn></mfrac>");
+        var uprightReGenerated = MathTypeMtefCodec.CreateEquationNative(
+            uprightReMathMl,
+            inline: false);
+        var uprightReReadBack = MathTypeOleStorage.ReadMathMl(
+            MathTypeOleStorage.CreateStandaloneCompoundFile(uprightReGenerated));
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(uprightReMathMl),
+            MathTypeMtefCodec.SemanticSignature(uprightReReadBack),
+            $"Upright Re/overline standalone MTEF mismatch. actual='{uprightReReadBack}'");
+
         var before = SnapshotMathTypeProcessIds();
         var generated = MathTypeMtefCodec.CreateEquationNative(mathMl, inline: false);
         var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);

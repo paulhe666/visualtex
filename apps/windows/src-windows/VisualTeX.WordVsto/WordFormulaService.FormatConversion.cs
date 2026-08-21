@@ -966,7 +966,8 @@ internal sealed partial class WordFormulaService
                             formula.MathMl!,
                             deferNumberingLayout: true,
                             deferFinalFingerprint: true,
-                            ommlBatchSource: ommlBatchSource);
+                            ommlBatchSource: ommlBatchSource,
+                            preserveExistingDisplayParagraphBoundary: true);
                     }
                     else
                     {
