@@ -31,6 +31,9 @@ Private Const VT_WORD_NUMBERING_MODE_SEQUENCE As String = "sequence"
 Private Const VT_WORD_NUMBERING_MODE_CHAPTER As String = "chapter"
 Private Const VT_WORD_NUMBERING_MODE_SECTION As String = "section"
 Private Const VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT As Double = 14#
+' Word InlineShape.Font.Position is integral, while the SVG mathematical
+' baseline is fractional. Keep the fractional 14 pt reference and map it to the
+' final image height immediately before each Word baseline write.
 Private Const VT_WORD_MIN_FORMULA_FONT_SIZE_PT As Double = 1#
 Private Const VT_WORD_MAX_FORMULA_FONT_SIZE_PT As Double = 512#
 Private Const VT_WORD_IMAGE_FONT_CONTROL_ID As String = _
@@ -13890,6 +13893,7 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
     Dim candidate As InlineShape
     Dim undoRecord As Object
     Dim formulaId As String
+    Dim nativeBookmarkName As String
     Dim displayMode As String
     Dim numbered As Boolean
     Dim encodedMetadata As String
@@ -13911,8 +13915,9 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
     Dim conversionErrorDescription As String
 
     If nativeBookmark Is Nothing Then Exit Function
+    nativeBookmarkName = nativeBookmark.Name
     If Not VTTryFormulaIdFromNativeBookmark( _
-       nativeBookmark.Name, formulaId) Then Exit Function
+       nativeBookmarkName, formulaId) Then Exit Function
     Set targetDocument = nativeBookmark.Range.Document
     Set nativeMath = VTNativeMathForBookmark(nativeBookmark)
     If nativeMath Is Nothing Then Exit Function
@@ -13952,12 +13957,18 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
     VTBeginWordInternalMutation
     internalMutationStarted = True
 
-    ' Insert after the still-live OMath. It remains the rollback copy until the
-    ' cached SVG drawing and all formula metadata are validated.
-    Set insertionRange = targetDocument.Range( _
-        Start:=sourceRange.End, End:=sourceRange.End)
+    ' Replace the exact OMath range, then run the same detachment transaction as
+    ' the full native-to-image path. A collapsed Range at OMath.Range.End stays
+    ' inside the math zone on Word for Mac; the previous fast path therefore
+    ' inserted the SVG into the old OMath and could leave a visible math frame
+    ' around the picture after conversion. Replacing the native range first
+    ' avoids manufacturing that hybrid container, while the Undo record remains
+    ' the rollback copy for any later validation failure.
+    Set insertionRange = sourceRange.Duplicate
     Set candidate = VTAddWordFormulaPicture( _
         targetDocument, insertionRange, vectorDocumentPath, fallbackImagePath)
+    sourceDeleted = True
+    Set candidate = VTDetachWordFormulaPictureFromMath(candidate)
     candidate.LockAspectRatio = msoFalse
     candidate.Width = CSng(widthPoints)
     candidate.Height = CSng(heightPoints)
@@ -13969,7 +13980,8 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
     Err.Clear
     On Error GoTo ConversionFailed
     If displayMode = "inline" Then
-        candidate.Range.Font.Position = CLng(baselinePoints)
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
     Else
         candidate.Range.Font.Position = 0
     End If
@@ -13981,12 +13993,14 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
             "Word did not persist the cached VisualTeX image properties."
     End If
 
-    If targetDocument.Bookmarks.Exists(nativeBookmark.Name) Then
-        targetDocument.Bookmarks(nativeBookmark.Name).Delete
+    If targetDocument.Bookmarks.Exists(nativeBookmarkName) Then
+        targetDocument.Bookmarks(nativeBookmarkName).Delete
     End If
-    sourceRange.Delete
-    sourceDeleted = True
     Set candidate = VTEnsureVisualTeXImageMacroButton(candidate)
+    If displayMode = "inline" Then
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
+    End If
     If displayMode = "block" Then
         VTNormalizeUnnumberedDisplayParagraph candidate.Range
         VTNormalizeImageDisplayParagraph candidate.Range
@@ -14030,9 +14044,15 @@ Public Sub VisualTeX_ConvertSelectedToImageFormula()
     Set nativeBookmark = VTFindNativeFormulaBookmark(Selection.Range, False)
     If nativeBookmark Is Nothing Then
         VTStartWordFormulaRestore "selection", "omml", "image"
-    ElseIf VTWordConvertNativeBookmarkToImageFast(nativeBookmark) Then
-        Exit Sub
     Else
+        ' Managed OMML created from a current VisualTeX image already has a
+        ' verified native signature, SVG cache and fractional scale state. Use
+        ' that complete in-Word replacement first: the hidden nativeToImage URL
+        ' can be accepted by the helper process without reaching the resident
+        ' helper, leaving the Session at "created" and making the Ribbon appear
+        ' to do nothing. Older or incomplete formulas still fall back to the
+        ' renderer so their geometry can be regenerated.
+        If VTWordConvertNativeBookmarkToImageFast(nativeBookmark) Then Exit Sub
         VTWordOpenNativeSession nativeBookmark, False, "nativeToImage"
     End If
     Exit Sub
@@ -14995,7 +15015,11 @@ Private Sub VTDocumentImportInsertFormula( _
         fontScale = overrideFontSizePt / fontSizePt
         widthPoints = widthPoints * fontScale
         heightPoints = heightPoints * fontScale
-        baselinePoints = baselinePoints * fontScale
+        ' Recompute from the fractional 14 pt reference instead of scaling an
+        ' already-rounded Word Position value. This keeps redraw/import baseline
+        ' rounding identical to a freshly rendered formula at the new size.
+        baselinePoints = referenceBaselinePt * overrideFontSizePt / _
+            VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
         fontSizePt = overrideFontSizePt
     End If
     VTValidateAbsoluteVisualTeXPath nativeDocumentPath
@@ -15152,7 +15176,8 @@ Private Sub VTDocumentImportInsertFormula( _
     candidate.Range.Font.Size = CSng(fontSizePt)
     On Error GoTo FormulaFailed
     If displayMode = "inline" Then
-        candidate.Range.Font.Position = CLng(baselinePoints)
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
     Else
         candidate.Range.Font.Position = 0
         candidate.Range.ParagraphFormat.Alignment = wdAlignParagraphCenter
@@ -15188,6 +15213,10 @@ Private Sub VTDocumentImportInsertFormula( _
             "Word re-resolved the wrong imported formula image."
     End If
     Set candidate = VTEnsureVisualTeXImageMacroButton(candidate)
+    If displayMode = "inline" Then
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
+    End If
 
     If displayMode = "block" Then
         If numbered Then
@@ -16391,11 +16420,14 @@ Private Sub VTCommitWordDocumentImportDispatch( _
     sourceDocumentId = CStr(dispatch("sourceDocumentId"))
     bookmarkName = CStr(dispatch("bookmarkName"))
     manifestPath = CStr(dispatch("documentImportPath"))
-    If sourceDocumentId <> VTWordDocumentIdentity() Then
+    Set targetDocument = VTFindOpenWordDocumentByIdentity(sourceDocumentId)
+    If targetDocument Is Nothing Then
         Err.Raise vbObjectError + 7586, "VisualTeX", _
-            "The active Word document changed while the document importer was open."
+            "The Word document used to start this import is no longer open."
     End If
-    If Not ActiveDocument.Bookmarks.Exists(bookmarkName) Then
+    targetDocument.Activate
+    VTRequireWritableWordDocument
+    If Not targetDocument.Bookmarks.Exists(bookmarkName) Then
         Err.Raise vbObjectError + 7586, "VisualTeX", _
             "The document import insertion point no longer exists."
     End If
@@ -16449,7 +16481,6 @@ Private Sub VTCommitWordDocumentImportDispatch( _
     progressInterval = itemCount \ 10
     If progressInterval < 1 Then progressInterval = 1
 
-    Set targetDocument = ActiveDocument
     Set anchorBookmark = targetDocument.Bookmarks(bookmarkName)
     insertionStart = anchorBookmark.Range.Start
     insertedEnd = insertionStart
@@ -17756,8 +17787,6 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     transactionStage = "validate-document"
     VTWordPerformanceMark "commit-enter"
     committedImageStart = -1
-    VTRequireWritableWordDocument
-    Set targetDocument = ActiveDocument
     VTRequireDispatchValue dispatch, "mode"
     VTRequireDispatchValue dispatch, "formulaId"
     VTRequireDispatchValue dispatch, "displayMode"
@@ -17795,9 +17824,17 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
 
     VTTraceWordSession sessionId, "commit-dispatch-read", pendingMarker
 
-    If Len(sourceDocumentId) = 0 Or sourceDocumentId <> VTWordDocumentIdentity() Then
-        Err.Raise vbObjectError + 7415, "VisualTeX", "The active Word document changed while VisualTeX was open."
+    If Len(sourceDocumentId) = 0 Then
+        Err.Raise vbObjectError + 7415, "VisualTeX", _
+            "The VisualTeX Word source document identity is missing."
     End If
+    Set targetDocument = VTFindOpenWordDocumentByIdentity(sourceDocumentId)
+    If targetDocument Is Nothing Then
+        Err.Raise vbObjectError + 7415, "VisualTeX", _
+            "The Word document used to start this VisualTeX operation is no longer open."
+    End If
+    targetDocument.Activate
+    VTRequireWritableWordDocument
     widthPoints = VTDispatchPositiveDouble(dispatch, "widthPoints")
     heightPoints = VTDispatchPositiveDouble(dispatch, "heightPoints")
     baselinePoints = VTDispatchOptionalDouble(dispatch, "baseline", 0#)
@@ -18179,7 +18216,8 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
         If baselinePoints > 0# Or baselinePoints < -256# Then
             Err.Raise vbObjectError + 7408, "VisualTeX", "VisualTeX Word baseline is outside the allowed range."
         End If
-        candidate.Range.Font.Position = CLng(baselinePoints)
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
     Else
         candidate.Range.Font.Position = 0
         If Not (targetIsNative And numbered) Then
@@ -18192,7 +18230,9 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
         Err.Raise vbObjectError + 7422, "VisualTeX", "Word did not persist the VisualTeX formula properties."
     End If
     If displayMode = "inline" Then
-        If candidate.Range.Font.Position <> CLng(baselinePoints) Then
+        If candidate.Range.Font.Position <> _
+           VTExpectedWordInlineImageBaseline( _
+               candidate, referenceHeightPt, referenceBaselinePt) Then
             Err.Raise vbObjectError + 7423, "VisualTeX", "Word did not persist the VisualTeX inline baseline."
         End If
     ElseIf Not (targetIsNative And numbered) Then
@@ -18239,6 +18279,14 @@ Private Sub VTCommitWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
     committedImageStart = candidate.Range.Start
     Set candidate = VTEnsureVisualTeXImageMacroButton(candidate)
     committedImageStart = candidate.Range.Start
+    If displayMode = "inline" Then
+        ' Reapply from the final resolved image height after Word has removed the
+        ' placeholder/old formula and finished any FormattedText normalization.
+        ' This closes the host-version gap where Position was correct on the
+        ' staged shape but changed after the surrounding document mutated.
+        VTApplyWordInlineImageBaseline _
+            candidate, referenceHeightPt, referenceBaselinePt
+    End If
     VTWordPerformanceMark "image-source-removed"
 
     If displayMode = "block" Then
@@ -29355,8 +29403,11 @@ Private Sub VTEnsureWordImageScaleState( _
     Dim currentBaseline As Double
     Dim expectedWidth As Double
     Dim expectedHeight As Double
+    Dim reportedWidth As Double
+    Dim reportedHeight As Double
     Dim previousReferenceHeightPt As Double
     Dim baselineRatio As Double
+    Dim adoptGeometry As Boolean
 
     If formulaShape Is Nothing Or _
        Not VTTryParseFormulaReference( _
@@ -29371,17 +29422,31 @@ Private Sub VTEnsureWordImageScaleState( _
        formulaShape.Range.Document, formulaId, fontSizePt, _
        referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
        observedWordFontSizePt) Then
-        ' When Word's reported font size is unchanged—or unavailable on builds
-        ' that do not persist InlineShape.Range.Font.Size—a geometry difference
-        ' is a direct resize by the user. Adopt it as the new 14 pt reference.
-        If Not VTValidWordFormulaFontSize(actualWordFontSize) Or _
-           Abs(actualWordFontSize - observedWordFontSizePt) <= 0.05 Then
-            expectedWidth = referenceWidthPt * _
-                fontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
-            expectedHeight = referenceHeightPt * _
-                fontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
-            If Abs(formulaShape.Width - expectedWidth) > 0.5 Or _
-               Abs(formulaShape.Height - expectedHeight) > 0.5 Then
+        expectedWidth = referenceWidthPt * _
+            fontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+        expectedHeight = referenceHeightPt * _
+            fontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+        If Abs(formulaShape.Width - expectedWidth) > 0.5 Or _
+           Abs(formulaShape.Height - expectedHeight) > 0.5 Then
+            adoptGeometry = True
+            ' Some Word builds report the surrounding paragraph's Font.Size
+            ' while an InlineShape is selected. Treat a changed Font.Size as a
+            ' real native Home-size operation only when the picture geometry has
+            ' also moved to the dimensions predicted by that size. Any other
+            ' geometry change is authoritative image resizing and must not be
+            ' rescaled again from a transient font report.
+            If VTValidWordFormulaFontSize(actualWordFontSize) And _
+               Abs(actualWordFontSize - observedWordFontSizePt) > 0.05 Then
+                reportedWidth = referenceWidthPt * _
+                    actualWordFontSize / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+                reportedHeight = referenceHeightPt * _
+                    actualWordFontSize / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+                If Abs(formulaShape.Width - reportedWidth) <= 0.5 And _
+                   Abs(formulaShape.Height - reportedHeight) <= 0.5 Then
+                    adoptGeometry = False
+                End If
+            End If
+            If adoptGeometry Then
                 previousReferenceHeightPt = referenceHeightPt
                 If previousReferenceHeightPt > 0# Then
                     baselineRatio = _
@@ -29393,13 +29458,11 @@ Private Sub VTEnsureWordImageScaleState( _
                     VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
                 referenceHeightPt = formulaShape.Height * _
                     VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
-                If displayMode = "inline" Then
-                    referenceBaselinePt = currentBaseline * _
-                        VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
-                ElseIf baselineRatio < 0# Then
-                    ' A block image always has Range.Font.Position = 0. Preserve
-                    ' the SVG math-baseline ratio instead of overwriting it with
-                    ' that paragraph baseline when the user resizes the image.
+                If baselineRatio < 0# Then
+                    ' Preserve the SVG mathematical-baseline ratio for both
+                    ' inline and block images. The previous inline path rebuilt
+                    ' this value from an already-rounded Font.Position after a
+                    ' resize, permanently introducing up to a point of drift.
                     referenceBaselinePt = _
                         referenceHeightPt * baselineRatio
                 Else
@@ -29442,6 +29505,126 @@ Private Sub VTEnsureWordImageScaleState( _
         VTRefreshNumberedImageFormulaAfterGeometryChange _
             formulaShape, formulaId, fontSizePt
     End If
+End Sub
+
+Private Function VTExpectedWordInlineImageBaseline( _
+    ByVal formulaShape As InlineShape, _
+    ByVal referenceHeightPt As Double, _
+    ByVal referenceBaselinePt As Double) As Long
+
+    Dim actualHeightPt As Double
+    Dim rawPosition As Double
+
+    If formulaShape Is Nothing Or referenceHeightPt <= 0# Or _
+       referenceBaselinePt < -256# Or referenceBaselinePt > 0# Then
+        Err.Raise vbObjectError + 7494, "VisualTeX", _
+            "The VisualTeX inline formula baseline reference is invalid."
+    End If
+    actualHeightPt = CDbl(formulaShape.Height)
+    If actualHeightPt <= 0# Or actualHeightPt > 10000# Then
+        Err.Raise vbObjectError + 7494, "VisualTeX", _
+            "The VisualTeX inline formula height is invalid."
+    End If
+
+    ' The image height reported by Word is authoritative at the moment the
+    ' baseline is applied. Word builds can round an imported SVG's dimensions
+    ' slightly differently, so scaling a pre-rounded Position value can leave
+    ' two machines one point apart even when they render the same SVG. Scale
+    ' the fractional 14 pt reference descent to the actual image height and
+    ' convert it to Word's integral Font.Position exactly once. SVG and
+    ' imported picture dimensions are quantized independently, so a mathematical
+    ' half point can arrive just below the boundary (the real Times fixture is
+    ' -1.491 pt rather than -1.5 pt). A 0.01 pt negative rounding tolerance fixes
+    ' only those boundary cases. It is not a fixed Word/OMath offset: fraction,
+    ' integral, sum and root formulas retain their distinct baseline values.
+    rawPosition = referenceBaselinePt * actualHeightPt / referenceHeightPt
+    If rawPosition < -256# Then rawPosition = -256#
+    If rawPosition > 0# Then rawPosition = 0#
+    If rawPosition < 0# Then
+        VTExpectedWordInlineImageBaseline = _
+            -CLng(Int((-rawPosition) + 0.51#))
+    Else
+        VTExpectedWordInlineImageBaseline = 0
+    End If
+End Function
+
+Private Sub VTApplyWordInlineImageBaseline( _
+    ByVal formulaShape As InlineShape, _
+    ByVal referenceHeightPt As Double, _
+    ByVal referenceBaselinePt As Double)
+
+    Dim requestedPosition As Long
+    Dim appliedPosition As Long
+    Dim attemptIndex As Long
+    Dim writeErrorNumber As Long
+    Dim applyErrorNumber As Long
+    Dim applyErrorDescription As String
+    Dim containingField As Field
+    Dim restoreFieldLock As Boolean
+
+    requestedPosition = VTExpectedWordInlineImageBaseline( _
+        formulaShape, referenceHeightPt, referenceBaselinePt)
+
+    ' A committed image may live inside the locked MACROBUTTON result used for
+    ' double-click editing. Word for Mac accepts the initial Position before the
+    ' field is locked, but some builds ignore later Range.Font.Position writes to
+    ' a locked result after an image resize. Temporarily unlock only our verified
+    ' VisualTeX field, restore the lock on every exit path, and leave unrelated
+    ' Word fields untouched.
+    On Error GoTo ApplyFailed
+    Set containingField = VTVisualTeXImageMacroButtonFieldForShape(formulaShape)
+    If Not containingField Is Nothing Then
+        restoreFieldLock = containingField.Locked
+        If restoreFieldLock Then containingField.Locked = False
+    End If
+
+    ' An InlineShape can inherit raised/subscript formatting from the insertion
+    ' caret. Clear those independent run flags before assigning Position so the
+    ' same mathematical baseline is not offset a second time on another Word
+    ' build or in a differently formatted paragraph.
+    For attemptIndex = 1 To 3
+        On Error Resume Next
+        Err.Clear
+        With formulaShape.Range.Font
+            .Superscript = False
+            .Subscript = False
+            .Position = requestedPosition
+        End With
+        writeErrorNumber = Err.Number
+        Err.Clear
+        appliedPosition = formulaShape.Range.Font.Position
+        If writeErrorNumber = 0 And Err.Number = 0 And _
+           appliedPosition = requestedPosition Then
+            On Error GoTo ApplyFailed
+            If Not containingField Is Nothing And restoreFieldLock Then _
+                containingField.Locked = True
+            Exit Sub
+        End If
+        Err.Clear
+        On Error GoTo ApplyFailed
+        ' Word can keep the old Position while an InlineShape resize/layout is
+        ' still being committed. Drain that host work before retrying the exact
+        ' same mathematical baseline instead of accepting a stale value.
+        DoEvents
+    Next attemptIndex
+
+    Err.Raise vbObjectError + 7494, "VisualTeX", _
+        "Word did not persist the VisualTeX inline formula baseline" & _
+        " [expected=" & CStr(requestedPosition) & _
+        "; actual=" & CStr(appliedPosition) & "]."
+
+ApplyFailed:
+    applyErrorNumber = Err.Number
+    applyErrorDescription = Err.Description
+    On Error Resume Next
+    If Not containingField Is Nothing And restoreFieldLock Then _
+        containingField.Locked = True
+    On Error GoTo 0
+    If applyErrorNumber = 0 Then applyErrorNumber = vbObjectError + 7494
+    If Len(applyErrorDescription) = 0 Then _
+        applyErrorDescription = "Word could not update the VisualTeX inline formula baseline."
+    Err.Raise applyErrorNumber, "VisualTeX inline baseline", _
+        applyErrorDescription
 End Sub
 
 Private Sub VTApplyWordImageFormulaFontSize( _
@@ -29500,7 +29683,8 @@ Private Sub VTApplyWordImageFormulaFontSize( _
     formulaShape.Height = CSng(targetHeight)
     formulaShape.LockAspectRatio = msoTrue
     If displayMode = "inline" Then
-        formulaShape.Range.Font.Position = CLng(targetBaseline)
+        VTApplyWordInlineImageBaseline _
+            formulaShape, referenceHeightPt, referenceBaselinePt
     Else
         formulaShape.Range.Font.Position = 0
         If numbered Then
@@ -29584,11 +29768,43 @@ Private Sub VTSynchronizeWordImageFormulaShape( _
     Dim referenceHeightPt As Double
     Dim referenceBaselinePt As Double
     Dim observedWordFontSizePt As Double
+    Dim baselineStateReadable As Boolean
+
+    If formulaShape Is Nothing Then Exit Sub
+
+    ' Baseline repair must not depend on the more fragile Word font-size view.
+    ' Some Word for Mac builds report the surrounding paragraph size for a
+    ' selected InlineShape. If that later size/geometry synchronization raises
+    ' or takes a compatibility branch, the old implementation never reached its
+    ' final baseline correction and left a resized inline formula at its stale
+    ' Position. Repair from the already-persisted mathematical reference first.
+    If VTTryParseFormulaReference( _
+       formulaShape.Title, formulaId, displayMode, numbered) Then
+        If displayMode = "inline" Then
+            baselineStateReadable = VTTryReadWordImageScaleState( _
+                formulaShape.Range.Document, formulaId, storedFontSizePt, _
+                referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
+                observedWordFontSizePt)
+            If baselineStateReadable Then
+                VTApplyWordInlineImageBaseline _
+                    formulaShape, referenceHeightPt, referenceBaselinePt
+            End If
+        End If
+    End If
 
     VTPrepareWordImageFormulaState _
         formulaShape, formulaId, displayMode, numbered, storedFontSizePt, _
         referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
         observedWordFontSizePt
+
+    ' Geometry adoption can update the 14 pt reference height while preserving
+    ' its mathematical baseline ratio. Reapply once more against the final
+    ' current height so direct image resizing, Word SVG dimension rounding and
+    ' explicit VisualTeX size changes all converge on the same integer Position.
+    If displayMode = "inline" Then
+        VTApplyWordInlineImageBaseline _
+            formulaShape, referenceHeightPt, referenceBaselinePt
+    End If
 End Sub
 
 Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
@@ -30241,15 +30457,38 @@ Private Sub VTRequireWritableWordDocument()
     End If
 End Sub
 
-Private Function VTWordDocumentIdentity() As String
+Private Function VTWordDocumentIdentityForDocument( _
+    ByVal documentObject As Document) As String
+
     On Error Resume Next
-    VTWordDocumentIdentity = ActiveDocument.FullName
-    If Err.Number <> 0 Or Len(VTWordDocumentIdentity) = 0 Then
+    VTWordDocumentIdentityForDocument = documentObject.FullName
+    If Err.Number <> 0 Or Len(VTWordDocumentIdentityForDocument) = 0 Then
         Err.Clear
-        VTWordDocumentIdentity = ActiveDocument.Name
+        VTWordDocumentIdentityForDocument = documentObject.Name
     End If
     On Error GoTo 0
-    VTWordDocumentIdentity = VTBoundedIdentity(VTWordDocumentIdentity)
+    VTWordDocumentIdentityForDocument = _
+        VTBoundedIdentity(VTWordDocumentIdentityForDocument)
+End Function
+
+Private Function VTWordDocumentIdentity() As String
+    If Documents.Count = 0 Then Exit Function
+    VTWordDocumentIdentity = _
+        VTWordDocumentIdentityForDocument(ActiveDocument)
+End Function
+
+Private Function VTFindOpenWordDocumentByIdentity( _
+    ByVal expectedIdentity As String) As Document
+
+    Dim candidate As Document
+
+    If Len(expectedIdentity) = 0 Then Exit Function
+    For Each candidate In Documents
+        If VTWordDocumentIdentityForDocument(candidate) = expectedIdentity Then
+            Set VTFindOpenWordDocumentByIdentity = candidate
+            Exit Function
+        End If
+    Next candidate
 End Function
 
 Private Function VTDoubleClickTraceValue(ByVal value As String) As String

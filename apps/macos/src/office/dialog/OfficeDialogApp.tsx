@@ -1049,11 +1049,9 @@ export function OfficeDialogApp() {
       pngBase64 = (
         await svgToPng(
           {
-            svg: base.svg,
             base64: base.svgBase64,
             width: base.width,
             height: base.height,
-            baseline: base.baseline,
           },
           { scale: 2, background: "transparent" },
         )

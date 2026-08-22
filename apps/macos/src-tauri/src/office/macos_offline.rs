@@ -87,10 +87,25 @@ const MAX_IDENTITY_CHARS: usize = 2048;
 const MAX_SHAPE_NAME_CHARS: usize = 128;
 const MAX_WORD_WIDTH_PT: f64 = 500.0;
 const WORD_REFERENCE_FONT_SIZE_PT: f64 = 14.0;
-// MathJax's TeX glyphs render about 9.5% narrower than Word's Cambria Math at
-// the same nominal point size. Scale only Word image formulas so 14 pt means a
-// comparable painted formula size; PowerPoint keeps its existing geometry.
-const WORD_IMAGE_VISUAL_SCALE: f64 = 1.1;
+// MathJax's built-in TeX paths render about 9.5% narrower than Word's Cambria
+// Math at the same nominal point size, so the historical KaTeX/Computer Modern
+// path keeps its 1.1 Word-image calibration. Times is different after VisualTeX
+// replaces the letter glyphs with real Times New Roman SVG <text>: two same-
+// LaTeX Word fixtures measured 36 px vs 35 px and 62 px vs 60 px horizontally,
+// but 12 px vs 11 px vertically. Keep the small horizontal compensation needed
+// by MathJax's TeX layout positions while removing the erroneous 10% vertical
+// enlargement that made Times image formulas taller and shifted their baseline.
+const WORD_TEX_IMAGE_VISUAL_SCALE: f64 = 1.1;
+const WORD_TEX_SHALLOW_DESCENT_FLOOR_PT: f64 = 1.91;
+const WORD_TIMES_IMAGE_WIDTH_SCALE: f64 = 1.067;
+const WORD_TIMES_IMAGE_HEIGHT_SCALE: f64 = 1.0;
+
+fn word_image_visual_scales(formula_letter_font: Option<&str>) -> (f64, f64) {
+    match formula_letter_font {
+        Some("times") => (WORD_TIMES_IMAGE_WIDTH_SCALE, WORD_TIMES_IMAGE_HEIGHT_SCALE),
+        _ => (WORD_TEX_IMAGE_VISUAL_SCALE, WORD_TEX_IMAGE_VISUAL_SCALE),
+    }
+}
 const MIN_WORD_FONT_SIZE_PT: f64 = 1.0;
 const MAX_WORD_FONT_SIZE_PT: f64 = 512.0;
 const POWERPOINT_REFERENCE_FONT_SIZE_PT: f64 = 14.0;
@@ -3343,9 +3358,19 @@ fn scale_word_reference_geometry(
     {
         return Err("Word formula point-size geometry is invalid".to_string());
     }
-    let baseline = (reference_baseline_pt * point_scale)
-        .round()
-        .clamp(-256.0, 0.0) as i32;
+    // Word exposes Font.Position only as whole points. SVG and imported
+    // picture dimensions are quantized independently, so a mathematical half
+    // point can arrive just below the boundary (the real Times fixture reports
+    // -1.491 pt instead of -1.5 pt). Use a small rounding tolerance for negative
+    // descents; unlike a fixed offset, this changes only boundary cases and
+    // preserves the distinct fraction/integral/sum/root baseline classes.
+    let raw_baseline = reference_baseline_pt * point_scale;
+    let baseline = if raw_baseline < 0.0 {
+        (raw_baseline - 0.01).round()
+    } else {
+        0.0
+    }
+    .clamp(-256.0, 0.0) as i32;
     Ok(WordGeometry {
         width,
         height,
@@ -3357,35 +3382,39 @@ fn scale_word_reference_geometry(
     })
 }
 
-fn calculate_word_svg_geometry(
+fn calculate_word_svg_geometry_with_scale(
     width: f64,
     height: f64,
-    baseline: Option<f64>,
+    baseline: f64,
     font_size_pt: f64,
+    width_scale: f64,
+    height_scale: f64,
 ) -> Result<WordGeometry, String> {
     if !width.is_finite()
         || !height.is_finite()
+        || !baseline.is_finite()
         || width <= 0.0
         || height <= 0.0
-        || baseline.is_some_and(|value| !value.is_finite() || value < 0.0 || value > height)
+        || baseline < 0.0
+        || baseline > height
+        || !width_scale.is_finite()
+        || !(0.5..=2.0).contains(&width_scale)
+        || !height_scale.is_finite()
+        || !(0.5..=2.0).contains(&height_scale)
     {
         return Err("Word formula SVG geometry is invalid".to_string());
     }
-    let natural_width = width * 0.75 * WORD_IMAGE_VISUAL_SCALE;
-    let natural_height = height * 0.75 * WORD_IMAGE_VISUAL_SCALE;
+    let natural_width = width * 0.75 * width_scale;
+    let natural_height = height * 0.75 * height_scale;
     let reference_scale = f64::min(1.0, MAX_WORD_WIDTH_PT / natural_width);
     let reference_width_pt = natural_width * reference_scale;
     let reference_height_pt = natural_height * reference_scale;
-    let reference_baseline_pt = baseline
-        .map(|value| {
-            let descent_ratio = (height - value) / height;
-            // Preserve the fractional descent at the canonical 14 pt size.
-            // Word's Font.Position is integral, so rounding this reference and
-            // rounding again after point-size scaling visibly under-corrects
-            // short subscript formulas such as L_z beside L^2.
-            -(reference_height_pt * descent_ratio).max(0.0)
-        })
-        .unwrap_or(0.0)
+    let descent_ratio = (height - baseline) / height;
+    // Preserve the fractional descent at the canonical 14 pt size. Word's
+    // Font.Position is integral, so rounding this reference and rounding again
+    // after point-size scaling visibly under-corrects short subscript formulas
+    // such as L_z beside L^2.
+    let reference_baseline_pt = (-(reference_height_pt * descent_ratio).max(0.0))
         .clamp(-256.0, 0.0);
     scale_word_reference_geometry(
         reference_width_pt,
@@ -3393,6 +3422,61 @@ fn calculate_word_svg_geometry(
         reference_baseline_pt,
         font_size_pt,
     )
+}
+
+#[cfg(test)]
+fn calculate_word_svg_geometry(
+    width: f64,
+    height: f64,
+    baseline: f64,
+    font_size_pt: f64,
+) -> Result<WordGeometry, String> {
+    calculate_word_svg_geometry_with_scale(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        WORD_TEX_IMAGE_VISUAL_SCALE,
+        WORD_TEX_IMAGE_VISUAL_SCALE,
+    )
+}
+
+fn calculate_word_svg_geometry_for_font(
+    width: f64,
+    height: f64,
+    baseline: f64,
+    font_size_pt: f64,
+    formula_letter_font: Option<&str>,
+) -> Result<WordGeometry, String> {
+    let (width_scale, height_scale) = word_image_visual_scales(formula_letter_font);
+    let geometry = calculate_word_svg_geometry_with_scale(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        width_scale,
+        height_scale,
+    )?;
+    // KaTeX and the non-Times letter-font replacements share MathJax's very
+    // shallow SVG descent for superscript-only expressions. Word's integral
+    // Font.Position then leaves x^2 visibly above adjacent OMML on screen and
+    // by 0.5-0.67 pt in PDF ink measurements. Apply a canonical-size descent
+    // floor only to that shallow class; fractions, integrals, sums and roots
+    // already exceed it and keep their formula-specific baseline. Times uses
+    // real text glyph metrics and retains its independent calibration.
+    if formula_letter_font != Some("times")
+        && geometry.reference_baseline_pt < 0.0
+        && geometry.reference_baseline_pt > -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT
+    {
+        scale_word_reference_geometry(
+            geometry.reference_width_pt,
+            geometry.reference_height_pt,
+            -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT,
+            font_size_pt,
+        )
+    } else {
+        Ok(geometry)
+    }
 }
 
 fn calculate_word_geometry(
@@ -3441,10 +3525,25 @@ fn calculate_word_geometry(
         .unwrap_or(WORD_REFERENCE_FONT_SIZE_PT);
     let baseline = export
         .baseline
-        .filter(|value| value.is_finite() && *value >= 0.0 && *value <= export.height);
+        .filter(|value| value.is_finite() && *value >= 0.0 && *value <= export.height)
+        .ok_or_else(|| {
+            "Word formula export is missing a valid mathematical baseline".to_string()
+        })?;
+    // Never silently fall back to the image bottom for a missing baseline. That
+    // makes simple formulas look acceptable while subscripts, fractions and
+    // tall delimiters are inserted at visibly different vertical positions on
+    // Word versions that round InlineShape.Font.Position differently. Every
+    // current renderer provides a mathematical baseline, so absence means the
+    // artifact is incomplete and must not be committed with corrupt geometry.
     // Document import and edit replacement share this exact 14 pt reference
     // geometry path, including maximum width, descent and baseline rounding.
-    calculate_word_svg_geometry(export.width, export.height, baseline, font_size_pt)
+    calculate_word_svg_geometry_for_font(
+        export.width,
+        export.height,
+        baseline,
+        font_size_pt,
+        Some(session.formula_letter_font.as_str()),
+    )
 }
 
 fn calculate_powerpoint_geometry(
@@ -4754,6 +4853,7 @@ fn calculate_document_image_geometry(
     height: f64,
     baseline: f64,
     font_size_pt: f64,
+    formula_letter_font: Option<&str>,
 ) -> Result<WordGeometry, String> {
     if !width.is_finite()
         || !height.is_finite()
@@ -4765,7 +4865,13 @@ fn calculate_document_image_geometry(
     {
         return Err("Document formula SVG geometry is invalid".to_string());
     }
-    calculate_word_svg_geometry(width, height, Some(baseline), font_size_pt)
+    calculate_word_svg_geometry_for_font(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        formula_letter_font,
+    )
 }
 
 fn resolve_document_paragraph_transfer(
@@ -5471,9 +5577,16 @@ fn commit_document_import_blocking(
                         .ok_or_else(|| "Image document formula width is missing".to_string())?;
                     let height = height
                         .ok_or_else(|| "Image document formula height is missing".to_string())?;
-                    let baseline = baseline.unwrap_or(height);
-                    let geometry =
-                        calculate_document_image_geometry(width, height, baseline, *font_size_pt)?;
+                    let baseline = baseline.ok_or_else(|| {
+                        "Image document formula is missing its mathematical baseline".to_string()
+                    })?;
+                    let geometry = calculate_document_image_geometry(
+                        width,
+                        height,
+                        baseline,
+                        *font_size_pt,
+                        resolved_metadata.formula_letter_font.as_deref(),
+                    )?;
                     let svg_path = document_formula_file_path(&session_id, formula_id, "svg")?;
                     let png_path = document_formula_file_path(&session_id, formula_id, "png")?;
                     atomic_write(&svg_path, &svg, 0o600)?;
@@ -6495,14 +6608,14 @@ mod tests {
         let superscript = calculate_word_svg_geometry(
             22.86186666666666,
             17.56613333333333,
-            Some(16.56613333333333),
+            16.56613333333333,
             11.0,
         )
         .expect("L^2 geometry should resolve");
         let subscript = calculate_word_svg_geometry(
             22.39893333333333,
             17.69493333333333,
-            Some(13.749333333333333),
+            13.749333333333333,
             11.0,
         )
         .expect("L_z geometry should resolve");
@@ -6512,6 +6625,68 @@ mod tests {
         assert_eq!(superscript.baseline, -1);
         assert_eq!(subscript.baseline, -3);
         assert_eq!(subscript.baseline - superscript.baseline, -2);
+    }
+
+    #[test]
+    fn word_times_image_geometry_matches_native_visual_calibration() {
+        // Real 11 pt Times New Roman a^2+b^2 geometry from the reported Word
+        // document. The old uniform 1.1 calibration produced about 38.245 x
+        // 12.379 pt; Word copy-as-picture measured its ink at 36 x 12 px while
+        // the same OMML was 35 x 11 px. Times therefore keeps only the small
+        // horizontal TeX-layout compensation and uses natural vertical scale.
+        // Its -1.49 pt formula-specific descent floors to -2 pt so Word does
+        // not render the image baseline above the adjacent native OMath.
+        let times = calculate_word_svg_geometry_for_font(
+            59.00053333333333,
+            19.0968,
+            16.566133333333333,
+            11.0,
+            Some("times"),
+        )
+        .expect("Times image geometry should resolve");
+        let katex = calculate_word_svg_geometry_for_font(
+            59.00053333333333,
+            19.0968,
+            16.566133333333333,
+            11.0,
+            Some("katex"),
+        )
+        .expect("KaTeX image geometry should retain its historical calibration");
+
+        assert!((times.width - 37.09763891428571).abs() < 0.001);
+        assert!((times.height - 11.25347142857143).abs() < 0.001);
+        assert_eq!(times.baseline, -2);
+        assert!((times.reference_baseline_pt + 1.898).abs() < 0.001);
+        assert!((katex.width - 38.24498857142857).abs() < 0.001);
+        assert!((katex.height - 12.378818571428573).abs() < 0.001);
+        assert_eq!(katex.baseline, -2);
+    }
+
+    #[test]
+    fn word_non_times_fonts_lower_only_shallow_superscript_descent() {
+        for font in ["katex", "cambria", "stix", "palatino", "helvetica"] {
+            let shallow = calculate_word_svg_geometry_for_font(
+                20.83792,
+                17.789648,
+                16.5848,
+                11.0,
+                Some(font),
+            )
+            .expect("non-Times shallow geometry should resolve");
+            let deep = calculate_word_svg_geometry_for_font(
+                17.21108,
+                21.760533,
+                14.1756,
+                11.0,
+                Some(font),
+            )
+            .expect("non-Times fraction geometry should resolve");
+
+            assert_eq!(shallow.baseline, -2, "font={font}");
+            assert!((shallow.reference_baseline_pt + 1.91).abs() < 0.001);
+            assert_eq!(deep.baseline, -5, "font={font}");
+            assert!(deep.reference_baseline_pt < -6.0);
+        }
     }
 
     #[test]
@@ -7218,7 +7393,7 @@ c &= e
 
     #[test]
     fn office_geometry_preserves_visual_point_size_and_powerpoint_center() {
-        let word_geometry = calculate_word_svg_geometry(100.0, 20.0, Some(15.0), 14.0)
+        let word_geometry = calculate_word_svg_geometry(100.0, 20.0, 15.0, 14.0)
             .expect("Word image geometry should apply its visual calibration");
         assert!((word_geometry.width - 82.5).abs() < 0.001);
         assert!((word_geometry.height - 16.5).abs() < 0.001);
@@ -7368,6 +7543,9 @@ c &= e
         let mut word_session = session.clone();
         word_session.host = OfficeHost::Word;
         word_session.font_size_pt = Some(24.0);
+        if let Some(export) = word_session.export_result.as_mut() {
+            export.baseline = Some(40.0);
+        }
         if let Some(metadata) = word_session.original_metadata.as_mut() {
             metadata.font_size_pt = Some(10.5);
         }

@@ -115,7 +115,7 @@ async function renderTemplate(
   const pngBase64 = (
     await svgToPng(svg, { scale: 2, background: "transparent" })
   ).base64;
-  const baseline = svg.baseline ?? svg.height;
+  const baseline = svg.baseline;
   return {
     canonicalLatex,
     ommlBase64: omml.ommlBase64,

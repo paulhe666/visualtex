@@ -243,7 +243,24 @@ function applyVisualTexSvgFontPreferences(
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}" transform="scale(1,-1)" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']+)["']/i)?.[1]?.trim();
+    // MathJax often lays out multi-letter operators such as \\arccos or
+    // \\operatorname{rank} as several <use> glyphs inside one translated
+    // parent. Every glyph after the first then owns an additional local
+    // translate(...). Dropping that transform while replacing <use> with a
+    // system-font <text> puts every character at the same origin and produces
+    // the severe overlap/"garbled" appearance seen in Word. Preserve all
+    // glyph-local positioning before applying the y-axis flip required for SVG
+    // text inside MathJax's outer scale(1,-1) coordinate system.
+    const transform = originalTransform
+      ? `${escapeSvgAttribute(originalTransform)} scale(1,-1)`
+      : "scale(1,-1)";
+    const position = `${
+      originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""
+    }${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""}`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${position} transform="${transform}" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
   return output;
 }
@@ -479,7 +496,7 @@ async function encodeCanvasPng(canvas: HTMLCanvasElement) {
 }
 
 export async function svgToPng(
-  svgResult: SvgExportResult,
+  svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
 ): Promise<PngExportResult> {
   if (typeof document === "undefined" || typeof Image === "undefined") {

@@ -199,7 +199,7 @@ async function prepareFormulaArtifactCommitItem(
     const pngBase64 = (
       await svgToPng(svg, { scale: 2, background: "transparent" })
     ).base64;
-    const resolvedBaseline = svg.baseline ?? svg.height;
+    const resolvedBaseline = svg.baseline;
     const reference = calculateReferenceGeometry(
       svg.width,
       svg.height,

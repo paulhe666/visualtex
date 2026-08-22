@@ -40,6 +40,13 @@ Private Sub App_WindowActivate( _
     ByVal Wn As Word.Window)
 
     On Error Resume Next
+    ' Word for Mac can re-quantize an SVG InlineShape while reopening a document
+    ' or reactivating its window without raising WindowSelectionChange. Run the
+    ' same selected-formula synchronization here so the mathematical baseline
+    ' is repaired from persisted geometry before the next edit. The resolver is
+    ' local to the current selection and returns immediately for ordinary text.
+    If Not VTWordInternalMutationActive() Then _
+        VisualTeX_SynchronizeSelectedImageFormulaSize Selection
     VTInvalidateWordEquationNumberingFormatControl
     On Error GoTo 0
 End Sub

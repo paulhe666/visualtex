@@ -215,6 +215,27 @@ if (pictureRoutingTarget && !pictureRoutingTargets.has(pictureRoutingTarget)) {
 }
 const requestedWordAddinPath = commandLineOption("--word-addin");
 const activeTemplatePath = requestedWordAddinPath || templatePath;
+const createFormulaLatexOption = commandLineOption("--formula-latex");
+const createFormulaLetterFontOption = commandLineOption("--formula-letter-font");
+const supportedFormulaLetterFonts = new Set([
+  "katex",
+  "times",
+  "cambria",
+  "stix",
+  "palatino",
+  "helvetica",
+]);
+if (
+  createFormulaLetterFontOption &&
+  !supportedFormulaLetterFonts.has(createFormulaLetterFontOption)
+) {
+  throw new Error(
+    `--formula-letter-font must be one of ${[...supportedFormulaLetterFonts].join("|")}`,
+  );
+}
+if ((createFormulaLatexOption || createFormulaLetterFontOption) && !createFormulaRegression) {
+  throw new Error("--formula-latex/--formula-letter-font require a --create-image/--create-native regression mode");
+}
 const firstFrameArtifactPath = commandLineOption("--first-frame-artifacts");
 const firstFrameImageRegression = Boolean(firstFrameArtifactPath);
 const itemLimitOption = commandLineOption("--item-limit");
@@ -277,8 +298,16 @@ if (
   throw new Error("--image conflicts with the selected OMML physical target");
 }
 const referenceFontSizePt = 14;
-const wordImageVisualScale = 1.1;
+const wordTexImageVisualScale = 1.1;
+const wordTimesImageWidthScale = 1.067;
+const wordTimesImageHeightScale = 1.0;
 const wordDisplayPaddingPx = 2;
+
+function wordImageVisualScalesForFont(formulaLetterFont = "katex") {
+  return formulaLetterFont === "times"
+    ? { width: wordTimesImageWidthScale, height: wordTimesImageHeightScale }
+    : { width: wordTexImageVisualScale, height: wordTexImageVisualScale };
+}
 const nativeCalibrationWidthPt = 95.71632;
 const editorReadyFileName = "editor-ready.json";
 const editorPerformanceFileName = "editor-performance.jsonl";
@@ -1072,9 +1101,10 @@ function wordSvgDocxBytes(svg, png, widthPoints, heightPoints) {
   );
 }
 
-function calculateImageGeometry(svg, fontSizePt) {
-  const naturalWidthPt = svg.width * 0.75 * wordImageVisualScale;
-  const naturalHeightPt = svg.height * 0.75 * wordImageVisualScale;
+function calculateImageGeometry(svg, fontSizePt, formulaLetterFont = "katex") {
+  const visualScale = wordImageVisualScalesForFont(formulaLetterFont);
+  const naturalWidthPt = svg.width * 0.75 * visualScale.width;
+  const naturalHeightPt = svg.height * 0.75 * visualScale.height;
   const referenceScale = Math.min(1, 500 / naturalWidthPt);
   const referenceWidthPt = naturalWidthPt * referenceScale;
   const referenceHeightPt = naturalHeightPt * referenceScale;
@@ -1344,6 +1374,7 @@ function browserFormulaArtifact(formula, artifactDirectory, index) {
       baseline: formula.baseline ?? formula.height,
     },
     formula.fontSizePt,
+    formula.metadata?.formulaLetterFont ?? "katex",
   );
   const stem = `first-frame-${index + 1}-${compactFormulaId(formula.formulaId)}`;
   const imagePath = join(artifactDirectory, `${stem}.svg`);
@@ -2574,6 +2605,8 @@ function formulaItem({
   numbered,
   fontSizePt,
   artifactDirectory,
+  formulaLetterFont = "katex",
+  formulaChineseFont = "system",
 }) {
   const normalized = normalizeFormulaEditorDocument(
     [{ id: crypto.randomUUID(), latex: metadataLatex }],
@@ -2621,8 +2654,10 @@ function formulaItem({
       paddingPx: displayMode === "inline" ? 1 : wordDisplayPaddingPx,
       background: "transparent",
       forceExplicitBlack: true,
+      formulaLetterFont,
+      formulaChineseFont,
     });
-    const geometry = calculateImageGeometry(svg, fontSizePt);
+    const geometry = calculateImageGeometry(svg, fontSizePt, formulaLetterFont);
     ({
       widthPoints,
       heightPoints,
@@ -2662,6 +2697,8 @@ function formulaItem({
     displayMode,
     numbered,
     fontSizePt,
+    formulaLetterFont,
+    formulaChineseFont,
     referenceWidthPt,
     referenceHeightPt,
     referenceBaselinePt,
@@ -2679,6 +2716,8 @@ function formulaItem({
     displayMode,
     numbered,
     fontSizePt,
+    formulaLetterFont,
+    formulaChineseFont,
     metadata: encodeFormulaMetadata(metadata),
     ommlBase64: Buffer.from(omml, "utf8").toString("base64url"),
     nativePath,
@@ -2722,7 +2761,11 @@ function editedImageFormulaArtifacts(
     rendered.lines.length,
     `Edited ${rendered.codeFormat} image`,
   );
-  const geometry = calculateImageGeometry(rendered.svg, formula.fontSizePt);
+  const geometry = calculateImageGeometry(
+    rendered.svg,
+    formula.fontSizePt,
+    formula.formulaLetterFont ?? "katex",
+  );
   const stem = `edited-${compactFormulaId(formula.formulaId)}`;
   const imagePath = join(artifactDirectory, `${stem}.svg`);
   const fallbackImagePath = join(artifactDirectory, `${stem}.png`);
@@ -3547,7 +3590,7 @@ async function runCreatedImageFormulaRegression(
     createNativeNumberedRegression
       ? "block"
       : "inline";
-  const createdLatex = createSourceFormattedEquationRegression
+  const defaultCreatedLatex = createSourceFormattedEquationRegression
     ? String.raw`\begin{equation}
 \frac{\delta \mathbb{E}[L]}
      {\delta f(\mathbf{x})}
@@ -3562,6 +3605,8 @@ p(\mathbf{x},t)\,
     : createNativeNumberedRegression
       ? String.raw`(a+b)^{n}=\sum_{k=0}^{n}\binom{n}{k}a^{n-k}b^{k}`
       : "dfdfdf";
+  const createdLatex = createFormulaLatexOption || defaultCreatedLatex;
+  const createdFormulaLetterFont = createFormulaLetterFontOption || "katex";
   const createMacroName = createdNativeEquation
     ? createdDisplayMode === "block"
       ? "VisualTeX_CreateNativeDisplay"
@@ -3631,6 +3676,7 @@ p(\mathbf{x},t)\,
     numbered: createdNumbered,
     fontSizePt,
     artifactDirectory: sessionDirectory,
+    formulaLetterFont: createdFormulaLetterFont,
   });
   nativeFiles.push(formula.nativePath);
   const dispatch = manifestText([
@@ -4828,7 +4874,7 @@ try {
       wordShapeHeightPt: displayHeight,
       imageInkHeightPt: calibrationInk.height,
       boxToInkHeightRatio,
-      visualScale: wordImageVisualScale,
+      visualScale: wordImageVisualScalesForFont("katex"),
       displayPaddingPx: wordDisplayPaddingPx,
     };
   }
