@@ -61,6 +61,7 @@ import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,
 } from "../shortcuts/greekLetterHotkeys";
+import { resolveNewFormulaLineMode } from "./formulaLineMode";
 import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
@@ -7379,7 +7380,51 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       });
     };
 
-    const addLineAfter = (index: number) => {
+    const setFormulaLineMode = (
+      lineId: string,
+      mode: FormulaLine["mode"],
+    ) => {
+      if (interactionReadOnly || latexCodeFormat !== "mixed-inline-display") return;
+      const state = useEditorStore.getState();
+      const current = state.lines.find((line) => line.id === lineId);
+      if (!current || current.mode === mode) return;
+      historyManager.commitPendingTransaction();
+      const selectionByLineId = Object.fromEntries(
+        linesRef.current.flatMap((line) => {
+          const currentField = fieldRefs.current.get(line.id);
+          return currentField?.isConnected
+            ? [[line.id, captureSelection(currentField)] as const]
+            : [];
+        }),
+      );
+      const before = getEditorDocumentSnapshot(selectionByLineId);
+      const after: ReplaceDocumentEntry["after"] = {
+        ...before,
+        lines: before.lines.map((line) =>
+          line.id === lineId ? { ...line, mode } : { ...line },
+        ),
+        activeLineId: lineId,
+      };
+      flushSync(() => state.replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      setActiveLine(lineId);
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: "source-apply",
+        timestamp: Date.now(),
+      });
+      focusLine(lineId, {
+        latex: current.latex,
+        selection: before.selectionByLineId[lineId] ?? null,
+      });
+    };
+
+    const addLineAfter = (
+      index: number,
+      requestedMode?: FormulaLine["mode"],
+    ) => {
       historyManager.commitPendingTransaction();
       const state = useEditorStore.getState();
       const beforeActiveLineId = state.activeLineId;
@@ -7394,7 +7439,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         state.lines[Math.max(0, Math.min(index, state.lines.length - 1))]?.id ??
         beforeActiveLineId;
       const scrollSnapshot = captureEditorScrollSnapshot(anchorLineId);
-      const line = createFormulaLine("");
+      const inheritedMode =
+        requestedMode ??
+        state.lines[Math.max(0, Math.min(index, state.lines.length - 1))]?.mode ??
+        "display";
+      const line = createFormulaLine("", undefined, inheritedMode);
       const afterSelection: MathSelectionSnapshot = {
         ranges: [[0, 0]],
         direction: "none",
@@ -7485,7 +7534,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const lastPastedLatex = normalizedLines.at(-1) ?? "";
       const lastLatex = concatenate(lastPastedLatex, rightLatex);
       const insertedLines = normalizedLines.slice(1).map((latex, index, lines) =>
-        createFormulaLine(index === lines.length - 1 ? lastLatex : latex),
+        createFormulaLine(
+          index === lines.length - 1 ? lastLatex : latex,
+          undefined,
+          currentLine.mode,
+        ),
       );
       const lastLine = insertedLines.at(-1);
       if (!lastLine) return;
@@ -7554,18 +7607,19 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       index: number,
       lineId: string,
       field: MathfieldElement,
+      requestedMode?: FormulaLine["mode"],
     ) => {
       // Raw LaTeX input still belongs to MathLive's command transaction. In
       // ordinary math input, Enter follows Word: a selection is removed first,
       // then the remaining content is split at the selection boundary.
       if (hasRawLatexInput(field)) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
       const selectedRange = field.selection.ranges[0];
       if (field.selection.ranges.length !== 1 || !selectedRange) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
       const splitStart = Math.max(
@@ -7587,7 +7641,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         ),
       );
       if (field.selectionIsCollapsed && splitEnd >= field.lastOffset) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7624,7 +7678,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           canonicalize(`${leftLatex} ${rightLatex}`) !==
             canonicalize(originalLatex))
       ) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7632,7 +7686,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const state = useEditorStore.getState();
       const currentIndex = state.lines.findIndex((line) => line.id === lineId);
       if (currentIndex < 0) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7650,7 +7704,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       );
 
       const scrollSnapshot = captureEditorScrollSnapshot(lineId);
-      const nextLine = createFormulaLine(rightLatex);
+      const nextLine = createFormulaLine(
+        rightLatex,
+        undefined,
+        requestedMode ?? before.lines[currentIndex]?.mode ?? "display",
+      );
       const nextLines = before.lines.map((line) =>
         line.id === lineId ? { ...line, latex: leftLatex } : { ...line },
       );
@@ -8373,7 +8431,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        splitLineAtCaret(index, lineId, field);
+        const currentLineMode =
+          currentState.lines.find((line) => line.id === lineId)?.mode ?? "display";
+        const requestedMode = resolveNewFormulaLineMode(
+          latexCodeFormat,
+          currentLineMode,
+          event,
+        );
+        splitLineAtCaret(index, lineId, field, requestedMode);
         return;
       }
 
@@ -9384,6 +9449,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         className={
           "editor-surface multi-line-editor" +
           (showLineNumbers ? " has-line-numbers" : "") +
+          (latexCodeFormat === "mixed-inline-display" && !interactionReadOnly ? " has-mixed-line-modes" : "") +
           (interactionReadOnly ? " is-read-only-preview" : "") +
           (previewOnly ? " is-source-preview-only" : "")
         }
@@ -9419,6 +9485,32 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 <span className="formula-line-number">
                   {String(index + 1).padStart(2, "0")}
                 </span>
+              ) : null}
+              {latexCodeFormat === "mixed-inline-display" && !interactionReadOnly ? (
+                <div
+                  className="formula-line-mode-toggle"
+                  role="group"
+                  aria-label={language === "en" ? "Formula row mode" : "公式行模式"}
+                >
+                  <button
+                    type="button"
+                    className={line.mode === "inline" ? "is-active" : ""}
+                    title={language === "en" ? "Inline · Shift+Enter for new row" : "行内 · 新建时 Shift+回车"}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setFormulaLineMode(lineId, "inline")}
+                  >
+                    {language === "en" ? "Inline" : "行内"}
+                  </button>
+                  <button
+                    type="button"
+                    className={line.mode === "display" ? "is-active" : ""}
+                    title={language === "en" ? "Display · Option+Enter for new row" : "行间 · 新建时 Option+回车"}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setFormulaLineMode(lineId, "display")}
+                  >
+                    {language === "en" ? "Display" : "行间"}
+                  </button>
+                </div>
               ) : null}
               <FormulaField
                 key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}-${fieldRepairEpochByLineId[lineId] ?? 0}`}

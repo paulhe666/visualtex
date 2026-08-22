@@ -216,8 +216,8 @@ if ! grep -a -Fq -- '--install-macos-office-addins' "$EXECUTABLE"; then
   echo "The release executable has no clean-install native Office maintenance entry point." >&2
   exit 1
 fi
-if ! grep -a -Fq 'dock-icon-v4.refreshed' "$EXECUTABLE"; then
-  echo "The release executable has no one-time Dock icon migration refresh." >&2
+if ! grep -a -Fq 'dock-icon-v5.refreshed' "$EXECUTABLE"; then
+  echo "The release executable has no current one-time Dock icon migration refresh." >&2
   exit 1
 fi
 

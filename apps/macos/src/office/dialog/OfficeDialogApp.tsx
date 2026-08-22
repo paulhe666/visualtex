@@ -22,7 +22,7 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyLatex,
+  copyFormulaLines,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../types/formula";
@@ -1871,7 +1871,7 @@ export function OfficeDialogApp() {
   }, [autoCommitOnClose, handleCancel, handleCommit, isEn, latex, sessionId]);
 
   const handleCopy = async () => {
-    await copyLatex(latex, latexCodeFormat);
+    await copyFormulaLines(lines, latexCodeFormat);
     addHistory(latex);
     setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
   };

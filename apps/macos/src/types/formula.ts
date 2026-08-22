@@ -1,5 +1,6 @@
 export type LatexCodeFormat =
   | "raw"
+  | "mixed-inline-display"
   | "inline-dollar"
   | "inline-text-double-dollar"
   | "inline-paren"
@@ -36,9 +37,12 @@ export type Theme =
   | "xcode"
   | "custom";
 
+export type FormulaLineMode = "inline" | "display";
+
 export interface FormulaLine {
   id: string;
   latex: string;
+  mode?: FormulaLineMode;
 }
 
 export interface FormulaBlock {

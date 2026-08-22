@@ -3176,6 +3176,7 @@ kbd {
 
 .formula-line {
   min-height: var(--formula-row-height, 69px);
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
@@ -3187,6 +3188,55 @@ kbd {
 
 .multi-line-editor.has-line-numbers .formula-line {
   grid-template-columns: 50px minmax(0, 1fr);
+}
+
+.formula-line-mode-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  z-index: 5;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 10%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+  user-select: none;
+}
+
+.formula-line.is-active .formula-line-mode-toggle,
+.formula-line:hover .formula-line-mode-toggle,
+.formula-line-mode-toggle:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.formula-line-mode-toggle button {
+  min-width: 35px;
+  height: 22px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.formula-line-mode-toggle button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.formula-line-mode-toggle button.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .workspace.has-active-line-highlight .formula-line:hover {

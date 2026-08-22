@@ -50,7 +50,7 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import {
-  formatLatex,
+  formatFormulaLines,
   parseLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
@@ -254,7 +254,7 @@ export function EditorWorkspace({
   const isEn = language === "en";
   const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatLatex(latex, latexCodeFormat);
+  const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
 
   const acceptSourcePreview = () => {
     const previewLines = sourceDraftFallbackRef.current?.previewLines;
@@ -716,7 +716,7 @@ export function EditorWorkspace({
         source,
         error: parsed.error ?? "invalid-latex",
         previewLines: previewValues.length
-          ? reconcileFormulaLines(previewValues, lines)
+          ? reconcileFormulaLines(previewValues, lines, parsed.modes)
           : null,
       };
       sourceDraftFallbackRef.current = fallback;
@@ -727,7 +727,7 @@ export function EditorWorkspace({
     sourceDraftFallbackRef.current = null;
     setSourceDraftFallback(null);
     const values = parsed.values.map(normalizeChineseLatex);
-    const nextLines = reconcileFormulaLines(values, lines);
+    const nextLines = reconcileFormulaLines(values, lines, parsed.modes);
     const nextActiveLineId = nextLines.some(
       (line) => line.id === activeLineId,
     )
