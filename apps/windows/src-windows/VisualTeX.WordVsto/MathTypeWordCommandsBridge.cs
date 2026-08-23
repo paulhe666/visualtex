@@ -45,10 +45,24 @@ internal static class MathTypeWordCommandsBridge
 
     internal static string? ResolveBlankEquationPath()
     {
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        if (string.IsNullOrWhiteSpace(programFilesX86)) return null;
-        var path = Path.Combine(programFilesX86, "MathType", "Office Support", "BlankEqn.doc");
-        return File.Exists(path) ? path : null;
+        var candidates = new List<string>();
+        var serverPath = MathTypeOleInterop.ResolveInstalledServerPath();
+        if (!string.IsNullOrWhiteSpace(serverPath))
+        {
+            var installRoot = Path.GetDirectoryName(serverPath);
+            if (!string.IsNullOrWhiteSpace(installRoot))
+                candidates.Add(Path.Combine(installRoot, "Office Support", "BlankEqn.doc"));
+        }
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(root))
+                candidates.Add(Path.Combine(root, "MathType", "Office Support", "BlankEqn.doc"));
+        }
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     internal static string ReadMathMl(InlineShape shape)
@@ -356,14 +370,8 @@ internal static class MathTypeWordCommandsBridge
         return normalized.ToString(SaveOptions.DisableFormatting);
     }
 
-    private static string? ResolveMathPagePath()
-    {
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        if (string.IsNullOrWhiteSpace(programFilesX86)) return null;
-        var architecture = Environment.Is64BitProcess ? "64" : "32";
-        var path = Path.Combine(programFilesX86, "MathType", "MathPage", architecture, "MathPage.wll");
-        return File.Exists(path) ? path : null;
-    }
+    private static string? ResolveMathPagePath() =>
+        MathTypeOleInterop.ResolveMathPagePath();
 
     private static T? GetDelegate<T>(IntPtr module, string name) where T : class
     {

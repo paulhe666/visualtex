@@ -128,7 +128,34 @@ internal static partial class Program
             var sourceOleWidth = shape!.Width;
             var sourceOleHeight = shape.Height;
             var sourceOlePosition = ReadInlineOlePositionForAcceptance(shape);
-            var sourceWordPreview = MathTypeWordOpenXml.Read(shape!).PreviewWmf;
+            var sourceFragmentForPreview = MathTypeWordOpenXml.Read(shape!);
+            var sourceWordPreview = sourceFragmentForPreview.PreviewWmf;
+            var sourceNative = MathTypeOleStorage.ReadEquationNative(
+                sourceFragmentForPreview.CompoundFile);
+            var sourceHeaderLength = BitConverter.ToUInt16(sourceNative, 0);
+            var sourceMtefLength = checked((int)BitConverter.ToUInt32(sourceNative, 8));
+            var sourceMtef = new byte[sourceMtefLength];
+            Buffer.BlockCopy(
+                sourceNative,
+                sourceHeaderLength,
+                sourceMtef,
+                0,
+                sourceMtefLength);
+            AssertTrue(
+                MathTypeNativePreviewRenderer.TryRender(
+                    sourceMtef,
+                    artifactRoot,
+                    out var sourceNativePreview),
+                "MathType native renderer was unavailable while validating the source presentation scale.");
+            float sourceNativeWidthPt;
+            float sourceNativeHeightPt;
+            int sourceNativeWordPosition;
+            using (sourceNativePreview)
+            {
+                sourceNativeWidthPt = sourceNativePreview.WidthPt;
+                sourceNativeHeightPt = sourceNativePreview.HeightPt;
+                sourceNativeWordPosition = sourceNativePreview.WordPosition;
+            }
             AssertEqual(
                 FormulaOleContract.MathTypeOleMode,
                 firstSelection.ObjectMode,
@@ -198,25 +225,39 @@ internal static partial class Program
             {
                 var expectedNativeWmf = File.ReadAllBytes(expectedNativePreview.WmfPath);
                 var actualInlinePosition = ReadInlineOlePositionForAcceptance(shape);
+                var sourceWidthScale = sourceNativeWidthPt > 0
+                    ? sourceOleWidth / sourceNativeWidthPt
+                    : 1f;
+                var sourceHeightScale = sourceNativeHeightPt > 0
+                    ? sourceOleHeight / sourceNativeHeightPt
+                    : 1f;
+                var expectedWidthPt = expectedNativePreview.WidthPt * sourceWidthScale;
+                var expectedHeightPt = expectedNativePreview.HeightPt * sourceHeightScale;
+                var expectedWordPosition = (int)Math.Round(
+                    expectedNativePreview.WordPosition * sourceHeightScale,
+                    MidpointRounding.AwayFromZero);
                 Console.WriteLine(
                     $"  MathType presentation: source={sourceOleWidth:0.0}x{sourceOleHeight:0.0}pt pos={sourceOlePosition}, "
+                    + $"sourceNative={sourceNativeWidthPt:0.0}x{sourceNativeHeightPt:0.0}pt pos={sourceNativeWordPosition}, "
+                    + $"scale={sourceWidthScale:0.###}x{sourceHeightScale:0.###}, "
                     + $"replacement={shape.Width:0.0}x{shape.Height:0.0}pt pos={actualInlinePosition}, "
-                    + $"native expected={expectedNativePreview.WidthPt:0.0}x{expectedNativePreview.HeightPt:0.0}pt pos={expectedNativePreview.WordPosition}.");
+                    + $"native target={expectedNativePreview.WidthPt:0.0}x{expectedNativePreview.HeightPt:0.0}pt pos={expectedNativePreview.WordPosition}, "
+                    + $"scaled expected={expectedWidthPt:0.0}x{expectedHeightPt:0.0}pt pos={expectedWordPosition}.");
                 AssertNear(
-                    expectedNativePreview.WidthPt,
+                    expectedWidthPt,
                     shape.Width,
                     0.6f,
-                    "Word did not use MathType's native width for the edited equation.");
+                    "Word did not preserve the source MathType width scale for the edited equation.");
                 AssertNear(
-                    expectedNativePreview.HeightPt,
+                    expectedHeightPt,
                     shape.Height,
                     0.6f,
-                    "Word did not use MathType's native height for the edited equation.");
+                    "Word did not preserve the source MathType height scale for the edited equation.");
                 AssertNear(
-                    expectedNativePreview.WordPosition,
+                    expectedWordPosition,
                     actualInlinePosition,
                     1.0f,
-                    "Word did not use MathType's native inline baseline for the edited equation.");
+                    "Word did not preserve the source MathType inline baseline scale for the edited equation.");
 
                 Range? suffixBaselineRange = null;
                 try
@@ -245,8 +286,14 @@ internal static partial class Program
                     replacementWordPreview);
                 Console.WriteLine(
                     $"  native presentation diff: Word replay={replayDifference:0.0000}, persisted WMF={persistedDifference:0.0000}.");
+                // Word converts the persisted WMF to CF_ENHMETAFILE when an OLE
+                // object is copied. That replay conversion can introduce a few
+                // antialiasing pixels, especially when the original MathType OLE
+                // carries a small user/document scale. The persisted WMF itself
+                // must remain essentially identical to MathType's renderer; allow
+                // only the extra conversion noise on Word's replay surface.
                 AssertTrue(
-                    replayDifference < 0.03 && persistedDifference < 0.03,
+                    replayDifference < 0.04 && persistedDifference < 0.01,
                     "The edited MathType OLE does not visually match MathType's native renderer.");
                 File.WriteAllBytes(
                     Path.Combine(artifactRoot, "preview-native-expected.wmf"),

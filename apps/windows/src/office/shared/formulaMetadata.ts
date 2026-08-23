@@ -156,14 +156,12 @@ export function isVisualTeXFormulaMetadata(
       (typeof candidate.fontSizePt === "number" &&
         Number.isFinite(candidate.fontSizePt) &&
         candidate.fontSizePt >= 5 &&
-        candidate.fontSizePt <= 200 &&
-        Math.abs(candidate.fontSizePt * 2 - Math.round(candidate.fontSizePt * 2)) < 1e-6)) &&
+        candidate.fontSizePt <= 200)) &&
     (candidate.renderFontSizePt === undefined ||
       (typeof candidate.renderFontSizePt === "number" &&
         Number.isFinite(candidate.renderFontSizePt) &&
         candidate.renderFontSizePt >= 5 &&
-        candidate.renderFontSizePt <= 200 &&
-        Math.abs(candidate.renderFontSizePt * 2 - Math.round(candidate.renderFontSizePt * 2)) < 1e-6)) &&
+        candidate.renderFontSizePt <= 200)) &&
     (candidate.formulaLetterFont === undefined ||
       FORMULA_LETTER_FONT_OPTIONS.some(
         (item) => item.id === candidate.formulaLetterFont,
@@ -235,7 +233,7 @@ export function createFormulaMetadata({
       : original?.baseline;
   const normalizeFontSize = (value: number | undefined, fallback: number) => {
     const resolved = Number.isFinite(value) ? (value as number) : fallback;
-    return Math.round(Math.min(200, Math.max(5, resolved)) * 2) / 2;
+    return Math.round(Math.min(200, Math.max(5, resolved)) * 100) / 100;
   };
   const resolvedFontSize = normalizeFontSize(
     fontSizePt,

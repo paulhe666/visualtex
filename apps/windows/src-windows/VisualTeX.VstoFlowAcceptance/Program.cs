@@ -598,6 +598,10 @@ internal static partial class Program
             {
                 RunWordMathTypeStandaloneCodecAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "mathtype-mtef-root-compat", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeMtefRootCompatibilityAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-addole-from-cfb", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeAddOleFromCfbAcceptance(artifactRoot);
@@ -753,6 +757,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-font-size", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordFontSizeAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-font-size-persistence", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFontSizePersistenceAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-native-omml-source", StringComparison.OrdinalIgnoreCase))
             {

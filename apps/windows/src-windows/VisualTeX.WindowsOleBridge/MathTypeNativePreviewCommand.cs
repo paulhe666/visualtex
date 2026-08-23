@@ -61,6 +61,7 @@ internal static class MathTypeNativePreviewCommand
     private sealed class Request
     {
         public string ResultPath { get; set; } = string.Empty;
+        public string MathTypeServerPath { get; set; } = string.Empty;
         public List<RequestItem> Items { get; set; } = new();
     }
 
@@ -113,7 +114,7 @@ internal static class MathTypeNativePreviewCommand
         var initialized = false;
         try
         {
-            var mathPage = ResolveMathPagePath();
+            var mathPage = ResolveMathPagePath(request.MathTypeServerPath);
             if (mathPage is null)
             {
                 response.Error = "MathType MathPage.wll is not installed.";
@@ -264,13 +265,46 @@ internal static class MathTypeNativePreviewCommand
         return exitCode;
     }
 
-    private static string? ResolveMathPagePath()
+    private static string? ResolveMathPagePath(string? mathTypeServerPath)
     {
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        if (string.IsNullOrWhiteSpace(programFilesX86)) return null;
+        var overridePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_MATHTYPE_MATHPAGE_PATH");
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(
+                overridePath.Trim().Trim('"'));
+            if (File.Exists(expanded)) return expanded;
+        }
+
         var architecture = Environment.Is64BitProcess ? "64" : "32";
-        var path = Path.Combine(programFilesX86, "MathType", "MathPage", architecture, "MathPage.wll");
-        return File.Exists(path) ? path : null;
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(mathTypeServerPath))
+        {
+            var expandedServer = Environment.ExpandEnvironmentVariables(
+                mathTypeServerPath.Trim().Trim('"'));
+            var installRoot = Path.GetDirectoryName(expandedServer);
+            if (!string.IsNullOrWhiteSpace(installRoot))
+                candidates.Add(Path.Combine(
+                    installRoot,
+                    "MathPage",
+                    architecture,
+                    "MathPage.wll"));
+        }
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(root))
+                candidates.Add(Path.Combine(
+                    root,
+                    "MathType",
+                    "MathPage",
+                    architecture,
+                    "MathPage.wll"));
+        }
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static T? GetDelegate<T>(IntPtr module, string name) where T : class

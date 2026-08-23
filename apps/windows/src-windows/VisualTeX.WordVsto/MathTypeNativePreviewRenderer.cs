@@ -14,6 +14,7 @@ internal static class MathTypeNativePreviewRenderer
     private sealed class Request
     {
         public string ResultPath { get; set; } = string.Empty;
+        public string MathTypeServerPath { get; set; } = string.Empty;
         public List<RequestItem> Items { get; set; } = new();
     }
 
@@ -171,7 +172,11 @@ internal static class MathTypeNativePreviewRenderer
             $"mathtype-native-sidecar-batch-{requestId}");
         var manifestPath = requestRoot + ".request.json";
         var responsePath = requestRoot + ".response.json";
-        var request = new Request { ResultPath = responsePath };
+        var request = new Request
+        {
+            ResultPath = responsePath,
+            MathTypeServerPath = MathTypeOleInterop.ResolveInstalledServerPath() ?? string.Empty,
+        };
         var temporaryMtefPaths = new List<string>();
         var temporaryWmfPaths = new List<string>();
         Process? process = null;
@@ -312,6 +317,7 @@ internal static class MathTypeNativePreviewRenderer
             var request = new Request
             {
                 ResultPath = responsePath,
+                MathTypeServerPath = MathTypeOleInterop.ResolveInstalledServerPath() ?? string.Empty,
                 Items = new List<RequestItem>
                 {
                     new()

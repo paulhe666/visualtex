@@ -10,6 +10,7 @@ public static class FormulaFontSize
     public const float MinimumPt = 5f;
     public const float MaximumPt = 200f;
     public const float StepPt = 0.5f;
+    public const float PrecisionPt = 0.01f;
 
     private static readonly float[] Presets =
     {
@@ -46,7 +47,13 @@ public static class FormulaFontSize
             ? value.Value
             : fallback;
         resolved = Math.Max(MinimumPt, Math.Min(MaximumPt, resolved));
-        return (float)(Math.Round(resolved / StepPt, MidpointRounding.AwayFromZero) * StepPt);
+        // Point sizes are persisted as semantic document data, not as entries in
+        // the half-point preset menu. Word and the Office dialog both allow typed
+        // custom sizes, so quantizing here silently changed values such as 13.25
+        // to 13.5 every time a formula was saved/reopened. Keep centipoint
+        // precision for stable JSON/COM round-trips; StepPt remains the navigation
+        // increment used by preset UI actions.
+        return (float)Math.Round(resolved, 2, MidpointRounding.AwayFromZero);
     }
 
     public static float NextPreset(double? value)
@@ -122,7 +129,7 @@ public static class FormulaFontSize
         {
             if (Math.Abs(size.Points - normalized) < 0.001f) return size.Name;
         }
-        return normalized.ToString("0.#", CultureInfo.InvariantCulture);
+        return normalized.ToString("0.##", CultureInfo.InvariantCulture);
     }
 
     public static string Describe(double? value)
@@ -131,7 +138,7 @@ public static class FormulaFontSize
         var display = FormatDisplay(normalized);
         return display.EndsWith("号", StringComparison.Ordinal)
             || display.StartsWith("小", StringComparison.Ordinal)
-            ? $"{display}（{normalized.ToString("0.#", CultureInfo.InvariantCulture)} 磅）"
+            ? $"{display}（{normalized.ToString("0.##", CultureInfo.InvariantCulture)} 磅）"
             : $"{display} 磅";
     }
 
@@ -147,6 +154,37 @@ public static class FormulaFontSize
         FormulaMetadata? metadata)
     {
         var fallback = ResolveSemanticFontSize(metadata);
+
+        // Inline OLE formulas persist the exact Word dimensions that belonged to
+        // the semantic font size at the last successful save. Prefer that
+        // document-native checkpoint over re-deriving a size from browser render
+        // pixels: Word/OLE can quantize the displayed extent slightly across a
+        // save/reopen cycle even though the user never resized the formula.
+        if (metadata?.WordInlineOleWidthPt is > 0
+            && metadata.WordInlineOleHeightPt is > 0)
+        {
+            var storedWidth = (float)metadata.WordInlineOleWidthPt.Value;
+            var storedHeight = (float)metadata.WordInlineOleHeightPt.Value;
+            const float storedGeometryTolerancePoints = 0.75f;
+            var widthMatchesStored = currentWidthPoints <= 0
+                || Math.Abs(currentWidthPoints - storedWidth) <= storedGeometryTolerancePoints;
+            var heightMatchesStored = currentHeightPoints <= 0
+                || Math.Abs(currentHeightPoints - storedHeight) <= storedGeometryTolerancePoints;
+            if (widthMatchesStored && heightMatchesStored) return fallback;
+
+            var storedHeightScale = currentHeightPoints > 0
+                ? currentHeightPoints / storedHeight
+                : float.NaN;
+            var storedWidthScale = currentWidthPoints > 0
+                ? currentWidthPoints / storedWidth
+                : float.NaN;
+            var storedScale = IsPositiveFinite(storedHeightScale)
+                ? storedHeightScale
+                : storedWidthScale;
+            if (IsPositiveFinite(storedScale))
+                return Normalize(fallback * storedScale, fallback);
+        }
+
         if (metadata?.RenderWidthPx is not > 0 || metadata.RenderHeightPx is not > 0)
             return fallback;
 

@@ -140,11 +140,12 @@ internal static class MathTypeOleInterop
         using var classKey = Registry.ClassesRoot.OpenSubKey(clsidKey);
         if (classKey is null) return false;
         var className = classKey.GetValue(null) as string;
-        var serverPath = ReadDefaultString(classKey, "LocalServer32")
-            ?? ReadDefaultString(classKey, "LocalServer");
+        var serverPath = NormalizeLocalServerPath(
+            ReadDefaultString(classKey, "LocalServer32")
+                ?? ReadDefaultString(classKey, "LocalServer"));
         var serverFileName = string.IsNullOrWhiteSpace(serverPath)
             ? null
-            : Path.GetFileName(serverPath.Trim().Trim('"'));
+            : Path.GetFileName(serverPath);
         var isMathType = !string.IsNullOrWhiteSpace(className)
                 && className.IndexOf("MathType", StringComparison.OrdinalIgnoreCase) >= 0
             || string.Equals(serverFileName, "MathType.exe", StringComparison.OrdinalIgnoreCase);
@@ -291,7 +292,14 @@ internal static class MathTypeOleInterop
             if (!TryResolveCapabilities(format.ProgID, out var capabilities))
                 throw new InvalidOperationException("The selected OLE object is not backed by an installed MathType server.");
             if (!capabilities.RegisteredMathMlGetSet)
-                throw new InvalidOperationException("The installed MathType OLE server does not register a MathML Get/Set format.");
+            {
+                // Some MathType 7.x builds expose MathML through IDataObject but
+                // omit or vary the optional DataFormats\\GetSet registry entries.
+                // Treat the registry as a discovery hint only; QueryGetData below
+                // is the authoritative runtime capability probe.
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-mathml-registry-hint-missing progId={format.ProgID} clsid={capabilities.ResolvedClsid}");
+            }
 
             runningObject = activateForConversion
                 ? GetRunningMathTypeObject(format, capabilities)
@@ -919,17 +927,38 @@ internal static class MathTypeOleInterop
             if (runningObject is not System.Runtime.InteropServices.ComTypes.IDataObject dataObject)
                 throw new InvalidOperationException("MathType OLE does not expose IDataObject.");
 
-            var request = CreateFormatEtc(1); // CF_TEXT, advertised by MathType 7 for DATADIR_SET.
-            global = Marshal.StringToHGlobalAnsi(text + "\0");
-            if (global == IntPtr.Zero)
-                throw new OutOfMemoryException("Unable to allocate MathType text transfer memory.");
-            var medium = new STGMEDIUM
+            // MathType 7.x does not expose one stable DATADIR_SET contract across
+            // point releases. Some builds advertise CF_TEXT but reject it with
+            // DV_E_FORMATETC, while accepting the registered TeX input format that
+            // is absent from the SET enumeration. Treat enumeration as a hint and
+            // perform the actual SetData calls in semantic-preference order.
+            var failures = new List<string>();
+            var texFormat = RegisterClipboardFormat("TeX Input Language");
+            COMException? texError = null;
+            if (texFormat != 0 && texFormat <= ushort.MaxValue)
             {
-                tymed = TYMED.TYMED_HGLOBAL,
-                unionmember = global,
-                pUnkForRelease = null,
-            };
-            dataObject.SetData(ref request, ref medium, false);
+                if (TrySetAnsiData(
+                        dataObject,
+                        CreateFormatEtc(unchecked((short)texFormat)),
+                        text,
+                        out texError))
+                    return;
+                if (texError is not null)
+                    failures.Add($"TeX Input Language=0x{texError.HResult:X8}");
+            }
+
+            if (TrySetAnsiData(
+                    dataObject,
+                    CreateFormatEtc(1),
+                    text,
+                    out var textError))
+                return;
+            if (textError is not null)
+                failures.Add($"CF_TEXT=0x{textError.HResult:X8}");
+
+            throw new InvalidOperationException(
+                "The installed MathType OLE server rejected all supported text SetData formats"
+                + (failures.Count == 0 ? "." : ": " + string.Join(", ", failures)));
         }
         finally
         {
@@ -1220,15 +1249,68 @@ internal static class MathTypeOleInterop
         System.Runtime.InteropServices.ComTypes.IDataObject dataObject,
         string mathMl)
     {
-        var request = ResolveSupportedMathMlSetFormat(dataObject);
+        // MathType 7.x registry/EnumFormatEtc declarations vary by point release.
+        // The actual SetData HRESULT is authoritative. Try each MathML spelling
+        // first, then fall back to MathType's TeX/text import channels using the
+        // same semantic equation rather than failing solely because one version
+        // omitted a SET advertisement.
+        var failures = new List<string>();
+        var asciiMathMl = ToAsciiMathMlPayload(mathMl);
+        foreach (var name in MathMlFormats)
+        {
+            var id = RegisterClipboardFormat(name);
+            if (id == 0 || id > ushort.MaxValue) continue;
+            if (TrySetAnsiData(
+                    dataObject,
+                    CreateFormatEtc(unchecked((short)id)),
+                    asciiMathMl,
+                    out var error))
+                return;
+            if (error is not null)
+                failures.Add($"{name}=0x{error.HResult:X8}");
+        }
 
-        // Match MathType's published .NET sample as closely as possible. Its
-        // SetData path explicitly uses the CLR Marshal allocator for the HGLOBAL
-        // payload instead of constructing a movable GlobalAlloc block manually.
-        // Keep ownership in the caller (release=false) and free it after SetData.
-        var global = Marshal.StringToHGlobalAnsi(ToAsciiMathMlPayload(mathMl));
+        var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+        if (!string.IsNullOrWhiteSpace(latex))
+        {
+            var texId = RegisterClipboardFormat("TeX Input Language");
+            if (texId != 0 && texId <= ushort.MaxValue)
+            {
+                if (TrySetAnsiData(
+                        dataObject,
+                        CreateFormatEtc(unchecked((short)texId)),
+                        latex,
+                        out var texError))
+                    return;
+                if (texError is not null)
+                    failures.Add($"TeX Input Language=0x{texError.HResult:X8}");
+            }
+
+            if (TrySetAnsiData(
+                    dataObject,
+                    CreateFormatEtc(1),
+                    latex,
+                    out var textError))
+                return;
+            if (textError is not null)
+                failures.Add($"CF_TEXT=0x{textError.HResult:X8}");
+        }
+
+        throw new InvalidOperationException(
+            "The installed MathType OLE server rejected all supported equation SetData formats"
+            + (failures.Count == 0 ? "." : ": " + string.Join(", ", failures)));
+    }
+
+    private static bool TrySetAnsiData(
+        System.Runtime.InteropServices.ComTypes.IDataObject dataObject,
+        FORMATETC request,
+        string payload,
+        out COMException? error)
+    {
+        error = null;
+        var global = Marshal.StringToHGlobalAnsi(payload + "\0");
         if (global == IntPtr.Zero)
-            throw new OutOfMemoryException("Unable to allocate MathType MathML transfer memory.");
+            throw new OutOfMemoryException("Unable to allocate MathType transfer memory.");
         try
         {
             var medium = new STGMEDIUM
@@ -1237,7 +1319,16 @@ internal static class MathTypeOleInterop
                 unionmember = global,
                 pUnkForRelease = null,
             };
-            dataObject.SetData(ref request, ref medium, false);
+            try
+            {
+                dataObject.SetData(ref request, ref medium, false);
+                return true;
+            }
+            catch (COMException setError)
+            {
+                error = setError;
+                return false;
+            }
         }
         finally
         {
@@ -1694,6 +1785,93 @@ internal static class MathTypeOleInterop
             }
         }
         return sawNumber;
+    }
+
+    internal static string? ResolveInstalledServerPath()
+    {
+        foreach (var progId in new[] { "Equation.DSMT4", "Equation" })
+        {
+            if (TryResolveCapabilities(progId, out var capabilities)
+                && !string.IsNullOrWhiteSpace(capabilities.ServerPath))
+                return capabilities.ServerPath;
+        }
+
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(root)) continue;
+            var candidate = Path.Combine(root, "MathType", "MathType.exe");
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    internal static string? ResolveMathPagePath()
+    {
+        var overridePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_MATHTYPE_MATHPAGE_PATH");
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(
+                overridePath.Trim().Trim('"'));
+            if (File.Exists(expanded)) return expanded;
+        }
+
+        var architecture = Environment.Is64BitProcess ? "64" : "32";
+        var candidates = new List<string>();
+        var serverPath = ResolveInstalledServerPath();
+        if (!string.IsNullOrWhiteSpace(serverPath))
+        {
+            var installRoot = Path.GetDirectoryName(serverPath);
+            if (!string.IsNullOrWhiteSpace(installRoot))
+                candidates.Add(Path.Combine(
+                    installRoot,
+                    "MathPage",
+                    architecture,
+                    "MathPage.wll"));
+        }
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(root))
+                candidates.Add(Path.Combine(
+                    root,
+                    "MathType",
+                    "MathPage",
+                    architecture,
+                    "MathPage.wll"));
+        }
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? NormalizeLocalServerPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var source = Environment.ExpandEnvironmentVariables(value.Trim());
+        string candidate;
+        if (source.StartsWith("\"", StringComparison.Ordinal))
+        {
+            var closingQuote = source.IndexOf('"', 1);
+            candidate = closingQuote > 1
+                ? source.Substring(1, closingQuote - 1)
+                : source.Trim('"');
+        }
+        else
+        {
+            var exeEnd = source.IndexOf(
+                ".exe",
+                StringComparison.OrdinalIgnoreCase);
+            candidate = exeEnd >= 0
+                ? source.Substring(0, exeEnd + 4)
+                : source.Split(new[] { ' ', '\t' }, 2)[0];
+        }
+        return candidate.Trim().Trim('"');
     }
 
     private static string? ReadDefaultString(RegistryKey parent, string subKeyName)

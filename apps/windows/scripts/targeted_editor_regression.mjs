@@ -2931,6 +2931,15 @@ async function main() {
             caretBounds && selectedBounds
               ? caretBounds.right - selectedBounds.left
               : 99;
+          const operator = selected?.closest(".ML__op-group");
+          const operatorBounds = operator?.getBoundingClientRect();
+          const operatorRegion =
+            selectedBounds && operatorBounds
+              ? selectedBounds.top + selectedBounds.height / 2 <
+                  operatorBounds.top + operatorBounds.height / 2
+                ? "upper"
+                : "lower"
+              : null;
           const topmostSelected =
             !${requireTopmostPlaceholder} ||
             Boolean(
@@ -2976,6 +2985,7 @@ async function main() {
             nativeCaretCount: nativeCarets.length,
             topmostSelected,
             placeholderSelected,
+            operatorRegion,
           };
         })()`, `${name} placeholder caret placement`);
 
@@ -3056,6 +3066,9 @@ async function main() {
         `document.querySelector('[data-command-id="sum"]').click()`,
       );
       const sumState = await readPlaceholderCaret("summation", 3);
+      if (sumState.operatorRegion !== "lower") {
+        throw new Error(`Summation did not start at its lower limit: ${JSON.stringify(sumState)}`);
+      }
       const sumTypedState = await typeBackslashOverPlaceholder("summation", 2);
 
       await key("Enter", "Enter", 13);
@@ -3069,9 +3082,85 @@ async function main() {
         `document.querySelector('[data-command-id="int"]').click()`,
       );
       const integralState = await readPlaceholderCaret("integral", 4);
+      if (integralState.operatorRegion !== "lower") {
+        throw new Error(`Integral did not start at its lower limit: ${JSON.stringify(integralState)}`);
+      }
       const integralTypedState = await typeBackslashOverPlaceholder(
         "integral",
         3,
+      );
+
+      await key("Enter", "Enter", 13);
+      await waitForEvaluation(`(() => {
+        const field = document.querySelector(
+          ".formula-line.is-active math-field",
+        );
+        return { ready: Boolean(field?.isConnected && field.value === "") };
+      })()`, "empty line for product insertion");
+      await evaluate(
+        `document.querySelector('[data-command-id="prod"]').click()`,
+      );
+      const productState = await readPlaceholderCaret("product", 3);
+      if (productState.operatorRegion !== "lower") {
+        throw new Error(`Product did not start at its lower limit: ${JSON.stringify(productState)}`);
+      }
+      const productTypedState = await typeBackslashOverPlaceholder("product", 2);
+
+      const fillBoundedOperator = async (
+        commandId,
+        placeholderCount,
+        values,
+        expectedPattern,
+      ) => {
+        await clearField();
+        await evaluate(
+          `document.querySelector('[data-command-id=${JSON.stringify(commandId)}]').click()`,
+        );
+        const first = await readPlaceholderCaret(
+          `${commandId} ordered lower limit`,
+          placeholderCount,
+        );
+        if (first.operatorRegion !== "lower") {
+          throw new Error(`${commandId} did not begin at lower limit: ${JSON.stringify(first)}`);
+        }
+        for (let index = 0; index < values.length; index += 1) {
+          await typeText(values[index]);
+          if (index < values.length - 1) {
+            await key("Tab", "Tab", 9);
+          }
+        }
+        const finalValue = await evaluate(`(() => {
+          const field = document.querySelector(
+            ".formula-line.is-active math-field",
+          );
+          return field?.value ?? "";
+        })()`);
+        const compact = finalValue.replace(/\s+/g, "");
+        if (!expectedPattern.test(compact)) {
+          throw new Error(
+            `${commandId} placeholder order is wrong: ${JSON.stringify({ finalValue, compact })}`,
+          );
+        }
+        return { first, finalValue };
+      };
+
+      const orderedSum = await fillBoundedOperator(
+        "sum",
+        3,
+        ["i", "n", "a"],
+        /\\sum_\{i\}\^\{n\}a/,
+      );
+      const orderedProduct = await fillBoundedOperator(
+        "prod",
+        3,
+        ["j", "m", "b"],
+        /\\prod_\{j\}\^\{m\}b/,
+      );
+      const orderedIntegral = await fillBoundedOperator(
+        "int",
+        4,
+        ["a", "b", "f", "x"],
+        /\\int_\{a\}\^\{b\}f.*\\mathrm\{d\}x/,
       );
 
       console.log(
@@ -3083,6 +3172,11 @@ async function main() {
             sumTypedState,
             integralState,
             integralTypedState,
+            productState,
+            productTypedState,
+            orderedSum,
+            orderedProduct,
+            orderedIntegral,
           },
           null,
           2,

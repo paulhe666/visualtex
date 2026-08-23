@@ -1258,7 +1258,20 @@ internal sealed partial class WordFormulaService
             shape.Width = size.Width;
             shape.Height = size.Height;
             shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
-            if (!WordFormulaMetadataReader.IsNativeOle(shape))
+            StoreWordInlineOleSize(
+                metadata,
+                shape.Width,
+                shape.Height,
+                alignOleInline);
+            if (WordFormulaMetadataReader.IsNativeOle(shape))
+            {
+                // Native VisualTeX OLE metadata is authoritative. Updating only
+                // Word's Title/AlternativeText cache leaves the embedded object
+                // with the old semantic size, so the next reopen can snap a 14 pt
+                // formula back to the previous 13.5 pt value.
+                WordFormulaMetadataReader.Write(shape, metadata);
+            }
+            else
             {
                 var encoded = FormulaMetadataCodec.Encode(metadata);
                 shape.Title = encoded;

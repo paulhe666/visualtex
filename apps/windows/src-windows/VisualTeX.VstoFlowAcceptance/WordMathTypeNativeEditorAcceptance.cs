@@ -13,15 +13,24 @@ internal static partial class Program
         var sourcePath = Path.Combine(
             artifactRoot,
             $"VisualTeX-MathType7-NativeEditor-{Guid.NewGuid():N}.docx");
-        var fallback = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..",
-            "artifacts", "mathtype-native-editor",
-            "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx"));
+        var fallbackCandidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..", "..", "..",
+                "artifacts", "mathtype-native-editor",
+                "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx")),
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..", "..", "..", "..",
+                "artifacts", "mathtype-native-editor",
+                "VisualTeX-MathType7-NativeEditor-5f04f8b3545e444a824705446e314ba1.docx")),
+        };
+        var fallback = fallbackCandidates.FirstOrDefault(File.Exists);
         // Always start from the untouched genuine MathType fixture. A successful
         // prior acceptance intentionally saves edits into sourcePath, so reusing
         // it would make the next run look like the read path returned stale data.
-        if (File.Exists(fallback))
+        if (!string.IsNullOrWhiteSpace(fallback))
             File.Copy(fallback, sourcePath, overwrite: true);
         if (!File.Exists(sourcePath))
             throw new FileNotFoundException(
@@ -420,6 +429,23 @@ internal static partial class Program
                     Console.WriteLine("  dismissed MathType teaching-tip dialog.");
                     return true;
                 }
+            }
+
+            var isEmptyEquationWarning =
+                text.IndexOf("空的公式", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("empty equation", StringComparison.OrdinalIgnoreCase) >= 0
+                || (title.IndexOf("MathType", StringComparison.OrdinalIgnoreCase) >= 0
+                    && text.IndexOf("Backspace", StringComparison.OrdinalIgnoreCase) >= 0
+                    && text.IndexOf("Delete", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (isEmptyEquationWarning)
+            {
+                var okButton = GetDlgItemForMathType(dialog, 1); // IDOK
+                if (okButton != IntPtr.Zero)
+                    SendMessageForMathType(okButton, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+                else
+                    SendMessageForMathType(dialog, 0x0111, new IntPtr(1), IntPtr.Zero); // WM_COMMAND / IDOK
+                Console.WriteLine("  dismissed MathType empty-equation warning.");
+                return true;
             }
 
             var isSavePrompt =

@@ -149,6 +149,104 @@ internal static partial class Program
             + "and started no MathType process.");
     }
 
+    private static void RunMathTypeMtefRootCompatibilityAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        const string sourceMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mi>c</mi></mfrac></math>";
+        const string editedMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msqrt><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></msqrt></math>";
+
+        var generated = MathTypeMtefCodec.CreateEquationNative(sourceMathMl, inline: false);
+        AssertEqual(217, generated.StructureOffset,
+            "The DSMT7 compatibility seed changed its canonical root offset unexpectedly.");
+        var headerLength = BitConverter.ToUInt16(generated.EquationNative, 0);
+
+        // MathType also uses the same canonical prefix for a genuinely empty
+        // equation: byte 216 is the initial FULL size state and byte 217 is the
+        // terminal equation END, with no LINE/PILE/MATRIX at all. That is a valid
+        // empty OLE object and must not surface as "root record 0 at offset 217".
+        var emptyMtef = new byte[generated.StructureOffset + 1];
+        Buffer.BlockCopy(generated.Mtef, 0, emptyMtef, 0, generated.StructureOffset);
+        emptyMtef[generated.StructureOffset] = 0;
+        var emptyNative = new byte[headerLength + emptyMtef.Length];
+        Buffer.BlockCopy(generated.EquationNative, 0, emptyNative, 0, headerLength);
+        Buffer.BlockCopy(
+            BitConverter.GetBytes((uint)emptyMtef.Length),
+            0,
+            emptyNative,
+            8,
+            sizeof(uint));
+        Buffer.BlockCopy(emptyMtef, 0, emptyNative, headerLength, emptyMtef.Length);
+        AssertEqual(217, MathTypeMtefCodec.FindRootStructureOffset(emptyMtef),
+            "Empty MathType 7.x MTEF did not preserve its terminal END boundary.");
+        var emptyReadBack = MathTypeMtefCodec.ReadEquationNativeMathMl(emptyNative);
+        AssertEqual(string.Empty, MathTypeMtefCodec.SemanticSignature(emptyReadBack),
+            "Empty MathType 7.x MTEF did not read back as an empty equation.");
+        var emptyRewrite = MathTypeMtefCodec.RewriteEquationNative(
+            emptyNative,
+            editedMathMl,
+            inline: false);
+        AssertEqual(217, emptyRewrite.StructureOffset,
+            "Editing an empty MathType 7.x equation changed its native prefix boundary.");
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(editedMathMl),
+            MathTypeMtefCodec.SemanticSignature(
+                MathTypeMtefCodec.ReadEquationNativeMathMl(emptyRewrite.EquationNative)),
+            "An empty MathType 7.x equation could not be edited into a non-empty formula.");
+
+        // Also cover a vendor/version separator before a real root: the preference
+        // prefix resolves to byte 217, byte 217 is END/0 padding, and the real
+        // top-level LINE begins one byte later.
+        var paddedMtef = new byte[generated.Mtef.Length + 1];
+        Buffer.BlockCopy(generated.Mtef, 0, paddedMtef, 0, generated.StructureOffset);
+        paddedMtef[generated.StructureOffset] = 0;
+        Buffer.BlockCopy(
+            generated.Mtef,
+            generated.StructureOffset,
+            paddedMtef,
+            generated.StructureOffset + 1,
+            generated.Mtef.Length - generated.StructureOffset);
+
+        var paddedNative = new byte[headerLength + paddedMtef.Length];
+        Buffer.BlockCopy(generated.EquationNative, 0, paddedNative, 0, headerLength);
+        Buffer.BlockCopy(
+            BitConverter.GetBytes((uint)paddedMtef.Length),
+            0,
+            paddedNative,
+            8,
+            sizeof(uint));
+        Buffer.BlockCopy(paddedMtef, 0, paddedNative, headerLength, paddedMtef.Length);
+
+        var recoveredRoot = MathTypeMtefCodec.FindRootStructureOffset(paddedMtef);
+        AssertEqual(218, recoveredRoot,
+            "MathType 7.x root recovery did not skip the offset-217 separator safely.");
+        var readBack = MathTypeMtefCodec.ReadEquationNativeMathMl(paddedNative);
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(sourceMathMl),
+            MathTypeMtefCodec.SemanticSignature(readBack),
+            "MathType 7.x root recovery changed the source equation semantics.");
+
+        var rewritten = MathTypeMtefCodec.RewriteEquationNative(
+            paddedNative,
+            editedMathMl,
+            inline: false);
+        AssertEqual(218, rewritten.StructureOffset,
+            "MathType 7.x rewrite did not preserve the recovered vendor prefix boundary.");
+        var editedReadBack = MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative);
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(editedMathMl),
+            MathTypeMtefCodec.SemanticSignature(editedReadBack),
+            "MathType 7.x recovered stream could not be edited and read back.");
+
+        File.WriteAllBytes(
+            Path.Combine(artifactRoot, "mathtype-78-offset217-compat-equation-native.bin"),
+            paddedNative);
+        Console.WriteLine(
+            "[MTEF ROOT COMPAT] terminal offset-217 END is accepted as an empty MathType equation, "
+            + "and an offset-217 END separator before a real root recovers to 218; both rewrite paths passed.");
+    }
+
     private sealed class MathTypeOfflineCase
     {
         public string Name { get; set; } = string.Empty;
@@ -1129,7 +1227,8 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline);
+                mathTypeBaseline,
+                allowTransientMathTypeProcess: true);
             WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
             AssertEqual(2, CountMathTypeOleShapes(document),
                 "VisualTeX→MathType adjacent conversion did not create exactly two MathType OLE formulas.");

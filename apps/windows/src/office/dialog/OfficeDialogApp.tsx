@@ -214,7 +214,7 @@ function serializeOfficeRenderLatex(
 function normalizeOfficeFontSizePt(value: unknown, fallback: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   const resolved = Number.isFinite(numeric) ? numeric : fallback;
-  return Math.round(Math.min(200, Math.max(5, resolved)) * 2) / 2;
+  return Math.round(Math.min(200, Math.max(5, resolved)) * 100) / 100;
 }
 
 function applyOfficeEditorPreferences(
@@ -292,7 +292,7 @@ function requireOfficeSessionFontSizePt(value: unknown, host: OfficeHost) {
         : "PowerPoint 公式 Session 缺少有效字号。",
     );
   }
-  return Math.round(numeric * 2) / 2;
+  return Math.round(numeric * 100) / 100;
 }
 
 const OFFICE_CHINESE_FONT_SIZE_OPTIONS = [

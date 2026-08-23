@@ -1049,6 +1049,36 @@ HRESULT CFormulaOleObject::SetFormulaJson(BSTR metadataJson)
         }
     }
 
+    // Word does not consistently turn a metadata-only SaveObject notification
+    // into a synchronous IPersistStorage::Save call. The live object can therefore
+    // report the new JSON while a fresh OLE instance loaded from the document still
+    // sees the old metadata. A successfully initialized persistent OLE object must
+    // have a loaded storage before a metadata-only update can claim success.
+    if (storage_ == nullptr)
+    {
+        metadataJson_ = std::move(previousMetadata);
+        dirty_ = previousDirty;
+        TraceOleCall(L"SetFormulaJson has no loaded storage");
+        return STG_E_REVERTED;
+    }
+
+    std::vector<BYTE> metadataBytes;
+    HRESULT persistResult = WideToUtf8(metadataJson_, metadataBytes);
+    if (SUCCEEDED(persistResult))
+        persistResult = WriteStorageStream(
+            storage_,
+            kVisualTeXMetadataStream,
+            metadataBytes);
+    if (SUCCEEDED(persistResult))
+        persistResult = storage_->Commit(STGC_DEFAULT);
+    if (FAILED(persistResult))
+    {
+        metadataJson_ = std::move(previousMetadata);
+        dirty_ = previousDirty;
+        TraceOleCall(L"SetFormulaJson direct metadata persistence failed");
+        return persistResult;
+    }
+
     TraceOleCall(L"SetFormulaJson succeeded");
     return S_OK;
 }

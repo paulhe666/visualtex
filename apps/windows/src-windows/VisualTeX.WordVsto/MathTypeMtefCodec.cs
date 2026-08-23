@@ -120,8 +120,12 @@ internal static class MathTypeMtefCodec
                 $"VisualTeX currently reads MathType OLE directly for MTEF v5 only, actual={mtef[0]}.");
 
         var structureOffset = FindRootStructureOffset(mtef);
-        var parser = new MtefStructureReader(mtef, structureOffset);
-        var content = parser.ReadRoot();
+        var isEmptyEquation =
+            structureOffset == mtef.Length - 1
+            && mtef[structureOffset] == RecordEnd;
+        var content = isEmptyEquation
+            ? Array.Empty<XNode>()
+            : new MtefStructureReader(mtef, structureOffset).ReadRoot();
         XNamespace mathMlNamespace = "http://www.w3.org/1998/Math/MathML";
         var math = new XElement(
             mathMlNamespace + "math",
@@ -674,6 +678,8 @@ internal static class MathTypeMtefCodec
             throw new InvalidDataException("Invalid or unsupported MTEF stream.");
         var position = FindEquationOptionsOffset(mtef) + 1;
         var sawPreferences = false;
+        var preferencesOffset = -1;
+        var sawInitialSize = false;
         while (position < mtef.Length)
         {
             var record = mtef[position];
@@ -697,23 +703,119 @@ internal static class MathTypeMtefCodec
                     position = SkipColorDefinition(mtef, position);
                     break;
                 case RecordEqnPrefs:
+                    preferencesOffset = position;
                     position = SkipEquationPreferences(mtef, position);
                     sawPreferences = true;
+                    break;
+                case >= 100:
+                    // MTEF v5 explicitly reserves record ids >= 100 for forward
+                    // compatible extensions. MathType versions are free to emit
+                    // them before the root; readers must skip the length-prefixed
+                    // payload instead of treating the record as the initial SIZE.
+                    position = SkipFutureRecord(mtef, position);
                     break;
                 default:
                     if (!sawPreferences)
                         throw new InvalidDataException(
                             $"Unexpected MTEF record {record} before equation preferences at offset {position}.");
-                    // Overall MTEF layout specifies one initial SIZE/typesize record
-                    // immediately before the root LINE/PILE. Preserve it in the
-                    // immutable prefix so generated structure inherits MathType's size.
-                    position = SkipInitialSizeRecord(mtef, position);
-                    if (position >= mtef.Length)
-                        throw new InvalidDataException("MTEF ended before its root equation record.");
-                    return position;
+                    if (record is RecordLine or RecordPile or RecordMatrix)
+                    {
+                        if (!sawInitialSize)
+                            WordDoubleClickHook.TraceMessage(
+                                $"mathtype-mtef-root-without-initial-size offset={position} record={record}");
+                        return position;
+                    }
+                    if (record == RecordSize
+                        || record >= RecordFull && record <= RecordSubSym)
+                    {
+                        // The published layout contains one initial size record,
+                        // but accepting repeated size changes here is harmless and
+                        // makes the reader tolerant of vendor/version prefixes while
+                        // keeping all of them in the immutable source prefix.
+                        position = SkipInitialSizeRecord(mtef, position);
+                        sawInitialSize = true;
+                        break;
+                    }
+                    if (record == RecordColor)
+                    {
+                        position++;
+                        _ = ReadUnsigned(mtef, ref position);
+                        break;
+                    }
+                    // MathType 7.x point releases can produce a prefix boundary
+                    // that differs from the canonical DSMT7 seed. Before treating
+                    // the current byte as authoritative, scan the post-preference
+                    // region for a LINE/PILE/MATRIX that parses as exactly one
+                    // complete top-level equation. A nested structure cannot pass
+                    // that whole-equation check because parent records remain.
+                    if (TryRecoverRootStructureOffset(
+                            mtef,
+                            preferencesOffset >= 0 ? preferencesOffset + 2 : 0,
+                            position,
+                            out var recoveredRoot))
+                        return recoveredRoot;
+                    // A genuine empty MathType equation is encoded as the normal
+                    // prefix/initial-size state followed directly by the final
+                    // equation END. MathType 7.8.x therefore legitimately has a
+                    // zero at the same offset where non-empty DSMT7 equations put
+                    // their root LINE. Treat only the terminal END as empty; any
+                    // other zero remains a hard parse failure.
+                    if (record == RecordEnd && position == mtef.Length - 1)
+                    {
+                        WordDoubleClickHook.TraceMessage(
+                            $"mathtype-mtef-empty-equation endOffset={position}");
+                        return position;
+                    }
+                    throw new InvalidDataException(
+                        $"Unsupported MathType root record {record} at offset {position}.");
             }
         }
         throw new InvalidDataException("MTEF has no root equation structure.");
+    }
+
+    private static bool TryRecoverRootStructureOffset(
+        byte[] data,
+        int lowerBound,
+        int expectedOffset,
+        out int rootOffset)
+    {
+        rootOffset = -1;
+        const int forwardSearchRadius = 256;
+        var start = Math.Max(0, lowerBound);
+        var end = Math.Min(data.Length - 2, expectedOffset + forwardSearchRadius);
+        var candidates = new List<int>();
+        for (var position = start; position <= end; position++)
+        {
+            var record = data[position];
+            if (record is not RecordLine and not RecordPile and not RecordMatrix)
+                continue;
+            if (!RootConsumesWholeEquation(data, position))
+                continue;
+            candidates.Add(position);
+        }
+        if (candidates.Count == 0) return false;
+        rootOffset = candidates
+            .OrderBy(position => Math.Abs(position - expectedOffset))
+            .ThenBy(position => position)
+            .First();
+        return true;
+    }
+
+    private static bool RootConsumesWholeEquation(byte[] data, int rootOffset)
+    {
+        try
+        {
+            var parser = new MtefStructureReader(data, rootOffset);
+            _ = parser.ReadRoot().ToArray();
+            return parser.HasOnlyEquationEndRemaining();
+        }
+        catch (Exception error) when (
+            error is InvalidDataException
+            || error is EndOfStreamException
+            || error is ArgumentOutOfRangeException)
+        {
+            return false;
+        }
     }
 
     private static int FindEquationOptionsOffset(byte[] mtef)
@@ -787,6 +889,18 @@ internal static class MathTypeMtefCodec
         return position;
     }
 
+    private static int SkipFutureRecord(byte[] data, int position)
+    {
+        Require(data, position, 1);
+        if (data[position] < 100)
+            throw new InvalidDataException(
+                $"MTEF record at offset {position} is not a future-extension record.");
+        position++;
+        var length = ReadUnsigned(data, ref position);
+        Require(data, position, length);
+        return position + length;
+    }
+
     private static int SkipInitialSizeRecord(byte[] data, int position)
     {
         Require(data, position, 1);
@@ -850,6 +964,9 @@ internal static class MathTypeMtefCodec
         List<byte> output)
     {
         var root = FindRootStructureOffset(sourceMtef);
+        if (root >= sourceMtef.Length
+            || sourceMtef[root] == RecordEnd)
+            return;
         Require(sourceMtef, root, 2);
         if (sourceMtef[root] != RecordLine)
             return;
@@ -3318,6 +3435,13 @@ internal static class MathTypeMtefCodec
                 return new XNode[] { ReadMatrix() };
             throw new InvalidDataException(
                 $"Unsupported MathType root record {Peek()} at offset {_position}.");
+        }
+
+        internal bool HasOnlyEquationEndRemaining()
+        {
+            SkipFormattingRecords();
+            return _position == _data.Length - 1
+                && Peek() == RecordEnd;
         }
 
         private XElement ReadLine()

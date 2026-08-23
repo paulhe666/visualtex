@@ -5,11 +5,11 @@ namespace VisualTeX.WindowsOffice.Tests;
 public sealed class FormulaFontSizeTests
 {
     [Theory]
-    [InlineData(13.24, 13.0)]
-    [InlineData(13.25, 13.5)]
+    [InlineData(13.24, 13.24)]
+    [InlineData(13.255, 13.26)]
     [InlineData(4.0, 5.0)]
     [InlineData(250.0, 200.0)]
-    public void NormalizesToHalfPointRange(double input, double expected)
+    public void NormalizesToCentipointRangeWithoutPresetQuantization(double input, double expected)
     {
         Assert.Equal((float)expected, FormulaFontSize.Normalize(input));
     }
@@ -54,6 +54,7 @@ public sealed class FormulaFontSizeTests
         Assert.Equal("四号", FormulaFontSize.FormatDisplay(14));
         Assert.Equal("小初", FormulaFontSize.FormatDisplay(36));
         Assert.Equal("13.5", FormulaFontSize.FormatDisplay(13.5));
+        Assert.Equal("13.25", FormulaFontSize.FormatDisplay(13.25));
         Assert.Equal("小四（12 磅）", FormulaFontSize.Describe(12));
     }
 
@@ -94,6 +95,50 @@ public sealed class FormulaFontSizeTests
             FormulaFontSize.InferOleFontSize(
                 actualWidthPoints,
                 actualHeightPoints,
+                metadata));
+    }
+
+    [Fact]
+    public void StoredInlineOleGeometryKeepsExactSemanticSizeAcrossReopenQuantization()
+    {
+        var metadata = new FormulaMetadata
+        {
+            FontSizePt = 14,
+            RenderFontSizePt = 14,
+            RenderWidthPx = 400,
+            RenderHeightPx = 100,
+            DisplayMode = "inline",
+            WordInlineOleWidthPt = 52.25,
+            WordInlineOleHeightPt = 13.75,
+        };
+
+        Assert.Equal(
+            14f,
+            FormulaFontSize.InferOleFontSize(
+                currentWidthPoints: 52.5f,
+                currentHeightPoints: 13.5f,
+                metadata));
+    }
+
+    [Fact]
+    public void StoredInlineOleGeometryStillDetectsRealUserResize()
+    {
+        var metadata = new FormulaMetadata
+        {
+            FontSizePt = 14,
+            RenderFontSizePt = 14,
+            RenderWidthPx = 400,
+            RenderHeightPx = 100,
+            DisplayMode = "inline",
+            WordInlineOleWidthPt = 40,
+            WordInlineOleHeightPt = 10,
+        };
+
+        Assert.Equal(
+            21f,
+            FormulaFontSize.InferOleFontSize(
+                currentWidthPoints: 60f,
+                currentHeightPoints: 15f,
                 metadata));
     }
 

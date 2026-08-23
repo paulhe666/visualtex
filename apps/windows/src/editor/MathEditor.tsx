@@ -1104,10 +1104,49 @@ function exactRawPlaceholderTemplate(rawQuery: string) {
   return rawPlaceholderCommandTemplates.get(rawQuery.trim()) ?? null;
 }
 
+function hasBoundedOperatorPlaceholderOrder(
+  command: string,
+  insertionTemplate: string,
+) {
+  if (!structuredSuggestionCommands.has(command)) return false;
+  const compact = insertionTemplate.replace(/\s+/g, "");
+  return /_\{[^}]*\\placeholder\{\}[^}]*\}\^\{[^}]*\\placeholder\{\}[^}]*\}/.test(
+    compact,
+  );
+}
+
+function activeOperatorLimitRegion(
+  field: MathfieldElement,
+): "upper" | "lower" | null {
+  const marker = activeMathCaretMarker(field);
+  const operator = marker?.closest<HTMLElement>(".ML__op-group");
+  if (!marker || !operator) return null;
+  const markerBounds = (marker.parentElement ?? marker).getBoundingClientRect();
+  const operatorBounds = operator.getBoundingClientRect();
+  if (markerBounds.height <= 0 || operatorBounds.height <= 0) return null;
+  return markerBounds.top + markerBounds.height / 2 <
+    operatorBounds.top + operatorBounds.height / 2
+    ? "upper"
+    : "lower";
+}
+
 function selectFirstLatexPlaceholder(
   field: MathfieldElement,
   command: string,
+  insertionTemplate = command,
 ) {
+  if (hasBoundedOperatorPlaceholderOrder(command, insertionTemplate)) {
+    // MathLive currently selects the visual upper limit first for an operator
+    // whose LaTeX template is written _{lower}^{upper}. Navigate with MathLive's
+    // own placeholder command so its internal raw-command/placeholder state stays
+    // coherent; manual model-range assignment breaks direct `\\command` input.
+    const moved = field.executeCommand("moveToNextPlaceholder");
+    if (moved && activeOperatorLimitRegion(field) === "lower") {
+      field.dataset.visualtexBoundedOperatorStage = "lower";
+      return;
+    }
+    delete field.dataset.visualtexBoundedOperatorStage;
+  }
   if (!reverseModelPlaceholderOrderCommands.has(command)) return;
   for (let offset = field.lastOffset; offset > 0; offset -= 1) {
     if (field.getElementInfo(offset)?.latex?.trim() !== "\\placeholder{}") {
@@ -3317,7 +3356,9 @@ function insertRawCommandIntoVerticalPlaceholder(
     focus: true,
     scrollIntoView: false,
   });
-  if (inserted) selectFirstLatexPlaceholder(field, selectedCommand);
+  if (inserted) {
+    selectFirstLatexPlaceholder(field, selectedCommand, insertionTemplate);
+  }
   return inserted;
 }
 
@@ -3396,7 +3437,7 @@ function commitNativeSuggestion(
         selectedCommand,
         rawInput || selectedCommand,
       );
-      selectFirstLatexPlaceholder(field, selectedCommand);
+      selectFirstLatexPlaceholder(field, selectedCommand, insertionTemplate);
       applyCompletedRawCommandAutoExit(
         field,
         settings,
@@ -5354,8 +5395,19 @@ function FormulaField(props: FormulaFieldProps) {
               ranges: [selectedRange],
               direction: "none",
             };
-          } else {
-            selectFirstLatexPlaceholder(field, placeholderCommand);
+          }
+          if (
+            !selectedRange ||
+            hasBoundedOperatorPlaceholderOrder(
+              placeholderCommand,
+              placeholderTemplate,
+            )
+          ) {
+            selectFirstLatexPlaceholder(
+              field,
+              placeholderCommand,
+              placeholderTemplate,
+            );
           }
           markVisualTexStructuralPlaceholders(field);
           field.focus();
@@ -5399,7 +5451,11 @@ function FormulaField(props: FormulaFieldProps) {
         scrollIntoView: false,
       });
       if (!inserted) return false;
-      selectFirstLatexPlaceholder(field, placeholderCommand);
+      selectFirstLatexPlaceholder(
+        field,
+        placeholderCommand,
+        placeholderTemplate,
+      );
 
       rawCommandAnchors.delete(field);
       delete field.dataset.pendingNativeSuggestion;
@@ -7341,6 +7397,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               scrollIntoView: false,
             });
             if (inserted && hasPlaceholder) {
+              selectFirstLatexPlaceholder(
+                field,
+                command.command,
+                insertionTemplate,
+              );
               markVisualTexStructuralPlaceholders(field);
               window.requestAnimationFrame(() => {
                 if (field.isConnected) {
@@ -7387,6 +7448,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         focusLine(targetLineId, {
           latex: normalizedValue,
           selection: captureSelection(field),
+          // Placeholder templates already synchronously focus MathLive's keyboard
+          // sink after insertion. Replaying that focus/selection 80 ms later can
+          // race the user's very first key (notably a physical backslash) before
+          // raw-LaTeX mode has had a chance to appear.
+          deferredRepair: !insertionTemplate.includes("\\placeholder{}"),
         });
       };
 
@@ -8295,6 +8361,37 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           // MathLive can safely handle it itself.
           return;
         }
+      }
+
+      if (
+        event.key === "Tab" &&
+        !event.isComposing &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !rawCommandActive &&
+        liveSuggestions.length === 0 &&
+        field.dataset.visualtexBoundedOperatorStage === "lower"
+      ) {
+        if (activeOperatorLimitRegion(field) === "lower") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          const moved = field.executeCommand("moveToPreviousPlaceholder");
+          if (moved && activeOperatorLimitRegion(field) === "upper") {
+            field.dataset.visualtexBoundedOperatorStage = "upper";
+            markVisualTexStructuralPlaceholders(field);
+            focusLine(lineId, {
+              latex: normalizeChineseLatex(field.value),
+              selection: captureSelection(field),
+            });
+            return;
+          }
+          // Never leave a stale stage marker after a failed semantic jump.
+          delete field.dataset.visualtexBoundedOperatorStage;
+          return;
+        }
+        delete field.dataset.visualtexBoundedOperatorStage;
       }
 
       const alignmentCaretDepth =

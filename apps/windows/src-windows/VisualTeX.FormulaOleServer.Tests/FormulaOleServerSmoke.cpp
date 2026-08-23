@@ -289,6 +289,29 @@ void VerifyStream(IStorage* storage, const wchar_t* name)
         throw std::runtime_error("Persisted OLE stream is empty");
 }
 
+std::string ReadStorageStreamUtf8(IStorage* storage, const wchar_t* name)
+{
+    CComPtr<IStream> stream;
+    Check(
+        storage->OpenStream(name, nullptr, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stream),
+        "OpenStream(read UTF-8)");
+    STATSTG stat = {};
+    Check(stream->Stat(&stat, STATFLAG_NONAME), "IStream::Stat(read UTF-8)");
+    if (stat.cbSize.QuadPart < 0 || stat.cbSize.QuadPart > 16 * 1024 * 1024)
+        throw std::runtime_error("Persisted metadata stream has an invalid size");
+    std::string result(static_cast<size_t>(stat.cbSize.QuadPart), '\0');
+    ULONG read = 0;
+    if (!result.empty())
+    {
+        Check(
+            stream->Read(result.data(), static_cast<ULONG>(result.size()), &read),
+            "IStream::Read(read UTF-8)");
+        if (read != result.size())
+            throw std::runtime_error("Persisted metadata stream was truncated");
+    }
+    return result;
+}
+
 void VerifyOleCreateProtocol(const std::filesystem::path& temp, const std::wstring& suffix)
 {
     for (const auto renderOption : {OLERENDER_NONE, OLERENDER_DRAW})
@@ -761,6 +784,17 @@ void RunSmoke(const std::filesystem::path& server)
             CComBSTR(png.c_str())),
         "InitializeFromFiles");
     VerifyDataAndView(formula);
+    // Establish the same baseline Word has for an already-inserted OLE object:
+    // all VisualTeX streams exist in storage before a metadata-only edit occurs.
+    Check(
+        persist->Save(storage, TRUE),
+        "IPersistStorage::Save(initial content before metadata-only update)");
+    Check(
+        persist->SaveCompleted(storage),
+        "IPersistStorage::SaveCompleted(initial content before metadata-only update)");
+    Check(
+        storage->Commit(STGC_DEFAULT),
+        "IStorage::Commit(initial content before metadata-only update)");
 
     CComQIPtr<IVisualTeXFormulaMetadata> metadataWriter(formula);
     if (metadataWriter == nullptr)
@@ -776,6 +810,40 @@ void RunSmoke(const std::filesystem::path& server)
         "GetFormulaJson(after metadata-only update)");
     if (std::wstring(afterMetadataOnlyUpdate, afterMetadataOnlyUpdate.Length()) != numberedMetadata)
         throw std::runtime_error("Metadata-only update did not persist in memory");
+    const std::string metadataStreamAfterUpdate = ReadStorageStreamUtf8(
+        storage,
+        kVisualTeXMetadataStream);
+    if (metadataStreamAfterUpdate.find("\"displayMode\":\"block\"") == std::string::npos
+        || metadataStreamAfterUpdate.find("\"numbered\":true") == std::string::npos)
+    {
+        std::cerr << "metadata stream after SetFormulaJson: "
+                  << metadataStreamAfterUpdate << std::endl;
+        throw std::runtime_error(
+            "Metadata-only update did not replace the compound-storage metadata stream");
+    }
+
+    // SetFormulaJson must also update the loaded compound storage immediately.
+    // Word may refresh/recreate the OLE client item before saving the document;
+    // a fresh object loaded from the same storage must therefore see the new JSON
+    // without relying on a later explicit IPersistStorage::Save from the host.
+    CComPtr<IVisualTeXFormulaObject> metadataReload = CreateFormulaObject();
+    CComQIPtr<IPersistStorage> metadataReloadPersist(metadataReload);
+    if (metadataReloadPersist == nullptr)
+        throw std::runtime_error("Reload IPersistStorage is unavailable");
+    Check(
+        metadataReloadPersist->Load(storage),
+        "IPersistStorage::Load(after metadata-only update)");
+    CComBSTR reloadedMetadataOnlyUpdate;
+    Check(
+        metadataReload->GetFormulaJson(&reloadedMetadataOnlyUpdate),
+        "GetFormulaJson(reloaded after metadata-only update)");
+    if (std::wstring(
+            reloadedMetadataOnlyUpdate,
+            reloadedMetadataOnlyUpdate.Length()) != numberedMetadata)
+        throw std::runtime_error(
+            "Metadata-only update was not persisted to compound storage");
+    metadataReloadPersist.Release();
+    metadataReload.Release();
 
     const HRESULT invalidMetadataUpdate = metadataWriter->SetFormulaJson(CComBSTR(L"{}"));
     if (SUCCEEDED(invalidMetadataUpdate))

@@ -103,11 +103,17 @@ public sealed class FormulaMetadata
                 || (RenderHeightPx.HasValue && Baseline.Value > RenderHeightPx.Value)))
             throw new InvalidOperationException("VisualTeX baseline must be within the rendered formula height.");
         if (FontSizePt.HasValue
-            && FormulaFontSize.Normalize(FontSizePt.Value) != FontSizePt.Value)
-            throw new InvalidOperationException("VisualTeX fontSizePt must use a supported half-point value.");
+            && (FontSizePt.Value < FormulaFontSize.MinimumPt
+                || FontSizePt.Value > FormulaFontSize.MaximumPt
+                || double.IsNaN(FontSizePt.Value)
+                || double.IsInfinity(FontSizePt.Value)))
+            throw new InvalidOperationException("VisualTeX fontSizePt must be a supported finite point size.");
         if (RenderFontSizePt.HasValue
-            && FormulaFontSize.Normalize(RenderFontSizePt.Value) != RenderFontSizePt.Value)
-            throw new InvalidOperationException("VisualTeX renderFontSizePt must use a supported half-point value.");
+            && (RenderFontSizePt.Value < FormulaFontSize.MinimumPt
+                || RenderFontSizePt.Value > FormulaFontSize.MaximumPt
+                || double.IsNaN(RenderFontSizePt.Value)
+                || double.IsInfinity(RenderFontSizePt.Value)))
+            throw new InvalidOperationException("VisualTeX renderFontSizePt must be a supported finite point size.");
         if (FormulaLetterFont is not null && !IsSupportedFormulaLetterFont(FormulaLetterFont))
             throw new InvalidOperationException("VisualTeX formulaLetterFont is not supported.");
         if (FormulaChineseFont is not null && !IsSupportedFormulaChineseFont(FormulaChineseFont))
