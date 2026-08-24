@@ -143,6 +143,8 @@ const VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE =
 // the DOM (rather than console-only) so the real Tauri app can be inspected
 // through macOS Accessibility while reproducing input-source transitions.
 const VISUALTEX_IME_DIAGNOSTIC_LABEL = "VisualTeX IME Diagnostic Trace";
+const VISUALTEX_IME_DIAGNOSTICS_ENABLED =
+  import.meta.env.VITE_VISUALTEX_IME_DIAGNOSTICS === "1";
 const visualTexImeDiagnosticEntries: string[] = [];
 const visualTexImeDiagnosticEventIds = new WeakMap<Event, number>();
 let visualTexImeDiagnosticSequence = 0;
@@ -181,6 +183,7 @@ function ensureVisualTexImeDiagnosticElement() {
 }
 
 function resetVisualTexImeDiagnosticTrace() {
+  if (!VISUALTEX_IME_DIAGNOSTICS_ENABLED) return;
   visualTexImeDiagnosticEntries.length = 0;
   const element = ensureVisualTexImeDiagnosticElement();
   element.value = "";
@@ -192,6 +195,7 @@ function traceVisualTexIme(
   event: Event | null = null,
   extra: Record<string, unknown> = {},
 ) {
+  if (!VISUALTEX_IME_DIAGNOSTICS_ENABLED) return;
   const keyboard = event instanceof KeyboardEvent ? event : null;
   const input = event instanceof InputEvent ? event : null;
   const composition = event instanceof CompositionEvent ? event : null;
@@ -6269,8 +6273,10 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
     window.addEventListener("keydown", handleWindowRawWrapperKeyDown, true);
-    for (const type of ["keypress", "keyup", "beforeinput", "input"] as const) {
-      window.addEventListener(type, handleWindowImeDiagnosticEvent, true);
+    if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
+      for (const type of ["keypress", "keyup", "beforeinput", "input"] as const) {
+        window.addEventListener(type, handleWindowImeDiagnosticEvent, true);
+      }
     }
     field.addEventListener("keydown", handleKeyDown, true);
     const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
@@ -6351,8 +6357,10 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
       window.removeEventListener("keydown", handleWindowRawWrapperKeyDown, true);
-      for (const type of ["keypress", "keyup", "beforeinput", "input"] as const) {
-        window.removeEventListener(type, handleWindowImeDiagnosticEvent, true);
+      if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
+        for (const type of ["keypress", "keyup", "beforeinput", "input"] as const) {
+          window.removeEventListener(type, handleWindowImeDiagnosticEvent, true);
+        }
       }
       field.removeEventListener("keydown", handleKeyDown, true);
       keyboardSink?.removeEventListener("keydown", handleRawWrapperKeyDown, true);
