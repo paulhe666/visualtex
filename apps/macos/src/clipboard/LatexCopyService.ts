@@ -2,6 +2,10 @@ import { validateLatex } from "mathlive/ssr";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry";
 import {
+  compatibilityCommandNames,
+  compatibilityRequiredArgumentCounts,
+} from "../autocomplete/compatibilityCommands";
+import {
   restoreLatexAlignmentMarkers,
   stripVisualTexAlignmentMarkers,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
@@ -868,6 +872,7 @@ function parseByFormatStrict(
 }
 
 const requiredCommandArgumentCount = new Map<string, number>([
+  ...compatibilityRequiredArgumentCounts,
   ["frac", 2], ["dfrac", 2], ["tfrac", 2], ["cfrac", 2],
   ["binom", 2], ["overset", 2], ["underset", 2],
   ["stackrel", 2], ["stackbin", 2], ["sqrt", 1], ["text", 1],
@@ -974,7 +979,10 @@ function validateFormulaDraft(latex: string): string | null {
       !(
         error.code === "unknown-command" &&
         typeof error.arg === "string" &&
-        findCustomSymbolByCommand(error.arg)
+        (
+          findCustomSymbolByCommand(error.arg) ||
+          compatibilityCommandNames.has(error.arg.replace(/^\\/, ""))
+        )
       ),
   );
   return errors.length ? errors[0]?.code ?? "invalid-latex" : null;

@@ -997,8 +997,8 @@ export function EditorWorkspace({
                     }
                     title={
                       isEn
-                        ? "Toggle \\mathbf bold for the selection only"
-                        : "切换粗体 · 使用 \\mathbf · 仅作用于选中内容"
+                        ? "Toggle bold while preserving math italic/upright shape"
+                        : "切换粗体 · 保留原有数学斜体/正体 · 仅作用于选中内容"
                     }
                     data-formula-selection-bold
                     onPointerEnter={rememberFormulaSelection}

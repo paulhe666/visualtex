@@ -1,9 +1,14 @@
-import { convertLatexToMarkup, type MathfieldElement } from "mathlive";
+import {
+  convertLatexToMarkup,
+  type MacroDictionary,
+  type MathfieldElement,
+} from "mathlive";
 import "../math/customSymbolRegistration.ts";
 import {
   expandCustomSymbolsForMathLiveMarkup,
   installCustomSymbolGlobalStyle,
 } from "../math/customSymbolRendering.ts";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros.ts";
 import {
   OIINT_SIZE1_OVAL_HEIGHT_EM,
   OIINT_SIZE1_OVAL_PATH,
@@ -135,9 +140,13 @@ export function convertVisualTexLatexToMarkup(
   installMathLiveContourIntegralGlobalStyle();
   installCustomSymbolGlobalStyle();
   const [text, options] = args;
+  const macros: MacroDictionary = {
+    ...VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS,
+    ...(options?.macros ?? {}),
+  };
   return convertLatexToMarkup(
     expandCustomSymbolsForMathLiveMarkup(text),
-    options,
+    { ...options, macros },
   );
 }
 
