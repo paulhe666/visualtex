@@ -8,6 +8,7 @@ internal sealed class WordFormulaFormatConversionPlan
     internal string SourceMode { get; set; } = string.Empty;
     internal string TargetMode { get; set; } = string.Empty;
     internal bool WholeDocument { get; set; }
+    internal string NumberFormatId { get; set; } = EquationNumberFormat.ContinuousId;
     internal List<WordFormulaFormatConversionTarget> Targets { get; set; } = new();
 }
 

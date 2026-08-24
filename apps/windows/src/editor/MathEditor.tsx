@@ -80,6 +80,7 @@ import {
 } from "../math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { ImeCompositionGuard } from "./imeCompositionGuard";
+import { hasBoundedOperatorPlaceholderOrder } from "./boundedOperatorTemplate";
 import {
   nativeSuggestionPreviewHasVisibleInk,
   resolveNativeSuggestionPreview,
@@ -1104,15 +1105,33 @@ function exactRawPlaceholderTemplate(rawQuery: string) {
   return rawPlaceholderCommandTemplates.get(rawQuery.trim()) ?? null;
 }
 
-function hasBoundedOperatorPlaceholderOrder(
-  command: string,
-  insertionTemplate: string,
+function selectOperatorLimitPlaceholderByGeometry(
+  field: MathfieldElement,
+  region: "upper" | "lower",
 ) {
-  if (!structuredSuggestionCommands.has(command)) return false;
-  const compact = insertionTemplate.replace(/\s+/g, "");
-  return /_\{[^}]*\\placeholder\{\}[^}]*\}\^\{[^}]*\\placeholder\{\}[^}]*\}/.test(
-    compact,
-  );
+  const ranges = latexPlaceholderRanges(field);
+  const candidates = visiblePlaceholderNodes(field).flatMap((placeholder) => {
+    const description = describeVerticalPlaceholderNode(field, placeholder);
+    if (
+      !description ||
+      description.region !== region ||
+      (description.kind !== "operator-limit" && description.kind !== "script")
+    ) {
+      return [];
+    }
+    const range = placeholderRangeForVisualNode(field, placeholder, ranges);
+    if (!range) return [];
+    return [{ range, centerX: description.centerX }];
+  });
+  const target = candidates.sort(
+    (left, right) => left.centerX - right.centerX,
+  )[0];
+  if (!target) return false;
+  field.selection = {
+    ranges: [target.range],
+    direction: "none",
+  };
+  return true;
 }
 
 function activeOperatorLimitRegion(
@@ -1120,14 +1139,23 @@ function activeOperatorLimitRegion(
 ): "upper" | "lower" | null {
   const marker = activeMathCaretMarker(field);
   const operator = marker?.closest<HTMLElement>(".ML__op-group");
-  if (!marker || !operator) return null;
-  const markerBounds = (marker.parentElement ?? marker).getBoundingClientRect();
-  const operatorBounds = operator.getBoundingClientRect();
-  if (markerBounds.height <= 0 || operatorBounds.height <= 0) return null;
-  return markerBounds.top + markerBounds.height / 2 <
-    operatorBounds.top + operatorBounds.height / 2
-    ? "upper"
-    : "lower";
+  if (marker && operator) {
+    const markerBounds = (marker.parentElement ?? marker).getBoundingClientRect();
+    const operatorBounds = operator.getBoundingClientRect();
+    if (markerBounds.height > 0 && operatorBounds.height > 0) {
+      return markerBounds.top + markerBounds.height / 2 <
+        operatorBounds.top + operatorBounds.height / 2
+        ? "upper"
+        : "lower";
+    }
+  }
+
+  // Some extended integral glyphs are rendered by MathLive as a generic
+  // vertical stack rather than an `.ML__op-group`. Reuse VisualTeX's geometry-
+  // based placeholder classifier so those operators still participate in the
+  // same lower -> upper -> body navigation contract.
+  const vertical = describeSelectedVerticalPlaceholder(field);
+  return vertical && vertical.kind !== "fraction" ? vertical.region : null;
 }
 
 function selectFirstLatexPlaceholder(
@@ -1135,16 +1163,48 @@ function selectFirstLatexPlaceholder(
   command: string,
   insertionTemplate = command,
 ) {
-  if (hasBoundedOperatorPlaceholderOrder(command, insertionTemplate)) {
-    // MathLive currently selects the visual upper limit first for an operator
-    // whose LaTeX template is written _{lower}^{upper}. Navigate with MathLive's
-    // own placeholder command so its internal raw-command/placeholder state stays
-    // coherent; manual model-range assignment breaks direct `\\command` input.
-    const moved = field.executeCommand("moveToNextPlaceholder");
-    if (moved && activeOperatorLimitRegion(field) === "lower") {
+  if (hasBoundedOperatorPlaceholderOrder(insertionTemplate)) {
+    // MathLive does not expose one stable model order for every large operator:
+    // standard \int/\sum start on the visual upper branch, while some extended
+    // integral commands already start on the lower branch. Base the correction
+    // on the rendered semantic region instead of assuming either model order.
+    if (activeOperatorLimitRegion(field) === "lower") {
       field.dataset.visualtexBoundedOperatorStage = "lower";
       return;
     }
+
+    const initialSelection = captureSelection(field);
+    const initialPosition = field.position;
+    const maxAttempts = Math.max(4, field.lastOffset + 2);
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!field.executeCommand("moveToNextPlaceholder")) break;
+      if (activeOperatorLimitRegion(field) === "lower") {
+        field.dataset.visualtexBoundedOperatorStage = "lower";
+        return;
+      }
+    }
+
+    field.selection = initialSelection;
+    field.position = initialPosition;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!field.executeCommand("moveToPreviousPlaceholder")) break;
+      if (activeOperatorLimitRegion(field) === "lower") {
+        field.dataset.visualtexBoundedOperatorStage = "lower";
+        return;
+      }
+    }
+
+    field.selection = initialSelection;
+    field.position = initialPosition;
+    if (
+      selectOperatorLimitPlaceholderByGeometry(field, "lower") &&
+      activeOperatorLimitRegion(field) === "lower"
+    ) {
+      field.dataset.visualtexBoundedOperatorStage = "lower";
+      return;
+    }
+    field.selection = initialSelection;
+    field.position = initialPosition;
     delete field.dataset.visualtexBoundedOperatorStage;
   }
   if (!reverseModelPlaceholderOrderCommands.has(command)) return;
@@ -1158,6 +1218,101 @@ function selectFirstLatexPlaceholder(
     };
     return;
   }
+}
+
+function moveBoundedOperatorRight(
+  field: MathfieldElement,
+) {
+  const stage = field.dataset.visualtexBoundedOperatorStage;
+  if (stage !== "lower" && stage !== "upper") return false;
+
+  const region = activeOperatorLimitRegion(field);
+  if (stage === "lower") {
+    if (region !== "lower") {
+      if (region === "upper") {
+        field.dataset.visualtexBoundedOperatorStage = "upper";
+      } else {
+        delete field.dataset.visualtexBoundedOperatorStage;
+      }
+      return false;
+    }
+
+    // Composite lower limits such as `k=1` contain more than one placeholder.
+    // Keep moving right inside the lower branch while another lower placeholder
+    // exists; only after the last lower placeholder do we cross to the upper
+    // branch. This keeps the semantic order lower -> upper even though MathLive's
+    // native placeholder cycle starts from the visual upper branch.
+    const beforeSelection = captureSelection(field);
+    const beforePosition = field.position;
+    if (field.executeCommand("moveToNextPlaceholder")) {
+      const nextRegion = activeOperatorLimitRegion(field);
+      if (nextRegion === "lower") return true;
+      if (nextRegion === "upper") {
+        field.dataset.visualtexBoundedOperatorStage = "upper";
+        return true;
+      }
+      field.selection = beforeSelection;
+      field.position = beforePosition;
+    }
+
+    // Walk backward through any already-filled lower placeholders until the
+    // visual upper branch is reached. A fixed attempt count based on the field
+    // size avoids coupling this logic to a specific operator template.
+    const maxAttempts = Math.max(4, field.lastOffset + 2);
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!field.executeCommand("moveToPreviousPlaceholder")) break;
+      const previousRegion = activeOperatorLimitRegion(field);
+      if (previousRegion === "upper") {
+        field.dataset.visualtexBoundedOperatorStage = "upper";
+        return true;
+      }
+    }
+
+    if (
+      selectOperatorLimitPlaceholderByGeometry(field, "upper") &&
+      activeOperatorLimitRegion(field) === "upper"
+    ) {
+      field.dataset.visualtexBoundedOperatorStage = "upper";
+      return true;
+    }
+
+    delete field.dataset.visualtexBoundedOperatorStage;
+    return false;
+  }
+
+  if (region !== "upper") {
+    delete field.dataset.visualtexBoundedOperatorStage;
+    return false;
+  }
+
+  // Once the upper limit is active, Right Arrow must leave the limit pair and
+  // continue to the next formula placeholder (integrand/term/etc.). If the
+  // lower placeholder is still empty, MathLive may visit it again first, so
+  // keep advancing until the caret is outside the operator limits.
+  const maxAttempts = Math.max(4, field.lastOffset + 2);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (!field.executeCommand("moveToNextPlaceholder")) break;
+    const nextRegion = activeOperatorLimitRegion(field);
+    if (nextRegion === "upper") return true;
+    if (nextRegion === null) {
+      delete field.dataset.visualtexBoundedOperatorStage;
+      return true;
+    }
+  }
+
+  // A custom bounded operator can legitimately have no following placeholder.
+  // In that case leave the script/operator hierarchy itself instead of falling
+  // back to MathLive's native upper -> lower horizontal cycle.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (!field.executeCommand("moveAfterParent")) break;
+    if (activeOperatorLimitRegion(field) === null) {
+      delete field.dataset.visualtexBoundedOperatorStage;
+      return true;
+    }
+  }
+
+  delete field.dataset.visualtexBoundedOperatorStage;
+  return false;
 }
 
 function isAccentContainerLatex(latex: string) {
@@ -5398,10 +5553,7 @@ function FormulaField(props: FormulaFieldProps) {
           }
           if (
             !selectedRange ||
-            hasBoundedOperatorPlaceholderOrder(
-              placeholderCommand,
-              placeholderTemplate,
-            )
+            hasBoundedOperatorPlaceholderOrder(placeholderTemplate)
           ) {
             selectFirstLatexPlaceholder(
               field,
@@ -8364,6 +8516,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       if (
+        event.key === "ArrowRight" &&
+        !event.isComposing &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !rawCommandActive &&
+        liveSuggestions.length === 0 &&
+        (field.dataset.visualtexBoundedOperatorStage === "lower" ||
+          field.dataset.visualtexBoundedOperatorStage === "upper")
+      ) {
+        if (moveBoundedOperatorRight(field)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          markVisualTexStructuralPlaceholders(field);
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
+          return;
+        }
+      }
+
+      if (
         event.key === "Tab" &&
         !event.isComposing &&
         !event.altKey &&
@@ -8372,26 +8548,19 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         !event.shiftKey &&
         !rawCommandActive &&
         liveSuggestions.length === 0 &&
-        field.dataset.visualtexBoundedOperatorStage === "lower"
+        (field.dataset.visualtexBoundedOperatorStage === "lower" ||
+          field.dataset.visualtexBoundedOperatorStage === "upper")
       ) {
-        if (activeOperatorLimitRegion(field) === "lower") {
+        if (moveBoundedOperatorRight(field)) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          const moved = field.executeCommand("moveToPreviousPlaceholder");
-          if (moved && activeOperatorLimitRegion(field) === "upper") {
-            field.dataset.visualtexBoundedOperatorStage = "upper";
-            markVisualTexStructuralPlaceholders(field);
-            focusLine(lineId, {
-              latex: normalizeChineseLatex(field.value),
-              selection: captureSelection(field),
-            });
-            return;
-          }
-          // Never leave a stale stage marker after a failed semantic jump.
-          delete field.dataset.visualtexBoundedOperatorStage;
+          markVisualTexStructuralPlaceholders(field);
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
           return;
         }
-        delete field.dataset.visualtexBoundedOperatorStage;
       }
 
       const alignmentCaretDepth =

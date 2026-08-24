@@ -614,6 +614,14 @@ internal static partial class Program
             {
                 RunMathTypeNativePreviewComplexAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "mathtype-native-preview-single-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeNativePreviewSinglePerformanceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-native-preview-shared-lifecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeNativePreviewSharedLifecycleAcceptance();
+            }
             else if (string.Equals(mode, "word-mathtype-openxml-clone", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeOpenXmlCloneAcceptance(artifactRoot);
@@ -673,6 +681,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlMathTypeFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-mathtype-single-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlMathTypeSinglePerformanceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-omml-selection-view", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOmmlSelectionViewAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
             {
@@ -817,6 +833,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-inline-ole-typing-baseline", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInlineOleTypingBaseline(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-inline-ole-initial-typing-baseline", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInlineOleInitialTypingBaseline(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-inline-ole-font-style-existing", StringComparison.OrdinalIgnoreCase))
             {

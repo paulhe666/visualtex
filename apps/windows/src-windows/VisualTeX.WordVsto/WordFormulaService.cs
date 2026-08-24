@@ -28,7 +28,7 @@ internal sealed partial class WordFormulaService
     private const float ParagraphBeforeOleDisplaySpaceAfterPoints = 0f;
     private readonly Application _application;
 
-    private sealed class WordViewState
+    internal sealed class WordViewState
     {
         internal int SelectionStart { get; set; }
         internal int SelectionEnd { get; set; }
@@ -68,6 +68,20 @@ internal sealed partial class WordFormulaService
     {
         internal int CharacterCount { get; set; }
         internal int Hidden { get; set; }
+    }
+
+    private readonly struct NonProseHostRange
+    {
+        internal NonProseHostRange(int start, int end)
+        {
+            Start = start;
+            End = end;
+        }
+
+        internal int Start { get; }
+        internal int End { get; }
+
+        internal bool Contains(int position) => position >= Start && position < End;
     }
 
     private sealed class MathTypeDisplayParagraphLayout
@@ -996,13 +1010,16 @@ internal sealed partial class WordFormulaService
                 selectionFont.Italic = sourceFont.Italic;
                 try { selectionFont.Underline = sourceFont.Underline; } catch { }
                 try { selectionFont.Color = sourceFont.Color; } catch { }
+                var sourcePosition = sourceFont.Position;
+                selectionFont.Position = sourcePosition == (int)WdConstants.wdUndefined
+                    ? 0
+                    : sourcePosition;
             }
             else
             {
                 selectionFont = selection.Font;
+                selectionFont.Position = 0;
             }
-
-            selectionFont.Position = 0;
             selectionFont.Hidden = 0;
             selectionFont.Subscript = 0;
             selectionFont.Superscript = 0;
@@ -1702,7 +1719,11 @@ internal sealed partial class WordFormulaService
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
             {
-                RestoreTypingBaselineAfter(shape);
+                // Establish the ordinary-text boundary before control returns to
+                // Word. Waiting for SelectionChange leaves the insertion format
+                // temporarily attached to the OLE host, so the first space/text
+                // typed after the object can inherit its negative Font.Position.
+                RestoreTypingBaselineAfter(shape, ensureTypingAnchor: true);
             }
             else
             {
@@ -1812,7 +1833,7 @@ internal sealed partial class WordFormulaService
     public OfficeObjectResult InsertMathTypeOle(
         OfficeSessionDocument session,
         string mathMl,
-        string emfPath,
+        string? emfPath,
         string? createdObjectBookmarkName = null,
         ResolvedEquationHeadingScope? preResolvedHeadingScope = null,
         ISet<int>? preparedHeadingScopeStarts = null,
@@ -1820,15 +1841,23 @@ internal sealed partial class WordFormulaService
         float isolatedNativePreviewWidthPt = 0,
         float isolatedNativePreviewHeightPt = 0,
         int isolatedNativePreviewWordPosition = 0,
-        bool isolatedNativePreviewAttempted = false)
+        bool isolatedNativePreviewAttempted = false,
+        bool reuseExistingInlineTypingBoundary = false,
+        bool updateCreatedMathTypeNumberFields = false)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
             throw new InvalidDataException(
                 "VisualTeX did not provide valid MathML for MathType OLE insertion.");
-        if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
+        var hasIsolatedNativePreview =
+            !string.IsNullOrWhiteSpace(isolatedNativePreviewWmfPath)
+            && File.Exists(isolatedNativePreviewWmfPath)
+            && isolatedNativePreviewWidthPt > 0
+            && isolatedNativePreviewHeightPt > 0;
+        if (!hasIsolatedNativePreview
+            && (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath)))
             throw new FileNotFoundException(
-                "VisualTeX did not provide a valid vector preview for MathType OLE insertion.",
+                "VisualTeX did not provide a valid MathType native or vector preview for OLE insertion.",
                 emfPath);
 
         var metadata = session.ToMetadata();
@@ -1861,11 +1890,10 @@ internal sealed partial class WordFormulaService
         float widthPt;
         float heightPt;
         int wordPosition;
-        var renderRoot = Path.GetDirectoryName(emfPath) ?? Path.GetTempPath();
-        if (!string.IsNullOrWhiteSpace(isolatedNativePreviewWmfPath)
-            && File.Exists(isolatedNativePreviewWmfPath)
-            && isolatedNativePreviewWidthPt > 0
-            && isolatedNativePreviewHeightPt > 0)
+        var renderRoot = !string.IsNullOrWhiteSpace(emfPath)
+            ? Path.GetDirectoryName(emfPath) ?? Path.GetTempPath()
+            : Path.GetTempPath();
+        if (hasIsolatedNativePreview)
         {
             previewWmf = File.ReadAllBytes(isolatedNativePreviewWmfPath);
             widthPt = isolatedNativePreviewWidthPt;
@@ -1895,8 +1923,12 @@ internal sealed partial class WordFormulaService
                     session.ExportResult?.Height ?? 0f,
                     session.ExportResult?.Baseline)
                 : 0;
+            if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
+                throw new FileNotFoundException(
+                    "MathType native preview was unavailable and no fallback EMF exists.",
+                    emfPath);
             previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
-                emfPath,
+                emfPath!,
                 widthPt,
                 heightPt);
         }
@@ -2140,12 +2172,14 @@ internal sealed partial class WordFormulaService
             shape.Width = widthPt;
             shape.Height = heightPt;
             shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
+            TraceInsertPerf("set-shape-geometry");
 
             if (inline && sourceParagraphCount >= 0)
                 RepairMathTypeInsertXmlParagraphSplit(
                     document,
                     shape,
                     sourceParagraphCount);
+            TraceInsertPerf("repair-inline-paragraph");
 
             // Word structural edits can move the InlineShape range. Re-resolve it
             // before the final baseline/numbering work without activating its OLE
@@ -2164,12 +2198,21 @@ internal sealed partial class WordFormulaService
                     "Word retained the MathType OLE but VisualTeX could not refresh its live InlineShape handle.");
             Release(shape);
             shape = refreshedShape;
+            TraceInsertPerf("refresh-native-shape");
 
             if (inline)
             {
                 stage = "apply-native-baseline";
                 SetInlineOleWordPosition(shape, wordPosition);
-                RestoreTypingBaselineAfter(shape);
+                TraceInsertPerf("set-native-baseline");
+                if (!reuseExistingInlineTypingBoundary)
+                {
+                    if (useLocalConversionLookup)
+                        RestoreTypingBaselineAfterMathTypeConversion(shape);
+                    else
+                        RestoreTypingBaselineAfter(shape);
+                }
+                TraceInsertPerf("restore-typing-baseline");
                 var shapeRange = shape.Range;
                 try { selection.SetRange(shapeRange.End, shapeRange.End); }
                 finally { Release(shapeRange); }
@@ -2182,7 +2225,8 @@ internal sealed partial class WordFormulaService
                     shape,
                     session.Numbered,
                     session.MathTypeNumberPosition,
-                    updateNestedNumberFields: !useLocalConversionLookup);
+                    updateNestedNumberFields:
+                        !useLocalConversionLookup || updateCreatedMathTypeNumberFields);
                 // MTDisplayEquation setup resets direct character formatting on
                 // the OLE run. Apply the exported math baseline after numbering
                 // and paragraph style are final so the adjacent number stays
@@ -2213,8 +2257,10 @@ internal sealed partial class WordFormulaService
                 createdObjectBookmark = document.Bookmarks.Add(
                     createdObjectBookmarkName,
                     createdObjectBookmarkRange);
+                TraceInsertPerf("bind-created-object-identity");
             }
             stage = "complete";
+            TraceInsertPerf("complete");
             return Result(session, document);
         }
         catch (Exception error)
@@ -3227,9 +3273,9 @@ internal sealed partial class WordFormulaService
         Document? document = null;
         Selection? selection = null;
         Range? insertion = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
         Range? equationRange = null;
+        var preservedDisplayParagraphStart = -1;
+        var preservedDisplayParagraphCount = -1;
         string sourceFingerprint = string.Empty;
         Bookmark? bookmark = null;
         Table? numberedTable = null;
@@ -3291,6 +3337,11 @@ internal sealed partial class WordFormulaService
                 }
                 else
                 {
+                    if (preserveExistingDisplayParagraphBoundary)
+                    {
+                        preservedDisplayParagraphCount = ReadDocumentParagraphCount(document);
+                        preservedDisplayParagraphStart = ReadParagraphStart(insertion);
+                    }
                     var displayInsertion = ResolveDisplayInsertionRange(document, insertion);
                     Release(insertion);
                     insertion = displayInsertion;
@@ -3373,12 +3424,16 @@ internal sealed partial class WordFormulaService
                 }
                 else if (preserveExistingDisplayParagraphBoundary)
                 {
-                    // Display OMML owns a paragraph of its own. InsertXML leaves the
-                    // now-empty source paragraph immediately behind it; remove exactly
-                    // that empty paragraph instead of adding another typing paragraph.
-                    RemoveEmptyParagraphImmediatelyAfterDisplayFormula(
+                    // Display OMML import may split the empty source paragraph to
+                    // either side of the new OMath depending on Word build/layout.
+                    // Restore the exact pre-conversion paragraph count using the
+                    // source paragraph's captured start instead of assuming the
+                    // residual blank paragraph is always after the formula.
+                    RepairPreservedDisplayParagraphBoundary(
                         document,
-                        equationRange);
+                        equationRange,
+                        preservedDisplayParagraphStart,
+                        preservedDisplayParagraphCount);
                     selection.SetRange(equationRange.End, equationRange.End);
                 }
                 else
@@ -3451,8 +3506,6 @@ internal sealed partial class WordFormulaService
             Release(bookmark);
             Release(equationRange);
             Release(numberedTable);
-            Release(paragraphRange);
-            Release(paragraph);
             Release(insertion);
             Release(selection);
             Release(document);
@@ -7014,10 +7067,65 @@ internal sealed partial class WordFormulaService
         finally { Release(typingRange); }
     }
 
-    private static void RemoveEmptyParagraphImmediatelyAfterDisplayFormula(
-        Document document,
-        Range formulaRange)
+    private static int ReadParagraphStart(Range anchor)
     {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            paragraphs = anchor.Paragraphs;
+            if (paragraphs.Count == 0) return anchor.Start;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            return paragraphRange.Start;
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static bool IsStructurallyEmptyParagraph(Range range)
+    {
+        OMaths? maths = null;
+        InlineShapes? shapes = null;
+        Fields? fields = null;
+        try
+        {
+            maths = range.OMaths;
+            shapes = range.InlineShapes;
+            fields = range.Fields;
+            var text = (range.Text ?? string.Empty)
+                .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+            return text.Length == 0
+                && maths.Count == 0
+                && shapes.Count == 0
+                && fields.Count == 0;
+        }
+        finally
+        {
+            Release(fields);
+            Release(shapes);
+            Release(maths);
+        }
+    }
+
+    private static void RepairPreservedDisplayParagraphBoundary(
+        Document document,
+        Range formulaRange,
+        int sourceParagraphStart,
+        int sourceParagraphCount)
+    {
+        if (sourceParagraphStart < 0 || sourceParagraphCount < 0) return;
+        var currentParagraphCount = ReadDocumentParagraphCount(document);
+        if (currentParagraphCount == sourceParagraphCount) return;
+        if (currentParagraphCount != sourceParagraphCount + 1)
+            throw new InvalidOperationException(
+                $"Word changed the paragraph count unexpectedly while converting a display formula to OMML: before={sourceParagraphCount}, after={currentParagraphCount}.");
+
         Paragraphs? formulaParagraphs = null;
         Paragraph? formulaParagraph = null;
         Range? formulaParagraphRange = null;
@@ -7026,37 +7134,59 @@ internal sealed partial class WordFormulaService
         Paragraphs? candidateParagraphs = null;
         Paragraph? candidateParagraph = null;
         Range? candidateRange = null;
-        OMaths? candidateMaths = null;
-        InlineShapes? candidateShapes = null;
         try
         {
             formulaParagraphs = formulaRange.Paragraphs;
-            if (formulaParagraphs.Count == 0) return;
+            if (formulaParagraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The converted OMML display formula spans multiple paragraphs.");
             formulaParagraph = formulaParagraphs[1];
             formulaParagraphRange = formulaParagraph.Range;
             content = document.Content;
-            if (formulaParagraphRange.End >= content.End) return;
 
-            object nextStart = formulaParagraphRange.End;
-            object nextEnd = formulaParagraphRange.End;
-            probe = document.Range(ref nextStart, ref nextEnd);
-            candidateParagraphs = probe.Paragraphs;
-            if (candidateParagraphs.Count == 0) return;
-            candidateParagraph = candidateParagraphs[1];
-            candidateRange = candidateParagraph.Range;
-            candidateMaths = candidateRange.OMaths;
-            candidateShapes = candidateRange.InlineShapes;
-            var text = (candidateRange.Text ?? string.Empty)
-                .Trim('\r', '\a', '\v', '\f', '\t', ' ');
-            if (text.Length == 0
-                && candidateMaths.Count == 0
-                && candidateShapes.Count == 0)
-                candidateRange.Delete();
+            if (formulaParagraphRange.Start > sourceParagraphStart)
+            {
+                var previousStart = Math.Max(content.Start, formulaParagraphRange.Start - 1);
+                probe = document.Range(previousStart, formulaParagraphRange.Start);
+                candidateParagraphs = probe.Paragraphs;
+                if (candidateParagraphs.Count == 0)
+                    throw new InvalidOperationException(
+                        "Word inserted an OMML paragraph before the source boundary, but the residual source paragraph could not be resolved.");
+                candidateParagraph = candidateParagraphs[1];
+                candidateRange = candidateParagraph.Range;
+                if (candidateRange.Start != sourceParagraphStart
+                    || !IsStructurallyEmptyParagraph(candidateRange))
+                    throw new InvalidOperationException(
+                        "The paragraph before the converted OMML formula is not the empty source paragraph VisualTeX expected to repair.");
+            }
+            else if (formulaParagraphRange.Start == sourceParagraphStart)
+            {
+                if (formulaParagraphRange.End >= content.End)
+                    throw new InvalidOperationException(
+                        "Word added a display-formula paragraph split at the document end, but no residual paragraph is available to repair.");
+                probe = document.Range(
+                    formulaParagraphRange.End,
+                    Math.Min(content.End, formulaParagraphRange.End + 1));
+                candidateParagraphs = probe.Paragraphs;
+                if (candidateParagraphs.Count == 0)
+                    throw new InvalidOperationException(
+                        "Word inserted an OMML paragraph after the source boundary, but the residual paragraph could not be resolved.");
+                candidateParagraph = candidateParagraphs[1];
+                candidateRange = candidateParagraph.Range;
+                if (!IsStructurallyEmptyParagraph(candidateRange))
+                    throw new InvalidOperationException(
+                        "The paragraph after the converted OMML formula contains user content and was not removed.");
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "The converted OMML display formula moved before its captured source paragraph boundary.");
+            }
+
+            candidateRange.Delete();
         }
         finally
         {
-            Release(candidateShapes);
-            Release(candidateMaths);
             Release(candidateRange);
             Release(candidateParagraph);
             Release(candidateParagraphs);
@@ -7066,6 +7196,11 @@ internal sealed partial class WordFormulaService
             Release(formulaParagraph);
             Release(formulaParagraphs);
         }
+
+        var repairedParagraphCount = ReadDocumentParagraphCount(document);
+        if (repairedParagraphCount != sourceParagraphCount)
+            throw new InvalidOperationException(
+                $"VisualTeX could not restore the display formula's original paragraph structure: expected={sourceParagraphCount}, actual={repairedParagraphCount}.");
     }
 
     private static void MoveSelectionAfterDisplayFormula(
@@ -7319,6 +7454,11 @@ internal sealed partial class WordFormulaService
         MathTypeNativePreviewRenderer.Result? sourceNativePreview = null;
         MathTypeNativePreviewRenderer.Result? nativePreview = null;
         var sourceParagraphCount = -1;
+        var sourceWasNumbered = false;
+        var sourceNumberPosition = "right";
+        var numberingLayoutChanged = false;
+        MathTypeWordOpenXml.NumberTemplate? sourceNumberTemplate = null;
+        var createdEditSectionBreakCodeStart = -1;
         var alignInline = string.Equals(
             session.DisplayMode,
             "inline",
@@ -7351,10 +7491,30 @@ internal sealed partial class WordFormulaService
             oldRange = oldShape.Range.Duplicate;
             var oldStart = oldRange.Start;
             var sourceCount = document.InlineShapes.Count;
+            // InsertXML can split the host paragraph for both display and inline
+            // Equation.DSMT4 objects. Capture this before deleting the source so an
+            // inline re-edit can restore surrounding prose to the same paragraph.
+            sourceParagraphCount = ReadDocumentParagraphCount(document);
             if (!alignInline)
             {
                 displayParagraphLayout = CaptureMathTypeDisplayParagraphLayout(oldShape);
-                sourceParagraphCount = ReadDocumentParagraphCount(document);
+                sourceWasNumbered = MathTypeOleInterop.TryReadDisplayNumberPosition(
+                    oldShape,
+                    out sourceNumberPosition);
+                numberingLayoutChanged = sourceWasNumbered != session.Numbered
+                    || sourceWasNumbered
+                        && session.Numbered
+                        && !string.Equals(
+                            sourceNumberPosition,
+                            session.MathTypeNumberPosition,
+                            StringComparison.OrdinalIgnoreCase);
+                if (sourceWasNumbered)
+                    sourceNumberTemplate = ReadMathTypePlaceRefTemplateForShape(
+                        document,
+                        oldShape,
+                        sourceNumberPosition);
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-replace-numbering source={sourceWasNumbered}:{sourceNumberPosition} target={session.Numbered}:{session.MathTypeNumberPosition} changed={numberingLayoutChanged}");
             }
 
             WordDoubleClickHook.TraceMessage(
@@ -7498,10 +7658,15 @@ internal sealed partial class WordFormulaService
                 ?? throw new InvalidOperationException(
                     "Word materialized the rewritten Flat OPC, but VisualTeX could not resolve the replacement MathType equation.");
 
+            if (sourceParagraphCount >= 0)
+                RepairMathTypeInsertXmlParagraphSplit(
+                    document,
+                    replacement,
+                    sourceParagraphCount);
+
             MathTypeDisplayParagraphLayout? detachedNumberLayout = null;
-            if (!alignInline && sourceParagraphCount >= 0)
+            if (!alignInline)
             {
-                RepairMathTypeInsertXmlParagraphSplit(document, replacement, sourceParagraphCount);
                 // Older VisualTeX builds could misclassify a MathType MTPlaceRef
                 // numbered row as inline and leave the equation and its number in
                 // two adjacent paragraphs.  Repair that already-damaged shape on
@@ -7513,8 +7678,33 @@ internal sealed partial class WordFormulaService
                     replacement);
             }
             var displayLayoutToRestore = detachedNumberLayout ?? displayParagraphLayout;
-            if (!alignInline && displayLayoutToRestore is not null)
+            if (!alignInline && numberingLayoutChanged)
+            {
+                var targetNumberTemplate = session.Numbered
+                    ? ResolveMathTypeEditNumberTemplate(
+                        document,
+                        replacement,
+                        sourceWasNumbered ? sourceNumberTemplate : null,
+                        out createdEditSectionBreakCodeStart)
+                    : null;
+                RebuildMathTypeDisplayScaffold(
+                    document,
+                    replacement,
+                    session.Numbered,
+                    session.MathTypeNumberPosition,
+                    targetNumberTemplate);
+                if (displayLayoutToRestore is not null)
+                    RestoreMathTypeDisplayParagraphLayout(
+                        replacement,
+                        displayLayoutToRestore);
+                MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-replace-numbering-rebuilt numbered={session.Numbered} position={session.MathTypeNumberPosition}");
+            }
+            else if (!alignInline && displayLayoutToRestore is not null)
+            {
                 RestoreMathTypeDisplayParagraphLayout(replacement, displayLayoutToRestore);
+            }
 
             // Keep the U+0001 object-result baseline synchronized with the exact
             // same exported MathType geometry used to build the WMF. Reusing the
@@ -7559,7 +7749,7 @@ internal sealed partial class WordFormulaService
                     {
                         rollbackRange = document.Range(rollbackStart, rollbackStart);
                         rollbackRange.InsertXML(rollbackWordOpenXml);
-                        if (!alignInline && sourceParagraphCount >= 0)
+                        if (sourceParagraphCount >= 0)
                         {
                             rollbackShape = FindMathTypeOleByRange(
                                 document,
@@ -7570,6 +7760,16 @@ internal sealed partial class WordFormulaService
                                     document,
                                     rollbackShape,
                                     sourceParagraphCount);
+                                if (!alignInline && numberingLayoutChanged)
+                                {
+                                    RebuildMathTypeDisplayScaffold(
+                                        document,
+                                        rollbackShape,
+                                        sourceWasNumbered,
+                                        sourceNumberPosition,
+                                        sourceWasNumbered ? sourceNumberTemplate : null);
+                                    MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                                }
                                 if (displayParagraphLayout is not null)
                                     RestoreMathTypeDisplayParagraphLayout(
                                         rollbackShape,
@@ -7584,6 +7784,16 @@ internal sealed partial class WordFormulaService
                     }
                 }
                 catch { }
+                if (createdEditSectionBreakCodeStart >= 0)
+                {
+                    try
+                    {
+                        RemoveMathTypeSectionBreakFieldAtCodeStart(
+                            document,
+                            createdEditSectionBreakCodeStart);
+                    }
+                    catch { }
+                }
             }
             else
             {
@@ -8744,6 +8954,27 @@ internal sealed partial class WordFormulaService
             Release(range);
             Release(selection);
         }
+    }
+
+    internal WordViewState CaptureFormulaFormatConversionViewState() =>
+        CaptureViewState();
+
+    internal void RestoreFormulaFormatConversionViewState(WordViewState? state)
+    {
+        if (state is null) return;
+        Document? document = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            RestoreViewState(document, state, preferredSelection: null);
+        }
+        catch
+        {
+            // View restoration must never turn an otherwise successful formula
+            // conversion into an error. The original document is reactivated by
+            // the conversion write path before this method normally runs.
+        }
+        finally { Release(document); }
     }
 
     private WordViewState CaptureViewState()
@@ -9972,14 +10203,22 @@ internal sealed partial class WordFormulaService
 
             if (numberOnLeft)
             {
+                // Do not create MTPlaceRef first and then insert a tab at its end.
+                // Word can expand the field's boundary to absorb that character,
+                // leaving no ordinary separator between the number and the OLE.
+                // Materialize the tab first, then create MTPlaceRef before it so
+                // the final structure is unambiguously FIELD + TAB + OLE.
+                var numberInsertionPosition = shapeRange.Start;
+                separator = document.Range(
+                    numberInsertionPosition,
+                    numberInsertionPosition);
+                separator.Text = "\t";
+                Release(separator);
+                separator = null;
                 placeRef = CreateIndependentMathTypePlaceRef(
                     document,
-                    shapeRange.Start,
+                    numberInsertionPosition,
                     numberTemplate!);
-                Release(shapeRange);
-                shapeRange = shape.Range;
-                separator = document.Range(shapeRange.Start, shapeRange.Start);
-                separator.Text = "\t";
             }
             else
             {
@@ -9999,6 +10238,226 @@ internal sealed partial class WordFormulaService
             Release(separator);
             Release(shapeRange);
         }
+    }
+
+    private static MathTypeWordOpenXml.NumberTemplate ReadMathTypePlaceRefTemplateForShape(
+        Document document,
+        InlineShape shape,
+        string numberPosition)
+    {
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Field? placeRef = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The MathType display equation does not occupy one paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            var numberOnLeft = string.Equals(
+                numberPosition,
+                "left",
+                StringComparison.OrdinalIgnoreCase);
+            placeRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft)
+                ?? throw new InvalidOperationException(
+                    "The numbered MathType equation has no readable MTPlaceRef field.");
+            return ReadMathTypePlaceRefTemplate(document, placeRef);
+        }
+        finally
+        {
+            Release(placeRef);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    private static MathTypeWordOpenXml.NumberTemplate ResolveMathTypeEditNumberTemplate(
+        Document document,
+        InlineShape shape,
+        MathTypeWordOpenXml.NumberTemplate? sourceTemplate,
+        out int createdSectionBreakCodeStart)
+    {
+        createdSectionBreakCodeStart = -1;
+        if (sourceTemplate is not null)
+            return sourceTemplate;
+
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Field? nearest = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The MathType display equation does not occupy one paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+
+            nearest = FindNearestMathTypePlaceRefField(
+                document,
+                shapeRange.Start,
+                paragraphRange.Start,
+                paragraphRange.End);
+            var documentNumberFormat = EquationNumberFormat.Resolve(
+                WordEquationNumbering.GetEquationNumberFormatId(document));
+            var template = nearest is not null
+                ? ReadMathTypePlaceRefTemplate(document, nearest)
+                : MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
+                    documentNumberFormat.Id);
+
+            if (documentNumberFormat.UsesHeading
+                && MathTypeNumberTemplateUsesHeading(template))
+            {
+                EnsureMathTypeHeadingScopeState(
+                    document,
+                    shapeRange.Start,
+                    documentNumberFormat,
+                    out createdSectionBreakCodeStart);
+            }
+            return template;
+        }
+        finally
+        {
+            Release(nearest);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    private static void RebuildMathTypeDisplayScaffold(
+        Document document,
+        InlineShape shape,
+        bool numbered,
+        string numberPosition,
+        MathTypeWordOpenXml.NumberTemplate? numberTemplate)
+    {
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        InlineShapes? paragraphShapes = null;
+        Field? placeRef = null;
+        Range? placeRefCode = null;
+        Range? placeRefResult = null;
+        Range? fieldSpan = null;
+        Range? prefix = null;
+        Range? suffix = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "MathType numbering can only be changed for a standalone display equation.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            paragraphShapes = paragraphRange.InlineShapes;
+            if (paragraphShapes.Count != 1)
+                throw new InvalidOperationException(
+                    "MathType numbering cannot be changed in a paragraph containing other inline objects.");
+
+            // Remove only the native MathType number field. Nested SEQ fields live
+            // inside its code range and disappear with the outer MACROBUTTON.
+            placeRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: true)
+                ?? FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: false);
+            if (placeRef is not null)
+            {
+                placeRefCode = placeRef.Code;
+                placeRefResult = placeRef.Result;
+                var fieldStart = Math.Max(
+                    paragraphRange.Start,
+                    placeRefCode.Start - 1);
+                var fieldEnd = Math.Min(
+                    Math.Max(paragraphRange.Start, paragraphRange.End - 1),
+                    placeRefResult.End + 1);
+                fieldSpan = document.Range(fieldStart, Math.Max(fieldStart, fieldEnd));
+                fieldSpan.Delete();
+            }
+
+            Release(shapeRange);
+            shapeRange = shape.Range;
+            Release(paragraphRange);
+            paragraphRange = paragraph.Range;
+            var bodyEnd = Math.Max(paragraphRange.Start, paragraphRange.End - 1);
+            prefix = document.Range(paragraphRange.Start, shapeRange.Start);
+            suffix = document.Range(shapeRange.End, bodyEnd);
+            if (!IsMathTypeDisplayScaffoldWhitespace(prefix.Text)
+                || !IsMathTypeDisplayScaffoldWhitespace(suffix.Text))
+                throw new InvalidOperationException(
+                    "MathType numbering was not changed because the display paragraph contains user text outside the equation.");
+
+            // Delete from the end first so the OLE range remains stable while its
+            // surrounding tabs are normalized back to a bare equation object.
+            if (suffix.End > suffix.Start) suffix.Delete();
+            Release(shapeRange);
+            shapeRange = shape.Range;
+            Release(paragraphRange);
+            paragraphRange = paragraph.Range;
+            Release(prefix);
+            prefix = document.Range(paragraphRange.Start, shapeRange.Start);
+            if (prefix.End > prefix.Start) prefix.Delete();
+
+            BuildIndependentMathTypeDisplayScaffold(
+                document,
+                shape,
+                numbered,
+                numberPosition,
+                numberTemplate);
+            ConfigureNewMathTypeDisplayEquation(
+                document,
+                shape,
+                numbered,
+                numberPosition);
+        }
+        finally
+        {
+            Release(suffix);
+            Release(prefix);
+            Release(fieldSpan);
+            Release(placeRefResult);
+            Release(placeRefCode);
+            Release(placeRef);
+            Release(paragraphShapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    private static bool IsMathTypeDisplayScaffoldWhitespace(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return true;
+        foreach (var character in text)
+        {
+            if (char.IsWhiteSpace(character)
+                || character is '\t' or '\r' or '\n' or '\v'
+                    or '\u0013' or '\u0014' or '\u0015')
+                continue;
+            return false;
+        }
+        return true;
     }
 
     private static Field CreateIndependentMathTypePlaceRef(
@@ -10146,8 +10605,16 @@ internal sealed partial class WordFormulaService
                     if (fieldEnd > shapeRange.Start)
                         throw new InvalidOperationException(
                             "The MathType left equation number is not positioned before the equation object.");
-                    separator = document.Range(fieldEnd, shapeRange.Start);
-                    if ((separator.Text ?? string.Empty).IndexOf('\t') < 0)
+                    // An empty-result MTPlaceRef exposes its U+0015 field-end
+                    // control at the same story boundary Word reports as the
+                    // following OLE field start. Range(fieldEnd, shape.Start) can
+                    // therefore be collapsed even though Paragraph.Range.Text is
+                    // physically FIELD-END + TAB + U+0001. Validate the actual
+                    // visible paragraph sequence instead of relying on those
+                    // ambiguous COM field coordinates.
+                    var objectTextIndex = paragraphText.IndexOf('\u0001');
+                    if (objectTextIndex <= 0
+                        || paragraphText[objectTextIndex - 1] != '\t')
                         throw new InvalidOperationException(
                             "The MathType left-numbered display equation has no tab between its number and equation.");
                 }
@@ -11808,22 +12275,20 @@ internal sealed partial class WordFormulaService
             if (paragraphs.Count == 0) return;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
+            var excludedHostRanges = CaptureNonProseHostRanges(paragraphRange);
 
             var targetPosition = 0;
             for (var position = formulaRange.Start - 1;
                  position >= paragraphRange.Start;
                  position--)
             {
+                if (excludedHostRanges.Any(host => host.Contains(position)))
+                    continue;
                 Release(probe);
                 probe = document.Range(position, position + 1);
                 if (!ContainsVisibleBodyText(probe.Text)) continue;
-                InlineShapes? probeShapes = null;
-                OMaths? probeMaths = null;
                 try
                 {
-                    probeShapes = probe.InlineShapes;
-                    probeMaths = probe.OMaths;
-                    if (probeShapes.Count > 0 || probeMaths.Count > 0) continue;
                     font = probe.Font;
                     var precedingPosition = font.Position;
                     if (precedingPosition != (int)WdConstants.wdUndefined
@@ -11836,8 +12301,6 @@ internal sealed partial class WordFormulaService
                 {
                     Release(font);
                     font = null;
-                    Release(probeMaths);
-                    Release(probeShapes);
                 }
             }
 
@@ -12602,7 +13065,8 @@ internal sealed partial class WordFormulaService
                 CopyInlineTypingCharacterFormatting(formattingSource, range);
 
             font = range.Font;
-            font.Position = 0;
+            if (formattingSource is null)
+                font.Position = 0;
             font.Hidden = 0;
             try { font.Subscript = 0; } catch { }
             try { font.Superscript = 0; } catch { }
@@ -12634,15 +13098,21 @@ internal sealed partial class WordFormulaService
             var paragraphBodyEnd = Math.Max(
                 paragraphRange.Start,
                 paragraphRange.End - 1);
+            var excludedHostRanges = CaptureNonProseHostRanges(paragraphRange);
 
             // The prose before an inline formula is the authoritative typing
-            // style. Word can already have polluted the run after an OLE with the
-            // object's font, so copying the following run would preserve the bug.
+            // style. An InlineShape.Range contains Word's hidden EMBED field-code
+            // host as well as the object character. A one-character probe inside
+            // that host usually reports InlineShapes.Count == 0, so checking the
+            // probe itself mistakes OLE field-code text for prose and propagates
+            // the formula's negative Font.Position into later typing. Exclude the
+            // complete host ranges captured from the paragraph instead.
             var preceding = FindOrdinaryVisibleCharacterRange(
                 document,
                 formulaRange.Start - 1,
                 paragraphRange.Start,
-                step: -1);
+                step: -1,
+                excludedHostRanges);
             if (preceding is not null) return preceding;
 
             // Paragraph-leading formulas have no preceding prose. In that case,
@@ -12651,7 +13121,8 @@ internal sealed partial class WordFormulaService
                 document,
                 Math.Max(typingAnchor.End, formulaRange.End),
                 paragraphBodyEnd,
-                step: 1);
+                step: 1,
+                excludedHostRanges);
         }
         finally
         {
@@ -12666,7 +13137,8 @@ internal sealed partial class WordFormulaService
         Document document,
         int startPosition,
         int boundaryPosition,
-        int step)
+        int step,
+        IReadOnlyList<NonProseHostRange> excludedHostRanges)
     {
         if (step is not (-1 or 1)) return null;
         const int maximumProbeCharacters = 256;
@@ -12679,16 +13151,13 @@ internal sealed partial class WordFormulaService
              probeIndex++, position += step)
         {
             Range? probe = null;
-            InlineShapes? shapes = null;
-            OMaths? maths = null;
             try
             {
                 if (position < 0) break;
+                if (excludedHostRanges.Any(host => host.Contains(position)))
+                    continue;
                 probe = document.Range(position, position + 1);
                 if (!ContainsVisibleBodyText(probe.Text)) continue;
-                shapes = probe.InlineShapes;
-                maths = probe.OMaths;
-                if (shapes.Count > 0 || maths.Count > 0) continue;
                 var result = probe.Duplicate;
                 return result;
             }
@@ -12698,12 +13167,62 @@ internal sealed partial class WordFormulaService
             }
             finally
             {
-                Release(maths);
-                Release(shapes);
                 Release(probe);
             }
         }
         return null;
+    }
+
+    private static List<NonProseHostRange> CaptureNonProseHostRanges(
+        Range paragraphRange)
+    {
+        var result = new List<NonProseHostRange>();
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        try
+        {
+            shapes = paragraphRange.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                InlineShape? shape = null;
+                Range? range = null;
+                try
+                {
+                    shape = shapes[index];
+                    range = shape.Range;
+                    result.Add(new NonProseHostRange(range.Start, range.End));
+                }
+                finally
+                {
+                    Release(range);
+                    Release(shape);
+                }
+            }
+
+            maths = paragraphRange.OMaths;
+            for (var index = 1; index <= maths.Count; index++)
+            {
+                OMath? math = null;
+                Range? range = null;
+                try
+                {
+                    math = maths[index];
+                    range = math.Range;
+                    result.Add(new NonProseHostRange(range.Start, range.End));
+                }
+                finally
+                {
+                    Release(range);
+                    Release(math);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            Release(maths);
+            Release(shapes);
+        }
     }
 
     private static void CopyInlineTypingCharacterFormatting(
@@ -12738,6 +13257,10 @@ internal sealed partial class WordFormulaService
             targetFont.Size = sourceFont.Size;
             targetFont.Bold = sourceFont.Bold;
             targetFont.Italic = sourceFont.Italic;
+            var sourcePosition = sourceFont.Position;
+            targetFont.Position = sourcePosition == (int)WdConstants.wdUndefined
+                ? 0
+                : sourcePosition;
             try { targetFont.Underline = sourceFont.Underline; } catch { }
             try { targetFont.Color = sourceFont.Color; } catch { }
         }
@@ -12804,6 +13327,35 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private void RestoreTypingBaselineAfterMathTypeConversion(InlineShape shape)
+    {
+        Range? range = null;
+        Selection? selection = null;
+        try
+        {
+            range = shape.Range;
+            // Format conversion replaces an existing inline equation at the same
+            // text boundary. Its surrounding prose already owns the correct
+            // character baseline, so do not rescan/rewrite the entire following
+            // prose segment here. Re-establish only the paragraph end and the
+            // collapsed insertion format immediately after the new MathType OLE.
+            ResetParagraphTypingPosition(range);
+            selection = _application.Selection;
+            selection.SetRange(range.End, range.End);
+            ApplyInlineTypingFormattingToSelection(selection, range);
+        }
+        catch
+        {
+            // The MathType OLE is already structurally valid. A transient Word
+            // insertion-format refusal must not invalidate the conversion.
+        }
+        finally
+        {
+            Release(selection);
+            Release(range);
+        }
+    }
+
     private void RestoreTypingBaselineAfter(
         InlineShape shape,
         bool ensureTypingAnchor = false)
@@ -12826,10 +13378,10 @@ internal sealed partial class WordFormulaService
                         metadata.FormulaId);
             }
 
-            // New or converted OLE objects are allowed to finish their Word COM
-            // transaction before any persistent text anchor is inserted. Stable
-            // objects (font-size changes and selection-boundary repair) opt in.
-            RestoreTypingCaretAt(document, caretPosition);
+            // The caret must inherit the ordinary prose run, not a hard-coded
+            // baseline. The persistent anchor above makes that formatting stable
+            // across the first keystroke, arrow navigation and later mouse clicks.
+            RestoreTypingCaretAt(document, caretPosition, range);
         }
         finally
         {
@@ -12843,7 +13395,6 @@ internal sealed partial class WordFormulaService
         InlineShapes? shapes = null;
         InlineShape? shape = null;
         Range? range = null;
-        var normalizedParagraphEnds = new HashSet<int>();
         try
         {
             shapes = document.InlineShapes;
@@ -12864,23 +13415,10 @@ internal sealed partial class WordFormulaService
                             StringComparison.OrdinalIgnoreCase))
                         continue;
                     range = shape.Range;
-                    Paragraphs? paragraphs = null;
-                    Paragraph? paragraph = null;
-                    Range? paragraphRange = null;
-                    try
-                    {
-                        paragraphs = range.Paragraphs;
-                        if (paragraphs.Count == 0) continue;
-                        paragraph = paragraphs[1];
-                        paragraphRange = paragraph.Range;
-                        if (!normalizedParagraphEnds.Add(paragraphRange.End)) continue;
-                    }
-                    finally
-                    {
-                        Release(paragraphRange);
-                        Release(paragraph);
-                        Release(paragraphs);
-                    }
+                    // Normalize every inline OLE segment in document order. The
+                    // previous one-per-paragraph gate repaired only the first OLE,
+                    // allowing a polluted run between later formulas to become the
+                    // formatting source for every subsequent typing anchor.
                     NormalizeFollowingInlineProseBaseline(range);
                     ResetParagraphTypingPosition(range);
                 }
@@ -13120,55 +13658,31 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private void RestoreTypingCaretAt(Document document, int caretPosition)
+    private void RestoreTypingCaretAt(
+        Document document,
+        int caretPosition,
+        Range formulaRange)
     {
         Range? content = null;
-        Range? caret = null;
         Selection? selection = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
         try
         {
             content = document.Content;
             var safePosition = Math.Max(
                 content.Start,
                 Math.Min(caretPosition, content.End));
-            caret = document.Range(safePosition, safePosition);
-            try
-            {
-                font = caret.Font;
-                font.Position = 0;
-                font.Hidden = 0;
-                font.Subscript = 0;
-                font.Superscript = 0;
-            }
-            catch
-            {
-                // Structural placement at the zero-width anchor remains valid
-                // even when Word rejects a transient insertion-format mutation.
-            }
-            finally
-            {
-                Release(font);
-                font = null;
-            }
-
             selection = _application.Selection;
             selection.SetRange(safePosition, safePosition);
-            try
-            {
-                font = selection.Font;
-                font.Position = 0;
-                font.Hidden = 0;
-                font.Subscript = 0;
-                font.Superscript = 0;
-            }
-            catch { }
+            ApplyInlineTypingFormattingToSelection(selection, formulaRange);
+        }
+        catch
+        {
+            // Structural caret placement remains useful even if Word rejects a
+            // transient insertion-format mutation at an unusual protected range.
         }
         finally
         {
-            Release(font);
             Release(selection);
-            Release(caret);
             Release(content);
         }
     }
@@ -13180,7 +13694,6 @@ internal sealed partial class WordFormulaService
     {
         Range? caret = null;
         Selection? selection = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
         try
         {
             ResetParagraphTypingPosition(formulaRange);
@@ -13189,41 +13702,18 @@ internal sealed partial class WordFormulaService
                 caret.SetRange(caretPosition.Value, caretPosition.Value);
             else
                 caret.Collapse(WdCollapseDirection.wdCollapseEnd);
-            try
-            {
-                font = caret.Font;
-                font.Position = 0;
-                font.Hidden = 0;
-            }
-            catch
-            {
-                // A collapsed range immediately after a locked hidden content
-                // control can reject direct font writes. The structural caret
-                // position is authoritative; formatting reset is best-effort.
-            }
-            finally
-            {
-                Release(font);
-                font = null;
-            }
 
             selection = _application.Selection;
             selection.SetRange(caret.Start, caret.End);
-            try
-            {
-                font = selection.Font;
-                font.Position = 0;
-                font.Hidden = 0;
-            }
-            catch
-            {
-                // Keep the caret outside the formula even if Word refuses to
-                // mutate the insertion-point font at this boundary.
-            }
+            ApplyInlineTypingFormattingToSelection(selection, formulaRange);
+        }
+        catch
+        {
+            // Keep the caret outside the formula even if Word refuses to mutate
+            // insertion formatting at an unusual protected boundary.
         }
         finally
         {
-            Release(font);
             Release(selection);
             Release(caret);
         }

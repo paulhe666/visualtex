@@ -2041,11 +2041,16 @@ export function OfficeDialogApp() {
             onChange={(event) => {
               const nextMode = event.target.value as OfficeObjectMode;
               setObjectMode(nextMode);
-              // Numbering surrounding a MathType source belongs to MathType/Word,
-              // not to VisualTeX.  Do not create a second VisualTeX numbering
-              // owner during the same edit or conversion.  After conversion, a
-              // later VisualTeX edit can opt into VisualTeX numbering normally.
-              if (session.objectMode === "mathTypeOle") setNumbered(false);
+              // When an existing MathType equation is converted to VisualTeX OLE,
+              // its native MTPlaceRef owner must not be carried into the new
+              // VisualTeX object. Staying as MathType keeps the editable native
+              // numbering state, including edit-time on/off and side changes.
+              if (
+                session.objectMode === "mathTypeOle" &&
+                nextMode !== "mathTypeOle"
+              ) {
+                setNumbered(false);
+              }
             }}
           >
             {session.mode === "create" ? (
@@ -2109,17 +2114,16 @@ export function OfficeDialogApp() {
         <label
           className="office-auto-commit-setting"
           title={
-            session.mode === "edit" && session.objectMode === "mathTypeOle"
+            session.objectMode === "mathTypeOle"
               ? isEn
-                ? "This MathType equation keeps its existing MathType/Word numbering. VisualTeX will not add a second number during this edit."
-                : "此 MathType 公式保留现有的 MathType/Word 编号；本次编辑不会再叠加一套 VisualTeX 编号。"
+                ? "Add or remove this equation's native MathType/Word number"
+                : "添加或取消此公式的 MathType/Word 原生编号"
               : undefined
           }
         >
           <input
             type="checkbox"
             checked={numbered}
-            disabled={session.mode === "edit" && session.objectMode === "mathTypeOle"}
             onChange={(event) => setNumbered(event.target.checked)}
           />
           <span>{isEn ? "Number" : "编号"}</span>
@@ -2142,7 +2146,6 @@ export function OfficeDialogApp() {
             value={mathTypeNumberPosition}
             data-office-mathtype-number-position
             aria-label={isEn ? "MathType equation number side" : "MathType 公式编号位置"}
-            disabled={session.mode === "edit"}
             onChange={(event) =>
               setMathTypeNumberPosition(
                 event.target.value === "left" ? "left" : "right",

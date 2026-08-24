@@ -32,7 +32,8 @@ mod windows_silent_ocr_hotkey;
 
 use ocr_install::{
     append_install_log, begin_install_log_session, cleanup_runtime_processes,
-    cleanup_stale_process, decode_process_output, install_log_path, load_snapshot,
+    cleanup_runtime_processes_for_install, cleanup_stale_process, decode_process_output,
+    install_log_path, load_snapshot,
     run_logged_command, save_snapshot,
     CommandCapture, CommandLimits,
     InstallControl, InstallSnapshot, InstallState,
@@ -2515,7 +2516,7 @@ fn install_windows_runtime_inner(
     if let Err(error) = begin_install_log_session(&paths.root) {
         eprintln!("Unable to rotate OCR installation log: {error}");
     }
-    let residual_processes = cleanup_runtime_processes(&paths.root)?;
+    let residual_processes = cleanup_runtime_processes_for_install(&paths.root);
     let stale_removed = cleanup_stale_process(&paths.root)?;
     cleanup_worker_temp(paths)?;
     if !residual_processes.is_empty() || stale_removed {

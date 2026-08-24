@@ -84,8 +84,20 @@ public sealed partial class ThisAddIn
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
         var converterSessionIds = new List<string>();
+        WordFormulaService.WordViewState? originalViewState = null;
         try
         {
+            // Snapshot selection and viewport before even capturing the source
+            // formulas. MathType inspection and OMML preparation can themselves
+            // touch Word's live Selection, so taking this snapshot inside Apply is
+            // already too late for selection-only conversions in long documents.
+            if (!wholeDocument)
+            {
+                originalViewState = await dispatcher.InvokeAsync(
+                        () => service.CaptureFormulaFormatConversionViewState())
+                    .ConfigureAwait(false);
+            }
+
             var plan = await dispatcher.InvokeAsync(
                     () => service.CaptureFormulaFormatConversionPlan(
                         wholeDocument,
@@ -133,12 +145,17 @@ public sealed partial class ThisAddIn
             }
 
             SetStatus($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…");
-            var allTargetsHaveDirectOmml = string.Equals(
+            var targetAcceptsDirectSourceMathMl = string.Equals(
                     targetMode,
                     FormulaOleContract.WordOmmlMode,
                     StringComparison.Ordinal)
+                || string.Equals(
+                    targetMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal);
+            var allTargetsHaveDirectMathMl = targetAcceptsDirectSourceMathMl
                 && plan.Targets.All(target => !string.IsNullOrWhiteSpace(target.SourceMathMl));
-            if (!allTargetsHaveDirectOmml)
+            if (!allTargetsHaveDirectMathMl)
             {
                 await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
                 await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
@@ -173,10 +190,7 @@ public sealed partial class ThisAddIn
                     target.FontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     target.Latex);
                 targetKeys[target.Id] = key;
-                if (string.Equals(
-                        targetMode,
-                        FormulaOleContract.WordOmmlMode,
-                        StringComparison.Ordinal)
+                if (targetAcceptsDirectSourceMathMl
                     && !string.IsNullOrWhiteSpace(target.SourceMathMl))
                     continue;
                 if (!pendingKeys.Add(key)) continue;
@@ -228,10 +242,7 @@ public sealed partial class ThisAddIn
                     Latex = target.Latex,
                     DisplayMode = target.DisplayMode,
                 };
-                if (string.Equals(
-                        targetMode,
-                        FormulaOleContract.WordOmmlMode,
-                        StringComparison.Ordinal)
+                if (targetAcceptsDirectSourceMathMl
                     && !string.IsNullOrWhiteSpace(target.SourceMathMl))
                 {
                     var directSession = CloneBulkFormulaSession(
@@ -305,7 +316,9 @@ public sealed partial class ThisAddIn
                 }
 
                 var nativePreviewRoot = prepared.Values
-                    .Select(formula => Path.GetDirectoryName(formula.EmfPath))
+                    .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
+                        ? null
+                        : Path.GetDirectoryName(formula.EmfPath))
                     .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
                     ?? Path.GetTempPath();
                 var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -424,6 +437,22 @@ public sealed partial class ThisAddIn
         }
         finally
         {
+            if (originalViewState is not null)
+            {
+                try
+                {
+                    await dispatcher.InvokeAsync(() =>
+                    {
+                        service.RestoreFormulaFormatConversionViewState(originalViewState);
+                        return true;
+                    }).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Selection/view restoration is best-effort and must never
+                    // hide the conversion result or prevent gate release.
+                }
+            }
             foreach (var template in rendered.Values)
             {
                 TryDeleteFile(template.EmfPath);

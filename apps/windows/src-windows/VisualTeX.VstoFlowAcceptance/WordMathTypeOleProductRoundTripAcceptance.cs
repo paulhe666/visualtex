@@ -185,7 +185,23 @@ internal static partial class Program
                 firstEditLatex,
                 exportWidth: 360,
                 exportHeight: 64);
+            var inlineParagraphCountBeforeEdit = document.Paragraphs.Count;
             service.ReplaceMathTypeOle(firstEdit, firstEditMathMl, previewEmf);
+            AssertEqual(
+                inlineParagraphCountBeforeEdit,
+                document.Paragraphs.Count,
+                "Editing an inline MathType equation inserted a paragraph break after the equation.");
+            var inlineEditedText = document.Content.Text ?? string.Empty;
+            var inlineLeftIndex = inlineEditedText.IndexOf("VTLEFT", StringComparison.Ordinal);
+            var inlineRightIndex = inlineEditedText.IndexOf("VTRIGHT", StringComparison.Ordinal);
+            AssertTrue(
+                inlineLeftIndex >= 0
+                && inlineRightIndex > inlineLeftIndex
+                && inlineEditedText.Substring(
+                        inlineLeftIndex,
+                        inlineRightIndex - inlineLeftIndex)
+                    .IndexOf('\r') < 0,
+                "Editing an inline MathType equation moved the following prose onto a new paragraph.");
             Release(range);
             range = null;
             Release(shape);
@@ -817,8 +833,79 @@ internal static partial class Program
                 "Unnumbered MathType display alignment changed after VisualTeX edit.");
             AssertNear(24f, format.LineSpacing, 0.1f,
                 "Unnumbered MathType display line spacing changed after VisualTeX edit.");
-            AssertEqual(1, paragraph.Range.Fields.Count,
-                "The MathType MTPlaceRef number field leaked into the unnumbered display row.");
+            AssertMathTypeEditNumberingState(
+                unnumberedService,
+                document,
+                ref shape,
+                ref range,
+                expectedNumbered: false,
+                expectedPosition: null,
+                "after preserving an unnumbered display equation");
+
+            // This is the actual product behavior requested for VisualTeX edits:
+            // an existing MathType display equation can gain a native MathType/
+            // Word number, move that number to the opposite side, and remove it
+            // again without changing object type or recreating the equation as a
+            // VisualTeX-owned OLE.
+            var enableRight = CreateMathTypeProductSession(
+                unnumberedService.ReadSelection(),
+                unnumberedLatex,
+                160,
+                64,
+                numbered: true,
+                mathTypeNumberPosition: "right");
+            unnumberedService.ReplaceMathTypeOle(
+                enableRight,
+                unnumberedMathMl,
+                previewEmf);
+            AssertMathTypeEditNumberingState(
+                unnumberedService,
+                document,
+                ref shape,
+                ref range,
+                expectedNumbered: true,
+                expectedPosition: "right",
+                "after edit-time number enable");
+
+            var moveLeft = CreateMathTypeProductSession(
+                unnumberedService.ReadSelection(),
+                unnumberedLatex,
+                160,
+                64,
+                numbered: true,
+                mathTypeNumberPosition: "left");
+            unnumberedService.ReplaceMathTypeOle(
+                moveLeft,
+                unnumberedMathMl,
+                previewEmf);
+            AssertMathTypeEditNumberingState(
+                unnumberedService,
+                document,
+                ref shape,
+                ref range,
+                expectedNumbered: true,
+                expectedPosition: "left",
+                "after edit-time number-side change");
+
+            var disableNumber = CreateMathTypeProductSession(
+                unnumberedService.ReadSelection(),
+                unnumberedLatex,
+                160,
+                64,
+                numbered: false,
+                mathTypeNumberPosition: "left");
+            unnumberedService.ReplaceMathTypeOle(
+                disableNumber,
+                unnumberedMathMl,
+                previewEmf);
+            AssertMathTypeEditNumberingState(
+                unnumberedService,
+                document,
+                ref shape,
+                ref range,
+                expectedNumbered: false,
+                expectedPosition: null,
+                "after edit-time number removal");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -831,8 +918,17 @@ internal static partial class Program
                 "Unnumbered MathType display alignment did not survive Word reopen.");
             AssertNear(24f, format.LineSpacing, 0.1f,
                 "Unnumbered MathType display line spacing did not survive Word reopen.");
+            var reopenedService = new WordFormulaService(application);
+            AssertMathTypeEditNumberingState(
+                reopenedService,
+                document,
+                ref shape,
+                ref range,
+                expectedNumbered: false,
+                expectedPosition: null,
+                "after edit-time number toggle save/reopen");
             Console.WriteLine(
-                "[MathType display] numbered and unnumbered rows preserved centering, spacing, tabs, native geometry/baseline and numbering ownership through edit + reopen.");
+                "[MathType display] numbered and unnumbered rows preserved centering, spacing, tabs, native geometry/baseline; edit-time number on/right -> left -> off survived save/reopen.");
         }
         finally
         {
@@ -1089,11 +1185,46 @@ internal static partial class Program
         }
     }
 
+    private static void AssertMathTypeEditNumberingState(
+        WordFormulaService service,
+        Word.Document document,
+        ref Word.InlineShape? shape,
+        ref Word.Range? range,
+        bool expectedNumbered,
+        string? expectedPosition,
+        string stage)
+    {
+        Release(range);
+        range = null;
+        Release(shape);
+        shape = document.InlineShapes[1];
+        if (!MathTypeOleInterop.IsMathTypeOle(shape))
+            throw new InvalidDataException(
+                $"{stage}: edited formula is no longer Equation.DSMT4.");
+        range = shape.Range.Duplicate;
+        range.Select();
+        var selection = service.ReadSelection();
+        AssertEqual("block", selection.Metadata?.DisplayMode,
+            $"{stage}: MathType display equation changed display mode.");
+        AssertEqual(expectedNumbered, selection.Metadata?.Numbered ?? false,
+            $"{stage}: VisualTeX read the wrong MathType numbering state.");
+        var hasPosition = MathTypeOleInterop.TryReadDisplayNumberPosition(
+            shape,
+            out var actualPosition);
+        AssertEqual(expectedNumbered, hasPosition,
+            $"{stage}: native MTPlaceRef presence did not match the requested numbering state.");
+        if (expectedNumbered)
+            AssertEqual(expectedPosition ?? "right", actualPosition,
+                $"{stage}: native MathType number is on the wrong side.");
+    }
+
     private static OfficeSessionDocument CreateMathTypeProductSession(
         OfficeSelection source,
         string latex,
         float exportWidth = 180,
-        float exportHeight = 64)
+        float exportHeight = 64,
+        bool? numbered = null,
+        string mathTypeNumberPosition = "right")
     {
         var metadata = source.Metadata
             ?? throw new InvalidDataException("MathType source metadata is unavailable.");
@@ -1111,7 +1242,8 @@ internal static partial class Program
             CodeFormat = "raw",
             DisplayMode = metadata.DisplayMode,
             ObjectMode = FormulaOleContract.MathTypeOleMode,
-            Numbered = false,
+            Numbered = numbered ?? metadata.Numbered,
+            MathTypeNumberPosition = mathTypeNumberPosition,
             FontSizePt = metadata.FontSizePt ?? 12,
             OriginalMetadata = metadata,
             Lines = new List<FormulaLine>

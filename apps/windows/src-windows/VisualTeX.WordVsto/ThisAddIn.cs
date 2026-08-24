@@ -292,6 +292,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _formulaFormatMutationDepth;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
+    private bool _mathTypePreviewSessionAcquired;
 
     public string GetCustomUI(string ribbonId) => RibbonXml;
 
@@ -328,6 +329,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
+        MathTypeNativePreviewRenderer.AcquireSharedSession();
+        _mathTypePreviewSessionAcquired = true;
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
         _application.DocumentBeforeSave += OnDocumentBeforeSave;
@@ -2838,6 +2841,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try { _doubleClickHook?.Dispose(); } catch { }
         _doubleClickHook = null;
         ClearNativeOleTarget();
+        if (_mathTypePreviewSessionAcquired)
+        {
+            _mathTypePreviewSessionAcquired = false;
+            MathTypeNativePreviewRenderer.ReleaseSharedSession();
+        }
         _sessionClient?.Dispose();
         _dispatcher?.Dispose();
         _lifetime?.Dispose();

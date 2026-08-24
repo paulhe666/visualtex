@@ -16,6 +16,9 @@ internal static partial class Program
         Word.Range? range = null;
         Word.Bookmarks? bookmarks = null;
         Word.Bookmark? identity = null;
+        Word.Bookmark? typingBoundary = null;
+        Word.Range? typingBoundaryRange = null;
+        Word.Range? followingProse = null;
         string? png1 = null;
         string? emf1 = null;
         string? png2 = null;
@@ -27,7 +30,7 @@ internal static partial class Program
         {
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
-            document.Content.Text = "source: \rcopy: \r";
+            document.Content.Text = "source: 后文\rcopy: \r";
             document.Activate();
             var service = new WordFormulaService(application);
             var oleAssetRoot = Path.Combine(
@@ -57,6 +60,18 @@ internal static partial class Program
             bookmarks = document.Bookmarks;
             AssertTrue(bookmarks.Exists(WordFormulaMetadataReader.IdentityBookmarkName(sourceFormulaId)),
                 "New OLE formula did not receive identity bookmark before first read.");
+            var typingBoundaryName = "VTBL_" + Guid.Parse(sourceFormulaId).ToString("N");
+            AssertTrue(bookmarks.Exists(typingBoundaryName),
+                "Direct inline OLE insertion did not create its VTBL typing boundary.");
+            typingBoundary = bookmarks[typingBoundaryName];
+            typingBoundaryRange = typingBoundary.Range;
+            AssertEqual("\u200C", typingBoundaryRange.Text,
+                "Direct inline OLE insertion did not use the zero-width U+200C typing boundary.");
+            followingProse = document.Range(
+                typingBoundaryRange.End,
+                typingBoundaryRange.End + 1);
+            AssertEqual("后", followingProse.Text,
+                "Direct inline OLE insertion added visible spacing before following prose.");
             range = shape.Range.Duplicate;
             range.Copy();
             var paragraph = document.Paragraphs[2];
@@ -146,6 +161,9 @@ internal static partial class Program
         }
         finally
         {
+            Release(followingProse);
+            Release(typingBoundaryRange);
+            Release(typingBoundary);
             Release(identity);
             Release(bookmarks);
             Release(range);

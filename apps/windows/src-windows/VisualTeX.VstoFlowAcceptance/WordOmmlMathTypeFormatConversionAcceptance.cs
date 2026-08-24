@@ -308,6 +308,643 @@ internal static partial class Program
         }
     }
 
+    private static void RunWordMathTypeOmmlSelectionViewAcceptance(
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var fixture = ResolveMathTypeNativeEditorFixture();
+        if (!File.Exists(fixture))
+            throw new FileNotFoundException(
+                "A genuine MathType-generated Equation.DSMT4 fixture is required for the selection-view acceptance.",
+                fixture);
+        var path = Path.Combine(
+            artifactRoot,
+            "MathType-To-OMML-Selection-View.docx");
+        File.Copy(fixture, path, overwrite: true);
+
+        using var host = new WordPerformanceHost(path);
+        Word.Range? prefixRange = null;
+        Word.Range? suffixRange = null;
+        Word.Range? content = null;
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? shape = null;
+        Word.Range? shapeRange = null;
+        Word.Selection? selection = null;
+        Word.Window? window = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? mathRange = null;
+        try
+        {
+            var prefix = new System.Text.StringBuilder();
+            for (var index = 1; index <= 180; index++)
+                prefix.Append($"VIEW-PREFIX-{index:D3} 这是用于验证 MathType 转 OMML 后页面位置保持的长文档正文。\r");
+            prefixRange = host.Document.Range(0, 0);
+            prefixRange.Text = prefix.ToString();
+
+            content = host.Document.Content;
+            var suffixStart = Math.Max(content.Start, content.End - 1);
+            suffixRange = host.Document.Range(suffixStart, suffixStart);
+            var suffix = new System.Text.StringBuilder();
+            for (var index = 1; index <= 60; index++)
+                suffix.Append($"\rVIEW-SUFFIX-{index:D3} 页面位置回归测试尾部正文。");
+            suffixRange.Text = suffix.ToString();
+
+            host.Application.Visible = true;
+            host.Document.Activate();
+            host.Application.ActiveWindow.Activate();
+            System.Windows.Forms.Application.DoEvents();
+
+            shapes = host.Document.InlineShapes;
+            if (shapes.Count != 1)
+                throw new InvalidDataException(
+                    $"Selection-view fixture contains {shapes.Count} inline shapes instead of one MathType equation.");
+            shape = shapes[1];
+            if (!MathTypeOleInterop.IsMathTypeOle(shape))
+                throw new InvalidDataException(
+                    "Selection-view fixture is no longer a MathType Equation.DSMT4 object.");
+            shapeRange = shape.Range.Duplicate;
+            shapeRange.Select();
+            window = host.Application.ActiveWindow;
+            window.ScrollIntoView(shapeRange, true);
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(250);
+            selection = host.Application.Selection;
+            var selectionStartBefore = selection.Start;
+            var selectionEndBefore = selection.End;
+            var verticalBefore = window.VerticalPercentScrolled;
+            var horizontalBefore = window.HorizontalPercentScrolled;
+            if (verticalBefore < 20)
+                throw new InvalidDataException(
+                    $"Selection-view setup did not place the MathType equation deep enough in the document; vertical={verticalBefore}%.");
+
+            host.AddIn.OnConvertMathTypeToOmmlSelection(new object());
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(15));
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(250);
+
+            AssertEqual(0, CountMathTypeOleShapes(host.Document),
+                "MathType→OMML selection-view acceptance left the MathType source behind.");
+            maths = host.Document.OMaths;
+            AssertEqual(1, maths.Count,
+                "MathType→OMML selection-view acceptance did not create exactly one native OMath.");
+            math = maths[1];
+            mathRange = math.Range.Duplicate;
+
+            Release(selection);
+            selection = host.Application.Selection;
+            var verticalAfter = window.VerticalPercentScrolled;
+            var horizontalAfter = window.HorizontalPercentScrolled;
+            var selectionStartAfter = selection.Start;
+            var selectionEndAfter = selection.End;
+            if (verticalAfter <= 5)
+                throw new InvalidDataException(
+                    $"MathType→OMML selected conversion jumped to the beginning of the document: before={verticalBefore}%, after={verticalAfter}%.");
+            if (Math.Abs(verticalAfter - verticalBefore) > 3)
+                throw new InvalidDataException(
+                    $"MathType→OMML selected conversion changed the vertical viewport too much: before={verticalBefore}%, after={verticalAfter}%.");
+            if (Math.Abs(horizontalAfter - horizontalBefore) > 3)
+                throw new InvalidDataException(
+                    $"MathType→OMML selected conversion changed horizontal viewport: before={horizontalBefore}%, after={horizontalAfter}%.");
+            if (Math.Abs(selectionStartAfter - mathRange.Start) > 64
+                || Math.Abs(selectionStartAfter - selectionStartBefore) > 64)
+                throw new InvalidDataException(
+                    "MathType→OMML selected conversion restored the viewport but moved Selection away from the converted equation. "
+                    + $"before={selectionStartBefore}:{selectionEndBefore}; after={selectionStartAfter}:{selectionEndAfter}; omml={mathRange.Start}:{mathRange.End}.");
+
+            host.Save(path);
+            Console.WriteLine(
+                "[MathType→OMML selection view] Preserved long-document viewport and selection vicinity: "
+                + $"vertical {verticalBefore}%→{verticalAfter}%, selection {selectionStartBefore}:{selectionEndBefore}→{selectionStartAfter}:{selectionEndAfter}.");
+        }
+        finally
+        {
+            Release(mathRange);
+            Release(math);
+            Release(maths);
+            Release(window);
+            Release(selection);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(content);
+            Release(suffixRange);
+            Release(prefixRange);
+        }
+    }
+
+    private static void RunWordOmmlMathTypeSinglePerformanceAcceptance(
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var tracePath = Path.Combine(
+            artifactRoot,
+            "single-omml-to-mathtype.trace.log");
+        try { File.Delete(tracePath); } catch { }
+        var previousFormatAcceptance = Environment.GetEnvironmentVariable(
+            "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
+        var previousTracePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousInjectedFailure = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                "1");
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                tracePath);
+
+            using var host = new WordPerformanceHost(documentPath: null);
+            var prewarmWatch = System.Diagnostics.Stopwatch.StartNew();
+            AssertTrue(
+                MathTypeNativePreviewRenderer.WaitForSharedSessionPrewarm(
+                    TimeSpan.FromSeconds(12)),
+                "MathType shared native-preview prewarm did not finish in time.");
+            prewarmWatch.Stop();
+            Console.WriteLine(
+                $"[SINGLE OMML→MT PREWARM] elapsedMs={prewarmWatch.ElapsedMilliseconds}");
+            const string token = "VT_SINGLE_OMML_TO_MT_PERF";
+            Word.Range? nativeRange = null;
+            try
+            {
+                host.Document.Content.Text = $"before {token} after\r";
+                nativeRange = InsertPureNativeOmml(
+                    host.Document,
+                    token,
+                    "(x+1)/(y-2)");
+                nativeRange.Select();
+
+                var sessionsBefore = SnapshotSessionIds();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                host.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+                while (DateTime.UtcNow < deadline)
+                {
+                    System.Windows.Forms.Application.DoEvents();
+                    if (host.Document.OMaths.Count == 0
+                        && CountMathTypeOleShapes(host.Document) == 1)
+                        break;
+                    Thread.Sleep(15);
+                }
+                WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(5));
+                watch.Stop();
+
+                AssertEqual(0, host.Document.OMaths.Count,
+                    "Single OMML→MathType Ribbon conversion left the source OMath behind.");
+                AssertEqual(1, CountMathTypeOleShapes(host.Document),
+                    "Single OMML→MathType Ribbon conversion did not create exactly one MathType OLE.");
+                AssertEveryMathTypeProgId(host.Document);
+                AssertSingleMathTypeTypingBoundaryMatchesProse(host);
+
+                var sessionsAfter = SnapshotSessionIds();
+                var createdSessions = sessionsAfter.Except(
+                    sessionsBefore,
+                    StringComparer.OrdinalIgnoreCase).ToArray();
+                AssertEqual(0, createdSessions.Length,
+                    "Direct-source OMML→MathType unexpectedly created Companion converter sessions: "
+                    + string.Join(",", createdSessions));
+
+                var trace = File.Exists(tracePath)
+                    ? File.ReadAllText(tracePath)
+                    : string.Empty;
+                AssertTrue(
+                    trace.IndexOf(
+                        "format-conversion-render-bypass sourceMode=wordOmml targetMode=mathTypeOle targets=1 reason=source-mathml-ready",
+                        StringComparison.Ordinal) >= 0,
+                    "Single OMML→MathType trace did not prove the direct-MathML renderer bypass.");
+                AssertTrue(
+                    trace.IndexOf(
+                        "format-conversion-render-start",
+                        StringComparison.Ordinal) < 0,
+                    "Single OMML→MathType still entered the Companion converter-render path.");
+
+                var outputPath = Path.Combine(
+                    artifactRoot,
+                    "Single-OMML-To-MathType-Performance.docx");
+                host.Save(outputPath);
+                Console.WriteLine(
+                    $"[SINGLE OMML→MT PERF] elapsedMs={watch.ElapsedMilliseconds}; "
+                    + "companionSessions=0; sourceMathMlBypass=true; MathTypeObjects=1; "
+                    + $"output={outputPath}");
+
+                AssertSinglePureNativeDisplayOmmlFastPath(host);
+                AssertSingleManagedOmmlAvoidsDirectDelete(host, tracePath);
+                AssertSharedMathTypePreviewBatchConversion(host, tracePath);
+                AssertSingleNumberedManagedOmmlFastPath(host, tracePath);
+            }
+            finally { Release(nativeRange); }
+
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                "1");
+            using (var rollbackHost = new WordPerformanceHost(documentPath: null))
+            {
+                Word.Range? rollbackRange = null;
+                try
+                {
+                    const string rollbackToken = "VT_SINGLE_OMML_FAST_ROLLBACK";
+                    rollbackHost.Document.Content.Text =
+                        $"rollback-before {rollbackToken} rollback-after\r";
+                    rollbackRange = InsertPureNativeOmml(
+                        rollbackHost.Document,
+                        rollbackToken,
+                        "(p+q)/(r+s)");
+                    rollbackRange.Select();
+                    rollbackHost.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+                    WaitForAddInIdle(
+                        rollbackHost.AddIn,
+                        TimeSpan.FromSeconds(5));
+                    AssertEqual(
+                        1,
+                        rollbackHost.Document.OMaths.Count,
+                        "Injected failure did not restore the direct-delete OMML source.");
+                    AssertEqual(
+                        0,
+                        CountMathTypeOleShapes(rollbackHost.Document),
+                        "Injected failure left a MathType OLE after direct-delete rollback.");
+                    var rollbackText = rollbackHost.Document.Content.Text ?? string.Empty;
+                    AssertTrue(
+                        rollbackText.IndexOf("rollback-before", StringComparison.Ordinal) >= 0
+                        && rollbackText.IndexOf("rollback-after", StringComparison.Ordinal) >= 0,
+                        "Direct-delete rollback damaged adjacent prose.");
+                    Console.WriteLine(
+                        "[SINGLE OMML→MT ROLLBACK] Injected post-delete failure restored the native OMath and adjacent prose.");
+                }
+                finally { Release(rollbackRange); }
+            }
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                previousInjectedFailure);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                previousTracePath);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                previousFormatAcceptance);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                previousInjectedFailure);
+        }
+    }
+
+    private static void AssertSinglePureNativeDisplayOmmlFastPath(
+        WordPerformanceHost host)
+    {
+        Word.Range? nativeRange = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? displayRange = null;
+        try
+        {
+            const string token = "VT_SINGLE_DISPLAY_OMML_FAST";
+            AppendAcceptanceText(
+                host.Document,
+                $"\rdisplay-before\r{token}\rdisplay-after\r");
+            nativeRange = InsertPureNativeOmml(
+                host.Document,
+                token,
+                "(u+v)/(w+1)");
+            maths = nativeRange.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException(
+                    "Display fast-path setup did not retain exactly one native OMath.");
+            math = maths[1];
+            math.Type = Word.WdOMathType.wdOMathDisplay;
+            displayRange = math.Range.Duplicate;
+            displayRange.Select();
+
+            var beforeCount = CountMathTypeOleShapes(host.Document);
+            host.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(5));
+            AssertEqual(
+                0,
+                host.Document.OMaths.Count,
+                "Single display OMML fast path left the source OMath behind.");
+            AssertEqual(
+                beforeCount + 1,
+                CountMathTypeOleShapes(host.Document),
+                "Single display OMML fast path did not create one MathType OLE.");
+            var text = host.Document.Content.Text ?? string.Empty;
+            AssertTrue(
+                text.IndexOf("display-before", StringComparison.Ordinal) >= 0
+                && text.IndexOf("display-after", StringComparison.Ordinal) >= 0,
+                "Single display OMML fast path damaged adjacent paragraphs.");
+            Console.WriteLine(
+                "[SINGLE DISPLAY OMML→MT] Pure native display OMath used the direct replacement path without damaging adjacent paragraphs.");
+        }
+        finally
+        {
+            Release(displayRange);
+            Release(math);
+            Release(maths);
+            Release(nativeRange);
+        }
+    }
+
+    private static void AssertSingleManagedOmmlAvoidsDirectDelete(
+        WordPerformanceHost host,
+        string tracePath)
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\"><msup><mi>t</mi><mn>2</mn></msup><mo>+</mo><mn>1</mn></math>";
+        var service = new WordFormulaService(host.Application);
+        var session = CreateOmmlMathTypeAcceptanceSession(
+            mathMl,
+            "inline",
+            false,
+            FormulaOleContract.WordOmmlMode);
+        Word.Bookmark? bookmark = null;
+        Word.Bookmark? staleBookmark = null;
+        Word.Range? equationRange = null;
+        try
+        {
+            SelectDocumentEnd(host.Document);
+            service.InsertOmml(session, mathMl);
+            bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                host.Document,
+                session.FormulaId)
+                ?? throw new InvalidDataException(
+                    "Managed OMML safety setup lost its VTOMML bookmark.");
+            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            equationRange.Select();
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Managed OMML safety check did not capture exactly one equation.");
+            AssertTrue(plan.Targets[0].SourceIsManagedOmml,
+                "A VisualTeX-managed OMML equation was misclassified as pure native OMML.");
+
+            var traceBefore = File.Exists(tracePath)
+                ? File.ReadAllText(tracePath)
+                : string.Empty;
+            var traceLengthBefore = traceBefore.Length;
+            equationRange.Select();
+            var beforeCount = CountMathTypeOleShapes(host.Document);
+            host.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(5));
+            AssertEqual(
+                beforeCount + 1,
+                CountMathTypeOleShapes(host.Document),
+                "Managed OMML did not convert to MathType.");
+            staleBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                host.Document,
+                session.FormulaId);
+            AssertTrue(
+                staleBookmark is null,
+                "Managed OMML conversion left its VTOMML bookmark behind.");
+            var trace = File.Exists(tracePath)
+                ? File.ReadAllText(tracePath)
+                : string.Empty;
+            var traceSuffix = traceLengthBefore >= 0 && traceLengthBefore < trace.Length
+                ? trace.Substring(traceLengthBefore)
+                : trace;
+            AssertTrue(
+                traceSuffix.IndexOf(
+                    "format-conversion-direct-omml-delete",
+                    StringComparison.Ordinal) < 0,
+                "Managed OMML incorrectly entered the pure-native direct-delete fast path.");
+            Console.WriteLine(
+                "[MANAGED OMML SAFETY] VisualTeX-managed OMML stayed on the metadata-aware replacement path and removed its VTOMML anchor.");
+        }
+        finally
+        {
+            Release(staleBookmark);
+            Release(equationRange);
+            Release(bookmark);
+        }
+    }
+
+    private static void AssertSingleNumberedManagedOmmlFastPath(
+        WordPerformanceHost host,
+        string tracePath)
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mfrac><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow><mrow><mi>y</mi><mo>−</mo><mn>2</mn></mrow></mfrac></math>";
+        var service = new WordFormulaService(host.Application);
+        var session = CreateOmmlMathTypeAcceptanceSession(
+            mathMl,
+            "block",
+            true,
+            FormulaOleContract.WordOmmlMode);
+        Word.Bookmark? bookmark = null;
+        Word.Bookmark? staleBookmark = null;
+        Word.Range? equationRange = null;
+        try
+        {
+            SelectDocumentEnd(host.Document);
+            service.InsertOmml(session, mathMl);
+            bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                host.Document,
+                session.FormulaId)
+                ?? throw new InvalidDataException(
+                    "Numbered managed OMML performance setup lost its VTOMML bookmark.");
+            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            equationRange.Select();
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Numbered managed OMML performance capture did not isolate one equation.");
+            AssertTrue(
+                plan.Targets[0].SourceIsManagedOmml && plan.Targets[0].Numbered,
+                "Numbered managed OMML performance source lost its managed/numbered state.");
+            AssertEqual(0, CountMathTypePlaceRefFields(host.Document),
+                "Numbered managed OMML performance setup unexpectedly has an older MathType number field.");
+
+            var traceBefore = File.Exists(tracePath)
+                ? File.ReadAllText(tracePath)
+                : string.Empty;
+            var traceLengthBefore = traceBefore.Length;
+            var beforeCount = CountMathTypeOleShapes(host.Document);
+            equationRange.Select();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            host.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                if (WordOmmlFormulaStore.FindByFormulaId(host.Document, session.FormulaId) is null
+                    && CountMathTypeOleShapes(host.Document) == beforeCount + 1)
+                    break;
+                Thread.Sleep(15);
+            }
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(5));
+            watch.Stop();
+
+            AssertEqual(beforeCount + 1, CountMathTypeOleShapes(host.Document),
+                "Single numbered managed OMML did not convert to one MathType OLE.");
+            AssertEqual(1, CountMathTypePlaceRefFields(host.Document),
+                "Single numbered managed OMML did not create exactly one MTPlaceRef field.");
+            staleBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                host.Document,
+                session.FormulaId);
+            AssertTrue(staleBookmark is null,
+                "Single numbered managed OMML conversion left its VTOMML identity behind.");
+
+            var trace = File.Exists(tracePath)
+                ? File.ReadAllText(tracePath)
+                : string.Empty;
+            var traceSuffix = traceLengthBefore < trace.Length
+                ? trace.Substring(traceLengthBefore)
+                : trace;
+            AssertTrue(
+                traceSuffix.IndexOf(
+                    "format-conversion-direct-numbered-omml-delete",
+                    StringComparison.Ordinal) >= 0,
+                "Single numbered managed OMML did not use the direct numbered source-removal path.");
+            AssertTrue(
+                traceSuffix.IndexOf(
+                    "format-conversion-numbering-local-mathtype-single finalized=1",
+                    StringComparison.Ordinal) >= 0,
+                "Single numbered managed OMML still used the document-wide MathType numbering refresh.");
+            AssertTrue(
+                watch.ElapsedMilliseconds < 2500,
+                $"Single numbered managed OMML→MathType remains too slow after prewarm: {watch.ElapsedMilliseconds}ms.");
+            Console.WriteLine(
+                $"[SINGLE NUMBERED OMML→MT PERF] elapsedMs={watch.ElapsedMilliseconds}; directNumberedDelete=true; localNumberFinalize=true.");
+        }
+        finally
+        {
+            Release(staleBookmark);
+            Release(equationRange);
+            Release(bookmark);
+        }
+    }
+
+    private static void AssertSharedMathTypePreviewBatchConversion(
+        WordPerformanceHost host,
+        string tracePath)
+    {
+        var beforeCount = CountMathTypeOleShapes(host.Document);
+        var traceBefore = File.Exists(tracePath)
+            ? File.ReadAllText(tracePath)
+            : string.Empty;
+        for (var index = 1; index <= 6; index++)
+        {
+            var token = $"VT_SHARED_BATCH_OMML_{index}";
+            AppendAcceptanceText(
+                host.Document,
+                $" batch-before-{index} {token} batch-after-{index}\r");
+            Word.Range? range = null;
+            try
+            {
+                range = InsertPureNativeOmml(
+                    host.Document,
+                    token,
+                    $"x_{index}+{index}");
+            }
+            finally { Release(range); }
+        }
+        AssertEqual(6, host.Document.OMaths.Count,
+            "Shared-preview batch setup did not create six native OMath equations.");
+
+        host.AddIn.OnConvertOmmlToMathTypeDocument(new object());
+        WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
+        AssertEqual(0, host.Document.OMaths.Count,
+            "Shared-preview batch conversion left native OMath equations behind.");
+        AssertEqual(
+            beforeCount + 6,
+            CountMathTypeOleShapes(host.Document),
+            "Shared-preview batch conversion did not create six MathType OLE objects.");
+        AssertEveryMathTypeProgId(host.Document);
+        var trace = File.Exists(tracePath)
+            ? File.ReadAllText(tracePath)
+            : string.Empty;
+        var suffix = trace.Length > traceBefore.Length
+            ? trace.Substring(traceBefore.Length)
+            : trace;
+        AssertTrue(
+            suffix.IndexOf(
+                "format-conversion-native-preview-batch-complete formulas=6",
+                StringComparison.Ordinal) >= 0,
+            "Shared-preview batch trace did not render all six MathType previews in one batch.");
+        for (var index = 1; index <= 6; index++)
+        {
+            AssertTrue(
+                (host.Document.Content.Text ?? string.Empty).IndexOf(
+                    $"batch-before-{index}",
+                    StringComparison.Ordinal) >= 0
+                && (host.Document.Content.Text ?? string.Empty).IndexOf(
+                    $"batch-after-{index}",
+                    StringComparison.Ordinal) >= 0,
+                $"Shared-preview batch conversion damaged prose around formula {index}.");
+        }
+        Console.WriteLine(
+            "[SHARED MATHTYPE BATCH] Six native OMML equations used one native-preview batch and preserved adjacent prose.");
+    }
+
+    private static void AssertSingleMathTypeTypingBoundaryMatchesProse(
+        WordPerformanceHost host)
+    {
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? shape = null;
+        Word.Range? shapeRange = null;
+        Word.Range? preceding = null;
+        Word.Range? typed = null;
+        Microsoft.Office.Interop.Word.Font? precedingFont = null;
+        Microsoft.Office.Interop.Word.Font? typedFont = null;
+        try
+        {
+            shapes = host.Document.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Word.InlineShape? candidate = null;
+                try
+                {
+                    candidate = shapes[index];
+                    if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                    shape = candidate;
+                    candidate = null;
+                    break;
+                }
+                finally { Release(candidate); }
+            }
+            if (shape is null)
+                throw new InvalidDataException(
+                    "Single OMML→MathType typing-boundary check found no MathType OLE.");
+
+            shapeRange = shape.Range;
+            preceding = host.Document.Range(
+                Math.Max(host.Document.Content.Start, shapeRange.Start - 1),
+                shapeRange.Start);
+            precedingFont = preceding.Font;
+            var expectedPosition = precedingFont.Position;
+            if (expectedPosition == (int)Word.WdConstants.wdUndefined)
+                expectedPosition = 0;
+
+            var selection = host.Application.Selection;
+            const string probe = "VTMT_TYPING_PROBE";
+            selection.SetRange(shapeRange.End, shapeRange.End);
+            var probeStart = selection.Start;
+            selection.TypeText(probe);
+            typed = host.Document.Range(probeStart, probeStart + probe.Length);
+            typedFont = typed.Font;
+            AssertEqual(
+                expectedPosition,
+                typedFont.Position,
+                "Text typed immediately after the fast-path MathType OLE inherited the wrong baseline.");
+            typed.Delete();
+        }
+        finally
+        {
+            Release(typedFont);
+            Release(precedingFont);
+            Release(typed);
+            Release(preceding);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
     private static void RunWordOmmlMathTypeFormatConversionAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
@@ -603,8 +1240,17 @@ internal static partial class Program
                 "Pure Word-native OMML round-trip damaged adjacent prose.");
             AssertNoNewMathTypeProcess(mathTypeProcessesBefore, "full OMML↔MathType acceptance");
 
+            AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+                application,
+                document,
+                emfPath);
+            AssertVisualTeXOleToOmmlPreservesNumberFormat(
+                application,
+                document,
+                artifactRoot);
+
             Console.WriteLine(
-                "[OMML↔MATHTYPE CORE] Selection + document conversion in both directions passed with VisualTeX-managed and pure Word-native OMath sources, mixed source types, inline/display formulas, numbering, hbar/Greek/fraction/integral/subscript/superscript/matrix/accent/vector semantics, adjacent prose preservation, non-empty MathType live previews, no OlePres, save/reopen persistence, and MathTypeProcessCount=0.");
+                "[OMML↔MATHTYPE CORE] Selection + document conversion in both directions passed with VisualTeX-managed and pure Word-native OMath sources, mixed source types, inline/display formulas, numbering, heading/section number-format preservation, display-paragraph preservation, hbar/Greek/fraction/integral/subscript/superscript/matrix/accent/vector semantics, adjacent prose preservation, non-empty MathType live previews, no OlePres, save/reopen persistence, and MathTypeProcessCount=0.");
         }
         finally
         {
@@ -616,6 +1262,380 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+        Word.Application application,
+        Word.Document returnDocument,
+        string emfPath)
+    {
+        AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+            application,
+            returnDocument,
+            emfPath,
+            numbered: false);
+        AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+            application,
+            returnDocument,
+            emfPath,
+            numbered: true);
+    }
+
+    private static void AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+        Word.Application application,
+        Word.Document returnDocument,
+        string emfPath,
+        bool numbered)
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mfrac><mi>a</mi><mi>b</mi></mfrac><mo>+</mo><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><mi>f</mi><mfenced><mi>x</mi></mfenced></math>";
+        Word.Document? probe = null;
+        Word.Paragraph? blankParagraph = null;
+        Word.Range? insertion = null;
+        Word.InlineShape? shape = null;
+        Word.Range? shapeRange = null;
+        Word.OMath? convertedMath = null;
+        Word.Range? convertedRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? formulaParagraph = null;
+        Word.Paragraph? precedingParagraph = null;
+        Word.Table? numberedTable = null;
+        Word.Range? numberedTableRange = null;
+        try
+        {
+            probe = application.Documents.Add();
+            probe.Content.Text = "VT-DISPLAY-BEFORE\r\rVT-DISPLAY-AFTER\r";
+            blankParagraph = probe.Paragraphs[2];
+            insertion = blankParagraph.Range.Duplicate;
+            insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+            insertion.Select();
+
+            var service = new WordFormulaService(application);
+            service.InsertMathTypeOle(
+                CreateOmmlMathTypeAcceptanceSession(
+                    mathMl,
+                    "block",
+                    numbered,
+                    FormulaOleContract.MathTypeOleMode),
+                mathMl,
+                emfPath);
+            AssertEqual(1, CountMathTypeOleShapes(probe),
+                "Display-paragraph regression setup did not create one MathType equation.");
+            shape = probe.InlineShapes[1];
+            shapeRange = shape.Range.Duplicate;
+            if (numbered)
+                AssertTrue(
+                    MathTypeOleInterop.TryReadDisplayNumberPosition(shape, out _),
+                    "Numbered MathType→OMML regression setup did not create an MTPlaceRef number.");
+            var paragraphCountBefore = probe.Paragraphs.Count;
+            shapeRange.Select();
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Display-paragraph regression did not capture the MathType display equation.");
+            var result = service.ApplyFormulaFormatConversionPlan(
+                plan,
+                PrepareOmmlMathTypeTargets(plan, emfPath));
+            AssertEqual(1, result.FormulaCount,
+                "Display MathType→OMML regression failed: " + string.Join(" | ", result.Failures));
+            AssertEqual(0, result.FailedFormulaCount,
+                "Display MathType→OMML regression reported a failed formula.");
+            AssertEqual(1, probe.OMaths.Count,
+                "MathType→OMML display conversion did not retain exactly one OMath.");
+
+            convertedMath = probe.OMaths[1];
+            convertedRange = convertedMath.Range.Duplicate;
+            paragraphs = probe.Paragraphs;
+
+            if (numbered)
+            {
+                AssertEqual(1, probe.Tables.Count,
+                    "Numbered MathType→OMML conversion did not create exactly one numbering table.");
+                numberedTable = probe.Tables[1];
+                numberedTableRange = numberedTable.Range.Duplicate;
+                AssertTrue(
+                    convertedRange.Start >= numberedTableRange.Start
+                    && convertedRange.End <= numberedTableRange.End,
+                    "Numbered MathType→OMML conversion left the OMath outside its numbering table.");
+
+                for (var index = 1; index <= paragraphs.Count; index++)
+                {
+                    Word.Paragraph? candidate = null;
+                    Word.Range? candidateRange = null;
+                    try
+                    {
+                        candidate = paragraphs[index];
+                        candidateRange = candidate.Range;
+                        if ((bool)candidateRange.get_Information(Word.WdInformation.wdWithInTable)
+                            || candidateRange.End != numberedTableRange.Start)
+                            continue;
+                        precedingParagraph = candidate;
+                        candidate = null;
+                        break;
+                    }
+                    finally
+                    {
+                        Release(candidateRange);
+                        Release(candidate);
+                    }
+                }
+                AssertTrue(precedingParagraph is not null,
+                    "Numbered MathType→OMML conversion has no body paragraph directly before its numbering table.");
+                Word.Range? precedingRange = null;
+                try
+                {
+                    precedingRange = precedingParagraph!.Range;
+                    var precedingText = (precedingRange.Text ?? string.Empty)
+                        .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                    AssertEqual("VT-DISPLAY-BEFORE", precedingText,
+                        "Numbered MathType→OMML left an empty body paragraph above the numbering table.");
+                    Console.WriteLine(
+                        $"[NUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] tableStart={numberedTableRange.Start}; preceding={precedingRange.Start}:{precedingRange.End} '{precedingText}'; no blank body paragraph remains above the table.");
+                }
+                finally { Release(precedingRange); }
+            }
+            else
+            {
+                AssertEqual(0, probe.Tables.Count,
+                    "Unnumbered MathType→OMML unexpectedly created a numbering table.");
+                AssertEqual(paragraphCountBefore, probe.Paragraphs.Count,
+                    "Unnumbered MathType→OMML display conversion changed the body paragraph count.");
+
+                var formulaParagraphIndex = -1;
+                for (var index = 1; index <= paragraphs.Count; index++)
+                {
+                    Release(formulaParagraph);
+                    formulaParagraph = paragraphs[index];
+                    Word.Range? range = null;
+                    try
+                    {
+                        range = formulaParagraph.Range;
+                        if (convertedRange.Start >= range.Start
+                            && convertedRange.End <= range.End)
+                        {
+                            formulaParagraphIndex = index;
+                            break;
+                        }
+                    }
+                    finally { Release(range); }
+                }
+                AssertTrue(formulaParagraphIndex > 1,
+                    "Converted unnumbered display OMML has no preceding body paragraph to validate.");
+                precedingParagraph = paragraphs[formulaParagraphIndex - 1];
+                Word.Range? precedingRange = null;
+                try
+                {
+                    precedingRange = precedingParagraph.Range;
+                    var precedingText = (precedingRange.Text ?? string.Empty)
+                        .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                    AssertEqual("VT-DISPLAY-BEFORE", precedingText,
+                        "Unnumbered MathType→OMML inserted a blank paragraph above the display equation.");
+                    Console.WriteLine(
+                        $"[UNNUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; preceding='{precedingText}'.");
+                }
+                finally { Release(precedingRange); }
+            }
+        }
+        finally
+        {
+            Release(numberedTableRange);
+            Release(numberedTable);
+            Release(precedingParagraph);
+            Release(formulaParagraph);
+            Release(paragraphs);
+            Release(convertedRange);
+            Release(convertedMath);
+            Release(shapeRange);
+            Release(shape);
+            Release(insertion);
+            Release(blankParagraph);
+            if (probe is not null)
+            {
+                try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(probe);
+            try { returnDocument.Activate(); } catch { }
+        }
+    }
+
+    private static void AssertVisualTeXOleToOmmlPreservesNumberFormat(
+        Word.Application application,
+        Word.Document returnDocument,
+        string artifactRoot)
+    {
+        // Use a previously generated, saved VisualTeX OLE document instead of
+        // creating a fresh native OLE inside this isolated acceptance process.
+        // The latter intentionally suppresses the installed OLE server and can be
+        // denied by COM before format conversion starts; opening the saved fixture
+        // exercises the real existing-document path reported by users.
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup><mo>=</mo><msup><mi>z</mi><mn>2</mn></msup></math>";
+        var fixturePath = Path.GetFullPath(Path.Combine(
+            "artifacts",
+            "issue11-probe",
+            "issue11-heading1-ole.docx"));
+        if (!File.Exists(fixturePath))
+            throw new FileNotFoundException(
+                "The saved numbered VisualTeX OLE fixture is required for number-format conversion acceptance.",
+                fixturePath);
+        var previousDefaultFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var workingPath = Path.Combine(
+            artifactRoot,
+            "VisualTeX-OLE-To-OMML-Heading2-Number-Format.docx");
+        File.Copy(fixturePath, workingPath, overwrite: true);
+
+        Word.Document? probe = null;
+        Word.Document? reopened = null;
+        Word.InlineShape? shape = null;
+        Word.Range? shapeRange = null;
+        try
+        {
+            probe = application.Documents.Open(
+                workingPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            var service = new WordFormulaService(application);
+            service.SetEquationNumberFormat(EquationNumberFormat.Heading2DotId);
+            AssertEqual(
+                EquationNumberFormat.Heading2DotId,
+                service.GetEquationNumberFormatId(),
+                "Number-format preservation fixture did not enter heading2-dot mode.");
+
+            for (var index = 1; index <= probe.InlineShapes.Count; index++)
+            {
+                Word.InlineShape? candidate = null;
+                try
+                {
+                    candidate = probe.InlineShapes[index];
+                    if (!WordFormulaMetadataReader.IsNativeOle(candidate)) continue;
+                    var metadata = WordFormulaMetadataReader.TryRead(candidate);
+                    if (metadata?.Numbered != true
+                        || !string.Equals(
+                            metadata.DisplayMode,
+                            "block",
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    shape = candidate;
+                    candidate = null;
+                    break;
+                }
+                finally { Release(candidate); }
+            }
+            AssertTrue(shape is not null,
+                "Saved fixture has no numbered VisualTeX OLE display equation to convert.");
+            var visualTeXOleCountBefore = CountVisualTeXNativeOleShapes(probe);
+            shapeRange = shape!.Range.Duplicate;
+            shapeRange.Select();
+            var selected = service.ReadSelection();
+            var sourceMetadata = selected.Metadata
+                ?? throw new InvalidDataException(
+                    "The saved VisualTeX OLE fixture lost its metadata before OMML conversion.");
+            AssertTrue(sourceMetadata.Numbered,
+                "The saved VisualTeX OLE fixture lost its numbered state before conversion.");
+            AssertEqual("block", sourceMetadata.DisplayMode,
+                "The number-format fixture formula is no longer a display equation.");
+            var convertedFormulaId = selected.FormulaId ?? sourceMetadata.FormulaId;
+            var replacementLatex = MathMlToLatexConverter.Convert(mathMl).Trim();
+            var lineId = sourceMetadata.Lines.FirstOrDefault()?.Id;
+            if (string.IsNullOrWhiteSpace(lineId)) lineId = Guid.NewGuid().ToString("D");
+            var targetSession = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                Mode = "edit",
+                Host = "word",
+                FormulaId = convertedFormulaId,
+                SourceDocumentId = selected.DocumentId,
+                SourceObjectId = selected.ObjectId,
+                Title = "VisualTeX OLE to OMML number-format acceptance",
+                CodeFormat = "latex",
+                DisplayMode = sourceMetadata.DisplayMode,
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                Numbered = sourceMetadata.Numbered,
+                FontSizePt = sourceMetadata.FontSizePt ?? 12,
+                OriginalMetadata = sourceMetadata,
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = lineId!, Latex = replacementLatex },
+                },
+                ExportResult = new OfficeExportDocument
+                {
+                    MathMl = mathMl,
+                    Width = 260,
+                    Height = 96,
+                    Baseline = 72,
+                },
+            };
+            service.ReplaceOmml(targetSession, mathMl);
+            AssertEqual(
+                visualTeXOleCountBefore - 1,
+                CountVisualTeXNativeOleShapes(probe),
+                "VisualTeX OLE→OMML number-format regression did not remove exactly the selected VisualTeX OLE.");
+            Word.Bookmark? convertedBookmark = null;
+            try
+            {
+                convertedBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                    probe,
+                    convertedFormulaId);
+                AssertTrue(convertedBookmark is not null,
+                    "VisualTeX OLE→OMML number-format regression did not retain the converted formula identity as OMML.");
+            }
+            finally { Release(convertedBookmark); }
+            AssertEqual(
+                EquationNumberFormat.Heading2DotId,
+                service.GetEquationNumberFormatId(),
+                "VisualTeX OLE→OMML fell back from section numbering to continuous numbering.");
+            var visibleTarget = WordEquationNumbering.GetEquationReferenceTargets(probe)
+                .Single(item => string.Equals(
+                    item.FormulaId,
+                    convertedFormulaId,
+                    StringComparison.OrdinalIgnoreCase));
+            AssertEqual(2, visibleTarget.NumberText.Count(character => character == '.'),
+                "Converted OMML visible number no longer has the section-numbering shape a.b.c.");
+            var numberBeforeReopen = visibleTarget.NumberText;
+
+            probe.Save();
+            probe.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(probe);
+            probe = null;
+            reopened = application.Documents.Open(
+                workingPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            var reopenedService = new WordFormulaService(application);
+            AssertEqual(
+                EquationNumberFormat.Heading2DotId,
+                reopenedService.GetEquationNumberFormatId(),
+                "Saved/reopened converted OMML lost the section-numbering format.");
+            var reopenedTarget = WordEquationNumbering.GetEquationReferenceTargets(reopened)
+                .Single(item => string.Equals(
+                    item.FormulaId,
+                    convertedFormulaId,
+                    StringComparison.OrdinalIgnoreCase));
+            AssertEqual(numberBeforeReopen, reopenedTarget.NumberText,
+                "Saved/reopened converted OMML changed its section-style equation number.");
+            Console.WriteLine(
+                $"[VISUALTEX OLE→OMML NUMBER FORMAT] format={EquationNumberFormat.Heading2DotId}; number={reopenedTarget.NumberText}; save/reopen preserved.");
+        }
+        finally
+        {
+            if (reopened is not null)
+            {
+                try { reopened.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(reopened);
+            Release(shapeRange);
+            Release(shape);
+            if (probe is not null)
+            {
+                try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(probe);
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
+            try { returnDocument.Activate(); } catch { }
         }
     }
 

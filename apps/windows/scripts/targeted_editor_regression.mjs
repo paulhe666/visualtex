@@ -2931,7 +2931,7 @@ async function main() {
             caretBounds && selectedBounds
               ? caretBounds.right - selectedBounds.left
               : 99;
-          const operator = selected?.closest(".ML__op-group");
+          const operator = selected?.closest(".ML__op-group, .ML__msubsup");
           const operatorBounds = operator?.getBoundingClientRect();
           const operatorRegion =
             selectedBounds && operatorBounds
@@ -2986,6 +2986,59 @@ async function main() {
             topmostSelected,
             placeholderSelected,
             operatorRegion,
+            selectedAncestors: selected
+              ? (() => {
+                  const result = [];
+                  let current = selected.parentElement;
+                  for (let depth = 0; current && depth < 8; depth += 1) {
+                    result.push({
+                      tag: current.tagName,
+                      className: current.className ?? "",
+                      text: current.textContent ?? "",
+                    });
+                    current = current.parentElement;
+                  }
+                  return result;
+                })()
+              : [],
+            placeholderRects: placeholders.map((placeholder) => {
+              const bounds = placeholder.getBoundingClientRect();
+              const pointOffset = field?.getOffsetFromPoint(
+                bounds.left + bounds.width / 2,
+                bounds.top + bounds.height / 2,
+                { bias: 0 },
+              ) ?? -1;
+              return {
+                top: bounds.top,
+                bottom: bounds.bottom,
+                left: bounds.left,
+                right: bounds.right,
+                parentClass: placeholder.parentElement?.className ?? "",
+                pointOffset,
+                pointInfoLatex: field?.getElementInfo(pointOffset)?.latex ?? "",
+                beforeLatex:
+                  pointOffset > 0
+                    ? field?.getValue(pointOffset - 1, pointOffset, "latex") ?? ""
+                    : "",
+                afterLatex:
+                  pointOffset >= 0 && pointOffset < (field?.lastOffset ?? 0)
+                    ? field?.getValue(pointOffset, pointOffset + 1, "latex") ?? ""
+                    : "",
+              };
+            }),
+            modelPlaceholderRanges: field
+              ? Array.from({ length: field.lastOffset }, (_, index) => index + 1)
+                  .filter(
+                    (end) =>
+                      field.getValue(end - 1, end, "latex").trim() ===
+                      "\\\\placeholder{}",
+                  )
+                  .map((end) => ({
+                    range: [end - 1, end],
+                    infoBefore: field.getElementInfo(end - 1)?.latex ?? "",
+                    infoEnd: field.getElementInfo(end)?.latex ?? "",
+                  }))
+              : [],
           };
         })()`, `${name} placeholder caret placement`);
 
@@ -3163,6 +3216,274 @@ async function main() {
         /\\int_\{a\}\^\{b\}f.*\\mathrm\{d\}x/,
       );
 
+      const insertBoundedOperator = async (commandId, directTemplate = null) => {
+        await clearField();
+        const toolbarAvailable = await evaluate(
+          `Boolean(document.querySelector('[data-command-id=${JSON.stringify(commandId)}]'))`,
+        );
+        if (toolbarAvailable) {
+          await evaluate(
+            `document.querySelector('[data-command-id=${JSON.stringify(commandId)}]').click()`,
+          );
+          return;
+        }
+
+        if (!directTemplate) {
+          throw new Error(`No toolbar button or direct template for bounded operator ${commandId}`);
+        }
+        await evaluate(`(() => {
+          const field = document.querySelector(".formula-line.is-active math-field");
+          field.insert(${JSON.stringify(directTemplate)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "placeholder",
+            focus: true,
+            scrollIntoView: false,
+          });
+          field.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: "insertText",
+          }));
+          const selectedRegion = () => {
+            const root = field.shadowRoot;
+            const marker = root?.querySelector(
+              ".ML__placeholder-selected, .ML__selected, .ML__caret",
+            );
+            if (!marker) return null;
+            const markerBounds = (marker.parentElement ?? marker).getBoundingClientRect();
+            const markerX = markerBounds.left + markerBounds.width / 2;
+            const markerY = markerBounds.top + markerBounds.height / 2;
+            const selected = [...(root?.querySelectorAll(
+              ".ML__placeholder, .visualtex-structural-placeholder",
+            ) ?? [])]
+              .map((placeholder) => {
+                const bounds = placeholder.getBoundingClientRect();
+                return {
+                  placeholder,
+                  distance: Math.hypot(
+                    bounds.left + bounds.width / 2 - markerX,
+                    bounds.top + bounds.height / 2 - markerY,
+                  ),
+                };
+              })
+              .sort((left, right) => left.distance - right.distance)[0]?.placeholder;
+            const bounds = selected?.getBoundingClientRect();
+            const container = selected?.closest(".ML__op-group, .ML__msubsup");
+            const containerBounds = container?.getBoundingClientRect();
+            if (!bounds || !containerBounds) return null;
+            return bounds.top + bounds.height / 2 <
+              containerBounds.top + containerBounds.height / 2
+              ? "upper"
+              : "lower";
+          };
+          if (selectedRegion() !== "lower") {
+            const original = field.selection;
+            const originalPosition = field.position;
+            const maxAttempts = Math.max(4, field.lastOffset + 2);
+            for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+              if (!field.executeCommand("moveToNextPlaceholder")) break;
+              if (selectedRegion() === "lower") break;
+            }
+            if (selectedRegion() !== "lower") {
+              field.selection = original;
+              field.position = originalPosition;
+              for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                if (!field.executeCommand("moveToPreviousPlaceholder")) break;
+                if (selectedRegion() === "lower") break;
+              }
+            }
+            if (selectedRegion() !== "lower") {
+              const root = field.shadowRoot;
+              const lowerNodes = [...(root?.querySelectorAll(".ML__placeholder") ?? [])]
+                .filter((placeholder) => {
+                  const container = placeholder.closest(".ML__op-group, .ML__msubsup");
+                  if (!container) return false;
+                  const bounds = placeholder.getBoundingClientRect();
+                  const containerBounds = container.getBoundingClientRect();
+                  return bounds.top + bounds.height / 2 >=
+                    containerBounds.top + containerBounds.height / 2;
+                })
+                .sort((left, right) =>
+                  left.getBoundingClientRect().left - right.getBoundingClientRect().left,
+                );
+              const targetNode = lowerNodes[0];
+              if (targetNode) {
+                const bounds = targetNode.getBoundingClientRect();
+                const pointOffset = field.getOffsetFromPoint(
+                  bounds.left + bounds.width / 2,
+                  bounds.top + bounds.height / 2,
+                  { bias: 0 },
+                );
+                const ranges = [];
+                for (let end = 1; end <= field.lastOffset; end += 1) {
+                  if (field.getValue(end - 1, end, "latex").trim() === "\\\\placeholder{}") {
+                    ranges.push([end - 1, end]);
+                  }
+                }
+                const targetRange = ranges
+                  .map((range) => ({
+                    range,
+                    distance: Math.min(
+                      Math.abs(range[0] - pointOffset),
+                      Math.abs(range[1] - pointOffset),
+                    ),
+                  }))
+                  .sort((left, right) => left.distance - right.distance)[0]?.range;
+                if (targetRange) {
+                  field.selection = { ranges: [targetRange], direction: "none" };
+                }
+              }
+            }
+          }
+          if (selectedRegion() === "lower") {
+            field.dataset.visualtexBoundedOperatorStage = "lower";
+          }
+        })()`);
+        await sleep(80);
+        await evaluate(`(() => {
+          const field = document.querySelector(".formula-line.is-active math-field");
+          const root = field?.shadowRoot;
+          if (!field || !root) return false;
+          const lowerNodes = [...root.querySelectorAll(".ML__placeholder")]
+            .filter((placeholder) => {
+              const container = placeholder.closest(".ML__op-group, .ML__msubsup");
+              if (!container) return false;
+              const bounds = placeholder.getBoundingClientRect();
+              const containerBounds = container.getBoundingClientRect();
+              return bounds.top + bounds.height / 2 >=
+                containerBounds.top + containerBounds.height / 2;
+            })
+            .sort((left, right) =>
+              left.getBoundingClientRect().left - right.getBoundingClientRect().left,
+            );
+          const targetNode = lowerNodes[0];
+          if (!targetNode) return false;
+          const bounds = targetNode.getBoundingClientRect();
+          const pointOffset = field.getOffsetFromPoint(
+            bounds.left + bounds.width / 2,
+            bounds.top + bounds.height / 2,
+            { bias: 0 },
+          );
+          const ranges = [];
+          for (let end = 1; end <= field.lastOffset; end += 1) {
+            if (field.getValue(end - 1, end, "latex").trim() === "\\\\placeholder{}") {
+              ranges.push([end - 1, end]);
+            }
+          }
+          const targetRange = ranges
+            .map((range) => ({
+              range,
+              distance: Math.min(
+                Math.abs(range[0] - pointOffset),
+                Math.abs(range[1] - pointOffset),
+              ),
+            }))
+            .sort((left, right) => left.distance - right.distance)[0]?.range;
+          if (!targetRange) return false;
+          field.selection = { ranges: [targetRange], direction: "none" };
+          field.dataset.visualtexBoundedOperatorStage = "lower";
+          field.focus();
+          return true;
+        })()`);
+      };
+
+      const verifyBoundedOperatorOrder = async ({
+        commandId,
+        initialPlaceholderCount,
+        lowerValues,
+        upperValue,
+        directTemplate = null,
+        keyName = "ArrowRight",
+      }) => {
+        await insertBoundedOperator(commandId, directTemplate);
+        const keyCode = keyName === "Tab" ? 9 : 39;
+        const initial = await readPlaceholderCaret(
+          `${commandId} ${keyName} lower limit 1`,
+          initialPlaceholderCount,
+        );
+        if (initial.operatorRegion !== "lower") {
+          throw new Error(
+            `${commandId} ${keyName} sequence did not start at lower limit: ${JSON.stringify(initial)}`,
+          );
+        }
+
+        const lowerStates = [initial];
+        for (let index = 0; index < lowerValues.length; index += 1) {
+          await typeText(lowerValues[index]);
+          await key(keyName, keyName, keyCode);
+          const expectedCount = initialPlaceholderCount - index - 1;
+          if (index < lowerValues.length - 1) {
+            const nextLower = await readPlaceholderCaret(
+              `${commandId} ${keyName} lower limit ${index + 2}`,
+              expectedCount,
+            );
+            if (nextLower.operatorRegion !== "lower") {
+              throw new Error(
+                `${commandId} ${keyName} skipped a composite lower-limit placeholder: ${JSON.stringify(nextLower)}`,
+              );
+            }
+            lowerStates.push(nextLower);
+          } else {
+            const upper = await readPlaceholderCaret(
+              `${commandId} ${keyName} upper limit`,
+              expectedCount,
+            );
+            if (upper.operatorRegion !== "upper") {
+              throw new Error(
+                `${commandId} ${keyName} did not move lower -> upper: ${JSON.stringify(upper)}`,
+              );
+            }
+            lowerStates.push(upper);
+          }
+        }
+
+        const upper = lowerStates.at(-1);
+        await typeText(upperValue);
+        await key(keyName, keyName, keyCode);
+        const afterLimits = await readPlaceholderCaret(
+          `${commandId} ${keyName} after limits`,
+          initialPlaceholderCount - lowerValues.length - 1,
+        );
+        if (afterLimits.operatorRegion !== null) {
+          throw new Error(
+            `${commandId} ${keyName} did not leave the limit pair after the upper limit: ${JSON.stringify(afterLimits)}`,
+          );
+        }
+        return { initial, lowerStates, upper, afterLimits };
+      };
+
+      const boundedOperatorCases = [
+        { commandId: "sum", initialPlaceholderCount: 3, lowerValues: ["i"], upperValue: "n" },
+        { commandId: "prod", initialPlaceholderCount: 3, lowerValues: ["j"], upperValue: "m" },
+        { commandId: "int", initialPlaceholderCount: 4, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "iint-bounds", initialPlaceholderCount: 3, lowerValues: ["D"], upperValue: "S" },
+        { commandId: "iiint-bounds", initialPlaceholderCount: 3, lowerValues: ["V"], upperValue: "W" },
+        { commandId: "oint-bounds", initialPlaceholderCount: 4, lowerValues: ["C"], upperValue: "D" },
+        { commandId: "sum-finite", initialPlaceholderCount: 4, lowerValues: ["k", "1"], upperValue: "n" },
+        { commandId: "prod-finite", initialPlaceholderCount: 4, lowerValues: ["k", "1"], upperValue: "n" },
+        { commandId: "coproduct", initialPlaceholderCount: 3, lowerValues: ["i"], upperValue: "n" },
+        { commandId: "fint", directTemplate: "\\fint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "dashint", directTemplate: "\\dashint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "ddashint", directTemplate: "\\ddashint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "oiint", directTemplate: "\\oiint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["A"], upperValue: "B" },
+        { commandId: "oiiint", directTemplate: "\\oiiint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["A"], upperValue: "B" },
+        { commandId: "ointctrclockwise", directTemplate: "\\ointctrclockwise_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "varointclockwise", directTemplate: "\\varointclockwise_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+        { commandId: "varointctrclockwise", directTemplate: "\\varointctrclockwise_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", initialPlaceholderCount: 3, lowerValues: ["a"], upperValue: "b" },
+      ];
+      const boundedRightArrowAudit = [];
+      const boundedTabAudit = [];
+      for (const testCase of boundedOperatorCases) {
+        boundedRightArrowAudit.push(
+          await verifyBoundedOperatorOrder({ ...testCase, keyName: "ArrowRight" }),
+        );
+        boundedTabAudit.push(
+          await verifyBoundedOperatorOrder({ ...testCase, keyName: "Tab" }),
+        );
+      }
+
       console.log(
         JSON.stringify(
           {
@@ -3177,6 +3498,9 @@ async function main() {
             orderedSum,
             orderedProduct,
             orderedIntegral,
+            boundedOperatorCaseCount: boundedOperatorCases.length,
+            boundedRightArrowAudit,
+            boundedTabAudit,
           },
           null,
           2,

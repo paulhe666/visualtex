@@ -194,6 +194,25 @@ internal static partial class Program
         AssertSavedInlineOleTypingAnchor(Path.Combine(artifactRoot, oleFileName));
     }
 
+    private static void RunWordInlineOleInitialTypingBaseline(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Console.WriteLine("[Word inline OLE initial baseline] Prewarming reusable hidden converter...");
+        client.PrewarmConverterAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Thread.Sleep(700);
+        WinForms.Application.DoEvents();
+
+        const string oleFileName = "VisualTeX-Word-Inline-OLE-Initial-Typing-Baseline.docx";
+        RunWordLatexRedrawScenario(
+            artifactRoot,
+            objectMode: FormulaOleContract.NativeOleMode,
+            wholeDocument: true,
+            expectedFileName: oleFileName,
+            verifyResizeBaseline: false);
+        AssertSavedInlineOleTypingAnchor(Path.Combine(artifactRoot, oleFileName));
+    }
+
     private static void RunExistingWordInlineOleFontStyle(string artifactRoot)
     {
         var buildLogsRoot = Path.Combine(
@@ -1600,7 +1619,8 @@ internal static partial class Program
         string artifactRoot,
         string objectMode,
         bool wholeDocument,
-        string expectedFileName)
+        string expectedFileName,
+        bool verifyResizeBaseline = true)
     {
         var modeName = objectMode == FormulaOleContract.NativeOleMode ? "OLE" : "OMML";
         var logPath = Path.Combine(
@@ -1640,7 +1660,11 @@ internal static partial class Program
             WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
             AssertLatexRedrawDocument(host.Document, objectMode);
             if (objectMode == FormulaOleContract.NativeOleMode)
-                AssertInlineOleResizeKeepsTrailingProseBaseline(host);
+            {
+                AssertInitialInlineOleTypingBoundaryNavigation(host);
+                if (verifyResizeBaseline)
+                    AssertInlineOleResizeKeepsTrailingProseBaseline(host);
+            }
             host.Save(documentPath);
             AssertLatexRedrawPerformance(redrawLog, modeName);
             Console.WriteLine(
@@ -1659,6 +1683,10 @@ internal static partial class Program
 
         selection.Font.Name = "宋体";
         selection.Font.Size = 10.5f;
+        // Reproduce the user's real document where ordinary body text itself has
+        // a -1 pt character position. A correct inline-OLE boundary must preserve
+        // that nonzero prose baseline rather than silently normalizing it to 0.
+        selection.Font.Position = -1;
         // A supplementary Unicode character before later formulas reproduces
         // Word's story-coordinate/UTF-16 offset mismatch from real documents.
         // The raw LaTeX run is intentionally smaller than the prose, matching
@@ -1667,8 +1695,12 @@ internal static partial class Program
         selection.Font.Size = 9.5f;
         selection.TypeText("$UVI>2$");
         selection.Font.Size = 10.5f;
-        selection.TypeText(" 普通正文后。");
+        // Match the real inline-OLE document structure: following prose starts
+        // immediately after the formula. VisualTeX may keep only its U+200C
+        // zero-width typing anchor between the OLE and this first body character.
+        selection.TypeText("普通正文后。");
         selection.TypeParagraph();
+        selection.Font.Position = 0;
 
         selection.Font.Size = 8.5f;
         selection.TypeText(@"\[E=mc^2\]");
@@ -1842,6 +1874,201 @@ internal static partial class Program
             Release(shapes);
             Release(maths);
             Release(content);
+        }
+    }
+
+    private static void AssertInitialInlineOleTypingBoundaryNavigation(
+        WordPerformanceHost host)
+    {
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? target = null;
+        Word.Range? formulaRange = null;
+        Word.Range? preceding = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? bookmark = null;
+        Word.Range? anchorRange = null;
+        Word.Selection? selection = null;
+        Microsoft.Office.Interop.Word.Font? precedingFont = null;
+        try
+        {
+            shapes = host.Document.InlineShapes;
+            FormulaMetadata? metadata = null;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Word.InlineShape? candidate = null;
+                try
+                {
+                    candidate = shapes[index];
+                    var candidateMetadata = WordFormulaMetadataReader.TryRead(candidate);
+                    if (!WordFormulaMetadataReader.IsNativeOle(candidate)
+                        || !string.Equals(candidateMetadata?.Latex, "UVI>2", StringComparison.Ordinal))
+                        continue;
+                    target = candidate;
+                    metadata = candidateMetadata;
+                    candidate = null;
+                    break;
+                }
+                finally { Release(candidate); }
+            }
+            if (target is null || metadata is null)
+                throw new InvalidDataException(
+                    "Initial typing-baseline acceptance could not find the UVI inline OLE.");
+
+            formulaRange = target.Range;
+            preceding = host.Document.Range(
+                Math.Max(0, formulaRange.Start - 1),
+                formulaRange.Start);
+            precedingFont = preceding.Font;
+            var expectedPosition = precedingFont.Position;
+            if (expectedPosition == (int)Word.WdConstants.wdUndefined)
+                expectedPosition = 0;
+
+            AssertInlineOleTypingAnchor(
+                host.Document,
+                target,
+                metadata,
+                expectedPosition,
+                precedingFont);
+
+            var bookmarkName = "VTBL_" + Guid.Parse(metadata.FormulaId).ToString("N");
+            bookmarks = host.Document.Bookmarks;
+            bookmark = bookmarks[bookmarkName];
+            anchorRange = bookmark.Range;
+
+            host.Application.Visible = true;
+            host.Document.Activate();
+            host.Application.ActiveWindow.Activate();
+            _ = SetForegroundWindow(new IntPtr(host.Application.ActiveWindow.Hwnd));
+            WinForms.Application.DoEvents();
+            Thread.Sleep(200);
+            selection = host.Application.Selection;
+
+            void AssertAnchorStillBodyFormatted(string stage)
+            {
+                Release(anchorRange);
+                anchorRange = bookmark.Range;
+                Microsoft.Office.Interop.Word.Font? anchorFont = null;
+                try
+                {
+                    anchorFont = anchorRange.Font;
+                    if (anchorFont.Position != expectedPosition)
+                        throw new InvalidDataException(
+                            $"{stage}: inline OLE typing anchor baseline changed. "
+                            + $"Expected {expectedPosition}, actual {anchorFont.Position}.");
+                    AssertBodyCharacterFormattingMatches(
+                        precedingFont,
+                        anchorFont,
+                        stage + " anchor");
+                }
+                finally { Release(anchorFont); }
+            }
+
+            void TypeProbe(string text, string stage)
+            {
+                Release(anchorRange);
+                anchorRange = bookmark.Range;
+                selection.SetRange(anchorRange.End, anchorRange.End);
+                WinForms.Application.DoEvents();
+                Thread.Sleep(100);
+                var typedStart = selection.Start;
+                Word.Range? typedRange = null;
+                Microsoft.Office.Interop.Word.Font? typedFont = null;
+                try
+                {
+                    selection.TypeText(text);
+                    WinForms.Application.DoEvents();
+                    Thread.Sleep(100);
+                    typedRange = host.Document.Range(
+                        typedStart,
+                        typedStart + text.Length);
+                    if (!string.Equals(typedRange.Text, text, StringComparison.Ordinal))
+                        throw new InvalidDataException(
+                            $"{stage}: Word inserted the typing probe at an unexpected range.");
+                    typedFont = typedRange.Font;
+                    if (typedFont.Position != expectedPosition)
+                        throw new InvalidDataException(
+                            $"{stage}: text typed after the inline OLE changed baseline. "
+                            + $"Expected {expectedPosition}, actual {typedFont.Position}.");
+                    AssertBodyCharacterFormattingMatches(
+                        precedingFont,
+                        typedFont,
+                        stage);
+                    typedRange.Delete();
+                }
+                finally
+                {
+                    Release(typedFont);
+                    Release(typedRange);
+                }
+                AssertAnchorStillBodyFormatted(stage + " after delete");
+            }
+
+            TypeProbe("directprobe", "Initial direct typing");
+
+            Release(anchorRange);
+            anchorRange = bookmark.Range;
+            if (!string.Equals(anchorRange.Text, "\u200C", StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "The persistent inline-OLE typing boundary must be U+200C, not a visible space.");
+            Word.Range? followingCharacter = null;
+            try
+            {
+                if (anchorRange.End < host.Document.Content.End - 1)
+                {
+                    followingCharacter = host.Document.Range(anchorRange.End, anchorRange.End + 1);
+                    if (string.Equals(followingCharacter.Text, " ", StringComparison.Ordinal))
+                        throw new InvalidDataException(
+                            "VisualTeX left an ordinary ASCII space after the inline OLE typing anchor.");
+                }
+            }
+            finally { Release(followingCharacter); }
+
+            selection.SetRange(anchorRange.End, anchorRange.End);
+            for (var cycle = 1; cycle <= 4; cycle++)
+            {
+                // Use physical keyboard navigation so Word executes the same
+                // caret-affinity path as a real user. There is intentionally no
+                // visible post-OLE space: only the U+200C typing anchor exists.
+                WinForms.SendKeys.SendWait("{LEFT}");
+                WinForms.Application.DoEvents();
+                Thread.Sleep(75);
+                AssertAnchorStillBodyFormatted($"Physical arrow cycle {cycle} left");
+                WinForms.SendKeys.SendWait("{RIGHT}");
+                WinForms.Application.DoEvents();
+                Thread.Sleep(75);
+                AssertAnchorStillBodyFormatted($"Physical arrow cycle {cycle} right");
+            }
+
+            TypeProbe("arrowprobe", "Typing after physical left/right navigation");
+
+            Release(anchorRange);
+            anchorRange = bookmark.Range;
+            var prosePosition = Math.Min(
+                Math.Max(anchorRange.End + 1, anchorRange.End),
+                Math.Max(anchorRange.End, host.Document.Content.End - 1));
+            selection.SetRange(prosePosition, prosePosition);
+            WinForms.Application.DoEvents();
+            Thread.Sleep(100);
+            selection.SetRange(anchorRange.End, anchorRange.End);
+            WinForms.Application.DoEvents();
+            Thread.Sleep(150);
+            AssertAnchorStillBodyFormatted("Repositioning from following prose");
+            TypeProbe("repositionprobe", "Typing after prose re-selection");
+
+            Console.WriteLine(
+                "[Word inline OLE initial baseline] Passed direct typing, four left/right cycles, and prose re-selection without baseline drift.");
+        }
+        finally
+        {
+            Release(precedingFont);
+            Release(selection);
+            Release(anchorRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(preceding);
+            Release(formulaRange);
+            Release(target);
+            Release(shapes);
         }
     }
 

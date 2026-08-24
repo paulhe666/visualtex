@@ -2,7 +2,8 @@
 mod ocr_install;
 
 use ocr_install::{
-    active_process_path, decode_process_output, install_log_path, load_snapshot,
+    active_process_path, best_effort_runtime_process_cleanup_for_install,
+    decode_process_output, install_log_path, load_snapshot, process_belongs_to_runtime,
     run_logged_command, save_snapshot, windows_powershell_executable, CommandLimits,
     InstallControl, InstallSnapshot, InstallState,
 };
@@ -35,6 +36,38 @@ fn main() -> Result<(), String> {
     let root = acceptance_root();
     fs::create_dir_all(&root)
         .map_err(|error| format!("Unable to create acceptance directory: {error}"))?;
+
+    let policy_blocked_cleanup = best_effort_runtime_process_cleanup_for_install(
+        &root,
+        Err("Unable to scan residual OCR installation processes: os error 786".to_string()),
+    );
+    if !policy_blocked_cleanup.is_empty() {
+        return Err("Policy-blocked residual scan unexpectedly reported terminated processes".to_string());
+    }
+    let policy_log = fs::read_to_string(install_log_path(&root))
+        .map_err(|error| format!("Unable to read policy-blocked cleanup log: {error}"))?;
+    if !policy_log.contains("inventory was skipped before installation")
+        || !policy_log.contains("786")
+    {
+        return Err(format!(
+            "Policy-blocked residual scan was not downgraded to a logged warning: {policy_log}"
+        ));
+    }
+
+    #[cfg(windows)]
+    {
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("Unable to locate acceptance executable: {error}"))?;
+        let executable_parent = executable
+            .parent()
+            .ok_or_else(|| "Acceptance executable has no parent directory".to_string())?;
+        if !process_belongs_to_runtime(std::process::id(), executable_parent)? {
+            return Err("Native stale-PID ownership check did not recognize the current process path".to_string());
+        }
+        if process_belongs_to_runtime(std::process::id(), &root)? {
+            return Err("Native stale-PID ownership check accepted an unrelated runtime root".to_string());
+        }
+    }
 
     let gbk = b"\xd0\xc5\xcf\xa2: \xd3\xc3\xcc\xe1\xb9\xa9\xb5\xc4\xc4\xa3\xca\xbd\xce\xde\xb7\xa8\xd5\xd2\xb5\xbd\xce\xc4\xbc\xfe\xa1\xa3";
     if decode_process_output(gbk) != "信息: 用提供的模式无法找到文件。" {

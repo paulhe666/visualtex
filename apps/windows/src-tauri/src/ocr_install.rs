@@ -10,12 +10,16 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
+use std::ffi::c_void;
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(windows)]
 const MB_ERR_INVALID_CHARS: u32 = 0x0000_0008;
+#[cfg(windows)]
+const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x0000_1000;
 
 #[cfg(windows)]
 pub fn windows_powershell_executable() -> Result<PathBuf, String> {
@@ -65,6 +69,14 @@ unsafe extern "system" {
         wide_char: *mut u16,
         wide_count: i32,
     ) -> i32;
+    fn OpenProcess(
+        desired_access: u32,
+        inherit_handle: i32,
+        process_id: u32,
+    ) -> *mut c_void;
+    fn GetModuleHandleW(module_name: *const u16) -> *mut c_void;
+    fn GetProcAddress(module: *mut c_void, proc_name: *const i8) -> *mut c_void;
+    fn CloseHandle(handle: *mut c_void) -> i32;
 }
 
 pub const INSTALL_STATUS_SCHEMA: u32 = 1;
@@ -576,6 +588,36 @@ pub fn cleanup_runtime_processes(runtime_root: &Path) -> Result<Vec<u32>, String
     }
 }
 
+pub fn cleanup_runtime_processes_for_install(runtime_root: &Path) -> Vec<u32> {
+    best_effort_runtime_process_cleanup_for_install(
+        runtime_root,
+        cleanup_runtime_processes(runtime_root),
+    )
+}
+
+pub(crate) fn best_effort_runtime_process_cleanup_for_install(
+    runtime_root: &Path,
+    result: Result<Vec<u32>, String>,
+) -> Vec<u32> {
+    match result {
+        Ok(terminated) => terminated,
+        Err(error) => {
+            // Full-process inventory is only a defensive pre-install cleanup.
+            // Enterprise AppLocker/WDAC policies can block VisualTeX from
+            // launching PowerShell even though the application itself is allowed.
+            // The explicitly recorded installer PID is validated separately using
+            // native Win32 APIs, so this auxiliary inventory must not make OCR
+            // installation require administrator elevation or policy changes.
+            let warning = format!(
+                "Residual OCR process inventory was skipped before installation: {error}"
+            );
+            eprintln!("{warning}");
+            let _ = append_install_log(runtime_root, &warning);
+            Vec::new()
+        }
+    }
+}
+
 pub fn cleanup_stale_process(runtime_root: &Path) -> Result<bool, String> {
     let path = active_process_path(runtime_root);
     let Ok(content) = fs::read(&path) else {
@@ -1004,27 +1046,70 @@ fn tail_chars(value: &str, max_chars: usize) -> String {
 }
 
 #[cfg(windows)]
-fn process_belongs_to_runtime(pid: u32, runtime_root: &Path) -> Result<bool, String> {
-    let script = format!(
-        "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction SilentlyContinue; if($null -eq $p){{exit 3}}; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Write-Output (($p.ExecutablePath + ' ' + $p.CommandLine).ToLowerInvariant())"
-    );
-    let output = powershell_command()?
-        .args(["-NoProfile", "-Command", &script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|error| format!("Unable to inspect stale OCR installation process {pid}: {error}"))?;
-    if !output.status.success() {
+pub(crate) fn process_belongs_to_runtime(pid: u32, runtime_root: &Path) -> Result<bool, String> {
+    // Do not use PowerShell/WMI here. This check is part of the stale-PID safety
+    // boundary and must still work on enterprise machines where powershell.exe is
+    // disabled by AppLocker/WDAC. Every command recorded by run_logged_command is
+    // launched from VisualTeX's private OCR runtime, so its executable path is a
+    // sufficient ownership check.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        // The PID no longer exists, belongs to a protected process, or has already
+        // been reused by something we cannot inspect. In all cases it is unsafe to
+        // terminate it and safe to treat the VisualTeX PID record as stale.
         return Ok(false);
     }
-    let process_text = decode_process_output(&output.stdout)
+
+    type QueryFullProcessImageNameWFn = unsafe extern "system" fn(
+        *mut c_void,
+        u32,
+        *mut u16,
+        *mut u32,
+    ) -> i32;
+    let module_name: Vec<u16> = "kernel32.dll\0".encode_utf16().collect();
+    let module = unsafe { GetModuleHandleW(module_name.as_ptr()) };
+    let proc = if module.is_null() {
+        std::ptr::null_mut()
+    } else {
+        unsafe { GetProcAddress(module, b"QueryFullProcessImageNameW\0".as_ptr().cast()) }
+    };
+    if proc.is_null() {
+        unsafe {
+            CloseHandle(process);
+        }
+        return Ok(false);
+    }
+    let query_full_process_image_name: QueryFullProcessImageNameWFn =
+        unsafe { std::mem::transmute(proc) };
+    let mut executable_path = vec![0u16; 32_768];
+    let mut path_size = executable_path.len() as u32;
+    let query_result = unsafe {
+        query_full_process_image_name(
+            process,
+            0,
+            executable_path.as_mut_ptr(),
+            &mut path_size,
+        )
+    };
+    unsafe {
+        CloseHandle(process);
+    }
+    if query_result == 0 || path_size == 0 {
+        return Ok(false);
+    }
+
+    let process_text = String::from_utf16_lossy(&executable_path[..path_size as usize])
         .replace('/', "\\")
+        .trim_end_matches('\\')
         .to_ascii_lowercase();
     let root_text = runtime_root
         .display()
         .to_string()
         .replace('/', "\\")
+        .trim_end_matches('\\')
         .to_ascii_lowercase();
-    Ok(process_text.contains(&root_text))
+    let root_prefix = format!("{root_text}\\");
+    Ok(process_text == root_text || process_text.starts_with(&root_prefix))
 }
 
 #[cfg(not(windows))]
@@ -1103,6 +1188,29 @@ mod tests {
         assert!(current.contains("VisualTeX OCR install session"));
         assert!(!current.contains("older attempt"));
         assert!(previous.contains("older attempt"));
+    }
+
+    #[test]
+    fn policy_blocked_residual_scan_does_not_block_installation() {
+        let root = tempdir().unwrap();
+        let terminated = best_effort_runtime_process_cleanup_for_install(
+            root.path(),
+            Err("Unable to scan residual OCR installation processes: os error 786".to_string()),
+        );
+        assert!(terminated.is_empty());
+        let log = fs::read_to_string(install_log_path(root.path())).unwrap();
+        assert!(log.contains("inventory was skipped before installation"));
+        assert!(log.contains("786"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stale_pid_ownership_uses_native_process_image_path() {
+        let executable = std::env::current_exe().unwrap();
+        let executable_parent = executable.parent().unwrap();
+        assert!(process_belongs_to_runtime(std::process::id(), executable_parent).unwrap());
+        let unrelated = tempdir().unwrap();
+        assert!(!process_belongs_to_runtime(std::process::id(), unrelated.path()).unwrap());
     }
 
     #[test]

@@ -17,6 +17,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Management" />
     <Reference Include="Microsoft.CSharp" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\VstoDependencyResolver.cs" Link="VstoDependencyResolver.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />

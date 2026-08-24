@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Management;
 using System.Text.Json;
 using Microsoft.Win32;
 
@@ -10,6 +11,12 @@ internal static class MathTypeNativePreviewRenderer
     private const int MaxBatchItemsPerSidecar = 128;
     private const string BridgeFileName = "visualtex-windows-office-bridge.exe";
     private const string BridgeOverrideEnvironment = "VISUALTEX_MATHTYPE_PREVIEW_BRIDGE_PATH";
+    private static readonly object SharedSessionGate = new();
+    private static readonly object NativeRenderGate = new();
+    private static int _sharedSessionUsers;
+    private static HashSet<int>? _sharedSessionBaseline;
+    private static int _sharedPrewarmQueued;
+    private static readonly ManualResetEventSlim SharedPrewarmCompleted = new(initialState: true);
 
     private sealed class Request
     {
@@ -56,6 +63,98 @@ internal static class MathTypeNativePreviewRenderer
         }
     }
 
+    internal static void AcquireSharedSession()
+    {
+        lock (SharedSessionGate)
+        {
+            if (_sharedSessionUsers == 0)
+            {
+                _sharedSessionBaseline = SnapshotMathTypeProcessIds();
+                Interlocked.Exchange(ref _sharedPrewarmQueued, 0);
+                SharedPrewarmCompleted.Set();
+            }
+            _sharedSessionUsers++;
+        }
+        QueueSharedSessionPrewarm();
+    }
+
+    internal static void ReleaseSharedSession()
+    {
+        HashSet<int>? baseline = null;
+        lock (SharedSessionGate)
+        {
+            if (_sharedSessionUsers <= 0) return;
+            _sharedSessionUsers--;
+            if (_sharedSessionUsers != 0) return;
+            if (_sharedSessionBaseline is not null)
+                baseline = new HashSet<int>(_sharedSessionBaseline);
+            _sharedSessionBaseline = null;
+            Interlocked.Exchange(ref _sharedPrewarmQueued, 0);
+            SharedPrewarmCompleted.Set();
+        }
+        if (baseline is not null)
+            QueueWindowlessMathTypeCleanup(baseline);
+    }
+
+    internal static bool WaitForSharedSessionPrewarm(TimeSpan timeout) =>
+        SharedPrewarmCompleted.Wait(timeout);
+
+    private static void QueueSharedSessionPrewarm()
+    {
+        if (Interlocked.Exchange(ref _sharedPrewarmQueued, 1) != 0) return;
+        SharedPrewarmCompleted.Reset();
+        _ = ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                const string mathMl =
+                    "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\"><mi>x</mi></math>";
+                var generated = MathTypeMtefCodec.CreateEquationNative(mathMl, inline: true);
+                var outputRoot = Path.Combine(
+                    Path.GetTempPath(),
+                    "VisualTeX",
+                    "mathtype-preview-prewarm");
+                var input = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+                {
+                    ["prewarm"] = generated.Mtef,
+                };
+                _ = TryRenderBatch(input, outputRoot, out var previews);
+                foreach (var preview in previews.Values)
+                    preview.Dispose();
+                WordDoubleClickHook.TraceMessage("mathtype-native-preview-shared-prewarm-complete");
+            }
+            catch (Exception error)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-native-preview-shared-prewarm-failed error={error.GetType().Name}:{error.Message}");
+            }
+            finally
+            {
+                SharedPrewarmCompleted.Set();
+            }
+        });
+    }
+
+    private static HashSet<int> ResolveRenderBaseline(out bool sharedSession)
+    {
+        lock (SharedSessionGate)
+        {
+            if (_sharedSessionUsers > 0 && _sharedSessionBaseline is not null)
+            {
+                sharedSession = true;
+                return new HashSet<int>(_sharedSessionBaseline);
+            }
+        }
+        sharedSession = false;
+        return SnapshotMathTypeProcessIds();
+    }
+
+    private static bool HasSharedSessionUsers()
+    {
+        lock (SharedSessionGate)
+            return _sharedSessionUsers > 0;
+    }
+
     internal static bool TryRenderBatch(
         IReadOnlyDictionary<string, byte[]> mtefs,
         string outputDirectory,
@@ -72,7 +171,7 @@ internal static class MathTypeNativePreviewRenderer
         if (bridgePath is null) return false;
 
         Directory.CreateDirectory(outputDirectory);
-        var mathTypeBaseline = SnapshotMathTypeProcessIds();
+        var mathTypeBaseline = ResolveRenderBaseline(out var sharedSession);
         try
         {
             var ordered = mtefs.ToArray();
@@ -96,9 +195,12 @@ internal static class MathTypeNativePreviewRenderer
             // Keep MathType's windowless -mtrpc helper alive between isolated
             // sidecars in the same document batch. Starting and killing it once
             // per formula turns 100 conversions into minutes of avoidable latency.
-            // Cleanup remains unconditional at the end of the batch and never
-            // touches a MathType process that existed before this operation.
-            CleanupNewWindowlessMathTypeProcesses(mathTypeBaseline);
+            // A Word-session preview helper is intentionally retained so the next
+            // conversion does not pay MathType's multi-second cold startup again.
+            // Standalone callers that did not acquire a shared session keep the
+            // previous delayed cleanup behavior.
+            if (!sharedSession || !HasSharedSessionUsers())
+                QueueWindowlessMathTypeCleanup(mathTypeBaseline);
         }
     }
 
@@ -160,6 +262,20 @@ internal static class MathTypeNativePreviewRenderer
     }
 
     private static bool TryRenderBatchCore(
+        string bridgePath,
+        IReadOnlyDictionary<string, byte[]> mtefs,
+        string outputDirectory,
+        out Dictionary<string, Result> results)
+    {
+        lock (NativeRenderGate)
+            return TryRenderBatchCoreUnlocked(
+                bridgePath,
+                mtefs,
+                outputDirectory,
+                out results);
+    }
+
+    private static bool TryRenderBatchCoreUnlocked(
         string bridgePath,
         IReadOnlyDictionary<string, byte[]> mtefs,
         string outputDirectory,
@@ -486,11 +602,23 @@ internal static class MathTypeNativePreviewRenderer
         return result;
     }
 
+    private static void QueueWindowlessMathTypeCleanup(HashSet<int> baseline)
+    {
+        var protectedProcessIds = new HashSet<int>(baseline);
+        _ = ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try { CleanupNewWindowlessMathTypeProcesses(protectedProcessIds); }
+            catch { }
+        });
+    }
+
     private static void CleanupNewWindowlessMathTypeProcesses(HashSet<int> baseline)
     {
         // MTInitAPI can leave a delayed `MathType.exe -mtrpc` server behind even
-        // after the rendering sidecar has exited. Never touch a MathType process
-        // that existed before this render, and never close a visible MathType UI.
+        // after the rendering sidecar has exited. Cleanup is deliberately strict:
+        // the PID must be newer than the protected baseline, have no visible UI,
+        // and still expose the explicit `-mtrpc` command line. A normal MathType
+        // launch or an OLE `-Embedding` server is never owned by this renderer.
         // This cleanup runs in the surviving VSTO process, so it also executes when
         // legacy MathPage native code terminates the sidecar with AccessViolation.
         try
@@ -499,7 +627,7 @@ internal static class MathTypeNativePreviewRenderer
             // the rendering sidecar has already exited. An immediate snapshot can
             // therefore miss the process and leave it behind. Give only that
             // delayed server a short arrival window, then keep the existing rule:
-            // never touch a pre-existing PID and never terminate visible MathType UI.
+            // never touch a pre-existing PID and terminate only confirmed -mtrpc helpers.
             Thread.Sleep(175);
             for (var attempt = 0; attempt < 10; attempt++)
             {
@@ -511,6 +639,7 @@ internal static class MathTypeNativePreviewRenderer
                         if (baseline.Contains(process.Id)) continue;
                         process.Refresh();
                         if (process.HasExited || process.MainWindowHandle != IntPtr.Zero) continue;
+                        if (!IsMathTypeRpcHelper(process)) continue;
                         foundNewWindowless = true;
                         try { process.Kill(); } catch { }
                     }
@@ -522,6 +651,40 @@ internal static class MathTypeNativePreviewRenderer
             }
         }
         catch { }
+    }
+
+    internal static bool IsMathTypeRpcCommandLine(string? commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return false;
+        return commandLine!.IndexOf("-mtrpc", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsMathTypeRpcHelper(Process process)
+    {
+        var commandLine = TryReadProcessCommandLine(process.Id);
+        return IsMathTypeRpcCommandLine(commandLine);
+    }
+
+    private static string? TryReadProcessCommandLine(int processId)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                $"SELECT CommandLine FROM Win32_Process WHERE ProcessId = {processId}");
+            using var results = searcher.Get();
+            foreach (ManagementObject process in results)
+            {
+                using (process)
+                    return process["CommandLine"] as string;
+            }
+        }
+        catch
+        {
+            // Process cleanup is fail-closed: if Windows will not expose the
+            // command line, VisualTeX leaves the process alone rather than risk
+            // terminating a user-launched MathType instance.
+        }
+        return null;
     }
 
     private static string QuoteProcessArgument(string value) =>

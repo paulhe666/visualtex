@@ -1019,6 +1019,17 @@ internal static class WordEquationNumbering
         WriteEquationNumberFormat(document, format.Id);
     }
 
+    internal static void RestoreEquationNumberFormatForConversion(
+        Document document,
+        string formatId)
+    {
+        var resolved = EquationNumberFormat.Resolve(formatId).Id;
+        if (TryReadDocumentEquationNumberFormatId(document, out var current)
+            && string.Equals(current, resolved, StringComparison.Ordinal))
+            return;
+        WriteEquationNumberFormat(document, resolved);
+    }
+
     private static EquationNumberFormat ReadEquationNumberFormat(Document document)
     {
         return TryReadDocumentEquationNumberFormatId(document, out var formatId)
@@ -1322,7 +1333,7 @@ internal static class WordEquationNumbering
         out int built)
     {
         built = 0;
-        var entries = new List<(string FormulaId, FormulaMetadata Metadata, int Position)>();
+        var entries = new List<(string FormulaId, FormulaMetadata Metadata, int Position, int SourceParagraphStart)>();
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
             "1",
@@ -1350,12 +1361,31 @@ internal static class WordEquationNumbering
                          .Select(group => group.Last()))
             {
                 Range? range = null;
+                Paragraphs? sourceParagraphs = null;
+                Paragraph? sourceParagraph = null;
+                Range? sourceParagraphRange = null;
                 try
                 {
                     range = GetFreshConvertedOmmlRange(document, metadata);
-                    entries.Add((metadata.FormulaId, metadata, range.Start));
+                    sourceParagraphs = range.Paragraphs;
+                    if (sourceParagraphs.Count != 1)
+                        throw new InvalidOperationException(
+                            $"Converted OMML formula {metadata.FormulaId} does not occupy one source paragraph before numbering migration.");
+                    sourceParagraph = sourceParagraphs[1];
+                    sourceParagraphRange = sourceParagraph.Range;
+                    entries.Add((
+                        metadata.FormulaId,
+                        metadata,
+                        range.Start,
+                        sourceParagraphRange.Start));
                 }
-                finally { Release(range); }
+                finally
+                {
+                    Release(sourceParagraphRange);
+                    Release(sourceParagraph);
+                    Release(sourceParagraphs);
+                    Release(range);
+                }
             }
 
             TraceStage("inventory");
@@ -1440,6 +1470,11 @@ internal static class WordEquationNumbering
                         range,
                         entry.FormulaId);
                     TraceStage("trim");
+                    RemoveEmptyOriginalFormulaParagraphBeforeMigratedTable(
+                        document,
+                        table,
+                        entry.SourceParagraphStart);
+                    TraceStage("remove-source-paragraph");
                     built++;
                 }
                 finally
@@ -1594,8 +1629,30 @@ internal static class WordEquationNumbering
             // six-formula document visibly block Word for one or two seconds.
             // Only insert/copy/numbering-structure changes need an order refresh.
             var currentVisibleNumberRefreshed = false;
-            if (!rebuiltStableNumberingSlot
-                && (numberingOrderMayHaveChanged || !hadCompleteOwnedArtifacts))
+            if (rebuiltStableNumberingSlot)
+            {
+                // OLE -> OMML keeps the existing 1x3 table but deliberately removes
+                // this formula's old VTEq/VTEqCap/VTEqNum artifacts before rebuilding
+                // them. CreateNativeCaption therefore starts from a bare SEQ field.
+                // The formula has not moved, but its *format* still has to be applied:
+                // otherwise a document using chapter/section numbering silently falls
+                // back to a continuous number after conversion. Re-plan the existing
+                // captions against the document's current format and patch only the
+                // formulas whose rendered number actually changes.
+                var stableSlotChangedNumbers =
+                    UpdateNativeEquationSequenceFieldsIncremental(document);
+                TraceStage("stable-slot-format-refresh");
+                if (stableSlotChangedNumbers.Count > 0)
+                {
+                    UpdateHealthyNativeCrossReferencesAfterRenumbering(
+                        document,
+                        stableSlotChangedNumbers);
+                    currentVisibleNumberRefreshed =
+                        stableSlotChangedNumbers.ContainsKey(metadata.FormulaId);
+                    TraceStage("stable-slot-references");
+                }
+            }
+            else if (numberingOrderMayHaveChanged || !hadCompleteOwnedArtifacts)
             {
                 if (TryUpdateAppendedNativeEquationSequenceField(
                         document,
@@ -3427,6 +3484,89 @@ internal static class WordEquationNumbering
             Release(shapes);
             Release(originalFormulaRange);
             Release(bookmark);
+        }
+    }
+
+    private static void RemoveEmptyOriginalFormulaParagraphBeforeMigratedTable(
+        Document document,
+        Table migratedTable,
+        int originalParagraphStart)
+    {
+        Range? content = null;
+        Range? tableRange = null;
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Tables? tables = null;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        Frames? frames = null;
+        try
+        {
+            content = document.Content;
+            tableRange = migratedTable.Range;
+            if (originalParagraphStart < content.Start
+                || originalParagraphStart >= content.End
+                || originalParagraphStart >= tableRange.Start)
+                return;
+
+            probe = document.Range(
+                originalParagraphStart,
+                Math.Min(content.End, originalParagraphStart + 1));
+            if ((bool)probe.get_Information(WdInformation.wdWithInTable)) return;
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+
+            // The only paragraph eligible for removal is the source formula's own
+            // now-empty body paragraph immediately before the newly migrated 1x3
+            // equation table. This is deliberately stricter than generic blank-line
+            // cleanup so a user-authored empty paragraph is never consumed.
+            if (paragraphRange.Start != originalParagraphStart
+                || paragraphRange.End != tableRange.Start
+                || !IsNumberingParagraphAdornment(paragraphRange.Text))
+                return;
+
+            tables = paragraphRange.Tables;
+            shapes = paragraphRange.InlineShapes;
+            maths = paragraphRange.OMaths;
+            fields = paragraphRange.Fields;
+            bookmarks = paragraphRange.Bookmarks;
+            frames = paragraphRange.Frames;
+            if (tables.Count != 0
+                || shapes.Count != 0
+                || maths.Count != 0
+                || fields.Count != 0
+                || bookmarks.Count != 0
+                || frames.Count != 0)
+                return;
+
+            paragraphRange.Delete();
+        }
+        catch
+        {
+            // Cosmetic structural cleanup must not turn an otherwise valid formula
+            // conversion into data loss. If Word refuses the exact safe deletion,
+            // retain the paragraph and let higher-level reconciliation proceed.
+        }
+        finally
+        {
+            Release(frames);
+            Release(bookmarks);
+            Release(fields);
+            Release(maths);
+            Release(shapes);
+            Release(tables);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+            Release(tableRange);
+            Release(content);
         }
     }
 
