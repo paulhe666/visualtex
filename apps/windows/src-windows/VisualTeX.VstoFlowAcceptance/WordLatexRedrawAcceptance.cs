@@ -159,6 +159,18 @@ internal static partial class Program
             expectedFileName: oleFileName);
         AssertSavedInlineOleTypingAnchor(
             Path.Combine(artifactRoot, oleFileName));
+        RunWordLatexRedrawScenario(
+            artifactRoot,
+            objectMode: FormulaOleContract.MathTypeOleMode,
+            wholeDocument: false,
+            expectedFileName: "VisualTeX-Word-Latex-Redraw-MathType-Selection.docx",
+            verifyResizeBaseline: false);
+        RunWordLatexRedrawScenario(
+            artifactRoot,
+            objectMode: FormulaOleContract.MathTypeOleMode,
+            wholeDocument: true,
+            expectedFileName: "VisualTeX-Word-Latex-Redraw-MathType-Document.docx",
+            verifyResizeBaseline: false);
     }
 
     private static void RunWordLatexRedrawOmmlOnly(
@@ -175,6 +187,175 @@ internal static partial class Program
             wholeDocument: false,
             expectedFileName: "VisualTeX-Word-Latex-Redraw-OMML-Only.docx");
     }
+
+    private static void RunWordLatexRedrawMathTypeOnly(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Console.WriteLine("[Word LaTeX redraw MathType] Prewarming reusable hidden converter...");
+        client.PrewarmConverterAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Thread.Sleep(700);
+        WinForms.Application.DoEvents();
+        RunWordLatexRedrawScenario(
+            artifactRoot,
+            objectMode: FormulaOleContract.MathTypeOleMode,
+            wholeDocument: false,
+            expectedFileName: "VisualTeX-Word-Latex-Redraw-MathType-Selection.docx",
+            verifyResizeBaseline: false);
+        RunWordLatexRedrawScenario(
+            artifactRoot,
+            objectMode: FormulaOleContract.MathTypeOleMode,
+            wholeDocument: true,
+            expectedFileName: "VisualTeX-Word-Latex-Redraw-MathType-Document.docx",
+            verifyResizeBaseline: false);
+        RunWordMathTypeToLatexRibbonAcceptance(artifactRoot);
+    }
+
+    private static void RunWordMathTypeToLatexRibbonAcceptance(string artifactRoot)
+    {
+        var sourcePath = Path.Combine(
+            artifactRoot,
+            "VisualTeX-Word-Latex-Redraw-MathType-Selection.docx");
+        var outputPath = Path.Combine(
+            artifactRoot,
+            "VisualTeX-Word-MathType-To-Latex-Ribbon.docx");
+        var logPath = Path.Combine(
+            artifactRoot,
+            "word-mathtype-to-latex-ribbon.log");
+        TryDeleteAcceptanceFile(outputPath);
+        TryDeleteAcceptanceFile(logPath);
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+            logPath);
+        try
+        {
+            List<(string Latex, string DisplayMode)> expected;
+            using (var host = new WordPerformanceHost(sourcePath))
+            {
+                expected = CaptureMathTypeLatexExpectations(host.Document);
+                AssertEqual(4, expected.Count,
+                    "MathType-to-LaTeX Ribbon fixture did not contain four MathType formulas.");
+
+                Word.InlineShapes? shapes = null;
+                Word.InlineShape? first = null;
+                Word.Range? firstRange = null;
+                try
+                {
+                    shapes = host.Document.InlineShapes;
+                    for (var index = 1; index <= shapes.Count; index++)
+                    {
+                        Release(first);
+                        first = shapes[index];
+                        if (!MathTypeOleInterop.IsMathTypeOle(first)) continue;
+                        firstRange = first.Range;
+                        host.Application.Selection.SetRange(firstRange.Start, firstRange.End);
+                        break;
+                    }
+                    if (firstRange is null)
+                        throw new InvalidDataException(
+                            "MathType-to-LaTeX Ribbon fixture has no selectable MathType formula.");
+                }
+                finally
+                {
+                    Release(firstRange);
+                    Release(first);
+                    Release(shapes);
+                }
+
+                host.AddIn.OnRedrawSelectionMathTypeToLatex(new object());
+                WaitForFormulaToLatex(logPath, expectedCompletions: 1);
+                WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(20));
+                AssertEqual(3, CountMathTypeOleFormulas(host.Document),
+                    "Selection MathType-to-LaTeX did not convert exactly one formula.");
+                AssertDocumentContains(
+                    host.Document,
+                    BuildExpectedMathTypeLatexSource(expected[0]));
+
+                CollapseSelectionAtDocumentStart(host);
+                host.AddIn.OnRedrawDocumentMathTypeToLatex(new object());
+                WaitForFormulaToLatex(logPath, expectedCompletions: 2);
+                WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
+                AssertEqual(0, CountMathTypeOleFormulas(host.Document),
+                    "Document MathType-to-LaTeX left MathType formulas behind.");
+                foreach (var item in expected)
+                    AssertDocumentContains(
+                        host.Document,
+                        BuildExpectedMathTypeLatexSource(item));
+                host.Save(outputPath);
+            }
+
+            using (var reopened = new WordPerformanceHost(outputPath))
+            {
+                AssertEqual(0, CountMathTypeOleFormulas(reopened.Document),
+                    "Reopened MathType-to-LaTeX document restored MathType objects unexpectedly.");
+                foreach (var item in expected)
+                    AssertDocumentContains(
+                        reopened.Document,
+                        BuildExpectedMathTypeLatexSource(item));
+            }
+            Console.WriteLine(
+                "[Word MathType→LaTeX] Selection and document Ribbon conversions passed with save/reopen persistence.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+                null);
+        }
+    }
+
+    private static List<(string Latex, string DisplayMode)> CaptureMathTypeLatexExpectations(
+        Word.Document document)
+    {
+        var result = new List<(string Latex, string DisplayMode)>();
+        Word.InlineShapes? shapes = null;
+        try
+        {
+            shapes = document.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Word.InlineShape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    if (!MathTypeOleInterop.IsMathTypeOle(shape)) continue;
+                    var metadata = MathTypeOleInterop.ReadMetadata(document.Application, shape);
+                    result.Add((metadata.Latex, metadata.DisplayMode));
+                }
+                finally { Release(shape); }
+            }
+            return result;
+        }
+        finally { Release(shapes); }
+    }
+
+    private static int CountMathTypeOleFormulas(Word.Document document)
+    {
+        var count = 0;
+        Word.InlineShapes? shapes = null;
+        try
+        {
+            shapes = document.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Word.InlineShape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    if (MathTypeOleInterop.IsMathTypeOle(shape)) count++;
+                }
+                finally { Release(shape); }
+            }
+            return count;
+        }
+        finally { Release(shapes); }
+    }
+
+    private static string BuildExpectedMathTypeLatexSource(
+        (string Latex, string DisplayMode) formula) =>
+        string.Equals(formula.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+            ? "$$" + formula.Latex + "$$"
+            : "$" + formula.Latex + "$";
 
     private static void RunWordInlineOleTypingBaseline(
         VisualTeXSessionClient client,
@@ -1622,7 +1803,11 @@ internal static partial class Program
         string expectedFileName,
         bool verifyResizeBaseline = true)
     {
-        var modeName = objectMode == FormulaOleContract.NativeOleMode ? "OLE" : "OMML";
+        var modeName = objectMode == FormulaOleContract.NativeOleMode
+            ? "OLE"
+            : objectMode == FormulaOleContract.MathTypeOleMode
+                ? "MathType"
+                : "OMML";
         var logPath = Path.Combine(
             artifactRoot,
             $"word-latex-redraw-{modeName.ToLowerInvariant()}.log");
@@ -1642,6 +1827,8 @@ internal static partial class Program
                     host.Application.Selection.SetRange(content.Start, content.Start);
                     if (objectMode == FormulaOleContract.NativeOleMode)
                         host.AddIn.OnRedrawDocumentToOle(new object());
+                    else if (objectMode == FormulaOleContract.MathTypeOleMode)
+                        host.AddIn.OnRedrawDocumentToMathType(new object());
                     else
                         host.AddIn.OnRedrawDocumentToOmml(new object());
                 }
@@ -1650,6 +1837,8 @@ internal static partial class Program
                     host.Application.Selection.SetRange(content.Start, content.End - 1);
                     if (objectMode == FormulaOleContract.NativeOleMode)
                         host.AddIn.OnRedrawSelectionToOle(new object());
+                    else if (objectMode == FormulaOleContract.MathTypeOleMode)
+                        host.AddIn.OnRedrawSelectionToMathType(new object());
                     else
                         host.AddIn.OnRedrawSelectionToOmml(new object());
                 }
@@ -1818,6 +2007,68 @@ internal static partial class Program
                 {
                     Release(displayRange);
                     Release(displayMath);
+                }
+            }
+            else if (objectMode == FormulaOleContract.MathTypeOleMode)
+            {
+                shapes = document.InlineShapes;
+                var mathType = new List<(Word.InlineShape Shape, FormulaMetadata Metadata)>();
+                for (var index = 1; index <= shapes.Count; index++)
+                {
+                    Word.InlineShape? shape = null;
+                    try
+                    {
+                        shape = shapes[index];
+                        if (!MathTypeOleInterop.IsMathTypeOle(shape)) continue;
+                        var metadata = MathTypeOleInterop.ReadMetadata(document.Application, shape);
+                        mathType.Add((shape, metadata));
+                        shape = null;
+                    }
+                    finally { Release(shape); }
+                }
+                try
+                {
+                    if (mathType.Count != 4)
+                        throw new InvalidDataException(
+                            $"MathType redraw created {mathType.Count} Equation.DSMT4 objects instead of 4.");
+                    AssertEqual(0, document.OMaths.Count,
+                        "MathType redraw unexpectedly left Word OMML equations behind.");
+                    var normalizedLatex = mathType
+                        .Select(item => (item.Metadata.Latex ?? string.Empty)
+                            .Replace(" ", string.Empty)
+                            .Replace("{", string.Empty)
+                            .Replace("}", string.Empty))
+                        .ToArray();
+                    AssertTrue(normalizedLatex.Any(value =>
+                            value.IndexOf("UVI>2", StringComparison.Ordinal) >= 0),
+                        "MathType redraw did not preserve the UVI>2 inline formula.");
+                    AssertTrue(normalizedLatex.Any(value =>
+                            value.IndexOf("E=mc^2", StringComparison.Ordinal) >= 0),
+                        "MathType redraw did not preserve the E=mc^2 display formula.");
+                    var display = mathType.FirstOrDefault(item =>
+                        string.Equals(item.Metadata.DisplayMode, "block", StringComparison.Ordinal)
+                        && (item.Metadata.Latex ?? string.Empty)
+                            .Replace(" ", string.Empty)
+                            .Replace("{", string.Empty)
+                            .Replace("}", string.Empty)
+                            .IndexOf("E=mc^2", StringComparison.Ordinal) >= 0);
+                    if (display.Shape is null)
+                        throw new InvalidDataException(
+                            "MathType redraw could not resolve the E=mc^2 display equation.");
+                    Word.Range? displayRange = null;
+                    try
+                    {
+                        displayRange = display.Shape.Range;
+                        AssertDisplayFormulaFollowedImmediatelyByText(
+                            document,
+                            displayRange,
+                            "AFTER_DISPLAY_BODY");
+                    }
+                    finally { Release(displayRange); }
+                }
+                finally
+                {
+                    foreach (var item in mathType) Release(item.Shape);
                 }
             }
             else

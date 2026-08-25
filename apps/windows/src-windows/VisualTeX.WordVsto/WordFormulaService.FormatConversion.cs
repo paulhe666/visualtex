@@ -778,6 +778,13 @@ internal sealed partial class WordFormulaService
                 WordDoubleClickHook.TraceMessage(
                     $"format-conversion-reference-aliases-captured sourceMode={plan.SourceMode} formulaId={target.SourceFormulaId} aliases={string.Join(",", aliases.Select(alias => alias.Name))}");
             }
+            var capturedReferenceFormatting =
+                MathTypeEquationReferences.CaptureReferenceCharacterFormatting(
+                    document,
+                    referenceAliasesByTargetId.Values
+                        .SelectMany(items => items)
+                        .Select(alias => alias.Name)
+                        .Distinct(StringComparer.OrdinalIgnoreCase));
             if (targetIsOmml && plan.Targets.Count > 0)
             {
                 var ommlFormulas = plan.Targets.Select(target =>
@@ -1462,8 +1469,16 @@ internal sealed partial class WordFormulaService
                     var refreshedReferences = MathTypeEquationReferences.RefreshReferences(
                         document,
                         restoredAliases);
+                    var expectedFormattingCount = capturedReferenceFormatting.Values.Sum(items => items.Count);
+                    var restoredFormattingCount =
+                        MathTypeEquationReferences.RestoreReferenceCharacterFormatting(
+                            document,
+                            capturedReferenceFormatting);
+                    if (restoredFormattingCount != expectedFormattingCount)
+                        throw new InvalidDataException(
+                            $"Restored {restoredFormattingCount}/{expectedFormattingCount} equation-reference formatting snapshots.");
                     WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-reference-aliases-restored sourceMode={plan.SourceMode} targetMode={plan.TargetMode} aliases={restoredAliases.Count} refreshedReferences={refreshedReferences}");
+                        $"format-conversion-reference-aliases-restored sourceMode={plan.SourceMode} targetMode={plan.TargetMode} aliases={restoredAliases.Count} refreshedReferences={refreshedReferences} restoredFormatting={restoredFormattingCount}");
                 }
                 catch (Exception referenceAliasError)
                 {

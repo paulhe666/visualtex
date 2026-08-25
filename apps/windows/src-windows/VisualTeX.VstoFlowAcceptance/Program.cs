@@ -806,6 +806,10 @@ internal static partial class Program
             {
                 RunWordLatexRedrawOmmlOnly(client, artifactRoot);
             }
+            else if (string.Equals(mode, "word-latex-redraw-mathtype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawMathTypeOnly(client, artifactRoot);
+            }
             else if (string.Equals(mode, "word-latex-redraw-distinct-formulas", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordLatexRedrawDistinctFormulas(artifactRoot);

@@ -1006,6 +1006,9 @@ internal static partial class Program
             var referenceTextBefore = ReadMathTypeReferenceResultForAcceptance(document, referenceAlias);
             AssertTrue(!string.IsNullOrWhiteSpace(referenceTextBefore),
                 "Consecutive numbered MathType→OMML setup created an empty MathType reference result.");
+            var referenceBoldBefore = ReadMathTypeReferenceBoldForAcceptance(document, referenceAlias);
+            AssertEqual(0, referenceBoldBefore,
+                "Consecutive numbered MathType→OMML setup unexpectedly created a bold MathType reference.");
 
             var plan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
@@ -1122,6 +1125,7 @@ internal static partial class Program
                 document,
                 referenceAlias,
                 referenceTextBefore,
+                referenceBoldBefore,
                 visualTeXReferenceAlias,
                 visualTeXReferenceTextBefore,
                 "OMML→MathType live conversion");
@@ -1142,6 +1146,7 @@ internal static partial class Program
                 document,
                 referenceAlias,
                 referenceTextBefore,
+                referenceBoldBefore,
                 visualTeXReferenceAlias,
                 visualTeXReferenceTextBefore,
                 "OMML→MathType save/reopen");
@@ -1398,6 +1403,44 @@ internal static partial class Program
         }
     }
 
+    private static int ReadMathTypeReferenceBoldForAcceptance(
+        Word.Document document,
+        string alias)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? result = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty).TrimStart();
+                if (!text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                result = field.Result;
+                font = result.Font;
+                return font.Bold;
+            }
+            throw new InvalidDataException($"Could not find REF {alias} for bold-format acceptance.");
+        }
+        finally
+        {
+            Release(font);
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
     private static void AssertConvertedMathTypeReferenceAlias(
         Word.Application application,
         Word.Document document,
@@ -1517,6 +1560,7 @@ internal static partial class Program
         Word.Document document,
         string mathTypeAlias,
         string expectedMathTypeText,
+        int expectedMathTypeBold,
         string visualTeXAlias,
         string expectedVisualTeXText,
         string stage)
@@ -1565,11 +1609,12 @@ internal static partial class Program
                     .TrimStart();
                 if (text.StartsWith("REF " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
                 {
-                    field.Update();
                     Release(result);
                     result = field.Result;
                     AssertEqual(expectedMathTypeText.Trim(), (result.Text ?? string.Empty).Trim(),
                         $"{stage} changed the MathType reference result.");
+                    AssertEqual(expectedMathTypeBold, result.Font.Bold,
+                        $"{stage} changed the MathType reference bold formatting.");
                     mathTypeRefFound = true;
                 }
                 if (text.StartsWith("REF " + visualTeXAlias, StringComparison.OrdinalIgnoreCase))

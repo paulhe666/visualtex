@@ -130,6 +130,18 @@ public interface IWordRibbonCallbacks
     [DispId(38)]
     void OnConvertMathTypeToOmmlDocument(object control);
 
+    [DispId(39)]
+    void OnRedrawSelectionToMathType(object control);
+
+    [DispId(40)]
+    void OnRedrawDocumentToMathType(object control);
+
+    [DispId(41)]
+    void OnRedrawSelectionMathTypeToLatex(object control);
+
+    [DispId(42)]
+    void OnRedrawDocumentMathTypeToLatex(object control);
+
 }
 
 [ComVisible(true)]
@@ -202,19 +214,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.RedrawGroup" label="LaTeX 重绘">
-          <menu id="VisualTeX.WordVsto.RedrawSelection" label="重绘所选" size="large" screentip="重绘所选公式或 LaTeX 代码" supertip="可将所选 LaTeX 代码原位重绘为公式，也可将所选 VisualTeX OLE 或 OMML 公式恢复为 LaTeX 代码。" tag="batchImport" getImage="GetRibbonImage">
+          <menu id="VisualTeX.WordVsto.RedrawSelection" label="重绘所选" size="large" screentip="重绘所选公式或 LaTeX 代码" supertip="可将所选 LaTeX 代码原位重绘为 VisualTeX OLE、Word OMML 或 MathType，也可将这三种公式恢复为 LaTeX 代码。" tag="batchImport" getImage="GetRibbonImage">
             <button id="VisualTeX.WordVsto.RedrawSelectionOmml" label="LaTeX 重绘为 Word OMML" screentip="原位替换为 Word 原生公式" onAction="OnRedrawSelectionToOmml" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionOle" label="LaTeX 重绘为 VisualTeX OLE" screentip="原位替换为可双击编辑的 OLE" onAction="OnRedrawSelectionToOle" />
+            <button id="VisualTeX.WordVsto.RedrawSelectionOle" label="LaTeX 重绘为 VisualTeX OLE" screentip="原位替换为可双击编辑的 VisualTeX OLE" onAction="OnRedrawSelectionToOle" />
+            <button id="VisualTeX.WordVsto.RedrawSelectionMathType" label="LaTeX 重绘为 MathType" screentip="原位替换为 MathType Equation.DSMT4 公式" onAction="OnRedrawSelectionToMathType" />
             <menuSeparator id="VisualTeX.WordVsto.RedrawSelectionSeparator" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionOleToLatex" label="所选 OLE 公式转为 LaTeX 代码" screentip="恢复所选 VisualTeX OLE 的 LaTeX 源码" onAction="OnRedrawSelectionOleToLatex" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionOmmlToLatex" label="所选 OMML 公式转为 LaTeX 代码" screentip="恢复所选 VisualTeX OMML 的 LaTeX 源码" onAction="OnRedrawSelectionOmmlToLatex" />
+            <button id="VisualTeX.WordVsto.RedrawSelectionOleToLatex" label="所选 VisualTeX OLE 转为 LaTeX 代码" screentip="恢复所选 VisualTeX OLE 的 LaTeX 源码" onAction="OnRedrawSelectionOleToLatex" />
+            <button id="VisualTeX.WordVsto.RedrawSelectionOmmlToLatex" label="所选 OMML 公式转为 LaTeX 代码" screentip="恢复所选 Word OMML 的 LaTeX 源码" onAction="OnRedrawSelectionOmmlToLatex" />
+            <button id="VisualTeX.WordVsto.RedrawSelectionMathTypeToLatex" label="所选 MathType 公式转为 LaTeX 代码" screentip="直接读取 MathType Equation Native 并恢复为 LaTeX 源码" onAction="OnRedrawSelectionMathTypeToLatex" />
           </menu>
-          <menu id="VisualTeX.WordVsto.RedrawDocument" label="重绘全文" size="large" screentip="重绘全文公式或 LaTeX 代码" supertip="可将全文 LaTeX 代码原位重绘为公式，也可将全文 VisualTeX OLE 或 OMML 公式恢复为 LaTeX 代码；开始前会再次确认。" imageMso="RefreshAll">
+          <menu id="VisualTeX.WordVsto.RedrawDocument" label="重绘全文" size="large" screentip="重绘全文公式或 LaTeX 代码" supertip="可将全文 LaTeX 代码原位重绘为 VisualTeX OLE、Word OMML 或 MathType，也可将全文这三种公式恢复为 LaTeX 代码；开始前会再次确认。" imageMso="RefreshAll">
             <button id="VisualTeX.WordVsto.RedrawDocumentOmml" label="全文 LaTeX 重绘为 Word OMML" onAction="OnRedrawDocumentToOmml" />
             <button id="VisualTeX.WordVsto.RedrawDocumentOle" label="全文 LaTeX 重绘为 VisualTeX OLE" onAction="OnRedrawDocumentToOle" />
+            <button id="VisualTeX.WordVsto.RedrawDocumentMathType" label="全文 LaTeX 重绘为 MathType" onAction="OnRedrawDocumentToMathType" />
             <menuSeparator id="VisualTeX.WordVsto.RedrawDocumentSeparator" />
-            <button id="VisualTeX.WordVsto.RedrawDocumentOleToLatex" label="全文 OLE 公式转为 LaTeX 代码" onAction="OnRedrawDocumentOleToLatex" />
+            <button id="VisualTeX.WordVsto.RedrawDocumentOleToLatex" label="全文 VisualTeX OLE 转为 LaTeX 代码" onAction="OnRedrawDocumentOleToLatex" />
             <button id="VisualTeX.WordVsto.RedrawDocumentOmmlToLatex" label="全文 OMML 公式转为 LaTeX 代码" onAction="OnRedrawDocumentOmmlToLatex" />
+            <button id="VisualTeX.WordVsto.RedrawDocumentMathTypeToLatex" label="全文 MathType 公式转为 LaTeX 代码" onAction="OnRedrawDocumentMathTypeToLatex" />
           </menu>
         </group>
         <group id="VisualTeX.WordVsto.FontSizeGroup" label="公式字号">
@@ -456,6 +472,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _ = RedrawLatexAsync(wholeDocument: true, FormulaOleContract.WordOmmlMode);
     public void OnRedrawDocumentToOle(object control) =>
         _ = RedrawLatexAsync(wholeDocument: true, FormulaOleContract.NativeOleMode);
+    public void OnRedrawSelectionToMathType(object control) =>
+        _ = RedrawLatexAsync(wholeDocument: false, FormulaOleContract.MathTypeOleMode);
+    public void OnRedrawDocumentToMathType(object control) =>
+        _ = RedrawLatexAsync(wholeDocument: true, FormulaOleContract.MathTypeOleMode);
     public void OnRedrawSelectionOleToLatex(object control) =>
         _ = ConvertFormulaObjectsToLatexAsync(
             wholeDocument: false,
@@ -472,6 +492,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _ = ConvertFormulaObjectsToLatexAsync(
             wholeDocument: true,
             FormulaOleContract.WordOmmlMode);
+    public void OnRedrawSelectionMathTypeToLatex(object control) =>
+        _ = ConvertFormulaObjectsToLatexAsync(
+            wholeDocument: false,
+            FormulaOleContract.MathTypeOleMode);
+    public void OnRedrawDocumentMathTypeToLatex(object control) =>
+        _ = ConvertFormulaObjectsToLatexAsync(
+            wholeDocument: true,
+            FormulaOleContract.MathTypeOleMode);
     public void OnExportSelectedAsPicture(object control) => _ = ExportSelectedAsPictureAsync();
     public void OnDeleteSelected(object control) => _ = DeleteSelectedAsync();
     public void OnInsertEquationReference(object control) => _ = InsertEquationReferenceAsync();
@@ -1533,7 +1561,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 FormulaOleContract.NativeOleMode,
                 StringComparison.Ordinal)
                 ? "VisualTeX OLE"
-                : "Word OMML";
+                : string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                    ? "MathType"
+                    : "Word OMML";
             if (wholeDocument
                 && !string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
@@ -1844,8 +1877,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             objectMode,
             FormulaOleContract.NativeOleMode,
             StringComparison.Ordinal)
-            ? "OLE"
-            : "OMML";
+            ? "VisualTeX OLE"
+            : string.Equals(
+                objectMode,
+                FormulaOleContract.MathTypeOleMode,
+                StringComparison.Ordinal)
+                ? "MathType"
+                : "Word OMML";
         try
         {
             var count = await dispatcher.InvokeAsync(
@@ -1856,8 +1894,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (count == 0)
                 throw new InvalidDataException(
                     wholeDocument
-                        ? $"当前 Word 文档中没有找到 VisualTeX {modeLabel} 公式。"
-                        : $"所选内容中没有找到 VisualTeX {modeLabel} 公式。");
+                        ? $"当前 Word 文档中没有找到 {modeLabel} 公式。"
+                        : $"所选内容中没有找到 {modeLabel} 公式。");
 
             if (wholeDocument
                 && !string.Equals(
@@ -1867,7 +1905,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
-                        $"将把当前文档中的 {count} 个 VisualTeX {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n"
+                        $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n"
                         + "另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
                         "VisualTeX 公式转为 LaTeX",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
@@ -1884,7 +1922,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WriteRedrawAcceptanceLog(
                 $"formula-to-latex-start scope={(wholeDocument ? "document" : "selection")} "
                 + $"mode={objectMode} formulas={count}");
-            SetStatus($"正在把 {count} 个 VisualTeX {modeLabel} 公式恢复为 LaTeX 代码…");
+            SetStatus($"正在把 {count} 个 {modeLabel} 公式恢复为 LaTeX 代码…");
             var result = await dispatcher.InvokeAsync(
                     () => service.ConvertFormulaObjectsToLatex(
                         wholeDocument,
@@ -1894,7 +1932,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 $"formula-to-latex-complete scope={(wholeDocument ? "document" : "selection")} "
                 + $"mode={objectMode} formulas={result.FormulaCount}");
             SetStatus(
-                $"公式转为 LaTeX 完成：{result.FormulaCount} 个 VisualTeX {modeLabel} 公式已恢复为源码。");
+                $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码。");
         }
         catch (OperationCanceledException error)
         {

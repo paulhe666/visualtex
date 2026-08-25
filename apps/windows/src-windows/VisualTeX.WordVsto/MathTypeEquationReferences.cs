@@ -29,6 +29,15 @@ internal sealed class EquationReferenceBookmarkAlias
 
 internal static class MathTypeEquationReferences
 {
+    internal sealed class ReferenceCharacterFormatting
+    {
+        internal int? Bold { get; set; }
+        internal int? Italic { get; set; }
+        internal WdUnderline? Underline { get; set; }
+        internal WdColor? Color { get; set; }
+        internal float? Size { get; set; }
+    }
+
     private const string PlaceRefMarker = "MACROBUTTON MTPlaceRef";
     private const string EquationBookmarkPrefix = "ZEqnNum";
     private const string MathTypeSectionStyleName = "MTEquationSection";
@@ -771,6 +780,303 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    internal static IReadOnlyDictionary<string, IReadOnlyList<ReferenceCharacterFormatting>>
+        CaptureReferenceCharacterFormatting(
+            Document document,
+            IEnumerable<string> bookmarkAliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        var aliases = new HashSet<string>(
+            bookmarkAliases.Where(name => !string.IsNullOrWhiteSpace(name)),
+            StringComparer.OrdinalIgnoreCase);
+        if (aliases.Count == 0)
+            return new Dictionary<string, IReadOnlyList<ReferenceCharacterFormatting>>(
+                StringComparer.OrdinalIgnoreCase);
+
+        var captured = aliases.ToDictionary(
+            alias => alias,
+            _ => new List<(int Start, ReferenceCharacterFormatting Formatting)>(),
+            StringComparer.OrdinalIgnoreCase);
+        var bookmarkRanges = new Dictionary<string, (int Start, int End)>(
+            StringComparer.OrdinalIgnoreCase);
+        var sourceOwnerRanges = new Dictionary<string, (int Start, int End)>(
+            StringComparer.OrdinalIgnoreCase);
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var alias in aliases)
+            {
+                if (bookmarks.Exists(alias))
+                {
+                    Release(bookmarkRange);
+                    bookmarkRange = null;
+                    Release(bookmark);
+                    bookmark = bookmarks[alias];
+                    bookmarkRange = bookmark.Range;
+                    bookmarkRanges[alias] = (bookmarkRange.Start, bookmarkRange.End);
+                }
+
+                const string nativeNumberPrefix = "VTEqNum_";
+                if (!alias.StartsWith(nativeNumberPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var rawFormulaId = alias.Substring(nativeNumberPrefix.Length);
+                if (!Guid.TryParseExact(rawFormulaId, "N", out var formulaGuid))
+                    continue;
+                Table? ownerTable = null;
+                Range? ownerTableRange = null;
+                try
+                {
+                    ownerTable = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        formulaGuid.ToString("D"));
+                    if (ownerTable is null) continue;
+                    ownerTableRange = ownerTable.Range;
+                    sourceOwnerRanges[alias] = (ownerTableRange.Start, ownerTableRange.End);
+                }
+                finally
+                {
+                    Release(ownerTableRange);
+                    Release(ownerTable);
+                }
+            }
+
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty).TrimStart();
+                if (!text.StartsWith("REF ", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var alias = aliases.FirstOrDefault(name =>
+                    text.StartsWith("REF " + name, StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(alias)) continue;
+                if (sourceOwnerRanges.TryGetValue(alias, out var ownerRange)
+                    && code.Start >= ownerRange.Start
+                    && code.Start < ownerRange.End)
+                    continue;
+                result = field.Result;
+                if (bookmarkRanges.TryGetValue(alias, out var bookmarkTarget)
+                    && result.Start < bookmarkTarget.End
+                    && result.End > bookmarkTarget.Start)
+                    continue;
+                captured[alias].Add((
+                    code.Start,
+                    CaptureReferenceCharacterFormatting(result)));
+            }
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+
+        return captured.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<ReferenceCharacterFormatting>)entry.Value
+                .OrderBy(item => item.Start)
+                .Select(item => item.Formatting)
+                .ToArray(),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static int RestoreReferenceCharacterFormatting(
+        Document document,
+        IReadOnlyDictionary<string, IReadOnlyList<ReferenceCharacterFormatting>> captured)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (captured is null || captured.Count == 0) return 0;
+
+        var live = captured.Keys.ToDictionary(
+            alias => alias,
+            _ => new List<(int Start, Field Field)>(),
+            StringComparer.OrdinalIgnoreCase);
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty).TrimStart();
+                if (!text.StartsWith("REF ", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var alias = captured.Keys.FirstOrDefault(name =>
+                    text.StartsWith("REF " + name, StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(alias)) continue;
+                live[alias].Add((code.Start, field));
+                field = null;
+            }
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+
+        var restored = 0;
+        try
+        {
+            foreach (var entry in captured)
+            {
+                var liveFields = live[entry.Key]
+                    .OrderBy(item => item.Start)
+                    .ToArray();
+                var count = Math.Min(entry.Value.Count, liveFields.Length);
+                for (var index = 0; index < count; index++)
+                {
+                    Range? result = null;
+                    try
+                    {
+                        result = liveFields[index].Field.Result;
+                        ApplyReferenceCharacterFormatting(result, entry.Value[index]);
+                        restored++;
+                    }
+                    finally { Release(result); }
+                }
+            }
+            return restored;
+        }
+        finally
+        {
+            foreach (var entries in live.Values)
+            foreach (var item in entries)
+                Release(item.Field);
+        }
+    }
+
+    internal static int FreezeReferencesToPlainText(
+        Document document,
+        IReadOnlyCollection<string> bookmarkAliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (bookmarkAliases is null || bookmarkAliases.Count == 0) return 0;
+
+        var aliases = new HashSet<string>(
+            bookmarkAliases.Where(name => !string.IsNullOrWhiteSpace(name)),
+            StringComparer.OrdinalIgnoreCase);
+        if (aliases.Count == 0) return 0;
+
+        var replacements = new List<(int Start, int End, string Text)>();
+        Fields? fields = null;
+        Field? outer = null;
+        Range? outerCode = null;
+        Range? outerResult = null;
+        Fields? nestedFields = null;
+        Field? nested = null;
+        Range? nestedCode = null;
+        Range? nestedResult = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(nestedResult);
+                nestedResult = null;
+                Release(nestedCode);
+                nestedCode = null;
+                Release(nested);
+                nested = null;
+                Release(nestedFields);
+                nestedFields = null;
+                Release(outerResult);
+                outerResult = null;
+                Release(outerCode);
+                outerCode = null;
+                Release(outer);
+                outer = fields[index];
+                outerCode = outer.Code;
+                var outerText = (outerCode.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ')
+                    .TrimStart();
+                if (!outerText.StartsWith("GOTOBUTTON ", StringComparison.OrdinalIgnoreCase)
+                    || !aliases.Any(alias =>
+                        outerText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                    continue;
+
+                nestedFields = outerCode.Fields;
+                for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                {
+                    Release(nestedResult);
+                    nestedResult = null;
+                    Release(nestedCode);
+                    nestedCode = null;
+                    Release(nested);
+                    nested = nestedFields[nestedIndex];
+                    nestedCode = nested.Code;
+                    var nestedText = nestedCode.Text ?? string.Empty;
+                    if (!nestedText.TrimStart().StartsWith("REF ", StringComparison.OrdinalIgnoreCase)
+                        || !aliases.Any(alias =>
+                            nestedText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                        continue;
+                    nestedResult = nested.Result;
+                    outerResult = outer.Result;
+                    var fullStart = Math.Max(document.Content.Start, outerCode.Start - 1);
+                    var fullEnd = Math.Min(
+                        document.Content.End,
+                        Math.Max(fullStart, outerResult.End + 1));
+                    replacements.Add((
+                        fullStart,
+                        fullEnd,
+                        nestedResult.Text ?? string.Empty));
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            Release(nestedResult);
+            Release(nestedCode);
+            Release(nested);
+            Release(nestedFields);
+            Release(outerResult);
+            Release(outerCode);
+            Release(outer);
+            Release(fields);
+        }
+
+        var frozen = 0;
+        foreach (var replacement in replacements
+                     .OrderByDescending(item => item.Start))
+        {
+            Range? range = null;
+            try
+            {
+                range = document.Range(replacement.Start, replacement.End);
+                range.Text = replacement.Text;
+                frozen++;
+            }
+            finally { Release(range); }
+        }
+        return frozen;
+    }
+
     internal static int RefreshReferences(
         Document document,
         ISet<string> bookmarkAliases)
@@ -792,10 +1098,58 @@ internal static class MathTypeEquationReferences
         try
         {
             fields = document.Fields;
+
+            // document.Fields also exposes REF fields nested inside MathType's
+            // GOTOBUTTON code. Those nested fields must not be refreshed by the
+            // generic direct-REF pass: doing so destroys the user's visible
+            // character formatting before the MathType-specific pass can preserve
+            // it (for example a regular reference can become bold after update).
+            var nestedMathTypeRefStarts = new HashSet<int>();
+            for (var outerIndex = 1; outerIndex <= fields.Count; outerIndex++)
+            {
+                Field? candidateOuter = null;
+                Range? candidateOuterCode = null;
+                Fields? candidateNestedFields = null;
+                Field? candidateNested = null;
+                Range? candidateNestedCode = null;
+                try
+                {
+                    candidateOuter = fields[outerIndex];
+                    candidateOuterCode = candidateOuter.Code;
+                    var outerText = candidateOuterCode.Text ?? string.Empty;
+                    if (outerText.IndexOf("GOTOBUTTON ", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    candidateNestedFields = candidateOuterCode.Fields;
+                    for (var nestedIndex = 1; nestedIndex <= candidateNestedFields.Count; nestedIndex++)
+                    {
+                        Release(candidateNestedCode);
+                        candidateNestedCode = null;
+                        Release(candidateNested);
+                        candidateNested = candidateNestedFields[nestedIndex];
+                        candidateNestedCode = candidateNested.Code;
+                        var nestedText = candidateNestedCode.Text ?? string.Empty;
+                        if (!nestedText.TrimStart().StartsWith("REF ", StringComparison.OrdinalIgnoreCase)
+                            || !bookmarkAliases.Any(alias =>
+                                nestedText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                            continue;
+                        nestedMathTypeRefStarts.Add(candidateNestedCode.Start);
+                    }
+                }
+                finally
+                {
+                    Release(candidateNestedCode);
+                    Release(candidateNested);
+                    Release(candidateNestedFields);
+                    Release(candidateOuterCode);
+                    Release(candidateOuter);
+                }
+            }
+
             for (var fieldIndex = 1; fieldIndex <= fields.Count; fieldIndex++)
             {
                 Field? direct = null;
                 Range? directCode = null;
+                Range? directResult = null;
                 try
                 {
                     direct = fields[fieldIndex];
@@ -803,12 +1157,24 @@ internal static class MathTypeEquationReferences
                     var directText = directCode.Text ?? string.Empty;
                     if (!directText.TrimStart().StartsWith("REF ", StringComparison.OrdinalIgnoreCase)
                         || !bookmarkAliases.Any(alias =>
-                            directText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                            directText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
+                        || nestedMathTypeRefStarts.Contains(directCode.Start))
                         continue;
+                    directResult = direct.Result;
+                    var formatting = CaptureReferenceCharacterFormatting(directResult);
                     try { direct.Update(); updated++; } catch { }
+                    Release(directResult);
+                    directResult = null;
+                    try
+                    {
+                        directResult = direct.Result;
+                        ApplyReferenceCharacterFormatting(directResult, formatting);
+                    }
+                    catch { }
                 }
                 finally
                 {
+                    Release(directResult);
                     Release(directCode);
                     Release(direct);
                 }
@@ -853,9 +1219,11 @@ internal static class MathTypeEquationReferences
                         continue;
 
                     var preferredColor = WdColor.wdColorAutomatic;
+                    ReferenceCharacterFormatting? visibleFormatting = null;
                     try
                     {
                         nestedResult = nested.Result;
+                        visibleFormatting = CaptureReferenceCharacterFormatting(nestedResult);
                         resultFont = nestedResult.Font;
                         var current = resultFont.Color;
                         if (current == WdColor.wdColorAutomatic || (int)current >= 0)
@@ -880,6 +1248,7 @@ internal static class MathTypeEquationReferences
                     {
                         nestedResult = nested.Result;
                         NormalizeMathTypeInternalReferenceStyle(nestedResult);
+                        ApplyReferenceCharacterFormatting(nestedResult, visibleFormatting);
                         resultFont = nestedResult.Font;
                         resultFont.Color = preferredColor;
                     }
@@ -954,6 +1323,82 @@ internal static class MathTypeEquationReferences
             Release(field);
             Release(fields);
         }
+    }
+
+    private static ReferenceCharacterFormatting CaptureReferenceCharacterFormatting(Range range)
+    {
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = range.Font;
+            var formatting = new ReferenceCharacterFormatting();
+            try
+            {
+                var value = font.Bold;
+                if (value != (int)WdConstants.wdUndefined) formatting.Bold = value;
+            }
+            catch { }
+            try
+            {
+                var value = font.Italic;
+                if (value != (int)WdConstants.wdUndefined) formatting.Italic = value;
+            }
+            catch { }
+            try
+            {
+                var value = font.Underline;
+                if ((int)value != (int)WdConstants.wdUndefined) formatting.Underline = value;
+            }
+            catch { }
+            try
+            {
+                var value = font.Color;
+                if (value == WdColor.wdColorAutomatic || (int)value >= 0)
+                    formatting.Color = value;
+            }
+            catch { }
+            try
+            {
+                var value = font.Size;
+                if (value > 0 && value < 1000) formatting.Size = value;
+            }
+            catch { }
+            return formatting;
+        }
+        finally { Release(font); }
+    }
+
+    private static void ApplyReferenceCharacterFormatting(
+        Range range,
+        ReferenceCharacterFormatting? formatting)
+    {
+        if (formatting is null) return;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = range.Font;
+            if (formatting.Bold.HasValue)
+            {
+                try { font.Bold = formatting.Bold.Value; } catch { }
+            }
+            if (formatting.Italic.HasValue)
+            {
+                try { font.Italic = formatting.Italic.Value; } catch { }
+            }
+            if (formatting.Underline.HasValue)
+            {
+                try { font.Underline = formatting.Underline.Value; } catch { }
+            }
+            if (formatting.Color.HasValue)
+            {
+                try { font.Color = formatting.Color.Value; } catch { }
+            }
+            if (formatting.Size.HasValue)
+            {
+                try { font.Size = formatting.Size.Value; } catch { }
+            }
+        }
+        finally { Release(font); }
     }
 
     private static void NormalizeMathTypeInternalReferenceStyle(Range range)

@@ -379,6 +379,12 @@ internal static class MathTypeMtefCodec
                 if (primeSignature is not null) return primeSignature;
                 if (value.Length > 1 && value.All(char.IsLetter))
                     return CanonicalToken("mi", value, "normal");
+                // MathJax keeps the TeX definition operator := in one <mo>,
+                // while MathType 7 serializes the same visible operator as two
+                // adjacent operator records ':' and '='. Treat only this known
+                // split as equivalent; other multi-character operators remain
+                // strict so the MTEF round-trip gate still catches real changes.
+                if (value == ":=") return "o(:)o(=)";
                 return "o(" + NormalizeOperatorToken(value) + ")";
             }
             case "mtext":

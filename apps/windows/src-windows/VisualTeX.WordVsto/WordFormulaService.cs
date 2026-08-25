@@ -1875,8 +1875,16 @@ internal sealed partial class WordFormulaService
         var generatedMathMl = MathTypeOleStorage.ReadMathMl(compoundFile);
         var expectedSignature = MathTypeMtefCodec.SemanticSignature(mathMl);
         if (!MathTypeMathMlRoundTripMatches(expectedSignature, generatedMathMl))
+        {
+            var detail = string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                ? $" expected='{expectedSignature}' generated='{MathTypeMtefCodec.SemanticSignature(generatedMathMl)}' generatedMathMl='{generatedMathMl}'"
+                : string.Empty;
             throw new InvalidDataException(
-                $"VisualTeX generated invalid standalone MathType MTEF for '{metadata.Latex}'.");
+                $"VisualTeX generated invalid standalone MathType MTEF for '{metadata.Latex}'.{detail}");
+        }
 
         // The visible Word presentation must use MathType's own MTEF geometry.
         // Using the frontend/MathJax EMF here made otherwise-valid Equation Native
@@ -3734,6 +3742,7 @@ internal sealed partial class WordFormulaService
                          .OrderByDescending(item => item.SourceRange.Start))
             {
                 Range? preservedDisplayParagraphRange = null;
+                string? preservedFollowingParagraphText = null;
                 try
                 {
                     var targetRange = resolved.SourceRange;
@@ -3745,8 +3754,19 @@ internal sealed partial class WordFormulaService
                             $"渲染期间公式内容发生变化：{resolved.Target.Latex}");
 
                     if (resolved.Target.PreserveDisplayParagraphBoundary)
+                    {
                         preservedDisplayParagraphRange =
                             DuplicateContainingParagraphRange(targetRange);
+                        Range? followingParagraphRange = null;
+                        try
+                        {
+                            followingParagraphRange = DuplicateFollowingParagraphRange(
+                                document,
+                                preservedDisplayParagraphRange);
+                            preservedFollowingParagraphText = followingParagraphRange?.Text;
+                        }
+                        finally { Release(followingParagraphRange); }
+                    }
 
                     selection.SetRange(targetRange.Start, targetRange.End);
                     selection.Text = string.Empty;
@@ -3763,7 +3783,9 @@ internal sealed partial class WordFormulaService
                         preserveExistingDisplayParagraphBoundary:
                             resolved.Target.PreserveDisplayParagraphBoundary,
                         preservedDisplayParagraphRange:
-                            preservedDisplayParagraphRange);
+                            preservedDisplayParagraphRange,
+                        preservedFollowingParagraphText:
+                            preservedFollowingParagraphText);
                     stopwatch.Stop();
                     totalInsertMilliseconds += stopwatch.ElapsedMilliseconds;
                     maxInsertMilliseconds = Math.Max(
@@ -3861,8 +3883,13 @@ internal sealed partial class WordFormulaService
                     objectMode,
                     FormulaOleContract.NativeOleMode,
                     StringComparison.Ordinal)
-                    ? "OLE"
-                    : "OMML";
+                    ? "VisualTeX OLE"
+                    : string.Equals(
+                        objectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal)
+                        ? "MathType"
+                        : "Word OMML";
                 throw new InvalidDataException(
                     wholeDocument
                         ? $"当前 Word 文档中没有找到可转换的 {modeLabel} 公式。"
@@ -3946,11 +3973,15 @@ internal sealed partial class WordFormulaService
             && !string.Equals(
                 objectMode,
                 FormulaOleContract.WordOmmlMode,
+                StringComparison.Ordinal)
+            && !string.Equals(
+                objectMode,
+                FormulaOleContract.MathTypeOleMode,
                 StringComparison.Ordinal))
             throw new ArgumentOutOfRangeException(
                 nameof(objectMode),
                 objectMode,
-                "Only VisualTeX OLE and Word OMML formulas can be restored to LaTeX code.");
+                "Only VisualTeX OLE, Word OMML and MathType formulas can be restored to LaTeX code.");
 
         var targets = new List<FormulaToLatexTarget>();
         try
@@ -3984,6 +4015,57 @@ internal sealed partial class WordFormulaService
                             {
                                 Metadata = metadata,
                                 ObjectMode = FormulaOleContract.NativeOleMode,
+                                Start = formulaRange.Start,
+                                End = formulaRange.End,
+                                FormulaRange = formulaRange,
+                                OleShape = shape,
+                            });
+                            formulaRange = null;
+                            shape = null;
+                        }
+                        finally
+                        {
+                            Release(formulaRange);
+                            Release(shape);
+                        }
+                    }
+                }
+                finally { Release(shapes); }
+                return targets;
+            }
+
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                InlineShapes? shapes = null;
+                try
+                {
+                    shapes = document.InlineShapes;
+                    for (var index = 1; index <= shapes.Count; index++)
+                    {
+                        InlineShape? shape = null;
+                        Range? formulaRange = null;
+                        try
+                        {
+                            shape = shapes[index];
+                            if (!MathTypeOleInterop.IsMathTypeOle(shape)) continue;
+                            formulaRange = shape.Range;
+                            if (!FormulaRangeMatchesScope(
+                                    formulaRange,
+                                    scope,
+                                    wholeDocument))
+                                continue;
+                            var sourceMathMl = MathTypeOleStorage.ReadMathMl(shape);
+                            var metadata = MathTypeOleInterop.ReadMetadata(
+                                document.Application,
+                                shape,
+                                sourceMathMl);
+                            targets.Add(new FormulaToLatexTarget
+                            {
+                                Metadata = metadata,
+                                ObjectMode = FormulaOleContract.MathTypeOleMode,
                                 Start = formulaRange.Start,
                                 End = formulaRange.End,
                                 FormulaRange = formulaRange,
@@ -4122,7 +4204,7 @@ internal sealed partial class WordFormulaService
         return formulaStart >= scopeStart && formulaEnd <= scopeEnd;
     }
 
-    private static void ConvertFormulaTargetToLatex(
+    private void ConvertFormulaTargetToLatex(
         Document document,
         FormulaToLatexTarget target,
         ref bool documentMutationStarted,
@@ -4142,6 +4224,59 @@ internal sealed partial class WordFormulaService
         Range? inserted = null;
         try
         {
+            if (string.Equals(
+                    target.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                if (target.OleShape is null)
+                    throw new InvalidDataException(
+                        "MathType 公式转 LaTeX 时无法定位源 Equation.DSMT4 对象。");
+
+                documentMutationStarted = true;
+                var referenceAliases = metadata.Numbered
+                    ? MathTypeEquationReferences.CaptureReferenceBookmarkAliases(
+                        document,
+                        target.OleShape)
+                    : Array.Empty<string>();
+                if (!preserveCrossReferences && referenceAliases.Count > 0)
+                    MathTypeEquationReferences.FreezeReferencesToPlainText(
+                        document,
+                        referenceAliases);
+
+                Range? liveSourceRange = null;
+                try
+                {
+                    liveSourceRange = target.OleShape.Range;
+                    var formatTarget = new WordFormulaFormatConversionTarget
+                    {
+                        SourceFormulaId = metadata.FormulaId,
+                        SourceObjectId = $"{RangeReferencePrefix}{liveSourceRange.Start}:{liveSourceRange.End}",
+                        SourceStart = liveSourceRange.Start,
+                        Latex = metadata.Latex,
+                        DisplayMode = metadata.DisplayMode,
+                        Numbered = metadata.Numbered,
+                        FontSizePt = FormulaFontSize.Normalize(
+                            metadata.FontSizePt ?? FormulaFontSize.DefaultPt),
+                        Metadata = metadata,
+                    };
+                    var insertionStart = DeleteSimpleSourceHost(
+                        document,
+                        FormulaOleContract.MathTypeOleMode,
+                        formatTarget);
+                    ThrowIfFormulaToLatexFailureInjected(target);
+                    insertion = document.Range(insertionStart, insertionStart);
+                    insertion.Text = latexSource;
+                    inserted = document.Range(
+                        insertionStart,
+                        insertionStart + latexSource.Length);
+                    VerifyLatexSourceRange(inserted, latexSource, metadata.FormulaId);
+                    NormalizeLatexSourceRange(inserted, metadata);
+                    return;
+                }
+                finally { Release(liveSourceRange); }
+            }
+
             numberedTable = TryGetVisualTeXNumberedTable(
                 target.FormulaRange,
                 metadata);
@@ -6270,6 +6405,7 @@ internal sealed partial class WordFormulaService
         bool display,
         bool preserveExistingDisplayParagraphBoundary = false,
         Range? preservedDisplayParagraphRange = null,
+        string? preservedFollowingParagraphText = null,
         WordOmmlConverter.BatchSource? ommlBatchSource = null,
         ICollection<FormulaMetadata>? deferredOmmlMetadata = null,
         bool bulkImport = false)
@@ -6283,6 +6419,10 @@ internal sealed partial class WordFormulaService
             session.ObjectMode,
             FormulaOleContract.WordOmmlMode,
             StringComparison.Ordinal);
+        var mathTypeOle = string.Equals(
+            session.ObjectMode,
+            FormulaOleContract.MathTypeOleMode,
+            StringComparison.Ordinal);
         Range? insertion = null;
         Range? equationRange = null;
         string sourceFingerprint = string.Empty;
@@ -6290,6 +6430,36 @@ internal sealed partial class WordFormulaService
         InlineShape? shape = null;
         try
         {
+            if (mathTypeOle)
+            {
+                if (string.IsNullOrWhiteSpace(prepared.MathMl))
+                    throw new InvalidDataException(
+                        $"公式 {metadata.FormulaId} 没有可用于 MathType 的 MathML。" );
+                if (string.IsNullOrWhiteSpace(prepared.EmfPath))
+                    throw new InvalidDataException(
+                        $"公式 {metadata.FormulaId} 没有可用于 MathType 的矢量预览。" );
+                var nativePreview = prepared.MathTypeNativePreview;
+                InsertMathTypeOle(
+                    session,
+                    prepared.MathMl!,
+                    prepared.EmfPath,
+                    isolatedNativePreviewWmfPath: nativePreview?.WmfPath,
+                    isolatedNativePreviewWidthPt: nativePreview?.WidthPt ?? 0,
+                    isolatedNativePreviewHeightPt: nativePreview?.HeightPt ?? 0,
+                    isolatedNativePreviewWordPosition: nativePreview?.WordPosition ?? 0,
+                    isolatedNativePreviewAttempted: prepared.MathTypeNativePreviewAttempted);
+                if (display
+                    && preserveExistingDisplayParagraphBoundary
+                    && preservedDisplayParagraphRange is not null)
+                {
+                    RemoveGeneratedParagraphAfterMathTypeRedraw(
+                        document,
+                        preservedDisplayParagraphRange,
+                        preservedFollowingParagraphText);
+                }
+                return;
+            }
+
             var usePreservedOleDisplayParagraph =
                 display
                 && !nativeOmml
@@ -6625,6 +6795,140 @@ internal sealed partial class WordFormulaService
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
+        }
+    }
+
+    private static Range? DuplicateFollowingParagraphRange(
+        Document document,
+        Range paragraphRange)
+    {
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? result = null;
+        try
+        {
+            if (paragraphRange.End >= document.Content.End) return null;
+            var start = paragraphRange.End;
+            var end = Math.Min(document.Content.End, start + 1);
+            probe = document.Range(start, end);
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count != 1) return null;
+            paragraph = paragraphs[1];
+            result = paragraph.Range.Duplicate;
+            var value = result;
+            result = null;
+            return value;
+        }
+        finally
+        {
+            Release(result);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+        }
+    }
+
+    private static void RemoveGeneratedParagraphAfterMathTypeRedraw(
+        Document document,
+        Range preservedFormulaParagraphRange,
+        string? preservedFollowingParagraphText)
+    {
+        Paragraphs? formulaParagraphs = null;
+        Paragraph? formulaParagraph = null;
+        Range? formulaRange = null;
+        Range? nextProbe = null;
+        Paragraphs? nextParagraphs = null;
+        Paragraph? nextParagraph = null;
+        Range? nextRange = null;
+        InlineShapes? nextShapes = null;
+        Fields? nextFields = null;
+        Range? afterNextProbe = null;
+        Paragraphs? afterNextParagraphs = null;
+        Paragraph? afterNextParagraph = null;
+        Range? afterNextRange = null;
+        try
+        {
+            formulaParagraphs = preservedFormulaParagraphRange.Paragraphs;
+            if (formulaParagraphs.Count != 1) return;
+            formulaParagraph = formulaParagraphs[1];
+            formulaRange = formulaParagraph.Range.Duplicate;
+            var formulaShapes = formulaRange.InlineShapes;
+            var hasMathTypeOle = false;
+            try
+            {
+                for (var index = 1; index <= formulaShapes.Count; index++)
+                {
+                    InlineShape? shape = null;
+                    try
+                    {
+                        shape = formulaShapes[index];
+                        if (!MathTypeOleInterop.IsMathTypeOle(shape)) continue;
+                        hasMathTypeOle = true;
+                        break;
+                    }
+                    finally { Release(shape); }
+                }
+            }
+            finally { Release(formulaShapes); }
+            if (!hasMathTypeOle) return;
+            if (formulaRange.End >= document.Content.End) return;
+
+            nextProbe = document.Range(
+                formulaRange.End,
+                Math.Min(document.Content.End, formulaRange.End + 1));
+            nextParagraphs = nextProbe.Paragraphs;
+            if (nextParagraphs.Count != 1) return;
+            nextParagraph = nextParagraphs[1];
+            nextRange = nextParagraph.Range.Duplicate;
+            if (ContainsVisibleBodyText(nextRange.Text)) return;
+            nextShapes = nextRange.InlineShapes;
+            nextFields = nextRange.Fields;
+            if (nextShapes.Count > 0 || nextFields.Count > 0) return;
+            if (preservedFollowingParagraphText is null) return;
+
+            // If the source already had a blank paragraph immediately after the
+            // display formula, this empty paragraph is user-authored and must stay.
+            if (string.Equals(
+                    nextRange.Text ?? string.Empty,
+                    preservedFollowingParagraphText,
+                    StringComparison.Ordinal))
+                return;
+            if (nextRange.End >= document.Content.End) return;
+
+            afterNextProbe = document.Range(
+                nextRange.End,
+                Math.Min(document.Content.End, nextRange.End + 1));
+            afterNextParagraphs = afterNextProbe.Paragraphs;
+            if (afterNextParagraphs.Count != 1) return;
+            afterNextParagraph = afterNextParagraphs[1];
+            afterNextRange = afterNextParagraph.Range.Duplicate;
+            if (!string.Equals(
+                    afterNextRange.Text ?? string.Empty,
+                    preservedFollowingParagraphText,
+                    StringComparison.Ordinal))
+                return;
+
+            // Word's MathType Flat OPC generated exactly one extra empty paragraph
+            // between the formula and the paragraph that originally followed the
+            // LaTeX source. Delete only that proven generated paragraph.
+            nextRange.Delete();
+        }
+        finally
+        {
+            Release(afterNextRange);
+            Release(afterNextParagraph);
+            Release(afterNextParagraphs);
+            Release(afterNextProbe);
+            Release(nextFields);
+            Release(nextShapes);
+            Release(nextRange);
+            Release(nextParagraph);
+            Release(nextParagraphs);
+            Release(nextProbe);
+            Release(formulaRange);
+            Release(formulaParagraph);
+            Release(formulaParagraphs);
         }
     }
 
