@@ -34,9 +34,6 @@ public interface IWordRibbonCallbacks
     [DispId(6)]
     void OnUpdateEquationNumbers(object control);
 
-    [DispId(7)]
-    void OnExportSelectedAsPicture(object control);
-
     [DispId(8)]
     void OnDeleteSelected(object control);
 
@@ -177,11 +174,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           <button id="VisualTeX.WordVsto.InlineOmml" label="OMML 行内公式" size="large" screentip="插入 Word 原生公式" supertip="插入可由 Word 原生公式工具直接编辑、同时保留 VisualTeX LaTeX 元数据的 OMML 行内公式。" tag="ommlInline" getImage="GetRibbonImage" onAction="OnInsertInlineOmml" />
           <button id="VisualTeX.WordVsto.DisplayOmml" label="OMML 行间公式" size="large" screentip="插入 Word 原生公式" supertip="插入可由 Word 原生公式工具直接编辑、同时保留 VisualTeX LaTeX 元数据的 OMML 行间公式。" tag="ommlDisplay" getImage="GetRibbonImage" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.WordVsto.Edit" label="编辑所选公式" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
-          <box id="VisualTeX.WordVsto.ConversionBox" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.ConvertSelected" label="转为原生 OLE" screentip="转为可嵌入编辑的原生 OLE" supertip="转换后对象随 Word 文档保存，并可通过 VisualTeX 双击重新编辑。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
-            <button id="VisualTeX.WordVsto.ConvertSelectedToOmml" label="转为 Word OMML" screentip="转为 Word 原生公式" supertip="将所选 VisualTeX 公式转换为 Word 原生 OMML；可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。" tag="convertToOmml" getImage="GetRibbonImage" onAction="OnConvertSelectedToOmml" />
-            <button id="VisualTeX.WordVsto.ExportPicture" label="导出所选为图片" imageMso="PictureInsertFromFile" onAction="OnExportSelectedAsPicture" />
-          </box>
           <box id="VisualTeX.WordVsto.FormatConversionBox" boxStyle="vertical">
             <menu id="VisualTeX.WordVsto.VisualTeXToMathType" label="VisualTeX → MathType" screentip="重新绘制为 MathType OLE" supertip="删除原 VisualTeX 宿主与旧编号，再用正常新建 MathType 公式的同一条成熟路径重新绘制。">
               <button id="VisualTeX.WordVsto.VisualTeXToMathTypeSelection" label="转换选中部分" onAction="OnConvertVisualTeXToMathTypeSelection" />
@@ -199,6 +191,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
               <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="转换选中部分" onAction="OnConvertMathTypeToOmmlSelection" />
               <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="全文批量转换" onAction="OnConvertMathTypeToOmmlDocument" />
             </menu>
+            <button id="VisualTeX.WordVsto.ConvertSelectedToOmml" label="VisualTeX → OMML" screentip="将所选 VisualTeX 公式转换为 Word OMML" supertip="将所选 VisualTeX 公式转换为 Word 原生 OMML；可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。" tag="convertToOmml" getImage="GetRibbonImage" onAction="OnConvertSelectedToOmml" />
+            <button id="VisualTeX.WordVsto.ConvertSelected" label="OMML → VisualTeX" screentip="将所选 OMML 公式转换为 VisualTeX OLE" supertip="将所选 Word OMML 公式转换为可嵌入编辑的 VisualTeX OLE，并保留 VisualTeX 双击编辑能力。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
             <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" screentip="更新 VisualTeX 与 MathType 公式编号" supertip="刷新当前文档中的 VisualTeX 编号，以及 MathType 原生 MTChap/MTSec/MTEqn 编号和对应公式引用。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
@@ -500,7 +494,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _ = ConvertFormulaObjectsToLatexAsync(
             wholeDocument: true,
             FormulaOleContract.MathTypeOleMode);
-    public void OnExportSelectedAsPicture(object control) => _ = ExportSelectedAsPictureAsync();
     public void OnDeleteSelected(object control) => _ = DeleteSelectedAsync();
     public void OnInsertEquationReference(object control) => _ = InsertEquationReferenceAsync();
     public void OnOpenDesktop(object control)
@@ -2804,23 +2797,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             SetStatus($"插入公式引用失败：{error.Message}");
-        }
-    }
-
-    private async Task ExportSelectedAsPictureAsync()
-    {
-        var dispatcher = _dispatcher;
-        var service = _formulaService;
-        if (dispatcher is null || service is null) return;
-        try
-        {
-            await dispatcher.InvokeAsync(service.ExportSelectedOleAsPicture)
-                .ConfigureAwait(false);
-            SetStatus("Word OLE 公式已导出为跨平台图片。");
-        }
-        catch (Exception error)
-        {
-            SetStatus($"导出 Word OLE 公式失败：{error.Message}");
         }
     }
 
