@@ -273,6 +273,150 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    internal static IReadOnlyList<string> CaptureReferenceBookmarkAliases(
+        Document document,
+        InlineShape equationShape)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (equationShape is null) throw new ArgumentNullException(nameof(equationShape));
+
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? numberRange = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
+        try
+        {
+            shapeRange = equationShape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1) return Array.Empty<string>();
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!IsMathTypePlaceRefCode(code.Text)) continue;
+                if (!TryGetVisibleNumberRange(document, field, out numberRange)
+                    || numberRange is null)
+                    continue;
+
+                var aliases = new List<string>();
+                bookmarks = document.Bookmarks;
+                for (var bookmarkIndex = 1; bookmarkIndex <= bookmarks.Count; bookmarkIndex++)
+                {
+                    Release(bookmarkRange);
+                    bookmarkRange = null;
+                    Release(bookmark);
+                    bookmark = bookmarks[bookmarkIndex];
+                    if (!bookmark.Name.StartsWith(
+                            EquationBookmarkPrefix,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    bookmarkRange = bookmark.Range;
+                    if (bookmarkRange.Start != numberRange.Start
+                        || bookmarkRange.End != numberRange.End)
+                        continue;
+                    aliases.Add(bookmark.Name);
+                }
+                return aliases
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            return Array.Empty<string>();
+        }
+        finally
+        {
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(numberRange);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    internal static int RestoreReferenceBookmarkAliases(
+        Document document,
+        string formulaId,
+        IReadOnlyCollection<string> bookmarkAliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (bookmarkAliases is null || bookmarkAliases.Count == 0) return 0;
+        if (string.IsNullOrWhiteSpace(formulaId))
+            throw new ArgumentException("FormulaId is required.", nameof(formulaId));
+
+        Bookmarks? bookmarks = null;
+        Bookmark? targetBookmark = null;
+        Table? numberedTable = null;
+        Cell? numberCell = null;
+        Range? targetRange = null;
+        Bookmark? aliasBookmark = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            if (!bookmarks.Exists(targetName))
+                throw new InvalidDataException(
+                    $"Converted OMML formula {formulaId} has no durable number bookmark {targetName}.");
+            targetBookmark = bookmarks[targetName];
+
+            numberedTable = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+                ?? throw new InvalidDataException(
+                    $"Converted OMML formula {formulaId} has no numbered equation table.");
+            numberCell = numberedTable.Cell(1, 3);
+            targetRange = numberCell.Range.Duplicate;
+            targetRange.End = Math.Max(targetRange.Start, targetRange.End - 1);
+            if (string.IsNullOrWhiteSpace(targetRange.Text))
+                throw new InvalidDataException(
+                    $"Converted OMML formula {formulaId} has no visible number text for MathType reference compatibility.");
+
+            var restored = 0;
+            foreach (var alias in bookmarkAliases
+                         .Where(name => !string.IsNullOrWhiteSpace(name))
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!alias.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (bookmarks.Exists(alias))
+                {
+                    Release(aliasBookmark);
+                    aliasBookmark = bookmarks[alias];
+                    aliasBookmark.Delete();
+                }
+                Release(aliasBookmark);
+                aliasBookmark = bookmarks.Add(alias, targetRange);
+                restored++;
+            }
+            return restored;
+        }
+        finally
+        {
+            Release(aliasBookmark);
+            Release(targetRange);
+            Release(numberCell);
+            Release(numberedTable);
+            Release(targetBookmark);
+            Release(bookmarks);
+        }
+    }
+
     internal static int RefreshReferences(
         Document document,
         ISet<string> bookmarkAliases)

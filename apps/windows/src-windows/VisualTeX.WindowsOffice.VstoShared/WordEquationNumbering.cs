@@ -1470,11 +1470,6 @@ internal static class WordEquationNumbering
                         range,
                         entry.FormulaId);
                     TraceStage("trim");
-                    RemoveEmptyOriginalFormulaParagraphBeforeMigratedTable(
-                        document,
-                        table,
-                        entry.SourceParagraphStart);
-                    TraceStage("remove-source-paragraph");
                     built++;
                 }
                 finally
@@ -1482,6 +1477,34 @@ internal static class WordEquationNumbering
                     Release(table);
                     Release(tables);
                     Release(range);
+                }
+            }
+
+            // Keep every now-empty source paragraph in place until all numbered
+            // tables have been migrated. For consecutive display formulas, deleting
+            // the later source paragraph immediately makes the preceding formula sit
+            // directly against a table. Word's Paragraph.InsertParagraphAfter then
+            // inserts into that following table, which can pull the preceding OMML
+            // into the later equation table. Once the whole end-to-start structural
+            // pass is complete, resolve each table by FormulaId and remove only its
+            // own immediately preceding empty source paragraph.
+            foreach (var entry in entries.OrderByDescending(item => item.Position))
+            {
+                Table? migratedTable = null;
+                try
+                {
+                    migratedTable = FindNumberedEquationTable(document, entry.FormulaId);
+                    if (migratedTable is null)
+                        throw new InvalidOperationException(
+                            $"Converted OMML formula {entry.FormulaId} lost its numbered table before source-paragraph cleanup.");
+                    RemoveEmptyOriginalFormulaParagraphBeforeMigratedTable(
+                        document,
+                        migratedTable);
+                    TraceStage("remove-source-paragraph");
+                }
+                finally
+                {
+                    Release(migratedTable);
                 }
             }
             return true;
@@ -3489,8 +3512,7 @@ internal static class WordEquationNumbering
 
     private static void RemoveEmptyOriginalFormulaParagraphBeforeMigratedTable(
         Document document,
-        Table migratedTable,
-        int originalParagraphStart)
+        Table migratedTable)
     {
         Range? content = null;
         Range? tableRange = null;
@@ -3508,26 +3530,28 @@ internal static class WordEquationNumbering
         {
             content = document.Content;
             tableRange = migratedTable.Range;
-            if (originalParagraphStart < content.Start
-                || originalParagraphStart >= content.End
-                || originalParagraphStart >= tableRange.Start)
+            if (tableRange.Start <= content.Start || tableRange.Start >= content.End)
                 return;
 
+            // Probe the paragraph mark immediately before the migrated table. The
+            // table is inserted directly after the source formula paragraph, so this
+            // paragraph is the source host left empty by the migration. Resolving it
+            // relative to the table is durable across earlier batch insertions, while
+            // the source's original absolute start is not.
             probe = document.Range(
-                originalParagraphStart,
-                Math.Min(content.End, originalParagraphStart + 1));
+                Math.Max(content.Start, tableRange.Start - 1),
+                tableRange.Start);
             if ((bool)probe.get_Information(WdInformation.wdWithInTable)) return;
             paragraphs = probe.Paragraphs;
             if (paragraphs.Count != 1) return;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range.Duplicate;
 
-            // The only paragraph eligible for removal is the source formula's own
-            // now-empty body paragraph immediately before the newly migrated 1x3
-            // equation table. This is deliberately stricter than generic blank-line
-            // cleanup so a user-authored empty paragraph is never consumed.
-            if (paragraphRange.Start != originalParagraphStart
-                || paragraphRange.End != tableRange.Start
+            // The only paragraph eligible for removal is the empty body paragraph
+            // immediately before this exact 1x3 equation table. A user-authored blank
+            // paragraph that preceded the source formula remains one paragraph farther
+            // back and therefore cannot match this adjacency check.
+            if (paragraphRange.End != tableRange.Start
                 || !IsNumberingParagraphAdornment(paragraphRange.Text))
                 return;
 

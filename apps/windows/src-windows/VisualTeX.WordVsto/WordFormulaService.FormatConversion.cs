@@ -742,6 +742,35 @@ internal sealed partial class WordFormulaService
                 $"format-conversion-runtime assembly={typeof(WordFormulaService).Assembly.Location} source={plan.SourceMode} target={plan.TargetMode} targetIsVisualTeX={targetIsVisualTeX} targetIsMathType={targetIsMathType}");
             var initialTargetObjectCount = CountSimpleFormatObjects(document, plan.TargetMode);
             var initialSourceObjectCount = CountSimpleFormatObjects(document, plan.SourceMode);
+            var mathTypeReferenceAliasesByTargetId =
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            if (targetIsOmml
+                && string.Equals(
+                    plan.SourceMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                foreach (var target in plan.Targets.Where(item => item.Numbered))
+                {
+                    InlineShape? sourceShape = null;
+                    try
+                    {
+                        sourceShape = FindMathTypeOleByRange(
+                            document,
+                            target.SourceObjectId,
+                            allowGlobalFallback: false);
+                        if (sourceShape is null) continue;
+                        var aliases = MathTypeEquationReferences.CaptureReferenceBookmarkAliases(
+                            document,
+                            sourceShape);
+                        if (aliases.Count == 0) continue;
+                        mathTypeReferenceAliasesByTargetId[target.Id] = aliases;
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-mathtype-reference-aliases-captured formulaId={target.SourceFormulaId} aliases={string.Join(",", aliases)}");
+                    }
+                    finally { Release(sourceShape); }
+                }
+            }
             if (targetIsOmml && plan.Targets.Count > 0)
             {
                 var ommlFormulas = plan.Targets.Select(target =>
@@ -1378,6 +1407,41 @@ internal sealed partial class WordFormulaService
                 else
                 {
                     WordEquationNumbering.TryReconcile(document);
+                }
+            }
+            if (targetIsOmml && mathTypeReferenceAliasesByTargetId.Count > 0)
+            {
+                try
+                {
+                    var restoredAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var entry in mathTypeReferenceAliasesByTargetId)
+                    {
+                        if (!prepared.TryGetValue(entry.Key, out var convertedFormula))
+                            throw new InvalidDataException(
+                                $"Missing converted OMML payload for MathType reference alias target {entry.Key}.");
+                        var restored = MathTypeEquationReferences.RestoreReferenceBookmarkAliases(
+                            document,
+                            convertedFormula.Session.FormulaId,
+                            entry.Value);
+                        if (restored != entry.Value.Count)
+                            throw new InvalidDataException(
+                                $"Restored {restored}/{entry.Value.Count} MathType reference aliases for converted formula {convertedFormula.Session.FormulaId}.");
+                        foreach (var alias in entry.Value)
+                            restoredAliases.Add(alias);
+                    }
+                    var refreshedReferences = MathTypeEquationReferences.RefreshReferences(
+                        document,
+                        restoredAliases);
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-mathtype-reference-aliases-restored aliases={restoredAliases.Count} refreshedReferences={refreshedReferences}");
+                }
+                catch (Exception referenceAliasError)
+                {
+                    result.FailedFormulaCount++;
+                    result.Failures.Add(
+                        $"MathType equation-reference compatibility finalization failed: {referenceAliasError.Message}");
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-mathtype-reference-alias-finalize-failed error={referenceAliasError}");
                 }
             }
             TraceFinalize("numbering-reconcile");

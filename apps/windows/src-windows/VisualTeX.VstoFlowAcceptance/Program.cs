@@ -682,6 +682,10 @@ internal static partial class Program
             {
                 RunWordOmmlMathTypeFormatConversionAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-omml-consecutive-numbered", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOmmlConsecutiveNumberedAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-mathtype-single-performance", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlMathTypeSinglePerformanceAcceptance(artifactRoot);

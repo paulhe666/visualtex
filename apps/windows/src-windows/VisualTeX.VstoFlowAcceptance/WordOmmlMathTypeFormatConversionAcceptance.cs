@@ -945,6 +945,422 @@ internal static partial class Program
         }
     }
 
+    private static void RunWordMathTypeOmmlConsecutiveNumberedAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var svgPath = Path.Combine(artifactRoot, "mathtype-omml-consecutive-numbered.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"112\" viewBox=\"0 0 360 112\"><text x=\"8\" y=\"78\" font-family=\"Cambria Math\" font-size=\"46\">det(A-λI)=0</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 360, 112);
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mrow><mi>q</mi><mo>=</mo><mn>7</mn></mrow></math>";
+
+        var mathTypeBaseline = SnapshotMathTypeProcessIds();
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = CreateWordApplication(visible: true);
+            document = application.Documents.Add();
+            document.Content.Text = "VT-CONSECUTIVE-BEFORE\r";
+            var service = new WordFormulaService(application);
+
+            for (var index = 0; index < 9; index++)
+            {
+                SelectDocumentEnd(document);
+                service.InsertMathTypeOle(
+                    CreateOmmlMathTypeAcceptanceSession(
+                        mathMl,
+                        "block",
+                        numbered: true,
+                        FormulaOleContract.MathTypeOleMode),
+                    mathMl,
+                    emfPath);
+                if (index < 8)
+                    AppendAcceptanceText(document, "\r");
+            }
+            AppendAcceptanceText(document, "\rVT-CONSECUTIVE-AFTER\r");
+
+            AssertEqual(9, CountMathTypeOleShapes(document),
+                "Consecutive numbered MathType→OMML setup did not create nine MathType equations.");
+            AssertEqual(9, CountMathTypePlaceRefFields(document),
+                "Consecutive numbered MathType→OMML setup did not create nine MTPlaceRef numbers.");
+
+            var mathTypeReferenceTargets = MathTypeEquationReferences.GetTargets(document);
+            AssertEqual(9, mathTypeReferenceTargets.Count,
+                "Consecutive numbered MathType→OMML setup did not expose nine MathType reference targets.");
+            SelectDocumentEnd(document);
+            var referenceSelection = application.Selection;
+            MathTypeEquationReferences.InsertReference(
+                document,
+                referenceSelection,
+                mathTypeReferenceTargets[1],
+                Word.WdColor.wdColorAutomatic);
+            Release(referenceSelection);
+            var referenceAlias = FindMathTypeReferenceAliasForAcceptance(document)
+                ?? throw new InvalidDataException(
+                    "Consecutive numbered MathType→OMML setup did not create a ZEqnNum reference alias.");
+            AssertTrue(document.Bookmarks.Exists(referenceAlias),
+                "Consecutive numbered MathType→OMML setup created a reference field without its ZEqnNum bookmark.");
+            var referenceTextBefore = ReadMathTypeReferenceResultForAcceptance(document, referenceAlias);
+            AssertTrue(!string.IsNullOrWhiteSpace(referenceTextBefore),
+                "Consecutive numbered MathType→OMML setup created an empty MathType reference result.");
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(9, plan.Targets.Count,
+                "Consecutive numbered MathType→OMML capture did not find all nine equations.");
+            AssertTrue(
+                plan.Targets.All(target => target.Numbered
+                    && string.Equals(target.DisplayMode, "block", StringComparison.Ordinal)),
+                "Consecutive numbered MathType→OMML capture lost numbered display ownership.");
+
+            var secondPlanTarget = plan.Targets
+                .OrderBy(target => target.SourceStart)
+                .ElementAt(1);
+            var preparedTargets = PrepareOmmlMathTypeTargets(plan, emfPath);
+            var result = service.ApplyFormulaFormatConversionPlan(
+                plan,
+                preparedTargets);
+            AssertEqual(9, result.FormulaCount,
+                "Consecutive numbered MathType→OMML conversion did not convert all nine equations: "
+                + string.Join(" | ", result.Failures));
+            AssertEqual(0, result.FailedFormulaCount,
+                "Consecutive numbered MathType→OMML conversion reported a failure: "
+                + string.Join(" | ", result.Failures));
+            AssertConsecutiveNumberedOmmlStructure(document, "live conversion");
+            var secondOmmlFormulaId = preparedTargets[secondPlanTarget.Id].Session.FormulaId;
+            AssertConvertedMathTypeReferenceAlias(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                secondOmmlFormulaId,
+                "live conversion");
+
+            var outputPath = Path.Combine(
+                artifactRoot,
+                "MathType-To-OMML-Consecutive-Numbered-9.docx");
+            document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                outputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            AssertConsecutiveNumberedOmmlStructure(document, "save/reopen");
+            AssertConvertedMathTypeReferenceAlias(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                secondOmmlFormulaId,
+                "save/reopen");
+            AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
+                application,
+                document,
+                emfPath);
+            AssertNoNewMathTypeProcess(
+                mathTypeBaseline,
+                "consecutive numbered MathType→OMML acceptance");
+
+            Console.WriteLine(
+                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent 1x3 OMML numbering tables with one center-cell OMath each, no source-host blank paragraph, and save/reopen persistence.");
+        }
+        finally
+        {
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void AssertConsecutiveNumberedOmmlStructure(
+        Word.Document document,
+        string stage)
+    {
+        AssertEqual(9, document.OMaths.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not retain nine OMath equations.");
+        AssertEqual(0, CountMathTypeOleShapes(document),
+            $"Consecutive numbered MathType→OMML {stage} left a MathType source behind.");
+        AssertEqual(9, document.Tables.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not create nine independent numbering tables.");
+        AssertEqual(9, CountManagedNumberedOmml(document),
+            $"Consecutive numbered MathType→OMML {stage} lost managed numbering ownership.");
+
+        for (var index = 1; index <= document.Tables.Count; index++)
+        {
+            Word.Table? table = null;
+            Word.Range? tableRange = null;
+            Word.Cell? leftCell = null;
+            Word.Cell? centerCell = null;
+            Word.Cell? rightCell = null;
+            Word.Range? leftRange = null;
+            Word.Range? centerRange = null;
+            Word.Range? rightRange = null;
+            try
+            {
+                table = document.Tables[index];
+                AssertEqual(1, table.Rows.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} has an extra row.");
+                AssertEqual(3, table.Columns.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} does not have three columns.");
+                tableRange = table.Range;
+                AssertEqual(1, tableRange.OMaths.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} swallowed another formula.");
+                leftCell = table.Cell(1, 1);
+                centerCell = table.Cell(1, 2);
+                rightCell = table.Cell(1, 3);
+                leftRange = leftCell.Range;
+                centerRange = centerCell.Range;
+                rightRange = rightCell.Range;
+                AssertEqual(0, leftRange.OMaths.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} has a formula in the left cell.");
+                AssertEqual(1, centerRange.OMaths.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} does not own exactly one center-cell formula.");
+                AssertEqual(0, rightRange.OMaths.Count,
+                    $"Consecutive numbered MathType→OMML {stage} table {index} has a formula in the number cell.");
+
+                for (var paragraphIndex = 1; paragraphIndex <= document.Paragraphs.Count; paragraphIndex++)
+                {
+                    Word.Paragraph? paragraph = null;
+                    Word.Range? paragraphRange = null;
+                    try
+                    {
+                        paragraph = document.Paragraphs[paragraphIndex];
+                        paragraphRange = paragraph.Range;
+                        if ((bool)paragraphRange.get_Information(Word.WdInformation.wdWithInTable)
+                            || paragraphRange.End != tableRange.Start)
+                            continue;
+                        var text = (paragraphRange.Text ?? string.Empty)
+                            .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                        AssertTrue(
+                            text.Length > 0,
+                            $"Consecutive numbered MathType→OMML {stage} left an empty source paragraph above table {index}.");
+                    }
+                    finally
+                    {
+                        Release(paragraphRange);
+                        Release(paragraph);
+                    }
+                }
+            }
+            finally
+            {
+                Release(rightRange);
+                Release(centerRange);
+                Release(leftRange);
+                Release(rightCell);
+                Release(centerCell);
+                Release(leftCell);
+                Release(tableRange);
+                Release(table);
+            }
+        }
+    }
+
+    private static string? FindMathTypeReferenceAliasForAcceptance(Word.Document document)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ');
+                var marker = "REF ZEqnNum";
+                var markerIndex = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                if (markerIndex < 0) continue;
+                var start = markerIndex + "REF ".Length;
+                var end = start;
+                while (end < text.Length
+                       && !char.IsWhiteSpace(text[end])
+                       && text[end] != '\\'
+                       && text[end] != '\u0014'
+                       && text[end] != '\u0015')
+                    end++;
+                var alias = text.Substring(start, end - start).Trim();
+                if (alias.StartsWith("ZEqnNum", StringComparison.OrdinalIgnoreCase))
+                    return alias;
+            }
+            return null;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static string ReadMathTypeReferenceResultForAcceptance(
+        Word.Document document,
+        string alias)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? result = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty).TrimStart();
+                if (!text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                result = field.Result;
+                return (result.Text ?? string.Empty).Trim();
+            }
+            return string.Empty;
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static void AssertConvertedMathTypeReferenceAlias(
+        Word.Application application,
+        Word.Document document,
+        string alias,
+        string expectedReferenceText,
+        string formulaId,
+        string stage)
+    {
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? aliasBookmark = null;
+        Word.Bookmark? nativeBookmark = null;
+        Word.Range? aliasRange = null;
+        Word.Range? nativeRange = null;
+        Word.Table? numberedTable = null;
+        Word.Cell? numberCell = null;
+        Word.Range? numberCellRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Field? outerGoTo = null;
+        Word.Field? nestedRef = null;
+        Word.Range? referenceResult = null;
+        Word.Selection? selection = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            AssertTrue(bookmarks.Exists(alias),
+                $"MathType→OMML {stage} lost reference compatibility bookmark {alias}.");
+            AssertTrue(bookmarks.Exists(nativeName),
+                $"MathType→OMML {stage} lost native OMML number bookmark {nativeName}.");
+            aliasBookmark = bookmarks[alias];
+            nativeBookmark = bookmarks[nativeName];
+            aliasRange = aliasBookmark.Range;
+            nativeRange = nativeBookmark.Range;
+            numberedTable = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+                ?? throw new InvalidDataException(
+                    $"MathType→OMML {stage} cannot resolve numbered table for {formulaId}.");
+            numberCell = numberedTable.Cell(1, 3);
+            numberCellRange = numberCell.Range.Duplicate;
+            numberCellRange.End = Math.Max(numberCellRange.Start, numberCellRange.End - 1);
+            AssertEqual(numberCellRange.Start, aliasRange.Start,
+                $"MathType→OMML {stage} restored {alias} at the wrong visible-number start position.");
+            AssertEqual(numberCellRange.End, aliasRange.End,
+                $"MathType→OMML {stage} restored {alias} at the wrong visible-number end position.");
+            AssertEqual(
+                expectedReferenceText.Trim(),
+                (aliasRange.Text ?? string.Empty).Trim(),
+                $"MathType→OMML {stage} restored {alias} over the wrong visible number text.");
+
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ')
+                    .TrimStart();
+                if (text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    Release(nestedRef);
+                    nestedRef = field;
+                    field = null;
+                    continue;
+                }
+                if (text.StartsWith("GOTOBUTTON " + alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    Release(outerGoTo);
+                    outerGoTo = field;
+                    field = null;
+                }
+            }
+            AssertTrue(nestedRef is not null,
+                $"MathType→OMML {stage} lost nested REF {alias}.");
+            AssertTrue(outerGoTo is not null,
+                $"MathType→OMML {stage} lost GOTOBUTTON {alias}.");
+            nestedRef!.Update();
+            referenceResult = nestedRef.Result;
+            AssertEqual(
+                expectedReferenceText.Trim(),
+                (referenceResult.Text ?? string.Empty).Trim(),
+                $"MathType→OMML {stage} changed the visible MathType reference text.");
+
+            outerGoTo!.DoClick();
+            selection = application.Selection;
+            AssertTrue(
+                selection.Start >= aliasRange.Start && selection.Start <= aliasRange.End,
+                $"MathType→OMML {stage} GOTOBUTTON did not navigate to restored bookmark {alias}.");
+        }
+        finally
+        {
+            Release(selection);
+            Release(referenceResult);
+            Release(nestedRef);
+            Release(outerGoTo);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(numberCellRange);
+            Release(numberCell);
+            Release(numberedTable);
+            Release(nativeRange);
+            Release(aliasRange);
+            Release(nativeBookmark);
+            Release(aliasBookmark);
+            Release(bookmarks);
+        }
+    }
+
     private static void RunWordOmmlMathTypeFormatConversionAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
