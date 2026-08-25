@@ -644,6 +644,7 @@ internal sealed partial class WordFormulaService
         Selection? selection = null;
         WordOmmlConverter.BatchSource? ommlBatchSource = null;
         var forwardSourceBookmarks = new Dictionary<string, string>(StringComparer.Ordinal);
+        var retainedMathTypeTargetBookmarks = new Dictionary<string, string>(StringComparer.Ordinal);
         var previousScreenUpdating = true;
         var screenUpdatingSuspended = false;
         Window? batchWindow = null;
@@ -742,15 +743,15 @@ internal sealed partial class WordFormulaService
                 $"format-conversion-runtime assembly={typeof(WordFormulaService).Assembly.Location} source={plan.SourceMode} target={plan.TargetMode} targetIsVisualTeX={targetIsVisualTeX} targetIsMathType={targetIsMathType}");
             var initialTargetObjectCount = CountSimpleFormatObjects(document, plan.TargetMode);
             var initialSourceObjectCount = CountSimpleFormatObjects(document, plan.SourceMode);
-            var mathTypeReferenceAliasesByTargetId =
-                new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-            if (targetIsOmml
-                && string.Equals(
-                    plan.SourceMode,
-                    FormulaOleContract.MathTypeOleMode,
-                    StringComparison.Ordinal))
+            var referenceAliasesByTargetId =
+                new Dictionary<string, IReadOnlyList<EquationReferenceBookmarkAlias>>(StringComparer.Ordinal);
+            foreach (var target in plan.Targets.Where(item => item.Numbered))
             {
-                foreach (var target in plan.Targets.Where(item => item.Numbered))
+                IReadOnlyList<EquationReferenceBookmarkAlias> aliases;
+                if (string.Equals(
+                        plan.SourceMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal))
                 {
                     InlineShape? sourceShape = null;
                     try
@@ -760,16 +761,22 @@ internal sealed partial class WordFormulaService
                             target.SourceObjectId,
                             allowGlobalFallback: false);
                         if (sourceShape is null) continue;
-                        var aliases = MathTypeEquationReferences.CaptureReferenceBookmarkAliases(
+                        aliases = MathTypeEquationReferences.CaptureFormatConversionAliasesFromMathType(
                             document,
                             sourceShape);
-                        if (aliases.Count == 0) continue;
-                        mathTypeReferenceAliasesByTargetId[target.Id] = aliases;
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-mathtype-reference-aliases-captured formulaId={target.SourceFormulaId} aliases={string.Join(",", aliases)}");
                     }
                     finally { Release(sourceShape); }
                 }
+                else
+                {
+                    aliases = MathTypeEquationReferences.CaptureFormatConversionAliasesFromVisualTeX(
+                        document,
+                        target.SourceFormulaId);
+                }
+                if (aliases.Count == 0) continue;
+                referenceAliasesByTargetId[target.Id] = aliases;
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-reference-aliases-captured sourceMode={plan.SourceMode} formulaId={target.SourceFormulaId} aliases={string.Join(",", aliases.Select(alias => alias.Name))}");
             }
             if (targetIsOmml && plan.Targets.Count > 0)
             {
@@ -1034,18 +1041,22 @@ internal sealed partial class WordFormulaService
                             target.DisplayMode,
                             "block",
                             StringComparison.Ordinal);
+                    var preserveFormulaCrossReferences =
+                        referenceAliasesByTargetId.ContainsKey(target.Id);
                     var insertionStart = useDirectSingleNativeOmmlDelete
                         ? DeleteSingleNativeOmmlSourceDirect(document, target)
                         : useDirectSingleManagedNumberedOmmlDelete
                             ? DeleteSingleManagedNumberedOmmlSourceDirect(
                                 document,
                                 target,
-                                sourceReferenceCounts)
+                                sourceReferenceCounts,
+                                preserveFormulaCrossReferences)
                             : DeleteSimpleSourceHost(
                                 document,
                                 plan.SourceMode,
                                 target,
-                                sourceReferenceCounts);
+                                sourceReferenceCounts,
+                                preserveFormulaCrossReferences);
                     if (useDirectSingleNativeOmmlDelete)
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-direct-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
@@ -1168,6 +1179,8 @@ internal sealed partial class WordFormulaService
                             document,
                             createdTargetBookmarkName,
                             target);
+                        if (referenceAliasesByTargetId.ContainsKey(target.Id))
+                            retainedMathTypeTargetBookmarks[target.Id] = createdTargetBookmarkName;
                     }
                     else if (targetIsVisualTeX)
                     {
@@ -1275,7 +1288,8 @@ internal sealed partial class WordFormulaService
                 finally
                 {
                     if (document is not null
-                        && !string.IsNullOrWhiteSpace(createdTargetBookmarkName))
+                        && !string.IsNullOrWhiteSpace(createdTargetBookmarkName)
+                        && !retainedMathTypeTargetBookmarks.ContainsKey(target.Id))
                         TryDeleteBookmark(document, createdTargetBookmarkName);
                     if (document is not null
                         && forwardSourceBookmarks.TryGetValue(target.Id, out var sourceLocatorBookmark))
@@ -1409,39 +1423,55 @@ internal sealed partial class WordFormulaService
                     WordEquationNumbering.TryReconcile(document);
                 }
             }
-            if (targetIsOmml && mathTypeReferenceAliasesByTargetId.Count > 0)
+            if (referenceAliasesByTargetId.Count > 0 && result.FailedFormulaCount == 0)
             {
                 try
                 {
                     var restoredAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var entry in mathTypeReferenceAliasesByTargetId)
+                    foreach (var entry in referenceAliasesByTargetId)
                     {
-                        if (!prepared.TryGetValue(entry.Key, out var convertedFormula))
-                            throw new InvalidDataException(
-                                $"Missing converted OMML payload for MathType reference alias target {entry.Key}.");
-                        var restored = MathTypeEquationReferences.RestoreReferenceBookmarkAliases(
-                            document,
-                            convertedFormula.Session.FormulaId,
-                            entry.Value);
+                        int restored;
+                        if (targetIsMathType)
+                        {
+                            if (!retainedMathTypeTargetBookmarks.TryGetValue(
+                                    entry.Key,
+                                    out var targetBookmarkName))
+                                throw new InvalidDataException(
+                                    $"Missing converted MathType target locator for reference aliases on {entry.Key}.");
+                            restored = MathTypeEquationReferences.RestoreFormatConversionAliasesToMathType(
+                                document,
+                                targetBookmarkName,
+                                entry.Value);
+                        }
+                        else
+                        {
+                            if (!prepared.TryGetValue(entry.Key, out var convertedFormula))
+                                throw new InvalidDataException(
+                                    $"Missing converted VisualTeX payload for reference aliases on {entry.Key}.");
+                            restored = MathTypeEquationReferences.RestoreFormatConversionAliasesToVisualTeX(
+                                document,
+                                convertedFormula.Session.FormulaId,
+                                entry.Value);
+                        }
                         if (restored != entry.Value.Count)
                             throw new InvalidDataException(
-                                $"Restored {restored}/{entry.Value.Count} MathType reference aliases for converted formula {convertedFormula.Session.FormulaId}.");
+                                $"Restored {restored}/{entry.Value.Count} equation-reference aliases for conversion target {entry.Key}.");
                         foreach (var alias in entry.Value)
-                            restoredAliases.Add(alias);
+                            restoredAliases.Add(alias.Name);
                     }
                     var refreshedReferences = MathTypeEquationReferences.RefreshReferences(
                         document,
                         restoredAliases);
                     WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-mathtype-reference-aliases-restored aliases={restoredAliases.Count} refreshedReferences={refreshedReferences}");
+                        $"format-conversion-reference-aliases-restored sourceMode={plan.SourceMode} targetMode={plan.TargetMode} aliases={restoredAliases.Count} refreshedReferences={refreshedReferences}");
                 }
                 catch (Exception referenceAliasError)
                 {
                     result.FailedFormulaCount++;
                     result.Failures.Add(
-                        $"MathType equation-reference compatibility finalization failed: {referenceAliasError.Message}");
+                        $"Equation-reference compatibility finalization failed: {referenceAliasError.Message}");
                     WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-mathtype-reference-alias-finalize-failed error={referenceAliasError}");
+                        $"format-conversion-reference-alias-finalize-failed error={referenceAliasError}");
                 }
             }
             TraceFinalize("numbering-reconcile");
@@ -1474,6 +1504,13 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            if (document is not null && retainedMathTypeTargetBookmarks.Count > 0)
+            {
+                foreach (var bookmarkName in retainedMathTypeTargetBookmarks.Values)
+                {
+                    try { TryDeleteBookmark(document, bookmarkName); } catch { }
+                }
+            }
             if (document is not null && forwardSourceBookmarks.Count > 0)
             {
                 foreach (var bookmarkName in forwardSourceBookmarks.Values)
@@ -2692,7 +2729,8 @@ internal sealed partial class WordFormulaService
     private int DeleteSingleManagedNumberedOmmlSourceDirect(
         Document document,
         WordFormulaFormatConversionTarget target,
-        IReadOnlyDictionary<string, int>? knownReferenceCounts)
+        IReadOnlyDictionary<string, int>? knownReferenceCounts,
+        bool preserveCrossReferences)
     {
         if (!target.SourceIsManagedOmml
             || !target.Numbered
@@ -2715,10 +2753,13 @@ internal sealed partial class WordFormulaService
                 throw new InvalidOperationException(
                     "The managed numbered OMML table contains user content or another formula and cannot use the direct replacement path.");
 
-            WordEquationNumbering.FreezeFormulaCrossReferences(
-                document,
-                target.SourceFormulaId,
-                knownReferenceCounts);
+            if (!preserveCrossReferences)
+            {
+                WordEquationNumbering.FreezeFormulaCrossReferences(
+                    document,
+                    target.SourceFormulaId,
+                    knownReferenceCounts);
+            }
             WordEquationNumbering.RemoveFormulaNumberingArtifacts(
                 document,
                 target.SourceFormulaId);
@@ -2748,7 +2789,8 @@ internal sealed partial class WordFormulaService
         Document document,
         string sourceMode,
         WordFormulaFormatConversionTarget target,
-        IReadOnlyDictionary<string, int>? knownReferenceCounts = null)
+        IReadOnlyDictionary<string, int>? knownReferenceCounts = null,
+        bool preserveCrossReferences = false)
     {
         InlineShape? shape = null;
         Range? shapeRange = null;
@@ -2836,7 +2878,8 @@ internal sealed partial class WordFormulaService
                         document,
                         sourceTarget,
                         ref mutationStarted,
-                        knownReferenceCounts);
+                        knownReferenceCounts,
+                        preserveCrossReferences);
 
                     // Word can acknowledge InlineShape.Delete() yet keep the EMBED
                     // field alive until a later structural edit. In that case the
@@ -2947,7 +2990,8 @@ internal sealed partial class WordFormulaService
                         document,
                         sourceTarget,
                         ref mutationStarted,
-                        knownReferenceCounts);
+                        knownReferenceCounts,
+                        preserveCrossReferences);
                     EnsureSimpleFormatSourceRemoved(
                         document,
                         sourceMode,

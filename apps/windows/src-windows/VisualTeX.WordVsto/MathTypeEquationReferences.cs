@@ -15,6 +15,18 @@ namespace VisualTeX.WordVsto;
 /// either MathType itself or VisualTeX without inventing a second numbering
 /// system.
 /// </summary>
+internal enum EquationReferenceBookmarkSpan
+{
+    NumberOnly,
+    VisibleNumber,
+}
+
+internal sealed class EquationReferenceBookmarkAlias
+{
+    internal string Name { get; set; } = string.Empty;
+    internal EquationReferenceBookmarkSpan Span { get; set; }
+}
+
 internal static class MathTypeEquationReferences
 {
     private const string PlaceRefMarker = "MACROBUTTON MTPlaceRef";
@@ -352,6 +364,179 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    internal static IReadOnlyList<EquationReferenceBookmarkAlias> CaptureFormatConversionAliasesFromMathType(
+        Document document,
+        InlineShape equationShape)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (equationShape is null) throw new ArgumentNullException(nameof(equationShape));
+
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? ownerRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? visibleRange = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
+        try
+        {
+            shapeRange = equationShape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1) return Array.Empty<EquationReferenceBookmarkAlias>();
+            paragraph = paragraphs[1];
+            ownerRange = paragraph.Range.Duplicate;
+            fields = ownerRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!IsMathTypePlaceRefCode(code.Text)) continue;
+                if (!TryGetVisibleNumberRange(document, field, out visibleRange)
+                    || visibleRange is null)
+                    continue;
+                break;
+            }
+            if (visibleRange is null) return Array.Empty<EquationReferenceBookmarkAlias>();
+
+            var aliases = new List<EquationReferenceBookmarkAlias>();
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmarkRange);
+                bookmarkRange = null;
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                var name = bookmark.Name;
+                var span = name.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? EquationReferenceBookmarkSpan.VisibleNumber
+                    : name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
+                        ? EquationReferenceBookmarkSpan.NumberOnly
+                        : (EquationReferenceBookmarkSpan?)null;
+                if (!span.HasValue) continue;
+
+                bookmarkRange = bookmark.Range;
+                if (bookmarkRange.Start < visibleRange.Start
+                    || bookmarkRange.End > visibleRange.End)
+                    continue;
+                if (!HasExternalReferenceToBookmark(document, name, ownerRange))
+                    continue;
+                aliases.Add(new EquationReferenceBookmarkAlias
+                {
+                    Name = name,
+                    Span = span.Value,
+                });
+            }
+            return aliases
+                .GroupBy(alias => alias.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(alias => alias.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        finally
+        {
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(visibleRange);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(ownerRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    internal static IReadOnlyList<EquationReferenceBookmarkAlias> CaptureFormatConversionAliasesFromVisualTeX(
+        Document document,
+        string formulaId)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (string.IsNullOrWhiteSpace(formulaId))
+            throw new ArgumentException("FormulaId is required.", nameof(formulaId));
+
+        Table? table = null;
+        Cell? numberCell = null;
+        Range? ownerRange = null;
+        Range? numberCellRange = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
+        try
+        {
+            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId);
+            if (table is null) return Array.Empty<EquationReferenceBookmarkAlias>();
+            ownerRange = table.Range.Duplicate;
+            numberCell = table.Cell(1, 3);
+            numberCellRange = numberCell.Range.Duplicate;
+            numberCellRange.End = Math.Max(numberCellRange.Start, numberCellRange.End - 1);
+
+            var aliases = new List<EquationReferenceBookmarkAlias>();
+            bookmarks = document.Bookmarks;
+            var nativeAlias = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            if (bookmarks.Exists(nativeAlias)
+                && HasExternalReferenceToBookmark(document, nativeAlias, ownerRange))
+            {
+                aliases.Add(new EquationReferenceBookmarkAlias
+                {
+                    Name = nativeAlias,
+                    Span = EquationReferenceBookmarkSpan.NumberOnly,
+                });
+            }
+
+            // Compatibility aliases inherited from an earlier MathType phase do
+            // not encode the VisualTeX FormulaId, so locate only ZEqnNum aliases by
+            // their ownership of this formula's visible number cell. The native
+            // VTEqNum_<FormulaId> identity above is captured directly by name; this
+            // avoids relying on Word's field-result bookmark boundary quirks.
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmarkRange);
+                bookmarkRange = null;
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                var name = bookmark.Name;
+                if (!name.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                bookmarkRange = bookmark.Range;
+                if (bookmarkRange.Start < numberCellRange.Start
+                    || bookmarkRange.End > numberCellRange.End)
+                    continue;
+                if (!HasExternalReferenceToBookmark(document, name, ownerRange))
+                    continue;
+                aliases.Add(new EquationReferenceBookmarkAlias
+                {
+                    Name = name,
+                    Span = EquationReferenceBookmarkSpan.VisibleNumber,
+                });
+            }
+            return aliases
+                .GroupBy(alias => alias.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(alias => alias.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        finally
+        {
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(numberCellRange);
+            Release(ownerRange);
+            Release(numberCell);
+            Release(table);
+        }
+    }
+
     internal static int RestoreReferenceBookmarkAliases(
         Document document,
         string formulaId,
@@ -417,6 +602,175 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    internal static int RestoreFormatConversionAliasesToVisualTeX(
+        Document document,
+        string formulaId,
+        IReadOnlyCollection<EquationReferenceBookmarkAlias> aliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (aliases is null || aliases.Count == 0) return 0;
+
+        Bookmarks? bookmarks = null;
+        Bookmark? nativeBookmark = null;
+        Table? table = null;
+        Cell? numberCell = null;
+        Range? numberOnlyRange = null;
+        Range? visibleRange = null;
+        Bookmark? aliasBookmark = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            if (!bookmarks.Exists(nativeName))
+                throw new InvalidDataException(
+                    $"Converted VisualTeX formula {formulaId} has no durable number bookmark {nativeName}.");
+            nativeBookmark = bookmarks[nativeName];
+            numberOnlyRange = nativeBookmark.Range.Duplicate;
+
+            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+                ?? throw new InvalidDataException(
+                    $"Converted VisualTeX formula {formulaId} has no numbered equation table.");
+            numberCell = table.Cell(1, 3);
+            visibleRange = numberCell.Range.Duplicate;
+            visibleRange.End = Math.Max(visibleRange.Start, visibleRange.End - 1);
+
+            var restored = 0;
+            foreach (var alias in aliases
+                         .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                         .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                         .Select(group => group.First()))
+            {
+                var targetRange = alias.Span == EquationReferenceBookmarkSpan.VisibleNumber
+                    ? visibleRange
+                    : numberOnlyRange;
+                if (bookmarks.Exists(alias.Name))
+                {
+                    Release(aliasBookmark);
+                    aliasBookmark = bookmarks[alias.Name];
+                    aliasBookmark.Delete();
+                }
+                Release(aliasBookmark);
+                aliasBookmark = bookmarks.Add(alias.Name, targetRange);
+                restored++;
+            }
+            return restored;
+        }
+        finally
+        {
+            Release(aliasBookmark);
+            Release(visibleRange);
+            Release(numberOnlyRange);
+            Release(numberCell);
+            Release(table);
+            Release(nativeBookmark);
+            Release(bookmarks);
+        }
+    }
+
+    internal static int RestoreFormatConversionAliasesToMathType(
+        Document document,
+        string targetBookmarkName,
+        IReadOnlyCollection<EquationReferenceBookmarkAlias> aliases)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (aliases is null || aliases.Count == 0) return 0;
+        if (string.IsNullOrWhiteSpace(targetBookmarkName))
+            throw new ArgumentException("Target bookmark is required.", nameof(targetBookmarkName));
+
+        Bookmarks? bookmarks = null;
+        Bookmark? targetBookmark = null;
+        Range? targetRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? visibleRange = null;
+        Range? numberOnlyRange = null;
+        Range? first = null;
+        Range? last = null;
+        Bookmark? aliasBookmark = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(targetBookmarkName))
+                throw new InvalidDataException(
+                    $"Converted MathType target locator {targetBookmarkName} is missing.");
+            targetBookmark = bookmarks[targetBookmarkName];
+            targetRange = targetBookmark.Range;
+            paragraphs = targetRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException("Converted MathType target is not in one stable paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!IsMathTypePlaceRefCode(code.Text)) continue;
+                if (!TryGetVisibleNumberRange(document, field, out visibleRange)
+                    || visibleRange is null)
+                    continue;
+                break;
+            }
+            if (visibleRange is null)
+                throw new InvalidDataException("Converted MathType target has no MTPlaceRef visible number range.");
+
+            numberOnlyRange = visibleRange.Duplicate;
+            if (numberOnlyRange.End - numberOnlyRange.Start >= 2)
+            {
+                first = document.Range(numberOnlyRange.Start, numberOnlyRange.Start + 1);
+                last = document.Range(numberOnlyRange.End - 1, numberOnlyRange.End);
+                if (string.Equals(first.Text, "(", StringComparison.Ordinal)
+                    && string.Equals(last.Text, ")", StringComparison.Ordinal))
+                    numberOnlyRange.SetRange(numberOnlyRange.Start + 1, numberOnlyRange.End - 1);
+            }
+
+            var restored = 0;
+            foreach (var alias in aliases
+                         .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                         .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                         .Select(group => group.First()))
+            {
+                var aliasRange = alias.Span == EquationReferenceBookmarkSpan.VisibleNumber
+                    ? visibleRange
+                    : numberOnlyRange;
+                if (bookmarks.Exists(alias.Name))
+                {
+                    Release(aliasBookmark);
+                    aliasBookmark = bookmarks[alias.Name];
+                    aliasBookmark.Delete();
+                }
+                Release(aliasBookmark);
+                aliasBookmark = bookmarks.Add(alias.Name, aliasRange);
+                restored++;
+            }
+            return restored;
+        }
+        finally
+        {
+            Release(aliasBookmark);
+            Release(last);
+            Release(first);
+            Release(numberOnlyRange);
+            Release(visibleRange);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(targetRange);
+            Release(targetBookmark);
+            Release(bookmarks);
+        }
+    }
+
     internal static int RefreshReferences(
         Document document,
         ISet<string> bookmarkAliases)
@@ -438,6 +792,28 @@ internal static class MathTypeEquationReferences
         try
         {
             fields = document.Fields;
+            for (var fieldIndex = 1; fieldIndex <= fields.Count; fieldIndex++)
+            {
+                Field? direct = null;
+                Range? directCode = null;
+                try
+                {
+                    direct = fields[fieldIndex];
+                    directCode = direct.Code;
+                    var directText = directCode.Text ?? string.Empty;
+                    if (!directText.TrimStart().StartsWith("REF ", StringComparison.OrdinalIgnoreCase)
+                        || !bookmarkAliases.Any(alias =>
+                            directText.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0))
+                        continue;
+                    try { direct.Update(); updated++; } catch { }
+                }
+                finally
+                {
+                    Release(directCode);
+                    Release(direct);
+                }
+            }
+
             for (var outerIndex = 1; outerIndex <= fields.Count; outerIndex++)
             {
                 Release(outerCodeFont);
@@ -539,6 +915,43 @@ internal static class MathTypeEquationReferences
             Release(nestedFields);
             Release(outerCode);
             Release(outer);
+            Release(fields);
+        }
+    }
+
+    private static bool HasExternalReferenceToBookmark(
+        Document document,
+        string bookmarkName,
+        Range ownerRange)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.Start >= ownerRange.Start && code.Start < ownerRange.End)
+                    continue;
+                var text = code.Text ?? string.Empty;
+                if (text.IndexOf(bookmarkName, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                if (text.IndexOf("REF ", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("GOTOBUTTON ", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
             Release(fields);
         }
     }

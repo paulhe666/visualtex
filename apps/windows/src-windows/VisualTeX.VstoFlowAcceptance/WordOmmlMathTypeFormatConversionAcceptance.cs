@@ -1060,6 +1060,157 @@ internal static partial class Program
                 referenceTextBefore,
                 secondOmmlFormulaId,
                 "save/reopen");
+
+            var visualTeXReferenceTargets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var visualTeXReferenceTarget = visualTeXReferenceTargets.Single(target =>
+                string.Equals(target.FormulaId, secondOmmlFormulaId, StringComparison.Ordinal));
+            SelectDocumentEnd(document);
+            var visualTeXReferenceSelection = application.Selection;
+            WordEquationNumbering.InsertEquationReference(
+                document,
+                visualTeXReferenceSelection,
+                visualTeXReferenceTarget,
+                EquationReferenceStyle.NumberOnly);
+            Release(visualTeXReferenceSelection);
+            var visualTeXReferenceAlias = WordEquationNumbering.NativeNumberBookmarkName(secondOmmlFormulaId);
+            var visualTeXReferenceTextBefore = ReadMathTypeReferenceResultForAcceptance(
+                document,
+                visualTeXReferenceAlias);
+            AssertEqual(
+                visualTeXReferenceTarget.NumberText.Trim(),
+                visualTeXReferenceTextBefore.Trim(),
+                "OMML reference setup did not create a dynamic VTEqNum reference to the second formula.");
+            var preReverseAliases = MathTypeEquationReferences.CaptureFormatConversionAliasesFromVisualTeX(
+                document,
+                secondOmmlFormulaId);
+            AssertTrue(preReverseAliases.Any(alias => string.Equals(
+                    alias.Name,
+                    referenceAlias,
+                    StringComparison.OrdinalIgnoreCase)),
+                "OMML→MathType setup did not capture the inherited ZEqnNum compatibility alias.");
+            AssertTrue(preReverseAliases.Any(alias => string.Equals(
+                    alias.Name,
+                    visualTeXReferenceAlias,
+                    StringComparison.OrdinalIgnoreCase)),
+                "OMML→MathType setup did not capture the dynamic VTEqNum compatibility alias.");
+
+            service = new WordFormulaService(application);
+            var ommlToMathTypePlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            AssertEqual(9, ommlToMathTypePlan.Targets.Count,
+                "Reference round-trip OMML→MathType capture did not find all nine formulas.");
+            var ommlToMathTypePrepared = PrepareOmmlMathTypeTargets(ommlToMathTypePlan, emfPath);
+            var ommlToMathTypeResult = service.ApplyFormulaFormatConversionPlan(
+                ommlToMathTypePlan,
+                ommlToMathTypePrepared);
+            AssertEqual(9, ommlToMathTypeResult.FormulaCount,
+                "Reference round-trip OMML→MathType did not convert all nine formulas: "
+                + string.Join(" | ", ommlToMathTypeResult.Failures));
+            AssertEqual(0, ommlToMathTypeResult.FailedFormulaCount,
+                "Reference round-trip OMML→MathType failed: "
+                + string.Join(" | ", ommlToMathTypeResult.Failures));
+            AssertEqual(0, document.OMaths.Count,
+                "Reference round-trip OMML→MathType left OMML formulas behind.");
+            AssertEqual(9, CountMathTypeOleShapes(document),
+                "Reference round-trip OMML→MathType did not create nine MathType equations.");
+            AssertEqual(9, CountMathTypePlaceRefFields(document),
+                "Reference round-trip OMML→MathType did not recreate nine MTPlaceRef fields.");
+            AssertReferenceAliasesOnMathType(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                visualTeXReferenceAlias,
+                visualTeXReferenceTextBefore,
+                "OMML→MathType live conversion");
+
+            var mathTypeRoundTripPath = Path.Combine(
+                artifactRoot,
+                "OMML-To-MathType-Reference-RoundTrip.docx");
+            document.SaveAs2(mathTypeRoundTripPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                mathTypeRoundTripPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            AssertReferenceAliasesOnMathType(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                visualTeXReferenceAlias,
+                visualTeXReferenceTextBefore,
+                "OMML→MathType save/reopen");
+
+            service = new WordFormulaService(application);
+            var secondMathTypeToOmmlPlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(9, secondMathTypeToOmmlPlan.Targets.Count,
+                "Second MathType→OMML reference round-trip capture did not find all nine formulas.");
+            var secondMathTypeTarget = secondMathTypeToOmmlPlan.Targets
+                .OrderBy(target => target.SourceStart)
+                .ElementAt(1);
+            var secondMathTypeToOmmlPrepared = PrepareOmmlMathTypeTargets(
+                secondMathTypeToOmmlPlan,
+                emfPath);
+            var secondMathTypeToOmmlResult = service.ApplyFormulaFormatConversionPlan(
+                secondMathTypeToOmmlPlan,
+                secondMathTypeToOmmlPrepared);
+            AssertEqual(9, secondMathTypeToOmmlResult.FormulaCount,
+                "Second MathType→OMML reference round-trip did not convert all nine formulas: "
+                + string.Join(" | ", secondMathTypeToOmmlResult.Failures));
+            AssertEqual(0, secondMathTypeToOmmlResult.FailedFormulaCount,
+                "Second MathType→OMML reference round-trip failed: "
+                + string.Join(" | ", secondMathTypeToOmmlResult.Failures));
+            var finalSecondOmmlFormulaId = secondMathTypeToOmmlPrepared[secondMathTypeTarget.Id]
+                .Session.FormulaId;
+            AssertConsecutiveNumberedOmmlStructure(document, "second live conversion");
+            AssertConvertedMathTypeReferenceAlias(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                finalSecondOmmlFormulaId,
+                "second MathType→OMML live conversion");
+            AssertVisualTeXReferenceAlias(
+                document,
+                visualTeXReferenceAlias,
+                visualTeXReferenceTextBefore,
+                finalSecondOmmlFormulaId,
+                "second MathType→OMML live conversion");
+
+            var finalRoundTripPath = Path.Combine(
+                artifactRoot,
+                "MathType-OMML-Reference-Repeated-RoundTrip.docx");
+            document.SaveAs2(finalRoundTripPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                finalRoundTripPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            AssertConsecutiveNumberedOmmlStructure(document, "second save/reopen");
+            AssertConvertedMathTypeReferenceAlias(
+                application,
+                document,
+                referenceAlias,
+                referenceTextBefore,
+                finalSecondOmmlFormulaId,
+                "second MathType→OMML save/reopen");
+            AssertVisualTeXReferenceAlias(
+                document,
+                visualTeXReferenceAlias,
+                visualTeXReferenceTextBefore,
+                finalSecondOmmlFormulaId,
+                "second MathType→OMML save/reopen");
+
             AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
                 application,
                 document,
@@ -1353,6 +1504,220 @@ internal static partial class Program
             Release(numberCellRange);
             Release(numberCell);
             Release(numberedTable);
+            Release(nativeRange);
+            Release(aliasRange);
+            Release(nativeBookmark);
+            Release(aliasBookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static void AssertReferenceAliasesOnMathType(
+        Word.Application application,
+        Word.Document document,
+        string mathTypeAlias,
+        string expectedMathTypeText,
+        string visualTeXAlias,
+        string expectedVisualTeXText,
+        string stage)
+    {
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? mathTypeBookmark = null;
+        Word.Bookmark? visualTeXBookmark = null;
+        Word.Range? mathTypeRange = null;
+        Word.Range? visualTeXRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Field? goTo = null;
+        Word.Range? result = null;
+        Word.Selection? selection = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            AssertTrue(bookmarks.Exists(mathTypeAlias),
+                $"{stage} lost MathType compatibility bookmark {mathTypeAlias}.");
+            AssertTrue(bookmarks.Exists(visualTeXAlias),
+                $"{stage} lost VisualTeX compatibility bookmark {visualTeXAlias}.");
+            mathTypeBookmark = bookmarks[mathTypeAlias];
+            visualTeXBookmark = bookmarks[visualTeXAlias];
+            mathTypeRange = mathTypeBookmark.Range;
+            visualTeXRange = visualTeXBookmark.Range;
+            AssertEqual(expectedMathTypeText.Trim(), (mathTypeRange.Text ?? string.Empty).Trim(),
+                $"{stage} restored the MathType alias over the wrong visible-number span.");
+            AssertEqual(expectedVisualTeXText.Trim(), (visualTeXRange.Text ?? string.Empty).Trim(),
+                $"{stage} restored the VisualTeX alias over the wrong number-only span.");
+
+            fields = document.Fields;
+            var mathTypeRefFound = false;
+            var visualTeXRefFound = false;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ')
+                    .TrimStart();
+                if (text.StartsWith("REF " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    field.Update();
+                    Release(result);
+                    result = field.Result;
+                    AssertEqual(expectedMathTypeText.Trim(), (result.Text ?? string.Empty).Trim(),
+                        $"{stage} changed the MathType reference result.");
+                    mathTypeRefFound = true;
+                }
+                if (text.StartsWith("REF " + visualTeXAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    field.Update();
+                    Release(result);
+                    result = field.Result;
+                    AssertEqual(expectedVisualTeXText.Trim(), (result.Text ?? string.Empty).Trim(),
+                        $"{stage} changed the VisualTeX reference result.");
+                    visualTeXRefFound = true;
+                }
+                if (text.StartsWith("GOTOBUTTON " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    Release(goTo);
+                    goTo = field;
+                    field = null;
+                }
+            }
+            AssertTrue(mathTypeRefFound,
+                $"{stage} lost the dynamic REF field for {mathTypeAlias}.");
+            AssertTrue(visualTeXRefFound,
+                $"{stage} lost the dynamic REF field for {visualTeXAlias}.");
+            AssertTrue(goTo is not null,
+                $"{stage} lost GOTOBUTTON {mathTypeAlias}.");
+
+            // Updating nested REF fields can cause Word to rematerialize the outer
+            // GOTOBUTTON field. Resolve it again immediately before DoClick so the
+            // test exercises the same live field object a real user double-clicks.
+            Release(goTo);
+            goTo = null;
+            Release(code);
+            code = null;
+            Release(field);
+            field = null;
+            Release(fields);
+            fields = document.Fields;
+            var expectedGoToSelectionStart = -1;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ')
+                    .TrimStart();
+                if (MathTypeEquationReferences.IsMathTypePlaceRefCode(text)
+                    && mathTypeRange.Start >= code.Start
+                    && mathTypeRange.End <= code.End)
+                {
+                    expectedGoToSelectionStart = Math.Max(document.Content.Start, code.Start - 1);
+                }
+                if (!text.StartsWith("GOTOBUTTON " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                Release(goTo);
+                goTo = field;
+                field = null;
+            }
+            AssertTrue(goTo is not null,
+                $"{stage} lost live GOTOBUTTON {mathTypeAlias} after REF refresh.");
+            AssertTrue(expectedGoToSelectionStart >= 0,
+                $"{stage} could not resolve the MTPlaceRef owner of {mathTypeAlias}.");
+            goTo!.DoClick();
+            selection = application.Selection;
+            AssertEqual(expectedGoToSelectionStart, selection.Start,
+                $"{stage} GOTOBUTTON did not navigate to the MTPlaceRef owner of {mathTypeAlias}; bookmark={mathTypeRange.Start}:{mathTypeRange.End}, selection={selection.Start}:{selection.End}.");
+        }
+        finally
+        {
+            Release(selection);
+            Release(result);
+            Release(goTo);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(visualTeXRange);
+            Release(mathTypeRange);
+            Release(visualTeXBookmark);
+            Release(mathTypeBookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static void AssertVisualTeXReferenceAlias(
+        Word.Document document,
+        string alias,
+        string expectedReferenceText,
+        string formulaId,
+        string stage)
+    {
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? aliasBookmark = null;
+        Word.Bookmark? nativeBookmark = null;
+        Word.Range? aliasRange = null;
+        Word.Range? nativeRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? result = null;
+        var referenceFound = false;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            AssertTrue(bookmarks.Exists(alias),
+                $"{stage} lost VisualTeX reference compatibility bookmark {alias}.");
+            AssertTrue(bookmarks.Exists(nativeName),
+                $"{stage} lost native OMML number bookmark {nativeName}.");
+            aliasBookmark = bookmarks[alias];
+            nativeBookmark = bookmarks[nativeName];
+            aliasRange = aliasBookmark.Range;
+            nativeRange = nativeBookmark.Range;
+            AssertEqual(nativeRange.Start, aliasRange.Start,
+                $"{stage} restored {alias} at the wrong number-only start position.");
+            AssertEqual(nativeRange.End, aliasRange.End,
+                $"{stage} restored {alias} at the wrong number-only end position.");
+            AssertEqual(expectedReferenceText.Trim(), (aliasRange.Text ?? string.Empty).Trim(),
+                $"{stage} restored {alias} over the wrong number text.");
+
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var text = (code.Text ?? string.Empty).TrimStart();
+                if (!text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                field.Update();
+                Release(result);
+                result = field.Result;
+                AssertEqual(expectedReferenceText.Trim(), (result.Text ?? string.Empty).Trim(),
+                    $"{stage} changed the dynamic VisualTeX reference result.");
+                referenceFound = true;
+            }
+            AssertTrue(referenceFound, $"{stage} lost dynamic REF {alias}.");
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
             Release(nativeRange);
             Release(aliasRange);
             Release(nativeBookmark);

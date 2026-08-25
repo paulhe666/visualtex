@@ -4126,7 +4126,8 @@ internal sealed partial class WordFormulaService
         Document document,
         FormulaToLatexTarget target,
         ref bool documentMutationStarted,
-        IReadOnlyDictionary<string, int>? knownReferenceCounts = null)
+        IReadOnlyDictionary<string, int>? knownReferenceCounts = null,
+        bool preserveCrossReferences = false)
     {
         var metadata = target.Metadata;
         var latexSource = target.LatexSource;
@@ -4153,10 +4154,13 @@ internal sealed partial class WordFormulaService
             if (metadata.Numbered)
             {
                 documentMutationStarted = true;
-                WordEquationNumbering.FreezeFormulaCrossReferences(
-                    document,
-                    metadata.FormulaId,
-                    knownReferenceCounts);
+                if (!preserveCrossReferences)
+                {
+                    WordEquationNumbering.FreezeFormulaCrossReferences(
+                        document,
+                        metadata.FormulaId,
+                        knownReferenceCounts);
+                }
                 WordEquationNumbering.RemoveFormulaNumberingArtifacts(
                     document,
                     metadata.FormulaId);
