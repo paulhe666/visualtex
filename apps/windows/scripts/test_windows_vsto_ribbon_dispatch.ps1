@@ -115,6 +115,10 @@ function Test-RibbonComDispatch(
             throw "$ClassName Ribbon XML is missing the bulk import callback or high-DPI icon tag."
         }
         if ($isWordAddIn) {
+            if ($ribbonXml -match 'VisualTeX.WordVsto.ExportPicture' -or
+                $ribbonXml -match 'OnExportSelectedAsPicture') {
+                throw "$ClassName Ribbon XML still exposes the removed picture export command."
+            }
             foreach ($requiredFormatControl in @(
                 'VisualTeX.WordVsto.VisualTeXToMathType',
                 'VisualTeX.WordVsto.MathTypeToVisualTeX',
@@ -170,7 +174,6 @@ Test-RibbonComDispatch `
         "OnUpdateEquationNumbers",
         "GetEquationNumberFormatPressed",
         "OnEquationNumberFormatChanged",
-        "OnExportSelectedAsPicture",
         "OnDeleteSelected",
         "OnOpenDesktop",
         "OnInsertEquationReference",
