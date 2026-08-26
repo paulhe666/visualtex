@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
@@ -39,6 +40,7 @@ interface Props {
     translateY: number,
   ) => void;
   onRotateLayer: (layerId: string, rotateDeg: number) => void;
+  onDeleteLayer: (layerId: string) => void;
   onAddEraserStroke: (points: Array<{ x: number; y: number }>) => void;
 }
 
@@ -372,11 +374,11 @@ export function CustomSymbolDesignerCanvas({
   onMoveLayer,
   onResizeLayer,
   onRotateLayer,
+  onDeleteLayer,
   onAddEraserStroke,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
-  const previousLayerCountRef = useRef(documentState.layers.length);
   const fitWidthRef = useRef(1);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
@@ -466,19 +468,22 @@ export function CustomSymbolDesignerCanvas({
   }, [initialViewBox, measureInkBounds]);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(fitViewport);
+    // Reframe only when switching to a different registered symbol. Inserting
+    // or resizing layers must never move the user's viewport underneath them.
+    const frame = requestAnimationFrame(() => {
+      const bounds = measureInkBounds();
+      const next = bounds
+        ? paddedViewBox(bounds.x, bounds.y, bounds.width, bounds.height)
+        : initialViewBox;
+      setInkBounds(bounds);
+      fitWidthRef.current = next.width;
+      setViewBox(next);
+    });
     return () => cancelAnimationFrame(frame);
-  }, [documentState.symbolId, fitViewport]);
-
-  useEffect(() => {
-    const previous = previousLayerCountRef.current;
-    previousLayerCountRef.current = documentState.layers.length;
-    if (previous === 0 && documentState.layers.length === 1) {
-      const frame = requestAnimationFrame(fitViewport);
-      return () => cancelAnimationFrame(frame);
-    }
-    return undefined;
-  }, [documentState.layers.length, fitViewport]);
+    // Intentionally keyed only by document identity; evolving layer metrics
+    // are measured without implicitly reframing the viewport.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentState.symbolId]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -530,6 +535,7 @@ export function CustomSymbolDesignerCanvas({
     const svg = svgRef.current;
     const matrix = svg?.getScreenCTM();
     if (!svg || !matrix) return;
+    svg.focus({ preventScroll: true });
     const start = pointWithMatrix(event.clientX, event.clientY, matrix.inverse());
     svg.setPointerCapture?.(event.pointerId);
     setDrag({
@@ -641,6 +647,7 @@ export function CustomSymbolDesignerCanvas({
 
   const beginCanvasPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.button !== 0 && event.button !== 1) return;
+    event.currentTarget.focus({ preventScroll: true });
     if (eraserMode && event.button === 0) {
       const point = localPoint(event);
       if (!point) return;
@@ -664,6 +671,21 @@ export function CustomSymbolDesignerCanvas({
       moved: false,
     });
     event.preventDefault();
+  };
+
+  const handleCanvasKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
+    if (
+      !selectedLayerId ||
+      (event.key !== "Backspace" && event.key !== "Delete") ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    onDeleteLayer(selectedLayerId);
   };
 
   const movePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -822,8 +844,7 @@ export function CustomSymbolDesignerCanvas({
 
   const worldPerPixel =
     viewBox.width / Math.max(svgRef.current?.clientWidth ?? 800, 1);
-  const handleSizeWorld = Math.max(8, worldPerPixel * 9);
-  const resizeHitSizeWorld = Math.max(handleSizeWorld * 3, worldPerPixel * 30);
+  const handleSizeWorld = Math.max(7, worldPerPixel * 8);
   const rotationDistanceWorld = Math.max(handleSizeWorld * 3.6, worldPerPixel * 34);
   const zoomPercent = Math.max(
     8,
@@ -879,6 +900,14 @@ export function CustomSymbolDesignerCanvas({
     const scaleY = Math.max(Math.abs(layer.transform.scaleY ?? 1), 0.02);
     const handleWidth = handleSizeWorld / scaleX;
     const handleHeight = handleSizeWorld / scaleY;
+    const screenWidth = Math.max(1, (bounds.width * scaleX) / worldPerPixel);
+    const screenHeight = Math.max(1, (bounds.height * scaleY) / worldPerPixel);
+    const shortestScreenSide = Math.min(screenWidth, screenHeight);
+    const resizeHitPixels = Math.min(
+      14,
+      Math.max(9, shortestScreenSide * 0.24),
+    );
+    const resizeHitSizeWorld = worldPerPixel * resizeHitPixels;
     const hitWidth = resizeHitSizeWorld / scaleX;
     const hitHeight = resizeHitSizeWorld / scaleY;
     const averageScale = Math.sqrt(scaleX * scaleY);
@@ -1030,6 +1059,8 @@ export function CustomSymbolDesignerCanvas({
         data-custom-symbol-infinite-canvas="true"
         data-custom-symbol-viewbox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
         data-custom-symbol-workspace={`${workspace.x} ${workspace.y} ${workspace.width} ${workspace.height}`}
+        tabIndex={-1}
+        onKeyDown={handleCanvasKeyDown}
         onWheel={(event) => {
           event.preventDefault();
           const point = localPoint(event);

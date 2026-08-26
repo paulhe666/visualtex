@@ -608,6 +608,19 @@ async function main() {
     await setReactInput(client, '[data-custom-symbol-system-glyph-search]', "");
     process.stdout.write("[custom-symbol-designer] system math glyph insertion and browser fallback verified\n");
 
+    const beforeFirstInsertion = await client.evaluate(`(() => {
+      const canvas = document.querySelector('[data-custom-symbol-canvas]');
+      const reference = document.querySelector('[data-custom-symbol-reference]');
+      const rect = reference?.getBoundingClientRect();
+      return {
+        viewBox: canvas?.getAttribute('viewBox') || '',
+        referenceCenter: rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : null,
+      };
+    })()`);
+    assert.ok(beforeFirstInsertion.referenceCenter);
+
     await client.evaluate(`document.querySelector('[data-add-custom-symbol-material]').click()`);
     await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 1`);
     await waitUntil(
@@ -675,6 +688,78 @@ async function main() {
     assert.ok(first.artworkRect.top >= first.shellRect.top - 2);
     assert.ok(first.artworkRect.right <= first.shellRect.right + 2);
     assert.ok(first.artworkRect.bottom <= first.shellRect.bottom + 2);
+
+    const afterFirstInsertion = await client.evaluate(`(() => {
+      const canvas = document.querySelector('[data-custom-symbol-canvas]');
+      const reference = document.querySelector('[data-custom-symbol-reference]');
+      const rect = reference?.getBoundingClientRect();
+      return {
+        viewBox: canvas?.getAttribute('viewBox') || '',
+        referenceCenter: rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : null,
+      };
+    })()`);
+    assert.equal(
+      afterFirstInsertion.viewBox,
+      beforeFirstInsertion.viewBox,
+      "Inserting the first character must not implicitly reframe the canvas viewport",
+    );
+    assert.ok(afterFirstInsertion.referenceCenter);
+    assert.ok(
+      Math.hypot(
+        afterFirstInsertion.referenceCenter.x - beforeFirstInsertion.referenceCenter.x,
+        afterFirstInsertion.referenceCenter.y - beforeFirstInsertion.referenceCenter.y,
+      ) < 1,
+      `The baseline reference must stay visually stationary on first insertion: ${JSON.stringify({ beforeFirstInsertion, afterFirstInsertion })}`,
+    );
+    process.stdout.write("[custom-symbol-designer] first insertion preserves viewport and baseline reference position\n");
+
+    const backspaceTarget = await client.evaluate(`(() => {
+      const layer = document.querySelector('[data-custom-symbol-canvas-layer].is-selected');
+      if (!layer) return null;
+      const rect = layer.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    assert.ok(backspaceTarget);
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: backspaceTarget.x,
+      y: backspaceTarget.y,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: backspaceTarget.x,
+      y: backspaceTarget.y,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    const canvasFocused = await client.evaluate(
+      `document.activeElement === document.querySelector('[data-custom-symbol-canvas]')`,
+    );
+    assert.equal(canvasFocused, true, "Clicking a character should focus the design canvas for keyboard editing");
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 0`);
+    await client.evaluate(`document.querySelector('[data-add-custom-symbol-material]').click()`);
+    await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 1`);
+    process.stdout.write("[custom-symbol-designer] selected canvas layer Backspace deletion verified\n");
 
     await client.evaluate(`document.querySelector('[data-toggle-custom-symbol-reference-alpha]').click()`);
     await waitUntil(client, `!document.querySelector('[data-custom-symbol-reference-alpha]')`);
@@ -876,6 +961,9 @@ async function main() {
     await waitUntil(client, `document.querySelector('[data-custom-symbol-artwork-layer] path')?.getAttribute('fill') !== 'none'`);
     process.stdout.write("[custom-symbol-designer] numeric transforms, flips, slant, hollow outline and perspective verified\n");
 
+    await client.evaluate(`document.querySelector('[data-custom-symbol-fit-view]').click()`);
+    await sleep(80);
+
     const scaleBeforeHandle = await client.evaluate(`(() => ({
       x: Number(document.querySelector('[data-designer-field="layer-scale-x"]')?.value || 1),
       y: Number(document.querySelector('[data-designer-field="layer-scale-y"]')?.value || 1),
@@ -889,6 +977,28 @@ async function main() {
     assert.equal(scaleBeforeHandle.hitTargets, 8, "Selected layer should expose eight forgiving resize hit targets");
     assert.equal(scaleBeforeHandle.rotationHandles, 1, "Selected layer should expose a direct rotation handle");
     assert.equal(scaleBeforeHandle.rotationHitTargets, 1, "The rotation handle should have a forgiving hit target");
+    const dragPriority = await client.evaluate(`(() => {
+      const selection = document.querySelector('[data-custom-symbol-canvas-layer].is-selected .custom-symbol-designer-selection-box');
+      if (!selection) return null;
+      const rect = selection.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const coveringResizeHandles = Array.from(
+        document.querySelectorAll('[data-custom-symbol-resize-hit-target]'),
+      ).filter((target) => {
+        const hit = target.getBoundingClientRect();
+        return x >= hit.left && x <= hit.right && y >= hit.top && y <= hit.bottom;
+      }).map((target) => target.getAttribute('data-custom-symbol-resize-hit-target'));
+      return { width: rect.width, height: rect.height, coveringResizeHandles };
+    })()`);
+    assert.ok(dragPriority, "Selected layer must expose a draggable interior");
+    if (dragPriority.width > 20 && dragPriority.height > 20) {
+      assert.deepEqual(
+        dragPriority.coveringResizeHandles,
+        [],
+        `Resize hit targets must not cover the center drag area: ${JSON.stringify(dragPriority)}`,
+      );
+    }
     const resizeBox = await client.evaluate(`(() => {
       const handle = document.querySelector('[data-custom-symbol-resize-handle="se"]');
       const hitTarget = document.querySelector('[data-custom-symbol-resize-hit-target="se"]');
@@ -914,7 +1024,14 @@ async function main() {
     assert.ok(resizeBox, "Bottom-right resize handle must have a forgiving hit target");
     assert.equal(resizeBox.outsideVisualHandle, true, "Resize regression must begin outside the painted handle");
     assert.equal(resizeBox.insideHitTarget, true, "Resize regression must begin inside the expanded hit target");
-    assert.ok(resizeBox.hitWidth >= resizeBox.visualWidth * 2.5, "Resize hit target should be substantially larger than the painted handle");
+    assert.ok(
+      resizeBox.hitWidth >= resizeBox.visualWidth,
+      "Resize hit target must remain at least as large as the painted handle",
+    );
+    assert.ok(
+      resizeBox.hitWidth <= 15.5,
+      `Resize hit target must stay compact enough for easy dragging: ${JSON.stringify(resizeBox)}`,
+    );
     await client.send("Input.dispatchMouseEvent", {
       type: "mousePressed",
       x: resizeBox.x,

@@ -224,34 +224,6 @@ function isSingleUnicodeMaterial(source: string) {
   return characters.length === 1 && characters[0] !== "\\" && !/\s/u.test(characters[0]);
 }
 
-const standardDesignerMetrics: CustomSymbolMetrics = {
-  widthEm: 3.2,
-  ascentEm: 3,
-  descentEm: 1.5,
-};
-
-function paddedGlyphMetrics(
-  metrics: CustomSymbolMetrics,
-  marginEm = 0.65,
-): CustomSymbolMetrics {
-  return {
-    widthEm: Math.max(standardDesignerMetrics.widthEm, metrics.widthEm + marginEm * 2),
-    ascentEm: Math.max(standardDesignerMetrics.ascentEm, metrics.ascentEm + marginEm),
-    descentEm: Math.max(standardDesignerMetrics.descentEm, metrics.descentEm + marginEm),
-  };
-}
-
-function expandMetrics(
-  current: CustomSymbolMetrics,
-  required: CustomSymbolMetrics,
-): CustomSymbolMetrics {
-  return {
-    widthEm: Math.max(current.widthEm, required.widthEm),
-    ascentEm: Math.max(current.ascentEm, required.ascentEm),
-    descentEm: Math.max(current.descentEm, required.descentEm),
-  };
-}
-
 function cloneLayer(layer: CustomSymbolDesignerLayer): CustomSymbolDesignerLayer {
   if (typeof structuredClone === "function") return structuredClone(layer);
   return JSON.parse(JSON.stringify(layer)) as CustomSymbolDesignerLayer;
@@ -274,6 +246,22 @@ function designerLayerCenter(layer: CustomSymbolDesignerLayer) {
   return {
     x: layer.bounds.x + layer.bounds.width / 2,
     y: layer.bounds.y + layer.bounds.height / 2,
+  };
+}
+
+function centerGlyphLayerOnDesignerBaseline(
+  layer: Extract<CustomSymbolDesignerLayer, { kind: "glyph" }>,
+  metrics: CustomSymbolMetrics,
+): CustomSymbolDesignerLayer {
+  return {
+    ...layer,
+    transform: {
+      ...layer.transform,
+      translateX:
+        ((metrics.widthEm - layer.asset.metrics.widthEm) * 1000) / 2,
+      translateY:
+        (metrics.ascentEm - layer.asset.metrics.ascentEm) * 1000,
+    },
   };
 }
 
@@ -515,8 +503,10 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
       const layer = glyphLayerFromAsset(asset, { id: createUuid(), name: source.trim() });
       setDocumentState((current) => ({
         ...current,
-        metrics: expandMetrics(current.metrics, paddedGlyphMetrics(asset.metrics, 0.5)),
-        layers: [...current.layers, layer],
+        layers: [
+          ...current.layers,
+          centerGlyphLayerOnDesignerBaseline(layer, current.metrics),
+        ],
       }));
       setSelectedLayerId(layer.id);
       setMaterialLatex(source);
@@ -543,8 +533,10 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
       });
       setDocumentState((current) => ({
         ...current,
-        metrics: expandMetrics(current.metrics, paddedGlyphMetrics(asset.metrics, 0.5)),
-        layers: [...current.layers, layer],
+        layers: [
+          ...current.layers,
+          centerGlyphLayerOnDesignerBaseline(layer, current.metrics),
+        ],
       }));
       setSelectedLayerId(layer.id);
       setMaterialError("");
@@ -1521,6 +1513,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
                     };
                   })
                 }
+                onDeleteLayer={deleteLayer}
                 onAddEraserStroke={addEraserStroke}
               />
             </div>
