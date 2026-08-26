@@ -136,7 +136,7 @@ OCR 使用本地 PaddleOCR PP-FormulaNet sidecar。安装、模型缓存、识�
 
 长期文档只保存稳定的架构、操作和验收规则。以下内容不得继续写入仓库长期文档：
 
-- GPT、Codex 或其他 AI 的对话记录；
+- 对话记录；
 - 某一轮任务交接话术；
 - 个人工作区绝对路径；
 - 一次性 DMG、DOTM、PPAM 哈希；

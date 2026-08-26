@@ -17,7 +17,6 @@ macOS 使用完全离线的原生 Office 路线：
 ## 工程文档
 
 - 当前产品方向与平台边界：`LaTeX_Visual_Formula_Editor_Project_Spec.md`
-- macOS 开发约束与最低验证：`SKILL.md`
 - 可复现构建与测试：`VisualTeX_测试构建信息.md`
 - 滚动验收清单：`VisualTeX_验收清单.md`
 - 用户操作说明：`docs/help/VisualTeX_帮助手册.md`
