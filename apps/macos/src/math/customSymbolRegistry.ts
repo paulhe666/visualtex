@@ -4,6 +4,7 @@ import { safeStorage } from "../runtime/safeStorage";
 import type {
   CustomSymbolDefinition,
   CustomSymbolDesignerSourceArchive,
+  CustomSymbolLayerEffects,
   CustomSymbolLibrary,
   CustomSymbolLimitsBehavior,
   CustomSymbolMathRole,
@@ -13,23 +14,29 @@ import type {
 } from "./customSymbolTypes";
 
 export const CUSTOM_SYMBOL_STORAGE_KEY = "visualtex.custom-symbols.v1";
+export const CUSTOM_SYMBOL_STORAGE_INDEX_KEY = "visualtex.custom-symbols.v2.index";
+export const CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY =
+  "visualtex.custom-symbols.v2.backup-index";
+export const CUSTOM_SYMBOL_STORAGE_RECORD_PREFIX =
+  "visualtex.custom-symbols.v2.record.";
 export const CUSTOM_SYMBOL_LIBRARY_VERSION = 1 as const;
 export const CUSTOM_SYMBOL_LIBRARY_CHANGED_EVENT =
   "visualtex-custom-symbol-library-changed";
 
-const broadcastChannelName = "visualtex-custom-symbols-v1";
-const maximumCustomSymbols = 96;
-const maximumShapesPerSymbol = 160;
+const CUSTOM_SYMBOL_STORAGE_INDEX_VERSION = 2 as const;
+const broadcastChannelName = "visualtex-custom-symbols-v2";
+const maximumShapesPerDesignerAsset = 256;
+const maximumCompiledArtworkShapes = 4_096;
 const maximumDesignerAssets = 96;
 const maximumDesignerLayers = 192;
 const maximumDesignerSourceLatexLength = 2_000;
 const maximumPathLength = 24_000;
 const maximumNameLength = 64;
 const maximumFallbackLength = 2_000;
-const maximumStoredLibraryLength = 1_800_000;
+const legacySnapshotMaximumLength = 1_800_000;
 const minimumMetric = 0.02;
-const maximumWidthEm = 12;
-const maximumVerticalMetricEm = 12;
+const maximumWidthEm = 64;
+const maximumVerticalMetricEm = 64;
 const finiteCoordinateLimit = 100_000;
 
 const mathRoles = new Set<CustomSymbolMathRole>([
@@ -120,7 +127,20 @@ export const CUSTOM_SYMBOL_PROTOTYPE_DEFINITION: CustomSymbolDefinition = {
   updatedAt: 0,
 };
 
-let cachedRawLibrary: string | null | undefined;
+interface CustomSymbolStorageIndexEntry {
+  id: string;
+  updatedAt: number;
+  recordKey: string;
+}
+
+interface CustomSymbolStorageIndex {
+  version: typeof CUSTOM_SYMBOL_STORAGE_INDEX_VERSION;
+  libraryVersion: typeof CUSTOM_SYMBOL_LIBRARY_VERSION;
+  revision: number;
+  symbols: CustomSymbolStorageIndexEntry[];
+}
+
+let cachedStorageSignature: string | null | undefined;
 let cachedUserLibrary: CustomSymbolLibrary | null = null;
 let revision = 0;
 const listeners = new Set<() => void>();
@@ -154,6 +174,8 @@ function normalizeTransform(value: unknown): CustomSymbolVectorTransform | undef
     "translateY",
     "scaleX",
     "scaleY",
+    "skewXDeg",
+    "skewYDeg",
     "rotateDeg",
     "originX",
     "originY",
@@ -285,6 +307,44 @@ function normalizeShape(value: unknown): CustomSymbolVectorShape {
         ...common,
       };
     }
+    case "text": {
+      const text = typeof value.text === "string" ? value.text.normalize("NFC") : "";
+      const fontFamily =
+        typeof value.fontFamily === "string" ? value.fontFamily.trim() : "";
+      const fontSize = finiteNumber(value.fontSize, NaN);
+      const fontWeight =
+        value.fontWeight === undefined
+          ? undefined
+          : Math.round(finiteNumber(value.fontWeight, NaN));
+      if (
+        !text ||
+        Array.from(text).length > 16 ||
+        /[\u0000-\u001f\u007f]/.test(text) ||
+        !fontFamily ||
+        fontFamily.length > 128 ||
+        /[\u0000-\u001f\u007f"'<>]/.test(fontFamily) ||
+        !Number.isFinite(fontSize) ||
+        fontSize < 20 ||
+        fontSize > 8_000 ||
+        (fontWeight !== undefined &&
+          (!Number.isFinite(fontWeight) || fontWeight < 100 || fontWeight > 900))
+      ) {
+        throw new Error("Custom symbol system-font glyph is invalid or too large.");
+      }
+      return {
+        kind: "text",
+        text,
+        x: finiteCoordinate(value.x),
+        y: finiteCoordinate(value.y),
+        fontFamily,
+        fontSize,
+        ...(value.fontStyle === "italic" || value.fontStyle === "normal"
+          ? { fontStyle: value.fontStyle }
+          : {}),
+        ...(fontWeight === undefined ? {} : { fontWeight }),
+        ...common,
+      };
+    }
     default:
       throw new Error(`Unsupported custom symbol shape: ${value.kind}`);
   }
@@ -339,6 +399,45 @@ function normalizeDesignerLayerId(value: unknown, kind: string) {
   return id;
 }
 
+function normalizeDesignerLayerEffects(
+  value: unknown,
+): CustomSymbolLayerEffects | undefined {
+  if (!isRecord(value)) return undefined;
+  const effects: CustomSymbolLayerEffects = {};
+  if (isRecord(value.outline)) {
+    const width = finiteNumber(value.outline.width, 72);
+    if (width < 1 || width > 1_200) {
+      throw new Error("Custom symbol outline width is outside the supported range.");
+    }
+    effects.outline = {
+      enabled: value.outline.enabled === true,
+      width,
+    };
+  }
+  if (isRecord(value.perspective)) {
+    const depth = finiteNumber(value.perspective.depth, 240);
+    const angleDeg = finiteNumber(value.perspective.angleDeg, 35);
+    const steps = Math.round(finiteNumber(value.perspective.steps, 8));
+    if (
+      depth < 0 ||
+      depth > 4_000 ||
+      angleDeg < -720 ||
+      angleDeg > 720 ||
+      steps < 1 ||
+      steps > 24
+    ) {
+      throw new Error("Custom symbol perspective parameters are outside the supported range.");
+    }
+    effects.perspective = {
+      enabled: value.perspective.enabled === true,
+      depth,
+      angleDeg,
+      steps,
+    };
+  }
+  return Object.keys(effects).length ? effects : undefined;
+}
+
 function normalizeDesignerSource(
   value: unknown,
 ): CustomSymbolDesignerSourceArchive | null {
@@ -372,7 +471,7 @@ function normalizeDesignerSource(
       sourceLatex.length > maximumDesignerSourceLatexLength ||
       !Array.isArray(candidate.shapes) ||
       candidate.shapes.length === 0 ||
-      candidate.shapes.length > maximumShapesPerSymbol
+      candidate.shapes.length > maximumShapesPerDesignerAsset
     ) {
       throw new Error("Custom symbol designer asset is invalid or too large.");
     }
@@ -404,6 +503,9 @@ function normalizeDesignerSource(
       visible: candidate.visible !== false,
       locked: candidate.locked === true,
       transform: normalizeTransform(candidate.transform) ?? {},
+      ...(normalizeDesignerLayerEffects(candidate.effects)
+        ? { effects: normalizeDesignerLayerEffects(candidate.effects) }
+        : {}),
       ...(candidate.clipRect == null
         ? {}
         : { clipRect: normalizeClipRect(candidate.clipRect) }),
@@ -511,7 +613,7 @@ function normalizeDefinition(
   }
   if (
     value.artwork.shapes.length === 0 ||
-    value.artwork.shapes.length > maximumShapesPerSymbol
+    value.artwork.shapes.length > maximumCompiledArtworkShapes
   ) {
     throw new Error("Custom symbol artwork has an invalid number of shapes.");
   }
@@ -554,7 +656,7 @@ export function normalizeCustomSymbolLibrary(value: unknown): CustomSymbolLibrar
   const ids = new Set<string>();
   const commands = new Set<string>();
   const symbols: CustomSymbolDefinition[] = [];
-  for (const candidate of value.symbols.slice(0, maximumCustomSymbols)) {
+  for (const candidate of value.symbols) {
     try {
       const symbol = normalizeDefinition(candidate);
       if (ids.has(symbol.id) || commands.has(symbol.command)) continue;
@@ -568,19 +670,133 @@ export function normalizeCustomSymbolLibrary(value: unknown): CustomSymbolLibrar
   return { version: CUSTOM_SYMBOL_LIBRARY_VERSION, symbols };
 }
 
+function parseStorageIndex(raw: string | null): CustomSymbolStorageIndex | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      !isRecord(value) ||
+      value.version !== CUSTOM_SYMBOL_STORAGE_INDEX_VERSION ||
+      value.libraryVersion !== CUSTOM_SYMBOL_LIBRARY_VERSION ||
+      !Array.isArray(value.symbols)
+    ) {
+      return null;
+    }
+    const ids = new Set<string>();
+    const recordKeys = new Set<string>();
+    const symbols: CustomSymbolStorageIndexEntry[] = [];
+    for (const candidate of value.symbols) {
+      if (!isRecord(candidate)) continue;
+      const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+      const updatedAt = Number(candidate.updatedAt);
+      const recordKey =
+        typeof candidate.recordKey === "string" ? candidate.recordKey : "";
+      if (
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(id) ||
+        !Number.isFinite(updatedAt) ||
+        !recordKey.startsWith(CUSTOM_SYMBOL_STORAGE_RECORD_PREFIX) ||
+        recordKey.length > 320 ||
+        ids.has(id) ||
+        recordKeys.has(recordKey)
+      ) {
+        return null;
+      }
+      ids.add(id);
+      recordKeys.add(recordKey);
+      symbols.push({ id, updatedAt, recordKey });
+    }
+    return {
+      version: CUSTOM_SYMBOL_STORAGE_INDEX_VERSION,
+      libraryVersion: CUSTOM_SYMBOL_LIBRARY_VERSION,
+      revision: Number.isFinite(Number(value.revision))
+        ? Number(value.revision)
+        : 0,
+      symbols,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readLegacyLibrary(raw: string | null) {
+  if (!raw) return emptyUserLibrary();
+  try {
+    return normalizeCustomSymbolLibrary(JSON.parse(raw));
+  } catch {
+    return emptyUserLibrary();
+  }
+}
+
+function readIndexedLibrary(
+  index: CustomSymbolStorageIndex,
+): CustomSymbolLibrary | null {
+  const candidates: unknown[] = [];
+  for (const entry of index.symbols) {
+    const raw = safeStorage.getItem(entry.recordKey);
+    if (!raw) return null;
+    try {
+      candidates.push(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+  const library = normalizeCustomSymbolLibrary({
+    version: CUSTOM_SYMBOL_LIBRARY_VERSION,
+    symbols: candidates,
+  });
+  if (library.symbols.length !== index.symbols.length) return null;
+  for (let position = 0; position < library.symbols.length; position += 1) {
+    const symbol = library.symbols[position];
+    const entry = index.symbols[position];
+    if (symbol.id !== entry.id || symbol.updatedAt !== entry.updatedAt) {
+      return null;
+    }
+  }
+  return library;
+}
+
+function storageSignature(
+  indexRaw: string | null,
+  backupIndexRaw: string | null,
+  legacyRaw: string | null,
+) {
+  return `index:${indexRaw ?? ""}|backup:${backupIndexRaw ?? ""}|legacy:${
+    legacyRaw ?? ""
+  }`;
+}
+
 function readStoredUserLibrary() {
-  const raw = safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_KEY);
-  if (cachedUserLibrary && raw === cachedRawLibrary) return cachedUserLibrary;
-  cachedRawLibrary = raw;
-  if (!raw) {
-    cachedUserLibrary = emptyUserLibrary();
+  const indexRaw = safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_INDEX_KEY);
+  const backupIndexRaw = safeStorage.getItem(
+    CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
+  );
+  const legacyRaw = safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_KEY);
+  const signature = storageSignature(indexRaw, backupIndexRaw, legacyRaw);
+  if (cachedUserLibrary && signature === cachedStorageSignature) {
     return cachedUserLibrary;
   }
-  try {
-    cachedUserLibrary = normalizeCustomSymbolLibrary(JSON.parse(raw));
-  } catch {
-    cachedUserLibrary = emptyUserLibrary();
+  cachedStorageSignature = signature;
+
+  const index = parseStorageIndex(indexRaw);
+  const indexed = index ? readIndexedLibrary(index) : null;
+  if (indexed) {
+    cachedUserLibrary = indexed;
+    return cachedUserLibrary;
   }
+
+  const backupIndex = parseStorageIndex(backupIndexRaw);
+  const backup = backupIndex ? readIndexedLibrary(backupIndex) : null;
+  if (backup) {
+    if (indexRaw) {
+      console.warn(
+        "VisualTeX recovered the previous complete custom-symbol library because the current indexed generation was incomplete.",
+      );
+    }
+    cachedUserLibrary = backup;
+    return cachedUserLibrary;
+  }
+
+  cachedUserLibrary = readLegacyLibrary(legacyRaw);
   return cachedUserLibrary;
 }
 
@@ -592,36 +808,151 @@ function notifyLocalChange() {
   }
 }
 
+function customSymbolStorageEventKey(key: string | null) {
+  return (
+    key === CUSTOM_SYMBOL_STORAGE_KEY ||
+    key === CUSTOM_SYMBOL_STORAGE_INDEX_KEY ||
+    key === CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY ||
+    Boolean(key?.startsWith(CUSTOM_SYMBOL_STORAGE_RECORD_PREFIX))
+  );
+}
+
 function ensureBrowserEvents() {
   if (browserEventsInstalled || typeof window === "undefined") return;
   browserEventsInstalled = true;
   window.addEventListener("storage", (event) => {
-    if (event.key !== CUSTOM_SYMBOL_STORAGE_KEY) return;
-    cachedRawLibrary = undefined;
+    if (!customSymbolStorageEventKey(event.key)) return;
+    cachedStorageSignature = undefined;
     cachedUserLibrary = null;
     notifyLocalChange();
   });
   if (typeof BroadcastChannel !== "undefined") {
     broadcastChannel = new BroadcastChannel(broadcastChannelName);
     broadcastChannel.addEventListener("message", () => {
-      cachedRawLibrary = undefined;
+      cachedStorageSignature = undefined;
       cachedUserLibrary = null;
       notifyLocalChange();
     });
   }
 }
 
+function nextRecordKey(symbol: CustomSymbolDefinition, token: string) {
+  return `${CUSTOM_SYMBOL_STORAGE_RECORD_PREFIX}${encodeURIComponent(symbol.id)}.${token}`;
+}
+
 function persistUserLibrary(library: CustomSymbolLibrary) {
   const normalized = normalizeCustomSymbolLibrary(library);
-  const serialized = JSON.stringify(normalized);
-  if (serialized.length > maximumStoredLibraryLength) {
-    throw new Error("Custom symbol library is too large to store safely.");
+  const currentIndexRaw = safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_INDEX_KEY);
+  const backupIndexRaw = safeStorage.getItem(
+    CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
+  );
+  const currentIndex = parseStorageIndex(currentIndexRaw);
+  const backupIndex = parseStorageIndex(backupIndexRaw);
+  const currentComplete = currentIndex ? readIndexedLibrary(currentIndex) : null;
+  const backupComplete = backupIndex ? readIndexedLibrary(backupIndex) : null;
+  const baseIndex = currentComplete
+    ? currentIndex
+    : backupComplete
+      ? backupIndex
+      : null;
+  const baseIndexRaw = currentComplete
+    ? currentIndexRaw
+    : backupComplete
+      ? backupIndexRaw
+      : null;
+  const previousEntries = new Map(
+    (baseIndex?.symbols ?? []).map((entry) => [entry.id, entry]),
+  );
+  const writeToken = `${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  const nextEntries: CustomSymbolStorageIndexEntry[] = [];
+  const nextRecordKeys = new Set<string>();
+  const createdRecordKeys: string[] = [];
+  let index: CustomSymbolStorageIndex;
+  let indexSerialized: string;
+
+  try {
+    for (const symbol of normalized.symbols) {
+      const previous = previousEntries.get(symbol.id);
+      const serializedSymbol = JSON.stringify(symbol);
+      const previousRecord = previous
+        ? safeStorage.getItem(previous.recordKey)
+        : null;
+      const canReuse =
+        previous?.updatedAt === symbol.updatedAt &&
+        previousRecord === serializedSymbol;
+      const recordKey = canReuse
+        ? previous.recordKey
+        : nextRecordKey(symbol, writeToken);
+      if (!canReuse) {
+        safeStorage.setItemStrict(recordKey, serializedSymbol);
+        createdRecordKeys.push(recordKey);
+      }
+      nextEntries.push({
+        id: symbol.id,
+        updatedAt: symbol.updatedAt,
+        recordKey,
+      });
+      nextRecordKeys.add(recordKey);
+    }
+
+    index = {
+      version: CUSTOM_SYMBOL_STORAGE_INDEX_VERSION,
+      libraryVersion: CUSTOM_SYMBOL_LIBRARY_VERSION,
+      revision: Math.max(Date.now(), (baseIndex?.revision ?? 0) + 1),
+      symbols: nextEntries,
+    };
+    indexSerialized = JSON.stringify(index);
+    if (baseIndex && baseIndexRaw) {
+      safeStorage.setItemStrict(
+        CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
+        baseIndexRaw,
+      );
+    } else {
+      safeStorage.removeItem(CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY);
+    }
+    safeStorage.setItemStrict(CUSTOM_SYMBOL_STORAGE_INDEX_KEY, indexSerialized);
+  } catch (error) {
+    for (const recordKey of createdRecordKeys) {
+      safeStorage.removeItem(recordKey);
+    }
+    throw error;
   }
-  safeStorage.setItem(CUSTOM_SYMBOL_STORAGE_KEY, serialized);
-  cachedRawLibrary = serialized;
+
+  const retainedRecordKeys = new Set(nextRecordKeys);
+  for (const entry of baseIndex?.symbols ?? []) {
+    retainedRecordKeys.add(entry.recordKey);
+  }
+  const oldEntries = [
+    ...(currentIndex?.symbols ?? []),
+    ...(backupIndex?.symbols ?? []),
+  ];
+  for (const previous of oldEntries) {
+    if (!retainedRecordKeys.has(previous.recordKey)) {
+      safeStorage.removeItem(previous.recordKey);
+    }
+  }
+
+  const legacySnapshot = JSON.stringify(normalized);
+  const storedLegacySnapshot =
+    legacySnapshot.length <= legacySnapshotMaximumLength
+      ? legacySnapshot
+      : null;
+  if (storedLegacySnapshot) {
+    safeStorage.setItem(CUSTOM_SYMBOL_STORAGE_KEY, storedLegacySnapshot);
+  } else {
+    safeStorage.removeItem(CUSTOM_SYMBOL_STORAGE_KEY);
+  }
+
+  cachedStorageSignature = storageSignature(
+    indexSerialized,
+    baseIndexRaw,
+    storedLegacySnapshot,
+  );
   cachedUserLibrary = normalized;
   notifyLocalChange();
-  broadcastChannel?.postMessage({ revision: Date.now() });
+  broadcastChannel?.postMessage({ revision: index.revision });
   return normalized;
 }
 
@@ -629,7 +960,7 @@ export function setCustomSymbolCommandAvailabilityValidator(
   validator: ((command: string) => boolean) | null,
 ) {
   runtimeCommandAvailabilityValidator = validator;
-  cachedRawLibrary = undefined;
+  cachedStorageSignature = undefined;
   cachedUserLibrary = null;
 }
 
@@ -666,9 +997,6 @@ export function registerCustomSymbol(value: unknown) {
   }
   if (library.symbols.some((candidate) => candidate.command === symbol.command)) {
     throw new Error(`\\${symbol.command} is already registered as a custom symbol.`);
-  }
-  if (library.symbols.length >= maximumCustomSymbols) {
-    throw new Error("The custom symbol library has reached its supported limit.");
   }
   return persistUserLibrary({
     version: CUSTOM_SYMBOL_LIBRARY_VERSION,
@@ -713,7 +1041,7 @@ export function replaceCustomSymbolLibrary(value: unknown) {
 }
 
 export function refreshCustomSymbolLibraryFromStorage() {
-  cachedRawLibrary = undefined;
+  cachedStorageSignature = undefined;
   cachedUserLibrary = null;
   notifyLocalChange();
   broadcastChannel?.postMessage({ revision: Date.now() });

@@ -32,12 +32,14 @@ export interface CustomSymbolVectorTransform {
   translateY?: number;
   scaleX?: number;
   scaleY?: number;
+  skewXDeg?: number;
+  skewYDeg?: number;
   rotateDeg?: number;
   originX?: number;
   originY?: number;
   /**
    * Optional immutable base transform produced by the glyph compiler. User
-   * translate/scale/rotate values are applied outside this matrix so imported
+   * translate/scale/skew/rotate values are applied outside this matrix so imported
    * MathJax glyph geometry stays exact while remaining editable as one layer.
    */
   matrix?: CustomSymbolVectorMatrix;
@@ -106,13 +108,26 @@ export interface CustomSymbolPolygonShape extends CustomSymbolShapeBase {
   points: Array<[number, number]>;
 }
 
+export interface CustomSymbolTextShape extends CustomSymbolShapeBase {
+  kind: "text";
+  text: string;
+  x: number;
+  /** Baseline position in designer coordinates. */
+  y: number;
+  fontFamily: string;
+  fontSize: number;
+  fontStyle?: "normal" | "italic";
+  fontWeight?: number;
+}
+
 export type CustomSymbolVectorShape =
   | CustomSymbolPathShape
   | CustomSymbolCircleShape
   | CustomSymbolLineShape
   | CustomSymbolRectShape
   | CustomSymbolEllipseShape
-  | CustomSymbolPolygonShape;
+  | CustomSymbolPolygonShape
+  | CustomSymbolTextShape;
 
 /**
  * Compiled monochrome vector artwork. Coordinates use a fixed 1000 units/em,
@@ -121,6 +136,27 @@ export type CustomSymbolVectorShape =
  */
 export interface CustomSymbolArtwork {
   shapes: CustomSymbolVectorShape[];
+}
+
+export interface CustomSymbolOutlineEffect {
+  enabled: boolean;
+  /** Target outline thickness in designer units (1000 units/em). */
+  width: number;
+}
+
+export interface CustomSymbolPerspectiveEffect {
+  enabled: boolean;
+  /** Total extrusion depth in designer units. */
+  depth: number;
+  /** Extrusion direction in SVG canvas degrees. */
+  angleDeg: number;
+  /** Number of vector copies used to form the extrusion. */
+  steps: number;
+}
+
+export interface CustomSymbolLayerEffects {
+  outline?: CustomSymbolOutlineEffect;
+  perspective?: CustomSymbolPerspectiveEffect;
 }
 
 export interface CustomSymbolDesignerSourceAsset {
@@ -137,6 +173,7 @@ export interface CustomSymbolDesignerSourceLayerBase {
   locked: boolean;
   transform: CustomSymbolVectorTransform;
   clipRect?: CustomSymbolClipRect | null;
+  effects?: CustomSymbolLayerEffects;
 }
 
 export interface CustomSymbolDesignerSourceGlyphLayer

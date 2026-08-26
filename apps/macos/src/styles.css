@@ -13858,16 +13858,76 @@ body[data-workspace-resize="dock"] * {
   cursor: default;
 }
 
-.custom-symbol-quick-materials {
+.custom-symbol-material-search {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--input-bg);
+  color: var(--text-faint);
 }
 
-.custom-symbol-quick-materials > button {
+.custom-symbol-material-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.custom-symbol-material-search input {
   min-width: 0;
-  height: 38px;
+  height: 27px;
   padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 8px;
+}
+
+.custom-symbol-material-categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.custom-symbol-material-categories > button {
+  min-width: 0;
+  min-height: 25px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 7px;
+  font-weight: 680;
+}
+
+.custom-symbol-material-categories > button:hover,
+.custom-symbol-material-categories > button.is-active {
+  border-color: var(--accent-border);
+  background: var(--tile-hover);
+  color: var(--text);
+}
+
+.custom-symbol-material-library {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  max-height: 218px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.custom-symbol-material-library > button {
+  min-width: 0;
+  height: 48px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1px;
+  padding: 3px 2px 2px;
   overflow: hidden;
   border: 1px solid var(--tile-border);
   border-radius: 7px;
@@ -13875,14 +13935,150 @@ body[data-workspace-resize="dock"] * {
   color: var(--text);
 }
 
-.custom-symbol-quick-materials > button:hover {
+.custom-symbol-material-library > button:hover {
   border-color: var(--accent-border);
   background: var(--tile-hover);
 }
 
-.custom-symbol-quick-materials .math-preview {
+.custom-symbol-material-library .math-preview {
   width: 100%;
-  height: 100%;
+  min-height: 0;
+}
+
+.custom-symbol-material-empty {
+  grid-column: 1 / -1;
+  padding: 12px 6px;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-align: center;
+}
+
+.custom-symbol-designer-panel.is-system-glyphs {
+  gap: 7px;
+}
+
+.custom-symbol-system-font-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: var(--text-faint);
+  font-size: 7px;
+  font-weight: 680;
+}
+
+.custom-symbol-system-font-field select {
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 7px;
+}
+
+.custom-symbol-system-font-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.custom-symbol-system-font-style,
+.custom-symbol-system-glyph-categories {
+  display: grid;
+  gap: 4px;
+}
+
+.custom-symbol-system-font-style {
+  grid-template-columns: 1fr 1fr;
+}
+
+.custom-symbol-system-glyph-categories {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.custom-symbol-system-font-style > button,
+.custom-symbol-system-glyph-categories > button {
+  min-width: 0;
+  min-height: 25px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 7px;
+  font-weight: 680;
+}
+
+.custom-symbol-system-font-style > button:hover,
+.custom-symbol-system-font-style > button.is-active,
+.custom-symbol-system-glyph-categories > button:hover,
+.custom-symbol-system-glyph-categories > button.is-active {
+  border-color: var(--accent-border);
+  background: var(--tile-hover);
+  color: var(--text);
+}
+
+.custom-symbol-system-glyph-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  max-height: 176px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.custom-symbol-system-glyph-grid > button {
+  min-width: 0;
+  height: 31px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--tile-border);
+  border-radius: 6px;
+  background: var(--formula-surface);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.custom-symbol-system-glyph-grid > button:hover,
+.custom-symbol-system-glyph-grid > button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--tile-hover);
+  outline: 0;
+}
+
+.custom-symbol-system-glyph-grid > button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.custom-symbol-system-glyph-grid > button.is-loading {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  animation: custom-symbol-glyph-loading 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes custom-symbol-glyph-loading {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+.custom-symbol-system-font-status {
+  padding: 6px 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--text-secondary);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.custom-symbol-system-font-hint {
+  color: var(--text-faint);
+  font-size: 7px;
+  line-height: 1.45;
 }
 
 .custom-symbol-geometry-heading {
@@ -14466,6 +14662,30 @@ body[data-workspace-resize="dock"] * {
   padding: 0 6px;
 }
 
+.custom-symbol-transform-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.custom-symbol-transform-actions button {
+  min-width: 0;
+  min-height: 27px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 7px;
+}
+
+.custom-symbol-transform-actions button:hover,
+.custom-symbol-transform-actions button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--tile-hover);
+  color: var(--text);
+}
+
 .custom-symbol-designer-inspector-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -14494,6 +14714,11 @@ body[data-workspace-resize="dock"] * {
   font-size: 7px;
 }
 
+.custom-symbol-metric-presets button.is-fit-content {
+  grid-column: 1 / -1;
+  font-weight: 720;
+}
+
 .custom-symbol-metric-presets button:hover,
 .custom-symbol-metric-presets button:focus-visible {
   border-color: var(--accent);
@@ -14502,6 +14727,40 @@ body[data-workspace-resize="dock"] * {
 }
 
 .custom-symbol-metric-hint {
+  color: var(--text-faint);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.custom-symbol-layer-effects {
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.custom-symbol-effect-toggle {
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.custom-symbol-effect-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+.custom-symbol-effect-hint {
   color: var(--text-faint);
   font-size: 7px;
   line-height: 1.45;
@@ -14753,5 +15012,668 @@ body[data-workspace-resize="dock"] * {
 
   .custom-symbol-designer-panel {
     padding: 8px;
+  }
+}
+
+/* Custom symbol designer: infinite-canvas interaction redesign ----------- */
+.custom-symbol-designer-backdrop {
+  padding: 12px;
+}
+
+.custom-symbol-designer-dialog {
+  /* Derive every designer surface from tokens guaranteed by all themes. */
+  --csd-canvas-bg: color-mix(in srgb, var(--formula-surface) 30%, var(--surface-sunken) 70%);
+  --csd-panel-bg: var(--surface);
+  --csd-control-bg: color-mix(in srgb, var(--surface) 92%, var(--bg) 8%);
+  --csd-tile-bg: color-mix(in srgb, var(--formula-surface) 94%, var(--bg) 6%);
+  --csd-tile-hover: color-mix(in srgb, var(--accent-soft) 55%, var(--surface) 45%);
+  --csd-overlay-bg: color-mix(in srgb, var(--surface) 92%, transparent);
+  --csd-grid-color: color-mix(in srgb, var(--text-faint) 56%, transparent);
+  --csd-ink: var(--text);
+  --bg-sunken: var(--csd-canvas-bg);
+  --text-secondary: var(--text-muted);
+  --input-bg: var(--csd-control-bg);
+  --tile-bg: var(--csd-tile-bg);
+  --tile-hover: var(--csd-tile-hover);
+  --tile-border: var(--border);
+  --accent-foreground: var(--primary-foreground);
+  width: min(1480px, calc(100vw - 24px));
+  height: min(900px, calc(100vh - 24px));
+  min-height: min(680px, calc(100vh - 24px));
+  border-radius: 14px;
+  background: var(--csd-panel-bg);
+  color: var(--text);
+}
+
+.custom-symbol-designer-header {
+  min-height: 58px;
+  padding: 0 16px 0 18px;
+}
+
+.custom-symbol-designer-header > div:first-child {
+  display: flex;
+  align-items: center;
+}
+
+.custom-symbol-designer-header strong {
+  font-size: 15px;
+  font-weight: 760;
+  letter-spacing: -0.01em;
+}
+
+.custom-symbol-designer-header .icon-button {
+  width: 34px;
+  height: 34px;
+}
+
+.custom-symbol-designer-body {
+  grid-template-columns: 318px minmax(520px, 1fr) 318px;
+  background: color-mix(in srgb, var(--bg-sunken) 88%, var(--surface));
+}
+
+.custom-symbol-designer-sidebar {
+  gap: 14px;
+  padding: 14px;
+}
+
+.custom-symbol-designer-panel {
+  gap: 10px;
+  padding: 0 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.custom-symbol-designer-panel > header {
+  min-height: 24px;
+  gap: 8px;
+}
+
+.custom-symbol-designer-panel > header strong {
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.custom-symbol-designer-panel > header span {
+  font-size: 11px;
+}
+
+.custom-symbol-designer-panel.is-registered-symbols {
+  max-height: 238px;
+}
+
+.custom-symbol-registered-list {
+  gap: 7px;
+}
+
+.custom-symbol-registered-item {
+  gap: 6px;
+  min-height: 50px;
+  padding: 5px;
+  border-radius: 9px;
+}
+
+.custom-symbol-registered-main {
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.custom-symbol-registered-glyph {
+  width: 42px;
+  height: 40px;
+  border-radius: 7px;
+}
+
+.custom-symbol-registered-copy {
+  gap: 3px;
+}
+
+.custom-symbol-registered-copy strong {
+  font-size: 11px;
+}
+
+.custom-symbol-registered-copy code {
+  font-size: 10px;
+}
+
+.custom-symbol-registered-actions {
+  gap: 3px;
+}
+
+.custom-symbol-registered-actions button,
+.custom-symbol-layer-item > button,
+.custom-symbol-layer-actions button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.custom-symbol-delete-warning {
+  gap: 8px;
+  padding: 9px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.custom-symbol-delete-warning button {
+  min-height: 32px;
+  font-size: 10.5px;
+}
+
+.custom-symbol-registered-empty,
+.custom-symbol-layer-empty,
+.custom-symbol-designer-inspector-empty {
+  padding: 12px 10px;
+  font-size: 11px;
+}
+
+.custom-symbol-designer-legacy-warning {
+  padding: 9px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.custom-symbol-material-input-row,
+.custom-symbol-designer-number-grid {
+  gap: 9px;
+}
+
+.custom-symbol-material-input-row input,
+.custom-symbol-designer-number-field input,
+.custom-symbol-registration-field input,
+.custom-symbol-registration-field select {
+  height: 36px;
+  font-size: 12px;
+}
+
+.custom-symbol-material-input-row input {
+  padding: 0 10px;
+}
+
+.custom-symbol-material-input-row button,
+.custom-symbol-designer-inspector-actions button,
+.custom-symbol-designer-footer button {
+  min-height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-material-search {
+  min-height: 36px;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+.custom-symbol-material-search input {
+  height: 34px;
+  font-size: 11px;
+}
+
+.custom-symbol-material-categories {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.custom-symbol-material-categories > button,
+.custom-symbol-system-font-style > button,
+.custom-symbol-system-glyph-categories > button {
+  min-height: 32px;
+  padding: 0 7px;
+  border-radius: 7px;
+  font-size: 10.5px;
+}
+
+.custom-symbol-material-library {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  min-height: 72px;
+  max-height: 250px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-sunken) 42%, var(--surface) 58%);
+}
+
+.custom-symbol-material-library > button {
+  height: 58px;
+  display: grid;
+  place-items: center;
+  grid-template-rows: minmax(0, 1fr);
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--csd-tile-bg);
+  color: var(--text);
+}
+
+.custom-symbol-material-library > button:hover,
+.custom-symbol-material-library > button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--csd-tile-hover);
+  color: var(--text);
+  outline: 0;
+}
+
+.custom-symbol-material-library .math-preview {
+  width: 100%;
+  height: 100%;
+  color: var(--csd-ink);
+  font-size: 27px;
+}
+
+.custom-symbol-material-library .math-preview .ML__latex,
+.custom-symbol-material-library .math-preview .ML__latex * {
+  color: var(--csd-ink) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.custom-symbol-material-empty,
+.custom-symbol-designer-error,
+.custom-symbol-system-font-status,
+.custom-symbol-registration-status {
+  font-size: 10.5px;
+}
+
+.custom-symbol-system-font-field {
+  gap: 9px;
+  font-size: 11px;
+}
+
+.custom-symbol-system-font-field select {
+  height: 36px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.custom-symbol-system-font-style,
+.custom-symbol-system-glyph-categories {
+  gap: 6px;
+}
+
+.custom-symbol-system-glyph-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 210px;
+}
+
+.custom-symbol-system-glyph-grid > button {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--csd-tile-bg);
+  color: var(--text);
+  font-size: 22px;
+}
+
+.custom-symbol-system-font-status {
+  padding: 8px 9px;
+  line-height: 1.3;
+}
+
+.custom-symbol-system-font-hint,
+.custom-symbol-metric-hint,
+.custom-symbol-effect-hint {
+  display: none;
+}
+
+.custom-symbol-geometry-heading {
+  margin-top: 1px;
+  padding-top: 11px;
+  font-size: 11px;
+}
+
+.custom-symbol-geometry-materials {
+  gap: 7px;
+}
+
+.custom-symbol-geometry-materials > button {
+  height: 36px;
+  gap: 8px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-layer-list {
+  gap: 7px;
+}
+
+.custom-symbol-layer-item {
+  grid-template-columns: 30px 40px minmax(0, 1fr) auto;
+  gap: 7px;
+  min-height: 52px;
+  padding: 5px 6px;
+  border-radius: 9px;
+}
+
+.custom-symbol-layer-preview {
+  width: 40px;
+  height: 38px;
+  border-radius: 7px;
+}
+
+.custom-symbol-layer-label {
+  gap: 3px;
+}
+
+.custom-symbol-layer-label strong {
+  font-size: 11px;
+}
+
+.custom-symbol-layer-label span {
+  font-size: 10px;
+}
+
+.custom-symbol-layer-actions {
+  gap: 2px;
+}
+
+.custom-symbol-designer-stage-column {
+  position: relative;
+  display: block;
+  background: var(--csd-canvas-bg);
+}
+
+.custom-symbol-designer-stage-toolbar {
+  position: absolute;
+  z-index: 4;
+  top: 14px;
+  left: 14px;
+  min-height: 0;
+  max-width: calc(100% - 190px);
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 12px;
+  background: var(--csd-overlay-bg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 9%, transparent);
+  backdrop-filter: blur(16px) saturate(1.1);
+  font-size: 11px;
+}
+
+.custom-symbol-designer-stage-toolbar-actions {
+  justify-content: flex-start;
+  gap: 8px;
+  white-space: normal;
+  flex-wrap: wrap;
+}
+
+.custom-symbol-reference-selector,
+.custom-symbol-eraser-size {
+  gap: 7px;
+  font-size: 11px;
+}
+
+.custom-symbol-reference-selector select,
+.custom-symbol-eraser-size input[type="number"] {
+  height: 30px;
+  font-size: 11px;
+}
+
+.custom-symbol-designer-stage-toolbar-actions button {
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-designer-stage {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.custom-symbol-designer-canvas-shell {
+  border: 0;
+  border-radius: 0;
+  background: var(--csd-canvas-bg);
+}
+
+.custom-symbol-designer-viewport-controls {
+  top: 14px;
+  right: 14px;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--csd-overlay-bg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 9%, transparent);
+  backdrop-filter: blur(16px) saturate(1.1);
+}
+
+.custom-symbol-designer-viewport-controls button,
+.custom-symbol-designer-viewport-controls span {
+  min-width: 32px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-designer-viewport-controls .custom-symbol-designer-ink-size {
+  min-width: 116px;
+  padding: 0 9px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.custom-symbol-designer-workspace {
+  fill: var(--csd-canvas-bg);
+}
+
+.custom-symbol-designer-canvas-paper,
+.custom-symbol-designer-output-outline {
+  display: none;
+}
+
+.custom-symbol-designer-grid-line {
+  fill: none;
+  stroke: var(--csd-grid-color);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.custom-symbol-designer-grid-line.is-minor,
+.custom-symbol-designer-grid-layer.is-minor {
+  opacity: 0.22;
+}
+
+.custom-symbol-designer-grid-line.is-major,
+.custom-symbol-designer-grid-layer.is-major {
+  opacity: 0.34;
+}
+
+.custom-symbol-designer-baseline {
+  stroke: color-mix(in srgb, var(--accent) 42%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 6 8;
+  opacity: 0.6;
+}
+
+.custom-symbol-designer-reference-alpha,
+.custom-symbol-designer-reference-glyph {
+  color: var(--text-muted);
+  opacity: 0.24;
+}
+
+.custom-symbol-designer-selection-box {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  stroke-dasharray: none;
+}
+
+.custom-symbol-designer-resize-handle,
+.custom-symbol-designer-rotation-handle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--text) 18%, transparent));
+}
+
+.custom-symbol-designer-rotation-stem {
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.custom-symbol-designer-rotation-hit-target {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+  cursor: grab;
+  touch-action: none;
+}
+
+.custom-symbol-designer-rotation-hit-target:active,
+.custom-symbol-designer-canvas.is-rotating {
+  cursor: grabbing;
+}
+
+.custom-symbol-designer-number-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.custom-symbol-designer-number-field {
+  gap: 5px;
+}
+
+.custom-symbol-designer-number-field span,
+.custom-symbol-registration-field > span {
+  font-size: 10.5px;
+}
+
+.custom-symbol-designer-number-field input {
+  padding: 0 9px;
+}
+
+.custom-symbol-transform-actions {
+  gap: 8px;
+}
+
+.custom-symbol-transform-actions button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-designer-inspector-actions {
+  gap: 8px;
+}
+
+.custom-symbol-layer-effects,
+.custom-symbol-geometry-properties,
+.custom-symbol-crop-controls {
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.custom-symbol-effect-toggle,
+.custom-symbol-geometry-fill-toggle {
+  min-height: 38px;
+  gap: 9px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.custom-symbol-effect-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.custom-symbol-crop-heading strong {
+  font-size: 11px;
+}
+
+.custom-symbol-crop-heading span {
+  font-size: 10px;
+}
+
+.custom-symbol-crop-presets {
+  gap: 6px;
+}
+
+.custom-symbol-crop-presets button,
+.custom-symbol-split-actions button {
+  min-height: 32px;
+  padding: 0 7px;
+  border-radius: 7px;
+  font-size: 10.5px;
+}
+
+.custom-symbol-designer-panel.is-registration {
+  margin-top: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg-elevated);
+}
+
+.custom-symbol-registration-field {
+  gap: 5px;
+}
+
+.custom-symbol-register-button {
+  min-height: 38px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.custom-symbol-registered-preview {
+  min-height: 58px;
+  padding: 8px 9px;
+  border-radius: 9px;
+}
+
+.custom-symbol-registered-preview code {
+  font-size: 10px;
+}
+
+.custom-symbol-designer-footer {
+  min-height: 50px;
+  padding: 7px 14px 7px 18px;
+}
+
+.custom-symbol-designer-footer span {
+  font-size: 11px;
+}
+
+@media (max-width: 1240px) {
+  .custom-symbol-designer-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+
+  .custom-symbol-designer-body {
+    grid-template-columns: 282px minmax(420px, 1fr) 282px;
+  }
+
+  .custom-symbol-designer-sidebar {
+    padding: 11px;
+  }
+}
+
+@media (max-width: 980px) {
+  .custom-symbol-designer-body {
+    grid-template-columns: 250px minmax(340px, 1fr) 250px;
+  }
+
+  .custom-symbol-material-library {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .custom-symbol-system-glyph-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }

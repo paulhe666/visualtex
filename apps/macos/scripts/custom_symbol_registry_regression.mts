@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { searchCommands } from "../src/autocomplete/CommandSearchEngine.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import {
+  CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
+  CUSTOM_SYMBOL_STORAGE_INDEX_KEY,
   deleteCustomSymbol,
   readCustomSymbolLibrary,
+  refreshCustomSymbolLibraryFromStorage,
   registerCustomSymbol,
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
 } from "../src/math/customSymbolRegistry.ts";
+import { safeStorage } from "../src/runtime/safeStorage.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 
 const now = Date.now();
@@ -253,6 +257,151 @@ try {
   assert.ok(
     roleSvgs.relation.width > roleSvgs.ordinary.width,
     "Relation custom symbols must receive relation spacing",
+  );
+
+  const alphabeticSuffix = (value: number) => {
+    let result = "";
+    let remaining = value;
+    do {
+      result = String.fromCharCode(97 + (remaining % 26)) + result;
+      remaining = Math.floor(remaining / 26) - 1;
+    } while (remaining >= 0);
+    return result;
+  };
+  const bulkSymbols = Array.from({ length: 128 }, (_, index) => ({
+    ...baseDefinition,
+    id: `regression-bulk-${index}`,
+    command: `selfbulk${alphabeticSuffix(index)}`,
+    name: `Bulk custom symbol ${index + 1}`,
+    createdAt: now + index,
+    updatedAt: now + index,
+  }));
+  replaceCustomSymbolLibrary({ version: 1, symbols: bulkSymbols });
+  assert.equal(
+    readCustomSymbolLibrary().symbols.length,
+    128,
+    "The registry must not truncate custom symbols at the former 96-item limit",
+  );
+  assert.match(
+    safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_INDEX_KEY) ?? "",
+    /"version":2/,
+    "The scalable record index must be persisted",
+  );
+
+  const firstIndex = JSON.parse(
+    safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_INDEX_KEY) ?? "{}",
+  ) as {
+    symbols?: Array<{ id: string; recordKey: string }>;
+  };
+  const firstBulkRecordKey = firstIndex.symbols?.find(
+    (entry) => entry.id === "regression-bulk-0",
+  )?.recordKey;
+  assert.ok(firstBulkRecordKey);
+  const updatedBulkSymbols = bulkSymbols.map((symbol, index) =>
+    index === 0
+      ? {
+          ...symbol,
+          name: "Bulk custom symbol changed without timestamp drift",
+          updatedAt: symbol.updatedAt,
+        }
+      : symbol,
+  );
+  replaceCustomSymbolLibrary({
+    version: 1,
+    symbols: updatedBulkSymbols,
+  });
+  assert.equal(
+    readCustomSymbolLibrary().symbols[0]?.name,
+    "Bulk custom symbol changed without timestamp drift",
+    "A same-millisecond update must not reuse stale per-symbol storage",
+  );
+  const secondIndex = JSON.parse(
+    safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_INDEX_KEY) ?? "{}",
+  ) as {
+    symbols?: Array<{ id: string; recordKey: string }>;
+  };
+  const secondBulkRecordKey = secondIndex.symbols?.find(
+    (entry) => entry.id === "regression-bulk-0",
+  )?.recordKey;
+  assert.ok(secondBulkRecordKey);
+  assert.notEqual(secondBulkRecordKey, firstBulkRecordKey);
+  assert.notEqual(
+    safeStorage.getItem(firstBulkRecordKey),
+    null,
+    "The previous complete generation must remain available for recovery",
+  );
+  assert.equal(
+    JSON.parse(safeStorage.getItem(secondBulkRecordKey) ?? "{}").name,
+    "Bulk custom symbol changed without timestamp drift",
+  );
+  const backupIndex = JSON.parse(
+    safeStorage.getItem(CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY) ?? "{}",
+  ) as {
+    symbols?: Array<{ id: string; recordKey: string }>;
+  };
+  assert.equal(
+    backupIndex.symbols?.find((entry) => entry.id === "regression-bulk-0")
+      ?.recordKey,
+    firstBulkRecordKey,
+  );
+
+  safeStorage.removeItem(secondBulkRecordKey);
+  safeStorage.removeItem("visualtex.custom-symbols.v1");
+  refreshCustomSymbolLibraryFromStorage();
+  const recoveredLibrary = readCustomSymbolLibrary();
+  assert.equal(recoveredLibrary.symbols.length, 128);
+  assert.equal(
+    recoveredLibrary.symbols[0]?.name,
+    "Bulk custom symbol 1",
+    "An incomplete current generation must recover the previous complete library instead of silently truncating it",
+  );
+
+  replaceCustomSymbolLibrary({
+    version: 1,
+    symbols: updatedBulkSymbols,
+  });
+  assert.equal(
+    readCustomSymbolLibrary().symbols[0]?.name,
+    "Bulk custom symbol changed without timestamp drift",
+  );
+
+  const originalSetItemStrict = safeStorage.setItemStrict;
+  const attemptedRecordKeys: string[] = [];
+  safeStorage.setItemStrict = (key, value) => {
+    if (key.startsWith("visualtex.custom-symbols.v2.record.")) {
+      originalSetItemStrict.call(safeStorage, key, value);
+      attemptedRecordKeys.push(key);
+      return;
+    }
+    if (key === CUSTOM_SYMBOL_STORAGE_INDEX_KEY) {
+      throw new Error("Injected custom-symbol index write failure");
+    }
+    originalSetItemStrict.call(safeStorage, key, value);
+  };
+  try {
+    assert.throws(
+      () =>
+        updateCustomSymbol("regression-bulk-0", {
+          name: "This failed update must not survive",
+        }),
+      /Injected custom-symbol index write failure/,
+    );
+  } finally {
+    safeStorage.setItemStrict = originalSetItemStrict;
+  }
+  assert.ok(attemptedRecordKeys.length > 0);
+  for (const recordKey of attemptedRecordKeys) {
+    assert.equal(
+      safeStorage.getItem(recordKey),
+      null,
+      "A failed index commit must remove newly written orphan records",
+    );
+  }
+  refreshCustomSymbolLibraryFromStorage();
+  assert.equal(
+    readCustomSymbolLibrary().symbols[0]?.name,
+    "Bulk custom symbol changed without timestamp drift",
+    "A failed indexed commit must leave the previous complete library active",
   );
 
   console.log(

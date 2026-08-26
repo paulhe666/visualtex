@@ -23,6 +23,8 @@ function compactTransform(
   if (transform.scaleY !== undefined && transform.scaleY !== 1) {
     result.scaleY = transform.scaleY;
   }
+  if (transform.skewXDeg) result.skewXDeg = transform.skewXDeg;
+  if (transform.skewYDeg) result.skewYDeg = transform.skewYDeg;
   if (transform.rotateDeg) result.rotateDeg = transform.rotateDeg;
   if (transform.originX) result.originX = transform.originX;
   if (transform.originY) result.originY = transform.originY;
@@ -43,6 +45,8 @@ function mergeLayerTransform(
     translateY: (base?.translateY ?? 0) + (layer.translateY ?? 0),
     scaleX: (base?.scaleX ?? 1) * (layer.scaleX ?? 1),
     scaleY: (base?.scaleY ?? 1) * (layer.scaleY ?? 1),
+    skewXDeg: (base?.skewXDeg ?? 0) + (layer.skewXDeg ?? 0),
+    skewYDeg: (base?.skewYDeg ?? 0) + (layer.skewYDeg ?? 0),
     rotateDeg: (base?.rotateDeg ?? 0) + (layer.rotateDeg ?? 0),
     originX: layer.originX ?? base?.originX,
     originY: layer.originY ?? base?.originY,
@@ -62,15 +66,79 @@ function compileLayerShape(
   } as CustomSymbolVectorShape;
 }
 
+function shapeWithLocalOffset(
+  shape: CustomSymbolVectorShape,
+  offsetX: number,
+  offsetY: number,
+) {
+  return {
+    ...shape,
+    transform: compactTransform({
+      ...shape.transform,
+      translateX: (shape.transform?.translateX ?? 0) + offsetX,
+      translateY: (shape.transform?.translateY ?? 0) + offsetY,
+    }),
+  } as CustomSymbolVectorShape;
+}
+
+function outlinedShape(
+  shape: CustomSymbolVectorShape,
+  layer: CustomSymbolDesignerLayer,
+) {
+  const outline = layer.effects?.outline;
+  if (!outline?.enabled || shape.operation === "erase") return shape;
+  const scaleX = Math.max(0.02, Math.abs(layer.transform.scaleX ?? 1));
+  const scaleY = Math.max(0.02, Math.abs(layer.transform.scaleY ?? 1));
+  const scaleCompensation = Math.sqrt(scaleX * scaleY);
+  return {
+    ...shape,
+    fill: false,
+    strokeWidth: Math.max(1, outline.width / scaleCompensation),
+    lineCap: shape.lineCap ?? "round",
+    lineJoin: shape.lineJoin ?? "round",
+  } as CustomSymbolVectorShape;
+}
+
+/**
+ * Return the editable layer artwork before the outer layer transform is
+ * applied. The same function is used by the designer preview and registration
+ * compiler so outline and perspective effects cannot diverge.
+ */
+export function customSymbolDesignerLayerLocalShapes(
+  layer: CustomSymbolDesignerLayer,
+): CustomSymbolVectorShape[] {
+  const sourceShapes =
+    layer.kind === "glyph" ? layer.asset.shapes : [layer.shape];
+  if (sourceShapes.some((shape) => shape.operation === "erase")) {
+    return sourceShapes;
+  }
+
+  const frontShapes = sourceShapes.map((shape) => outlinedShape(shape, layer));
+  const perspective = layer.effects?.perspective;
+  if (!perspective?.enabled || perspective.depth <= 0) return frontShapes;
+
+  const steps = Math.max(1, Math.min(24, Math.round(perspective.steps)));
+  const radians = (perspective.angleDeg * Math.PI) / 180;
+  const depthX = Math.cos(radians) * perspective.depth;
+  const depthY = Math.sin(radians) * perspective.depth;
+  const extrusion: CustomSymbolVectorShape[] = [];
+  for (let step = steps; step >= 1; step -= 1) {
+    const ratio = step / steps;
+    for (const shape of sourceShapes) {
+      extrusion.push(shapeWithLocalOffset(shape, depthX * ratio, depthY * ratio));
+    }
+  }
+  return [...extrusion, ...frontShapes];
+}
+
 export function compileCustomSymbolDesignerArtwork(
   document: CustomSymbolDesignerDocument,
 ) {
   return document.layers.flatMap((layer) => {
     if (!layer.visible) return [];
-    if (layer.kind === "glyph") {
-      return layer.asset.shapes.map((shape) => compileLayerShape(shape, layer));
-    }
-    return [compileLayerShape(layer.shape, layer)];
+    return customSymbolDesignerLayerLocalShapes(layer).map((shape) =>
+      compileLayerShape(shape, layer),
+    );
   });
 }
 
@@ -87,12 +155,16 @@ function svgTransformParts(
   const ty = transform.translateY ?? 0;
   const sx = transform.scaleX ?? 1;
   const sy = transform.scaleY ?? 1;
+  const skewX = transform.skewXDeg ?? 0;
+  const skewY = transform.skewYDeg ?? 0;
   const angle = transform.rotateDeg ?? 0;
   const ox = transform.originX ?? 0;
   const oy = transform.originY ?? 0;
   if (tx || ty) parts.push(`translate(${tx} ${ty})`);
   if (ox || oy) parts.push(`translate(${ox} ${oy})`);
   if (angle) parts.push(`rotate(${angle})`);
+  if (skewX) parts.push(`skewX(${skewX})`);
+  if (skewY) parts.push(`skewY(${skewY})`);
   if (sx !== 1 || sy !== 1) parts.push(`scale(${sx} ${sy})`);
   if (ox || oy) parts.push(`translate(${-ox} ${-oy})`);
   if (includeMatrix && transform.matrix) {
@@ -137,6 +209,17 @@ function geometryElement(shape: CustomSymbolVectorShape) {
         "points",
         shape.points.map(([x, y]) => `${x},${y}`).join(" "),
       );
+      break;
+    case "text":
+      element.setAttribute("x", String(shape.x));
+      element.setAttribute("y", String(shape.y));
+      element.setAttribute("font-family", shape.fontFamily);
+      element.setAttribute("font-size", String(shape.fontSize));
+      if (shape.fontStyle) element.setAttribute("font-style", shape.fontStyle);
+      if (shape.fontWeight !== undefined) {
+        element.setAttribute("font-weight", String(shape.fontWeight));
+      }
+      element.textContent = shape.text;
       break;
   }
   const defaultFill = shape.kind !== "line";
@@ -197,6 +280,37 @@ function appendMeasuredShape(
   parent.append(outer);
 }
 
+function transformStrokeScale(
+  transform: CustomSymbolVectorTransform | undefined,
+) {
+  if (!transform) return 1;
+  const scaleX = Math.abs(transform.scaleX ?? 1);
+  const scaleY = Math.abs(transform.scaleY ?? 1);
+  const skewX = Math.abs(Math.tan(((transform.skewXDeg ?? 0) * Math.PI) / 180));
+  const skewY = Math.abs(Math.tan(((transform.skewYDeg ?? 0) * Math.PI) / 180));
+  const shearBound = 1 + skewX + skewY;
+  const matrix = transform.matrix;
+  const matrixBound = matrix
+    ? Math.max(
+        1,
+        Math.hypot(matrix[0], matrix[1]) +
+          Math.hypot(matrix[2], matrix[3]),
+      )
+    : 1;
+  return Math.max(0.02, scaleX, scaleY) * shearBound * matrixBound;
+}
+
+function fallbackArtworkStrokePadding(artwork: CustomSymbolVectorShape[]) {
+  return artwork.reduce((maximum, shape) => {
+    if (shape.operation === "erase") return maximum;
+    const defaultWidth = shape.kind === "line" ? 50 : 0;
+    const width = Math.max(0, shape.strokeWidth ?? defaultWidth);
+    if (!width) return maximum;
+    const radius = (width * transformStrokeScale(shape.transform)) / 2;
+    return Math.max(maximum, radius * 1.25);
+  }, 0);
+}
+
 function measureArtworkBounds(
   artwork: CustomSymbolVectorShape[],
   metrics: CustomSymbolMetrics,
@@ -235,6 +349,7 @@ function measureArtworkBounds(
       }): DOMRect;
     };
     let bounds: DOMRect;
+    let fallbackStrokePadding = 0;
     try {
       bounds = graphics.getBBox({
         fill: true,
@@ -244,6 +359,7 @@ function measureArtworkBounds(
       });
     } catch {
       bounds = group.getBBox();
+      fallbackStrokePadding = fallbackArtworkStrokePadding(paintShapes);
     }
     if (
       !Number.isFinite(bounds.x) ||
@@ -256,10 +372,10 @@ function measureArtworkBounds(
       return null;
     }
     return {
-      left: bounds.x,
-      top: bounds.y,
-      right: bounds.x + bounds.width,
-      bottom: bounds.y + bounds.height,
+      left: bounds.x - fallbackStrokePadding,
+      top: bounds.y - fallbackStrokePadding,
+      right: bounds.x + bounds.width + fallbackStrokePadding,
+      bottom: bounds.y + bounds.height + fallbackStrokePadding,
     };
   } finally {
     svg.remove();
@@ -279,6 +395,39 @@ function shiftArtwork(
       translateY: (shape.transform?.translateY ?? 0) + shiftY,
     }),
   })) as CustomSymbolVectorShape[];
+}
+
+export function fitCustomSymbolDesignerDocumentToArtwork(
+  source: CustomSymbolDesignerDocument,
+  paddingUnits = registrationPaddingUnits,
+): CustomSymbolDesignerDocument {
+  const artwork = compileCustomSymbolDesignerArtwork(source);
+  const measured = measureArtworkBounds(artwork, source.metrics);
+  if (!measured) return source;
+  const baseline = source.metrics.ascentEm * 1000;
+  const left = measured.left - paddingUnits;
+  const right = measured.right + paddingUnits;
+  const top = Math.min(measured.top - paddingUnits, baseline - 20);
+  const bottom = Math.max(measured.bottom + paddingUnits, baseline);
+  const width = Math.max(20, right - left);
+  const height = Math.max(20, bottom - top);
+  const normalizedBaseline = baseline - top;
+  return {
+    ...source,
+    metrics: {
+      widthEm: Number((width / 1000).toFixed(6)),
+      ascentEm: Number((normalizedBaseline / 1000).toFixed(6)),
+      descentEm: Number(((height - normalizedBaseline) / 1000).toFixed(6)),
+    },
+    layers: source.layers.map((layer) => ({
+      ...layer,
+      transform: {
+        ...layer.transform,
+        translateX: (layer.transform.translateX ?? 0) - left,
+        translateY: (layer.transform.translateY ?? 0) - top,
+      },
+    })),
+  };
 }
 
 function autoCropRegisteredArtwork(

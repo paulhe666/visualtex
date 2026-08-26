@@ -138,6 +138,7 @@ async function main() {
       const designerTypes = await import("/src/math/customSymbolDesignerTypes.ts");
       const designerGeometry = await import("/src/math/customSymbolDesignerGeometry.ts");
       const designerArchive = await import("/src/math/customSymbolDesignerArchive.ts");
+      const systemGlyphs = await import("/src/math/customSymbolSystemGlyphs.ts");
       const registry = await import("/src/math/customSymbolRegistry.ts");
       const registration = await import("/src/math/customSymbolRegistration.ts");
       const runtime = await import("/src/export/runtime.ts");
@@ -437,13 +438,282 @@ async function main() {
           (layer) => layer.kind,
         ),
       };
+
+      const cambriaPreset = systemGlyphs.systemFontPresetById("cambria-math");
+      const styledSystemGlyph = await systemGlyphs.createSystemFontGlyphAssetAsync({
+        character: "𝑥",
+        font: cambriaPreset,
+        italic: true,
+      });
+      const ordinarySystemGlyph = await systemGlyphs.createSystemFontGlyphAssetAsync({
+        character: "A",
+        font: cambriaPreset,
+        italic: true,
+      });
+      const systemDocument = designerTypes.createEmptyCustomSymbolDesignerDocument();
+      systemDocument.name = "System mathematical glyph";
+      systemDocument.command = "vtxsystemglyph";
+      systemDocument.ommlFallback = BS + "mathit{x}";
+      systemDocument.metrics = { ...styledSystemGlyph.asset.metrics };
+      systemDocument.layers = [
+        designer.glyphLayerFromAsset(styledSystemGlyph.asset, {
+          id: "system-math-italic-x",
+          name: "Cambria mathematical italic x",
+        }),
+      ];
+      const systemDefinition = designer.customSymbolDefinitionFromDesignerDocument(
+        systemDocument,
+        { id: "designer-system-glyph-roundtrip" },
+      );
+      registration.registerCustomSymbolSafely(systemDefinition);
+      const systemArtifact = runtime.latexToSvg(BS + "vtxsystemglyph", {
+        displayMode: false,
+        fontSizePt: 12,
+        paddingPx: 0,
+        background: "transparent",
+      });
+      const systemPng = await runtime.svgToPng(systemArtifact, {
+        scale: 2,
+        background: "transparent",
+      });
+      const restoredSystem = designerArchive.restoreCustomSymbolDesignerDocument(
+        systemDefinition,
+      );
+      const styledShape = styledSystemGlyph.asset.shapes[0] || null;
+      const ordinaryShape = ordinarySystemGlyph.asset.shapes[0] || null;
+      const searchResults = systemGlyphs.searchSystemGlyphs(
+        "math-alphanumeric",
+        "U+1D465",
+        20,
+      );
+      const completeMathematicalAlphabet = systemGlyphs.searchSystemGlyphs(
+        "math-alphanumeric",
+        "",
+      );
+      const fontAvailability = await systemGlyphs.detectSystemMathFontAvailability();
+      const systemGlyphProbe = {
+        searchHasItalicX: searchResults.some(
+          (glyph) => glyph.codePoint === 0x1d465,
+        ),
+        completeAlphabetCount: completeMathematicalAlphabet.length,
+        completeAlphabetHasLastCodePoint: completeMathematicalAlphabet.some(
+          (glyph) => glyph.codePoint === 0x1d7ff,
+        ),
+        styledVectorOutline: styledSystemGlyph.vectorOutline,
+        styledShapeKind: styledShape?.kind || "",
+        styledFontStyle:
+          styledShape?.kind === "text" ? styledShape.fontStyle || "" : "path",
+        ordinaryShapeKind: ordinaryShape?.kind || "",
+        ordinaryFontStyle:
+          ordinaryShape?.kind === "text" ? ordinaryShape.fontStyle || "" : "path",
+        svgHasArtwork: systemArtifact.svg.includes(
+          'data-visualtex-custom-symbol="designer-system-glyph-roundtrip"',
+        ),
+        svgHasSystemText: systemArtifact.svg.includes("<text "),
+        pngType: systemPng.blob.type,
+        pngSize: systemPng.blob.size,
+        archiveLayerCount: systemDefinition.designerSource?.layers?.length ?? -1,
+        restoredSourceMode: restoredSystem.sourceMode,
+        restoredSourceLatex:
+          restoredSystem.document.layers[0]?.kind === "glyph"
+            ? restoredSystem.document.layers[0].asset.sourceLatex
+            : "",
+        availabilityKeys: Object.keys(fontAvailability).sort(),
+      };
+
+      const effectsDocument = designerTypes.createEmptyCustomSymbolDesignerDocument();
+      effectsDocument.name = "Transformed outlined perspective glyph";
+      effectsDocument.command = "vtxeffectglyph";
+      const effectsLayer = designer.glyphLayerFromAsset(partialAsset, {
+        id: "effect-partial",
+        name: "effect partial",
+      });
+      const effectsCenterX = partialAsset.metrics.widthEm * 500;
+      const effectsCenterY =
+        (partialAsset.metrics.ascentEm + partialAsset.metrics.descentEm) * 500;
+      effectsLayer.transform = {
+        ...effectsLayer.transform,
+        translateX: 120,
+        translateY: -80,
+        scaleX: -1.2,
+        scaleY: 1.1,
+        skewXDeg: -8,
+        rotateDeg: 27,
+        originX: effectsCenterX,
+        originY: effectsCenterY,
+      };
+      effectsLayer.effects = {
+        outline: { enabled: true, width: 84 },
+        perspective: { enabled: true, depth: 180, angleDeg: 32, steps: 4 },
+      };
+      effectsDocument.metrics = { widthEm: 5, ascentEm: 4, descentEm: 2 };
+      effectsDocument.layers = [effectsLayer];
+      const localEffectsShapes = designer.customSymbolDesignerLayerLocalShapes(
+        effectsLayer,
+      );
+      const effectsDefinition = designer.customSymbolDefinitionFromDesignerDocument(
+        effectsDocument,
+        { id: "designer-effects-roundtrip" },
+      );
+      const restoredEffects = designerArchive.restoreCustomSymbolDesignerDocument(
+        effectsDefinition,
+      );
+      registration.registerCustomSymbolSafely(effectsDefinition);
+      const effectsSvg = runtime.latexToSvg(BS + "vtxeffectglyph", {
+        displayMode: false,
+        fontSizePt: 12,
+        paddingPx: 0,
+        background: "transparent",
+      }).svg;
+      const frontEffectShape = localEffectsShapes.at(-1) || null;
+      const restoredEffectsLayer = restoredEffects.document.layers[0] || null;
+      const effectsProbe = {
+        sourceShapeCount: partialAsset.shapes.length,
+        localShapeCount: localEffectsShapes.length,
+        expectedShapeCount: partialAsset.shapes.length * 5,
+        frontFill: frontEffectShape?.fill,
+        frontStrokeWidth: frontEffectShape?.strokeWidth ?? 0,
+        compiledScaleX: effectsDefinition.artwork.shapes[0]?.transform?.scaleX ?? 0,
+        compiledSkewX:
+          effectsDefinition.artwork.shapes[0]?.transform?.skewXDeg ?? 0,
+        compiledRotation:
+          effectsDefinition.artwork.shapes[0]?.transform?.rotateDeg ?? 0,
+        compiledOriginX:
+          effectsDefinition.artwork.shapes[0]?.transform?.originX ?? null,
+        restoredEffects:
+          restoredEffectsLayer && "effects" in restoredEffectsLayer
+            ? restoredEffectsLayer.effects || null
+            : null,
+        svgTransforms: effectsSvg.match(/transform="[^"]+"/g) || [],
+        svgHasScaleFlip: effectsSvg.includes("scale(-1.2 1.1)"),
+        svgHasSkew: effectsSvg.includes("skewX(-8)"),
+        svgHasRotation: effectsSvg.includes("rotate(27)"),
+      };
+
+      const fitDocument = designerTypes.createEmptyCustomSymbolDesignerDocument();
+      fitDocument.metrics = { widthEm: 10, ascentEm: 7, descentEm: 3 };
+      const fitLayer = designer.glyphLayerFromAsset(partialAsset, {
+        id: "fit-partial",
+        name: "fit partial",
+      });
+      fitLayer.transform = {
+        ...fitLayer.transform,
+        translateX: 7200,
+        translateY: 5200,
+        rotateDeg: 18,
+        originX: partialAsset.metrics.widthEm * 500,
+        originY:
+          (partialAsset.metrics.ascentEm + partialAsset.metrics.descentEm) * 500,
+      };
+      fitDocument.layers = [fitLayer];
+      const fittedDocument = designer.fitCustomSymbolDesignerDocumentToArtwork(
+        fitDocument,
+      );
+      const fitProbe = {
+        sourceWidth: fitDocument.metrics.widthEm,
+        fittedWidth: fittedDocument.metrics.widthEm,
+        fittedHeight:
+          fittedDocument.metrics.ascentEm + fittedDocument.metrics.descentEm,
+        sourceTranslateX: fitLayer.transform.translateX,
+        fittedTranslateX:
+          fittedDocument.layers[0]?.transform.translateX ?? null,
+        fittedTranslateY:
+          fittedDocument.layers[0]?.transform.translateY ?? null,
+      };
+
+      const originalGetBBox = SVGGraphicsElement.prototype.getBBox;
+      let fallbackStrokeProbe;
+      SVGGraphicsElement.prototype.getBBox = function (...args) {
+        if (args.length > 0) {
+          throw new Error("Simulated WebKit getBBox options fallback");
+        }
+        return originalGetBBox.apply(this, args);
+      };
+      try {
+        const createFallbackDocument = (outlined) => {
+          const documentState =
+            designerTypes.createEmptyCustomSymbolDesignerDocument();
+          documentState.metrics = { widthEm: 8, ascentEm: 6, descentEm: 2 };
+          const layer = designer.glyphLayerFromAsset(partialAsset, {
+            id: outlined ? "fallback-outline" : "fallback-plain",
+            name: outlined ? "fallback outline" : "fallback plain",
+          });
+          layer.transform = {
+            ...layer.transform,
+            translateX: 1900,
+            translateY: 1200,
+            scaleX: 2.1,
+            scaleY: 1.35,
+            rotateDeg: 13,
+          };
+          if (outlined) {
+            layer.effects = {
+              outline: { enabled: true, width: 320 },
+            };
+          }
+          documentState.layers = [layer];
+          return documentState;
+        };
+        const plainDocument = createFallbackDocument(false);
+        const outlinedDocument = createFallbackDocument(true);
+        const fittedPlain = designer.fitCustomSymbolDesignerDocumentToArtwork(
+          plainDocument,
+        );
+        const fittedOutlined = designer.fitCustomSymbolDesignerDocumentToArtwork(
+          outlinedDocument,
+        );
+        const plainDefinition = designer.customSymbolDefinitionFromDesignerDocument(
+          plainDocument,
+          { id: "fallback-plain-definition" },
+        );
+        const outlinedDefinition =
+          designer.customSymbolDefinitionFromDesignerDocument(outlinedDocument, {
+            id: "fallback-outline-definition",
+          });
+        fallbackStrokeProbe = {
+          fittedPlainWidth: fittedPlain.metrics.widthEm,
+          fittedOutlinedWidth: fittedOutlined.metrics.widthEm,
+          fittedPlainHeight:
+            fittedPlain.metrics.ascentEm + fittedPlain.metrics.descentEm,
+          fittedOutlinedHeight:
+            fittedOutlined.metrics.ascentEm + fittedOutlined.metrics.descentEm,
+          runtimePlainWidth: plainDefinition.metrics.widthEm,
+          runtimeOutlinedWidth: outlinedDefinition.metrics.widthEm,
+          runtimePlainHeight:
+            plainDefinition.metrics.ascentEm + plainDefinition.metrics.descentEm,
+          runtimeOutlinedHeight:
+            outlinedDefinition.metrics.ascentEm +
+            outlinedDefinition.metrics.descentEm,
+        };
+      } finally {
+        SVGGraphicsElement.prototype.getBBox = originalGetBBox;
+      }
+
       for (const symbol of registry.readCustomSymbolLibrary().symbols) {
         registry.deleteCustomSymbol(symbol.id);
       }
-      return { results: output, designerProbe, geometryProbe, tightCropProbe };
+      return {
+        results: output,
+        designerProbe,
+        geometryProbe,
+        tightCropProbe,
+        systemGlyphProbe,
+        effectsProbe,
+        fitProbe,
+        fallbackStrokeProbe,
+      };
     })()`);
 
-    const { results, designerProbe, geometryProbe, tightCropProbe } = probe;
+    const {
+      results,
+      designerProbe,
+      geometryProbe,
+      tightCropProbe,
+      systemGlyphProbe,
+      effectsProbe,
+      fitProbe,
+      fallbackStrokeProbe,
+    } = probe;
     assert.equal(results.length, 7);
     for (const result of results) {
       assert.ok(result.shapeCount > 0, `${result.name} should compile vector shapes`);
@@ -533,8 +803,91 @@ async function main() {
     assert.equal(geometryProbe.legacySourceMode, "flattened-legacy");
     assert.equal(geometryProbe.legacyLayerCount, geometryProbe.shapeCount);
     assert.ok(geometryProbe.legacyLayerKinds.every((kind) => kind === "geometry"));
+
+    assert.equal(systemGlyphProbe.searchHasItalicX, true);
+    assert.ok(systemGlyphProbe.completeAlphabetCount > 900);
+    assert.equal(systemGlyphProbe.completeAlphabetHasLastCodePoint, true);
+    assert.equal(systemGlyphProbe.styledVectorOutline, false);
+    assert.equal(systemGlyphProbe.styledShapeKind, "text");
+    assert.equal(
+      systemGlyphProbe.styledFontStyle,
+      "normal",
+      "A mathematical-alphanumeric italic glyph must not receive a second synthetic italic slant",
+    );
+    assert.equal(systemGlyphProbe.ordinaryShapeKind, "text");
+    assert.equal(
+      systemGlyphProbe.ordinaryFontStyle,
+      "italic",
+      "An ordinary system-font letter must honor the requested mathematical italic style",
+    );
+    assert.equal(systemGlyphProbe.svgHasArtwork, true);
+    assert.equal(systemGlyphProbe.svgHasSystemText, true);
+    assert.equal(systemGlyphProbe.pngType, "image/png");
+    assert.ok(systemGlyphProbe.pngSize > 100);
+    assert.equal(systemGlyphProbe.archiveLayerCount, 1);
+    assert.equal(systemGlyphProbe.restoredSourceMode, "editable");
+    assert.equal(systemGlyphProbe.restoredSourceLatex, "𝑥");
+    assert.deepEqual(systemGlyphProbe.availabilityKeys, [
+      "cambria-math",
+      "latin-modern-math",
+      "stix-two-math",
+      "system-serif",
+      "xits-math",
+    ]);
+
+    assert.ok(effectsProbe.sourceShapeCount > 0);
+    assert.equal(effectsProbe.localShapeCount, effectsProbe.expectedShapeCount);
+    assert.equal(effectsProbe.frontFill, false);
+    assert.ok(effectsProbe.frontStrokeWidth > 0);
+    assert.equal(effectsProbe.compiledScaleX, -1.2);
+    assert.equal(effectsProbe.compiledSkewX, -8);
+    assert.equal(effectsProbe.compiledRotation, 27);
+    assert.ok(Number.isFinite(effectsProbe.compiledOriginX));
+    assert.deepEqual(effectsProbe.restoredEffects, {
+      outline: { enabled: true, width: 84 },
+      perspective: { enabled: true, depth: 180, angleDeg: 32, steps: 4 },
+    });
+    assert.equal(
+      effectsProbe.svgHasScaleFlip,
+      true,
+      `Runtime SVG lost the horizontal flip: ${JSON.stringify(effectsProbe.svgTransforms)}`,
+    );
+    assert.equal(effectsProbe.svgHasSkew, true);
+    assert.equal(effectsProbe.svgHasRotation, true);
+
+    assert.ok(fitProbe.fittedWidth > 0);
+    assert.ok(fitProbe.fittedHeight > 0);
+    assert.ok(
+      fitProbe.fittedWidth < fitProbe.sourceWidth * 0.4,
+      `Fit-to-content did not tighten the designer output: ${JSON.stringify(fitProbe)}`,
+    );
+    assert.equal(fitProbe.sourceTranslateX, 7200);
+    assert.notEqual(fitProbe.fittedTranslateX, fitProbe.sourceTranslateX);
+    assert.ok(Number.isFinite(fitProbe.fittedTranslateX));
+    assert.ok(Number.isFinite(fitProbe.fittedTranslateY));
+
+    assert.ok(fallbackStrokeProbe);
+    assert.ok(
+      fallbackStrokeProbe.fittedOutlinedWidth >
+        fallbackStrokeProbe.fittedPlainWidth + 0.2,
+      `The WebKit getBBox fallback must reserve horizontal outline width: ${JSON.stringify(fallbackStrokeProbe)}`,
+    );
+    assert.ok(
+      fallbackStrokeProbe.fittedOutlinedHeight >
+        fallbackStrokeProbe.fittedPlainHeight + 0.2,
+      `The WebKit getBBox fallback must reserve vertical outline width: ${JSON.stringify(fallbackStrokeProbe)}`,
+    );
+    assert.ok(
+      fallbackStrokeProbe.runtimeOutlinedWidth >
+        fallbackStrokeProbe.runtimePlainWidth + 0.2,
+    );
+    assert.ok(
+      fallbackStrokeProbe.runtimeOutlinedHeight >
+        fallbackStrokeProbe.runtimePlainHeight + 0.2,
+    );
+
     console.log(
-      "Custom symbol LaTeX glyph compiler, local non-destructive slicing, geometry composition, and designer artwork round-trip regression passed",
+      "Custom symbol LaTeX/system glyph compilation, fit-to-content, transforms, outline/perspective, geometry composition, and editable round-trip regression passed",
     );
   } finally {
     client?.close();

@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 mod ocr_offline;
 mod office;
 mod quick_ocr;
+mod system_math_glyphs;
 
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
@@ -1906,6 +1907,8 @@ pub fn run() {
             get_app_window_configuration,
             apply_app_window_configuration,
             switch_main_window_mode,
+            system_math_glyphs::probe_macos_math_fonts,
+            system_math_glyphs::extract_macos_math_glyph,
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,

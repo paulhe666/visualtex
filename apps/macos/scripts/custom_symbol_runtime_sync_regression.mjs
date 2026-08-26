@@ -262,6 +262,32 @@ async function main() {
     assert.equal(officeInitial.count, 0);
     process.stdout.write("[custom-symbol-runtime] office registry ready\n");
 
+    const crossWindowStorageKey = "visualtex.regression.cross-window-removal";
+    const cachedStorageValue = await mainClient.evaluate(`(async () => {
+      const storageModule = await import("/src/runtime/safeStorage.ts");
+      window.__visualtexSafeStorage = storageModule.safeStorage;
+      storageModule.safeStorage.setItemStrict(
+        ${JSON.stringify(crossWindowStorageKey)},
+        "present",
+      );
+      return storageModule.safeStorage.getItem(
+        ${JSON.stringify(crossWindowStorageKey)},
+      );
+    })()`);
+    assert.equal(cachedStorageValue, "present");
+    const officeSawStorageValue = await officeClient.evaluate(`(() => {
+      const key = ${JSON.stringify(crossWindowStorageKey)};
+      const value = localStorage.getItem(key);
+      localStorage.removeItem(key);
+      return value;
+    })()`);
+    assert.equal(officeSawStorageValue, "present");
+    await waitUntil(
+      mainClient,
+      `window.__visualtexSafeStorage?.getItem(${JSON.stringify(crossWindowStorageKey)}) === null`,
+    );
+    process.stdout.write("[custom-symbol-runtime] cross-window storage removal cache invalidation verified\n");
+
     const collisionChecks = await mainClient.evaluate(`(async () => {
       const registration = await import("/src/math/customSymbolRegistration.ts");
       const registry = await import("/src/math/customSymbolRegistry.ts");

@@ -1,5 +1,6 @@
 import type {
   CustomSymbolClipRect,
+  CustomSymbolLayerEffects,
   CustomSymbolLimitsBehavior,
   CustomSymbolMathRole,
   CustomSymbolMetrics,
@@ -35,6 +36,8 @@ export interface CustomSymbolDesignerLayerBase {
   locked: boolean;
   /** User transform applied outside the immutable glyph/compiler matrix. */
   transform: Omit<CustomSymbolVectorTransform, "matrix">;
+  /** Non-destructive layer appearance and extrusion parameters. */
+  effects?: CustomSymbolLayerEffects;
   /** Non-destructive crop in final designer-canvas coordinates. */
   clipRect?: CustomSymbolClipRect | null;
 }
