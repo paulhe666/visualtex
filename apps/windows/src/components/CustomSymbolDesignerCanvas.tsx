@@ -1038,18 +1038,18 @@ export function CustomSymbolDesignerCanvas({
       data-custom-symbol-auto-ink-bounds="true"
     >
       <div className="custom-symbol-designer-viewport-controls" aria-label={isEn ? "Canvas zoom" : "画布缩放"}>
-        <span
-          className="custom-symbol-designer-ink-size"
-          data-custom-symbol-ink-size
-          title={isEn ? "Ink bounds" : "墨迹尺寸"}
-        >
-          {inkSizeLabel}
-        </span>
         <button type="button" data-custom-symbol-zoom-out onClick={() => zoomAround(1.18)} title={isEn ? "Zoom out" : "缩小"}>−</button>
         <span data-custom-symbol-zoom-percent>{zoomPercent}%</span>
         <button type="button" data-custom-symbol-fit-view onClick={fitViewport}>{isEn ? "Locate" : "定位"}</button>
         <button type="button" data-custom-symbol-zoom-in onClick={() => zoomAround(0.84)} title={isEn ? "Zoom in" : "放大"}>+</button>
       </div>
+      <span
+        className="custom-symbol-designer-ink-size"
+        data-custom-symbol-ink-size
+        title={isEn ? "Ink bounds" : "墨迹尺寸"}
+      >
+        {inkSizeLabel}
+      </span>
       <svg
         ref={svgRef}
         className={`custom-symbol-designer-canvas${pan?.moved ? " is-panning" : ""}${rotate ? " is-rotating" : ""}${eraserMode ? " is-erasing" : ""}`}

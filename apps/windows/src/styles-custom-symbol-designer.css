@@ -1958,7 +1958,7 @@
   bottom: auto;
   left: auto;
   width: max-content;
-  max-width: calc(100% - 28px);
+  max-width: none;
   height: auto;
   min-height: 0;
   display: inline-flex;
@@ -1982,11 +1982,27 @@
   font-size: 11px;
 }
 
-.custom-symbol-designer-viewport-controls .custom-symbol-designer-ink-size {
-  min-width: 116px;
-  padding: 0 9px;
+.custom-symbol-designer-ink-size {
+  position: absolute;
+  z-index: 4;
+  right: 14px;
+  bottom: 14px;
+  width: max-content;
+  max-width: calc(100% - 28px);
+  height: 26px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--csd-overlay-bg);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-secondary);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .custom-symbol-designer-workspace {
