@@ -639,8 +639,12 @@ fn run_windows_script(
         .args(arguments)
         .output()
         .map_err(|error| format!("Unable to start Windows Office script: {error}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = crate::ocr_install::decode_process_output(&output.stdout)
+        .trim()
+        .to_string();
+    let stderr = crate::ocr_install::decode_process_output(&output.stderr)
+        .trim()
+        .to_string();
     if output.status.success() {
         return Ok(stdout);
     }

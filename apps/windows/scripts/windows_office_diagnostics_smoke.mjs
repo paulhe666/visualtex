@@ -37,6 +37,11 @@ for (const required of [
 }
 assert.ok(!certificate.includes('Programs\\VisualTeX\\VisualTeX.exe'));
 assert.ok(!certificate.includes('VisualTeX\\visualtex.exe'));
+assert.ok(certificate.includes("Add-CertificateToCurrentUserStore Root $certificate"));
+assert.ok(!certificate.includes("certutil.exe"));
+assert.ok(lifecycle.includes("crate::ocr_install::decode_process_output(&output.stdout)"));
+assert.ok(lifecycle.includes("crate::ocr_install::decode_process_output(&output.stderr)"));
+assert.ok(!backend.includes('hidden_command("certutil.exe")'));
 
 const destructiveMarkers = [
   "Remove-LegacyOfficeJsState",

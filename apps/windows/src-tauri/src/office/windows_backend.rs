@@ -566,17 +566,19 @@ fn windows_certificate_trusted(paths: &OfficePaths) -> bool {
     let Some(thumbprint) = registry_string_value(OFFICE_MODE_KEY, "CertificateThumbprint") else {
         return false;
     };
-    hidden_command("certutil.exe")
-        .args(["-user", "-store", "Root", &thumbprint])
-        .output()
-        .map(|output| {
-            output.status.success()
-                && String::from_utf8_lossy(&output.stdout)
-                    .replace(' ', "")
-                    .to_ascii_uppercase()
-                    .contains(&thumbprint.replace(' ', "").to_ascii_uppercase())
-        })
-        .unwrap_or(false)
+    let normalized_thumbprint = thumbprint.replace(' ', "").to_ascii_uppercase();
+    if normalized_thumbprint.is_empty()
+        || !normalized_thumbprint
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return false;
+    }
+    let certificate_key = format!(
+        r"HKCU\Software\Microsoft\SystemCertificates\Root\Certificates\{}",
+        normalized_thumbprint
+    );
+    registry_key_exists_in_view(&certificate_key, RegistryView::Native)
 }
 
 fn registry_default_string_value_in_view(key: &str, view: RegistryView) -> Option<String> {

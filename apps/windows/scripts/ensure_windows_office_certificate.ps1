@@ -158,6 +158,23 @@ function Test-CertificateInCurrentUserStore {
     }
 }
 
+function Add-CertificateToCurrentUserStore {
+    param(
+        [Security.Cryptography.X509Certificates.StoreName]$StoreName,
+        [Security.Cryptography.X509Certificates.X509Certificate2]$Certificate
+    )
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+        $StoreName,
+        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    )
+    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    try {
+        $store.Add($Certificate)
+    } finally {
+        $store.Close()
+    }
+}
+
 $resolvedExecutable = Resolve-VisualTeXExecutable
 if ($ResolveVisualTeXPathOnly) {
     Write-Output $resolvedExecutable
@@ -222,9 +239,10 @@ if (-not [string]::IsNullOrWhiteSpace($previousThumbprint) -and
 }
 
 if (-not (Test-CertificateInCurrentUserStore Root $certificate.Thumbprint)) {
-    & certutil.exe -user -f -addstore Root $certificatePath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "certutil.exe failed to add the VisualTeX Office HTTPS certificate to the current-user Root store (exit code $LASTEXITCODE)."
+    try {
+        Add-CertificateToCurrentUserStore Root $certificate
+    } catch {
+        throw "Unable to add the VisualTeX Office HTTPS certificate to the current-user Root store: $($_.Exception.Message)"
     }
 }
 if (-not (Test-CertificateInCurrentUserStore Root $certificate.Thumbprint)) {

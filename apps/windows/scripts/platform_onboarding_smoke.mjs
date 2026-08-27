@@ -132,7 +132,9 @@ assert(hooksSource.includes('-VisualTeXPath "$INSTDIR\\${MAINBINARYNAME}.exe"'))
 assert(!hooksSource.includes('-VisualTeXPath "$INSTDIR\\VisualTeX.exe"'));
 assert(!hooksSource.includes('install_windows_ole.ps1'));
 assert(installOleSource.includes("forwarding to the native Ribbon + OLE LocalServer installer"));
-assert(certificateSource.includes("certutil.exe -user -f -addstore Root $certificatePath"));
+assert(certificateSource.includes("Add-CertificateToCurrentUserStore Root $certificate"));
+assert(certificateSource.includes("StoreLocation]::CurrentUser"));
+assert(!certificateSource.includes("certutil.exe"));
 assert(certificateSource.includes('ArgumentList "--office-bootstrap"'));
 assert(certificateSource.includes("WaitForExit(30000)"));
 assert(!certificateSource.includes('ArgumentList "--office-background"'));
