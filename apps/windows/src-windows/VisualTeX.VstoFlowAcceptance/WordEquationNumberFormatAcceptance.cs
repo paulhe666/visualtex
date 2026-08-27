@@ -572,7 +572,7 @@ internal static partial class Program
                 "The equation reference bookmark is missing.");
             bookmark = bookmarks[bookmarkName];
             range = bookmark.Range;
-            var actual = (range.Text ?? string.Empty).Trim();
+            var actual = ReadRenderedEquationReferenceText(document, range);
             if (!string.Equals(expected, actual, StringComparison.Ordinal)
                 && expected.StartsWith("(", StringComparison.Ordinal)
                 && actual.EndsWith(")", StringComparison.Ordinal)
@@ -581,12 +581,14 @@ internal static partial class Program
                 Word.Range? expanded = null;
                 try
                 {
-                    // Word can shrink a test-only bookmark around a REF field so
-                    // the literal opening parenthesis sits immediately outside
-                    // its start. Validate the rendered document text rather than
-                    // treating that bookmark-boundary movement as lost content.
+                    // Word can shrink a test-only bookmark around a field so the
+                    // literal opening parenthesis sits immediately outside its
+                    // start. Validate the rendered field result rather than the
+                    // bookmark-boundary movement.
                     expanded = document.Range(range.Start - 1, range.End);
-                    var expandedText = (expanded.Text ?? string.Empty).Trim();
+                    var expandedText = ReadRenderedEquationReferenceText(
+                        document,
+                        expanded);
                     if (expandedText.StartsWith("(", StringComparison.Ordinal))
                         actual = expandedText;
                 }
@@ -600,6 +602,84 @@ internal static partial class Program
             Release(range);
             Release(bookmark);
             Release(bookmarks);
+        }
+    }
+
+    private static string ReadRenderedEquationReferenceText(
+        Word.Document document,
+        Word.Range range)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Fields? nestedFields = null;
+        Word.Field? nested = null;
+        Word.Range? nestedResult = null;
+        try
+        {
+            var raw = range.Text ?? string.Empty;
+            var visibleReference = string.Empty;
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.End < range.Start || code.Start > range.End) continue;
+                var instruction = (code.Text ?? string.Empty)
+                    .Replace('\r', ' ')
+                    .Replace('\n', ' ')
+                    .Replace('\t', ' ')
+                    .TrimStart();
+                if (!instruction.StartsWith(
+                        "GOTOBUTTON ",
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                Release(nestedFields);
+                nestedFields = code.Fields;
+                if (nestedFields.Count != 1)
+                    throw new InvalidDataException(
+                        "The navigable equation reference does not contain exactly one nested REF field.");
+                Release(nested);
+                nested = nestedFields[1];
+                Release(nestedResult);
+                nestedResult = nested.Result;
+                visibleReference = (nestedResult.Text ?? string.Empty).Trim();
+                break;
+            }
+
+            if (visibleReference.Length == 0)
+                return raw.Trim();
+
+            var builder = new System.Text.StringBuilder(raw.Length + visibleReference.Length);
+            var inserted = false;
+            foreach (var character in raw)
+            {
+                if (character is '\u0013' or '\u0014' or '\u0015')
+                {
+                    if (!inserted)
+                    {
+                        builder.Append(visibleReference);
+                        inserted = true;
+                    }
+                    continue;
+                }
+                builder.Append(character);
+            }
+            if (!inserted) builder.Append(visibleReference);
+            return builder.ToString().Trim();
+        }
+        finally
+        {
+            Release(nestedResult);
+            Release(nested);
+            Release(nestedFields);
+            Release(code);
+            Release(field);
+            Release(fields);
         }
     }
 }

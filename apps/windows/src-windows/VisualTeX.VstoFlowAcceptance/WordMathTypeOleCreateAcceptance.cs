@@ -536,7 +536,22 @@ internal static partial class Program
         {
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
-            document.Content.Text = "display create acceptance";
+            document.Content.Text = string.Empty;
+            InsertNumberingHeading(
+                application,
+                document,
+                level: 1,
+                text: "Display create heading");
+            range = document.Range(document.Content.End - 1, document.Content.End - 1);
+            range.Text = "display create acceptance";
+            Release(range);
+            range = null;
+            // This scenario explicitly validates MathType's native heading-scope
+            // state. Pin the format instead of inheriting the machine's current
+            // continuous/heading default from HKCU.
+            WordEquationNumbering.SetEquationNumberFormat(
+                document,
+                EquationNumberFormat.Heading1DotId);
             range = document.Range(document.Content.End - 1, document.Content.End - 1);
             range.Select();
             var service = new WordFormulaService(application);
@@ -591,7 +606,11 @@ internal static partial class Program
                 artifactRoot);
             AssertTrue(CountMathTypePlaceRefFields(document) == 1,
                 "First numbered MathType display create did not create exactly one MTPlaceRef field.");
-            AssertNativeMathTypeSectionBreak(document, 1);
+            AssertNativeMathTypeSectionBreak(
+                document,
+                expectedCount: 1,
+                expectedChapter: 1,
+                expectedSection: 0);
 
             Release(range);
             range = document.Range(document.Content.End - 1, document.Content.End - 1);
@@ -620,7 +639,11 @@ internal static partial class Program
                 artifactRoot);
             AssertTrue(CountMathTypePlaceRefFields(document) == 2,
                 "Second numbered MathType display create did not preserve/clone MTPlaceRef numbering.");
-            AssertNativeMathTypeSectionBreak(document, 1);
+            AssertNativeMathTypeSectionBreak(
+                document,
+                expectedCount: 1,
+                expectedChapter: 1,
+                expectedSection: 0);
             var codesBeforeSave = ReadMathTypePlaceRefCodes(document);
             AssertEqual(2, codesBeforeSave.Count,
                 "MathType numbered create did not produce two durable MTPlaceRef codes.");
@@ -636,7 +659,11 @@ internal static partial class Program
                 "MathType display creates changed object count after Word reopen.");
             AssertTrue(CountMathTypePlaceRefFields(document) == 2,
                 "MathType MTPlaceRef fields did not survive Word reopen.");
-            AssertNativeMathTypeSectionBreak(document, 1);
+            AssertNativeMathTypeSectionBreak(
+                document,
+                expectedCount: 1,
+                expectedChapter: 1,
+                expectedSection: 0);
             var codesAfterReopen = ReadMathTypePlaceRefCodes(document);
             AssertEqual(codesBeforeSave[0], codesAfterReopen[0],
                 "First MathType numbering template changed after Word reopen.");
@@ -1327,7 +1354,9 @@ internal static partial class Program
 
     private static void AssertNativeMathTypeSectionBreak(
         Word.Document document,
-        int expectedCount)
+        int expectedCount,
+        int expectedChapter = 1,
+        int expectedSection = 1)
     {
         Word.Fields? fields = null;
         Word.Field? field = null;
@@ -1379,10 +1408,14 @@ internal static partial class Program
                 var ordered = nestedCodes.OrderBy(item => item.Start).Select(item => item.Code).ToArray();
                 AssertEqual("SEQ MTEqn \\r \\h \\* MERGEFORMAT", ordered[0],
                     "MathType section break does not reset MTEqn using MathType's native field code.");
-                AssertEqual("SEQ MTSec \\r 1 \\h \\* MERGEFORMAT", ordered[1],
-                    "MathType section break does not initialize MTSec to 1 using MathType's native field code.");
-                AssertEqual("SEQ MTChap \\r 1 \\h \\* MERGEFORMAT", ordered[2],
-                    "MathType section break does not initialize MTChap to 1 using MathType's native field code.");
+                AssertEqual(
+                    $"SEQ MTSec \\r {expectedSection} \\h \\* MERGEFORMAT",
+                    ordered[1],
+                    $"MathType section break does not initialize MTSec to {expectedSection} using MathType's native field code.");
+                AssertEqual(
+                    $"SEQ MTChap \\r {expectedChapter} \\h \\* MERGEFORMAT",
+                    ordered[2],
+                    $"MathType section break does not initialize MTChap to {expectedChapter} using MathType's native field code.");
 
                 styleObject = code.get_Style();
                 style = styleObject as Word.Style;

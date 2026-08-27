@@ -53,6 +53,30 @@ public sealed partial class ThisAddIn
             FormulaOleContract.MathTypeOleMode,
             FormulaOleContract.WordOmmlMode);
 
+    public void OnConvertVisualTeXToOmmlSelection(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: false,
+            FormulaOleContract.NativeOleMode,
+            FormulaOleContract.WordOmmlMode);
+
+    public void OnConvertVisualTeXToOmmlDocument(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: true,
+            FormulaOleContract.NativeOleMode,
+            FormulaOleContract.WordOmmlMode);
+
+    public void OnConvertOmmlToVisualTeXSelection(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: false,
+            FormulaOleContract.WordOmmlMode,
+            FormulaOleContract.NativeOleMode);
+
+    public void OnConvertOmmlToVisualTeXDocument(object control) =>
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument: true,
+            FormulaOleContract.WordOmmlMode,
+            FormulaOleContract.NativeOleMode);
+
     private async Task ConvertFormulaFormatAsync(
         bool wholeDocument,
         string sourceMode,

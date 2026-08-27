@@ -8,6 +8,7 @@ using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Xsl;
 using Microsoft.Office.Interop.Word;
+using Microsoft.Win32;
 using Application = Microsoft.Office.Interop.Word.Application;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -15,6 +16,41 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordOmmlConverter
 {
+    private const int MaximumFormulaXmlCharacters = 16 * 1024 * 1024;
+    private const int MaximumFormulaXmlDepth = 256;
+    private const int MaximumFormulaXmlElements = 250_000;
+
+    private static XmlReader CreateSafeXmlReader(string xml, string kind)
+    {
+        if (xml.Length > MaximumFormulaXmlCharacters)
+            throw new InvalidDataException(
+                $"{kind} exceeds the supported safety limit of {MaximumFormulaXmlCharacters} characters.");
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = MaximumFormulaXmlCharacters,
+            IgnoreWhitespace = false,
+            CloseInput = true,
+        };
+
+        var elements = 0;
+        using (var preflight = XmlReader.Create(new StringReader(xml), settings))
+        {
+            while (preflight.Read())
+            {
+                if (preflight.NodeType != XmlNodeType.Element) continue;
+                if (preflight.Depth >= MaximumFormulaXmlDepth)
+                    throw new InvalidDataException(
+                        $"{kind} nesting exceeds the supported safety limit of {MaximumFormulaXmlDepth} levels.");
+                if (++elements > MaximumFormulaXmlElements)
+                    throw new InvalidDataException(
+                        $"{kind} contains more than the supported safety limit of {MaximumFormulaXmlElements} elements.");
+            }
+        }
+        return XmlReader.Create(new StringReader(xml), settings);
+    }
+
     private const string MathNamespace =
         "http://schemas.openxmlformats.org/officeDocument/2006/math";
     private const string WordNamespace =
@@ -1678,16 +1714,6 @@ internal static class WordOmmlConverter
                         .Attribute(math + "val")?
                         .Value,
                     "1",
-                    StringComparison.Ordinal)
-                || slot.Name == math + "e"
-                && parent?.Name == math + "mr"
-                && parent.Parent?.Name == math + "m"
-                && string.Equals(
-                    parent.Parent.Element(math + "mPr")?
-                        .Element(math + "plcHide")?
-                        .Attribute(math + "val")?
-                        .Value,
-                    "1",
                     StringComparison.Ordinal);
             if (hidden) continue;
 
@@ -2499,24 +2525,119 @@ internal static class WordOmmlConverter
     private static string ResolveTransformPath(string fileName)
     {
         var candidates = new List<string>();
+        var overrideRoot = Environment.GetEnvironmentVariable(
+            "VISUALTEX_OFFICE_MATH_XSL_ROOT");
+        AddCandidateRoot(candidates, overrideRoot, fileName);
+
+        // App Paths is the authoritative Office location for MSI, Click-to-Run,
+        // per-user and alternate-bit installations. Derive the stylesheet folder
+        // from every visible 32/64-bit registry view before trying conventional
+        // Program Files roots.
+        foreach (var wordPath in ReadRegisteredWordPaths())
+        {
+            var directory = Path.GetDirectoryName(wordPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                candidates.Add(Path.Combine(directory!, fileName));
+        }
+
         AddCandidateRoot(candidates, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), fileName);
         AddCandidateRoot(candidates, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), fileName);
         AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("ProgramW6432"), fileName);
+        AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles"), fileName);
+        AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles(x86)"), fileName);
         AddCandidateRoot(candidates, AppContext.BaseDirectory, fileName);
         foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (File.Exists(candidate)) return candidate;
         }
         throw new FileNotFoundException(
-            $"Unable to locate Office {fileName}. Repair Microsoft Word or reinstall the Office integration.");
+            $"Unable to locate Office {fileName}. Searched the registered Word installation and Office 2007-365 roots. Repair Microsoft Word or reinstall the Office integration.");
     }
 
     private static void AddCandidateRoot(List<string> candidates, string? root, string fileName)
     {
         if (string.IsNullOrWhiteSpace(root)) return;
-        candidates.Add(Path.Combine(root, "Microsoft Office", "root", "Office16", fileName));
-        candidates.Add(Path.Combine(root, "Office16", fileName));
-        candidates.Add(Path.Combine(root, fileName));
+        var expandedRoot = Environment.ExpandEnvironmentVariables(
+            root!.Trim().Trim('"'));
+        if (File.Exists(expandedRoot))
+        {
+            candidates.Add(expandedRoot);
+            return;
+        }
+
+        candidates.Add(Path.Combine(expandedRoot, fileName));
+        foreach (var version in new[] { "Office16", "Office15", "Office14", "Office12" })
+        {
+            candidates.Add(Path.Combine(
+                expandedRoot,
+                "Microsoft Office",
+                "root",
+                version,
+                fileName));
+            candidates.Add(Path.Combine(
+                expandedRoot,
+                "Microsoft Office",
+                version,
+                fileName));
+            candidates.Add(Path.Combine(expandedRoot, version, fileName));
+            candidates.Add(Path.Combine(
+                expandedRoot,
+                "Microsoft Shared",
+                version.ToUpperInvariant(),
+                fileName));
+        }
+    }
+
+    private static IEnumerable<string> ReadRegisteredWordPaths()
+    {
+        var views = Environment.Is64BitOperatingSystem
+            ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
+            : new[] { RegistryView.Registry32 };
+        foreach (var view in views)
+        {
+            foreach (var hive in new[]
+                     {
+                         RegistryHive.CurrentUser,
+                         RegistryHive.LocalMachine,
+                     })
+            {
+                RegistryKey? baseKey = null;
+                RegistryKey? appPathKey = null;
+                try
+                {
+                    baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    appPathKey = baseKey.OpenSubKey(
+                        "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE");
+                    var value = appPathKey?.GetValue(null) as string;
+                    if (string.IsNullOrWhiteSpace(value)) continue;
+                    var path = NormalizeRegisteredExecutablePath(value!);
+                    if (!string.IsNullOrWhiteSpace(path)) yield return path;
+                }
+                finally
+                {
+                    appPathKey?.Dispose();
+                    baseKey?.Dispose();
+                }
+            }
+        }
+    }
+
+    private static string NormalizeRegisteredExecutablePath(string value)
+    {
+        var source = Environment.ExpandEnvironmentVariables(value.Trim());
+        if (source.StartsWith("\"", StringComparison.Ordinal))
+        {
+            var closing = source.IndexOf('"', 1);
+            return closing > 1
+                ? source.Substring(1, closing - 1)
+                : source.Trim('"');
+        }
+        var exeEnd = source.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        return (exeEnd >= 0
+                ? source.Substring(0, exeEnd + 4)
+                : source.Split(new[] { ' ', '\t' }, 2)[0])
+            .Trim()
+            .Trim('"');
     }
 
     private static XslCompiledTransform GetTransform()

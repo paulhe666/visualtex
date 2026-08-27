@@ -103,30 +103,20 @@ internal static class MathTypeWordCommandsBridge
             initialized = true;
 
             format = shape.OLEFormat;
-            if (!string.Equals(format.ProgID, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
+            if (!MathTypeOleInterop.TryResolveCapabilities(shape, out var capabilities))
                 throw new InvalidDataException(
-                    $"MathType server read expected Equation.DSMT4, actual='{format.ProgID}'.");
+                    $"MathType server read could not resolve the OLE class '{format.ProgID}'.");
 
-            object runForConversion = 2;
+            object runForConversion = capabilities.RunForConversionVerb;
             format.DoVerb(ref runForConversion);
 
-            Exception? objectError = null;
-            for (var attempt = 0; attempt < 20; attempt++)
-            {
-                try
-                {
-                    runningObject = format.Object;
-                    if (runningObject is not null) break;
-                }
-                catch (Exception error) when (error is COMException or InvalidCastException)
-                {
-                    objectError = error;
-                }
-                Thread.Sleep(15 + attempt * 3);
-            }
+            runningObject = WaitForRunningMathTypeObject(
+                format,
+                TimeSpan.FromSeconds(5),
+                out var objectError);
             if (runningObject is null)
                 throw new InvalidOperationException(
-                    "MathType RunForConversion did not expose OLEFormat.Object for readback.",
+                    "MathType RunForConversion did not expose OLEFormat.Object for readback within 5 seconds.",
                     objectError);
 
             var serverMathMl = ReadMathMlFromServer(getEquation, runningObject);
@@ -196,34 +186,25 @@ internal static class MathTypeWordCommandsBridge
             initialized = true;
 
             format = shape.OLEFormat;
-            if (!string.Equals(format.ProgID, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
+            if (!MathTypeOleInterop.TryResolveCapabilities(shape, out var capabilities))
                 throw new InvalidDataException(
-                    $"MathType server write expected Equation.DSMT4, actual='{format.ProgID}'.");
+                    $"MathType server write could not resolve the OLE class '{format.ProgID}'.");
 
-            // Exact equivalent of MathType's MTSetData.ActivateMT:
-            //     eqnShape.OLEFormat.DoVerb (2)
-            object runForConversion = 2;
+            // Enter the installed MathType class's registered RunForConversion verb.
+            // MathType 7 normally uses verb 2, but discovery is authoritative for
+            // older/newer desktop builds and localized registrations.
+            object runForConversion = capabilities.RunForConversionVerb;
             format.DoVerb(ref runForConversion);
 
             // Word/MathType may need a short COM pump before OLEFormat.Object is
             // exposed after RunForConversion. Do not activate any visible editor.
-            Exception? objectError = null;
-            for (var attempt = 0; attempt < 20; attempt++)
-            {
-                try
-                {
-                    runningObject = format.Object;
-                    if (runningObject is not null) break;
-                }
-                catch (Exception error) when (error is COMException or InvalidCastException)
-                {
-                    objectError = error;
-                }
-                Thread.Sleep(15 + attempt * 3);
-            }
+            runningObject = WaitForRunningMathTypeObject(
+                format,
+                TimeSpan.FromSeconds(5),
+                out var objectError);
             if (runningObject is null)
                 throw new InvalidOperationException(
-                    "MathType RunForConversion did not expose OLEFormat.Object.",
+                    "MathType RunForConversion did not expose OLEFormat.Object within 5 seconds.",
                     objectError);
 
             if (string.Equals(
@@ -289,6 +270,34 @@ internal static class MathTypeWordCommandsBridge
             }
             if (module != IntPtr.Zero) FreeLibrary(module);
         }
+    }
+
+    private static object? WaitForRunningMathTypeObject(
+        OLEFormat format,
+        TimeSpan timeout,
+        out Exception? lastError)
+    {
+        lastError = null;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var delayMilliseconds = 15;
+        do
+        {
+            try
+            {
+                var running = format.Object;
+                if (running is not null) return running;
+            }
+            catch (Exception error) when (error is COMException or InvalidCastException)
+            {
+                lastError = error;
+            }
+
+            if (watch.Elapsed >= timeout) break;
+            Thread.Sleep(delayMilliseconds);
+            delayMilliseconds = Math.Min(120, delayMilliseconds + 15);
+        }
+        while (watch.Elapsed < timeout);
+        return null;
     }
 
     private static string ReadMathMlFromServer(

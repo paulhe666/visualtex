@@ -123,11 +123,33 @@ function Test-RibbonComDispatch(
                 'VisualTeX.WordVsto.VisualTeXToMathType',
                 'VisualTeX.WordVsto.MathTypeToVisualTeX',
                 'VisualTeX.WordVsto.OmmlToMathType',
-                'VisualTeX.WordVsto.MathTypeToOmml'
+                'VisualTeX.WordVsto.MathTypeToOmml',
+                'VisualTeX.WordVsto.VisualTeXToOmml',
+                'VisualTeX.WordVsto.OmmlToVisualTeX'
             )) {
                 $controlMarker = 'id="{0}"' -f $requiredFormatControl
                 if ($ribbonXml -notmatch [regex]::Escape($controlMarker)) {
                     throw "$ClassName Ribbon XML is missing format conversion control $requiredFormatControl."
+                }
+            }
+
+            $formulaServiceType = $assembly.GetType(
+                "VisualTeX.WordVsto.WordFormulaService",
+                $true)
+            $pairValidator = $formulaServiceType.GetMethod(
+                "ValidateSimpleFormatConversionPair",
+                [Reflection.BindingFlags]::Static -bor [Reflection.BindingFlags]::NonPublic)
+            if ($null -eq $pairValidator) {
+                throw "$ClassName is missing the format conversion pair validator."
+            }
+            foreach ($pair in @(
+                @("nativeOle", "wordOmml"),
+                @("wordOmml", "nativeOle")
+            )) {
+                try {
+                    [void]$pairValidator.Invoke($null, @($pair[0], $pair[1]))
+                } catch {
+                    throw "$ClassName rejects supported format conversion $($pair[0]) -> $($pair[1]): $($_.Exception.InnerException.Message)"
                 }
             }
         }
@@ -189,7 +211,11 @@ Test-RibbonComDispatch `
         "OnConvertOmmlToMathTypeSelection",
         "OnConvertOmmlToMathTypeDocument",
         "OnConvertMathTypeToOmmlSelection",
-        "OnConvertMathTypeToOmmlDocument"
+        "OnConvertMathTypeToOmmlDocument",
+        "OnConvertVisualTeXToOmmlSelection",
+        "OnConvertVisualTeXToOmmlDocument",
+        "OnConvertOmmlToVisualTeXSelection",
+        "OnConvertOmmlToVisualTeXDocument"
     )
 
 Test-RibbonComDispatch `

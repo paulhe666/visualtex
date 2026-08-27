@@ -18,7 +18,8 @@ export const safeStorage = {
           memoryStorage.set(key, value);
           return value;
         }
-        return memoryStorage.get(key) ?? null;
+        memoryStorage.delete(key);
+        return null;
       } catch {
         // Fall back to memory for this session.
       }
@@ -34,6 +35,29 @@ export const safeStorage = {
       storage.setItem(key, value);
     } catch {
       // Keep the in-memory preference when WebView storage is unavailable.
+    }
+  },
+
+  /**
+   * Persist a value without swallowing a real browser storage failure. This is
+   * used for user-authored assets where silently falling back to process memory
+   * would make data appear saved until the application restarts.
+   */
+  setItemStrict(key: string, value: string): void {
+    const storage = browserStorage();
+    if (!storage) {
+      memoryStorage.set(key, value);
+      return;
+    }
+    try {
+      storage.setItem(key, value);
+      memoryStorage.set(key, value);
+    } catch (error) {
+      throw new Error(
+        `VisualTeX could not persist ${key}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   },
 

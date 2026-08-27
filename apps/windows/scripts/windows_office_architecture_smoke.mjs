@@ -658,12 +658,13 @@ assert.ok(wordDoubleClickHook.includes('"WINWORD"'));
 for (const command of [
   "OnConvertSelected",
   "OnDeleteSelected",
-  "OnExportSelectedAsPicture",
   "OnOpenDesktop",
 ]) {
   assert.ok(wordVsto.includes(command), `Word Ribbon is missing ${command}`);
   assert.ok(powerpointVsto.includes(command), `PowerPoint Ribbon is missing ${command}`);
 }
+assert.ok(!wordVsto.includes("OnExportSelectedAsPicture"));
+assert.ok(powerpointVsto.includes("OnExportSelectedAsPicture"));
 assert.ok(wordVsto.includes("OnUpdateEquationNumbers"));
 assert.ok(!wordVsto.includes("OnBatchEquationNumbering"));
 assert.ok(!wordVsto.includes("BatchEquationNumberingAsync"));
@@ -720,8 +721,6 @@ for (const binding of [
   ['VisualTeX.WordVsto.InlineOmml', 'tag="ommlInline"'],
   ['VisualTeX.WordVsto.DisplayOmml', 'tag="ommlDisplay"'],
   ['VisualTeX.WordVsto.Edit', 'tag="editSelected"'],
-  ['VisualTeX.WordVsto.ConvertSelected"', 'tag="convertToOle"'],
-  ['VisualTeX.WordVsto.ConvertSelectedToOmml', 'tag="convertToOmml"'],
   ['VisualTeX.WordVsto.UpdateNumbers', 'tag="updateNumbers"'],
   ['VisualTeX.WordVsto.BulkImport', 'tag="batchImport"'],
 ]) {
@@ -735,6 +734,25 @@ for (const binding of [
 ]) {
   assert.ok(powerpointVsto.includes(`id="${binding[0]}`));
   assert.ok(powerpointVsto.includes(binding[1]));
+}
+for (const menuId of [
+  "VisualTeX.WordVsto.VisualTeXToOmml",
+  "VisualTeX.WordVsto.OmmlToVisualTeX",
+]) {
+  const menuStart = wordVsto.indexOf(`<menu id="${menuId}"`);
+  assert.ok(menuStart >= 0, `Word Ribbon is missing ${menuId}`);
+  const menuEnd = wordVsto.indexOf(">", menuStart);
+  const menuTag = wordVsto.slice(menuStart, menuEnd + 1);
+  assert.ok(!menuTag.includes("getImage="), `${menuId} unexpectedly has getImage`);
+  assert.ok(!menuTag.includes("imageMso="), `${menuId} unexpectedly has imageMso`);
+}
+for (const callback of [
+  "OnConvertVisualTeXToOmmlSelection",
+  "OnConvertVisualTeXToOmmlDocument",
+  "OnConvertOmmlToVisualTeXSelection",
+  "OnConvertOmmlToVisualTeXDocument",
+]) {
+  assert.ok(wordVsto.includes(callback), `Word Ribbon is missing ${callback}`);
 }
 assert.ok(wordVsto.includes('getImage="GetRibbonImage"'));
 assert.ok(powerpointVsto.includes('getImage="GetRibbonImage"'));

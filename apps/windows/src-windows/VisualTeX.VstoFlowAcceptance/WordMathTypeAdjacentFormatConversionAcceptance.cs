@@ -24,7 +24,8 @@ internal static partial class Program
         ProbeAdjacentOmmlGroupInsertion();
         RunDirection(targetVisualTeX: true);
         RunDirection(targetVisualTeX: false);
-        Console.WriteLine("[ADJACENT FORMAT PASS] zero-gap MathType OLE pair survived MT→VisualTeX and MT→OMML without cross-formula contamination.");
+        RunDisplayToVisualTeXBoundary();
+        Console.WriteLine("[ADJACENT FORMAT PASS] zero-gap MathType OLE pair survived MT→VisualTeX and MT→OMML without cross-formula contamination; every unnumbered display conversion direction among MathType, VisualTeX and OMML preserved its paragraph boundary without an extra blank line.");
 
         void ProbeAdjacentOmmlGroupInsertion()
         {
@@ -70,6 +71,224 @@ internal static partial class Program
                 Release(document);
                 Release(application);
                 ForceComCleanup();
+            }
+        }
+
+        void RunDisplayToVisualTeXBoundary()
+        {
+            var previousFormatAcceptance = Environment.GetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
+            var previousTracePath = Environment.GetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH");
+            var tracePath = Path.Combine(
+                artifactRoot,
+                "display-mt-to-vt-boundary.trace.log");
+            try { File.Delete(tracePath); } catch { }
+            Word.Application? application = null;
+            Word.Document? document = null;
+            Word.Document? reopened = null;
+            Word.Range? insertion = null;
+            Word.Paragraphs? paragraphs = null;
+            Word.Paragraph? formulaParagraph = null;
+            Word.Range? formulaRange = null;
+            Word.InlineShapes? formulaShapes = null;
+            Word.InlineShape? shape = null;
+            VisualTeX.WordVsto.ThisAddIn? addIn = null;
+            Array custom = Array.Empty<object>();
+            try
+            {
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                    "1");
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                    tracePath);
+                var mathTypeBaseline = SnapshotMathTypeProcessIds();
+                application = CreateWordApplication(visible: false);
+                document = application.Documents.Add();
+                document.Content.Text = "display-before\r\rdisplay-after\r";
+                paragraphs = document.Paragraphs;
+                AssertTrue(paragraphs.Count >= 3,
+                    "Display MT→VisualTeX boundary setup did not create the source/formula/following paragraph sequence.");
+                var sourceParagraphCount = paragraphs.Count;
+                formulaParagraph = paragraphs[2];
+                formulaRange = formulaParagraph.Range.Duplicate;
+                insertion = document.Range(formulaRange.Start, formulaRange.Start);
+                insertion.Select();
+                var service = new WordFormulaService(application);
+                service.InsertMathTypeOle(
+                    CreateMathTypeCreateSession("block", false, firstLatex),
+                    firstMathMl,
+                    emfPath,
+                    preserveExistingDisplayParagraphBoundary: true);
+                var paragraphCountBefore = document.Paragraphs.Count;
+                AssertEqual(sourceParagraphCount, paragraphCountBefore,
+                    "Display MathType source setup changed the baseline paragraph count.");
+
+                addIn = new VisualTeX.WordVsto.ThisAddIn();
+                addIn.OnConnection(
+                    application,
+                    Extensibility.ext_ConnectMode.ext_cm_AfterStartup,
+                    addIn,
+                    ref custom);
+                addIn.OnConvertMathTypeToVisualTeXDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=MathType target=VisualTeX",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+
+                AssertEqual(1, CountInstalledVisualTeXOleShapes(document),
+                    "Display MT→VisualTeX did not create exactly one VisualTeX formula.");
+                AssertEqual(0, CountMathTypeOleShapes(document),
+                    "Display MT→VisualTeX left its MathType source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display MT→VisualTeX changed the paragraph count and introduced an extra blank line.");
+                AssertVisualTeXDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display MT→VisualTeX");
+
+                addIn.OnConvertVisualTeXToOmmlDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=VisualTeX target=OMML",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+                AssertEqual(1, document.OMaths.Count,
+                    "Display VisualTeX→OMML did not create exactly one Word equation.");
+                AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
+                    "Display VisualTeX→OMML left its VisualTeX source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display VisualTeX→OMML changed the paragraph count.");
+                AssertOmmlDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display VisualTeX→OMML");
+
+                addIn.OnConvertOmmlToVisualTeXDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=OMML target=VisualTeX",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+                AssertEqual(1, CountInstalledVisualTeXOleShapes(document),
+                    "Display OMML→VisualTeX did not create exactly one VisualTeX formula.");
+                AssertEqual(0, document.OMaths.Count,
+                    "Display OMML→VisualTeX left its OMML source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display OMML→VisualTeX changed the paragraph count.");
+                AssertVisualTeXDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display OMML→VisualTeX");
+
+                addIn.OnConvertVisualTeXToMathTypeDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=VisualTeX target=MathType",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+                AssertEqual(1, CountMathTypeOleShapes(document),
+                    "Display VisualTeX→MathType did not create exactly one MathType formula.");
+                AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
+                    "Display VisualTeX→MathType left its VisualTeX source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display VisualTeX→MathType changed the paragraph count.");
+                AssertMathTypeDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display VisualTeX→MathType");
+
+                addIn.OnConvertMathTypeToOmmlDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=MathType target=OMML",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+                AssertEqual(1, document.OMaths.Count,
+                    "Display MathType→OMML did not create exactly one Word equation.");
+                AssertEqual(0, CountMathTypeOleShapes(document),
+                    "Display MathType→OMML left its MathType source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display MathType→OMML changed the paragraph count.");
+                AssertOmmlDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display MathType→OMML");
+
+                addIn.OnConvertOmmlToMathTypeDocument(new object());
+                WaitForInstalledOmmlMathTypeConversion(
+                    tracePath,
+                    "source=OMML target=MathType",
+                    mathTypeBaseline);
+                WaitForAddInIdle(addIn, TimeSpan.FromSeconds(30));
+                AssertEqual(1, CountMathTypeOleShapes(document),
+                    "Display OMML→MathType did not create exactly one MathType formula.");
+                AssertEqual(0, document.OMaths.Count,
+                    "Display OMML→MathType left its OMML source behind.");
+                AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                    "Display OMML→MathType changed the paragraph count.");
+                AssertMathTypeDisplayFollowedImmediatelyByText(
+                    document,
+                    "display-after",
+                    "Display OMML→MathType");
+
+                var outputPath = Path.Combine(
+                    artifactRoot,
+                    "Display-Format-Conversion-Boundary-Matrix.docx");
+                document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+                document.Close(Word.WdSaveOptions.wdSaveChanges);
+                Release(document);
+                document = null;
+                reopened = application.Documents.Open(
+                    outputPath,
+                    ReadOnly: false,
+                    AddToRecentFiles: false,
+                    Visible: false);
+                AssertEqual(paragraphCountBefore, reopened.Paragraphs.Count,
+                    "Save/reopen changed the display conversion paragraph count.");
+                AssertMathTypeDisplayFollowedImmediatelyByText(
+                    reopened,
+                    "display-after",
+                    "Reopened display conversion matrix");
+                AssertNoNewMathTypeProcess(
+                    mathTypeBaseline,
+                    "display format conversion boundary matrix");
+                Console.WriteLine(
+                    "[DISPLAY FORMAT] MT→VisualTeX→OMML→VisualTeX→MathType→OMML→MathType preserved the same display paragraph and following user paragraph with no generated blank line.");
+            }
+            finally
+            {
+                Release(shape);
+                Release(formulaShapes);
+                Release(formulaRange);
+                Release(formulaParagraph);
+                Release(paragraphs);
+                Release(insertion);
+                if (addIn is not null)
+                {
+                    try
+                    {
+                        addIn.OnDisconnection(
+                            Extensibility.ext_DisconnectMode.ext_dm_UserClosed,
+                            ref custom);
+                    }
+                    catch { }
+                }
+                try { reopened?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { QuitWordApplicationIfOwned(application); } catch { }
+                Release(reopened);
+                Release(document);
+                Release(application);
+                ForceComCleanup();
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                    previousFormatAcceptance);
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                    previousTracePath);
             }
         }
 
@@ -237,6 +456,113 @@ internal static partial class Program
                 Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", previousFormatAcceptance);
                 Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", previousTracePath);
             }
+        }
+    }
+
+    private static void AssertOmmlDisplayFollowedImmediatelyByText(
+        Word.Document document,
+        string expectedFollowingText,
+        string context)
+    {
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Paragraph? formulaParagraph = null;
+        Word.Range? formulaRange = null;
+        Word.OMaths? maths = null;
+        try
+        {
+            paragraphs = document.Paragraphs;
+            var followingIndex = -1;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = paragraphs[index];
+                paragraphRange = paragraph.Range;
+                var text = (paragraphRange.Text ?? string.Empty)
+                    .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                if (!string.Equals(text, expectedFollowingText, StringComparison.Ordinal))
+                    continue;
+                followingIndex = index;
+                break;
+            }
+            AssertTrue(followingIndex > 1,
+                $"{context} could not resolve the user paragraph following the formula.");
+
+            formulaParagraph = paragraphs[followingIndex - 1];
+            formulaRange = formulaParagraph.Range;
+            maths = formulaRange.OMaths;
+            AssertEqual(1, maths.Count,
+                $"{context} left a plain blank paragraph between the OMML display formula and '{expectedFollowingText}'.");
+        }
+        finally
+        {
+            Release(maths);
+            Release(formulaRange);
+            Release(formulaParagraph);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static void AssertVisualTeXDisplayFollowedImmediatelyByText(
+        Word.Document document,
+        string expectedFollowingText,
+        string context)
+    {
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Paragraph? formulaParagraph = null;
+        Word.Range? formulaRange = null;
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? shape = null;
+        try
+        {
+            paragraphs = document.Paragraphs;
+            var followingIndex = -1;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = paragraphs[index];
+                paragraphRange = paragraph.Range;
+                var text = (paragraphRange.Text ?? string.Empty)
+                    .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                if (!string.Equals(text, expectedFollowingText, StringComparison.Ordinal))
+                    continue;
+                followingIndex = index;
+                break;
+            }
+            AssertTrue(followingIndex > 1,
+                $"{context} could not resolve the user paragraph following the formula.");
+
+            formulaParagraph = paragraphs[followingIndex - 1];
+            formulaRange = formulaParagraph.Range;
+            shapes = formulaRange.InlineShapes;
+            var visualTeXCount = 0;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(shape);
+                shape = shapes[index];
+                if (WordFormulaMetadataReader.IsNativeOle(shape)) visualTeXCount++;
+            }
+            AssertEqual(1, visualTeXCount,
+                $"{context} left a plain blank paragraph between the VisualTeX display formula and '{expectedFollowingText}'.");
+        }
+        finally
+        {
+            Release(shape);
+            Release(shapes);
+            Release(formulaRange);
+            Release(formulaParagraph);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
         }
     }
 }

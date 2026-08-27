@@ -23,6 +23,7 @@ internal sealed class WordFormulaFormatConversionTarget
     internal bool SourceIsManagedOmml { get; set; }
     internal string DisplayMode { get; set; } = "inline";
     internal bool Numbered { get; set; }
+    internal int PrecedingPlainBlankParagraphCount { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";
     internal double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;
     internal FormulaMetadata Metadata { get; set; } = new();

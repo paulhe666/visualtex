@@ -24,6 +24,18 @@ apps/windows/src-windows/**/TestResults/
 apps/windows/src-windows/artifacts/
 apps/windows/WINDOWS-BUILD-OUTPUT/
 
+# Local acceptance/build output. Acceptance executables default to the OS temp
+# tree; these rules cover historical runs that used relative checkout paths.
+/artifacts/
+/%TEMP%/
+/NUL
+apps/windows/artifacts/
+apps/windows/build-logs/
+apps/windows/Tempvisualtex-*/
+apps/windows/src-tauri/target-perf/
+apps/windows/src-tauri/src-tauri/
+apps/windows/src-tauri/resources/ocr-python/
+
 # OCR runtimes and caches
 apps/*/.cache/
 apps/*/ocr/.venv/

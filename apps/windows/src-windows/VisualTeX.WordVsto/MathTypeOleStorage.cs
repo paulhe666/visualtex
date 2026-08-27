@@ -11,7 +11,7 @@ namespace VisualTeX.WordVsto;
 internal static class MathTypeOleStorage
 {
     internal static readonly Guid MathTypeEquationClsid =
-        new("0002CE03-0000-0000-C000-000000000046");
+        MathTypeOleInterop.CanonicalClsid;
 
     private const int StgmRead = 0x00000000;
     private const int StgmWrite = 0x00000001;
@@ -20,6 +20,7 @@ internal static class MathTypeOleStorage
     private const int StgmCreate = 0x00001000;
     private const int StatFlagNoName = 1;
     private const int AdvfNoData = 1;
+    internal const int MaximumCompoundFileBytes = 64 * 1024 * 1024;
 
     internal sealed class RewriteResult
     {
@@ -126,6 +127,7 @@ internal static class MathTypeOleStorage
             float heightPt)
         {
             ValidateCompoundFile(compoundFile);
+            var storageIdentity = ReadCompoundFileIdentity(compoundFile);
             var oleResult = OleInitialize(IntPtr.Zero);
             if (oleResult == 0 || oleResult == 1)
                 _oleInitializedHere = true;
@@ -136,7 +138,9 @@ internal static class MathTypeOleStorage
             {
                 var descriptor = MathTypeOleClipboardProxy.CreateStandaloneObjectDescriptor(
                     widthPt,
-                    heightPt);
+                    heightPt,
+                    storageIdentity.Clsid,
+                    storageIdentity.UserType);
                 _replacementProxy = new MathTypeOleClipboardProxy(
                     compoundFile,
                     emfPath,
@@ -252,7 +256,8 @@ internal static class MathTypeOleStorage
                 0,
                 out storage);
             if (result < 0) Marshal.ThrowExceptionForHR(result);
-            var clsid = MathTypeEquationClsid;
+            var identity = MathTypeOleInterop.ResolvePreferredStorageIdentity();
+            var clsid = identity.Clsid;
             storage.SetClass(ref clsid);
             var mathTypeFormat = RegisterClipboardFormatW("MathType EF");
             if (mathTypeFormat == 0)
@@ -261,7 +266,7 @@ internal static class MathTypeOleStorage
             result = WriteFmtUserTypeStg(
                 storage,
                 checked((ushort)mathTypeFormat),
-                "MathType 7.0 Equation");
+                identity.UserType);
             if (result < 0) Marshal.ThrowExceptionForHR(result);
             // These are the standard OLE2 containment metadata streams written by
             // MathType 7 for an Equation.DSMT4 embedded object.  They contain no
@@ -334,6 +339,13 @@ internal static class MathTypeOleStorage
 
     internal static bool LooksLikeMathTypeCompoundFile(byte[] compoundFile)
     {
+        // Word documents are untrusted input. Reject impossible/truncated payloads
+        // and cap parser work before reading CFB sector counts or stream lengths.
+        // Real MathType equation storages are tiny relative to this ceiling.
+        if (compoundFile is null
+            || compoundFile.Length < 512
+            || compoundFile.Length > MaximumCompoundFileBytes)
+            return false;
         if (!HasCompoundFileSignature(compoundFile)) return false;
         var path = MaterializeTemporaryCompoundFile(compoundFile, "identify");
         try
@@ -341,16 +353,12 @@ internal static class MathTypeOleStorage
             var storage = OpenStorage(path, StgmRead | StgmShareExclusive);
             try
             {
-                storage.Stat(out var stat, StatFlagNoName);
-                if (stat.clsid != MathTypeEquationClsid) return false;
                 try
                 {
-                    var native = ReadStream(storage, "Equation Native");
-                    return native.Length > 34
-                        && BitConverter.ToUInt16(native, 0) == 28
-                        && native[28] == 5;
+                    ValidateMathTypeStorage(storage);
+                    return true;
                 }
-                catch (COMException)
+                catch
                 {
                     return false;
                 }
@@ -400,6 +408,7 @@ internal static class MathTypeOleStorage
         {
             sourceStorage = OpenStorage(path, StgmRead | StgmShareExclusive);
             ValidateMathTypeStorage(sourceStorage);
+            sourceStorage.Stat(out var sourceStat, StatFlagNoName);
 
             destinationObject = Marshal.GetObjectForIUnknown(destinationStoragePointer);
             if (destinationObject is not IStorageNative destinationStorage)
@@ -411,7 +420,9 @@ internal static class MathTypeOleStorage
                 IntPtr.Zero,
                 IntPtr.Zero,
                 destinationStorage);
-            var clsid = MathTypeEquationClsid;
+            var clsid = sourceStat.clsid == Guid.Empty
+                ? MathTypeOleInterop.ResolvePreferredStorageIdentity().Clsid
+                : sourceStat.clsid;
             destinationStorage.SetClass(ref clsid);
             destinationStorage.Commit(0);
         }
@@ -465,6 +476,42 @@ internal static class MathTypeOleStorage
         finally { TryDelete(path); }
     }
 
+    internal static MathTypeOleInterop.StorageIdentity ReadCompoundFileIdentity(
+        byte[] compoundFile)
+    {
+        ValidateCompoundFile(compoundFile);
+        var path = MaterializeTemporaryCompoundFile(compoundFile, "read-storage-identity");
+        try
+        {
+            var storage = OpenStorage(path, StgmRead | StgmShareExclusive);
+            try
+            {
+                ValidateMathTypeStorage(storage);
+                storage.Stat(out var stat, StatFlagNoName);
+                var preferred = MathTypeOleInterop.ResolvePreferredStorageIdentity();
+                var resolvedClsid = stat.clsid == Guid.Empty
+                    ? preferred.Clsid
+                    : stat.clsid;
+                var resolvedProgId = MathTypeOleInterop.TryResolveCapabilities(
+                        resolvedClsid,
+                        out var capabilities)
+                    && !string.IsNullOrWhiteSpace(capabilities.ProgId)
+                        ? capabilities.ProgId
+                        : preferred.ProgId;
+                return new MathTypeOleInterop.StorageIdentity
+                {
+                    ProgId = string.IsNullOrWhiteSpace(resolvedProgId)
+                        ? MathTypeOleInterop.CanonicalProgId
+                        : resolvedProgId,
+                    Clsid = resolvedClsid,
+                    UserType = TryReadStorageUserType(storage) ?? preferred.UserType,
+                };
+            }
+            finally { Release(storage); }
+        }
+        finally { TryDelete(path); }
+    }
+
     internal static Guid ReadCompoundFileRootClsid(byte[] compoundFile)
     {
         ValidateCompoundFile(compoundFile);
@@ -494,6 +541,64 @@ internal static class MathTypeOleStorage
             try
             {
                 storage.SetClass(ref rootClsid);
+                storage.Commit(0);
+            }
+            finally { Release(storage); }
+            return File.ReadAllBytes(path);
+        }
+        finally { TryDelete(path); }
+    }
+
+    internal static byte[] RewriteCompoundFileIdentity(
+        byte[] compoundFile,
+        Guid rootClsid,
+        string userType)
+    {
+        ValidateCompoundFile(compoundFile);
+        if (rootClsid == Guid.Empty)
+            throw new ArgumentException(
+                "OLE storage identity requires a non-empty root CLSID.",
+                nameof(rootClsid));
+        if (string.IsNullOrWhiteSpace(userType))
+            throw new ArgumentException(
+                "OLE storage identity requires a non-empty user type.",
+                nameof(userType));
+
+        var path = MaterializeTemporaryCompoundFile(compoundFile, "rewrite-storage-identity");
+        try
+        {
+            var storage = OpenStorage(path, StgmReadWrite | StgmShareExclusive);
+            try
+            {
+                ushort clipboardFormat = 0;
+                IntPtr existingUserType = IntPtr.Zero;
+                try
+                {
+                    _ = ReadFmtUserTypeStg(
+                        storage,
+                        out clipboardFormat,
+                        out existingUserType);
+                }
+                finally
+                {
+                    if (existingUserType != IntPtr.Zero)
+                        Marshal.FreeCoTaskMem(existingUserType);
+                }
+                if (clipboardFormat == 0)
+                {
+                    var registered = RegisterClipboardFormatW("MathType EF");
+                    if (registered == 0 || registered > ushort.MaxValue)
+                        throw new InvalidOperationException(
+                            "Could not register the MathType EF clipboard format.");
+                    clipboardFormat = checked((ushort)registered);
+                }
+
+                storage.SetClass(ref rootClsid);
+                var result = WriteFmtUserTypeStg(
+                    storage,
+                    clipboardFormat,
+                    userType.Trim());
+                if (result < 0) Marshal.ThrowExceptionForHR(result);
                 storage.Commit(0);
             }
             finally { Release(storage); }
@@ -688,6 +793,12 @@ internal static class MathTypeOleStorage
 
     private static void ValidateCompoundFile(byte[] compoundFile)
     {
+        if (compoundFile is null || compoundFile.Length < 512)
+            throw new InvalidDataException(
+                "The embedded MathType object is too short to be a complete Compound File Binary payload.");
+        if (compoundFile.Length > MaximumCompoundFileBytes)
+            throw new InvalidDataException(
+                $"The embedded MathType object exceeds the supported safety limit of {MaximumCompoundFileBytes} bytes.");
         if (!HasCompoundFileSignature(compoundFile))
             throw new InvalidDataException(
                 "The embedded MathType object is not a Compound File Binary payload.");
@@ -703,15 +814,46 @@ internal static class MathTypeOleStorage
     private static void ValidateMathTypeStorage(IStorageNative storage)
     {
         storage.Stat(out var stat, StatFlagNoName);
-        if (stat.clsid != MathTypeEquationClsid)
+        var recognizedClass = stat.clsid == MathTypeEquationClsid
+            || MathTypeOleInterop.IsDirectlyRegisteredMathTypeClass(stat.clsid);
+        var storedUserType = TryReadStorageUserType(storage);
+        var recognizedUserType = !string.IsNullOrWhiteSpace(storedUserType)
+            && storedUserType!.IndexOf(
+                "MathType",
+                StringComparison.OrdinalIgnoreCase) >= 0;
+        if (!recognizedClass && !recognizedUserType)
             throw new InvalidDataException(
-                $"Embedded OLE storage CLSID {stat.clsid:B} is not MathType Equation.DSMT4.");
+                $"Embedded OLE storage class {stat.clsid:B} / user type '{storedUserType ?? "(missing)"}' is not a recognized MathType equation.");
+
         var native = ReadStream(storage, "Equation Native");
         if (native.Length < 34 || BitConverter.ToUInt16(native, 0) != 28)
             throw new InvalidDataException("MathType Equation Native stream has an unsupported header.");
         if (native[28] != 5)
             throw new InvalidDataException(
-                $"VisualTeX currently supports direct MathType preservation for MTEF v5 only, actual={native[28]}.");
+                $"VisualTeX direct preservation requires MathType MTEF v5; actual={native[28]}. Legacy Equation Editor MTEF and unknown future formats are not rewritten as MathType by mistake.");
+    }
+
+    private static string? TryReadStorageUserType(IStorageNative storage)
+    {
+        IntPtr userTypePointer = IntPtr.Zero;
+        try
+        {
+            var result = ReadFmtUserTypeStg(
+                storage,
+                out _,
+                out userTypePointer);
+            if (result < 0 || userTypePointer == IntPtr.Zero) return null;
+            return Marshal.PtrToStringUni(userTypePointer);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (userTypePointer != IntPtr.Zero)
+                Marshal.FreeCoTaskMem(userTypePointer);
+        }
     }
 
     private static IStorageNative OpenStorage(string path, int mode)
@@ -1069,6 +1211,12 @@ internal static class MathTypeOleStorage
         IStorageNative storage,
         ushort clipboardFormat,
         string userType);
+
+    [DllImport("ole32.dll", CharSet = CharSet.Unicode)]
+    private static extern int ReadFmtUserTypeStg(
+        IStorageNative storage,
+        out ushort clipboardFormat,
+        out IntPtr userType);
 
     [DllImport("ole32.dll", CharSet = CharSet.Unicode)]
     private static extern int StgCreateDocfile(

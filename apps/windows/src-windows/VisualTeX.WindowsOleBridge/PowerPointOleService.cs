@@ -458,9 +458,15 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
     private static void MoveToZOrder(object shape, int target)
     {
         dynamic candidate = shape;
-        for (var attempts = 0; attempts < 512; attempts++)
+        var current = Convert.ToInt32(candidate.ZOrderPosition);
+        var requiredMoves = Math.Max(0, current - target);
+        // Dense technical slides can legitimately contain more than 512 shapes.
+        // Bound the loop by the actual distance instead of silently stopping at a
+        // fixed ceiling, with a small allowance for PowerPoint reindexing shapes.
+        var maxAttempts = requiredMoves + 8;
+        for (var attempts = 0; attempts < maxAttempts; attempts++)
         {
-            var current = Convert.ToInt32(candidate.ZOrderPosition);
+            current = Convert.ToInt32(candidate.ZOrderPosition);
             if (current <= target) break;
             candidate.ZOrder(MsoSendBackward);
         }

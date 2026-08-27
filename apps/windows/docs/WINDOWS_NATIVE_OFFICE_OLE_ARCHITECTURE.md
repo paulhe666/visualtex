@@ -189,3 +189,16 @@ Each stage records changed files, exact commands, results, and environmental blo
 10. Public-release qualification only after all gates pass.
 
 Bulk conversion of every legacy formula in a document is intentionally not exposed yet. Selected-object conversion is complete and transactional; safe bulk conversion requires a headless or queued vector-render workflow so each legacy formula can obtain a validated SVG/EMF without opening overlapping editor sessions.
+
+## 12. Generated-output ownership
+
+Production source directories must not be used as acceptance-output roots. The two native Office acceptance executables default to a single operating-system temporary tree:
+
+- VSTO flow: `%TEMP%\VisualTeX\acceptance\vsto-flow\...`
+- native Office OLE: `%TEMP%\VisualTeX\acceptance\native-office-ole\...`
+
+An explicit absolute output path is still honored. A relative output argument is resolved below the corresponding temporary root rather than against the repository checkout, and `..` traversal is rejected. `VISUALTEX_ACCEPTANCE_ARTIFACT_ROOT` can replace the VSTO-flow base root for CI retention.
+
+Repository-local release output can be removed with `npm run clean:windows-release`. Historical local acceptance output can first be reviewed with `npm run clean:windows-local:dry-run` and is removed only by the explicit `npm run clean:windows-local` command; that command is restricted to known generated roots and does not remove source files, Office build outputs, user documents, or unrelated Cargo dependencies.
+
+Acceptance projects reference the production Word and PowerPoint projects normally. They must not link-copy large groups of production `.cs` files across project boundaries, because that creates duplicate type ownership and silently breaks as production dependencies evolve.

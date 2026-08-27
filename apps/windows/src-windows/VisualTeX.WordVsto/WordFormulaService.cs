@@ -1649,7 +1649,8 @@ internal sealed partial class WordFormulaService
         string pngPath,
         string emfPath,
         bool deferNumberingLayout = false,
-        bool numberingScaffoldOnly = false)
+        bool numberingScaffoldOnly = false,
+        bool preserveExistingDisplayParagraphBoundary = false)
     {
         var metadata = session.ToMetadata();
         metadata.Validate();
@@ -1693,7 +1694,10 @@ internal sealed partial class WordFormulaService
                 }
                 else
                 {
-                    var displayInsertion = ResolveDisplayInsertionRange(document, insertion);
+                    var displayInsertion = ResolveDisplayInsertionRange(
+                        document,
+                        insertion,
+                        replaceAtExactInsertion: preserveExistingDisplayParagraphBoundary);
                     Release(insertion);
                     insertion = displayInsertion;
                     shape = AddOleObject(document, insertion);
@@ -1751,6 +1755,10 @@ internal sealed partial class WordFormulaService
                             selection,
                             shapeRange,
                             metadata.FormulaId);
+                    }
+                    else if (preserveExistingDisplayParagraphBoundary)
+                    {
+                        selection.SetRange(shapeRange.End, shapeRange.End);
                     }
                     else
                     {
@@ -1843,7 +1851,8 @@ internal sealed partial class WordFormulaService
         int isolatedNativePreviewWordPosition = 0,
         bool isolatedNativePreviewAttempted = false,
         bool reuseExistingInlineTypingBoundary = false,
-        bool updateCreatedMathTypeNumberFields = false)
+        bool updateCreatedMathTypeNumberFields = false,
+        bool preserveExistingDisplayParagraphBoundary = false)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
@@ -1963,11 +1972,10 @@ internal sealed partial class WordFormulaService
         // replacements, so the per-item path can avoid repeated global scans.
         var useLocalConversionLookup =
             !string.IsNullOrWhiteSpace(createdObjectBookmarkName);
-        var traceInsertPerformance = useLocalConversionLookup
-            && string.Equals(
-                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF"),
-                "1",
-                StringComparison.Ordinal);
+        var traceInsertPerformance = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF"),
+            "1",
+            StringComparison.Ordinal);
         var insertPerfWatch = traceInsertPerformance ? Stopwatch.StartNew() : null;
         long insertPerfLastMs = 0;
         void TraceInsertPerf(string perfStage)
@@ -2082,7 +2090,8 @@ internal sealed partial class WordFormulaService
                 displaySpacingAnchor = insertion.Duplicate;
                 var displayInsertion = ResolveStandaloneMathTypeDisplayInsertionRange(
                     document,
-                    insertion);
+                    insertion,
+                    replaceAtExactInsertion: preserveExistingDisplayParagraphBoundary);
                 Release(insertion);
                 insertion = displayInsertion;
                 TraceInsertPerf("prepare-display-row");
@@ -2100,20 +2109,15 @@ internal sealed partial class WordFormulaService
                 session.MathTypeNumberPosition);
             TraceInsertPerf("build-flat-opc");
 
-            // Batch format conversion passes a temporary identity bookmark name.
-            // In that path the insertion range itself is already an exact locator,
-            // so do not walk document.InlineShapes to predict the new ordinal.
-            // With many OLE equations that COM scan is O(N) per formula; converting
-            // the document from the end toward the start therefore became O(N^2)
-            // and dominated the 50-formula stress run. Keep the ordinal/count
-            // safety checks for ordinary interactive insertion, but use a narrow
-            // range/paragraph lookup for the conversion transaction.
-            var sourceObjectCount = useLocalConversionLookup
-                ? -1
-                : document.InlineShapes.Count;
-            var expectedNewShapeIndex = useLocalConversionLookup
-                ? -1
-                : ResolveInlineShapeInsertionIndex(document, insertionStart);
+            // Resolve the inserted OLE from the exact mutation site for every path,
+            // including ordinary interactive insertion. The previous interactive
+            // safety check enumerated document.InlineShapes twice and read every
+            // preceding shape.Range merely to predict the new ordinal. In a document
+            // with N formulas that made each new insertion O(N), and a sequence of N
+            // insertions O(N²). Word inserts one OLE character at the target range;
+            // a bounded local probe plus the semantic CFB validation below is both
+            // stricter and independent of total document size. Keep the global
+            // nearest-position scan only as an exceptional compatibility fallback.
             sourceParagraphCount = ReadDocumentParagraphCount(document);
             TraceInsertPerf("pre-insert-bookkeeping");
             stage = "insert-flat-opc";
@@ -2130,19 +2134,18 @@ internal sealed partial class WordFormulaService
                 throw new COMException(
                     "Injected MathType Flat OPC failure for rollback acceptance.",
                     unchecked((int)0x8007000E));
-            if (!useLocalConversionLookup
-                && document.InlineShapes.Count != sourceObjectCount + 1)
-                throw new InvalidOperationException(
-                    "Word did not materialize exactly one standalone MathType OLE equation.");
+            var insertedRangeEnd = Math.Min(
+                document.Content.End,
+                insertionStart + 8);
             var insertedRangeReference =
-                $"{RangeReferencePrefix}{insertionStart}:{insertionStart + 1}";
-            shape = useLocalConversionLookup
-                ? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
-                    ?? FindMathTypeOleInLocalWindow(document, insertionStart)
-                : FindMathTypeOleAtIndex(document, expectedNewShapeIndex)
-                    ?? FindMathTypeOleByRange(document, insertedRangeReference)
-                    ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
-                    ?? FindMathTypeOleNearPosition(document, insertionStart);
+                $"{RangeReferencePrefix}{insertionStart}:{insertedRangeEnd}";
+            shape = FindMathTypeOleByRange(
+                    document,
+                    insertedRangeReference,
+                    allowGlobalFallback: false)
+                ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
+                ?? FindMathTypeOleInLocalWindow(document, insertionStart)
+                ?? FindMathTypeOleNearPosition(document, insertionStart);
             if (shape is null)
                 throw new InvalidOperationException(
                     "Word inserted the MathType OLE data but VisualTeX could not resolve the new equation.");
@@ -2193,14 +2196,16 @@ internal sealed partial class WordFormulaService
             // before the final baseline/numbering work without activating its OLE
             // server.
             stage = "refresh-native-shape";
-            var refreshedShape = useLocalConversionLookup
-                ? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
-                    ?? FindMathTypeOleInLocalWindow(document, insertionStart)
-                : FindMathTypeOleByRange(
-                        document,
-                        $"{RangeReferencePrefix}{insertionStart}:{insertionStart + 1}")
-                    ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
-                    ?? FindMathTypeOleNearPosition(document, insertionStart);
+            var refreshedRangeEnd = Math.Min(
+                document.Content.End,
+                insertionStart + 8);
+            var refreshedShape = FindMathTypeOleByRange(
+                    document,
+                    $"{RangeReferencePrefix}{insertionStart}:{refreshedRangeEnd}",
+                    allowGlobalFallback: false)
+                ?? FindMathTypeOleInParagraphAtPosition(document, insertionStart)
+                ?? FindMathTypeOleInLocalWindow(document, insertionStart)
+                ?? FindMathTypeOleNearPosition(document, insertionStart);
             if (refreshedShape is null)
                 throw new InvalidOperationException(
                     "Word retained the MathType OLE but VisualTeX could not refresh its live InlineShape handle.");
@@ -2246,6 +2251,8 @@ internal sealed partial class WordFormulaService
                 {
                     if (session.Numbered)
                         selection.SetRange(shapeRange.Start, shapeRange.End);
+                    else if (preserveExistingDisplayParagraphBoundary)
+                        selection.SetRange(shapeRange.End, shapeRange.End);
                     else
                         MoveSelectionAfterDisplayFormula(selection, shapeRange);
                 }
@@ -7238,37 +7245,70 @@ internal sealed partial class WordFormulaService
 
     private static Range ResolveDisplayInsertionRange(
         Document document,
-        Range anchor)
+        Range anchor,
+        bool replaceAtExactInsertion = false)
     {
+        Range? probe = null;
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
         Range? content = null;
         try
         {
-            paragraphs = anchor.Paragraphs;
+            content = document.Content;
+            var lastInsertPosition = Math.Max(content.Start, content.End - 1);
+            var exactPosition = Math.Max(
+                content.Start,
+                Math.Min(anchor.Start, lastInsertPosition));
+            if (replaceAtExactInsertion)
+            {
+                // At a paragraph boundary a collapsed Word range can report the
+                // paragraph on either side. Probe one character forward so an
+                // in-place format conversion never appends the target formula to
+                // the paragraph that originally followed the source equation.
+                probe = document.Range(
+                    exactPosition,
+                    Math.Min(content.End, exactPosition + 1));
+                paragraphs = probe.Paragraphs;
+            }
+            else
+            {
+                paragraphs = anchor.Paragraphs;
+            }
             if (paragraphs.Count == 0)
                 return anchor.Duplicate;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            content = document.Content;
+
+            var hasVisibleText = ContainsVisibleBodyText(paragraphRange.Text);
+            if (replaceAtExactInsertion)
+            {
+                if (!hasVisibleText)
+                    return document.Range(paragraphRange.Start, paragraphRange.Start);
+
+                // The source display host has been removed completely and the
+                // exact replacement point now coincides with the start of the
+                // following user paragraph. Reserve one paragraph before that
+                // content; this is the formula host, not an additional blank line.
+                if (exactPosition <= paragraphRange.Start)
+                {
+                    paragraphRange.InsertParagraphBefore();
+                    return document.Range(exactPosition, exactPosition);
+                }
+                throw new InvalidOperationException(
+                    "VisualTeX refused to insert a converted display formula inside user paragraph text.");
+            }
 
             // Reuse an existing empty paragraph instead of creating another one.
-            // If the caret is in a paragraph containing body text, insert at the
-            // paragraph end; Word creates the display paragraph directly there.
-            // Tables.Add/InlineShapes.AddOLEObject then consume that location and
-            // leave only Word's required trailing paragraph, never a blank one in
-            // front of the formula.
-            var position = ContainsVisibleBodyText(paragraphRange.Text)
+            // For an ordinary interactive insertion in body text, append at the
+            // paragraph end and let Word create the display host there.
+            var position = hasVisibleText
                 ? paragraphRange.End
                 : paragraphRange.Start;
-            var lastInsertPosition = Math.Max(content.Start, content.End - 1);
             position = Math.Max(
                 content.Start,
                 Math.Min(position, lastInsertPosition));
-            object insertionStart = position;
-            object insertionEnd = position;
-            return document.Range(ref insertionStart, ref insertionEnd);
+            return document.Range(position, position);
         }
         finally
         {
@@ -7276,6 +7316,7 @@ internal sealed partial class WordFormulaService
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
+            Release(probe);
         }
     }
 
@@ -7890,33 +7931,55 @@ internal sealed partial class WordFormulaService
                     out var nativePreviews);
             nativePreviews.TryGetValue("source", out sourceNativePreview);
             nativePreviews.TryGetValue("rewritten", out nativePreview);
-            if (!renderedAllNativePreviews
-                || sourceNativePreview is null
-                || nativePreview is null)
-                throw new InvalidOperationException(
-                    "MathType 原生预览渲染失败。为避免 VisualTeX 前端几何改变公式基线和格式，原 MathType 公式未被修改。");
-
-            var widthScale = CalculateMathTypeNativePresentationScale(
-                sourceFragment.WidthPt,
-                sourceNativePreview.WidthPt);
-            var heightScale = CalculateMathTypeNativePresentationScale(
-                sourceFragment.HeightPt,
-                sourceNativePreview.HeightPt);
-            previewWmf = File.ReadAllBytes(nativePreview.WmfPath);
-            targetWidthPt = Math.Max(1f, nativePreview.WidthPt * widthScale);
-            targetHeightPt = Math.Max(1f, nativePreview.HeightPt * heightScale);
-            targetWordPosition = alignToWordTextBaseline
-                ? (int)Math.Round(
-                    nativePreview.WordPosition * heightScale,
-                    MidpointRounding.AwayFromZero)
-                : 0;
-            WordDoubleClickHook.TraceMessage(
-                $"mathtype-replace-native-preview formulaId={session.FormulaId} "
-                + $"sourceWord={sourceFragment.WidthPt:0.###}x{sourceFragment.HeightPt:0.###}@{originalWordPosition} "
-                + $"sourceNative={sourceNativePreview.WidthPt:0.###}x{sourceNativePreview.HeightPt:0.###}@{sourceNativePreview.WordPosition} "
-                + $"rewrittenNative={nativePreview.WidthPt:0.###}x{nativePreview.HeightPt:0.###}@{nativePreview.WordPosition} "
-                + $"scale={widthScale:0.###}x{heightScale:0.###} "
-                + $"target={targetWidthPt:0.###}x{targetHeightPt:0.###}@{targetWordPosition}");
+            if (renderedAllNativePreviews
+                && sourceNativePreview is not null
+                && nativePreview is not null)
+            {
+                var widthScale = CalculateMathTypeNativePresentationScale(
+                    sourceFragment.WidthPt,
+                    sourceNativePreview.WidthPt);
+                var heightScale = CalculateMathTypeNativePresentationScale(
+                    sourceFragment.HeightPt,
+                    sourceNativePreview.HeightPt);
+                previewWmf = File.ReadAllBytes(nativePreview.WmfPath);
+                targetWidthPt = Math.Max(1f, nativePreview.WidthPt * widthScale);
+                targetHeightPt = Math.Max(1f, nativePreview.HeightPt * heightScale);
+                targetWordPosition = alignToWordTextBaseline
+                    ? (int)Math.Round(
+                        nativePreview.WordPosition * heightScale,
+                        MidpointRounding.AwayFromZero)
+                    : 0;
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-replace-native-preview formulaId={session.FormulaId} "
+                    + $"sourceWord={sourceFragment.WidthPt:0.###}x{sourceFragment.HeightPt:0.###}@{originalWordPosition} "
+                    + $"sourceNative={sourceNativePreview.WidthPt:0.###}x{sourceNativePreview.HeightPt:0.###}@{sourceNativePreview.WordPosition} "
+                    + $"rewrittenNative={nativePreview.WidthPt:0.###}x{nativePreview.HeightPt:0.###}@{nativePreview.WordPosition} "
+                    + $"scale={widthScale:0.###}x{heightScale:0.###} "
+                    + $"target={targetWidthPt:0.###}x{targetHeightPt:0.###}@{targetWordPosition}");
+            }
+            else
+            {
+                // Older MathType installations may provide only a 32-bit MathPage
+                // library, and machines without MathPage have no native renderer at
+                // all. Editing must still remain functional: use the already-rendered
+                // VisualTeX EMF as a Word-owned presentation while preserving the
+                // genuine MathType CFB/MTEF semantics. This is the same safe fallback
+                // used by direct insertion and never activates the MathType server.
+                previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
+                    emfPath,
+                    targetWidthPt,
+                    targetHeightPt);
+                targetWordPosition = alignToWordTextBaseline
+                    ? CalculateMathTypeOleWordPosition(
+                        targetHeightPt,
+                        session.ExportResult?.Height ?? 0f,
+                        session.ExportResult?.Baseline)
+                    : 0;
+                WordDoubleClickHook.TraceMessage(
+                    $"mathtype-replace-preview-fallback formulaId={session.FormulaId} "
+                    + $"sourceNative={sourceNativePreview is not null} rewrittenNative={nativePreview is not null} "
+                    + $"target={targetWidthPt:0.###}x{targetHeightPt:0.###}@{targetWordPosition}");
+            }
 
             // Rewrite the existing Equation.DSMT4 CFB and its external Word WMF
             // presentation in one offline Flat OPC transaction using the native
@@ -11114,15 +11177,184 @@ internal sealed partial class WordFormulaService
         int excludeStart,
         int excludeEnd)
     {
-        Fields? fields = null;
+        Range? content = null;
+        Range? localBeforeRange = null;
+        Range? localAfterRange = null;
+        Range? beforeRange = null;
+        Range? afterRange = null;
+        Fields? localBeforeFields = null;
+        Fields? localAfterFields = null;
+        Fields? beforeFields = null;
+        Fields? afterFields = null;
+        Field? localBefore = null;
+        Field? localAfter = null;
+        Field? before = null;
+        Field? after = null;
+        try
+        {
+            content = document.Content;
+            var safePosition = Math.Max(
+                content.Start,
+                Math.Min(position, content.End));
+
+            // Ordinary insertion is usually adjacent to the previous MathType
+            // equation. Search only a bounded character window first so adding the
+            // Nth formula does not enumerate every field created by formulas 1..N-1.
+            // A document-wide directional fallback remains for a genuinely distant
+            // custom MathType numbering template.
+            var localStart = Math.Max(content.Start, safePosition - 4096);
+            var localEnd = Math.Min(content.End, safePosition + 4096);
+            var localBeforeStart = -1;
+            var localAfterStart = -1;
+            if (safePosition > localStart)
+            {
+                localBeforeRange = document.Range(localStart, safePosition);
+                localBeforeFields = localBeforeRange.Fields;
+                localBefore = FindNearestMathTypePlaceRefFieldInCollection(
+                    localBeforeFields,
+                    safePosition,
+                    excludeStart,
+                    excludeEnd,
+                    reverse: true,
+                    stopAfterFirstMatch: true,
+                    out localBeforeStart);
+            }
+            if (safePosition < localEnd)
+            {
+                localAfterRange = document.Range(safePosition, localEnd);
+                localAfterFields = localAfterRange.Fields;
+                localAfter = FindNearestMathTypePlaceRefFieldInCollection(
+                    localAfterFields,
+                    safePosition,
+                    excludeStart,
+                    excludeEnd,
+                    reverse: false,
+                    stopAfterFirstMatch: true,
+                    out localAfterStart);
+            }
+            if (localBefore is not null || localAfter is not null)
+            {
+                if (localAfter is null
+                    || localBefore is not null
+                    && Math.Abs(localBeforeStart - safePosition)
+                        <= Math.Abs(localAfterStart - safePosition))
+                {
+                    var localResult = localBefore;
+                    localBefore = null;
+                    return localResult;
+                }
+                var localAfterResult = localAfter;
+                localAfter = null;
+                return localAfterResult;
+            }
+
+            if (safePosition > content.Start)
+            {
+                beforeRange = document.Range(content.Start, safePosition);
+                beforeFields = beforeRange.Fields;
+                before = FindNearestMathTypePlaceRefFieldInCollection(
+                    beforeFields,
+                    safePosition,
+                    excludeStart,
+                    excludeEnd,
+                    reverse: true,
+                    stopAfterFirstMatch: true,
+                    out var beforeStart);
+                if (before is not null && safePosition - beforeStart == 0)
+                {
+                    var exact = before;
+                    before = null;
+                    return exact;
+                }
+            }
+
+            if (safePosition < content.End)
+            {
+                afterRange = document.Range(safePosition, content.End);
+                afterFields = afterRange.Fields;
+                after = FindNearestMathTypePlaceRefFieldInCollection(
+                    afterFields,
+                    safePosition,
+                    excludeStart,
+                    excludeEnd,
+                    reverse: false,
+                    stopAfterFirstMatch: true,
+                    out var afterStart);
+
+                if (before is null)
+                {
+                    var result = after;
+                    after = null;
+                    return result;
+                }
+                if (after is null)
+                {
+                    var result = before;
+                    before = null;
+                    return result;
+                }
+
+                Range? beforeCode = null;
+                try
+                {
+                    beforeCode = before.Code;
+                    var beforeStart = Math.Max(content.Start, beforeCode.Start - 1);
+                    if (Math.Abs(beforeStart - safePosition)
+                        <= Math.Abs(afterStart - safePosition))
+                    {
+                        var result = before;
+                        before = null;
+                        return result;
+                    }
+                    var afterResult = after;
+                    after = null;
+                    return afterResult;
+                }
+                finally { Release(beforeCode); }
+            }
+
+            var onlyBefore = before;
+            before = null;
+            return onlyBefore;
+        }
+        finally
+        {
+            Release(after);
+            Release(before);
+            Release(localAfter);
+            Release(localBefore);
+            Release(afterFields);
+            Release(beforeFields);
+            Release(localAfterFields);
+            Release(localBeforeFields);
+            Release(afterRange);
+            Release(beforeRange);
+            Release(localAfterRange);
+            Release(localBeforeRange);
+            Release(content);
+        }
+    }
+
+    private static Field? FindNearestMathTypePlaceRefFieldInCollection(
+        Fields fields,
+        int position,
+        int excludeStart,
+        int excludeEnd,
+        bool reverse,
+        bool stopAfterFirstMatch,
+        out int matchedStart)
+    {
         Field? field = null;
         Range? code = null;
         Field? best = null;
         var bestDistance = int.MaxValue;
+        matchedStart = -1;
         try
         {
-            fields = document.Fields;
-            for (var index = 1; index <= fields.Count; index++)
+            var index = reverse ? fields.Count : 1;
+            var end = reverse ? 1 : fields.Count;
+            var step = reverse ? -1 : 1;
+            for (; reverse ? index >= end : index <= end; index += step)
             {
                 Release(code);
                 code = null;
@@ -11141,6 +11373,8 @@ internal sealed partial class WordFormulaService
                 best = field;
                 field = null;
                 bestDistance = distance;
+                matchedStart = fieldStart;
+                if (stopAfterFirstMatch) break;
             }
             return best;
         }
@@ -11148,7 +11382,6 @@ internal sealed partial class WordFormulaService
         {
             Release(code);
             Release(field);
-            Release(fields);
         }
     }
 
@@ -11156,12 +11389,22 @@ internal sealed partial class WordFormulaService
         Document document,
         int beforePosition = int.MaxValue)
     {
+        Range? content = null;
+        Range? searchRange = null;
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
         try
         {
-            fields = document.Fields;
+            content = document.Content;
+            var searchEnd = beforePosition == int.MaxValue
+                ? content.End
+                : Math.Max(
+                    content.Start,
+                    Math.Min(content.End, beforePosition + 1));
+            if (searchEnd <= content.Start) return false;
+            searchRange = document.Range(content.Start, searchEnd);
+            fields = searchRange.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -11169,43 +11412,6 @@ internal sealed partial class WordFormulaService
                 Release(field);
                 field = fields[index];
                 code = field.Code;
-                if ((code.Text ?? string.Empty).IndexOf(
-                        "MACROBUTTON MTEditEquationSection2",
-                        StringComparison.OrdinalIgnoreCase) >= 0
-                    && code.Start <= beforePosition)
-                    return true;
-            }
-            return false;
-        }
-        finally
-        {
-            Release(code);
-            Release(field);
-            Release(fields);
-        }
-    }
-
-    private static bool HasMathTypeSectionBreakBetween(
-        Document document,
-        int afterPosition,
-        int beforePosition)
-    {
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
-        try
-        {
-            var start = Math.Min(afterPosition, beforePosition);
-            var end = Math.Max(afterPosition, beforePosition);
-            fields = document.Fields;
-            for (var index = 1; index <= fields.Count; index++)
-            {
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                code = field.Code;
-                if (code.Start < start || code.Start > end) continue;
                 if ((code.Text ?? string.Empty).IndexOf(
                         "MACROBUTTON MTEditEquationSection2",
                         StringComparison.OrdinalIgnoreCase) >= 0)
@@ -11218,6 +11424,54 @@ internal sealed partial class WordFormulaService
             Release(code);
             Release(field);
             Release(fields);
+            Release(searchRange);
+            Release(content);
+        }
+    }
+
+    private static bool HasMathTypeSectionBreakBetween(
+        Document document,
+        int afterPosition,
+        int beforePosition)
+    {
+        Range? content = null;
+        Range? searchRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            content = document.Content;
+            var start = Math.Max(
+                content.Start,
+                Math.Min(Math.Min(afterPosition, beforePosition), content.End));
+            var end = Math.Max(
+                start,
+                Math.Min(Math.Max(afterPosition, beforePosition) + 1, content.End));
+            if (end <= start) return false;
+            searchRange = document.Range(start, end);
+            fields = searchRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        "MACROBUTTON MTEditEquationSection2",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(searchRange);
+            Release(content);
         }
     }
 
@@ -11311,15 +11565,24 @@ internal sealed partial class WordFormulaService
         int afterPosition,
         int beforePosition)
     {
+        Range? content = null;
+        Range? searchRange = null;
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
         var best = int.MaxValue;
         try
         {
-            var start = Math.Min(afterPosition, beforePosition);
-            var end = Math.Max(afterPosition, beforePosition);
-            fields = document.Fields;
+            content = document.Content;
+            var start = Math.Max(
+                content.Start,
+                Math.Min(Math.Min(afterPosition, beforePosition), content.End));
+            var end = Math.Max(
+                start,
+                Math.Min(Math.Max(afterPosition, beforePosition) + 1, content.End));
+            if (end <= start) return -1;
+            searchRange = document.Range(start, end);
+            fields = searchRange.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -11327,7 +11590,6 @@ internal sealed partial class WordFormulaService
                 Release(field);
                 field = fields[index];
                 code = field.Code;
-                if (code.Start < start || code.Start > end) continue;
                 if ((code.Text ?? string.Empty).IndexOf(
                         "MACROBUTTON MTEditEquationSection2",
                         StringComparison.OrdinalIgnoreCase) < 0)
@@ -11341,6 +11603,8 @@ internal sealed partial class WordFormulaService
             Release(code);
             Release(field);
             Release(fields);
+            Release(searchRange);
+            Release(content);
         }
     }
 
@@ -11574,7 +11838,7 @@ internal sealed partial class WordFormulaService
                     paragraphFieldCode = paragraphField.Code;
                     var fieldCodeText = paragraphFieldCode.Text ?? string.Empty;
                     if (fieldCodeText.IndexOf("MTPlaceRef", StringComparison.OrdinalIgnoreCase) >= 0
-                        || fieldCodeText.IndexOf("EMBED Equation.DSMT4", StringComparison.OrdinalIgnoreCase) >= 0)
+                        || fieldCodeText.IndexOf("EMBED ", StringComparison.OrdinalIgnoreCase) >= 0)
                         throw new InvalidOperationException(
                             "MathType chapter/section state still shares a paragraph with equation-owned fields.");
                 }
@@ -12571,10 +12835,16 @@ internal sealed partial class WordFormulaService
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
-        Range? probe = null;
+        Range? precedingWindow = null;
+        Range? preceding = null;
+        Range? trailingHostWindow = null;
         Range? trailing = null;
         InlineShapes? shapes = null;
+        InlineShape? nextShape = null;
+        Range? nextShapeRange = null;
         OMaths? maths = null;
+        OMath? nextMath = null;
+        Range? nextMathRange = null;
         Microsoft.Office.Interop.Word.Font? font = null;
         try
         {
@@ -12583,73 +12853,63 @@ internal sealed partial class WordFormulaService
             if (paragraphs.Count == 0) return;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            var excludedHostRanges = CaptureNonProseHostRanges(paragraphRange);
+            var paragraphBodyEnd = Math.Max(
+                paragraphRange.Start,
+                paragraphRange.End - 1);
+
+            // Only the nearby prose can determine the insertion baseline. Capturing
+            // every InlineShape/OMath in a paragraph made appending the Nth inline
+            // formula rescan formulas 1..N-1 twice. Keep the format probe bounded;
+            // hidden OLE field-code ranges inside this small window are still
+            // excluded by the same host-aware logic used previously.
+            const int maximumProbeCharacters = 256;
+            var precedingStart = Math.Max(
+                paragraphRange.Start,
+                formulaRange.Start - maximumProbeCharacters);
+            if (formulaRange.Start > precedingStart)
+            {
+                precedingWindow = document.Range(precedingStart, formulaRange.Start);
+                var excludedHostRanges = CaptureNonProseHostRanges(precedingWindow);
+                preceding = FindOrdinaryVisibleCharacterRange(
+                    document,
+                    formulaRange.Start - 1,
+                    precedingStart,
+                    step: -1,
+                    excludedHostRanges);
+            }
 
             var targetPosition = 0;
-            for (var position = formulaRange.Start - 1;
-                 position >= paragraphRange.Start;
-                 position--)
+            if (preceding is not null)
             {
-                if (excludedHostRanges.Any(host => host.Contains(position)))
-                    continue;
-                Release(probe);
-                probe = document.Range(position, position + 1);
-                if (!ContainsVisibleBodyText(probe.Text)) continue;
-                try
-                {
-                    font = probe.Font;
-                    var precedingPosition = font.Position;
-                    if (precedingPosition != (int)WdConstants.wdUndefined
-                        && precedingPosition >= -256
-                        && precedingPosition <= 256)
-                        targetPosition = precedingPosition;
-                    break;
-                }
-                finally
-                {
-                    Release(font);
-                    font = null;
-                }
+                font = preceding.Font;
+                var precedingPosition = font.Position;
+                if (precedingPosition != (int)WdConstants.wdUndefined
+                    && precedingPosition >= -256
+                    && precedingPosition <= 256)
+                    targetPosition = precedingPosition;
+                Release(font);
+                font = null;
             }
 
-            var trailingEnd = Math.Max(
-                formulaRange.End,
-                paragraphRange.End - 1);
-            shapes = paragraphRange.InlineShapes;
-            for (var index = 1; index <= shapes.Count; index++)
+            var trailingEnd = Math.Max(formulaRange.End, paragraphBodyEnd);
+            if (trailingEnd <= formulaRange.End) return;
+            trailingHostWindow = document.Range(formulaRange.End, trailingEnd);
+
+            // Range collections are in document order. The first following host is
+            // sufficient; do not enumerate every object in the paragraph.
+            shapes = trailingHostWindow.InlineShapes;
+            if (shapes.Count > 0)
             {
-                InlineShape? candidate = null;
-                Range? candidateRange = null;
-                try
-                {
-                    candidate = shapes[index];
-                    candidateRange = candidate.Range;
-                    if (candidateRange.Start >= formulaRange.End)
-                        trailingEnd = Math.Min(trailingEnd, candidateRange.Start);
-                }
-                finally
-                {
-                    Release(candidateRange);
-                    Release(candidate);
-                }
+                nextShape = shapes[1];
+                nextShapeRange = nextShape.Range;
+                trailingEnd = Math.Min(trailingEnd, nextShapeRange.Start);
             }
-            maths = paragraphRange.OMaths;
-            for (var index = 1; index <= maths.Count; index++)
+            maths = trailingHostWindow.OMaths;
+            if (maths.Count > 0)
             {
-                OMath? candidate = null;
-                Range? candidateRange = null;
-                try
-                {
-                    candidate = maths[index];
-                    candidateRange = candidate.Range;
-                    if (candidateRange.Start >= formulaRange.End)
-                        trailingEnd = Math.Min(trailingEnd, candidateRange.Start);
-                }
-                finally
-                {
-                    Release(candidateRange);
-                    Release(candidate);
-                }
+                nextMath = maths[1];
+                nextMathRange = nextMath.Range;
+                trailingEnd = Math.Min(trailingEnd, nextMathRange.Start);
             }
 
             if (trailingEnd <= formulaRange.End) return;
@@ -12668,10 +12928,16 @@ internal sealed partial class WordFormulaService
         finally
         {
             Release(font);
+            Release(nextMathRange);
+            Release(nextMath);
             Release(maths);
+            Release(nextShapeRange);
+            Release(nextShape);
             Release(shapes);
             Release(trailing);
-            Release(probe);
+            Release(trailingHostWindow);
+            Release(preceding);
+            Release(precedingWindow);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
@@ -13396,6 +13662,8 @@ internal sealed partial class WordFormulaService
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
+        Range? precedingWindow = null;
+        Range? followingWindow = null;
         try
         {
             document = formulaRange.Document;
@@ -13406,34 +13674,48 @@ internal sealed partial class WordFormulaService
             var paragraphBodyEnd = Math.Max(
                 paragraphRange.Start,
                 paragraphRange.End - 1);
-            var excludedHostRanges = CaptureNonProseHostRanges(paragraphRange);
+            const int maximumProbeCharacters = 256;
 
             // The prose before an inline formula is the authoritative typing
-            // style. An InlineShape.Range contains Word's hidden EMBED field-code
-            // host as well as the object character. A one-character probe inside
-            // that host usually reports InlineShapes.Count == 0, so checking the
-            // probe itself mistakes OLE field-code text for prose and propagates
-            // the formula's negative Font.Position into later typing. Exclude the
-            // complete host ranges captured from the paragraph instead.
-            var preceding = FindOrdinaryVisibleCharacterRange(
-                document,
-                formulaRange.Start - 1,
+            // style. Restrict host discovery to the same bounded region that can
+            // actually be probed; scanning every OLE in a long formula paragraph
+            // made caret restoration grow linearly with formula count.
+            var precedingStart = Math.Max(
                 paragraphRange.Start,
-                step: -1,
-                excludedHostRanges);
-            if (preceding is not null) return preceding;
+                formulaRange.Start - maximumProbeCharacters);
+            if (formulaRange.Start > precedingStart)
+            {
+                precedingWindow = document.Range(precedingStart, formulaRange.Start);
+                var precedingHosts = CaptureNonProseHostRanges(precedingWindow);
+                var preceding = FindOrdinaryVisibleCharacterRange(
+                    document,
+                    formulaRange.Start - 1,
+                    precedingStart,
+                    step: -1,
+                    precedingHosts);
+                if (preceding is not null) return preceding;
+            }
 
             // Paragraph-leading formulas have no preceding prose. In that case,
-            // inherit from the first ordinary character after the formula.
+            // inherit from the first nearby ordinary character after the formula.
+            var followingStart = Math.Max(typingAnchor.End, formulaRange.End);
+            var followingEnd = Math.Min(
+                paragraphBodyEnd,
+                followingStart + maximumProbeCharacters);
+            if (followingEnd <= followingStart) return null;
+            followingWindow = document.Range(followingStart, followingEnd);
+            var followingHosts = CaptureNonProseHostRanges(followingWindow);
             return FindOrdinaryVisibleCharacterRange(
                 document,
-                Math.Max(typingAnchor.End, formulaRange.End),
-                paragraphBodyEnd,
+                followingStart,
+                followingEnd,
                 step: 1,
-                excludedHostRanges);
+                followingHosts);
         }
         finally
         {
+            Release(followingWindow);
+            Release(precedingWindow);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);

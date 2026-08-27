@@ -6,6 +6,300 @@ namespace VisualTeX.WordVsto;
 
 internal sealed partial class WordFormulaService
 {
+    private sealed class ConvertedVisualTeXNumberingEntry
+    {
+        internal WordFormulaFormatConversionTarget Target { get; set; } = new();
+        internal FormulaMetadata Metadata { get; set; } = new();
+        internal int Position { get; set; }
+        internal string RangeHint { get; set; } = string.Empty;
+    }
+
+    private int BuildConvertedVisualTeXNumberingBatch(
+        Document document,
+        WordFormulaFormatConversionPlan plan,
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+        int convertedFormulaCount)
+    {
+        var entries = new List<ConvertedVisualTeXNumberingEntry>();
+        var targetByFormulaId = new Dictionary<string, WordFormulaFormatConversionTarget>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var target in plan.Targets)
+        {
+            if (!prepared.TryGetValue(target.Id, out var formula)) continue;
+            var formulaId = formula.Session.FormulaId;
+            if (string.IsNullOrWhiteSpace(formulaId)) continue;
+            targetByFormulaId[formulaId] = target;
+        }
+
+        // VTO_ bookmarks are excellent single-operation locators, but replacing an
+        // earlier numbered OMML table can make Word expand a later target bookmark
+        // across the deleted table/caption boundary. Inventory the actual OLE hosts
+        // once, before any numbering structure is created, using their embedded
+        // FormulaId as the source of truth. No InlineShapes collection is retained
+        // across a structural edit.
+        InlineShapes? inventoryShapes = null;
+        try
+        {
+            inventoryShapes = document.InlineShapes;
+            var inventoryCount = inventoryShapes.Count;
+            for (var index = 1; index <= inventoryCount; index++)
+            {
+                InlineShape? shape = null;
+                Range? range = null;
+                try
+                {
+                    shape = inventoryShapes[index];
+                    if (!WordFormulaMetadataReader.IsNativeOle(shape)) continue;
+                    var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape);
+                    if (metadata is null
+                        || !targetByFormulaId.TryGetValue(
+                            metadata.FormulaId,
+                            out var target))
+                        continue;
+                    if (metadata.Numbered != target.Numbered
+                        || !string.Equals(
+                            metadata.DisplayMode,
+                            target.DisplayMode,
+                            StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException(
+                            $"Converted VisualTeX formula {metadata.FormulaId} lost its display/numbered state before numbering finalization.");
+                    range = shape.Range;
+                    Paragraphs? inventoryParagraphs = null;
+                    Paragraph? inventoryParagraph = null;
+                    Range? inventoryParagraphRange = null;
+                    try
+                    {
+                        inventoryParagraphs = range.Paragraphs;
+                        if (inventoryParagraphs.Count != 1)
+                            throw new InvalidOperationException(
+                                $"Converted VisualTeX formula {metadata.FormulaId} spans {inventoryParagraphs.Count} paragraphs before numbering finalization.");
+                        inventoryParagraph = inventoryParagraphs[1];
+                        inventoryParagraphRange = inventoryParagraph.Range;
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-visualtex-numbering-inventory formulaId={metadata.FormulaId} range={range.Start}:{range.End} paragraph={inventoryParagraphRange.Start}:{inventoryParagraphRange.End} numbered={metadata.Numbered}");
+                    }
+                    finally
+                    {
+                        Release(inventoryParagraphRange);
+                        Release(inventoryParagraph);
+                        Release(inventoryParagraphs);
+                    }
+                    entries.Add(new ConvertedVisualTeXNumberingEntry
+                    {
+                        Target = target,
+                        Metadata = metadata,
+                        Position = range.Start,
+                        RangeHint = $"{RangeReferencePrefix}{range.Start}:{range.End}",
+                    });
+                }
+                finally
+                {
+                    Release(range);
+                    Release(shape);
+                }
+            }
+        }
+        finally { Release(inventoryShapes); }
+
+        if (entries.Count != convertedFormulaCount
+            || entries.Select(entry => entry.Metadata.FormulaId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count() != convertedFormulaCount)
+            throw new InvalidDataException(
+                $"Converted VisualTeX target inventory mismatch before numbering: expected {convertedFormulaCount} unique formulas, found {entries.Count} hosts / {entries.Select(entry => entry.Metadata.FormulaId).Distinct(StringComparer.OrdinalIgnoreCase).Count()} identities.");
+
+        var builtNumbered = 0;
+        // Numbered display creation is a structural Word edit. Never hold or walk a
+        // live InlineShapes collection while wrapping formulas in 1x3 tables: Word
+        // can invalidate/reorder that COM collection after the first table is
+        // created. Freeze FormulaId + position first, then resolve each durable VTO_
+        // identity afresh and migrate from the end of the document toward the start.
+        foreach (var entry in entries.OrderByDescending(item => item.Position))
+        {
+            InlineShape? shape = null;
+            Range? range = null;
+            try
+            {
+                shape = ResolveConvertedVisualTeXByEmbeddedIdentity(
+                        document,
+                        entry.Metadata.FormulaId,
+                        entry.RangeHint)
+                    ?? throw new InvalidOperationException(
+                        $"Converted VisualTeX formula {entry.Metadata.FormulaId} could not be resolved from its frozen range before numbering finalization.");
+                range = shape.Range;
+                Paragraphs? liveParagraphs = null;
+                Paragraph? liveParagraph = null;
+                Range? liveParagraphRange = null;
+                try
+                {
+                    liveParagraphs = range.Paragraphs;
+                    if (liveParagraphs.Count > 0)
+                    {
+                        liveParagraph = liveParagraphs[1];
+                        liveParagraphRange = liveParagraph.Range;
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-visualtex-numbering-before-scaffold formulaId={entry.Metadata.FormulaId} frozenRange={entry.RangeHint} liveRange={range.Start}:{range.End} paragraph={liveParagraphRange.Start}:{liveParagraphRange.End}");
+                    }
+                }
+                finally
+                {
+                    Release(liveParagraphRange);
+                    Release(liveParagraph);
+                    Release(liveParagraphs);
+                }
+                if (string.Equals(
+                        entry.Metadata.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal))
+                {
+                    RemoveInlineBaselineSentinel(document, entry.Metadata.FormulaId);
+                    ResetDisplayFormulaPosition(range);
+                }
+
+                if (entry.Metadata.Numbered
+                    && string.Equals(
+                        entry.Metadata.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal))
+                {
+                    WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+                        document,
+                        range,
+                        shape.Height,
+                        entry.Metadata);
+                    builtNumbered++;
+                }
+                else
+                {
+                    // DeferNumberingLayout also skips the normal display-paragraph
+                    // reconciliation for unnumbered targets. Reapply that local
+                    // formatting here without touching unrelated formulas.
+                    WordEquationNumbering.ReconcileFormula(
+                        document,
+                        range,
+                        shape.Height,
+                        entry.Metadata,
+                        numberingOrderMayHaveChanged: false);
+                }
+            }
+            finally
+            {
+                Release(range);
+                Release(shape);
+            }
+        }
+
+        // Structural migration is now complete. Rebind every converted OLE identity
+        // bookmark from the actual embedded FormulaId so later edits do not inherit
+        // a VTO_ bookmark that Word expanded while an earlier OMML table was removed.
+        InlineShapes? finalShapes = null;
+        try
+        {
+            var convertedIds = new HashSet<string>(
+                entries.Select(entry => entry.Metadata.FormulaId),
+                StringComparer.OrdinalIgnoreCase);
+            finalShapes = document.InlineShapes;
+            var finalCount = finalShapes.Count;
+            var rebound = 0;
+            for (var index = 1; index <= finalCount; index++)
+            {
+                InlineShape? shape = null;
+                try
+                {
+                    shape = finalShapes[index];
+                    if (!WordFormulaMetadataReader.IsNativeOle(shape)) continue;
+                    var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape);
+                    if (metadata is null || !convertedIds.Contains(metadata.FormulaId))
+                        continue;
+                    BindOleIdentityBookmark(shape, metadata.FormulaId);
+                    rebound++;
+                }
+                finally { Release(shape); }
+            }
+            if (rebound != entries.Count)
+                throw new InvalidDataException(
+                    $"Converted VisualTeX identity repair mismatch: expected {entries.Count}, rebound {rebound}.");
+        }
+        finally { Release(finalShapes); }
+
+        return builtNumbered;
+    }
+
+    private static InlineShape? ResolveConvertedVisualTeXByEmbeddedIdentity(
+        Document document,
+        string formulaId,
+        string rangeHint)
+    {
+        Range? hintedRange = null;
+        InlineShapes? hintedShapes = null;
+        Range? content = null;
+        InlineShapes? allShapes = null;
+        try
+        {
+            if (TryParseRangeReference(rangeHint, out var start, out var end))
+            {
+                content = document.Content;
+                if (start >= content.Start && end >= start && end <= content.End)
+                {
+                    hintedRange = document.Range(start, end);
+                    hintedShapes = hintedRange.InlineShapes;
+                    for (var index = 1; index <= hintedShapes.Count; index++)
+                    {
+                        InlineShape? candidate = null;
+                        try
+                        {
+                            candidate = hintedShapes[index];
+                            if (!WordFormulaMetadataReader.IsNativeOle(candidate)) continue;
+                            var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(candidate);
+                            if (!string.Equals(
+                                    metadata?.FormulaId,
+                                    formulaId,
+                                    StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            var result = candidate;
+                            candidate = null;
+                            return result;
+                        }
+                        finally { Release(candidate); }
+                    }
+                }
+            }
+
+            // End-to-start migration should keep every earlier frozen range stable.
+            // Retain a raw embedded-identity fallback for unusual Word range drift,
+            // but never consult VTO_ here because those are exactly what this batch
+            // is repairing.
+            allShapes = document.InlineShapes;
+            for (var index = 1; index <= allShapes.Count; index++)
+            {
+                InlineShape? candidate = null;
+                try
+                {
+                    candidate = allShapes[index];
+                    if (!WordFormulaMetadataReader.IsNativeOle(candidate)) continue;
+                    var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(candidate);
+                    if (!string.Equals(
+                            metadata?.FormulaId,
+                            formulaId,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var result = candidate;
+                    candidate = null;
+                    return result;
+                }
+                finally { Release(candidate); }
+            }
+            return null;
+        }
+        finally
+        {
+            Release(allShapes);
+            Release(content);
+            Release(hintedShapes);
+            Release(hintedRange);
+        }
+    }
+
     private static bool HasAdjacentFormatConversionSourceHosts(
         IReadOnlyList<WordFormulaFormatConversionTarget> targets)
     {
@@ -380,13 +674,8 @@ internal sealed partial class WordFormulaService
                         TracePlanPerf("identify-mathtype");
                         if (bulkOleSnapshot is not null
                             && bulkOleSnapshot.CompoundFile.Length > 0
-                            && (string.Equals(
-                                    bulkOleSnapshot.ProgId,
-                                    "Equation.DSMT4",
-                                    StringComparison.OrdinalIgnoreCase)
-                                || bulkOleSnapshot.ProgId.StartsWith(
-                                    "Equation.",
-                                    StringComparison.OrdinalIgnoreCase)))
+                            && MathTypeOleStorage.LooksLikeMathTypeCompoundFile(
+                                bulkOleSnapshot.CompoundFile))
                         {
                             try
                             {
@@ -456,6 +745,15 @@ internal sealed partial class WordFormulaService
                         SourceIsManagedOmml = false,
                         DisplayMode = metadata.DisplayMode,
                         Numbered = metadata.Numbered,
+                        PrecedingPlainBlankParagraphCount = string.Equals(
+                                sourceMode,
+                                FormulaOleContract.NativeOleMode,
+                                StringComparison.Ordinal)
+                            ? CountPlainBlankParagraphsImmediatelyBeforeFormulaHost(
+                                document,
+                                range,
+                                metadata)
+                            : 0,
                         MathTypeNumberPosition = mathTypeNumberPosition,
                         FontSizePt = FormulaFontSize.Normalize(metadata.FontSizePt),
                         Metadata = metadata,
@@ -477,6 +775,229 @@ internal sealed partial class WordFormulaService
             Release(scope);
             Release(selection);
             Release(document);
+        }
+    }
+
+    private static int CountPlainBlankParagraphsImmediatelyBeforeFormulaHost(
+        Document document,
+        Range formulaRange,
+        FormulaMetadata metadata)
+    {
+        Table? numberedTable = null;
+        Range? tableRange = null;
+        try
+        {
+            var anchorStart = formulaRange.Start;
+            if (metadata.Numbered
+                && string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
+            {
+                numberedTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    metadata.FormulaId);
+                if (numberedTable is not null)
+                {
+                    tableRange = numberedTable.Range;
+                    anchorStart = tableRange.Start;
+                }
+            }
+            return CountConsecutivePlainBlankParagraphsBeforePosition(
+                document,
+                anchorStart);
+        }
+        finally
+        {
+            Release(tableRange);
+            Release(numberedTable);
+        }
+    }
+
+    private static int CountConsecutivePlainBlankParagraphsBeforePosition(
+        Document document,
+        int position)
+    {
+        Range? content = null;
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Tables? tables = null;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        Frames? frames = null;
+        try
+        {
+            content = document.Content;
+            var cursor = position;
+            var count = 0;
+            while (cursor > content.Start)
+            {
+                Release(frames); frames = null;
+                Release(bookmarks); bookmarks = null;
+                Release(fields); fields = null;
+                Release(maths); maths = null;
+                Release(shapes); shapes = null;
+                Release(tables); tables = null;
+                Release(paragraphRange); paragraphRange = null;
+                Release(paragraph); paragraph = null;
+                Release(paragraphs); paragraphs = null;
+                Release(probe); probe = null;
+
+                probe = document.Range(cursor - 1, cursor);
+                if ((bool)probe.get_Information(WdInformation.wdWithInTable)) break;
+                paragraphs = probe.Paragraphs;
+                if (paragraphs.Count != 1) break;
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range.Duplicate;
+                if (paragraphRange.End != cursor
+                    || !string.Equals(paragraphRange.Text, "\r", StringComparison.Ordinal))
+                    break;
+
+                tables = paragraphRange.Tables;
+                shapes = paragraphRange.InlineShapes;
+                maths = paragraphRange.OMaths;
+                fields = paragraphRange.Fields;
+                bookmarks = paragraphRange.Bookmarks;
+                frames = paragraphRange.Frames;
+                if (tables.Count != 0
+                    || shapes.Count != 0
+                    || maths.Count != 0
+                    || fields.Count != 0
+                    || bookmarks.Count != 0
+                    || frames.Count != 0)
+                    break;
+
+                count++;
+                cursor = paragraphRange.Start;
+            }
+            return count;
+        }
+        finally
+        {
+            Release(frames);
+            Release(bookmarks);
+            Release(fields);
+            Release(maths);
+            Release(shapes);
+            Release(tables);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+            Release(content);
+        }
+    }
+
+    private static int RestoreConvertedOmmlPrecedingBlankParagraphCounts(
+        Document document,
+        WordFormulaFormatConversionPlan plan,
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared)
+    {
+        var removed = 0;
+        foreach (var target in plan.Targets
+                     .Where(item => item.Numbered
+                         && string.Equals(item.DisplayMode, "block", StringComparison.Ordinal)))
+        {
+            if (!prepared.TryGetValue(target.Id, out var converted)
+                || string.IsNullOrWhiteSpace(converted.Session.FormulaId))
+                continue;
+            var formulaId = converted.Session.FormulaId;
+            while (true)
+            {
+                Table? table = null;
+                Range? tableRange = null;
+                try
+                {
+                    table = WordEquationNumbering.FindNumberedEquationTable(
+                            document,
+                            formulaId)
+                        ?? throw new InvalidOperationException(
+                            $"Converted OMML formula {formulaId} lost its numbered table during blank-paragraph restoration.");
+                    tableRange = table.Range;
+                    var actual = CountConsecutivePlainBlankParagraphsBeforePosition(
+                        document,
+                        tableRange.Start);
+                    if (actual <= target.PrecedingPlainBlankParagraphCount)
+                        break;
+                    if (!DeletePlainBlankParagraphImmediatelyBeforePosition(
+                            document,
+                            tableRange.Start))
+                        throw new InvalidOperationException(
+                            $"Converted OMML formula {formulaId} retained an unexpected blank source paragraph that could not be removed safely.");
+                    removed++;
+                }
+                finally
+                {
+                    Release(tableRange);
+                    Release(table);
+                }
+            }
+        }
+        return removed;
+    }
+
+    private static bool DeletePlainBlankParagraphImmediatelyBeforePosition(
+        Document document,
+        int position)
+    {
+        Range? content = null;
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Tables? tables = null;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        Frames? frames = null;
+        try
+        {
+            content = document.Content;
+            if (position <= content.Start || position > content.End)
+                return false;
+            probe = document.Range(position - 1, position);
+            if ((bool)probe.get_Information(WdInformation.wdWithInTable))
+                return false;
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            if (paragraphRange.End != position
+                || !string.Equals(paragraphRange.Text, "\r", StringComparison.Ordinal))
+                return false;
+
+            tables = paragraphRange.Tables;
+            shapes = paragraphRange.InlineShapes;
+            maths = paragraphRange.OMaths;
+            fields = paragraphRange.Fields;
+            bookmarks = paragraphRange.Bookmarks;
+            frames = paragraphRange.Frames;
+            if (tables.Count != 0
+                || shapes.Count != 0
+                || maths.Count != 0
+                || fields.Count != 0
+                || bookmarks.Count != 0
+                || frames.Count != 0)
+                return false;
+
+            paragraphRange.Delete();
+            return true;
+        }
+        finally
+        {
+            Release(frames);
+            Release(bookmarks);
+            Release(fields);
+            Release(maths);
+            Release(shapes);
+            Release(tables);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+            Release(content);
         }
     }
 
@@ -843,6 +1364,28 @@ internal sealed partial class WordFormulaService
                 WordDoubleClickHook.TraceMessage(
                     $"format-conversion-reference-counts-fast-path source={plan.SourceMode} formulas={sourceReferenceCounts.Count}");
             }
+
+            // A numbered VisualTeX/OMML formula has one generated REF inside its
+            // own number cell. Any larger count proves that an external equation
+            // reference exists. Such a reference must have a bookmark alias that
+            // can be rebound to the target format; silently unlinking it would turn
+            // a live, navigable reference into plain text. Fail before the first
+            // document mutation instead.
+            if (sourceReferenceCounts is not null)
+            {
+                foreach (var target in plan.Targets.Where(item => item.Numbered))
+                {
+                    if (!sourceReferenceCounts.TryGetValue(
+                            target.SourceFormulaId,
+                            out var referenceCount)
+                        || referenceCount <= 1)
+                        continue;
+                    if (referenceAliasesByTargetId.ContainsKey(target.Id))
+                        continue;
+                    throw new InvalidDataException(
+                        $"公式“{target.Latex}”存在 {referenceCount - 1} 个外部动态引用，但未能建立可跨格式恢复的编号书签。为避免把引用降级为普通文本，本次转换未执行。");
+                }
+            }
             var hasAdjacentSourceHosts = targetIsOmml
                 && HasAdjacentFormatConversionSourceHosts(plan.Targets);
             var useForwardSourceBookmarks = targetIsOmml
@@ -1133,7 +1676,12 @@ internal sealed partial class WordFormulaService
                             reuseExistingInlineTypingBoundary:
                                 useDirectSingleNativeOmmlDelete,
                             updateCreatedMathTypeNumberFields:
-                                canFinalizeSingleMathTypeNumberLocally);
+                                canFinalizeSingleMathTypeNumberLocally,
+                            preserveExistingDisplayParagraphBoundary:
+                                string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.Ordinal));
                     }
                     else if (string.Equals(
                                  plan.TargetMode,
@@ -1163,7 +1711,12 @@ internal sealed partial class WordFormulaService
                             session,
                             formula.PngPath!,
                             formula.EmfPath!,
-                            deferNumberingLayout: targetIsVisualTeX);
+                            deferNumberingLayout: targetIsVisualTeX,
+                            preserveExistingDisplayParagraphBoundary:
+                                string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.Ordinal));
                     }
                     TracePerf("insert-target");
                     if (forwardSourceBookmarks.TryGetValue(target.Id, out var insertedSourceBookmark))
@@ -1413,21 +1966,49 @@ internal sealed partial class WordFormulaService
                             document,
                             out var finalizedNumbered))
                     {
+                        var removedBlankParagraphs =
+                            RestoreConvertedOmmlPrecedingBlankParagraphCounts(
+                                document,
+                                plan,
+                                prepared);
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-local-batch targetMode={plan.TargetMode} built={builtNumbered} finalized={finalizedNumbered}");
+                            $"format-conversion-numbering-local-batch targetMode={plan.TargetMode} built={builtNumbered} finalized={finalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
                     }
                     else
                     {
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-numbering-local-batch-fallback targetMode={plan.TargetMode}");
                         var fallbackFinalizedNumbered = WordEquationNumbering.UpdateEquationNumbers(document);
+                        var removedBlankParagraphs =
+                            RestoreConvertedOmmlPrecedingBlankParagraphCounts(
+                                document,
+                                plan,
+                                prepared);
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-fallback-finalized targetMode={plan.TargetMode} numbered={fallbackFinalizedNumbered}");
+                            $"format-conversion-numbering-fallback-finalized targetMode={plan.TargetMode} numbered={fallbackFinalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
                     }
                 }
-                else
+                else if (targetIsVisualTeX)
                 {
-                    WordEquationNumbering.TryReconcile(document);
+                    WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+                        document,
+                        plan.NumberFormatId);
+                    var rebuiltVisualTeXNumbered =
+                        BuildConvertedVisualTeXNumberingBatch(
+                            document,
+                            plan,
+                            prepared,
+                            result.FormulaCount);
+                    if (rebuiltVisualTeXNumbered > 0)
+                    {
+                        if (!WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
+                                document,
+                                out var finalizedVisualTeXNumbered))
+                            throw new InvalidOperationException(
+                                "Converted VisualTeX numbering scaffolds could not be finalized safely.");
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-numbering-visualtex-batch built={rebuiltVisualTeXNumbered} finalized={finalizedVisualTeXNumbered}");
+                    }
                 }
             }
             if (referenceAliasesByTargetId.Count > 0 && result.FailedFormulaCount == 0)
@@ -2510,10 +3091,18 @@ internal sealed partial class WordFormulaService
         var mathTypeToOmml =
             string.Equals(sourceMode, FormulaOleContract.MathTypeOleMode, StringComparison.Ordinal)
             && string.Equals(targetMode, FormulaOleContract.WordOmmlMode, StringComparison.Ordinal);
+        var visualTeXToOmml =
+            string.Equals(sourceMode, FormulaOleContract.NativeOleMode, StringComparison.Ordinal)
+            && string.Equals(targetMode, FormulaOleContract.WordOmmlMode, StringComparison.Ordinal);
+        var ommlToVisualTeX =
+            string.Equals(sourceMode, FormulaOleContract.WordOmmlMode, StringComparison.Ordinal)
+            && string.Equals(targetMode, FormulaOleContract.NativeOleMode, StringComparison.Ordinal);
         if (!visualTeXToMathType
             && !mathTypeToVisualTeX
             && !ommlToMathType
-            && !mathTypeToOmml)
+            && !mathTypeToOmml
+            && !visualTeXToOmml
+            && !ommlToVisualTeX)
             throw new ArgumentOutOfRangeException(
                 nameof(targetMode),
                 $"Unsupported simple format conversion: {sourceMode} -> {targetMode}.");

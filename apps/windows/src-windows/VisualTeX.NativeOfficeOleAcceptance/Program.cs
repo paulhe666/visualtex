@@ -84,6 +84,33 @@ internal static class Program
     private static extern bool SetForegroundWindow(IntPtr window);
 
     [STAThread]
+    private static string ResolveArtifactRoot(string? argument)
+    {
+        var baseRoot = Path.Combine(
+            Path.GetTempPath(),
+            "VisualTeX",
+            "acceptance",
+            "native-office-ole");
+        if (string.IsNullOrWhiteSpace(argument))
+            return Path.Combine(baseRoot, Guid.NewGuid().ToString("N"));
+
+        var expanded = Environment.ExpandEnvironmentVariables(
+            argument!.Trim().Trim('"'));
+        if (Path.IsPathRooted(expanded))
+            return Path.GetFullPath(expanded);
+        var segments = expanded
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+            .Split(new[] { Path.DirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => !string.Equals(segment, ".", StringComparison.Ordinal))
+            .ToArray();
+        if (segments.Any(segment => string.Equals(segment, "..", StringComparison.Ordinal)))
+            throw new InvalidDataException(
+                "A relative native Office acceptance path cannot contain '..'. Use an absolute path for an explicit external destination.");
+        return Path.Combine(
+            baseRoot,
+            segments.Length == 0 ? Guid.NewGuid().ToString("N") : Path.Combine(segments));
+    }
+
     private static int Main(string[] args)
     {
         if (args.Length >= 1
@@ -349,9 +376,7 @@ internal static class Program
             return 3;
         }
 
-        var artifactRoot = args.Length >= 2
-            ? Path.GetFullPath(args[1])
-            : Path.Combine(Path.GetTempPath(), $"VisualTeX-Native-Office-OLE-{Guid.NewGuid():N}");
+        var artifactRoot = ResolveArtifactRoot(args.Length >= 2 ? args[1] : null);
         var previewRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "VisualTeX",

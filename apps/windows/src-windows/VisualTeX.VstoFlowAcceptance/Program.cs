@@ -323,6 +323,55 @@ internal static partial class Program
         application.Quit(Word.WdSaveOptions.wdDoNotSaveChanges);
     }
 
+    private static string ResolveAcceptanceArtifactRoot(
+        string? artifactArgument,
+        string mode)
+    {
+        var configuredRoot = Environment.GetEnvironmentVariable(
+            "VISUALTEX_ACCEPTANCE_ARTIFACT_ROOT");
+        var baseRoot = string.IsNullOrWhiteSpace(configuredRoot)
+            ? Path.Combine(
+                Path.GetTempPath(),
+                "VisualTeX",
+                "acceptance",
+                "vsto-flow")
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(
+                configuredRoot!.Trim().Trim('"')));
+
+        if (string.IsNullOrWhiteSpace(artifactArgument))
+        {
+            var safeMode = string.Concat((mode ?? "all").Select(character =>
+                char.IsLetterOrDigit(character) || character is '-' or '_'
+                    ? character
+                    : '-'));
+            return Path.Combine(
+                baseRoot,
+                $"{safeMode}-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}");
+        }
+
+        var expanded = Environment.ExpandEnvironmentVariables(
+            artifactArgument!.Trim().Trim('"'));
+        if (Path.IsPathRooted(expanded))
+            return Path.GetFullPath(expanded);
+
+        // Relative acceptance paths used to be resolved against the checkout and
+        // created hundreds of artifacts/* and Tempvisualtex-* directories beside
+        // source files. Keep the caller's grouping, but anchor it under one OS-temp
+        // root. Reject traversal rather than allowing a relative argument to escape.
+        var segments = expanded
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+            .Split(new[] { Path.DirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => !string.Equals(segment, ".", StringComparison.Ordinal))
+            .ToArray();
+        if (segments.Any(segment => string.Equals(segment, "..", StringComparison.Ordinal)))
+            throw new InvalidDataException(
+                "A relative acceptance artifact path cannot contain '..'. Use an absolute path for an explicit external destination.");
+        var relative = segments.Length == 0
+            ? $"{mode}-{DateTime.Now:yyyyMMdd-HHmmss-fff}"
+            : Path.Combine(segments);
+        return Path.GetFullPath(Path.Combine(baseRoot, relative));
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -347,9 +396,7 @@ internal static partial class Program
             ?.Substring("--mode=".Length)
             ?? "all";
         var artifactArgument = args.FirstOrDefault(argument => !argument.StartsWith("--", StringComparison.Ordinal));
-        var artifactRoot = artifactArgument is not null
-            ? Path.GetFullPath(artifactArgument)
-            : Path.Combine(Path.GetTempPath(), $"VisualTeX-VSTO-Flow-{DateTime.Now:yyyyMMdd-HHmmss}");
+        var artifactRoot = ResolveAcceptanceArtifactRoot(artifactArgument, mode);
         Directory.CreateDirectory(artifactRoot);
 
         using var log = new StreamWriter(
@@ -478,6 +525,10 @@ internal static partial class Program
             {
                 RunPowerPointContextSafetyAcceptance(client, artifactRoot);
             }
+            else if (string.Equals(mode, "powerpoint-dense-zorder", StringComparison.OrdinalIgnoreCase))
+            {
+                RunPowerPointDenseZOrderAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "powerpoint-ole-svg-delete", StringComparison.OrdinalIgnoreCase))
             {
                 RunPowerPointOleSvgDeleteAcceptance(client, artifactRoot);
@@ -598,9 +649,29 @@ internal static partial class Program
             {
                 RunWordMathTypeStandaloneCodecAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-insert-scaling", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeInsertScalingAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-insertion-complexity", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeInsertionComplexityAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-preview-fallback", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypePreviewFallbackAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "mathtype-mtef-root-compat", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeMtefRootCompatibilityAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-ole-storage-robustness", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeOleStorageRobustnessAcceptance();
+            }
+            else if (string.Equals(mode, "mathtype-capability-resolution", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeCapabilityResolutionAcceptance();
             }
             else if (string.Equals(mode, "word-mathtype-addole-from-cfb", StringComparison.OrdinalIgnoreCase))
             {
@@ -3756,7 +3827,7 @@ internal static partial class Program
             shape.Range.Select();
             Release(shape);
             shape = null;
-            addIn.OnExportSelectedAsPicture(new object());
+            _ = new VisualTeX.WordVsto.WordFormulaService(application).ExportSelectedOleAsPicture();
             shape = WaitForWordShapeMode(document, nativeOle: false, TimeSpan.FromSeconds(15));
             AssertEqual(Word.WdInlineShapeType.wdInlineShapePicture, shape.Type,
                 "Word OLE export did not create a normal picture.");

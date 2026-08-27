@@ -2042,7 +2042,57 @@ const visualTexRawLatexClass = "has-visualtex-raw-latex-command";
 const visualTexPointerSelectingClass = "visualtex-pointer-selecting";
 const visualTexSourcePreviewClass = "visualtex-source-preview-only";
 const visualTexCaretRepaintClass = "visualtex-caret-repaint";
+const visualTexPostOperatorCaretClass = "visualtex-post-operator-caret";
+const visualTexPostOperatorCaretShiftProperty =
+  "--visualtex-post-operator-caret-shift";
 const visualTexCaretRepaintFrames = new WeakMap<MathfieldElement, number>();
+
+function isMathLiveInterAtomGlue(node: Element | null): node is HTMLElement {
+  if (!(node instanceof HTMLElement)) return false;
+  if (node.dataset.atomId || node.className || node.textContent) return false;
+  return (
+    node.style.display === "inline-block" &&
+    /^\d*\.?\d+(?:em|ex|px)$/.test(node.style.width)
+  );
+}
+
+function syncPostOperatorCaretSpacing(field: MathfieldElement) {
+  const caret = field.shadowRoot?.querySelector<HTMLElement>(".ML__caret");
+  if (!caret) return;
+
+  const previousAtom = caret.previousElementSibling;
+  const leadingGlue = previousAtom?.previousElementSibling ?? null;
+  const trailingGlue = caret.nextElementSibling;
+  const shouldShift =
+    previousAtom instanceof HTMLElement &&
+    Boolean(previousAtom.dataset.atomId) &&
+    isMathLiveInterAtomGlue(leadingGlue) &&
+    isMathLiveInterAtomGlue(trailingGlue);
+
+  if (!shouldShift) {
+    if (caret.classList.contains(visualTexPostOperatorCaretClass)) {
+      caret.classList.remove(visualTexPostOperatorCaretClass);
+    }
+    caret.style.removeProperty(visualTexPostOperatorCaretShiftProperty);
+    return;
+  }
+
+  const shift = trailingGlue.getBoundingClientRect().width;
+  if (!(shift > 0)) return;
+  const nextShift = `${shift}px`;
+  if (
+    caret.style.getPropertyValue(visualTexPostOperatorCaretShiftProperty) !==
+    nextShift
+  ) {
+    caret.style.setProperty(
+      visualTexPostOperatorCaretShiftProperty,
+      nextShift,
+    );
+  }
+  if (!caret.classList.contains(visualTexPostOperatorCaretClass)) {
+    caret.classList.add(visualTexPostOperatorCaretClass);
+  }
+}
 
 function repaintMathLiveCaret(field: MathfieldElement) {
   const previousFrame = visualTexCaretRepaintFrames.get(field);
@@ -3042,6 +3092,12 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
         opacity: 1 !important;
         animation: none !important;
         transform: translateZ(0);
+      }
+
+      .ML__caret.${visualTexPostOperatorCaretClass} {
+        transform: translateX(
+          var(${visualTexPostOperatorCaretShiftProperty}, 0px)
+        ) !important;
       }
 
       .${visualTexPlaceholderCaretClass} {
@@ -5386,6 +5442,7 @@ function FormulaField(props: FormulaFieldProps) {
     };
     const handleSelectionChange = () => {
       markVisualTexStructuralPlaceholders(field);
+      syncPostOperatorCaretSpacing(field);
       const selectedAccentState = captureSelectedAccentPlaceholderState(field);
       if (selectedAccentState) {
         activateVisualTexAccentPlaceholder(field, selectedAccentState);
@@ -6310,6 +6367,7 @@ function FormulaField(props: FormulaFieldProps) {
         scheduleDeletedVisualTexPlaceholderRestore(field);
         markVisualTexStructuralPlaceholders(field);
         markVisualTexChineseGlyphs(field);
+        syncPostOperatorCaretSpacing(field);
         syncFrameSize();
         schedulePointerPlaceholderSnapshotStyle();
           scheduleInputActivity();
@@ -6331,9 +6389,11 @@ function FormulaField(props: FormulaFieldProps) {
     // a newly inserted line never paints with the CSS fallback or predicted
     // height and then visibly shrinks on the next animation frame.
     measureFrameSize();
+    syncPostOperatorCaretSpacing(field);
     queueMicrotask(() => {
       if (!field.isConnected) return;
       measureFrameSize();
+      syncPostOperatorCaretSpacing(field);
     });
 
     return () => {

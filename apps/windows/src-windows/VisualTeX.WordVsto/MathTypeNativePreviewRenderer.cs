@@ -11,6 +11,7 @@ internal static class MathTypeNativePreviewRenderer
     private const int MaxBatchItemsPerSidecar = 128;
     private const string BridgeFileName = "visualtex-windows-office-bridge.exe";
     private const string BridgeOverrideEnvironment = "VISUALTEX_MATHTYPE_PREVIEW_BRIDGE_PATH";
+    private const string DisablePreviewEnvironment = "VISUALTEX_DISABLE_MATHTYPE_NATIVE_PREVIEW";
     private static readonly object SharedSessionGate = new();
     private static readonly object NativeRenderGate = new();
     private static int _sharedSessionUsers;
@@ -516,6 +517,12 @@ internal static class MathTypeNativePreviewRenderer
 
     private static string? ResolveBridgePath()
     {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(DisablePreviewEnvironment),
+                "1",
+                StringComparison.Ordinal))
+            return null;
+
         var overridden = Environment.GetEnvironmentVariable(BridgeOverrideEnvironment);
         if (!string.IsNullOrWhiteSpace(overridden))
         {
@@ -535,7 +542,7 @@ internal static class MathTypeNativePreviewRenderer
             var executable = key?.GetValue("ExecutablePath") as string;
             if (!string.IsNullOrWhiteSpace(executable))
             {
-                var directory = Path.GetDirectoryName(executable.Trim().Trim('"'));
+                var directory = Path.GetDirectoryName(executable!.Trim().Trim('"'));
                 if (!string.IsNullOrWhiteSpace(directory))
                 {
                     var candidate = Path.Combine(directory, BridgeFileName);

@@ -96,11 +96,19 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
 
     internal static byte[] CreateStandaloneObjectDescriptor(
         float widthPt,
-        float heightPt)
+        float heightPt,
+        Guid classId,
+        string userType)
     {
+        if (classId == Guid.Empty)
+            throw new InvalidDataException(
+                "MathType standalone object descriptor requires a non-empty OLE class ID.");
+        if (string.IsNullOrWhiteSpace(userType))
+            throw new InvalidDataException(
+                "MathType standalone object descriptor requires a non-empty user type.");
         const int fixedDescriptorBytes = 52;
         const uint contentAspect = 1;
-        var fullUserType = Encoding.Unicode.GetBytes("MathType 7.0 Equation\0");
+        var fullUserType = Encoding.Unicode.GetBytes(userType.Trim() + "\0");
         var sourceOfCopy = Encoding.Unicode.GetBytes("VisualTeX\0");
         var fullUserTypeOffset = fixedDescriptorBytes;
         var sourceOfCopyOffset = fixedDescriptorBytes + fullUserType.Length;
@@ -109,7 +117,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
         using var stream = new MemoryStream(totalBytes);
         using var writer = new BinaryWriter(stream, Encoding.Unicode, leaveOpen: true);
         writer.Write((uint)totalBytes);
-        writer.Write(MathTypeOleStorage.MathTypeEquationClsid.ToByteArray());
+        writer.Write(classId.ToByteArray());
         writer.Write(contentAspect);
         writer.Write(PointsToHimetric(widthPt));
         writer.Write(PointsToHimetric(heightPt));

@@ -121,6 +121,16 @@ internal static partial class Program
                 WordEquationNumbering.SetEquationNumberFormat(document, sourceNumberFormat);
                 Console.WriteLine($"[CONSECUTIVE NUMBERED] inherited equation-number format '{sourceNumberFormat}'.");
             }
+            else
+            {
+                // Never let this acceptance depend on the current user's registry
+                // default. Its expected 0.1/0.2/0.3 captions deliberately exercise
+                // heading-aware conversion even on a clean or differently configured
+                // machine.
+                WordEquationNumbering.SetEquationNumberFormat(
+                    document,
+                    EquationNumberFormat.Heading1DotId);
+            }
             var service = new WordFormulaService(application);
             RunSimpleFormatConversionRollbackBridgeAcceptance(
                 application,
@@ -332,6 +342,13 @@ internal static partial class Program
             document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine(
                 "[CONSECUTIVE NUMBERED] Three consecutive numbered VisualTeX display formulas converted to three MathType Equation.DSMT4 objects with three fresh MTPlaceRef fields and no VisualTeX numbering bookmarks.");
+
+            RunOmmlVisualTeXNumberedRoundTripAcceptance(
+                application,
+                pngPath,
+                emfPath,
+                formulas,
+                artifactRoot);
         }
         finally
         {
@@ -348,6 +365,193 @@ internal static partial class Program
             }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void RunOmmlVisualTeXNumberedRoundTripAcceptance(
+        Word.Application application,
+        string pngPath,
+        string emfPath,
+        IReadOnlyList<(string Latex, string MathMl, bool Numbered)> formulas,
+        string artifactRoot)
+    {
+        Word.Document? document = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Content.Text = "OMML to VisualTeX numbered roundtrip acceptance\r";
+            var service = new WordFormulaService(application);
+            foreach (var formula in formulas)
+            {
+                Word.Range? insertion = null;
+                try
+                {
+                    insertion = document.Range(
+                        document.Content.End - 1,
+                        document.Content.End - 1);
+                    insertion.Select();
+                }
+                finally { Release(insertion); }
+                service.InsertOle(
+                    CreateSimpleVisualTeXSourceSession(formula.Latex, numbered: true),
+                    pngPath,
+                    emfPath);
+            }
+
+            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
+                "OMML→VisualTeX roundtrip setup did not create one numbered VisualTeX host per formula.");
+
+            var toOmmlPlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.NativeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(formulas.Count, toOmmlPlan.Targets.Count,
+                "OMML→VisualTeX roundtrip setup did not capture every VisualTeX source formula.");
+            var toOmmlPrepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
+            for (var index = 0; index < toOmmlPlan.Targets.Count; index++)
+            {
+                var target = toOmmlPlan.Targets[index];
+                var source = formulas[index];
+                toOmmlPrepared[target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleFormatTargetSession(
+                        target,
+                        FormulaOleContract.WordOmmlMode,
+                        source.MathMl),
+                    MathMl = source.MathMl,
+                };
+            }
+            var toOmmlResult = service.ApplyFormulaFormatConversionPlan(
+                toOmmlPlan,
+                toOmmlPrepared);
+            AssertEqual(formulas.Count, toOmmlResult.FormulaCount,
+                "VisualTeX→OMML roundtrip leg did not convert every numbered formula.");
+            AssertEqual(0, toOmmlResult.FailedFormulaCount,
+                $"VisualTeX→OMML roundtrip leg failed: {string.Join(" | ", toOmmlResult.Failures)}");
+            AssertEqual(formulas.Count, document.OMaths.Count,
+                "VisualTeX→OMML roundtrip leg did not leave one OMath per formula.");
+            AssertEqual(0, CountVisualTeXNativeOleShapes(document),
+                "VisualTeX→OMML roundtrip leg left VisualTeX OLE sources behind.");
+            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
+                "VisualTeX→OMML roundtrip leg did not preserve every numbered host.");
+            var baselineOmmlBlankParagraphs =
+                CountPureBlankParagraphsImmediatelyBeforeTables(document);
+
+            var toVisualTeXPlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.NativeOleMode);
+            AssertEqual(formulas.Count, toVisualTeXPlan.Targets.Count,
+                "OMML→VisualTeX roundtrip leg did not capture every numbered OMML formula.");
+            AssertTrue(toVisualTeXPlan.Targets.All(target => target.Numbered),
+                "OMML→VisualTeX roundtrip capture lost numbered state before conversion.");
+
+            var toVisualTeXPrepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
+            foreach (var target in toVisualTeXPlan.Targets)
+            {
+                var mathMl = target.SourceMathMl
+                    ?? throw new InvalidDataException(
+                        $"OMML target {target.Id} did not expose source MathML.");
+                toVisualTeXPrepared[target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleFormatTargetSession(
+                        target,
+                        FormulaOleContract.NativeOleMode,
+                        mathMl),
+                    MathMl = mathMl,
+                    PngPath = pngPath,
+                    EmfPath = emfPath,
+                };
+            }
+            var toVisualTeXResult = service.ApplyFormulaFormatConversionPlan(
+                toVisualTeXPlan,
+                toVisualTeXPrepared);
+            Console.WriteLine(
+                $"[OMML→VISUALTEX NUMBERED RESULT] converted={toVisualTeXResult.FormulaCount} failed={toVisualTeXResult.FailedFormulaCount} triples={CountVisualTeXNumberingBookmarkTriples(document)}");
+            AssertEqual(formulas.Count, toVisualTeXResult.FormulaCount,
+                "OMML→VisualTeX roundtrip leg did not convert every numbered formula.");
+            AssertEqual(0, toVisualTeXResult.FailedFormulaCount,
+                $"OMML→VisualTeX roundtrip leg failed: {string.Join(" | ", toVisualTeXResult.Failures)}");
+            AssertEqual(0, document.OMaths.Count,
+                "OMML→VisualTeX roundtrip leg left OMML sources behind.");
+            AssertEqual(formulas.Count, CountVisualTeXNativeOleShapes(document),
+                "OMML→VisualTeX roundtrip leg did not create one VisualTeX OLE per source formula.");
+            AssertEqual(formulas.Count, CountInstalledVisualTeXNumberedFormulaHosts(document),
+                "OMML→VisualTeX roundtrip leg lost Numbered metadata on a converted formula.");
+            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
+                "OMML→VisualTeX roundtrip leg lost a VTEq/VTEqCap/VTEqNum numbering host.");
+
+            var backToOmmlPlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.NativeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(formulas.Count, backToOmmlPlan.Targets.Count,
+                "OMML→VisualTeX→OMML roundtrip did not recapture every VisualTeX formula.");
+            var backToOmmlPrepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
+            for (var index = 0; index < backToOmmlPlan.Targets.Count; index++)
+            {
+                var target = backToOmmlPlan.Targets[index];
+                var source = formulas[index];
+                backToOmmlPrepared[target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleFormatTargetSession(
+                        target,
+                        FormulaOleContract.WordOmmlMode,
+                        source.MathMl),
+                    MathMl = source.MathMl,
+                };
+            }
+            var backToOmmlResult = service.ApplyFormulaFormatConversionPlan(
+                backToOmmlPlan,
+                backToOmmlPrepared);
+            AssertEqual(formulas.Count, backToOmmlResult.FormulaCount,
+                "OMML→VisualTeX→OMML roundtrip did not convert every formula back to OMML.");
+            AssertEqual(0, backToOmmlResult.FailedFormulaCount,
+                $"OMML→VisualTeX→OMML roundtrip failed: {string.Join(" | ", backToOmmlResult.Failures)}");
+            AssertEqual(formulas.Count, document.OMaths.Count,
+                "OMML→VisualTeX→OMML roundtrip did not leave one OMath per formula.");
+            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
+                "OMML→VisualTeX→OMML roundtrip lost a numbering host.");
+            AssertEqual(
+                baselineOmmlBlankParagraphs,
+                CountPureBlankParagraphsImmediatelyBeforeTables(document),
+                "OMML→VisualTeX→OMML roundtrip introduced an extra plain blank paragraph before a numbered OMML table.");
+
+            var outputPath = Path.Combine(
+                artifactRoot,
+                "OMML-To-VisualTeX-Numbered-Roundtrip.docx");
+            document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                $"[OMML→VISUALTEX NUMBERED] Preserved {formulas.Count} independent numbered VisualTeX hosts. path={outputPath}");
+        }
+        finally
+        {
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
         }
     }
 
@@ -489,6 +693,15 @@ internal static partial class Program
 
     private static OfficeSessionDocument CreateSimpleMathTypeTargetSession(
         WordFormulaFormatConversionTarget target,
+        string mathMl) =>
+        CreateSimpleFormatTargetSession(
+            target,
+            FormulaOleContract.MathTypeOleMode,
+            mathMl);
+
+    private static OfficeSessionDocument CreateSimpleFormatTargetSession(
+        WordFormulaFormatConversionTarget target,
+        string objectMode,
         string mathMl)
     {
         return new OfficeSessionDocument
@@ -504,7 +717,7 @@ internal static partial class Program
             },
             CodeFormat = "latex",
             DisplayMode = target.DisplayMode,
-            ObjectMode = FormulaOleContract.MathTypeOleMode,
+            ObjectMode = objectMode,
             Numbered = target.Numbered,
             MathTypeNumberPosition = target.MathTypeNumberPosition,
             FontSizePt = target.FontSizePt,
@@ -576,6 +789,50 @@ internal static partial class Program
             Release(bookmark);
             Release(bookmarks);
         }
+    }
+
+    private static int CountPureBlankParagraphsImmediatelyBeforeTables(Word.Document document)
+    {
+        var count = 0;
+        for (var index = 1; index <= document.Tables.Count; index++)
+        {
+            Word.Table? table = null;
+            Word.Range? probe = null;
+            Word.Paragraphs? paragraphs = null;
+            Word.Paragraph? paragraph = null;
+            Word.Range? paragraphRange = null;
+            try
+            {
+                table = document.Tables[index];
+                var tableStart = table.Range.Start;
+                if (tableStart <= document.Content.Start) continue;
+                probe = document.Range(tableStart - 1, tableStart);
+                if ((bool)probe.get_Information(Word.WdInformation.wdWithInTable)) continue;
+                paragraphs = probe.Paragraphs;
+                if (paragraphs.Count != 1) continue;
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range;
+                if (paragraphRange.End != tableStart
+                    || !string.Equals(paragraphRange.Text, "\r", StringComparison.Ordinal))
+                    continue;
+                if (paragraphRange.Tables.Count == 0
+                    && paragraphRange.InlineShapes.Count == 0
+                    && paragraphRange.OMaths.Count == 0
+                    && paragraphRange.Fields.Count == 0
+                    && paragraphRange.Bookmarks.Count == 0
+                    && paragraphRange.Frames.Count == 0)
+                    count++;
+            }
+            finally
+            {
+                Release(paragraphRange);
+                Release(paragraph);
+                Release(paragraphs);
+                Release(probe);
+                Release(table);
+            }
+        }
+        return count;
     }
 
     private static int CountVisualTeXNumberingBookmarkTriples(Word.Document document) =>

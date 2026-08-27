@@ -47,6 +47,17 @@ public sealed class MathTypeOleClientSiteNative : IMathTypeOleClientSiteNative
 
 internal static class MathTypeOleInterop
 {
+    internal const string CanonicalProgId = "Equation.DSMT4";
+    internal const string CanonicalUserType = "MathType 7.0 Equation";
+    internal static readonly Guid CanonicalClsid =
+        new("0002CE03-0000-0000-C000-000000000046");
+
+    private static readonly object CapabilityCacheSync = new();
+    private static readonly Dictionary<string, CapabilityCacheEntry> CapabilityCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan CapabilityCacheLifetime = TimeSpan.FromSeconds(30);
+    private const int MaximumCapabilityCacheEntries = 32;
+
     private const uint GmemMoveable = 0x0002;
     private const uint GmemZeroInit = 0x0040;
     private const uint OleCloseNoSave = 1;
@@ -63,9 +74,24 @@ internal static class MathTypeOleInterop
     {
         public string ProgId { get; set; } = string.Empty;
         public Guid ResolvedClsid { get; set; }
+        public string? ClassName { get; set; }
         public string? ServerPath { get; set; }
         public int RunForConversionVerb { get; set; } = 2;
         public bool RegisteredMathMlGetSet { get; set; }
+    }
+
+    private sealed class CapabilityCacheEntry
+    {
+        public DateTimeOffset ExpiresAtUtc { get; set; }
+        public bool Success { get; set; }
+        public Capabilities Value { get; set; } = new();
+    }
+
+    internal sealed class StorageIdentity
+    {
+        public string ProgId { get; set; } = CanonicalProgId;
+        public Guid Clsid { get; set; } = CanonicalClsid;
+        public string UserType { get; set; } = CanonicalUserType;
     }
 
     internal static bool IsMathTypeOle(InlineShape shape)
@@ -82,7 +108,7 @@ internal static class MathTypeOleInterop
             {
                 format = shape.OLEFormat;
                 var progId = format.ProgID;
-                if (string.Equals(progId, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(progId, CanonicalProgId, StringComparison.OrdinalIgnoreCase))
                     return true;
                 if (TryResolveCapabilities(progId, out _))
                     return true;
@@ -101,8 +127,14 @@ internal static class MathTypeOleInterop
             try
             {
                 var fragment = MathTypeWordOpenXml.Read(shape);
-                return string.Equals(fragment.ProgId, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase)
-                    || fragment.ProgId.StartsWith("Equation.", StringComparison.OrdinalIgnoreCase);
+                // Never identify an object merely because its ProgID starts with
+                // "Equation.". Microsoft Equation Editor and unrelated equation
+                // servers use that prefix too. The Flat OPC reader validates the
+                // embedded CFB as a MathType MTEF-v5 object, including the stored
+                // user type/class identity, which also works when MathType is not
+                // installed on the current computer.
+                return MathTypeOleStorage.LooksLikeMathTypeCompoundFile(
+                    fragment.CompoundFile);
             }
             catch
             {
@@ -119,27 +151,159 @@ internal static class MathTypeOleInterop
     internal static bool TryResolveCapabilities(string? progId, out Capabilities capabilities)
     {
         capabilities = new Capabilities();
-        if (string.IsNullOrWhiteSpace(progId)
-            || !(string.Equals(progId, "Equation", StringComparison.OrdinalIgnoreCase)
-                || progId.StartsWith("Equation.", StringComparison.OrdinalIgnoreCase)))
-            return false;
+        if (string.IsNullOrWhiteSpace(progId)) return false;
 
-        if (CLSIDFromProgID(progId, out var current) != 0)
+        // Do not assume every MathType release/registration uses an Equation.*
+        // ProgID. Resolve any registered ProgID, then accept it only when the
+        // resulting class name or executable is actually MathType. This remains
+        // fail-closed for Microsoft Equation Editor and unrelated OLE servers.
+        if (CLSIDFromProgID(progId!, out var current) != 0
+            && !TryReadProgIdClsid(progId!, out current))
             return false;
+        return TryResolveCapabilities(progId!, current, out capabilities);
+    }
 
-        var visited = new HashSet<Guid>();
-        for (var depth = 0; depth < 16 && visited.Add(current); depth++)
+    internal static bool TryResolveCapabilities(
+        InlineShape? shape,
+        out Capabilities capabilities)
+    {
+        capabilities = new Capabilities();
+        if (shape is null) return false;
+        OLEFormat? format = null;
+        try
         {
-            var hr = OleGetAutoConvert(ref current, out var next);
+            if (shape.Type is not WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                and not WdInlineShapeType.wdInlineShapeLinkedOLEObject)
+                return false;
+
+            try
+            {
+                format = shape.OLEFormat;
+                if (TryResolveCapabilities(format.ProgID, out capabilities))
+                    return true;
+            }
+            catch
+            {
+                // A damaged/missing ProgID registration can make OLEFormat fail.
+                // Fall through to the serialized storage identity below.
+            }
+            finally
+            {
+                Release(format);
+                format = null;
+            }
+
+            try
+            {
+                var fragment = MathTypeWordOpenXml.Read(shape);
+                var identity = MathTypeOleStorage.ReadCompoundFileIdentity(
+                    fragment.CompoundFile);
+                return identity.Clsid != Guid.Empty
+                    && TryResolveCapabilities(
+                        CanonicalProgId,
+                        identity.Clsid,
+                        out capabilities);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            capabilities = new Capabilities();
+            return false;
+        }
+        finally { Release(format); }
+    }
+
+    internal static bool TryResolveCapabilities(
+        Guid clsid,
+        out Capabilities capabilities)
+    {
+        capabilities = new Capabilities();
+        return clsid != Guid.Empty
+            && TryResolveCapabilities(CanonicalProgId, clsid, out capabilities);
+    }
+
+    internal static bool IsRegisteredMathTypeClass(Guid clsid) =>
+        IsDirectlyRegisteredMathTypeClass(clsid);
+
+    private static bool AllowsMathTypeAutoConvertAlias(string progId) =>
+        string.Equals(progId, CanonicalProgId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(progId, "DSEquations", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(progId, "Equation", StringComparison.OrdinalIgnoreCase)
+        || progId.StartsWith("Equation.DSMT", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsDirectlyRegisteredMathTypeClass(Guid clsid)
+    {
+        if (clsid == Guid.Empty) return false;
+        using var classKey = OpenClassesSubKey(
+            "CLSID\\{" + clsid.ToString("D") + "}");
+        if (classKey is null) return false;
+        var className = classKey.GetValue(null) as string;
+        var serverPath = NormalizeLocalServerPath(
+            ReadDefaultString(classKey, "LocalServer32")
+                ?? ReadDefaultString(classKey, "LocalServer"));
+        return !string.IsNullOrWhiteSpace(className)
+                && className!.IndexOf("MathType", StringComparison.OrdinalIgnoreCase) >= 0
+            || string.Equals(
+                Path.GetFileName(serverPath),
+                "MathType.exe",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static StorageIdentity ResolvePreferredStorageIdentity()
+    {
+        foreach (var progId in new[] { CanonicalProgId, "DSEquations", "Equation" })
+        {
+            if (!TryResolveCapabilities(progId, out var capabilities)) continue;
+            return new StorageIdentity
+            {
+                ProgId = string.IsNullOrWhiteSpace(capabilities.ProgId)
+                    ? CanonicalProgId
+                    : capabilities.ProgId,
+                Clsid = capabilities.ResolvedClsid,
+                UserType = string.IsNullOrWhiteSpace(capabilities.ClassName)
+                    ? CanonicalUserType
+                    : capabilities.ClassName!,
+            };
+        }
+        return new StorageIdentity();
+    }
+
+    private static bool TryResolveCapabilities(
+        string progId,
+        Guid initialClsid,
+        out Capabilities capabilities)
+    {
+        capabilities = new Capabilities();
+        var current = initialClsid;
+        // Microsoft Equation Editor may register OleAutoConvert to MathType after
+        // MathType is installed. That migration hint must not make Equation.3 (or
+        // another unrelated equation server) look like an existing MathType OLE.
+        // Follow auto-conversion only for MathType's own known aliases/family, or
+        // when the starting class is already directly registered as MathType.
+        if (!AllowsMathTypeAutoConvertAlias(progId)
+            && !IsDirectlyRegisteredMathTypeClass(initialClsid))
+            return false;
+        var visited = new HashSet<Guid>();
+        for (var depth = 0;
+             depth < 16 && current != Guid.Empty && visited.Add(current);
+             depth++)
+        {
+            var probe = current;
+            var hr = OleGetAutoConvert(ref probe, out var next);
             if (hr != 0 || next == Guid.Empty || next == current)
                 break;
             current = next;
         }
 
         var clsidKey = "CLSID\\{" + current.ToString("D") + "}";
-        using var classKey = Registry.ClassesRoot.OpenSubKey(clsidKey);
+        using var classKey = OpenClassesSubKey(clsidKey);
         if (classKey is null) return false;
         var className = classKey.GetValue(null) as string;
+        var registeredProgId = ReadDefaultString(classKey, "ProgID");
         var serverPath = NormalizeLocalServerPath(
             ReadDefaultString(classKey, "LocalServer32")
                 ?? ReadDefaultString(classKey, "LocalServer"));
@@ -147,7 +311,7 @@ internal static class MathTypeOleInterop
             ? null
             : Path.GetFileName(serverPath);
         var isMathType = !string.IsNullOrWhiteSpace(className)
-                && className.IndexOf("MathType", StringComparison.OrdinalIgnoreCase) >= 0
+                && className!.IndexOf("MathType", StringComparison.OrdinalIgnoreCase) >= 0
             || string.Equals(serverFileName, "MathType.exe", StringComparison.OrdinalIgnoreCase);
         if (!isMathType) return false;
 
@@ -192,8 +356,11 @@ internal static class MathTypeOleInterop
 
         capabilities = new Capabilities
         {
-            ProgId = progId,
+            ProgId = string.IsNullOrWhiteSpace(registeredProgId)
+                ? progId
+                : registeredProgId!,
             ResolvedClsid = current,
+            ClassName = className,
             ServerPath = serverPath,
             RunForConversionVerb = conversionVerb,
             RegisteredMathMlGetSet = supportsMathMl,
@@ -557,7 +724,7 @@ internal static class MathTypeOleInterop
                 throw new InvalidOperationException(
                     "OleCreate MathType object does not expose IDataObject.");
             WriteMathMlToDataObject(dataObject, mathMl);
-            ConvertContainedMathTypeOleObject(oleObject, clientSite);
+            ConvertContainedMathTypeOleObject(oleObject, clientSite, progId);
             SaveContainedMathTypeOleObject(oleObject, storage);
             return ReadMathMlFromDataObject(dataObject);
         }
@@ -595,8 +762,8 @@ internal static class MathTypeOleInterop
                 throw new InvalidOperationException(
                     "OleCreate MathType object does not expose IDataObject.");
 
-            ConvertContainedMathTypeOleObject(oleObject, clientSite);
-            var request = CreateFormatEtc(1); // CF_TEXT; MathType 7 advertises this for DATADIR_SET.
+            ConvertContainedMathTypeOleObject(oleObject, clientSite, progId);
+            var request = CreateFormatEtc(1); // CF_TEXT; MathType advertises this for DATADIR_SET.
             var textGlobal = Marshal.StringToHGlobalAnsi(text + "\0");
             if (textGlobal == IntPtr.Zero)
                 throw new OutOfMemoryException(
@@ -676,7 +843,7 @@ internal static class MathTypeOleInterop
             // MathType's OLE contract requires the client item to enter its
             // RunForConversion verb before accepting programmatic MathML SetData.
             // A dormant OleCreate object otherwise returns DV_E_FORMATETC.
-            ConvertContainedMathTypeOleObject(oleObject, clientSite);
+            ConvertContainedMathTypeOleObject(oleObject, clientSite, progId);
             WriteMathMlToDataObject(dataObject, mathMl);
             SaveContainedMathTypeOleObject(oleObject, storage);
 
@@ -1017,19 +1184,18 @@ internal static class MathTypeOleInterop
             activationError = error;
         }
 
-        object? running = null;
+        var watch = Stopwatch.StartNew();
         var delayMilliseconds = 20;
-        for (var attempt = 0; attempt < 12; attempt++)
+        while (watch.Elapsed < TimeSpan.FromSeconds(5))
         {
-            running = TryGetObject(format);
+            var running = TryGetObject(format);
             if (running is not null) return running;
-            if (attempt == 11) break;
             Thread.Sleep(delayMilliseconds);
-            delayMilliseconds = Math.Min(80, delayMilliseconds + 10);
+            delayMilliseconds = Math.Min(120, delayMilliseconds + 15);
         }
 
         throw new COMException(
-            "MathType OLE server started but Word did not expose IDataObject."
+            "MathType OLE server started but Word did not expose IDataObject within 5 seconds."
             + (activationError is null ? string.Empty : $" {activationError.Message}"));
     }
 
@@ -1151,10 +1317,14 @@ internal static class MathTypeOleInterop
 
     private static void ConvertContainedMathTypeOleObject(
         object oleObject,
-        MathTypeOleClientSiteNative clientSite)
+        MathTypeOleClientSiteNative clientSite,
+        string progId)
     {
         if (oleObject is not IOleObjectNative native)
             throw new InvalidOperationException("MathType OleCreate object does not expose IOleObject.");
+        if (!TryResolveCapabilities(progId, out var capabilities))
+            throw new InvalidOperationException(
+                $"The installed OLE class '{progId}' is not recognized as MathType.");
         var rectangle = new OleRect();
         var clientSitePointer = Marshal.GetComInterfaceForObject(
             clientSite,
@@ -1162,7 +1332,7 @@ internal static class MathTypeOleInterop
         try
         {
             var hr = native.DoVerb(
-                2, // MathType kConvert / RunForConversion
+                capabilities.RunForConversionVerb,
                 IntPtr.Zero,
                 clientSitePointer,
                 0,
@@ -1789,12 +1959,17 @@ internal static class MathTypeOleInterop
 
     internal static string? ResolveInstalledServerPath()
     {
-        foreach (var progId in new[] { "Equation.DSMT4", "Equation" })
+        foreach (var progId in new[] { CanonicalProgId, "DSEquations", "Equation" })
         {
             if (TryResolveCapabilities(progId, out var capabilities)
-                && !string.IsNullOrWhiteSpace(capabilities.ServerPath))
+                && !string.IsNullOrWhiteSpace(capabilities.ServerPath)
+                && File.Exists(capabilities.ServerPath))
                 return capabilities.ServerPath;
         }
+
+        var appPath = ReadRegisteredApplicationPath("MathType.exe");
+        if (!string.IsNullOrWhiteSpace(appPath) && File.Exists(appPath))
+            return appPath;
 
         foreach (var root in new[]
                  {
@@ -1803,8 +1978,15 @@ internal static class MathTypeOleInterop
                  })
         {
             if (string.IsNullOrWhiteSpace(root)) continue;
-            var candidate = Path.Combine(root, "MathType", "MathType.exe");
-            if (File.Exists(candidate)) return candidate;
+            foreach (var relative in new[]
+                     {
+                         Path.Combine("MathType", "MathType.exe"),
+                         Path.Combine("WIRIS", "MathType", "MathType.exe"),
+                     })
+            {
+                var candidate = Path.Combine(root, relative);
+                if (File.Exists(candidate)) return candidate;
+            }
         }
         return null;
     }
@@ -1817,7 +1999,9 @@ internal static class MathTypeOleInterop
         {
             var expanded = Environment.ExpandEnvironmentVariables(
                 overridePath.Trim().Trim('"'));
-            if (File.Exists(expanded)) return expanded;
+            if (File.Exists(expanded)
+                && IsMathPageBinaryCompatibleWithCurrentProcess(expanded))
+                return expanded;
         }
 
         var architecture = Environment.Is64BitProcess ? "64" : "32";
@@ -1827,11 +2011,7 @@ internal static class MathTypeOleInterop
         {
             var installRoot = Path.GetDirectoryName(serverPath);
             if (!string.IsNullOrWhiteSpace(installRoot))
-                candidates.Add(Path.Combine(
-                    installRoot,
-                    "MathPage",
-                    architecture,
-                    "MathPage.wll"));
+                AddMathPageCandidates(candidates, installRoot!, architecture);
         }
         foreach (var root in new[]
                  {
@@ -1840,20 +2020,162 @@ internal static class MathTypeOleInterop
                  })
         {
             if (!string.IsNullOrWhiteSpace(root))
-                candidates.Add(Path.Combine(
-                    root,
-                    "MathType",
-                    "MathPage",
-                    architecture,
-                    "MathPage.wll"));
+            {
+                AddMathPageCandidates(
+                    candidates,
+                    Path.Combine(root, "MathType"),
+                    architecture);
+                AddMathPageCandidates(
+                    candidates,
+                    Path.Combine(root, "WIRIS", "MathType"),
+                    architecture);
+            }
         }
-        return candidates.FirstOrDefault(File.Exists);
+        return candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(path =>
+                File.Exists(path)
+                && IsMathPageBinaryCompatibleWithCurrentProcess(path));
+    }
+
+    private static bool TryReadProgIdClsid(string progId, out Guid clsid)
+    {
+        clsid = Guid.Empty;
+        using var key = OpenClassesSubKey(progId + "\\CLSID");
+        var value = key?.GetValue(null) as string;
+        return Guid.TryParse(value, out clsid) && clsid != Guid.Empty;
+    }
+
+    private static RegistryKey? OpenClassesSubKey(string relativePath)
+    {
+        try
+        {
+            var merged = Registry.ClassesRoot.OpenSubKey(relativePath);
+            if (merged is not null) return merged;
+        }
+        catch { }
+
+        var views = Environment.Is64BitOperatingSystem
+            ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
+            : new[] { RegistryView.Registry32 };
+        foreach (var view in views)
+        {
+            foreach (var hive in new[]
+                     {
+                         RegistryHive.CurrentUser,
+                         RegistryHive.LocalMachine,
+                     })
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    var key = baseKey.OpenSubKey("Software\\Classes\\" + relativePath);
+                    if (key is not null) return key;
+                }
+                catch
+                {
+                    // Continue across per-user/per-machine and 32/64-bit views.
+                }
+            }
+        }
+        return null;
+    }
+
+    private static string? ReadRegisteredApplicationPath(string executableName)
+    {
+        var views = Environment.Is64BitOperatingSystem
+            ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
+            : new[] { RegistryView.Registry32 };
+        foreach (var view in views)
+        {
+            foreach (var hive in new[]
+                     {
+                         RegistryHive.CurrentUser,
+                         RegistryHive.LocalMachine,
+                     })
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    using var key = baseKey.OpenSubKey(
+                        "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\"
+                        + executableName);
+                    var path = NormalizeLocalServerPath(key?.GetValue(null) as string);
+                    if (!string.IsNullOrWhiteSpace(path)) return path;
+                }
+                catch { }
+            }
+        }
+        return null;
+    }
+
+    private static void AddMathPageCandidates(
+        ICollection<string> candidates,
+        string installRoot,
+        string architecture)
+    {
+        if (string.IsNullOrWhiteSpace(installRoot)) return;
+        candidates.Add(Path.Combine(
+            installRoot,
+            "MathPage",
+            architecture,
+            "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "MathPage", "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "Office Support", "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "MathPage.wll"));
+
+        var mathPageRoot = Path.Combine(installRoot, "MathPage");
+        try
+        {
+            if (!Directory.Exists(mathPageRoot)) return;
+            foreach (var path in Directory.GetFiles(
+                         mathPageRoot,
+                         "MathPage.wll",
+                         SearchOption.AllDirectories))
+                candidates.Add(path);
+        }
+        catch
+        {
+            // Installation discovery is best-effort; explicit candidates remain.
+        }
+    }
+
+    private static bool IsMathPageBinaryCompatibleWithCurrentProcess(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new BinaryReader(stream);
+            if (reader.ReadUInt16() != 0x5A4D) return false; // MZ
+            stream.Position = 0x3C;
+            var peOffset = reader.ReadInt32();
+            if (peOffset < 0 || peOffset > stream.Length - 6) return false;
+            stream.Position = peOffset;
+            if (reader.ReadUInt32() != 0x00004550) return false; // PE\0\0
+            var machine = reader.ReadUInt16();
+            return RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.X86 => machine == 0x014C,
+                Architecture.X64 => machine == 0x8664,
+                Architecture.Arm => machine == 0x01C4,
+                Architecture.Arm64 => machine == 0xAA64,
+                _ => false,
+            };
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? NormalizeLocalServerPath(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        var source = Environment.ExpandEnvironmentVariables(value.Trim());
+        var source = Environment.ExpandEnvironmentVariables(value!.Trim());
         string candidate;
         if (source.StartsWith("\"", StringComparison.Ordinal))
         {

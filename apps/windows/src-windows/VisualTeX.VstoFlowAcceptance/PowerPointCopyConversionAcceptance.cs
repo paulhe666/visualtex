@@ -72,7 +72,7 @@ internal static partial class Program
             // still distinguish the copied picture from its source.
             shape.Copy();
             application.ActiveWindow.View.GotoSlide(2);
-            pastedRange = slide2.Shapes.Paste();
+            pastedRange = PastePowerPointShapesWithRetry(slide2);
             copiedShape = pastedRange[1];
             copiedShape.Select(MsoTriState.msoTrue);
             var copiedPictureSelection = service.ReadSelection();
@@ -116,7 +116,7 @@ internal static partial class Program
             // Copy the OLE on the same slide. The copy inherits both embedded
             // metadata and shape tags, but the owner token must force a new id.
             shape.Copy();
-            pastedRange = slide1.Shapes.Paste();
+            pastedRange = PastePowerPointShapesWithRetry(slide1);
             copiedShape = pastedRange[1];
             copiedShape.Select(MsoTriState.msoTrue);
             var copiedOleSelection = service.ReadSelection();
@@ -276,7 +276,7 @@ internal static partial class Program
 
             // OMML copy gets an independent identity as well.
             shape.Copy();
-            pastedRange = slide1.Shapes.Paste();
+            pastedRange = PastePowerPointShapesWithRetry(slide1);
             copiedShape = pastedRange[1];
             copiedShape.Select(MsoTriState.msoTrue);
             var copiedOmmlSelection = service.ReadSelection();
@@ -708,7 +708,9 @@ internal static partial class Program
             "CreateVectorEmfFromSvg",
             BindingFlags.Public | BindingFlags.Static)
             ?? throw new MissingMethodException(type.FullName, "CreateVectorEmfFromSvg");
-        var result = (string)(method.Invoke(null, new object[] { svgPath, width, height, true })
+        var result = (string)(method.Invoke(
+            null,
+            new object[] { svgPath, width, height, true, 0f })
             ?? throw new InvalidOperationException("PowerPoint EMF preview generation returned null."));
         var diagnostics = type.GetProperty(
             "LastRecordingDiagnostics",
@@ -717,6 +719,44 @@ internal static partial class Program
         if (!string.IsNullOrWhiteSpace(diagnostics))
             Console.WriteLine($"  PowerPoint EMF recording: {diagnostics}");
         return result;
+    }
+
+    private static PowerPoint.ShapeRange PastePowerPointShapesWithRetry(
+        PowerPoint.Slide slide)
+    {
+        PowerPoint.Shapes? shapes = null;
+        Exception? lastError = null;
+        try
+        {
+            shapes = slide.Shapes;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            do
+            {
+                PowerPoint.ShapeRange? pasted = null;
+                try
+                {
+                    pasted = shapes.Paste();
+                    if (pasted is not null && pasted.Count > 0)
+                    {
+                        var result = pasted;
+                        pasted = null;
+                        return result;
+                    }
+                }
+                catch (System.Runtime.InteropServices.COMException error)
+                {
+                    lastError = error;
+                }
+                finally { Release(pasted); }
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(50);
+            }
+            while (watch.Elapsed < TimeSpan.FromSeconds(3));
+            throw new InvalidOperationException(
+                "PowerPoint clipboard did not materialize the copied formula within 3 seconds.",
+                lastError);
+        }
+        finally { Release(shapes); }
     }
 
     private static void AssertPowerPointOle(PowerPoint.Shape shape, string message)

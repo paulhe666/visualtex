@@ -6,6 +6,7 @@ import "./styles-macos-main.css";
 import "./styles-editor-parity.css";
 import "./styles-latest-macos-ui.css";
 import "./styles-windows-shared-latest.css";
+import "./styles-custom-symbol-designer.css";
 
 installBrowserCompatibility();
 installFloatingLayerAutoAvoidance();

@@ -24,6 +24,8 @@ mod ocr_storage;
 mod ocr_offline;
 #[cfg(windows)]
 mod ocr_python_bundle;
+#[cfg(windows)]
+mod system_math_glyphs;
 mod office;
 #[cfg(windows)]
 mod windows_quick_ocr;
@@ -3937,6 +3939,8 @@ pub fn run() {
             set_main_window_keypad_mode,
             get_word_numbering_user_configuration,
             apply_word_numbering_user_configuration,
+            system_math_glyphs::probe_system_math_fonts,
+            system_math_glyphs::extract_system_math_glyph,
             office::lifecycle::set_app_theme,
             office::lifecycle::set_app_editor_layout,
             office::lifecycle::set_app_editor_preferences,

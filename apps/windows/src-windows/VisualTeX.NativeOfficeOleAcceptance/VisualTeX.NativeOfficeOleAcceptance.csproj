@@ -15,21 +15,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
-    <Compile Include="..\VisualTeX.WordVsto\WordFormulaService.cs" Link="WordFormulaService.cs" />
-    <Compile Include="..\VisualTeX.WordVsto\PreparedWordBulkFormula.cs" Link="PreparedWordBulkFormula.cs" />
-    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointFormulaService.cs" Link="PowerPointFormulaService.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOleObjectAccessor.cs" Link="WordOleObjectAccessor.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordBulkImportParser.cs" Link="WordBulkImportParser.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
+    <ProjectReference Include="..\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj" />
+    <ProjectReference Include="..\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj" />
     <Reference Include="Microsoft.CSharp" />
     <COMReference Include="Microsoft Office 16.0 Object Library">
       <Guid>{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}</Guid>

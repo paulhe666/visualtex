@@ -55,7 +55,122 @@ internal static partial class Program
             MathTypeMtefCodec.SemanticSignature(readBack),
             $"Standalone VisualTeX MTEF semantic mismatch. actual='{readBack}'");
         AssertTrue(MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compound),
-            "Standalone VisualTeX CFB does not look like Equation.DSMT4 storage.");
+            "Standalone VisualTeX CFB does not look like a validated MathType storage.");
+
+        var preferredIdentity = MathTypeOleInterop.ResolvePreferredStorageIdentity();
+        AssertEqual(
+            preferredIdentity.Clsid,
+            MathTypeOleStorage.ReadCompoundFileRootClsid(compound),
+            "Standalone MathType storage did not use the installed/compatible class identity.");
+        AssertTrue(
+            !string.IsNullOrWhiteSpace(preferredIdentity.UserType)
+            && preferredIdentity.UserType.IndexOf(
+                "MathType",
+                StringComparison.OrdinalIgnoreCase) >= 0,
+            "Resolved MathType storage user type is not MathType-specific.");
+        AssertTrue(
+            !string.IsNullOrWhiteSpace(preferredIdentity.ProgId),
+            "Resolved MathType storage identity has no ProgID.");
+        if (MathTypeOleInterop.TryResolveCapabilities(
+                "DSEquations",
+                out var versionIndependentCapabilities))
+        {
+            AssertEqual(
+                preferredIdentity.Clsid,
+                versionIndependentCapabilities.ResolvedClsid,
+                "MathType's version-independent ProgID resolved to a different OLE class.");
+            AssertTrue(
+                !string.IsNullOrWhiteSpace(versionIndependentCapabilities.ProgId),
+                "MathType's version-independent ProgID did not resolve a registered class ProgID.");
+        }
+        if (MathTypeOleInterop.TryResolveCapabilities(
+                "Equation.3",
+                out var legacyEquationCapabilities))
+        {
+            // Some MathType installations register an OLE auto-conversion chain
+            // from Microsoft Equation 3.0 to MathType. In that environment the
+            // capability is legitimate, but it must resolve to the actual MathType
+            // class/server rather than accepting Equation.* by name alone.
+            AssertTrue(
+                legacyEquationCapabilities.ResolvedClsid != Guid.Empty
+                && (!string.IsNullOrWhiteSpace(legacyEquationCapabilities.ClassName)
+                    && legacyEquationCapabilities.ClassName!.IndexOf(
+                        "MathType",
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                    || string.Equals(
+                        Path.GetFileName(legacyEquationCapabilities.ServerPath),
+                        "MathType.exe",
+                        StringComparison.OrdinalIgnoreCase)),
+                "Equation.3 capability resolution did not terminate at a registered MathType class.");
+            Console.WriteLine(
+                $"[MATHTYPE COMPAT] Equation.3 auto-converts to MathType class {legacyEquationCapabilities.ResolvedClsid:B} on this machine.");
+        }
+
+        var descriptor = MathTypeOleClipboardProxy.CreateStandaloneObjectDescriptor(
+            120,
+            36,
+            preferredIdentity.Clsid,
+            preferredIdentity.UserType);
+        AssertEqual(
+            preferredIdentity.Clsid,
+            new Guid(descriptor.Skip(4).Take(16).ToArray()),
+            "Standalone MathType OLE descriptor did not carry the selected class ID.");
+        var userTypeOffset = checked((int)BitConverter.ToUInt32(descriptor, 44));
+        AssertTrue(
+            userTypeOffset >= 52 && userTypeOffset < descriptor.Length,
+            "Standalone MathType OLE descriptor has an invalid user-type offset.");
+        var userTypeEnd = userTypeOffset;
+        while (userTypeEnd + 1 < descriptor.Length
+            && (descriptor[userTypeEnd] != 0 || descriptor[userTypeEnd + 1] != 0))
+            userTypeEnd += 2;
+        var descriptorUserType = System.Text.Encoding.Unicode.GetString(
+            descriptor,
+            userTypeOffset,
+            Math.Max(0, userTypeEnd - userTypeOffset));
+        AssertEqual(
+            preferredIdentity.UserType,
+            descriptorUserType,
+            "Standalone MathType OLE descriptor did not carry the selected user type.");
+
+        // A MathType document can be opened on a computer with another MathType
+        // class registration or no MathType installation at all. Its embedded
+        // user type + MTEF-v5 payload are durable; an exact MathType-7 CLSID is not.
+        // Verify that a foreign root CLSID is accepted only because the remaining
+        // CFB identity and Equation Native stream are still genuine MathType.
+        var foreignClsid = new Guid("7E345A40-D53A-4C6C-9CA1-A0D777ACDD43");
+        var foreignClassCompound = MathTypeOleStorage.RewriteCompoundFileRootClsid(
+            compound,
+            foreignClsid);
+        AssertTrue(
+            MathTypeOleStorage.LooksLikeMathTypeCompoundFile(foreignClassCompound),
+            "MathType CFB compatibility still depends on one hard-coded class ID.");
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(mathMl),
+            MathTypeMtefCodec.SemanticSignature(
+                MathTypeOleStorage.ReadMathMl(foreignClassCompound)),
+            "Foreign-class MathType CFB lost equation semantics.");
+        var nonMathTypeIdentityCompound = MathTypeOleStorage.RewriteCompoundFileIdentity(
+            compound,
+            new Guid("0002CE02-0000-0000-C000-000000000046"),
+            "Microsoft Equation 3.0");
+        AssertTrue(
+            !MathTypeOleStorage.LooksLikeMathTypeCompoundFile(nonMathTypeIdentityCompound),
+            "A non-MathType equation CFB with an Equation Native stream was misidentified as MathType.");
+        AssertTrue(
+            !MathTypeOleStorage.LooksLikeMathTypeCompoundFile(new byte[512]),
+            "An arbitrary/non-CFB payload was misidentified as MathType.");
+
+        var forwardXslt = WordOmmlConverter.ResolveTransformPath();
+        var reverseXslt = WordOmmlConverter.ResolveReverseTransformPath();
+        AssertTrue(File.Exists(forwardXslt),
+            "Registered Office installation did not resolve MML2OMML.XSL.");
+        AssertTrue(File.Exists(reverseXslt),
+            "Registered Office installation did not resolve OMML2MML.XSL.");
+        var transformProbe = WordOmmlConverter.TransformMathMlToOmml(
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>+</mo><mn>1</mn></math>");
+        AssertTrue(
+            transformProbe.IndexOf("oMath", StringComparison.OrdinalIgnoreCase) >= 0,
+            "Resolved Office Math stylesheet did not produce OMML.");
 
         static bool Contains(byte[] data, params byte[] pattern)
         {

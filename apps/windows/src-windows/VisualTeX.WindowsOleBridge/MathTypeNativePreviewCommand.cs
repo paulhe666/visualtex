@@ -273,9 +273,15 @@ internal static class MathTypeNativePreviewCommand
         {
             var expanded = Environment.ExpandEnvironmentVariables(
                 overridePath.Trim().Trim('"'));
-            if (File.Exists(expanded)) return expanded;
+            if (File.Exists(expanded)
+                && IsNativeLibraryCompatibleWithCurrentProcess(expanded))
+                return expanded;
         }
 
+        // The preview command runs in the packaged x64 sidecar, independently of
+        // Word's bitness. Resolve MathPage for this process rather than assuming the
+        // Office/VSTO architecture. This keeps x86 Word compatible with an x64
+        // renderer while rejecting a wrong-bitness override before LoadLibrary.
         var architecture = Environment.Is64BitProcess ? "64" : "32";
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(mathTypeServerPath))
@@ -284,11 +290,7 @@ internal static class MathTypeNativePreviewCommand
                 mathTypeServerPath.Trim().Trim('"'));
             var installRoot = Path.GetDirectoryName(expandedServer);
             if (!string.IsNullOrWhiteSpace(installRoot))
-                candidates.Add(Path.Combine(
-                    installRoot,
-                    "MathPage",
-                    architecture,
-                    "MathPage.wll"));
+                AddMathPageCandidates(candidates, installRoot!, architecture);
         }
         foreach (var root in new[]
                  {
@@ -296,15 +298,87 @@ internal static class MathTypeNativePreviewCommand
                      Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                  })
         {
-            if (!string.IsNullOrWhiteSpace(root))
-                candidates.Add(Path.Combine(
-                    root,
-                    "MathType",
-                    "MathPage",
-                    architecture,
-                    "MathPage.wll"));
+            if (string.IsNullOrWhiteSpace(root)) continue;
+            AddMathPageCandidates(
+                candidates,
+                Path.Combine(root, "MathType"),
+                architecture);
+            AddMathPageCandidates(
+                candidates,
+                Path.Combine(root, "WIRIS", "MathType"),
+                architecture);
         }
-        return candidates.FirstOrDefault(File.Exists);
+        return candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(path =>
+                File.Exists(path)
+                && IsNativeLibraryCompatibleWithCurrentProcess(path));
+    }
+
+    private static void AddMathPageCandidates(
+        ICollection<string> candidates,
+        string installRoot,
+        string architecture)
+    {
+        if (string.IsNullOrWhiteSpace(installRoot)) return;
+        candidates.Add(Path.Combine(
+            installRoot,
+            "MathPage",
+            architecture,
+            "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "MathPage", "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "Office Support", "MathPage.wll"));
+        candidates.Add(Path.Combine(installRoot, "MathPage.wll"));
+
+        // MathType point releases have used more than one MathPage subdirectory.
+        // Search only the bounded MathPage subtree, never an entire Program Files
+        // hierarchy, and validate PE architecture before loading a candidate.
+        var mathPageRoot = Path.Combine(installRoot, "MathPage");
+        try
+        {
+            if (!Directory.Exists(mathPageRoot)) return;
+            foreach (var path in Directory.GetFiles(
+                         mathPageRoot,
+                         "MathPage.wll",
+                         SearchOption.AllDirectories))
+                candidates.Add(path);
+        }
+        catch
+        {
+            // Explicit candidates above remain usable when enumeration is denied.
+        }
+    }
+
+    private static bool IsNativeLibraryCompatibleWithCurrentProcess(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new BinaryReader(stream);
+            if (reader.ReadUInt16() != 0x5A4D) return false; // MZ
+            stream.Position = 0x3C;
+            var peOffset = reader.ReadInt32();
+            if (peOffset < 0 || peOffset > stream.Length - 6) return false;
+            stream.Position = peOffset;
+            if (reader.ReadUInt32() != 0x00004550) return false; // PE\0\0
+            var machine = reader.ReadUInt16();
+            return System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+            {
+                System.Runtime.InteropServices.Architecture.X86 => machine == 0x014C,
+                System.Runtime.InteropServices.Architecture.X64 => machine == 0x8664,
+                System.Runtime.InteropServices.Architecture.Arm => machine == 0x01C4,
+                System.Runtime.InteropServices.Architecture.Arm64 => machine == 0xAA64,
+                _ => false,
+            };
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static T? GetDelegate<T>(IntPtr module, string name) where T : class

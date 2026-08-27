@@ -3,13 +3,13 @@ import type {
   CustomSymbolDesignerSourceArchive,
   CustomSymbolDesignerSourceAsset,
   CustomSymbolDesignerSourceLayer,
-} from "./customSymbolTypes.ts";
+} from "./customSymbolTypes";
 import type {
   CustomSymbolDesignerDocument,
   CustomSymbolDesignerGeometryLayer,
   CustomSymbolDesignerGlyphLayer,
   CustomSymbolDesignerLayer,
-} from "./customSymbolDesignerTypes.ts";
+} from "./customSymbolDesignerTypes";
 
 function deepClone<T>(value: T): T {
   if (typeof structuredClone === "function") return structuredClone(value);
@@ -24,6 +24,11 @@ function assetKey(layer: CustomSymbolDesignerGlyphLayer) {
   });
 }
 
+/**
+ * Compact the editable designer document into a source archive. Identical glyph
+ * assets are stored once, so three non-destructive slices of the same \int do
+ * not duplicate the original MathJax path three times in localStorage.
+ */
 export function createCustomSymbolDesignerSourceArchive(
   document: CustomSymbolDesignerDocument,
 ): CustomSymbolDesignerSourceArchive {
@@ -38,6 +43,7 @@ export function createCustomSymbolDesignerSourceArchive(
       visible: layer.visible,
       locked: layer.locked,
       transform: deepClone(layer.transform),
+      ...(layer.effects ? { effects: deepClone(layer.effects) } : {}),
       ...(layer.clipRect ? { clipRect: deepClone(layer.clipRect) } : {}),
     };
     if (layer.kind === "glyph") {
@@ -84,6 +90,7 @@ export function restoreCustomSymbolDesignerDocument(
         visible: layer.visible,
         locked: layer.locked,
         transform: deepClone(layer.transform),
+        effects: layer.effects ? deepClone(layer.effects) : undefined,
         clipRect: layer.clipRect ? deepClone(layer.clipRect) : null,
       };
       if (layer.kind === "glyph") {

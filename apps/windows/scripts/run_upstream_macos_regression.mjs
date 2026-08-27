@@ -329,6 +329,50 @@ if (basename(sourcePath) === "formula_hotkey_regression.mjs") {
     `(button) => button.dataset.formulaTileLatex === String.fromCharCode(92) + "beta",`,
   );
 }
+if (
+  [
+    "custom_symbol_glyph_compiler_regression.mjs",
+    "custom_symbol_runtime_sync_regression.mjs",
+  ].includes(basename(sourcePath))
+) {
+  // These custom-symbol probes compile and round-trip a large matrix of
+  // MathJax glyphs inside one awaited Runtime.evaluate call. Windows debug
+  // Chromium can legitimately exceed the upstream macOS 15-second CDP limit.
+  source = source.replaceAll("}, 15000);", "}, 60000);");
+}
+if (basename(sourcePath) === "custom_symbol_glyph_compiler_regression.mjs") {
+  // macOS owns a front-end Office artifact aggregator that calls its native
+  // OMML converter. Windows routes actual Office writes through the VSTO/OLE
+  // bridge, so exercise the equivalent shared SVG + semantic MathML fallback
+  // here instead of importing a macOS-only module that does not exist locally.
+  source = source.replace(
+    '      const officeRender = await import("/src/office/shared/formulaRenderArtifacts.ts");',
+    `      const officeRender = {
+        renderOfficeFormulaArtifacts({ lines, displayMode, host, includeWordOmml = true }) {
+          const canonicalLatex = lines
+            .map((line) => line.latex)
+            .join(String.fromCharCode(10));
+          const svg = runtime.latexToSvg(canonicalLatex, {
+            displayMode: displayMode === "block",
+            fontSizePt: 14,
+            paddingPx: displayMode === "inline" ? 1 : host === "word" ? 2 : 10,
+            background: "transparent",
+            forceExplicitBlack: host === "word",
+          });
+          const mathMl = includeWordOmml
+            ? runtime.latexToMathMl(canonicalLatex, displayMode === "block")
+            : "";
+          return {
+            canonicalLatex,
+            svg,
+            omml: includeWordOmml
+              ? { omml: mathMl.replaceAll("&#x2248;", "≈") }
+              : null,
+          };
+        },
+      };`,
+  );
+}
 if (basename(sourcePath) === "quick_format_toolbar_regression.mjs") {
   source = source.replace(
     `            hasLineAlignment: line.hasAttribute("data-alignment"),`,

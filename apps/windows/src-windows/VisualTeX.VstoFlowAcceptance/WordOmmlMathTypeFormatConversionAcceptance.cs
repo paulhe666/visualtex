@@ -618,6 +618,7 @@ internal static partial class Program
             displayRange = math.Range.Duplicate;
             displayRange.Select();
 
+            var paragraphCountBefore = host.Document.Paragraphs.Count;
             var beforeCount = CountMathTypeOleShapes(host.Document);
             host.AddIn.OnConvertOmmlToMathTypeSelection(new object());
             WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(5));
@@ -629,6 +630,14 @@ internal static partial class Program
                 beforeCount + 1,
                 CountMathTypeOleShapes(host.Document),
                 "Single display OMML fast path did not create one MathType OLE.");
+            AssertEqual(
+                paragraphCountBefore,
+                host.Document.Paragraphs.Count,
+                "Single display OMML→MathType inserted an extra paragraph below the converted equation.");
+            AssertMathTypeDisplayFollowedImmediatelyByText(
+                host.Document,
+                "display-after",
+                "Single display OMML→MathType");
             var text = host.Document.Content.Text ?? string.Empty;
             AssertTrue(
                 text.IndexOf("display-before", StringComparison.Ordinal) >= 0
@@ -643,6 +652,64 @@ internal static partial class Program
             Release(math);
             Release(maths);
             Release(nativeRange);
+        }
+    }
+
+    private static void AssertMathTypeDisplayFollowedImmediatelyByText(
+        Word.Document document,
+        string expectedFollowingText,
+        string context)
+    {
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? followingParagraph = null;
+        Word.Range? followingRange = null;
+        Word.Paragraph? formulaParagraph = null;
+        Word.Range? formulaRange = null;
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? shape = null;
+        try
+        {
+            paragraphs = document.Paragraphs;
+            var followingIndex = -1;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(followingRange);
+                followingRange = null;
+                Release(followingParagraph);
+                followingParagraph = paragraphs[index];
+                followingRange = followingParagraph.Range;
+                var text = (followingRange.Text ?? string.Empty)
+                    .Trim('\r', '\a', '\v', '\f', '\t', ' ');
+                if (!string.Equals(text, expectedFollowingText, StringComparison.Ordinal))
+                    continue;
+                followingIndex = index;
+                break;
+            }
+            AssertTrue(followingIndex > 1,
+                $"{context} could not resolve the paragraph following the converted display formula.");
+
+            formulaParagraph = paragraphs[followingIndex - 1];
+            formulaRange = formulaParagraph.Range;
+            shapes = formulaRange.InlineShapes;
+            var mathTypeCount = 0;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(shape);
+                shape = shapes[index];
+                if (MathTypeOleInterop.IsMathTypeOle(shape)) mathTypeCount++;
+            }
+            AssertEqual(1, mathTypeCount,
+                $"{context} left an empty paragraph between the MathType display equation and '{expectedFollowingText}'.");
+        }
+        finally
+        {
+            Release(shape);
+            Release(shapes);
+            Release(formulaRange);
+            Release(formulaParagraph);
+            Release(followingRange);
+            Release(followingParagraph);
+            Release(paragraphs);
         }
     }
 
@@ -1083,6 +1150,13 @@ internal static partial class Program
                 visualTeXReferenceTarget.NumberText.Trim(),
                 visualTeXReferenceTextBefore.Trim(),
                 "OMML reference setup did not create a dynamic VTEqNum reference to the second formula.");
+            AssertVisualTeXReferenceAlias(
+                application,
+                document,
+                visualTeXReferenceAlias,
+                visualTeXReferenceTextBefore,
+                secondOmmlFormulaId,
+                "OMML reference setup");
             var preReverseAliases = MathTypeEquationReferences.CaptureFormatConversionAliasesFromVisualTeX(
                 document,
                 secondOmmlFormulaId);
@@ -1184,6 +1258,7 @@ internal static partial class Program
                 finalSecondOmmlFormulaId,
                 "second MathType→OMML live conversion");
             AssertVisualTeXReferenceAlias(
+                application,
                 document,
                 visualTeXReferenceAlias,
                 visualTeXReferenceTextBefore,
@@ -1210,6 +1285,7 @@ internal static partial class Program
                 finalSecondOmmlFormulaId,
                 "second MathType→OMML save/reopen");
             AssertVisualTeXReferenceAlias(
+                application,
                 document,
                 visualTeXReferenceAlias,
                 visualTeXReferenceTextBefore,
@@ -1574,6 +1650,7 @@ internal static partial class Program
         Word.Field? field = null;
         Word.Range? code = null;
         Word.Field? goTo = null;
+        Word.Field? visualTeXGoTo = null;
         Word.Range? result = null;
         Word.Selection? selection = null;
         try
@@ -1631,6 +1708,13 @@ internal static partial class Program
                     Release(goTo);
                     goTo = field;
                     field = null;
+                    continue;
+                }
+                if (text.StartsWith("GOTOBUTTON " + visualTeXAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    Release(visualTeXGoTo);
+                    visualTeXGoTo = field;
+                    field = null;
                 }
             }
             AssertTrue(mathTypeRefFound,
@@ -1639,12 +1723,16 @@ internal static partial class Program
                 $"{stage} lost the dynamic REF field for {visualTeXAlias}.");
             AssertTrue(goTo is not null,
                 $"{stage} lost GOTOBUTTON {mathTypeAlias}.");
+            AssertTrue(visualTeXGoTo is not null,
+                $"{stage} lost GOTOBUTTON {visualTeXAlias}.");
 
             // Updating nested REF fields can cause Word to rematerialize the outer
             // GOTOBUTTON field. Resolve it again immediately before DoClick so the
             // test exercises the same live field object a real user double-clicks.
             Release(goTo);
             goTo = null;
+            Release(visualTeXGoTo);
+            visualTeXGoTo = null;
             Release(code);
             code = null;
             Release(field);
@@ -1670,25 +1758,41 @@ internal static partial class Program
                 {
                     expectedGoToSelectionStart = Math.Max(document.Content.Start, code.Start - 1);
                 }
-                if (!text.StartsWith("GOTOBUTTON " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
+                if (text.StartsWith("GOTOBUTTON " + mathTypeAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    Release(goTo);
+                    goTo = field;
+                    field = null;
                     continue;
-                Release(goTo);
-                goTo = field;
+                }
+                if (!text.StartsWith("GOTOBUTTON " + visualTeXAlias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                Release(visualTeXGoTo);
+                visualTeXGoTo = field;
                 field = null;
             }
             AssertTrue(goTo is not null,
                 $"{stage} lost live GOTOBUTTON {mathTypeAlias} after REF refresh.");
+            AssertTrue(visualTeXGoTo is not null,
+                $"{stage} lost live GOTOBUTTON {visualTeXAlias} after REF refresh.");
             AssertTrue(expectedGoToSelectionStart >= 0,
                 $"{stage} could not resolve the MTPlaceRef owner of {mathTypeAlias}.");
             goTo!.DoClick();
             selection = application.Selection;
             AssertEqual(expectedGoToSelectionStart, selection.Start,
                 $"{stage} GOTOBUTTON did not navigate to the MTPlaceRef owner of {mathTypeAlias}; bookmark={mathTypeRange.Start}:{mathTypeRange.End}, selection={selection.Start}:{selection.End}.");
+            Release(selection);
+            selection = null;
+            visualTeXGoTo!.DoClick();
+            selection = application.Selection;
+            AssertEqual(expectedGoToSelectionStart, selection.Start,
+                $"{stage} GOTOBUTTON did not navigate to the MTPlaceRef owner of {visualTeXAlias}; bookmark={visualTeXRange.Start}:{visualTeXRange.End}, selection={selection.Start}:{selection.End}.");
         }
         finally
         {
             Release(selection);
             Release(result);
+            Release(visualTeXGoTo);
             Release(goTo);
             Release(code);
             Release(field);
@@ -1702,6 +1806,7 @@ internal static partial class Program
     }
 
     private static void AssertVisualTeXReferenceAlias(
+        Word.Application application,
         Word.Document document,
         string alias,
         string expectedReferenceText,
@@ -1717,6 +1822,8 @@ internal static partial class Program
         Word.Field? field = null;
         Word.Range? code = null;
         Word.Range? result = null;
+        Word.Field? goTo = null;
+        Word.Selection? selection = null;
         var referenceFound = false;
         try
         {
@@ -1746,19 +1853,36 @@ internal static partial class Program
                 field = fields[index];
                 code = field.Code;
                 var text = (code.Text ?? string.Empty).TrimStart();
-                if (!text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                if (text.StartsWith("REF " + alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    field.Update();
+                    Release(result);
+                    result = field.Result;
+                    AssertEqual(expectedReferenceText.Trim(), (result.Text ?? string.Empty).Trim(),
+                        $"{stage} changed the dynamic VisualTeX reference result.");
+                    referenceFound = true;
                     continue;
-                field.Update();
-                Release(result);
-                result = field.Result;
-                AssertEqual(expectedReferenceText.Trim(), (result.Text ?? string.Empty).Trim(),
-                    $"{stage} changed the dynamic VisualTeX reference result.");
-                referenceFound = true;
+                }
+                if (!text.StartsWith("GOTOBUTTON " + alias, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                Release(goTo);
+                goTo = field;
+                field = null;
             }
             AssertTrue(referenceFound, $"{stage} lost dynamic REF {alias}.");
+            AssertTrue(goTo is not null,
+                $"{stage} lost the navigable GOTOBUTTON field for {alias}.");
+            goTo!.DoClick();
+            selection = application.Selection;
+            AssertTrue(
+                selection.Start >= Math.Max(document.Content.Start, aliasRange.Start - 1)
+                && selection.Start <= Math.Min(document.Content.End, aliasRange.End + 1),
+                $"{stage} GOTOBUTTON did not navigate to {alias}; bookmark={aliasRange.Start}:{aliasRange.End}, selection={selection.Start}:{selection.End}.");
         }
         finally
         {
+            Release(selection);
+            Release(goTo);
             Release(result);
             Release(code);
             Release(field);
@@ -1811,9 +1935,9 @@ internal static partial class Program
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>s</mi><mo>=</mo><mn>9</mn></math>";
 
         var mathTypeProcessesBefore = SnapshotMathTypeProcessIds();
-        if (mathTypeProcessesBefore.Count != 0)
-            throw new InvalidOperationException(
-                "OMML↔MathType acceptance requires MathType.exe to be absent before the test starts.");
+        if (mathTypeProcessesBefore.Count > 0)
+            Console.WriteLine(
+                $"[OMML↔MATHTYPE CORE] Preserving {mathTypeProcessesBefore.Count} pre-existing MathType process(es); every stage still verifies that conversion starts no additional process.");
 
         Word.Application? application = null;
         Word.Document? document = null;

@@ -139,6 +139,18 @@ public interface IWordRibbonCallbacks
     [DispId(42)]
     void OnRedrawDocumentMathTypeToLatex(object control);
 
+    [DispId(43)]
+    void OnConvertVisualTeXToOmmlSelection(object control);
+
+    [DispId(44)]
+    void OnConvertVisualTeXToOmmlDocument(object control);
+
+    [DispId(45)]
+    void OnConvertOmmlToVisualTeXSelection(object control);
+
+    [DispId(46)]
+    void OnConvertOmmlToVisualTeXDocument(object control);
+
 }
 
 [ComVisible(true)]
@@ -191,8 +203,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
               <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="转换选中部分" onAction="OnConvertMathTypeToOmmlSelection" />
               <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="全文批量转换" onAction="OnConvertMathTypeToOmmlDocument" />
             </menu>
-            <button id="VisualTeX.WordVsto.ConvertSelectedToOmml" label="VisualTeX → OMML" screentip="将所选 VisualTeX 公式转换为 Word OMML" supertip="将所选 VisualTeX 公式转换为 Word 原生 OMML；可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。" tag="convertToOmml" getImage="GetRibbonImage" onAction="OnConvertSelectedToOmml" />
-            <button id="VisualTeX.WordVsto.ConvertSelected" label="OMML → VisualTeX" screentip="将所选 OMML 公式转换为 VisualTeX OLE" supertip="将所选 Word OMML 公式转换为可嵌入编辑的 VisualTeX OLE，并保留 VisualTeX 双击编辑能力。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
+            <menu id="VisualTeX.WordVsto.VisualTeXToOmml" label="VisualTeX → OMML" screentip="将 VisualTeX OLE 转换为 Word OMML" supertip="使用统一格式转换管线，将选中范围或全文中的 VisualTeX OLE 原位转换为 Word 原生 OMML，并保留编号和公式引用。">
+              <button id="VisualTeX.WordVsto.VisualTeXToOmmlSelection" label="转换选中部分" onAction="OnConvertVisualTeXToOmmlSelection" />
+              <button id="VisualTeX.WordVsto.VisualTeXToOmmlDocument" label="全文批量转换" onAction="OnConvertVisualTeXToOmmlDocument" />
+            </menu>
+            <menu id="VisualTeX.WordVsto.OmmlToVisualTeX" label="OMML → VisualTeX" screentip="将 Word OMML 转换为 VisualTeX OLE" supertip="使用统一格式转换管线，将选中范围或全文中的 Word OMML 原位转换为 VisualTeX OLE，并保留编号和公式引用。">
+              <button id="VisualTeX.WordVsto.OmmlToVisualTeXSelection" label="转换选中部分" onAction="OnConvertOmmlToVisualTeXSelection" />
+              <button id="VisualTeX.WordVsto.OmmlToVisualTeXDocument" label="全文批量转换" onAction="OnConvertOmmlToVisualTeXDocument" />
+            </menu>
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
             <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" screentip="更新 VisualTeX 与 MathType 公式编号" supertip="刷新当前文档中的 VisualTeX 编号，以及 MathType 原生 MTChap/MTSec/MTEqn 编号和对应公式引用。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
@@ -2744,7 +2762,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                 document,
                                 selection,
                                 target,
-                                EquationReferenceStyle.Parenthesized);
+                                EquationReferenceStyle.Parenthesized,
+                                referenceInsertionColor);
                         }
                         return DescribeReferenceTarget(target);
                     }
@@ -2780,7 +2799,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             document,
                             selection,
                             dialog.SelectedTarget,
-                            dialog.SelectedStyle);
+                            dialog.SelectedStyle,
+                            referenceInsertionColor);
                     }
                     return DescribeReferenceTarget(dialog.SelectedTarget);
                 }

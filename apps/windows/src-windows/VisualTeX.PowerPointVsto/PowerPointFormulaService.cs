@@ -1104,6 +1104,53 @@ public sealed class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
+            var expectedName = $"VisualTeX_{formulaId}";
+
+            // Shape names are indexed directly by PowerPoint. Resolve the exact
+            // object name captured when the editor opened, then the canonical
+            // VisualTeX_<FormulaId> name, before considering any shape inventory.
+            // This makes ordinary edit/replace and each delayed OLE geometry repair
+            // O(number of slides), rather than O(all shapes in the presentation).
+            // The full metadata scan remains only for legacy/renamed shapes.
+            for (var slideIndex = 1; slideIndex <= slides.Count; slideIndex++)
+            {
+                Slide? slide = null;
+                Shapes? shapes = null;
+                try
+                {
+                    slide = slides[slideIndex];
+                    shapes = slide.Shapes;
+                    foreach (var name in new[] { preferredObjectId, expectedName })
+                    {
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        Shape? direct = null;
+                        try
+                        {
+                            try { direct = shapes[name!]; }
+                            catch { direct = null; }
+                            if (direct is null) continue;
+                            var metadata = ReadMetadata(direct);
+                            if (!string.Equals(
+                                    metadata?.FormulaId,
+                                    formulaId,
+                                    StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            var foundSlide = slide;
+                            var foundShape = direct;
+                            slide = null;
+                            direct = null;
+                            return (foundSlide, foundShape);
+                        }
+                        finally { Release(direct); }
+                    }
+                }
+                finally
+                {
+                    Release(shapes);
+                    Release(slide);
+                }
+            }
+
             for (var slideIndex = 1; slideIndex <= slides.Count; slideIndex++)
             {
                 Slide? slide = null;
@@ -1119,18 +1166,16 @@ public sealed class PowerPointFormulaService
                         {
                             shape = shapes[shapeIndex];
                             var metadata = ReadMetadata(shape);
-                            var preferredMatch = !string.IsNullOrEmpty(preferredObjectId)
-                                && shape.Name == preferredObjectId;
-                            var metadataMatch = metadata?.FormulaId == formulaId
-                                || shape.Name == $"VisualTeX_{formulaId}";
-                            if (metadataMatch || (preferredMatch && metadata?.FormulaId == formulaId))
-                            {
-                                var foundSlide = slide;
-                                var foundShape = shape;
-                                slide = null;
-                                shape = null;
-                                return (foundSlide, foundShape);
-                            }
+                            if (!string.Equals(
+                                    metadata?.FormulaId,
+                                    formulaId,
+                                    StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            var foundSlide = slide;
+                            var foundShape = shape;
+                            slide = null;
+                            shape = null;
+                            return (foundSlide, foundShape);
                         }
                         finally { Release(shape); }
                     }
@@ -1656,6 +1701,12 @@ public sealed class PowerPointFormulaService
             _oleGeometryRestoreGenerations.TryGetValue(generationKey, out var currentGeneration)
             && currentGeneration == generation;
 
+        void CompleteGeneration()
+        {
+            if (IsCurrentGeneration())
+                _oleGeometryRestoreGenerations.Remove(generationKey);
+        }
+
         void Restore()
         {
             if (!IsCurrentGeneration()) return;
@@ -1698,13 +1749,22 @@ public sealed class PowerPointFormulaService
         post(() =>
         {
             Restore();
-            post(Restore);
+            post(() =>
+            {
+                Restore();
+                if (delayedPost is null)
+                    CompleteGeneration();
+            });
         });
         if (delayedPost is not null)
         {
             delayedPost(Restore, 60);
             delayedPost(Restore, 140);
-            delayedPost(Restore, 240);
+            delayedPost(() =>
+            {
+                try { Restore(); }
+                finally { CompleteGeneration(); }
+            }, 320);
         }
     }
 
@@ -1733,7 +1793,15 @@ public sealed class PowerPointFormulaService
 
     private static void MoveToZOrder(Shape shape, int target)
     {
-        for (var attempts = 0; attempts < 512 && shape.ZOrderPosition > target; attempts++)
+        var current = shape.ZOrderPosition;
+        var requiredMoves = Math.Max(0, current - target);
+        // A fixed 512-attempt ceiling silently failed on dense technical slides.
+        // Bound work by the actual number of required moves instead, with a small
+        // allowance for PowerPoint regrouping/reindexing shapes during replacement.
+        var maxAttempts = requiredMoves + 8;
+        for (var attempts = 0;
+             attempts < maxAttempts && shape.ZOrderPosition > target;
+             attempts++)
             shape.ZOrder(MsoZOrderCmd.msoSendBackward);
     }
 

@@ -28,6 +28,16 @@ internal static class WordFormulaMetadataReader
         return ApplyIdentityBookmark(shape, TryReadNativeOle(shape));
     }
 
+    internal static FormulaMetadata? TryReadEmbeddedNativeOle(InlineShape shape)
+    {
+        if (shape is null || !IsNativeOle(shape)) return null;
+        // Structural batch migration must sometimes repair VTO_ bookmarks after
+        // Word expands/moves them while a preceding numbered table is dismantled.
+        // In that narrow window the embedded OLE payload is the only authoritative
+        // identity. Do not apply a possibly-corrupted Word identity bookmark here.
+        return TryReadNativeOle(shape);
+    }
+
     internal static FormulaMetadata? TryReadCached(InlineShape shape) =>
         ApplyIdentityBookmark(shape, TryReadCachedPreview(shape));
 

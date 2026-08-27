@@ -15,6 +15,7 @@ internal static class MathTypeWordOpenXml
     private const uint AldusPlaceableKey = 0x9AC6CDD7;
     private const ushort PlaceableInch = 2304;
     private const int MmAnisotropic = 8;
+    private const int MaximumFlatOpcCharacters = 192 * 1024 * 1024;
 
     private static readonly XNamespace PackageNamespace =
         "http://schemas.microsoft.com/office/2006/xmlPackage";
@@ -131,6 +132,7 @@ internal static class MathTypeWordOpenXml
     {
         if (string.IsNullOrWhiteSpace(wordOpenXml))
             return Array.Empty<OleSnapshot>();
+        EnsureFlatOpcSize(wordOpenXml, "Word OLE snapshot package");
 
         var package = XDocument.Parse(wordOpenXml, LoadOptions.PreserveWhitespace);
         var documentPart = FindPart(package, "/word/document.xml");
@@ -182,8 +184,16 @@ internal static class MathTypeWordOpenXml
                                 binary.Value
                                     .Where(character => !char.IsWhiteSpace(character))
                                     .ToArray());
-                            try { snapshot.CompoundFile = Convert.FromBase64String(encoded); }
-                            catch (FormatException) { snapshot.CompoundFile = Array.Empty<byte>(); }
+                            try
+                            {
+                                snapshot.CompoundFile = DecodeCompoundFileBase64(
+                                    encoded,
+                                    "Flat OPC OLE snapshot");
+                            }
+                            catch (InvalidDataException)
+                            {
+                                snapshot.CompoundFile = Array.Empty<byte>();
+                            }
                         }
                     }
                 }
@@ -197,6 +207,7 @@ internal static class MathTypeWordOpenXml
     {
         if (string.IsNullOrWhiteSpace(wordOpenXml))
             throw new InvalidDataException("Word returned empty Flat OPC for the MathType equation.");
+        EnsureFlatOpcSize(wordOpenXml, "MathType Flat OPC package");
 
         var document = XDocument.Parse(wordOpenXml, LoadOptions.PreserveWhitespace);
         var references = ResolveObjectReferences(document);
@@ -260,6 +271,10 @@ internal static class MathTypeWordOpenXml
         if (!(widthPt > 0) || !(heightPt > 0))
             throw new InvalidDataException(
                 $"Invalid MathType preview size {widthPt}x{heightPt} pt.");
+        var storageIdentity = MathTypeOleStorage.ReadCompoundFileIdentity(compoundFile);
+        var oleProgId = string.IsNullOrWhiteSpace(storageIdentity.ProgId)
+            ? MathTypeOleInterop.CanonicalProgId
+            : storageIdentity.ProgId;
 
         var imageRelationshipId = "rId1";
         var oleRelationshipId = "rId2";
@@ -341,7 +356,7 @@ internal static class MathTypeWordOpenXml
         var oleObject = new XElement(
             OfficeNamespace + "OLEObject",
             new XAttribute("Type", "Embed"),
-            new XAttribute("ProgID", "Equation.DSMT4"),
+            new XAttribute("ProgID", oleProgId),
             new XAttribute("ShapeID", shapeId),
             new XAttribute("DrawAspect", "Content"),
             new XAttribute("ObjectID", objectId),
@@ -454,7 +469,7 @@ internal static class MathTypeWordOpenXml
                     compoundFile)));
         var xmlText = package.ToString(SaveOptions.DisableFormatting);
         var validation = Read(xmlText);
-        if (!string.Equals(validation.ProgId, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase)
+        if (!string.Equals(validation.ProgId, oleProgId, StringComparison.OrdinalIgnoreCase)
             || !validation.CompoundFile.SequenceEqual(compoundFile)
             || !validation.PreviewWmf.SequenceEqual(previewWmf))
             throw new InvalidDataException(
@@ -779,11 +794,13 @@ internal static class MathTypeWordOpenXml
         var oleObject = document.Descendants(OfficeNamespace + "OLEObject").SingleOrDefault()
             ?? throw new InvalidDataException("Flat OPC does not contain exactly one OLEObject.");
         var progId = (string?)oleObject.Attribute("ProgID") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(progId)
-            || !(string.Equals(progId, "Equation", StringComparison.OrdinalIgnoreCase)
-                || progId.StartsWith("Equation.", StringComparison.OrdinalIgnoreCase)))
+        if (string.IsNullOrWhiteSpace(progId))
             throw new InvalidDataException(
-                $"Flat OPC OLE object has unexpected ProgID '{progId}'.");
+                "Flat OPC OLE object has no ProgID.");
+        // Alternate MathType releases/registrations are validated by the embedded
+        // CFB identity and MTEF payload in Read(), not by an Equation.* name prefix.
+        // This keeps offline documents portable while still rejecting non-MathType
+        // equation servers before any rewrite is accepted.
         var oleRelationshipId = (string?)oleObject.Attribute(OfficeRelationshipNamespace + "id")
             ?? throw new InvalidDataException("Flat OPC OLEObject has no relationship id.");
 
@@ -838,6 +855,36 @@ internal static class MathTypeWordOpenXml
             throw new InvalidDataException(
                 $"Expected exactly one Flat OPC part '{partName}', found {matches.Length}.");
         return matches[0];
+    }
+
+    private static void EnsureFlatOpcSize(string wordOpenXml, string context)
+    {
+        if (wordOpenXml.Length > MaximumFlatOpcCharacters)
+            throw new InvalidDataException(
+                $"{context} exceeds the supported safety limit of {MaximumFlatOpcCharacters} characters.");
+    }
+
+    private static byte[] DecodeCompoundFileBase64(
+        string encoded,
+        string context)
+    {
+        var maximumEncodedLength =
+            ((long)MathTypeOleStorage.MaximumCompoundFileBytes + 2L) / 3L * 4L + 4096L;
+        if (encoded.Length > maximumEncodedLength)
+            throw new InvalidDataException(
+                $"{context} exceeds the supported MathType OLE safety limit of {MathTypeOleStorage.MaximumCompoundFileBytes} bytes.");
+        byte[] compoundFile;
+        try { compoundFile = Convert.FromBase64String(encoded); }
+        catch (FormatException error)
+        {
+            throw new InvalidDataException(
+                $"{context} contains invalid base64 data.",
+                error);
+        }
+        if (compoundFile.Length > MathTypeOleStorage.MaximumCompoundFileBytes)
+            throw new InvalidDataException(
+                $"{context} exceeds the supported MathType OLE safety limit of {MathTypeOleStorage.MaximumCompoundFileBytes} bytes.");
+        return compoundFile;
     }
 
     private static byte[] ReadBinaryPart(XDocument document, string partName)

@@ -750,18 +750,31 @@ internal static class WordEquationNumbering
     {
         entries = Array.Empty<NativeEquationCaptionEntry>();
         referenceCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        bool Fail(string reason)
+        {
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+                    "1",
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal))
+                TraceNumberingPerformance($"[perf] update-numbers.health-fail reason={reason}");
+            return false;
+        }
         Range? content = null;
         try
         {
             content = document.Content;
             var xml = content.WordOpenXML ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(xml)) return false;
+            if (string.IsNullOrWhiteSpace(xml)) return Fail("empty-openxml");
 
             var bookmarkMatches = Regex.Matches(
                 xml,
                 @"<w:bookmarkStart\b[^>]*\bw:name=""(?<name>VTEq(?:Cap|Num)?_[^""]+)""[^>]*/?>",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (bookmarkMatches.Count == 0) return false;
+            if (bookmarkMatches.Count == 0) return Fail("no-numbering-bookmarks");
 
             var visibleIds = new List<string>();
             var captionIds = new List<string>();
@@ -799,7 +812,7 @@ internal static class WordEquationNumbering
             if (visibleIds.Count == 0
                 || visibleIds.Count != captionIds.Count
                 || visibleIds.Count != numberIds.Count)
-                return false;
+                return Fail($"bookmark-count-mismatch visible={visibleIds.Count}[{string.Join(",", visibleIds)}] caption={captionIds.Count}[{string.Join(",", captionIds)}] number={numberIds.Count}[{string.Join(",", numberIds)}]");
 
             var visibleSet = visibleIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var captionSet = captionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -809,7 +822,7 @@ internal static class WordEquationNumbering
                 || numberSet.Count != numberIds.Count
                 || !visibleSet.SetEquals(captionSet)
                 || !visibleSet.SetEquals(numberSet))
-                return false;
+                return Fail("bookmark-id-set-mismatch");
 
             // A complete numbering scaffold whose three-column table no longer
             // contains a VisualTeX formula is an orphan (for example after a user
@@ -820,7 +833,7 @@ internal static class WordEquationNumbering
                 xml,
                 @"<w:bookmarkStart\b(?=[^>]*\bw:name=""VTEq_(?<guid>[0-9A-F]{32})"")[^>]*/>",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (visibleStartMatches.Count != visibleSet.Count) return false;
+            if (visibleStartMatches.Count != visibleSet.Count) return Fail($"visible-bookmark-start-count-mismatch starts={visibleStartMatches.Count} expected={visibleSet.Count}");
             foreach (Match visibleStart in visibleStartMatches)
             {
                 var formulaId = Guid.ParseExact(
@@ -834,9 +847,9 @@ internal static class WordEquationNumbering
                     "</w:tbl>",
                     visibleStart.Index,
                     StringComparison.OrdinalIgnoreCase);
-                if (tableStart < 0 || tableEnd <= visibleStart.Index) return false;
+                if (tableStart < 0 || tableEnd <= visibleStart.Index) return Fail($"visible-bookmark-outside-table formulaId={formulaId}");
                 tableEnd += "</w:tbl>".Length;
-                if (tableEnd - tableStart > 262144) return false;
+                if (tableEnd - tableStart > 262144) return Fail($"numbering-table-too-large formulaId={formulaId}");
                 var tableXml = xml.Substring(tableStart, tableEnd - tableStart);
                 var hasOleFormula = tableXml.IndexOf(
                     "ProgID=\"VisualTeX.Formula.1\"",
@@ -844,14 +857,14 @@ internal static class WordEquationNumbering
                 var hasOmmlFormula = tableXml.IndexOf(
                     $"w:name=\"{WordOmmlFormulaStore.BookmarkName(formulaId)}\"",
                     StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!hasOleFormula && !hasOmmlFormula) return false;
+                if (!hasOleFormula && !hasOmmlFormula) return Fail($"numbering-table-has-no-owned-formula formulaId={formulaId}");
             }
 
             var startMatches = Regex.Matches(
                 xml,
                 @"<w:bookmarkStart\b(?=[^>]*\bw:id=""(?<id>-?\d+)"")(?=[^>]*\bw:name=""VTEqNum_(?<guid>[0-9A-F]{32})"")[^>]*/>",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (startMatches.Count != numberSet.Count) return false;
+            if (startMatches.Count != numberSet.Count) return Fail($"number-bookmark-start-count-mismatch starts={startMatches.Count} expected={numberSet.Count}");
 
             var result = new List<NativeEquationCaptionEntry>(startMatches.Count);
             var seenNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -864,7 +877,7 @@ internal static class WordEquationNumbering
                     return false;
                 var formulaId = formulaGuid.ToString("D");
                 if (!numberSet.Contains(formulaId) || !seenNumbers.Add(formulaId))
-                    return false;
+                    return Fail($"duplicate-or-unknown-number-bookmark formulaId={formulaId}");
 
                 var bookmarkId = Regex.Escape(startMatch.Groups["id"].Value);
                 var endMatch = Regex.Match(
@@ -873,9 +886,9 @@ internal static class WordEquationNumbering
                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
                     TimeSpan.FromSeconds(1));
                 if (!endMatch.Success || endMatch.Index <= startMatch.Index)
-                    return false;
+                    return Fail($"number-bookmark-end-missing formulaId={formulaId}");
                 if (endMatch.Index - startMatch.Index > 16384)
-                    return false;
+                    return Fail($"number-bookmark-range-too-large formulaId={formulaId}");
 
                 var segment = xml.Substring(
                     startMatch.Index + startMatch.Length,
@@ -890,14 +903,14 @@ internal static class WordEquationNumbering
                     textMatches.Cast<Match>()
                         .Select(match => System.Net.WebUtility.HtmlDecode(
                             match.Groups["text"].Value))));
-                if (string.IsNullOrWhiteSpace(numberText)) return false;
+                if (string.IsNullOrWhiteSpace(numberText)) return Fail($"number-bookmark-empty formulaId={formulaId}");
                 result.Add(new NativeEquationCaptionEntry(
                     formulaId,
                     startMatch.Index,
                     numberText));
             }
 
-            if (result.Count != visibleSet.Count) return false;
+            if (result.Count != visibleSet.Count) return Fail($"number-entry-count-mismatch entries={result.Count} expected={visibleSet.Count}");
 
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var referenceMatches = Regex.Matches(
@@ -921,7 +934,7 @@ internal static class WordEquationNumbering
             // on the conservative full reconciliation path.
             if (visibleSet.Any(formulaId =>
                     !counts.TryGetValue(formulaId, out var count) || count < 1))
-                return false;
+                return Fail("generated-ref-missing");
 
             entries = result.OrderBy(entry => entry.Position).ToArray();
             referenceCounts = counts;
@@ -2576,7 +2589,7 @@ internal static class WordEquationNumbering
             return planned
                 .Select(formulaId => new
                 {
-                    FormulaId = formulaId,
+                    FormulaId = formulaId!,
                     Position = FindOpenXmlCaptionPosition(xml, formulaId),
                 })
                 .OrderByDescending(item => item.Position)
@@ -2989,7 +3002,8 @@ internal static class WordEquationNumbering
             document,
             formulaRange,
             formulaId,
-            knownNumberedTable);
+            knownNumberedTable,
+            useEmbeddedOleIdentity: useConversionSafeVisibleNumber);
         TraceStage("ensure-table");
         if (!reuseExistingScaffold)
         {
@@ -3116,7 +3130,8 @@ internal static class WordEquationNumbering
         Document document,
         Range formulaRange,
         string formulaId,
-        Table? knownNumberedTable = null)
+        Table? knownNumberedTable = null,
+        bool useEmbeddedOleIdentity = false)
     {
         if (knownNumberedTable is not null || IsNumberedEquationTable(formulaRange)) return;
         RemoveVisibleEquationNumber(document, formulaId);
@@ -3170,7 +3185,8 @@ internal static class WordEquationNumbering
                     document,
                     paragraphRange,
                     formulaId,
-                    formulaRange);
+                    formulaRange,
+                    useEmbeddedOleIdentity);
                 return;
             }
             sourceContent = paragraphRange.Duplicate;
@@ -3304,7 +3320,8 @@ internal static class WordEquationNumbering
         Document document,
         Range paragraphRange,
         string formulaId,
-        Range formulaRange)
+        Range formulaRange,
+        bool useEmbeddedOleIdentity)
     {
         Range? conversionRange = null;
         Table? table = null;
@@ -3397,13 +3414,15 @@ internal static class WordEquationNumbering
                 document,
                 table,
                 formulaId,
-                formulaRange);
+                formulaRange,
+                useEmbeddedOleIdentity: useEmbeddedOleIdentity);
             RemoveNumberingTableCenterDecorations(document, table, formulaRange);
             RefreshFormulaRangeInNumberedTable(
                 document,
                 table,
                 formulaId,
-                formulaRange);
+                formulaRange,
+                useEmbeddedOleIdentity: useEmbeddedOleIdentity);
         }
         finally
         {
@@ -3612,7 +3631,8 @@ internal static class WordEquationNumbering
         Table table,
         string formulaId,
         Range formulaRange,
-        bool allowUnanchoredOmml = false)
+        bool allowUnanchoredOmml = false,
+        bool useEmbeddedOleIdentity = false)
     {
         Cell? centerCell = null;
         Range? centerRange = null;
@@ -3631,7 +3651,9 @@ internal static class WordEquationNumbering
             {
                 Release(shape);
                 shape = shapes[index];
-                var metadata = WordFormulaMetadataReader.TryRead(shape);
+                var metadata = useEmbeddedOleIdentity
+                    ? WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
+                    : WordFormulaMetadataReader.TryRead(shape);
                 if (metadata is null
                     || !string.Equals(
                         metadata.FormulaId,
@@ -5679,6 +5701,15 @@ internal static class WordEquationNumbering
             }
             else
             {
+                // Word does not reliably remove a bookmark when deleting the
+                // bookmarked range if that range lives in the hidden native-caption
+                // Frame immediately between numbered tables. In batch format
+                // conversion the first source caption can otherwise collapse to a
+                // zero-length VTEqCap_* bookmark and survive after its formula has
+                // been replaced, making the freshly-built target numbering look
+                // unhealthy and triggering a destructive full reconciliation.
+                // Detach ownership explicitly before deleting the caption content.
+                bookmark.Delete();
                 range.Delete();
             }
         }
@@ -7755,8 +7786,16 @@ internal static class WordEquationNumbering
         Document document,
         Selection selection,
         EquationReferenceTarget target,
-        EquationReferenceStyle style)
+        EquationReferenceStyle style,
+        WdColor? preferredInsertionColor = null)
     {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (selection is null) throw new ArgumentNullException(nameof(selection));
+        if (target is null) throw new ArgumentNullException(nameof(target));
+        if (target.Source != EquationReferenceSource.VisualTeX)
+            throw new InvalidOperationException(
+                "The selected equation is not a VisualTeX/OMML reference target.");
+
         var prefix = style switch
         {
             EquationReferenceStyle.EquationPrefix => "式（",
@@ -7770,36 +7809,17 @@ internal static class WordEquationNumbering
             _ => string.Empty,
         };
 
-        Range? insertion = null;
-        Fields? fields = null;
-        Field? field = null;
-        Range? result = null;
-        try
-        {
-            if (!string.IsNullOrEmpty(prefix)) selection.TypeText(prefix);
-            insertion = selection.Range.Duplicate;
-            insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
-            fields = document.Fields;
-            object fieldType = WdFieldEmpty;
-            object fieldCode = $"REF {NativeNumberBookmarkName(target.FormulaId)} \\h";
-            object preserveFormatting = true;
-            field = fields.Add(
-                insertion,
-                ref fieldType,
-                ref fieldCode,
-                ref preserveFormatting);
-            NormalizeReferenceResult(field);
-            result = field.Result;
-            selection.SetRange(result.End, result.End);
-            if (!string.IsNullOrEmpty(suffix)) selection.TypeText(suffix);
-        }
-        finally
-        {
-            Release(result);
-            Release(field);
-            Release(fields);
-            Release(insertion);
-        }
+        // A direct REF field updates its text, but Word does not treat it like the
+        // native MathType equation reference that users can double-click. Use the
+        // same real Word field tree for every VisualTeX/OMML reference: an outer
+        // GOTOBUTTON routes navigation and one nested REF keeps the number live.
+        WordEquationReferenceFields.InsertNavigableReference(
+            document,
+            selection,
+            NativeNumberBookmarkName(target.FormulaId),
+            prefix,
+            suffix,
+            preferredInsertionColor);
     }
 
     internal static int FreezeFormulaCrossReferences(
