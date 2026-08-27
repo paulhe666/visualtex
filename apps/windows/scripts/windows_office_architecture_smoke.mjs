@@ -40,8 +40,10 @@ assert.ok(oleProject.includes("net8.0-windows"));
 assert.ok(oleProject.includes("win-x64"));
 assert.ok(oleProject.includes("PublishSingleFile>true"));
 assert.ok(oleProject.includes("SelfContained>true"));
-assert.ok(wordProject.includes("net48"));
-assert.ok(powerpointProject.includes("net48"));
+assert.ok(wordProject.includes("<TargetFramework>net472</TargetFramework>"));
+assert.ok(powerpointProject.includes("<TargetFramework>net472</TargetFramework>"));
+assert.ok(wordProject.includes("Microsoft.NETFramework.ReferenceAssemblies.net472"));
+assert.ok(powerpointProject.includes("Microsoft.NETFramework.ReferenceAssemblies.net472"));
 for (const vstoProject of [wordProject, powerpointProject]) {
   assert.ok(vstoProject.includes("<Platforms>x86;x64</Platforms>"));
   assert.ok(vstoProject.includes("'$(Platform)' == 'x86'"));
@@ -52,6 +54,28 @@ assert.ok(nativeOfficeAcceptanceProject.includes("<TargetFramework>net48</Target
 assert.ok(nativeOfficeAcceptanceProject.includes("<Platforms>x86;x64</Platforms>"));
 assert.ok(nativeOfficeAcceptanceProject.includes("Microsoft.Office.Interop.Word"));
 assert.ok(nativeOfficeAcceptanceProject.includes("Microsoft.Office.Interop.PowerPoint"));
+
+const customSymbolDialog = await source(
+  "src/components/CustomSymbolDesignerDialog.tsx",
+);
+const customSymbolRegistry = await source("src/math/customSymbolRegistry.ts");
+const customSymbolDesignerStyles = await source(
+  "src/styles-custom-symbol-designer.css",
+);
+assert.ok(customSymbolDialog.includes('? { enabled: false, width: 30 }'));
+assert.ok(customSymbolRegistry.includes("finiteNumber(value.outline.width, 30)"));
+assert.match(
+  customSymbolDesignerStyles,
+  /\.custom-symbol-designer-viewport-controls\s*\{[^}]*bottom:\s*auto;[^}]*width:\s*max-content;[^}]*height:\s*auto;/s,
+);
+assert.match(
+  customSymbolDesignerStyles,
+  /\.custom-symbol-geometry-icon\.is-line::before,[^}]*transform:\s*none;/s,
+);
+assert.match(
+  customSymbolDesignerStyles,
+  /\.custom-symbol-geometry-icon\.is-arrow::before\s*\{[^}]*transform:\s*none;/s,
+);
 
 const nativeOleProject = await source(
   "src-windows/VisualTeX.FormulaOleServer/VisualTeX.FormulaOleServer.vcxproj",
@@ -273,6 +297,9 @@ const vstoOlePngExtractor = await source(
 const wordEquationNumbering = await source(
   "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.cs",
 );
+const wordEquationReferenceFields = await source(
+  "src-windows/VisualTeX.WordVsto/WordEquationReferenceFields.cs",
+);
 const wordOmmlConverter = await source(
   "src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs",
 );
@@ -446,7 +473,8 @@ assert.ok(officeServer.includes('"/preferences"'));
 assert.ok(officeServer.includes("powerpoint_default_font_size_pt"));
 assert.ok(officeState.includes('office-preferences.json'));
 assert.ok(officeState.includes("DEFAULT_POWERPOINT_FORMULA_FONT_SIZE_PT: f64 = 20.0"));
-assert.ok(officeState.includes("persist_powerpoint_default_font_size_pt"));
+assert.ok(officeState.includes("set_powerpoint_default_font_size_pt"));
+assert.ok(officeState.includes("persist_office_preferences"));
 assert.ok(officeState.includes("app_editor_layout"));
 assert.ok(officeState.includes("normalize_app_editor_layout"));
 assert.ok(settingsDialog.includes("data-powerpoint-default-font-size"));
@@ -836,14 +864,18 @@ assert.ok(wordEquationNumbering.includes("Heading1DotId"));
 assert.ok(wordEquationNumbering.includes("Heading2DashId"));
 assert.ok(wordEquationNumbering.includes("GetHeadingNumberAnchors"));
 assert.ok(wordEquationNumbering.includes("ResolveEquationNumberScope"));
-assert.ok(wordEquationNumbering.includes('REF {NativeNumberBookmarkName(target.FormulaId)}'));
+assert.ok(wordEquationNumbering.includes("WordEquationReferenceFields.InsertNavigableReference"));
+assert.ok(wordEquationNumbering.includes("NativeNumberBookmarkName(target.FormulaId)"));
+assert.ok(wordEquationReferenceFields.includes("WdFieldType.wdFieldGoToButton"));
+assert.ok(wordEquationReferenceFields.includes("WdFieldType.wdFieldRef"));
+assert.ok(wordEquationReferenceFields.includes("\\\\* CHARFORMAT \\\\!"));
 assert.ok(wordEquationNumbering.includes("TryResolveVisualTeXReferenceBookmark"));
 assert.ok(wordEquationNumbering.includes("EquationBookmarkPrefix"));
 assert.ok(wordEquationNumbering.includes("UpdateNativeCrossReferences"));
 assert.ok(!wordEquationNumbering.includes("EquationReferenceBookmarkPrefix"));
 assert.ok(wordEquationNumbering.includes("WdTabAlignmentCenter"));
 assert.ok(wordEquationNumbering.includes("WdTabAlignmentRight"));
-assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.FormulaIds"));
+assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.BookmarkedFormulaIds"));
 assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.FindByFormulaId"));
 assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.GetEquationRange"));
 assert.ok(wordEquationNumbering.includes("FormulaFontSize.ResolveSemanticFontSize"));
@@ -937,7 +969,11 @@ assert.ok(installVsto.includes('-Name "NativeOleEnabled"'));
 assert.ok(installVsto.includes("hashManifest.dependencies"));
 assert.ok(installVsto.includes("Assert-NoOfficeProcesses"));
 assert.ok(installVsto.includes("Assert-VstoRuntimeInstalled"));
-assert.ok(installVsto.includes("Assert-NetFramework48Installed"));
+assert.ok(installVsto.includes("Assert-NetFramework472Installed"));
+assert.ok(installVsto.includes("$minimumRelease = 461808"));
+assert.ok(installVsto.includes(".NET Framework 4.7.2 or newer is required"));
+assert.ok(!installVsto.includes("Assert-NetFramework48Installed"));
+assert.ok(!installVsto.includes("expected at least 528040"));
 assert.ok(installVsto.includes("Assert-OfficeApplicationsInstalled"));
 assert.ok(installVsto.includes("Assert-MsiArchitecture"));
 assert.ok(installVsto.includes("Assert-OfficeAddinRegistration"));
@@ -1014,7 +1050,11 @@ assert.ok(ribbonDispatchSmoke.includes("QueryInterface"));
 assert.ok(ribbonDispatchSmoke.includes("VisualTeX.WordVsto.Tab"));
 assert.ok(ribbonDispatchSmoke.includes("VisualTeX.PowerPointVsto.Tab"));
 assert.ok(ribbonDispatchSmoke.includes("SysWOW64"));
+assert.ok(ribbonDispatchSmoke.includes("\\net472\\VisualTeX.WordVsto.dll"));
+assert.ok(ribbonDispatchSmoke.includes("\\net472\\VisualTeX.PowerPointVsto.dll"));
 assert.ok(dependencyLoadingSmoke.includes("System.Text.Json, Version=8.0.0.0"));
+assert.ok(dependencyLoadingSmoke.includes("\\net472\\VisualTeX.WordVsto.dll"));
+assert.ok(dependencyLoadingSmoke.includes("\\net472\\VisualTeX.PowerPointVsto.dll"));
 assert.ok(nativeMsi.includes("3,1,32,1"));
 assert.ok(nativeMsi.includes('Name="CodeBase"'));
 assert.ok(nativeMsi.includes('Name="Mode" Type="string" Value="vsto"'));
@@ -1027,6 +1067,8 @@ assert.ok(nativeMsi.includes('Bitness="$(var.ComponentBitness)"'));
 assert.ok(nativeMsiProject.includes(">always32</ComponentBitness>"));
 assert.ok(nativeMsiProject.includes(">always64</ComponentBitness>"));
 assert.ok(nativeMsiProject.includes("ComponentBitness=$(ComponentBitness)"));
+assert.ok(nativeMsiProject.includes("VisualTeX.WordVsto\\bin\\$(Platform)\\$(Configuration)\\net472"));
+assert.ok(nativeMsiProject.includes("VisualTeX.PowerPointVsto\\bin\\$(Platform)\\$(Configuration)\\net472"));
 assert.ok(!nativeMsi.includes("OleManifestEnabled"));
 assert.ok(dependencyLoadingSmoke.includes("System.Numerics.Vectors, Version=4.1.4.0"));
 assert.ok(dependencyLoadingSmoke.includes("SerializeJson"));
@@ -1037,6 +1079,8 @@ assert.ok(buildWindowsOffice.includes('PackagePlatform = "x64"'));
 assert.ok(buildWindowsOffice.includes('PackagePlatform = "x86"'));
 assert.ok(buildWindowsOffice.includes('OlePlatform = "Win32"'));
 assert.ok(buildWindowsOffice.includes("VisualTeX-WindowsOffice-VSTO-$packagePlatform.msi"));
+assert.ok(buildWindowsOffice.includes('$vstoTargetFramework = "net472"'));
+assert.ok(buildWindowsOffice.includes("microsoft.netframework.referenceassemblies.$vstoTargetFramework"));
 assert.ok(installVsto.includes("Resolve-OfficePlatform"));
 assert.ok(installVsto.includes("RegistryView]::Registry32"));
 assert.ok(installVsto.includes("RegistryView]::Registry64"));

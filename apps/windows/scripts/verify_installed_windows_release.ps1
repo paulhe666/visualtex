@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$ExpectedAppVersion = "1.2.5",
-    [string]$ExpectedOfficeMsiVersion = "1.0.41.0"
+    [string]$ExpectedOfficeMsiVersion = "1.0.42.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,8 +77,8 @@ if (-not $appVersion.StartsWith($ExpectedAppVersion, [StringComparison]::Ordinal
     throw "Installed VisualTeX version is $appVersion; expected $ExpectedAppVersion."
 }
 
-$expectedWordDll = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$officePlatform\Release\net48\VisualTeX.WordVsto.dll"
-$expectedPowerPointDll = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$officePlatform\Release\net48\VisualTeX.PowerPointVsto.dll"
+$expectedWordDll = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$officePlatform\Release\net472\VisualTeX.WordVsto.dll"
+$expectedPowerPointDll = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$officePlatform\Release\net472\VisualTeX.PowerPointVsto.dll"
 $oleBuildPlatform = if ($officePlatform -eq "x86") { "Win32" } else { "x64" }
 $expectedOleServer = Join-Path $root "src-windows\artifacts\formula-ole-server\$oleBuildPlatform\Release\VisualTeX.FormulaOleServer.exe"
 foreach ($entry in @(

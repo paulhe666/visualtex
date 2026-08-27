@@ -178,8 +178,8 @@ function Test-RibbonComDispatch(
     }
 }
 
-$wordAssembly = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$Platform\$Configuration\net48\VisualTeX.WordVsto.dll"
-$powerPointAssembly = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$Platform\$Configuration\net48\VisualTeX.PowerPointVsto.dll"
+$wordAssembly = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$Platform\$Configuration\net472\VisualTeX.WordVsto.dll"
+$powerPointAssembly = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$Platform\$Configuration\net472\VisualTeX.PowerPointVsto.dll"
 
 Test-RibbonComDispatch `
     $wordAssembly `

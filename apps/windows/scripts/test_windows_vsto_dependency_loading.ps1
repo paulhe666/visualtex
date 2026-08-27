@@ -118,11 +118,11 @@ if (-not [string]::IsNullOrWhiteSpace($ProbeAssemblyPath)) {
 
 $probes = @(
     [ordered]@{
-        Assembly = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$Platform\$Configuration\net48\VisualTeX.WordVsto.dll"
+        Assembly = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$Platform\$Configuration\net472\VisualTeX.WordVsto.dll"
         Class = "VisualTeX.WordVsto.ThisAddIn"
     },
     [ordered]@{
-        Assembly = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$Platform\$Configuration\net48\VisualTeX.PowerPointVsto.dll"
+        Assembly = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$Platform\$Configuration\net472\VisualTeX.PowerPointVsto.dll"
         Class = "VisualTeX.PowerPointVsto.ThisAddIn"
     }
 )

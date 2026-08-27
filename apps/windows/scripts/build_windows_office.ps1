@@ -14,6 +14,7 @@ $installerProject = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Install
 $oleServerProject = Join-Path $root "src-windows\VisualTeX.FormulaOleServer\VisualTeX.FormulaOleServer.vcxproj"
 $resourceRoot = Join-Path $root "src-tauri\resources\windows-office"
 $oleBuildRoot = Join-Path $root "src-windows\artifacts\formula-ole-server"
+$vstoTargetFramework = "net472"
 
 function Stop-BuildOleServerProcesses {
     $normalizedRoot = [IO.Path]::GetFullPath($oleBuildRoot).TrimEnd('\') + '\'
@@ -78,8 +79,7 @@ $env:DOTNET_HOST_PATH = $dotnet
 $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = Split-Path -Parent $dotnet
 $env:MSBuildSDKsPath = Join-Path $sdk.FullName "Sdks"
 $env:MSBuildEnableWorkloadResolver = "false"
-$referenceRoot = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.netframework.referenceassemblies.net48\1.0.3\build"
-if (-not (Test-Path $referenceRoot)) { throw ".NET Framework 4.8 reference assemblies package is missing." }
+$referenceRoot = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.netframework.referenceassemblies.$vstoTargetFramework\1.0.3\build"
 
 New-Item $resourceRoot -ItemType Directory -Force | Out-Null
 
@@ -103,6 +103,9 @@ foreach ($architecture in $architectures) {
     foreach ($project in @($wordProject, $powerPointProject)) {
         & $dotnet restore $project --ignore-failed-sources -p:Platform=$packagePlatform -r $runtimeIdentifier
         if ($LASTEXITCODE -ne 0) { throw "NuGet restore failed: $project" }
+        if (-not (Test-Path $referenceRoot)) {
+            throw ".NET Framework 4.7.2 reference assemblies package is missing after restore: $referenceRoot"
+        }
         & $msbuild $project /m /p:Configuration=$Configuration /p:Platform=$packagePlatform /p:TargetFrameworkRootPath=$referenceRoot
         if ($LASTEXITCODE -ne 0) { throw "$packagePlatform VSTO build failed: $project" }
     }
@@ -127,8 +130,8 @@ foreach ($architecture in $architectures) {
     if (-not (Test-Path $msi)) { throw "$packagePlatform VisualTeX VSTO MSI was not produced: $msi" }
     Copy-Item $msi (Join-Path $resourceRoot $packageFileName) -Force
 
-    $wordOutput = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$packagePlatform\$Configuration\net48\VisualTeX.WordVsto.dll"
-    $powerPointOutput = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$packagePlatform\$Configuration\net48\VisualTeX.PowerPointVsto.dll"
+    $wordOutput = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$packagePlatform\$Configuration\$vstoTargetFramework\VisualTeX.WordVsto.dll"
+    $powerPointOutput = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$packagePlatform\$Configuration\$vstoTargetFramework\VisualTeX.PowerPointVsto.dll"
     $oleServerOutput = Join-Path $root "src-windows\artifacts\formula-ole-server\$olePlatform\$Configuration\VisualTeX.FormulaOleServer.exe"
     if (-not (Test-Path $wordOutput) -or -not (Test-Path $powerPointOutput) -or -not (Test-Path $oleServerOutput)) {
         throw "The $packagePlatform VSTO and native OLE outputs required for SHA-256 verification are missing."

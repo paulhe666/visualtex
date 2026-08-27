@@ -19,8 +19,8 @@
       VstoFilesComponentGuid=$(VstoFilesComponentGuid);
       OleServerFilesComponentGuid=$(OleServerFilesComponentGuid);
       ComponentBitness=$(ComponentBitness);
-      WordOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WordVsto\bin\$(Platform)\$(Configuration)\net48;
-      PowerPointOutput=$(MSBuildThisFileDirectory)..\VisualTeX.PowerPointVsto\bin\$(Platform)\$(Configuration)\net48;
+      WordOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WordVsto\bin\$(Platform)\$(Configuration)\net472;
+      PowerPointOutput=$(MSBuildThisFileDirectory)..\VisualTeX.PowerPointVsto\bin\$(Platform)\$(Configuration)\net472;
       ContractsOutput=$(MSBuildThisFileDirectory)..\VisualTeX.WindowsOffice.Contracts\bin\$(Platform)\$(Configuration)\netstandard2.0;
       OleServerOutput=$(MSBuildThisFileDirectory)..\artifacts\formula-ole-server\$(OleServerPlatform)\$(Configuration)
     </DefineConstants>

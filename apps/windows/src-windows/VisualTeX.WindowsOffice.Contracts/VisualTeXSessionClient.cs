@@ -178,7 +178,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         }
         catch (PlatformNotSupportedException)
         {
-            // .NET Framework 4.8 supports this property. Keep the system TLS
+            // .NET Framework 4.7.2 supports this property. Keep the system TLS
             // default only on runtimes where the property is unavailable.
         }
         handler.ServerCertificateCustomValidationCallback = CaptureServerCertificate;

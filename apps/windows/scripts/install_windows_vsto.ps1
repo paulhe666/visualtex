@@ -464,7 +464,7 @@ function Assert-VstoRuntimeInstalled([string]$Architecture) {
     throw "Microsoft Visual Studio Tools for Office Runtime is missing or incomplete at HKLM\$subKey. Checked x86 and x64 registry views for Office $Architecture."
 }
 
-function Assert-NetFramework48Installed {
+function Assert-NetFramework472Installed {
     $releaseValues = @()
     foreach ($architecture in @("x64", "x86")) {
         $release = Get-RegistryValue `
@@ -476,13 +476,14 @@ function Assert-NetFramework48Installed {
         if ($null -ne $release) { $releaseValues += [int]$release }
     }
     if ($releaseValues.Count -eq 0) {
-        throw ".NET Framework 4 Full installation was not found. VisualTeX Office integration targets .NET Framework 4.8."
+        throw ".NET Framework 4 Full installation was not found. VisualTeX Office integration targets .NET Framework 4.7.2."
     }
     $releaseValue = ($releaseValues | Measure-Object -Maximum).Maximum
-    if ($releaseValue -lt 528040) {
-        throw ".NET Framework 4.8 or newer is required. Detected Release=$releaseValue; expected at least 528040."
+    $minimumRelease = 461808
+    if ($releaseValue -lt $minimumRelease) {
+        throw ".NET Framework 4.7.2 or newer is required. Detected Release=$releaseValue; expected at least $minimumRelease."
     }
-    Add-DiagnosticCheck ".NET Framework 4.8" $true "Release=$releaseValue" "prerequisite"
+    Add-DiagnosticCheck ".NET Framework 4.7.2" $true "Release=$releaseValue" "prerequisite"
 }
 
 function Resolve-MachineOfficeInstallRoot([string]$Architecture) {
@@ -928,7 +929,7 @@ try {
     Write-Host "Detected Office platform: $script:resolvedOfficePlatform"
     Assert-OfficeApplicationsInstalled $script:resolvedOfficePlatform
     Assert-VstoRuntimeInstalled $script:resolvedOfficePlatform
-    Assert-NetFramework48Installed
+    Assert-NetFramework472Installed
     Assert-CurrentUserCertificateTrusted
     $sharedConfiguration = Assert-SharedCompanionConfiguration $script:resolvedVisualTeXPath
     $officeUiResource = Assert-OfficeUiResources $script:resolvedVisualTeXPath

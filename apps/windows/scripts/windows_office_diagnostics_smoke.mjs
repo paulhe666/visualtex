@@ -48,7 +48,7 @@ const preflightMarkers = [
   "Resolve-OfficePlatform",
   "Assert-OfficeApplicationsInstalled",
   "Assert-VstoRuntimeInstalled",
-  "Assert-NetFramework48Installed",
+  "Assert-NetFramework472Installed",
   "Assert-CurrentUserCertificateTrusted",
   "Assert-SharedCompanionConfiguration",
   "Assert-OfficeUiResources",
@@ -67,6 +67,9 @@ for (const marker of preflightMarkers) {
   assert.ok(index >= 0, `installer preflight missing/bad order: ${marker}`);
   assert.ok(index < firstDestructive, `installer runs ${marker} after destructive changes`);
 }
+assert.ok(installer.includes("$minimumRelease = 461808"));
+assert.ok(installer.includes(".NET Framework 4.7.2 or newer is required"));
+assert.ok(!installer.includes("expected at least 528040"));
 for (const required of [
   "Static installation verification",
   "Static Office integration installed and verified",
@@ -220,7 +223,7 @@ assert.ok(!backend.includes("OLE_CATALOG_KEY"));
 assert.ok(!backend.includes("register_ole_catalog"));
 assert.ok(!backend.includes("office_catalog_path"));
 
-assert.ok(hooks.includes('-VisualTeXPath "$INSTDIR\\VisualTeX.exe"'));
+assert.ok(hooks.includes('-VisualTeXPath "$INSTDIR\\${MAINBINARYNAME}.exe"'));
 assert.ok(!hooks.includes("visualtex_office_static_runtime_verified"));
 assert.ok(!hooks.includes("visualtex_office_verify_connections"));
 assert.ok(!hooks.includes("visualtex_office_verification_deferred"));

@@ -891,7 +891,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
     updateLayer(selectedLayer.id, (layer) => {
       const defaults =
         kind === "outline"
-          ? { enabled: false, width: 72 }
+          ? { enabled: false, width: 30 }
           : { enabled: false, depth: 240, angleDeg: 35, steps: 8 };
       return {
         ...layer,

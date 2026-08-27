@@ -405,7 +405,7 @@ function normalizeDesignerLayerEffects(
   if (!isRecord(value)) return undefined;
   const effects: CustomSymbolLayerEffects = {};
   if (isRecord(value.outline)) {
-    const width = finiteNumber(value.outline.width, 72);
+    const width = finiteNumber(value.outline.width, 30);
     if (width < 1 || width > 1_200) {
       throw new Error("Custom symbol outline width is outside the supported range.");
     }

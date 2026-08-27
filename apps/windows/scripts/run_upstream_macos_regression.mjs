@@ -138,7 +138,31 @@ if (basename(sourcePath) === "custom_symbol_designer_ui_regression.mjs") {
   );
   source = source.replace(
     '    assert.equal(registered.preview, true);',
-    '    assert.equal(registered.preview, true);\n    process.stdout.write("[custom-symbol-designer] production UI, eraser and auto-crop verified\\n");\n    return;',
+    [
+      '    assert.equal(registered.preview, true);',
+      '    const windowsDesignerLayout = await client.evaluate(`(() => {',
+      '      const shell = document.querySelector("[data-custom-symbol-canvas-shell]");',
+      '      const controls = shell?.querySelector(".custom-symbol-designer-viewport-controls");',
+      '      const lineIcon = document.querySelector(\'[data-add-custom-symbol-geometry="line"] .custom-symbol-geometry-icon\');',
+      '      const arrowIcon = document.querySelector(\'[data-add-custom-symbol-geometry="arrow"] .custom-symbol-geometry-icon\');',
+      '      const shellRect = shell?.getBoundingClientRect();',
+      '      const controlsRect = controls?.getBoundingClientRect();',
+      '      return {',
+      '        shell: shellRect ? { width: shellRect.width, height: shellRect.height } : null,',
+      '        controls: controlsRect ? { width: controlsRect.width, height: controlsRect.height } : null,',
+      '        lineTransform: lineIcon ? getComputedStyle(lineIcon, "::before").transform : "",',
+      '        arrowTransform: arrowIcon ? getComputedStyle(arrowIcon, "::before").transform : "",',
+      '      };',
+      '    })()`);',
+      '    assert.ok(windowsDesignerLayout.shell && windowsDesignerLayout.controls, JSON.stringify(windowsDesignerLayout));',
+      '    assert.ok(windowsDesignerLayout.controls.height <= 64, JSON.stringify(windowsDesignerLayout));',
+      '    assert.ok(windowsDesignerLayout.controls.height < windowsDesignerLayout.shell.height * 0.2, JSON.stringify(windowsDesignerLayout));',
+      '    assert.equal(windowsDesignerLayout.lineTransform, "none", JSON.stringify(windowsDesignerLayout));',
+      '    assert.equal(windowsDesignerLayout.arrowTransform, "none", JSON.stringify(windowsDesignerLayout));',
+      '    process.stdout.write("[custom-symbol-designer] compact Windows zoom controls and horizontal geometry icons verified\\n");',
+      '    process.stdout.write("[custom-symbol-designer] production UI, eraser and auto-crop verified\\n");',
+      '    return;',
+    ].join("\n"),
   );
 }
 if (basename(sourcePath) === "editor_layout_switch_regression.mjs") {
