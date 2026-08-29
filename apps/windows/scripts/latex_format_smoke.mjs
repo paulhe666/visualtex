@@ -113,9 +113,9 @@ const inlineTextSource = formatLatex(
 );
 assert.equal(
   inlineTextSource,
-  "速度$$v=\\frac{s}{t}+x^{\\text{中文}}+y_{\\text{下标}}$$",
+  "速度$v=\\frac{s}{t}+x^{\\text{中文}}+y_{\\text{下标}}$",
 );
-assert.doesNotMatch(inlineTextSource, /^\$\$\\text\{/);
+assert.doesNotMatch(inlineTextSource, /\$\$/);
 assert.match(inlineTextSource, /x\^\{\\text\{中文\}\}/);
 assert.deepEqual(
   parseLatexSourceDraft(
@@ -123,6 +123,14 @@ assert.deepEqual(
     "inline-text-double-dollar",
   ),
   { valid: true, values: [inlineTextFormula] },
+);
+assert.deepEqual(
+  parseLatexSourceDraft(
+    "速度$$v=\\frac{s}{t}+x^{\\text{中文}}+y_{\\text{下标}}$$",
+    "inline-text-double-dollar",
+  ),
+  { valid: true, values: [inlineTextFormula] },
+  "legacy $$...$$ mixed text/formula input should remain importable",
 );
 
 for (const [source, format, expectedError, expectedValues] of [

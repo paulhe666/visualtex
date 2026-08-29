@@ -33,6 +33,7 @@ const SILENT_OCR_HUD_LABEL: &str = "silent-ocr-hud";
 const SILENT_OCR_HUD_EVENT: &str = "visualtex-silent-ocr-status";
 const DEFAULT_SILENT_OCR_MODEL: &str = "PP-FormulaNet_plus-M";
 const DEFAULT_SILENT_OCR_COPY_FORMAT: &str = "display-dollar";
+const DEFAULT_SILENT_OCR_CAPTURE_MODE: &str = "windows";
 const SILENT_OCR_CAPTURE_TIMEOUT_MS: u64 = 60_000;
 const ALLOWED_SILENT_OCR_COPY_FORMATS: &[&str] = &[
     "raw",
@@ -106,6 +107,12 @@ struct SilentOcrConfiguration {
     enabled: bool,
     model: String,
     copy_format: String,
+    #[serde(default = "default_silent_ocr_capture_mode")]
+    capture_mode: String,
+}
+
+fn default_silent_ocr_capture_mode() -> String {
+    DEFAULT_SILENT_OCR_CAPTURE_MODE.to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,6 +129,7 @@ impl Default for SilentOcrConfiguration {
             enabled: false,
             model: DEFAULT_SILENT_OCR_MODEL.to_string(),
             copy_format: DEFAULT_SILENT_OCR_COPY_FORMAT.to_string(),
+            capture_mode: default_silent_ocr_capture_mode(),
         }
     }
 }
@@ -189,6 +197,11 @@ fn load_configuration(app: &AppHandle) -> SilentOcrConfiguration {
     if !ALLOWED_SILENT_OCR_COPY_FORMATS.contains(&configuration.copy_format.as_str()) {
         configuration.copy_format = DEFAULT_SILENT_OCR_COPY_FORMAT.to_string();
     }
+    configuration.capture_mode = crate::windows_quick_ocr::normalize_capture_mode(
+        &configuration.capture_mode,
+    )
+    .unwrap_or(DEFAULT_SILENT_OCR_CAPTURE_MODE)
+    .to_string();
     configuration
 }
 
@@ -624,9 +637,10 @@ fn format_silent_ocr_latex(lines: &[String], format: &str) -> String {
 }
 
 async fn run_silent_ocr(app: AppHandle, configuration: SilentOcrConfiguration) -> Result<(), String> {
-    let capture = tauri::async_runtime::spawn_blocking(|| {
+    let capture_mode = configuration.capture_mode.clone();
+    let capture = tauri::async_runtime::spawn_blocking(move || {
         crate::windows_quick_ocr::capture_windows_quick_ocr_bytes(
-            true,
+            &capture_mode,
             SILENT_OCR_CAPTURE_TIMEOUT_MS,
         )
     })
@@ -637,34 +651,48 @@ async fn run_silent_ocr(app: AppHandle, configuration: SilentOcrConfiguration) -
         return Ok(());
     };
 
-    emit_hud(&app, "running", "正在检查 OCR 环境…", 22);
+    emit_hud(&app, "running", "正在检查 OCR 提供器…", 22);
     let ocr = app
         .try_state::<OcrState>()
         .ok_or_else(|| "OCR runtime is unavailable".to_string())?
         .inner()
         .clone();
-    let runtime = ocr.runtime_status(app.clone(), false).await?;
-    if !runtime.installed {
-        return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
-    }
+    let active_provider = ocr.active_provider(&app)?;
     let requested = configuration.model;
-    let model = if runtime.installed_models.iter().any(|item| item == &requested) {
-        requested
-    } else if runtime
-        .installed_models
-        .iter()
-        .any(|item| item == &runtime.default_model)
-    {
-        runtime.default_model.clone()
-    } else {
-        runtime
+    let model = if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+        let runtime = ocr.runtime_status(app.clone(), false).await?;
+        if !runtime.installed {
+            return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
+        }
+        if runtime.installed_models.iter().any(|item| item == &requested) {
+            requested
+        } else if runtime
             .installed_models
-            .first()
-            .cloned()
-            .ok_or_else(|| "没有可用的 OCR 模型".to_string())?
+            .iter()
+            .any(|item| item == &runtime.default_model)
+        {
+            runtime.default_model.clone()
+        } else {
+            runtime
+                .installed_models
+                .first()
+                .cloned()
+                .ok_or_else(|| "没有可用的 OCR 模型".to_string())?
+        }
+    } else {
+        requested
     };
 
-    emit_hud(&app, "running", "正在识别公式…", 36);
+    emit_hud(
+        &app,
+        "running",
+        if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+            "正在使用本地模型识别公式…"
+        } else {
+            "正在通过已配置的 OCR API 识别公式…"
+        },
+        36,
+    );
     let recognition = ocr
         .recognize(
             app.clone(),
@@ -821,6 +849,7 @@ pub(crate) fn configure(
     enabled: bool,
     model: &str,
     copy_format: &str,
+    capture_mode: &str,
 ) -> Result<String, String> {
     let normalized_model = model.trim();
     if !crate::ALLOWED_MODELS.contains(&normalized_model) {
@@ -830,12 +859,15 @@ pub(crate) fn configure(
     if !ALLOWED_SILENT_OCR_COPY_FORMATS.contains(&normalized_copy_format) {
         return Err("Unsupported silent OCR LaTeX copy format".to_string());
     }
+    let normalized_capture_mode =
+        crate::windows_quick_ocr::normalize_capture_mode(capture_mode)?;
 
     let registered_shortcut = set_registered(enabled)?;
     let next = SilentOcrConfiguration {
         enabled,
         model: normalized_model.to_string(),
         copy_format: normalized_copy_format.to_string(),
+        capture_mode: normalized_capture_mode.to_string(),
     };
     {
         let mut configuration = configuration_store()

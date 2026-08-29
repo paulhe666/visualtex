@@ -9,148 +9,152 @@ internal static partial class Program
     private static void RunWordOleNumberingMigration(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
-        var assetRoot = Path.Combine(artifactRoot, "word-ole-numbering-migration-assets");
-        Directory.CreateDirectory(assetRoot);
+        var documentPath = Path.Combine(
+            artifactRoot,
+            "word-visualtex-ole-tab-numbering-migration.docx");
+        var previewPath = Path.Combine(artifactRoot, "word-visualtex-ole-tab-preview.png");
+        var previewDataUrl = CreatePngDataUrl(
+            "word-ole-numbering-migration",
+            180,
+            64);
+        File.WriteAllBytes(
+            previewPath,
+            Convert.FromBase64String(
+                previewDataUrl.Substring(previewDataUrl.IndexOf(',') + 1)));
 
         Word.Application? application = null;
         Word.Document? document = null;
         Word.Range? insertion = null;
-        Word.Range? formulaRange = null;
+        Word.Table? legacyTable = null;
+        Word.Cell? formulaCell = null;
+        Word.Range? formulaCellRange = null;
+        Word.Row? emptyRow = null;
         Word.InlineShape? shape = null;
-        Word.Table? table = null;
-        Word.Cell? leftCell = null;
-        Word.Cell? centerCell = null;
-        Word.Cell? rightCell = null;
-        Word.Range? centerRange = null;
-        Word.Range? rightRange = null;
-        Word.Section? section = null;
-        Word.PageSetup? pageSetup = null;
+        Word.Range? shapeRange = null;
         try
         {
             application = CreateWordApplication(visible: false);
-            document = application.Documents.Add();
+            document = application.Documents.Add(Visible: false);
+            document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
 
-            const string latex = "x^2+y^2=1";
+            const string latex = @"x^2+y^2=z^2";
             var formulaId = Guid.NewGuid().ToString("D");
-            var svg = PerformanceSvg(901);
-            var (pngPath, _) = CreatePerformanceOleAssets(
-                assetRoot,
-                901,
-                latex,
-                svg);
+            var now = DateTimeOffset.UtcNow.ToString("O");
             var metadata = new FormulaMetadata
             {
                 FormulaId = formulaId,
-                Title = "OLE numbering migration acceptance",
+                Title = "VisualTeX OLE tab-numbering migration acceptance",
                 Latex = latex,
                 CodeFormat = "latex",
                 DisplayMode = "block",
                 Numbered = true,
-                RenderWidthPx = ExportWidth,
-                RenderHeightPx = ExportHeight,
-                Baseline = ExportBaseline,
-                FontSizePt = 11,
-                RenderFontSizePt = 11,
+                RenderWidthPx = 180,
+                RenderHeightPx = 64,
+                Baseline = 48,
+                FontSizePt = 12,
+                RenderFontSizePt = 12,
+                FormulaLetterFont = "katex",
+                FormulaChineseFont = "system",
                 CreatedWithVersion = "1.2.5",
                 UpdatedWithVersion = "1.2.5",
-                CreatedAt = DateTimeOffset.UtcNow.ToString("O"),
-                UpdatedAt = DateTimeOffset.UtcNow.ToString("O"),
+                CreatedAt = now,
+                UpdatedAt = now,
                 Lines = new List<FormulaLine>
                 {
-                    new() { Id = Guid.NewGuid().ToString("D"), Latex = latex },
+                    new()
+                    {
+                        Id = Guid.NewGuid().ToString("D"),
+                        Latex = latex,
+                    },
                 },
             };
             metadata.Validate();
 
             insertion = document.Range(0, 0);
-            object link = false;
-            object save = true;
-            object insertionObject = insertion;
+            legacyTable = document.Tables.Add(insertion, 1, 3);
+            formulaCell = legacyTable.Cell(1, 2);
+            formulaCellRange = formulaCell.Range.Duplicate;
+            formulaCellRange.End = Math.Max(
+                formulaCellRange.Start,
+                formulaCellRange.End - 1);
             shape = document.InlineShapes.AddPicture(
-                pngPath,
-                ref link,
-                ref save,
-                ref insertionObject);
-            shape.Width = ExportWidth * 0.75f;
-            shape.Height = ExportHeight * 0.75f;
+                FileName: previewPath,
+                LinkToFile: false,
+                SaveWithDocument: true,
+                Range: formulaCellRange);
+            shape.Width = 135f;
+            shape.Height = 48f;
             WordFormulaMetadataReader.Write(shape, metadata);
-            formulaRange = shape.Range.Duplicate;
+            shapeRange = shape.Range;
 
-            if (document.Tables.Count != 0)
-                throw new InvalidDataException(
-                    "Structural OLE surrogate did not start as a standalone display object.");
+            // Construct the complete legacy 2x3 input before invoking production
+            // code. BuildFormulaNumberingScaffoldForConversion is now deliberately
+            // table-destructive: it accepts this old host only as migration input,
+            // trims the benign empty row and immediately creates the final tab-only
+            // numbering scaffold. The fixture must therefore never try to append a
+            // row after that call through an invalidated legacy Table RCW.
+            emptyRow = legacyTable.Rows.Add();
+            AssertEqual(2, legacyTable.Rows.Count,
+                "The legacy-numbering migration fixture did not create a 2x3 table.");
+            AssertEqual(3, legacyTable.Columns.Count,
+                "The legacy-numbering migration fixture changed the table column count.");
 
-            // OLE and cross-platform picture formulas share the same non-OMML
-            // structural migration branch. Using a metadata-tagged picture here
-            // isolates the exact ConvertToTable/Columns.Add behavior without
-            // depending on the native OLE server's cross-process security policy.
-            WordEquationNumbering.ReconcileFormula(
+            WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
                 document,
-                formulaRange,
+                shapeRange,
                 shape.Height,
-                metadata);
+                metadata,
+                legacyTable,
+                plannedOrdinal: 1,
+                plannedPrefix: "0.");
+            Release(shapeRange); shapeRange = null;
+            Release(shape); shape = null;
 
-            if (document.Tables.Count != 1)
-                throw new InvalidDataException(
-                    $"Numbered display migration should create exactly one table, actual {document.Tables.Count}.");
-            if (document.InlineShapes.Count != 1)
-                throw new InvalidDataException(
-                    $"Numbered display migration lost or duplicated the formula object, actual {document.InlineShapes.Count}.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "structural VisualTeX OLE surrogate",
+                requireNativeOle: false,
+                requireFormulaMetadata: false);
 
-            table = document.Tables[1];
-            if (table.Columns.Count != 3)
-                throw new InvalidDataException(
-                    $"Numbered display table should have three columns, actual {table.Columns.Count}.");
-            leftCell = table.Cell(1, 1);
-            centerCell = table.Cell(1, 2);
-            rightCell = table.Cell(1, 3);
-            centerRange = centerCell.Range;
-            rightRange = rightCell.Range;
-            if (centerRange.InlineShapes.Count != 1)
-                throw new InvalidDataException(
-                    "Migrated display formula is not in the center cell.");
-            if ((rightRange.Text ?? string.Empty).IndexOf("(1)", StringComparison.Ordinal) < 0)
-                throw new InvalidDataException(
-                    "Migrated display formula did not render visible equation number (1).");
+            document.Save();
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document); document = null;
+            document = application.Documents.Open(
+                documentPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "saved/reopened structural VisualTeX OLE surrogate",
+                requireNativeOle: false,
+                requireFormulaMetadata: false);
 
-            section = document.Sections[1];
-            pageSetup = section.PageSetup;
-            var availableWidth = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
-            var actualWidth = leftCell.Width + centerCell.Width + rightCell.Width;
-            if (Math.Abs(actualWidth - availableWidth) > 2f)
-                throw new InvalidDataException(
-                    $"Migrated numbered table width is {actualWidth:F2} pt; expected {availableWidth:F2} pt.");
-            if (Math.Abs(leftCell.Width - availableWidth * 0.2f) > 2f
-                || Math.Abs(centerCell.Width - availableWidth * 0.6f) > 2f
-                || Math.Abs(rightCell.Width - availableWidth * 0.2f) > 2f)
-                throw new InvalidDataException(
-                    $"Migrated numbered column widths are {leftCell.Width:F2}/{centerCell.Width:F2}/{rightCell.Width:F2} pt instead of 20/60/20 percent.");
-
-            var artifactPath = Path.Combine(
-                artifactRoot,
-                "word-ole-unnumbered-to-numbered-structural.docx");
-            document.SaveAs2(artifactPath, Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine(
-                "Word OLE numbering structural migration acceptance passed: the standalone non-OMML formula stayed visible after numbering and the 3-column table remained within the text width.");
+                "Word VisualTeX OLE numbering migration acceptance passed: the first reconcile trimmed a benign empty legacy row, migrated the 1x3 host to one MathType-style center/right-tab paragraph, and save/reopen kept that structure.");
         }
         finally
         {
-            Release(pageSetup);
-            Release(section);
-            Release(rightRange);
-            Release(centerRange);
-            Release(rightCell);
-            Release(centerCell);
-            Release(leftCell);
-            Release(table);
+            Release(shapeRange);
             Release(shape);
-            Release(formulaRange);
+            Release(emptyRow);
+            Release(formulaCellRange);
+            Release(formulaCell);
+            Release(legacyTable);
             Release(insertion);
-            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
             Release(document);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
+            try { File.Delete(previewPath); } catch { }
             ForceComCleanup();
         }
     }

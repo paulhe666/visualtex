@@ -89,9 +89,11 @@ import {
   OCR_MODELS,
   cancelOcrRecognition,
   fileToOcrRequest,
+  getOcrProviderConfiguration,
   getOcrRuntimeStatus,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
+  normalizeOcrFormulaLines,
   recognizeFormulaImage,
   warmupOcrModel,
   type OcrModelName,
@@ -106,13 +108,12 @@ import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
-  isQuickOcrCaptureMode,
+  normalizeQuickOcrCaptureMode,
   quickOcrCaptureToFile,
   restoreQuickOcrWindow,
   QUICK_OCR_CAPTURE_MODE_STORAGE_KEY,
   SILENT_OCR_SHORTCUT,
   SILENT_OCR_STORAGE_KEY,
-  waitForQuickOcrSystemScreenshot,
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
 
@@ -164,7 +165,7 @@ function App() {
   const [silentOcrShortcut, setSilentOcrShortcut] = useState(SILENT_OCR_SHORTCUT);
   const [quickOcrCaptureMode, setQuickOcrCaptureMode] = useState<QuickOcrCaptureMode>(() => {
     const stored = readLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY);
-    return isQuickOcrCaptureMode(stored) ? stored : "immediate";
+    return normalizeQuickOcrCaptureMode(stored) ?? "windows";
   });
   const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
@@ -425,7 +426,12 @@ function App() {
   useEffect(() => {
     if (!isTauriEnvironment()) return;
     let cancelled = false;
-    void configureSilentOcr(silentOcrEnabled, ocrModel, latexCodeFormat)
+    void configureSilentOcr(
+      silentOcrEnabled,
+      ocrModel,
+      latexCodeFormat,
+      quickOcrCaptureMode,
+    )
       .then((shortcut) => {
         if (cancelled || !silentOcrEnabled || !shortcut) return;
         setSilentOcrShortcut(shortcut);
@@ -445,7 +451,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [silentOcrEnabled, ocrModel, latexCodeFormat, isEn]);
+  }, [silentOcrEnabled, ocrModel, latexCodeFormat, quickOcrCaptureMode, isEn]);
 
   useEffect(() => {
     const menu = menuOpen ? appMenuRef.current : copyMenuOpen ? copyMenuRef.current : null;
@@ -572,35 +578,51 @@ function App() {
     inlineOcrCancelRequestedRef.current = false;
     setInlineOcr({
       status: "running",
-      message: isEn ? "Checking the local OCR runtime…" : "正在检查本地 OCR 环境…",
+      message: isEn ? "Checking the OCR provider…" : "正在检查 OCR 提供器…",
       seconds: 0,
       model: ocrModel,
     });
 
     let unlisten: (() => void) | undefined;
     try {
-      const runtime = await getOcrRuntimeStatus();
+      const providerConfiguration = await getOcrProviderConfiguration();
+      const usingLocalProvider = providerConfiguration.activeProvider === "local";
       if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      if (!runtime.installed) {
-        setOcrOpen(true);
-        throw new Error(
-          isEn
-            ? "Install the OCR runtime before pasting an image"
-            : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
-        );
-      }
+      if (usingLocalProvider) {
+        const runtime = await getOcrRuntimeStatus();
+        if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+        if (!runtime.installed) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? "Install the OCR runtime before pasting an image"
+              : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
+          );
+        }
 
-      if (!runtime.installedModels.includes(ocrModel)) {
-        setOcrOpen(true);
-        throw new Error(
-          isEn
-            ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
-            : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
+        if (!runtime.installedModels.includes(ocrModel)) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
+              : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
+          );
+        }
+      } else {
+        setInlineOcr((current) =>
+          current
+            ? {
+                ...current,
+                message: isEn
+                  ? "Sending the image to the configured OCR API…"
+                  : "正在将图片发送到已配置的 OCR API…",
+              }
+            : current,
         );
       }
       const availableOcrModel = ocrModel;
 
-      unlisten = await listenOcrRecognitionProgress((progress) => {
+      if (usingLocalProvider) unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
           progress.model !== ocrModel
@@ -627,10 +649,7 @@ function App() {
         throw new Error("OCR_CANCELLED");
       }
 
-      const recognizedLatex = result.formulas
-        .map((formula) => formula.latex.trim())
-        .filter(Boolean)
-        .join("\n");
+      const recognizedLatex = normalizeOcrFormulaLines(result.formulas).join("\n");
       if (!recognizedLatex) {
         throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
       }
@@ -718,22 +737,24 @@ function App() {
 
     setQuickOcrCaptureBusy(true);
     try {
-      const waitingForSystemScreenshot =
-        quickOcrCaptureMode === "system-screenshot";
+      const waitingForClipboardImage = quickOcrCaptureMode === "clipboard";
+      const usingPixPin = quickOcrCaptureMode === "pixpin";
       setToast(
-        waitingForSystemScreenshot
+        waitingForClipboardImage
           ? isEn
-            ? "VisualTeX minimized. Switch to the target page and take a Windows screenshot within 60 seconds."
-            : "VisualTeX 已最小化，请切到目标页面，并在 60 秒内使用 Windows 系统截图快捷键截图"
-          : isEn
-            ? "Select a formula area in the Windows Snipping Tool"
-            : "请在 Windows 截图工具中框选要识别的公式区域",
+            ? "VisualTeX minimized. Use any screenshot tool within 60 seconds; the next clipboard image will be recognized."
+            : "VisualTeX 已最小化，请在 60 秒内使用任意截图工具；下一张剪贴板图片会被直接识别"
+          : usingPixPin
+            ? isEn
+              ? "Select a formula area in PixPin"
+              : "请在 PixPin 中框选要识别的公式区域"
+            : isEn
+              ? "Select a formula area in the Windows Snipping Tool"
+              : "请在 Windows 截图工具中框选要识别的公式区域",
       );
       let capture: Awaited<ReturnType<typeof captureQuickOcrScreenshot>> = null;
       try {
-        capture = waitingForSystemScreenshot
-          ? await waitForQuickOcrSystemScreenshot()
-          : await captureQuickOcrScreenshot();
+        capture = await captureQuickOcrScreenshot(quickOcrCaptureMode);
       } finally {
         // Quick OCR is an interactive main-app workflow: after the screenshot
         // is committed, return to the editor before recognition/insertion so
@@ -742,10 +763,10 @@ function App() {
       }
       if (!capture) {
         setToast(
-          waitingForSystemScreenshot
+          waitingForClipboardImage
             ? isEn
-              ? "No new Windows screenshot was detected within 60 seconds"
-              : "60 秒内未检测到新的 Windows 系统截图"
+              ? "No new clipboard image was detected within 60 seconds"
+              : "60 秒内未检测到新的剪贴板图片"
             : isEn
               ? "Screenshot cancelled"
               : "已取消截图",
@@ -774,13 +795,17 @@ function App() {
     setQuickOcrCaptureMode(mode);
     writeLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY, mode);
     setToast(
-      mode === "system-screenshot"
+      mode === "clipboard"
         ? isEn
-          ? "Quick OCR mode: wait for Windows screenshot"
-          : "快捷 OCR 已切换为：等待 Windows 系统截图"
-        : isEn
-          ? "Quick OCR mode: immediate selection"
-          : "快捷 OCR 已切换为：立即框选",
+          ? "OCR screenshot source: next clipboard image"
+          : "OCR 截图来源已切换为：下一张剪贴板图片"
+        : mode === "pixpin"
+          ? isEn
+            ? "OCR screenshot source: PixPin"
+            : "OCR 截图来源已切换为：PixPin"
+          : isEn
+            ? "OCR screenshot source: Windows Snipping Tool"
+            : "OCR 截图来源已切换为：Windows 截图工具",
     );
   };
 

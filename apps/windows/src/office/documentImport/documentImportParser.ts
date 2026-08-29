@@ -3,7 +3,7 @@ import { splitFormulaEquationTag } from "../shared/formulaEquationTag.ts";
 
 export type DocumentSourceFormat = "auto" | "markdown" | "latex";
 export type ResolvedDocumentSourceFormat = Exclude<DocumentSourceFormat, "auto">;
-export type DocumentObjectMode = "wordOmml" | "nativeOle";
+export type DocumentObjectMode = "wordOmml" | "nativeOle" | "mathTypeOle";
 
 export type DocumentImportRun =
   | {

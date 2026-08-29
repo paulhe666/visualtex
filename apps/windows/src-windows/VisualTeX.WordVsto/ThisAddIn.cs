@@ -352,6 +352,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try { _comAddIn.Object = this; } catch { }
         }
+        var officeMathFontReady = WordOfficeMathFontLoader.TryEnsureLoaded(
+            out var officeMathFontError);
         _formulaService = new WordFormulaService(_application);
         _dispatcher = new OfficeUiDispatcher();
         _sessionClient = new VisualTeXSessionClient();
@@ -361,6 +363,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _mathTypePreviewSessionAcquired = true;
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
+        _application.DocumentOpen += OnDocumentOpen;
         _application.DocumentBeforeSave += OnDocumentBeforeSave;
         string? doubleClickError = null;
         try
@@ -376,14 +379,27 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = null;
             doubleClickError = error.Message;
         }
-        SetStatus(doubleClickError is null
-            ? "VisualTeX Word VSTO 已就绪。"
-            : $"VisualTeX 已就绪，但 OLE 双击监听不可用：{doubleClickError}");
+        SetStatus(!officeMathFontReady
+            ? $"VisualTeX 已就绪，但 Word 数学字体不可用：{officeMathFontError}"
+            : doubleClickError is null
+                ? "VisualTeX Word VSTO 已就绪。"
+                : $"VisualTeX 已就绪，但 OLE 双击监听不可用：{doubleClickError}");
     }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) => Dispose();
     public void OnAddInsUpdate(ref Array custom) { }
-    public void OnStartupComplete(ref Array custom) { }
+    public void OnStartupComplete(ref Array custom)
+    {
+        Document? document = null;
+        try
+        {
+            document = _application?.ActiveDocument;
+            if (document is not null)
+                RefreshNumberedOmmlTabLayoutsAfterOpen(document);
+        }
+        catch { }
+        finally { ReleaseComObject(document); }
+    }
     public void OnBeginShutdown(ref Array custom) => Dispose();
 
     public void OnRibbonLoad(object ribbonUi)
@@ -633,6 +649,111 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Interlocked.Exchange(ref _formulaFormatMutationDepth, 0);
     }
 
+    private void OnDocumentOpen(Document document) =>
+        RefreshNumberedOmmlTabLayoutsAfterOpen(document);
+
+    private void RefreshNumberedOmmlTabLayoutsAfterOpen(Document document)
+    {
+        try
+        {
+            document.Repaginate();
+            var refreshed = WordEquationNumbering.RefreshNumberedOmmlTabLayouts(
+                document);
+            if (refreshed > 0)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"document-open-omml-tab-layout-refreshed formulas={refreshed}");
+                ScheduleNumberedOmmlDisplayShapeFinalization(document);
+            }
+        }
+        catch (Exception error)
+        {
+            // A protected/read-only document can reject paragraph-format changes.
+            // Opening the document must remain successful; the explicit update-
+            // number command can retry after editing is enabled.
+            WordDoubleClickHook.TraceMessage(
+                $"document-open-omml-tab-layout-refresh-failed: {error}");
+        }
+    }
+
+    private void ScheduleNumberedOmmlDisplayShapeFinalization(Document sourceDocument)
+    {
+        var dispatcher = _dispatcher;
+        var application = _application;
+        if (dispatcher is null || application is null) return;
+
+        string fullName;
+        string name;
+        try { fullName = sourceDocument.FullName ?? string.Empty; }
+        catch { fullName = string.Empty; }
+        try { name = sourceDocument.Name ?? string.Empty; }
+        catch { name = string.Empty; }
+
+        void PostFinalizationTurn(int turn)
+        {
+            dispatcher.Post(() =>
+            {
+                Documents? documents = null;
+                Document? candidate = null;
+                Document? target = null;
+                var targetResolved = false;
+                try
+                {
+                    documents = application.Documents;
+                    for (var index = 1; index <= documents.Count; index++)
+                    {
+                        ReleaseComObject(candidate);
+                        candidate = documents[index];
+                        string candidateFullName;
+                        string candidateName;
+                        try { candidateFullName = candidate.FullName ?? string.Empty; }
+                        catch { candidateFullName = string.Empty; }
+                        try { candidateName = candidate.Name ?? string.Empty; }
+                        catch { candidateName = string.Empty; }
+                        var matches = !string.IsNullOrWhiteSpace(fullName)
+                            ? string.Equals(
+                                candidateFullName,
+                                fullName,
+                                StringComparison.OrdinalIgnoreCase)
+                            : string.Equals(
+                                candidateName,
+                                name,
+                                StringComparison.OrdinalIgnoreCase);
+                        if (!matches) continue;
+                        target = candidate;
+                        candidate = null;
+                        targetResolved = true;
+                        break;
+                    }
+                    if (target is null) return;
+                    var finalized =
+                        WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(
+                            target);
+                    WordDoubleClickHook.TraceMessage(
+                        $"document-open-omml-display-shapes-finalized turn={turn} formulas={finalized}");
+                }
+                catch (Exception error)
+                {
+                    WordDoubleClickHook.TraceMessage(
+                        $"document-open-omml-display-shape-finalization-failed turn={turn}: {error}");
+                }
+                finally
+                {
+                    ReleaseComObject(target);
+                    ReleaseComObject(candidate);
+                    ReleaseComObject(documents);
+                    if (targetResolved && turn < 5)
+                        PostFinalizationTurn(turn + 1);
+                }
+            });
+        }
+
+        // Turn 1 recommits the dedicated empty anchor paragraph, turn 2 creates the
+        // deferred external REF Shape, and turns 3-5 reacquire it after Word commits
+        // DrawingML for geometry/no-line/no-fill (including transient E_FAIL retries).
+        PostFinalizationTurn(1);
+    }
+
     private void OnDocumentBeforeSave(
         Document document,
         ref bool saveAsUi,
@@ -648,6 +769,24 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             WordDoubleClickHook.TraceMessage(
                 $"document-before-save-baseline-normalization-failed: {error}");
+        }
+        try
+        {
+            // A freshly created numbered Display OMath may finish committing its
+            // external DrawingML REF Shape one dispatcher turn after insertion.
+            // Reacquire/finalize those managed Shapes at the durable save boundary
+            // so an immediate Ctrl+S cannot persist Word's transient decoration.
+            var finalized =
+                WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(
+                    document);
+            if (finalized > 0)
+                WordDoubleClickHook.TraceMessage(
+                    $"document-before-save-omml-display-shapes-finalized formulas={finalized}");
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"document-before-save-omml-display-shape-finalization-failed: {error}");
         }
     }
 
@@ -1417,9 +1556,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (mathMl is null)
                         throw new InvalidOperationException(
                             "VisualTeX Word OMML MathML payload is unavailable.");
-                    return session.Mode == "edit"
+                    var ommlResult = session.Mode == "edit"
                         ? service.ReplaceOmml(session, mathMl)
                         : service.InsertOmml(session, mathMl);
+                    if (session.Numbered
+                        && string.Equals(
+                            session.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal))
+                    {
+                        Document? activeDocument = null;
+                        try
+                        {
+                            activeDocument = _application?.ActiveDocument;
+                            if (activeDocument is not null)
+                                ScheduleNumberedOmmlDisplayShapeFinalization(
+                                    activeDocument);
+                        }
+                        finally { ReleaseComObject(activeDocument); }
+                    }
+                    return ommlResult;
                 }
                 if (string.Equals(
                         session.ObjectMode,
@@ -2005,6 +2161,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(
             StringComparer.Ordinal);
+        var mathTypePreviews =
+            new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
+                StringComparer.Ordinal);
         var converterSessionIds = new List<string>();
         var operationStopwatch = Stopwatch.StartNew();
         string? bulkImportSessionId = null;
@@ -2053,9 +2212,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .SelectMany(block => block.Runs)
                 .Where(run => run.IsFormula)
                 .ToList();
-            var objectMode = document.FormulaObjectMode == WordBulkFormulaObjectMode.Ole
-                ? FormulaOleContract.NativeOleMode
-                : FormulaOleContract.WordOmmlMode;
+            var objectMode = document.FormulaObjectMode switch
+            {
+                WordBulkFormulaObjectMode.Ole => FormulaOleContract.NativeOleMode,
+                WordBulkFormulaObjectMode.MathType => FormulaOleContract.MathTypeOleMode,
+                _ => FormulaOleContract.WordOmmlMode,
+            };
             var pendingKeys = new HashSet<string>(StringComparer.Ordinal);
             var formulaKeys = new Dictionary<string, string>(StringComparer.Ordinal);
             var pendingTemplates = new List<(
@@ -2127,6 +2289,55 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     + $"elapsedMs={renderStopwatch.ElapsedMilliseconds}");
             }
 
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                SetStatus($"正在批量生成 {formulaRuns.Count} 个 MathType 原生预览…");
+                var nativePreviewInputs =
+                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                foreach (var item in rendered)
+                {
+                    var generated = MathTypeMtefCodec.CreateEquationNative(
+                        item.Value.MathMl,
+                        string.Equals(
+                            item.Value.Session.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase));
+                    nativePreviewInputs[item.Key] = generated.Mtef;
+                }
+
+                var nativePreviewRoot = rendered.Values
+                    .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
+                        ? null
+                        : Path.GetDirectoryName(template.EmfPath))
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                    ?? Path.GetTempPath();
+                var nativePreviewWatch = Stopwatch.StartNew();
+                var renderedAllNativePreviews =
+                    MathTypeNativePreviewRenderer.TryRenderBatch(
+                        nativePreviewInputs,
+                        nativePreviewRoot,
+                        out var nativePreviews);
+                var missingPreviewKeys = rendered.Keys
+                    .Where(key => !nativePreviews.ContainsKey(key))
+                    .ToArray();
+                if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
+                {
+                    foreach (var preview in nativePreviews.Values)
+                        preview.Dispose();
+                    throw new InvalidOperationException(
+                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{rendered.Count}）。"
+                        + "为避免批量导入回退到 VisualTeX 前端几何，Word 文档尚未开始修改。");
+                }
+                foreach (var preview in nativePreviews)
+                    mathTypePreviews.Add(preview.Key, preview.Value);
+                WriteBulkAcceptanceLog(
+                    $"mathtype-native-preview-batch templates={nativePreviews.Count} "
+                    + $"formulas={formulaRuns.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+            }
+
             foreach (var run in formulaRuns)
             {
                 var key = formulaKeys[run.Id];
@@ -2137,6 +2348,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     sourceDocumentId,
                     fontSizePt,
                     objectMode);
+                var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
+                    ? preview
+                    : null;
                 prepared.Add(run.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -2144,6 +2358,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     MathMl = template.MathMl,
                     PngPath = template.PngPath,
                     EmfPath = template.EmfPath,
+                    MathTypeNativePreview = mathTypePreview,
+                    MathTypeNativePreviewAttempted = string.Equals(
+                        objectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal),
                 });
             }
 
@@ -2226,6 +2445,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TryDeleteFile(template.SvgPath);
                 TryDeleteFile(template.PngPath);
             }
+            foreach (var preview in mathTypePreviews.Values.Distinct())
+                preview.Dispose();
         }
     }
 
@@ -2317,12 +2538,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "latex" => WordBulkSourceFormat.Latex,
                 _ => WordBulkSourceFormat.Auto,
             };
+            var configuredObjectMode = Environment.GetEnvironmentVariable(
+                "VISUALTEX_VSTO_BULK_OBJECT_MODE");
             var acceptanceObjectMode = string.Equals(
-                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_BULK_OBJECT_MODE"),
-                "ole",
-                StringComparison.OrdinalIgnoreCase)
+                    configuredObjectMode,
+                    "ole",
+                    StringComparison.OrdinalIgnoreCase)
                 ? WordBulkFormulaObjectMode.Ole
-                : WordBulkFormulaObjectMode.Omml;
+                : string.Equals(
+                    configuredObjectMode,
+                    "mathtype",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? WordBulkFormulaObjectMode.MathType
+                    : WordBulkFormulaObjectMode.Omml;
             return (
                 WordBulkImportParser.Parse(
                     acceptanceSource,
@@ -2379,11 +2607,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
         var source = string.Join("\n", session.Lines.Select(item => item.Latex));
         var objectMode = string.Equals(
-            session.ObjectMode,
-            FormulaOleContract.NativeOleMode,
-            StringComparison.Ordinal)
+                session.ObjectMode,
+                FormulaOleContract.NativeOleMode,
+                StringComparison.Ordinal)
             ? WordBulkFormulaObjectMode.Ole
-            : WordBulkFormulaObjectMode.Omml;
+            : string.Equals(
+                session.ObjectMode,
+                FormulaOleContract.MathTypeOleMode,
+                StringComparison.Ordinal)
+                ? WordBulkFormulaObjectMode.MathType
+                : WordBulkFormulaObjectMode.Omml;
         if (string.Equals(
                 session.CodeFormat,
                 "visualtex-document-json",
@@ -2639,10 +2872,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        if (dispatcher is null || service is null) return;
+        var application = _application;
+        if (dispatcher is null || service is null || application is null) return;
         try
         {
-            var count = await dispatcher.InvokeAsync(service.UpdateEquationNumbers)
+            var count = await dispatcher.InvokeAsync(() =>
+                {
+                    var updated = service.UpdateEquationNumbers();
+                    Document? document = null;
+                    try
+                    {
+                        document = application.ActiveDocument;
+                        ScheduleNumberedOmmlDisplayShapeFinalization(document);
+                    }
+                    finally { ReleaseComObject(document); }
+                    return updated;
+                })
                 .ConfigureAwait(false);
             SetStatus($"已更新 {count} 个 VisualTeX / MathType 公式编号及相关引用。");
         }
@@ -2870,6 +3115,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try { _application.WindowBeforeDoubleClick -= OnWindowBeforeDoubleClick; } catch { }
             try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }
+            try { _application.DocumentOpen -= OnDocumentOpen; } catch { }
             try { _application.DocumentBeforeSave -= OnDocumentBeforeSave; } catch { }
         }
         try { _doubleClickHook?.Dispose(); } catch { }
@@ -2886,6 +3132,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = null;
         _dispatcher = null;
         _formulaService = null;
+        WordOfficeMathFontLoader.UnloadSessionRegistration();
         _lifetime = null;
         _ribbonUi = null;
         if (_comAddIn is not null)

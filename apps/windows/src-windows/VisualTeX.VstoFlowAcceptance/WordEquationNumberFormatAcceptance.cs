@@ -97,7 +97,7 @@ internal static partial class Program
                 application,
                 document,
                 formulas[0].FormulaId);
-            var legacyReferenceBookmark = InsertLegacyNumberingReference(
+            var legacyReferenceBookmark = InsertPlainNumberingReference(
                 application,
                 document,
                 formulas[0].FormulaId);
@@ -403,12 +403,15 @@ internal static partial class Program
         }
     }
 
-    private static string InsertLegacyNumberingReference(
+    private static string InsertPlainNumberingReference(
         Word.Application application,
         Word.Document document,
         string formulaId)
     {
         Word.Selection? selection = null;
+        Word.Range? fieldInsertion = null;
+        Word.Field? reference = null;
+        Word.Range? referenceResult = null;
         Word.Range? referenceRange = null;
         Word.Bookmarks? bookmarks = null;
         Word.Bookmark? bookmark = null;
@@ -416,27 +419,24 @@ internal static partial class Program
         {
             selection = application.Selection;
             selection.EndKey(Word.WdUnits.wdStory);
-            selection.TypeText("Legacy reference: ");
+            selection.TypeText("Plain REF reference: ");
             var start = selection.Start;
-            var target = WordEquationNumbering.GetEquationReferenceTargets(document)
-                .Single(item => string.Equals(
-                    item.FormulaId,
-                    formulaId,
-                    StringComparison.OrdinalIgnoreCase));
             selection.TypeText("(");
-            selection.InsertCrossReference(
-                ReferenceType: Word.WdCaptionLabelID.wdCaptionEquation,
-                ReferenceKind: Word.WdReferenceKind.wdEntireCaption,
-                ReferenceItem: target.NativeReferenceItem,
-                InsertAsHyperlink: true,
-                IncludePosition: false);
-            selection.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            fieldInsertion = document.Range(selection.Start, selection.Start);
+            reference = document.Fields.Add(
+                fieldInsertion,
+                Word.WdFieldType.wdFieldEmpty,
+                $"REF {WordEquationNumbering.NativeNumberBookmarkName(formulaId)} \\h",
+                PreserveFormatting: true);
+            reference.Update();
+            referenceResult = reference.Result;
+            selection.SetRange(referenceResult.End, referenceResult.End);
             selection.TypeText(")");
             var end = selection.Start;
             selection.TypeParagraph();
             referenceRange = document.Range(start, end);
             bookmarks = document.Bookmarks;
-            const string bookmarkName = "VTTestLegacyEquationNumberReference";
+            const string bookmarkName = "VTTestPlainEquationNumberReference";
             bookmark = bookmarks.Add(bookmarkName, referenceRange);
             return bookmarkName;
         }
@@ -445,6 +445,9 @@ internal static partial class Program
             Release(bookmark);
             Release(bookmarks);
             Release(referenceRange);
+            Release(referenceResult);
+            Release(reference);
+            Release(fieldInsertion);
             Release(selection);
         }
     }
@@ -522,10 +525,83 @@ internal static partial class Program
             var native = ReadEquationNumberBookmarkText(
                 document,
                 WordEquationNumbering.NativeNumberBookmarkName(formulas[index].FormulaId));
+            if (!string.Equals(expectedNumbers[index], visible, StringComparison.Ordinal)
+                || !string.Equals(expectedNumbers[index], native, StringComparison.Ordinal))
+            {
+                DumpEquationSequenceFieldInventory(
+                    document,
+                    $"format={formatId} formulaIndex={index + 1} expected={expectedNumbers[index]} visible={visible} native={native}");
+            }
             AssertEqual(expectedNumbers[index], visible,
                 $"Visible equation number {index + 1} is wrong for format {formatId}.");
             AssertEqual(expectedNumbers[index], native,
                 $"Native caption number {index + 1} is wrong for format {formatId}.");
+        }
+    }
+
+    private static void DumpEquationSequenceFieldInventory(
+        Word.Document document,
+        string context)
+    {
+        Word.Fields? fields = null;
+        Word.Bookmarks? bookmarks = null;
+        try
+        {
+            fields = document.Fields;
+            bookmarks = document.Bookmarks;
+            Console.WriteLine(
+                $"  [SEQ inventory] {context}; documentFields={fields.Count}, bookmarks={bookmarks.Count}.");
+            for (var fieldIndex = 1; fieldIndex <= fields.Count; fieldIndex++)
+            {
+                Word.Field? field = null;
+                Word.Range? code = null;
+                Word.Range? result = null;
+                try
+                {
+                    field = fields[fieldIndex];
+                    code = field.Code;
+                    var codeText = code.Text ?? string.Empty;
+                    if (codeText.IndexOf(
+                            "SEQ VisualTeXEquation",
+                            StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    result = field.Result;
+                    var aliases = new List<string>();
+                    for (var bookmarkIndex = 1; bookmarkIndex <= bookmarks.Count; bookmarkIndex++)
+                    {
+                        Word.Bookmark? bookmark = null;
+                        Word.Range? bookmarkRange = null;
+                        try
+                        {
+                            bookmark = bookmarks[bookmarkIndex];
+                            bookmarkRange = bookmark.Range;
+                            if (bookmarkRange.StoryType == result.StoryType
+                                && bookmarkRange.Start <= result.Start
+                                && bookmarkRange.End >= result.End)
+                                aliases.Add(bookmark.Name ?? string.Empty);
+                        }
+                        catch { }
+                        finally
+                        {
+                            Release(bookmarkRange);
+                            Release(bookmark);
+                        }
+                    }
+                    Console.WriteLine(
+                        $"    SEQ#{fieldIndex}: story={result.StoryType}, code={code.Start}:{code.End} '{codeText.Trim()}', result={result.Start}:{result.End} '{NormalizeEquationNumberText(result.Text)}', aliases=[{string.Join(",", aliases)}]");
+                }
+                finally
+                {
+                    Release(result);
+                    Release(code);
+                    Release(field);
+                }
+            }
+        }
+        finally
+        {
+            Release(bookmarks);
+            Release(fields);
         }
     }
 

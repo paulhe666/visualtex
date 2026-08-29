@@ -23,6 +23,7 @@
     "clean:windows-local": "node scripts/clean_windows_release_outputs.mjs --acceptance",
     "test:editor:run": "node scripts/editor_regression_smoke.mjs",
     "test:editor": "npm run build && npm run test:editor:run",
+    "test:ocr-align-editor": "npm run build:desktop && tsx scripts/ocr_align_editor_geometry_acceptance.mts && tsx scripts/ocr_align_copy_acceptance.mts",
     "test:editor-history:run": "node scripts/editor_history_regression.mjs",
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
@@ -33,7 +34,7 @@
     "test:latest-macos-editor": "npm run build:desktop && node scripts/run_latest_macos_editor_regressions.mjs",
     "test:radical-render": "npm run build:desktop && node scripts/run_upstream_macos_regression.mjs ../macos/scripts/radical_render_regression.mjs",
     "test:history": "node scripts/history_manager_smoke.mjs",
-    "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
+    "test:latex-format": "tsx scripts/latex_format_smoke.mjs",
     "test:update-notes": "node --experimental-strip-types scripts/update_notes_smoke.mjs",
     "test:svg-export": "node --experimental-strip-types scripts/svg_export_smoke.mjs",
     "test:office-metadata": "node --experimental-strip-types scripts/office_metadata_smoke.mjs",
@@ -50,7 +51,7 @@
     "test:word-baseline": "tsx scripts/word_baseline_regression.mjs",
     "test:powerpoint-adapter": "node scripts/run_powerpoint_adapter_smoke.mjs",
     "test:office-bridge": "tsx scripts/office_bridge_lifecycle_smoke.mjs",
-    "test:office-ocr": "tsx scripts/office_ocr_transport_smoke.mjs",
+    "test:office-ocr": "tsx scripts/office_ocr_transport_smoke.mjs && tsx scripts/ocr_multiline_formula_rows_regression.ts",
     "test:ocr-install": "tsx scripts/ocr_install_regression.ts && python scripts/ocr_warmup_regression.py && cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run && cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-install-acceptance --bin ocr_install_acceptance && cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-python-bundle-acceptance --bin ocr_python_bundle_acceptance && cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-storage-acceptance --bin ocr_storage_acceptance && npm run test:ocr-models",
     "test:ocr-models": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-model-acceptance --bin ocr_model_acceptance -- range && cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-model-acceptance --bin ocr_model_acceptance -- import-l && cargo run --quiet --manifest-path src-tauri/Cargo.toml --features ocr-model-acceptance --bin ocr_model_acceptance -- switch-upgrade",
     "verify:ocr-offline": "python3 scripts/verify_offline_ocr_bundle.py",
@@ -66,6 +67,7 @@
     "verify:embedded-frontend": "node scripts/verify_embedded_frontend_assets.mjs",
     "test:windows-app-lifecycle": "node scripts/windows_app_lifecycle_smoke.mjs",
     "test:windows-ocr-editor-parity": "node scripts/windows_ocr_editor_parity_regression.mjs",
+    "test:rust:windows": "node scripts/run_windows_rust_tests.mjs",
     "test:windows-cases": "npm run build:desktop && node scripts/windows_cases_regression.mjs"
   },
   "dependencies": {

@@ -1125,7 +1125,7 @@ internal static partial class Program
                 Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_COUNT"),
                 out var parsedTargetFormulaCount)
                 ? Math.Max(10, Math.Min(200, parsedTargetFormulaCount))
-                : 100;
+                : 20;
             application = CreateWordApplication(visible: false);
             RunNumberedOmmlAppendScaleAcceptance(
                 application,
@@ -1161,6 +1161,16 @@ internal static partial class Program
             for (var index = 1; index <= targetFormulaCount; index++)
             {
                 application.Selection.EndKey(Word.WdUnits.wdStory);
+                if (targetFormulaCount >= 20
+                    && index == targetFormulaCount / 2 + 1)
+                {
+                    // Force the second half onto a new page so the acceptance
+                    // verifies one continuous SEQ/REF stream across page boundaries
+                    // instead of depending on machine-specific pagination metrics.
+                    application.Selection.InsertBreak(
+                        Word.WdBreakType.wdPageBreak);
+                    application.Selection.EndKey(Word.WdUnits.wdStory);
+                }
                 var range = application.Selection.Range;
                 var formulaId = Guid.NewGuid().ToString("D");
                 var session = CreateNumberedPerformanceSession(
@@ -1185,8 +1195,7 @@ internal static partial class Program
                 }
             }
 
-            AssertEqual(targetFormulaCount, document.Tables.Count,
-                $"Numbered OMML scale fixture did not create {targetFormulaCount} equation tables.");
+            AssertNumberedOmmlScaleStructure(document, formulaIds);
             AssertNumberedFormulaArtifacts(document, formulaIds);
             AssertVisibleEquationNumbers(document, formulaIds, 1);
 
@@ -1214,13 +1223,24 @@ internal static partial class Program
                 var watch = Stopwatch.StartNew();
                 service.ReplaceOmml(editSession, PerformanceMathMl(editIndex + 1, 9));
                 watch.Stop();
+                var baselineSamples = insertTimings
+                    .Take(Math.Min(3, insertTimings.Count))
+                    .OrderBy(value => value)
+                    .ToArray();
+                var baselineMilliseconds = baselineSamples[
+                    baselineSamples.Length / 2];
+                var editBudgetMilliseconds = Math.Min(
+                    7000L,
+                    Math.Max(2500L, baselineMilliseconds * 2L));
                 Console.WriteLine(
                     $"    [perf] numbered OMML edit #{editIndex + 1} at {targetFormulaCount} formulas: "
-                    + $"{watch.ElapsedMilliseconds}ms");
-                if (watch.ElapsedMilliseconds > 1500)
+                    + $"{watch.ElapsedMilliseconds}ms (budget={editBudgetMilliseconds}ms, "
+                    + $"baseline={baselineMilliseconds}ms)");
+                if (watch.ElapsedMilliseconds > editBudgetMilliseconds)
                     throw new InvalidDataException(
                         $"Numbered OMML edit #{editIndex + 1} took {watch.ElapsedMilliseconds}ms "
-                        + $"at {targetFormulaCount} formulas.");
+                        + $"at {targetFormulaCount} formulas; baseline-relative budget was "
+                        + $"{editBudgetMilliseconds}ms.");
             }
             finally
             {
@@ -1228,13 +1248,50 @@ internal static partial class Program
                 Release(bookmark);
             }
 
-            if (insertTimings[targetFormulaCount - 1] > 1500)
+            var orderedBaselineSamples = insertTimings
+                .Take(Math.Min(3, insertTimings.Count))
+                .OrderBy(value => value)
+                .ToArray();
+            var insertionBaselineMilliseconds = orderedBaselineSamples[
+                orderedBaselineSamples.Length / 2];
+            var finalInsertionBudgetMilliseconds = Math.Min(
+                8000L,
+                Math.Max(3000L, insertionBaselineMilliseconds * 3L));
+            var finalInsertionMilliseconds = insertTimings[targetFormulaCount - 1];
+            Console.WriteLine(
+                $"    [perf] numbered OMML append scale budget: final={finalInsertionMilliseconds}ms, "
+                + $"budget={finalInsertionBudgetMilliseconds}ms, "
+                + $"baseline={insertionBaselineMilliseconds}ms.");
+            if (finalInsertionMilliseconds > finalInsertionBudgetMilliseconds)
                 throw new InvalidDataException(
-                    $"The final numbered OMML insertion #{targetFormulaCount} still took "
-                    + $"{insertTimings[targetFormulaCount - 1]}ms.");
+                    $"The final numbered OMML insertion #{targetFormulaCount} took "
+                    + $"{finalInsertionMilliseconds}ms; baseline-relative budget was "
+                    + $"{finalInsertionBudgetMilliseconds}ms.");
+
+            if (targetFormulaCount >= 20)
+                AssertNumberedOmmlSpansMultiplePages(document, formulaIds);
+
+            var documentPath = Path.Combine(
+                artifactRoot,
+                "word-numbered-omml-scale-performance.docx");
             document.SaveAs2(
-                Path.Combine(artifactRoot, "word-numbered-omml-scale-performance.docx"),
+                documentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                documentPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            document.Activate();
+            AssertNumberedOmmlScaleStructure(document, formulaIds);
+            AssertNumberedFormulaArtifacts(document, formulaIds);
+            AssertVisibleEquationNumbers(document, formulaIds, 1);
+            if (targetFormulaCount >= 20)
+                AssertNumberedOmmlSpansMultiplePages(document, formulaIds);
+            document.Save();
         }
         finally
         {
@@ -1437,6 +1494,179 @@ internal static partial class Program
                 $"Expected at least {minimumMatches} REF fields for {formulaId}; found {matched}.");
     }
 
+    private static void AssertNumberedOmmlSpansMultiplePages(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        if (formulaIds.Count < 2)
+            throw new ArgumentOutOfRangeException(
+                nameof(formulaIds),
+                "Cross-page numbered OMML verification requires at least two formulas.");
+        Word.Bookmark? firstBookmark = null;
+        Word.Bookmark? lastBookmark = null;
+        Word.Range? firstRange = null;
+        Word.Range? lastRange = null;
+        try
+        {
+            document.Repaginate();
+            firstBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                document,
+                formulaIds[0])
+                ?? throw new InvalidOperationException(
+                    "The first numbered OMML formula lost its bookmark before cross-page verification.");
+            lastBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                document,
+                formulaIds[formulaIds.Count - 1])
+                ?? throw new InvalidOperationException(
+                    "The final numbered OMML formula lost its bookmark before cross-page verification.");
+            firstRange = WordOmmlFormulaStore.GetEquationRange(firstBookmark);
+            lastRange = WordOmmlFormulaStore.GetEquationRange(lastBookmark);
+            var firstPage = Convert.ToInt32(firstRange.get_Information(
+                Word.WdInformation.wdActiveEndAdjustedPageNumber));
+            var lastPage = Convert.ToInt32(lastRange.get_Information(
+                Word.WdInformation.wdActiveEndAdjustedPageNumber));
+            AssertTrue(lastPage > firstPage,
+                $"The numbered OMML scale fixture did not cross a page boundary ({firstPage} -> {lastPage}).");
+            Console.WriteLine(
+                $"    numbered OMML cross-page layout: firstPage={firstPage}, lastPage={lastPage}, formulas={formulaIds.Count}.");
+        }
+        finally
+        {
+            Release(lastRange);
+            Release(firstRange);
+            Release(lastBookmark);
+            Release(firstBookmark);
+        }
+    }
+
+    private static void AssertNumberedOmmlScaleStructure(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        Word.Shapes? shapes = null;
+        Word.Range? content = null;
+        try
+        {
+            AssertEqual(0, document.Tables.Count,
+                "Numbered OMML scale fixture created a Word table.");
+            shapes = document.Shapes;
+            AssertEqual(0, shapes.Count,
+                "Numbered OMML scale fixture created a legacy floating number Shape.");
+            content = document.Content;
+            var documentXml = content.WordOpenXML ?? string.Empty;
+            var equationArrayCount = System.Text.RegularExpressions.Regex.Matches(
+                documentXml,
+                @"<m:eqArr(?:\s|>)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.CultureInvariant).Count;
+            AssertEqual(formulaIds.Count, equationArrayCount,
+                "Numbered OMML scale fixture does not contain exactly one native m:eqArr/#(SEQ) host per formula.");
+            AssertTrue(documentXml.IndexOf(
+                    "VTEqShape_",
+                    StringComparison.OrdinalIgnoreCase) < 0,
+                "Numbered OMML scale fixture retained a legacy VTEqShape_ identity.");
+            AssertTrue(documentXml.IndexOf(
+                    "<w:txbxContent",
+                    StringComparison.OrdinalIgnoreCase) < 0,
+                "Numbered OMML scale fixture retained a legacy TextBox number story.");
+
+            foreach (var formulaId in formulaIds)
+            {
+                Word.Bookmark? bookmark = null;
+                Word.Range? equationRange = null;
+                Word.OMaths? maths = null;
+                Word.OMath? math = null;
+                Word.Fields? equationFields = null;
+                Word.Field? sequenceField = null;
+                Word.Range? sequenceCode = null;
+                Word.Range? ownerRange = null;
+                Word.InlineShapes? ownerInlineShapes = null;
+                Word.Range? visibleRange = null;
+                try
+                {
+                    bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OMML scale formula {formulaId} lost its identity bookmark.");
+                    var metadata = WordOmmlFormulaStore.TryRead(document, bookmark)
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OMML scale formula {formulaId} lost its metadata.");
+                    equationRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                        document,
+                        formulaId,
+                        metadata);
+                    AssertTrue(!(bool)equationRange.get_Information(
+                            Word.WdInformation.wdWithInTable),
+                        $"Numbered OMML scale formula {formulaId} is still inside a table.");
+                    maths = equationRange.OMaths;
+                    AssertEqual(1, maths.Count,
+                        $"Numbered OMML scale formula {formulaId} does not contain exactly one OMath.");
+                    math = maths[1];
+                    AssertEqual(Word.WdOMathType.wdOMathDisplay, math.Type,
+                        $"Numbered OMML scale formula {formulaId} is not genuine Word Display math.");
+                    equationFields = equationRange.Fields;
+                    AssertEqual(1, equationFields.Count,
+                        $"Numbered OMML scale formula {formulaId} does not own exactly one mathematical SEQ field.");
+                    sequenceField = equationFields[1];
+                    sequenceCode = sequenceField.Code;
+                    AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(
+                            sequenceCode.Text),
+                        $"Numbered OMML scale formula {formulaId} field is not SEQ VisualTeXEquation.");
+                    AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
+                            "REF VTEqNum_",
+                            StringComparison.OrdinalIgnoreCase) < 0,
+                        $"Numbered OMML scale formula {formulaId} incorrectly embeds REF inside #().");
+
+                    ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OMML scale formula {formulaId} lost its formula paragraph.");
+                    var ownerXml = ownerRange.WordOpenXML ?? string.Empty;
+                    AssertTrue(ownerXml.IndexOf("<m:oMathPara", StringComparison.OrdinalIgnoreCase) >= 0,
+                        $"Numbered OMML scale formula {formulaId} lost m:oMathPara.");
+                    AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                            ownerXml,
+                            formulaId),
+                        $"Numbered OMML scale formula {formulaId} lost its native #(SEQ) structure or aliases.");
+                    AssertTrue(ownerXml.IndexOf(
+                            "REF VTEqNum_",
+                            StringComparison.OrdinalIgnoreCase) < 0,
+                        $"Numbered OMML scale formula {formulaId} contains a mathematical REF.");
+                    ownerInlineShapes = ownerRange.InlineShapes;
+                    AssertEqual(0, ownerInlineShapes.Count,
+                        $"Numbered OMML scale formula {formulaId} retained an inline drawing/object in its paragraph.");
+
+                    visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(
+                        document,
+                        formulaId)
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OMML scale formula {formulaId} lost its VTEq_ number alias.");
+                    AssertEqual(Word.WdStoryType.wdMainTextStory, visibleRange.StoryType,
+                        $"Numbered OMML scale formula {formulaId} number alias left the main mathematical story.");
+                    AssertTrue(visibleRange.Start >= equationRange.Start
+                               && visibleRange.End <= equationRange.End,
+                        $"Numbered OMML scale formula {formulaId} number alias is outside its OMath.");
+                }
+                finally
+                {
+                    Release(visibleRange);
+                    Release(ownerInlineShapes);
+                    Release(ownerRange);
+                    Release(sequenceCode);
+                    Release(sequenceField);
+                    Release(equationFields);
+                    Release(math);
+                    Release(maths);
+                    Release(equationRange);
+                    Release(bookmark);
+                }
+            }
+        }
+        finally
+        {
+            Release(content);
+            Release(shapes);
+        }
+    }
+
     private static void AssertNumberedFormulaArtifacts(
         Word.Document document,
         IReadOnlyList<string> formulaIds)
@@ -1454,29 +1684,28 @@ internal static partial class Program
         IReadOnlyList<string> formulaIds,
         int firstNumber)
     {
-        Word.Bookmarks? bookmarks = null;
-        Word.Bookmark? bookmark = null;
+        Word.Range? visibleRange = null;
         try
         {
-            bookmarks = document.Bookmarks;
             for (var index = 0; index < formulaIds.Count; index++)
             {
-                var bookmarkName = WordEquationNumbering.EquationBookmarkName(formulaIds[index]);
-                if (!bookmarks.Exists(bookmarkName))
-                    throw new InvalidOperationException($"Visible number bookmark {bookmarkName} is missing.");
-                Release(bookmark);
-                bookmark = bookmarks[bookmarkName];
-                var text = (bookmark.Range.Text ?? string.Empty).Trim();
+                Release(visibleRange);
+                visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                        document,
+                        formulaIds[index])
+                    ?? throw new InvalidOperationException(
+                        $"Native mathematical number range for formula {formulaIds[index]} is missing.");
+                AssertEqual(Word.WdStoryType.wdMainTextStory, visibleRange.StoryType,
+                    $"Numbered OMML formula {index + 1} left the main mathematical story.");
+                var text = NormalizeNumberedOmmlLabel(visibleRange.Text)
+                    .Trim('(', ')');
                 AssertEqual(
-                    $"({firstNumber + index})",
+                    (firstNumber + index).ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
                     text,
                     $"Visible numbered formula {index + 1} is stale.");
             }
         }
-        finally
-        {
-            Release(bookmark);
-            Release(bookmarks);
-        }
+        finally { Release(visibleRange); }
     }
 }

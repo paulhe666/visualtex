@@ -258,7 +258,13 @@ export function DocumentImportApp() {
         setSession(next);
         setSource(next.lines[0]?.latex ?? "");
         setFormat(formatFromSession(next));
-        setObjectMode(next.objectMode === "nativeOle" ? "nativeOle" : "wordOmml");
+        setObjectMode(
+          next.objectMode === "nativeOle"
+            ? "nativeOle"
+            : next.objectMode === "mathTypeOle"
+              ? "mathTypeOle"
+              : "wordOmml",
+        );
         setLoading(false);
       })
       .catch((error) => {
@@ -398,6 +404,7 @@ export function DocumentImportApp() {
             <select value={objectMode} onChange={(event) => setObjectMode(event.target.value as DocumentObjectMode)}>
               <option value="wordOmml">Word 原生 OMML</option>
               <option value="nativeOle">VisualTeX OLE</option>
+              <option value="mathTypeOle">MathType OLE</option>
             </select>
           </label>
           <button

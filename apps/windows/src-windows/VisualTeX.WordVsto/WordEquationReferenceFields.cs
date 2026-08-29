@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -166,6 +167,152 @@ internal static class WordEquationReferenceFields
             Release(sourceFormattingRange);
             Release(bookmarks);
         }
+    }
+
+    internal static int UpdateNavigableReferences(
+        Document document,
+        ISet<string>? targetBookmarkNames = null)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+
+        Fields? outerFields = null;
+        var updated = 0;
+        try
+        {
+            outerFields = document.Fields;
+            for (var outerIndex = 1; outerIndex <= outerFields.Count; outerIndex++)
+            {
+                Field? outerField = null;
+                Range? outerCode = null;
+                Fields? nestedFields = null;
+                Field? nestedField = null;
+                Range? nestedCode = null;
+                Range? nestedResult = null;
+                try
+                {
+                    outerField = outerFields[outerIndex];
+                    if (outerField.Type != WdFieldType.wdFieldGoToButton)
+                        continue;
+
+                    outerCode = outerField.Code;
+                    nestedFields = outerCode.Fields;
+                    for (var nestedIndex = 1;
+                         nestedIndex <= nestedFields.Count;
+                         nestedIndex++)
+                    {
+                        Release(nestedResult);
+                        nestedResult = null;
+                        Release(nestedCode);
+                        nestedCode = null;
+                        Release(nestedField);
+                        nestedField = nestedFields[nestedIndex];
+                        if (nestedField.Type != WdFieldType.wdFieldRef)
+                            continue;
+
+                        nestedCode = nestedField.Code;
+                        if (!TryReadVisualTeXNumberBookmark(
+                                nestedCode.Text,
+                                out var bookmarkName))
+                            continue;
+                        if (targetBookmarkNames is not null
+                            && !targetBookmarkNames.Contains(bookmarkName))
+                            continue;
+
+                        nestedResult = nestedField.Result;
+                        var formatting = CaptureFormatting(nestedResult);
+
+                        // The REF is nested inside GOTOBUTTON.Code and therefore is
+                        // not part of document.Fields' top-level enumeration. Update
+                        // it directly. Never touch the target #(SEQ) field or its
+                        // mathematical Field.Code.Text.
+                        nestedField.Update();
+
+                        // Word may rematerialize the outer field tree after a nested
+                        // update. Reacquire it before restoring the user-visible
+                        // character formatting inherited when the reference was
+                        // inserted.
+                        Release(nestedResult);
+                        nestedResult = null;
+                        Release(nestedCode);
+                        nestedCode = null;
+                        Release(nestedField);
+                        nestedField = null;
+                        Release(nestedFields);
+                        nestedFields = null;
+                        Release(outerCode);
+                        outerCode = outerField.Code;
+                        NormalizeInternalStyle(outerCode);
+                        nestedFields = outerCode.Fields;
+                        for (var refreshedIndex = 1;
+                             refreshedIndex <= nestedFields.Count;
+                             refreshedIndex++)
+                        {
+                            Release(nestedCode);
+                            nestedCode = null;
+                            Release(nestedField);
+                            nestedField = nestedFields[refreshedIndex];
+                            if (nestedField.Type != WdFieldType.wdFieldRef)
+                                continue;
+                            nestedCode = nestedField.Code;
+                            if (!TryReadVisualTeXNumberBookmark(
+                                    nestedCode.Text,
+                                    out var refreshedBookmark)
+                                || !string.Equals(
+                                    refreshedBookmark,
+                                    bookmarkName,
+                                    StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            NormalizeInternalStyle(nestedCode);
+                            ApplyFormatting(nestedCode, formatting);
+                            nestedResult = nestedField.Result;
+                            NormalizeInternalStyle(nestedResult);
+                            ApplyFormatting(nestedResult, formatting);
+                            break;
+                        }
+                        try { outerField.ShowCodes = false; } catch { }
+                        updated++;
+                        break;
+                    }
+                }
+                catch (COMException)
+                {
+                    // A protected or temporarily busy field must not prevent the
+                    // remaining references from refreshing. Ordinary REF fields are
+                    // still handled by WordEquationNumbering's normal pass.
+                }
+                finally
+                {
+                    Release(nestedResult);
+                    Release(nestedCode);
+                    Release(nestedField);
+                    Release(nestedFields);
+                    Release(outerCode);
+                    Release(outerField);
+                }
+            }
+        }
+        finally { Release(outerFields); }
+        return updated;
+    }
+
+    private static bool TryReadVisualTeXNumberBookmark(
+        string? code,
+        out string bookmarkName)
+    {
+        bookmarkName = string.Empty;
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        var match = Regex.Match(
+            code!,
+            @"^\s*REF\s+(?:""(?<quoted>[^""]+)""|(?<plain>[^\s\\]+))",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success) return false;
+        var candidate = match.Groups["quoted"].Success
+            ? match.Groups["quoted"].Value
+            : match.Groups["plain"].Value;
+        if (!candidate.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase))
+            return false;
+        bookmarkName = candidate;
+        return true;
     }
 
     private static CharacterFormatting CaptureFormatting(Range range)

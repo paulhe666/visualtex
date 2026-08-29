@@ -297,6 +297,9 @@ const vstoOlePngExtractor = await source(
 const wordEquationNumbering = await source(
   "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.cs",
 );
+const wordEquationNumberingTrueDisplay = await source(
+  "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.TrueDisplay.cs",
+);
 const wordEquationReferenceFields = await source(
   "src-windows/VisualTeX.WordVsto/WordEquationReferenceFields.cs",
 );
@@ -556,7 +559,21 @@ assert.ok(wordVstoService.includes("font.Subscript = 0"));
 assert.ok(wordVstoService.includes("font.Superscript = 0"));
 assert.ok(wordVstoService.includes("RemoveInlineBaselineSentinel"));
 assert.ok(wordVstoService.includes("ResolveDisplayInsertionRange"));
-assert.ok(wordVstoService.includes("document.Tables.Add(tableAnchor, 1, 3)"));
+assert.ok(wordVstoService.includes("PrepareNumberedNativeOmmlInsertionHost"));
+for (const productionNumberingSource of [
+  wordVstoService,
+  wordEquationNumbering,
+  wordEquationNumberingTrueDisplay,
+]) {
+  assert.ok(!productionNumberingSource.includes("document.Tables.Add(tableAnchor, 1, 3)"));
+  assert.ok(!productionNumberingSource.includes(".ConvertToTable("));
+  assert.ok(!productionNumberingSource.includes("NormalizeNumberedDisplayArgumentSizing("));
+  assert.ok(!productionNumberingSource.includes("WrapVisualTeXNativeEquationNumber("));
+}
+assert.ok(wordEquationNumberingTrueDisplay.includes("WdOMathType.wdOMathDisplay"));
+assert.ok(wordEquationNumberingTrueDisplay.includes("EnsureNativeDisplayNumberShape"));
+assert.ok(wordEquationNumberingTrueDisplay.includes("WdFieldType.wdFieldRef"));
+assert.ok(wordEquationNumberingTrueDisplay.includes("IsPureTrueDisplayFormulaParagraph"));
 assert.ok(wordVstoService.includes('private const string InlineMathGuard = " ";'));
 assert.ok(wordVstoService.includes('private const string InlineBaselineSentinel = " ";'));
 assert.ok(wordVstoService.includes("LegacyInlineMathGuard"));
@@ -882,8 +899,9 @@ assert.ok(wordEquationNumbering.includes("FormulaFontSize.ResolveSemanticFontSiz
 assert.ok(wordEquationNumbering.includes("ResolveEquationNumberLabelRange"));
 assert.ok(wordEquationNumbering.includes('EquationNumberFontName = "Cambria Math"'));
 assert.ok(wordEquationNumbering.includes("ApplyEquationNumberFont"));
-assert.ok(wordEquationNumbering.includes("DisableLineHeightGrid = -1"));
-assert.ok(wordEquationNumbering.includes("wdAutoFitFixed"));
+assert.ok(wordVstoService.includes("paragraphFormat.DisableLineHeightGrid = -1"));
+assert.ok(wordEquationNumberingTrueDisplay.includes("StyleNativeDisplayAnchorParagraph"));
+assert.ok(wordEquationNumberingTrueDisplay.includes("WdWrapType.wdWrapNone"));
 assert.ok(wordOmmlConverter.includes("MML2OMML.XSL"));
 assert.ok(wordOmmlConverter.includes("FormattedText"));
 assert.ok(wordOmmlConverter.includes("CreateBatchSource"));

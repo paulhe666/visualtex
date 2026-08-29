@@ -778,7 +778,7 @@ pub fn run_logged_command(
                     })
                     .unwrap_or_default();
                 break Err(format!(
-                    "{label} was stopped because the download or installation exceeded the installer limit of {} minutes.{download_detail} This is separate from pip's 30-second per-socket timeout. The pip cache and existing OCR environment were preserved; retry continues from the missing package. log={}",
+                    "{label} timed out because the download or installation exceeded the installer limit of {} minutes.{download_detail} This is separate from pip's 30-second per-socket timeout. The pip cache and existing OCR environment were preserved; retry continues from the missing package. log={}",
                     limits.step_timeout.as_secs() / 60,
                     log_path.display()
                 ));

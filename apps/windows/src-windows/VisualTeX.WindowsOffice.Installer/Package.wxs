@@ -4,7 +4,7 @@
     Name="VisualTeX Windows Office Integration"
     Manufacturer="VisualTeX"
     ProductCode="$(var.InstallerProductCode)"
-    Version="1.0.42.0"
+    Version="1.0.43.0"
     UpgradeCode="A81B4BF7-0E51-45CE-A5AA-5E28F6944F42"
     Scope="perMachine"
     Compressed="yes">
@@ -19,8 +19,19 @@
       </Directory>
     </StandardDirectory>
 
+    <StandardDirectory Id="FontsFolder">
+      <Component Id="LatinModernMathSystemFont" Guid="5D6FC1D8-FF31-44C4-B704-386F6C7E48EC">
+        <File
+          Id="LatinModernMathSystemFontFile"
+          Source="$(WordOutput)\latinmodern-math.otf"
+          FontTitle="Latin Modern Math"
+          KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
     <Feature Id="Complete" Title="VisualTeX Windows Office Integration" Level="1">
       <ComponentRef Id="VstoFiles" />
+      <ComponentRef Id="LatinModernMathSystemFont" />
       <ComponentRef Id="NativeOleServerFiles" />
       <ComponentRef Id="NativeOleRegistration" />
       <ComponentRef Id="WordComRegistration" />
@@ -45,6 +56,9 @@
       <File Id="MicrosoftBclAsync" Source="$(WordOutput)\Microsoft.Bcl.AsyncInterfaces.dll" />
       <File Id="WordInterop" Source="$(WordOutput)\Microsoft.Office.Interop.Word.dll" />
       <File Id="PowerPointInterop" Source="$(PowerPointOutput)\Microsoft.Office.Interop.PowerPoint.dll" />
+      <File Id="LatinModernMathFont" Source="$(WordOutput)\latinmodern-math.otf" />
+      <File Id="LatinModernMathLicense" Source="$(WordOutput)\GUST-FONT-LICENSE.txt" />
+      <File Id="LatinModernMathReadme" Source="$(WordOutput)\README-Latin-Modern-Math.txt" />
       <RegistryValue
         Root="HKLM"
         Key="Software\VisualTeX\OfficeIntegration"

@@ -37,7 +37,6 @@ internal static partial class Program
         Word.Document? document = null;
         Word.InlineShape? shape = null;
         Word.Range? shapeRange = null;
-        Word.Table? table = null;
         try
         {
             application = CreateWordApplication(visible: false);
@@ -74,8 +73,9 @@ internal static partial class Program
                 ?? throw new InvalidDataException("The unnumbered VisualTeX source lost metadata.");
             AssertTrue(!originalMetadata.Numbered,
                 "The number-toggle fixture was unexpectedly numbered before editing.");
-            AssertTrue(WordEquationNumbering.FindNumberedEquationTable(document, formulaId) is null,
-                "The unnumbered VisualTeX source unexpectedly owns a numbering table.");
+            AssertTrue(
+                !document.Bookmarks.Exists(WordEquationNumbering.EquationBookmarkName(formulaId)),
+                "The unnumbered VisualTeX source unexpectedly owns a visible equation number.");
 
             shapeRange = shape.Range;
             var editSession = CreateNumberedPerformanceSession(
@@ -102,33 +102,33 @@ internal static partial class Program
                 ?? throw new InvalidDataException("The numbered VisualTeX result lost metadata.");
             AssertTrue(updatedMetadata.Numbered,
                 "Editing the VisualTeX formula did not persist Numbered=true.");
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
-                ?? throw new InvalidDataException("Editing the VisualTeX formula did not create its numbering table.");
-            AssertEqual(1, table.Rows.Count,
-                "The new VisualTeX numbering host is not one row.");
-            AssertEqual(3, table.Columns.Count,
-                "The new VisualTeX numbering host is not three columns.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "unnumbered-to-numbered edit");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
             Release(document); document = null;
             document = application.Documents.Open(documentPath, ReadOnly: false, Visible: false);
-            Release(table); table = null;
             Release(shape); shape = null;
             shape = FindVisualTeXOleByFormulaIdForNumberToggle(document, formulaId);
             updatedMetadata = WordFormulaMetadataReader.TryRead(shape)
                 ?? throw new InvalidDataException("Saved/reopened numbered VisualTeX result lost metadata.");
             AssertTrue(updatedMetadata.Numbered,
                 "Saved/reopened VisualTeX result lost Numbered=true.");
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
-                ?? throw new InvalidDataException("Saved/reopened VisualTeX result lost its numbering table.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "saved/reopened unnumbered-to-numbered edit");
 
             Console.WriteLine(
-                "VisualTeX unnumbered->numbered edit acceptance passed: ReplaceOle completed without stale COM access, numbering host is 1x3, and save/reopen retained Numbered=true.");
+                "VisualTeX unnumbered->numbered edit acceptance passed: ReplaceOle completed without stale COM access, the host uses MathType-style center/right tabs, and save/reopen retained Numbered=true.");
         }
         finally
         {
-            Release(table);
             Release(shapeRange);
             Release(shape);
             if (document is not null)
@@ -175,7 +175,6 @@ internal static partial class Program
         Word.Document? document = null;
         Word.InlineShape? shape = null;
         Word.Range? shapeRange = null;
-        Word.Table? table = null;
         Office.COMAddIns? addIns = null;
         Office.COMAddIn? installedAddIn = null;
         object? callbacksObject = null;
@@ -279,13 +278,11 @@ internal static partial class Program
                 ?? throw new InvalidDataException("Installed numbered result lost metadata.");
             AssertTrue(updatedMetadata.Numbered,
                 "Installed editor close did not persist Numbered=true.");
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
-                ?? throw new InvalidDataException(
-                    "Installed editor close completed but the numbering table is missing.");
-            AssertEqual(1, table.Rows.Count,
-                "Installed editor close produced a non-1-row numbering host.");
-            AssertEqual(3, table.Columns.Count,
-                "Installed editor close produced a non-3-column numbering host.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "installed editor unnumbered-to-numbered close");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -294,7 +291,6 @@ internal static partial class Program
                 documentPath,
                 ReadOnly: false,
                 AddToRecentFiles: false);
-            Release(table); table = null;
             Release(shape); shape = null;
             shape = FindVisualTeXOleByFormulaIdForNumberToggle(document, formulaId);
             updatedMetadata = WordFormulaMetadataReader.TryRead(shape)
@@ -302,12 +298,14 @@ internal static partial class Program
                     "Saved/reopened installed number-toggle result lost metadata.");
             AssertTrue(updatedMetadata.Numbered,
                 "Saved/reopened installed number-toggle result lost Numbered=true.");
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
-                ?? throw new InvalidDataException(
-                    "Saved/reopened installed number-toggle result lost its numbering host.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                formulaId,
+                updateReference: true,
+                context: "saved/reopened installed number-toggle result");
 
             Console.WriteLine(
-                "[INSTALLED ADD-IN NUMBER TOGGLE] Real VisualTeX.WordVsto editor Session changed Numbered=false to true, WM_CLOSE completed the Session, the editor hid, the host is 1x3, and save/reopen retained the numbered VisualTeX OLE.");
+                "[INSTALLED ADD-IN NUMBER TOGGLE] Real VisualTeX.WordVsto editor Session changed Numbered=false to true, WM_CLOSE completed the Session, the editor hid, the host uses MathType-style center/right tabs, and save/reopen retained the numbered VisualTeX OLE.");
         }
         finally
         {
@@ -333,7 +331,6 @@ internal static partial class Program
                 }
                 catch { }
             }
-            Release(table);
             Release(shapeRange);
             Release(shape);
             Release(callbacksObject);

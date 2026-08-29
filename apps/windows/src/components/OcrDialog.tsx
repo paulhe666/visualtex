@@ -5,16 +5,20 @@ import {
   Check,
   CheckCircle2,
   ClipboardPaste,
+  Cloud,
   Copy,
   Cpu,
   Download,
   FolderOpen,
   HardDrive,
   ImagePlus,
+  KeyRound,
   LoaderCircle,
   Plus,
   RefreshCw,
+  Save,
   ScanLine,
+  Server,
   Trash2,
   Upload,
   X,
@@ -46,6 +50,7 @@ import {
   downloadOcrModel,
   getOcrInstallStatus,
   getOcrModelCatalog,
+  getOcrProviderConfiguration,
   getOcrModelDownloadStatus,
   openOcrInstallLogs,
   openOcrStorageLocation,
@@ -54,6 +59,8 @@ import {
   type OcrModelCatalog,
   type OcrModelDownloadSnapshot,
   type OcrModelName,
+  type OcrProviderConfiguration,
+  type OcrProviderId,
   type OcrRecognitionProgress,
   type OcrRecognitionResult,
   type OcrRuntimeStatus,
@@ -66,8 +73,11 @@ import {
   listenOcrInstallProgress,
   listenOcrModelDownloadProgress,
   listenOcrRecognitionProgress,
+  normalizeOcrFormulaLines,
+  normalizeOcrFormulaText,
   recognizeFormulaImage,
   removeOptionalOcrModel,
+  saveOcrProviderConfiguration,
   resolveAvailableOcrModel,
   resetOcrRuntime,
   restartOcrWorker,
@@ -113,6 +123,29 @@ function readError(error: unknown) {
 
 const OCR_MODEL_PACKAGE_EXTENSION = ".vtxocrmodel";
 
+const FALLBACK_OCR_PROVIDER_CONFIGURATION: OcrProviderConfiguration = {
+  activeProvider: "local",
+  openAiCompatible: {
+    protocol: "responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "",
+    prompt:
+      'Read every mathematical formula in this image in visual order. Return JSON only in the exact form {"formulas":[{"latex":"..."}]}. Return each independent visual formula row as a separate formulas-array item; keep matrices and cases as one item. Use valid LaTeX without markdown fences or surrounding dollar delimiters.',
+    hasApiKey: false,
+  },
+  ollama: {
+    baseUrl: "http://127.0.0.1:11434",
+    model: "",
+    prompt:
+      'Read every mathematical formula in this image in visual order. Return JSON only in the exact form {"formulas":[{"latex":"..."}]}. Return each independent visual formula row as a separate formulas-array item; keep matrices and cases as one item. Use valid LaTeX without markdown fences or surrounding dollar delimiters.',
+  },
+  mathpix: {
+    baseUrl: "https://api.mathpix.com",
+    appId: "",
+    hasAppKey: false,
+  },
+};
+
 function isOcrModelPackagePath(path: string) {
   return path.trim().toLowerCase().endsWith(OCR_MODEL_PACKAGE_EXTENSION);
 }
@@ -137,12 +170,20 @@ function isDropPositionInsideElement(
 }
 
 function normalizeResultLatex(value: string) {
-  return value
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join("\n");
+  return normalizeOcrFormulaText(value).join("\n");
+}
+
+function providerLabel(provider: OcrProviderId, isEn: boolean) {
+  switch (provider) {
+    case "openai-compatible":
+      return isEn ? "OpenAI-compatible API" : "OpenAI 兼容 API";
+    case "ollama":
+      return "Ollama";
+    case "mathpix":
+      return "Mathpix";
+    default:
+      return isEn ? "Local PP-FormulaNet" : "本地 PP-FormulaNet";
+  }
 }
 
 function hasTauriWebviewRuntime() {
@@ -177,6 +218,15 @@ export function OcrDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [runtime, setRuntime] = useState<OcrRuntimeStatus | null>(null);
+  const [providerConfiguration, setProviderConfiguration] =
+    useState<OcrProviderConfiguration>(FALLBACK_OCR_PROVIDER_CONFIGURATION);
+  const [providerLoaded, setProviderLoaded] = useState(false);
+  const [providerDirty, setProviderDirty] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+  const [openAiApiKey, setOpenAiApiKey] = useState("");
+  const [clearOpenAiApiKey, setClearOpenAiApiKey] = useState(false);
+  const [mathpixAppKey, setMathpixAppKey] = useState("");
+  const [clearMathpixAppKey, setClearMathpixAppKey] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<OcrModelCatalog | null>(null);
   const [modelDownload, setModelDownload] = useState<OcrModelDownloadSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
@@ -220,6 +270,9 @@ export function OcrDialog({
     modelDownload?.state === "downloading" ||
     modelDownload?.state === "verifying" ||
     modelDownload?.state === "installing";
+  const activeProvider = providerConfiguration.activeProvider;
+  const usingLocalProvider = activeProvider === "local";
+  const activeProviderLabel = providerLabel(activeProvider, isEn);
   const storageAvailableBytes = runtime?.storageAvailableBytes ?? null;
   const storageLowForInitialInstall =
     !runtime?.installed &&
@@ -306,6 +359,98 @@ export function OcrDialog({
     }
   }, [isEn]);
 
+  const refreshProviderConfiguration = useCallback(async () => {
+    if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
+      setProviderConfiguration(FALLBACK_OCR_PROVIDER_CONFIGURATION);
+      setProviderLoaded(true);
+      setProviderDirty(false);
+      return;
+    }
+    try {
+      const configuration = await getOcrProviderConfiguration();
+      setProviderConfiguration(configuration);
+      setOpenAiApiKey("");
+      setClearOpenAiApiKey(false);
+      setMathpixAppKey("");
+      setClearMathpixAppKey(false);
+      setProviderDirty(false);
+    } catch (providerError) {
+      // Keep a complete editable fallback visible so a damaged native provider
+      // configuration can be repaired by one explicit Save instead of trapping
+      // the user behind a permanently disabled settings screen.
+      setProviderConfiguration(FALLBACK_OCR_PROVIDER_CONFIGURATION);
+      setOpenAiApiKey("");
+      setClearOpenAiApiKey(false);
+      setMathpixAppKey("");
+      setClearMathpixAppKey(false);
+      setProviderDirty(true);
+      setError(readError(providerError));
+    } finally {
+      setProviderLoaded(true);
+    }
+  }, []);
+
+  const updateProviderConfiguration = useCallback(
+    (update: (current: OcrProviderConfiguration) => OcrProviderConfiguration) => {
+      setProviderConfiguration(update);
+      setProviderDirty(true);
+    },
+    [],
+  );
+
+  const handleSaveProviderConfiguration = useCallback(async () => {
+    if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) return;
+    setSavingProvider(true);
+    setError("");
+    try {
+      const saved = await saveOcrProviderConfiguration({
+        activeProvider: providerConfiguration.activeProvider,
+        openAiCompatible: {
+          protocol: providerConfiguration.openAiCompatible.protocol,
+          baseUrl: providerConfiguration.openAiCompatible.baseUrl,
+          model: providerConfiguration.openAiCompatible.model,
+          prompt: providerConfiguration.openAiCompatible.prompt,
+          apiKey: openAiApiKey || undefined,
+          clearApiKey: clearOpenAiApiKey,
+        },
+        ollama: {
+          baseUrl: providerConfiguration.ollama.baseUrl,
+          model: providerConfiguration.ollama.model,
+          prompt: providerConfiguration.ollama.prompt,
+        },
+        mathpix: {
+          baseUrl: providerConfiguration.mathpix.baseUrl,
+          appId: providerConfiguration.mathpix.appId,
+          appKey: mathpixAppKey || undefined,
+          clearAppKey: clearMathpixAppKey,
+        },
+      });
+      setProviderConfiguration(saved);
+      setOpenAiApiKey("");
+      setClearOpenAiApiKey(false);
+      setMathpixAppKey("");
+      setClearMathpixAppKey(false);
+      setProviderDirty(false);
+      onNotify(
+        isEn
+          ? `OCR provider saved: ${providerLabel(saved.activeProvider, true)}`
+          : `OCR 提供器已保存：${providerLabel(saved.activeProvider, false)}`,
+      );
+    } catch (providerError) {
+      setError(readError(providerError));
+    } finally {
+      setSavingProvider(false);
+    }
+  }, [
+    clearMathpixAppKey,
+    clearOpenAiApiKey,
+    isEn,
+    mathpixAppKey,
+    onNotify,
+    openAiApiKey,
+    providerConfiguration,
+  ]);
+
   const refreshModelCatalog = useCallback(async () => {
     if (!isTauriEnvironment()) {
       setModelCatalog(null);
@@ -373,6 +518,7 @@ export function OcrDialog({
       // Re-read the pointer and actual runtime files every time the dialog is
       // opened. Keeping the previous React object here made a changed path or
       // deleted environment appear unchanged after reopening the dialog.
+      void refreshProviderConfiguration();
       void refreshRuntime(false);
       void refreshInstallStatus();
       void refreshModelCatalog();
@@ -382,7 +528,13 @@ export function OcrDialog({
       runtimeRequestGenerationRef.current += 1;
       window.cancelAnimationFrame(frame);
     };
-  }, [open, refreshInstallStatus, refreshModelCatalog, refreshRuntime]);
+  }, [
+    open,
+    refreshInstallStatus,
+    refreshModelCatalog,
+    refreshProviderConfiguration,
+    refreshRuntime,
+  ]);
 
   useEffect(() => {
     if (!open || !isTauriEnvironment() || !hasTauriWebviewRuntime()) return;
@@ -874,11 +1026,23 @@ export function OcrDialog({
       setError(isEn ? "Choose or paste a formula image first." : "请先选择或粘贴一张公式图片。");
       return;
     }
-    if (!runtime?.installed) {
+    if (!providerLoaded) {
+      setError(isEn ? "OCR provider configuration is still loading." : "OCR 提供器配置仍在加载中。");
+      return;
+    }
+    if (providerDirty) {
+      setError(
+        isEn
+          ? "Save the OCR provider configuration before recognition."
+          : "请先保存 OCR 提供器配置，再开始识别。",
+      );
+      return;
+    }
+    if (usingLocalProvider && !runtime?.installed) {
       setError(isEn ? "Install the OCR runtime first." : "请先安装 OCR 运行环境。");
       return;
     }
-    if (!selectedModelInstalled) {
+    if (usingLocalProvider && !selectedModelInstalled) {
       setError(
         isEn
           ? "Import or explicitly download the selected OCR model first."
@@ -895,7 +1059,13 @@ export function OcrDialog({
       id: "pending",
       stage: "preprocess",
       model,
-      message: isEn ? "Preparing the formula image" : "正在准备公式图片",
+      message: usingLocalProvider
+        ? isEn
+          ? "Preparing the formula image"
+          : "正在准备公式图片"
+        : isEn
+          ? `Preparing request for ${activeProviderLabel}`
+          : `正在准备发送到${activeProviderLabel}`,
     });
     setResult(null);
     setLatex("");
@@ -903,15 +1073,15 @@ export function OcrDialog({
 
     let unlisten: (() => void) | undefined;
     try {
-      unlisten = await listenOcrRecognitionProgress((progress) => {
-        if (progress.model === model) setRecognitionProgress(progress);
-      });
+      if (usingLocalProvider) {
+        unlisten = await listenOcrRecognitionProgress((progress) => {
+          if (progress.model === model) setRecognitionProgress(progress);
+        });
+      }
       const request = await fileToOcrRequest(file, model);
       const nextResult = await recognizeFormulaImage(request);
       setResult(nextResult);
-      setLatex(
-        normalizeResultLatex(nextResult.formulas.map((formula) => formula.latex).join("\n")),
-      );
+      setLatex(normalizeOcrFormulaLines(nextResult.formulas).join("\n"));
     } catch (recognitionError) {
       const message = readError(recognitionError);
       if (cancellingRef.current || message.includes("OCR_CANCELLED")) {
@@ -937,7 +1107,7 @@ export function OcrDialog({
       id: current?.id ?? "pending",
       stage: "cancelling",
       model,
-      message: isEn ? "Stopping the OCR worker…" : "正在停止 OCR 进程…",
+      message: isEn ? "Stopping the OCR request…" : "正在停止 OCR 请求…",
     }));
     try {
       await cancelOcrRecognition();
@@ -1080,7 +1250,7 @@ export function OcrDialog({
               <ScanLine size={20} />
             </span>
             <div>
-              <span className="eyebrow">PP-FORMULANET OCR</span>
+              <span className="eyebrow">VISUALTEX OCR</span>
               <h2 id="ocr-dialog-title">{isEn ? "Formula image recognition" : "图片公式识别"}</h2>
             </div>
           </div>
@@ -1168,6 +1338,334 @@ export function OcrDialog({
               </div>
             )}
 
+            <section className="ocr-provider-card" aria-label={isEn ? "OCR provider" : "OCR 提供器"}>
+              <div className="ocr-provider-heading">
+                <span className={`ocr-provider-icon${usingLocalProvider ? " is-local" : " is-api"}`}>
+                  {usingLocalProvider ? <Server size={17} /> : <Cloud size={17} />}
+                </span>
+                <div>
+                  <strong>{isEn ? "Recognition provider" : "识别提供器"}</strong>
+                  <span>{activeProviderLabel}</span>
+                </div>
+              </div>
+
+              <label className="ocr-provider-field">
+                <span>{isEn ? "Provider" : "提供器"}</span>
+                <select
+                  value={activeProvider}
+                  disabled={recognizing || savingProvider}
+                  onChange={(event) =>
+                    updateProviderConfiguration((current) => ({
+                      ...current,
+                      activeProvider: event.target.value as OcrProviderId,
+                    }))
+                  }
+                >
+                  <option value="local">{isEn ? "Local PP-FormulaNet" : "本地 PP-FormulaNet"}</option>
+                  <option value="openai-compatible">{isEn ? "OpenAI-compatible API" : "OpenAI 兼容 API"}</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="mathpix">Mathpix</option>
+                </select>
+              </label>
+
+              {activeProvider === "openai-compatible" && (
+                <div className="ocr-provider-fields">
+                  <label className="ocr-provider-field">
+                    <span>{isEn ? "Protocol" : "协议"}</span>
+                    <select
+                      value={providerConfiguration.openAiCompatible.protocol}
+                      disabled={recognizing || savingProvider}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          openAiCompatible: {
+                            ...current.openAiCompatible,
+                            protocol: event.target.value as "responses" | "chat-completions",
+                          },
+                        }))
+                      }
+                    >
+                      <option value="responses">Responses API</option>
+                      <option value="chat-completions">Chat Completions</option>
+                    </select>
+                  </label>
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Base URL" : "基础地址"}</span>
+                    <input
+                      value={providerConfiguration.openAiCompatible.baseUrl}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      placeholder="https://api.openai.com/v1"
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          openAiCompatible: {
+                            ...current.openAiCompatible,
+                            baseUrl: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field">
+                    <span>{isEn ? "Vision model" : "视觉模型"}</span>
+                    <input
+                      value={providerConfiguration.openAiCompatible.model}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      placeholder={isEn ? "Enter a model supported by the endpoint" : "填写接口支持的视觉模型"}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          openAiCompatible: {
+                            ...current.openAiCompatible,
+                            model: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field">
+                    <span>
+                      {isEn ? "API key" : "API 密钥"}
+                      {providerConfiguration.openAiCompatible.hasApiKey && !clearOpenAiApiKey
+                        ? isEn
+                          ? " · saved"
+                          : " · 已保存"
+                        : ""}
+                    </span>
+                    <input
+                      type="password"
+                      value={openAiApiKey}
+                      disabled={recognizing || savingProvider || clearOpenAiApiKey}
+                      autoComplete="new-password"
+                      placeholder={
+                        providerConfiguration.openAiCompatible.hasApiKey
+                          ? isEn
+                            ? "Leave blank to keep the saved key"
+                            : "留空将继续使用已保存密钥"
+                          : isEn
+                            ? "Leave blank when the endpoint does not require authentication"
+                            : "接口无需鉴权时可留空"
+                      }
+                      onChange={(event) => {
+                        setOpenAiApiKey(event.target.value);
+                        setProviderDirty(true);
+                      }}
+                    />
+                  </label>
+                  {providerConfiguration.openAiCompatible.hasApiKey && (
+                    <label className="ocr-provider-clear-secret">
+                      <input
+                        type="checkbox"
+                        checked={clearOpenAiApiKey}
+                        disabled={recognizing || savingProvider}
+                        onChange={(event) => {
+                          setClearOpenAiApiKey(event.target.checked);
+                          setProviderDirty(true);
+                        }}
+                      />
+                      <span>{isEn ? "Remove the saved API key" : "删除已保存的 API 密钥"}</span>
+                    </label>
+                  )}
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Recognition prompt" : "识别提示词"}</span>
+                    <textarea
+                      value={providerConfiguration.openAiCompatible.prompt}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          openAiCompatible: {
+                            ...current.openAiCompatible,
+                            prompt: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <small className="ocr-provider-protocol-note">
+                    {isEn
+                      ? 'VisualTeX sends the image as a data URL and expects {"formulas":[{"latex":"..."}]}; structured-output requests automatically fall back for compatible servers that do not implement JSON Schema.'
+                      : 'VisualTeX 会以 data URL 发送图片，并统一接收 {"formulas":[{"latex":"..."}]}；若兼容服务器不支持 JSON Schema，会自动退回普通 JSON 响应。'}
+                  </small>
+                </div>
+              )}
+
+              {activeProvider === "ollama" && (
+                <div className="ocr-provider-fields">
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Ollama address" : "Ollama 地址"}</span>
+                    <input
+                      value={providerConfiguration.ollama.baseUrl}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      placeholder="http://127.0.0.1:11434"
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          ollama: { ...current.ollama, baseUrl: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Vision model" : "视觉模型"}</span>
+                    <input
+                      value={providerConfiguration.ollama.model}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      placeholder={isEn ? "For example, a locally installed vision model" : "例如本机已安装的视觉模型名称"}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          ollama: { ...current.ollama, model: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Recognition prompt" : "识别提示词"}</span>
+                    <textarea
+                      value={providerConfiguration.ollama.prompt}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          ollama: { ...current.ollama, prompt: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <small className="ocr-provider-protocol-note">
+                    {isEn
+                      ? "Uses Ollama /api/chat with a base64 image, stream=false, and a JSON result schema."
+                      : "使用 Ollama /api/chat，以 base64 图片、stream=false 和 JSON 结果结构调用。"}
+                  </small>
+                </div>
+              )}
+
+              {activeProvider === "mathpix" && (
+                <div className="ocr-provider-fields">
+                  <label className="ocr-provider-field is-wide">
+                    <span>{isEn ? "Mathpix address" : "Mathpix 地址"}</span>
+                    <input
+                      value={providerConfiguration.mathpix.baseUrl}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      placeholder="https://api.mathpix.com"
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          mathpix: { ...current.mathpix, baseUrl: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field">
+                    <span>app_id</span>
+                    <input
+                      value={providerConfiguration.mathpix.appId}
+                      disabled={recognizing || savingProvider}
+                      spellCheck={false}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          mathpix: { ...current.mathpix, appId: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="ocr-provider-field">
+                    <span>
+                      app_key
+                      {providerConfiguration.mathpix.hasAppKey && !clearMathpixAppKey
+                        ? isEn
+                          ? " · saved"
+                          : " · 已保存"
+                        : ""}
+                    </span>
+                    <input
+                      type="password"
+                      value={mathpixAppKey}
+                      disabled={recognizing || savingProvider || clearMathpixAppKey}
+                      autoComplete="new-password"
+                      placeholder={
+                        providerConfiguration.mathpix.hasAppKey
+                          ? isEn
+                            ? "Leave blank to keep the saved key"
+                            : "留空将继续使用已保存密钥"
+                          : "app_key"
+                      }
+                      onChange={(event) => {
+                        setMathpixAppKey(event.target.value);
+                        setProviderDirty(true);
+                      }}
+                    />
+                  </label>
+                  {providerConfiguration.mathpix.hasAppKey && (
+                    <label className="ocr-provider-clear-secret">
+                      <input
+                        type="checkbox"
+                        checked={clearMathpixAppKey}
+                        disabled={recognizing || savingProvider}
+                        onChange={(event) => {
+                          setClearMathpixAppKey(event.target.checked);
+                          setProviderDirty(true);
+                        }}
+                      />
+                      <span>{isEn ? "Remove the saved app_key" : "删除已保存的 app_key"}</span>
+                    </label>
+                  )}
+                  <small className="ocr-provider-protocol-note">
+                    {isEn
+                      ? "Uses POST /v3/text with a base64 data URL, reads latex_styled first and then text, disables improve_mathpix, and enforces Mathpix's 2 MB base64-image limit before sending."
+                      : "使用 POST /v3/text 和 base64 data URL，优先读取 latex_styled，缺失时读取 text；默认关闭 improve_mathpix，并在发送前执行 Mathpix 的 2 MB base64 图片限制。"}
+                  </small>
+                </div>
+              )}
+
+              {usingLocalProvider && (
+                <small className="ocr-provider-protocol-note">
+                  {isEn
+                    ? "All recognition stays on this computer and uses the verified PP-FormulaNet model selected below."
+                    : "所有识别均留在本机，并使用下方选择的已校验 PP-FormulaNet 模型。"}
+                </small>
+              )}
+
+              <div className="ocr-provider-actions">
+                <span>
+                  <KeyRound size={13} />
+                  {isEn
+                    ? "Secrets are encrypted for the current Windows user and never exposed to the web UI after saving."
+                    : "密钥按当前 Windows 用户加密保存，保存后不会重新暴露给网页界面。"}
+                </span>
+                <button
+                  type="button"
+                  className={providerDirty ? "primary-button" : "secondary-button"}
+                  disabled={!providerLoaded || !providerDirty || savingProvider || recognizing}
+                  onClick={() => void handleSaveProviderConfiguration()}
+                >
+                  {savingProvider ? (
+                    <LoaderCircle size={14} className="is-spinning" />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  {savingProvider
+                    ? isEn
+                      ? "Saving…"
+                      : "正在保存…"
+                    : isEn
+                      ? "Save provider"
+                      : "保存提供器"}
+                </button>
+              </div>
+            </section>
+
+            {usingLocalProvider && (
+              <>
             <label className="ocr-model-field">
               <span>{isEn ? "Recognition model" : "识别模型"}</span>
               <select
@@ -1324,6 +1822,8 @@ export function OcrDialog({
                 </span>
               </div>
             )}
+              </>
+            )}
 
             <div className="ocr-input-tip">
               <AlertCircle size={14} />
@@ -1336,6 +1836,7 @@ export function OcrDialog({
           </div>
 
           <div className="ocr-output-column">
+            {usingLocalProvider ? (
             <section className="ocr-runtime-card">
               <div className="ocr-runtime-summary">
                 <span className={"ocr-runtime-icon " + (runtime?.installed && !checkingRuntime && !changingStorage ? "is-ready" : "")}>
@@ -1599,6 +2100,69 @@ export function OcrDialog({
                 </div>
               )}
             </section>
+            ) : (
+              <section className="ocr-runtime-card ocr-api-runtime-card">
+                <div className="ocr-runtime-summary">
+                  <span className={`ocr-runtime-icon${providerDirty ? "" : " is-ready"}`}>
+                    {savingProvider ? (
+                      <LoaderCircle size={17} className="is-spinning" />
+                    ) : providerDirty ? (
+                      <AlertCircle size={17} />
+                    ) : (
+                      <Cloud size={17} />
+                    )}
+                  </span>
+                  <div>
+                    <strong>
+                      {providerDirty
+                        ? isEn
+                          ? "OCR API changes are not saved"
+                          : "OCR API 修改尚未保存"
+                        : isEn
+                          ? `${activeProviderLabel} is active`
+                          : `当前使用${activeProviderLabel}`}
+                    </strong>
+                    <span>
+                      {providerDirty
+                        ? isEn
+                          ? "Save the provider configuration before recognition so every VisualTeX and Office OCR entry point uses the same settings."
+                          : "请先保存提供器配置；保存后 VisualTeX 与 Office 的所有 OCR 入口会统一使用这套设置。"
+                        : isEn
+                          ? "The local PP-FormulaNet runtime is not required while this provider is active."
+                          : "启用此提供器时无需安装本地 PP-FormulaNet 运行环境。"}
+                    </span>
+                  </div>
+                </div>
+                <div className="ocr-runtime-details ocr-api-provider-details">
+                  {activeProvider === "openai-compatible" && (
+                    <>
+                      <span>{providerConfiguration.openAiCompatible.protocol === "responses" ? "Responses API" : "Chat Completions"}</span>
+                      <span>{providerConfiguration.openAiCompatible.model || (isEn ? "model not set" : "未填写模型")}</span>
+                      <code>{providerConfiguration.openAiCompatible.baseUrl}</code>
+                    </>
+                  )}
+                  {activeProvider === "ollama" && (
+                    <>
+                      <span>/api/chat</span>
+                      <span>{providerConfiguration.ollama.model || (isEn ? "model not set" : "未填写模型")}</span>
+                      <code>{providerConfiguration.ollama.baseUrl}</code>
+                    </>
+                  )}
+                  {activeProvider === "mathpix" && (
+                    <>
+                      <span>POST /v3/text</span>
+                      <span>{providerConfiguration.mathpix.appId || "app_id"}</span>
+                      <code>{providerConfiguration.mathpix.baseUrl}</code>
+                    </>
+                  )}
+                </div>
+                <small className="ocr-api-privacy-note">
+                  {isEn
+                    ? "The selected image is sent only to the configured endpoint. API credentials remain in the native Windows backend. Plain HTTP with a secret is rejected unless the endpoint is loopback."
+                    : "所选图片只会发送到已配置的接口；API 凭据仅保留在 Windows 原生后端。除本机回环地址外，携带密钥的明文 HTTP 会被拒绝。"}
+                </small>
+              </section>
+            )}
 
             <section className="ocr-result-card">
               <div className="ocr-result-heading">
@@ -1613,7 +2177,10 @@ export function OcrDialog({
                         ? "Dark background normalized · "
                         : "已自动反色 · "
                       : ""}
-                    {result.elapsedMs} ms · {result.processedWidth}×{result.processedHeight}
+                    {providerLabel(result.provider as OcrProviderId, isEn)} · {result.elapsedMs} ms
+                    {result.processedWidth > 0 && result.processedHeight > 0
+                      ? ` · ${result.processedWidth}×${result.processedHeight}`
+                      : ""}
                   </span>
                 )}
               </div>
@@ -1626,14 +2193,22 @@ export function OcrDialog({
                       (isEn ? "Recognizing formula…" : "正在识别公式…")}
                   </strong>
                   <span>
-                    {isEn
-                      ? `${selectedModel.labelEn} · ${recognitionSeconds}s elapsed`
-                      : `${selectedModel.labelZh} · 已等待 ${recognitionSeconds} 秒`}
+                    {usingLocalProvider
+                      ? isEn
+                        ? `${selectedModel.labelEn} · ${recognitionSeconds}s elapsed`
+                        : `${selectedModel.labelZh} · 已等待 ${recognitionSeconds} 秒`
+                      : isEn
+                        ? `${activeProviderLabel} · ${recognitionSeconds}s elapsed`
+                        : `${activeProviderLabel} · 已等待 ${recognitionSeconds} 秒`}
                   </span>
                   <small className="ocr-recognition-meta">
-                    {isEn
-                      ? "Recognition uses only the verified local model_dir. It will never download a model in the background."
-                      : "识别只会使用已校验的本地 model_dir，过程中绝不会后台下载模型。"}
+                    {usingLocalProvider
+                      ? isEn
+                        ? "Recognition uses only the verified local model_dir. It will never download a model in the background."
+                        : "识别只会使用已校验的本地 model_dir，过程中绝不会后台下载模型。"
+                      : isEn
+                        ? "The image is being sent to the saved endpoint; the response is normalized to the same VisualTeX LaTeX result format."
+                        : "图片正发送到已保存的接口；返回内容会统一转换为 VisualTeX 的 LaTeX 结果格式。"}
                   </small>
                 </div>
               ) : latex ? (
@@ -1695,8 +2270,10 @@ export function OcrDialog({
               onClick={handleRecognize}
               disabled={
                 !file ||
-                !runtime?.installed ||
-                !selectedModelInstalled ||
+                !providerLoaded ||
+                providerDirty ||
+                savingProvider ||
+                (usingLocalProvider && (!runtime?.installed || !selectedModelInstalled)) ||
                 installing ||
                 modelBusy ||
                 modelDownloadActive

@@ -18,8 +18,18 @@ internal static class WordOmmlNativeSource
             equationRange,
             formulaId);
         var displayMode = ReadDisplayMode(equationRange);
+        var numbered = string.Equals(
+                displayMode,
+                "block",
+                StringComparison.Ordinal)
+            && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                wordOpenXml);
+        var semanticWordOpenXml = numbered
+            ? WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(
+                wordOpenXml)
+            : wordOpenXml;
         var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
-            wordOpenXml,
+            semanticWordOpenXml,
             display: string.Equals(displayMode, "block", StringComparison.Ordinal));
         var latex = SanitizeFormulaBoundaryArtifacts(
             MathMlToLatexConverter.Convert(mathMl));
@@ -40,10 +50,11 @@ internal static class WordOmmlNativeSource
             },
             CodeFormat = "raw",
             DisplayMode = displayMode,
-            Numbered = false,
+            Numbered = numbered,
             FontSizePt = fontSize,
             RenderFontSizePt = fontSize,
-            NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(wordOpenXml),
+            NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                semanticWordOpenXml),
             CreatedWithVersion = "1.2.5",
             UpdatedWithVersion = "1.2.5",
             CreatedAt = now,

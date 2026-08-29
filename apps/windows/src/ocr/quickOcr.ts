@@ -8,12 +8,26 @@ export const SILENT_OCR_SHORTCUT = "Ctrl+Alt+O";
 export const QUICK_OCR_CAPTURE_MODE_STORAGE_KEY =
   "visualtex.quick-ocr.capture-mode";
 
-export type QuickOcrCaptureMode = "immediate" | "system-screenshot";
+export type QuickOcrCaptureMode = "windows" | "pixpin" | "clipboard";
+
+/**
+ * Keep configuration imports from older 1.2.x builds working while exposing
+ * names that describe the actual capture provider. "clipboard" accepts the
+ * next image written by PixPin, ShareX, Snipping Tool, or any other utility.
+ */
+export function normalizeQuickOcrCaptureMode(
+  value: unknown,
+): QuickOcrCaptureMode | null {
+  if (value === "windows" || value === "immediate") return "windows";
+  if (value === "pixpin") return "pixpin";
+  if (value === "clipboard" || value === "system-screenshot") return "clipboard";
+  return null;
+}
 
 export function isQuickOcrCaptureMode(
   value: unknown,
 ): value is QuickOcrCaptureMode {
-  return value === "immediate" || value === "system-screenshot";
+  return value === "windows" || value === "pixpin" || value === "clipboard";
 }
 
 export interface QuickOcrCapture {
@@ -28,12 +42,12 @@ function hasTauriRuntime() {
   );
 }
 
-async function captureWindowsClipboardImage(launchCapture: boolean) {
+async function captureWindowsClipboardImage(captureMode: QuickOcrCaptureMode) {
   if (!hasTauriRuntime()) {
     throw new Error("Windows Quick OCR is available in the desktop app only.");
   }
   return invoke<QuickOcrCapture | null>("capture_windows_quick_ocr", {
-    launchCapture,
+    captureMode,
     timeoutMs: 60_000,
   });
 }
@@ -58,21 +72,14 @@ export async function writeSilentOcrClipboardText(text: string) {
 }
 
 /**
- * Windows "immediate" capture opens the native Snipping Tool region selector
- * immediately. This keeps capture precise and avoids a second, app-specific
- * desktop-capture implementation.
+ * Capture with the selected provider, then read the newly committed Windows
+ * clipboard image directly. Windows Snipping Tool remains the default; PixPin
+ * uses its official scripting command, while clipboard mode waits for any tool.
  */
-export async function captureQuickOcrScreenshot() {
-  return captureWindowsClipboardImage(true);
-}
-
-/**
- * The alternate workflow intentionally does not open Snipping Tool. VisualTeX
- * minimizes so the user can navigate to any page and invoke their preferred
- * Windows screenshot shortcut; the next clipboard image is consumed by OCR.
- */
-export async function waitForQuickOcrSystemScreenshot() {
-  return captureWindowsClipboardImage(false);
+export async function captureQuickOcrScreenshot(
+  captureMode: QuickOcrCaptureMode = "windows",
+) {
+  return captureWindowsClipboardImage(captureMode);
 }
 
 /** Register the Windows global Ctrl+Alt+O bridge while OCR stays in React. */
@@ -80,9 +87,15 @@ export async function configureSilentOcr(
   enabled: boolean,
   model: OcrModelName,
   copyFormat: LatexCodeFormat,
+  captureMode: QuickOcrCaptureMode,
 ) {
   if (!hasTauriRuntime()) return enabled ? SILENT_OCR_SHORTCUT : "";
-  return invoke<string>("configure_silent_ocr", { enabled, model, copyFormat });
+  return invoke<string>("configure_silent_ocr", {
+    enabled,
+    model,
+    copyFormat,
+    captureMode,
+  });
 }
 
 export function quickOcrCaptureToFile(capture: QuickOcrCapture) {

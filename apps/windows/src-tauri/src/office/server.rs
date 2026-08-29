@@ -1431,6 +1431,37 @@ async fn get_ocr_status(
     }
 }
 
+async fn get_ocr_provider_configuration(
+    State(context): State<ServerContext>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.provider_configuration(&app) {
+        Ok(configuration) => Json(configuration).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn put_ocr_provider_configuration(
+    State(context): State<ServerContext>,
+    Json(configuration): Json<crate::ocr_provider::OcrProviderConfigurationUpdate>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context
+        .companion
+        .ocr
+        .save_provider_configuration(&app, configuration)
+    {
+        Ok(configuration) => Json(configuration).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
 async fn install_ocr(State(context): State<ServerContext>) -> Response {
     let app = match ocr_app(&context) {
         Ok(app) => app,
@@ -2539,6 +2570,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             post(commit_windows_session),
         )
         .route("/ocr/status", get(get_ocr_status))
+        .route(
+            "/ocr/providers",
+            get(get_ocr_provider_configuration).put(put_ocr_provider_configuration),
+        )
         .route("/ocr/install", post(install_ocr))
         .route("/ocr/install/status", get(get_ocr_install_status))
         .route("/ocr/install/cancel", post(cancel_ocr_install))

@@ -3,6 +3,7 @@ import { useEditorStore } from "../stores/editorStore";
 import { safeStorage } from "./safeStorage";
 import { publishSynchronizedTheme } from "../themeSync";
 import { OCR_MODELS } from "../ocr/ocrService";
+import { normalizeQuickOcrCaptureMode } from "../ocr/quickOcr";
 import type { CommandUsage } from "../types/command";
 import type { FormulaDocument, FormulaHistoryItem } from "../types/formula";
 import {
@@ -303,10 +304,10 @@ function normalizeStorage(value: unknown) {
       !OCR_MODELS.some((item) => item.id === raw)
     ) {
       continue;
-    } else if (
-      key === "visualtex.quick-ocr.capture-mode" &&
-      !["immediate", "system-screenshot"].includes(raw)
-    ) {
+    } else if (key === "visualtex.quick-ocr.capture-mode") {
+      const captureMode = normalizeQuickOcrCaptureMode(raw);
+      if (!captureMode) continue;
+      result[key] = captureMode;
       continue;
     }
     result[key] = raw;

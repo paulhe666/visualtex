@@ -155,7 +155,7 @@ export function EditorWorkspace({
   ocrBusy = false,
   onOcrModelChange,
   onQuickOcr,
-  quickOcrCaptureMode = "immediate",
+  quickOcrCaptureMode = "windows",
   onQuickOcrCaptureModeChange,
   silentOcrEnabled = false,
   silentOcrShortcut = "Ctrl+Alt+O",
@@ -1227,13 +1227,17 @@ export function EditorWorkspace({
                       disabled={ocrBusy}
                       data-quick-ocr-button
                       title={
-                        quickOcrCaptureMode === "system-screenshot"
+                        quickOcrCaptureMode === "clipboard"
                           ? isEn
-                            ? "Minimize VisualTeX and wait for your next Windows screenshot"
-                            : "最小化 VisualTeX，等待你下一次使用 Windows 系统截图键截图"
-                          : isEn
-                            ? "Open the Windows region selector immediately"
-                            : "立即打开 Windows 区域截图选择器"
+                            ? "Wait for the next image copied by any screenshot tool"
+                            : "等待任意截图工具写入下一张剪贴板图片"
+                          : quickOcrCaptureMode === "pixpin"
+                            ? isEn
+                              ? "Open PixPin's region capture and read the copied image"
+                              : "打开 PixPin 区域截图并直接读取复制的图片"
+                            : isEn
+                              ? "Open the Windows Snipping Tool region selector"
+                              : "打开 Windows 截图工具的区域选择器"
                       }
                     >
                       <Camera size={15} />
@@ -1242,7 +1246,7 @@ export function EditorWorkspace({
                     {onQuickOcrCaptureModeChange && (
                       <button
                         type="button"
-                        className={`quick-ocr-mode-trigger${quickOcrModeMenuOpen ? " is-open" : ""}${quickOcrCaptureMode === "system-screenshot" ? " is-system-screenshot" : ""}`}
+                        className={`quick-ocr-mode-trigger${quickOcrModeMenuOpen ? " is-open" : ""}${quickOcrCaptureMode !== "windows" ? " is-custom-provider" : ""}`}
                         onClick={() => setQuickOcrModeMenuOpen((open) => !open)}
                         disabled={ocrBusy}
                         aria-label={isEn ? "Choose Quick OCR capture mode" : "选择快捷 OCR 截图模式"}
@@ -1256,31 +1260,45 @@ export function EditorWorkspace({
                       <div className="quick-ocr-mode-menu" role="menu" data-quick-ocr-mode-menu>
                         <button
                           type="button"
-                          className={quickOcrCaptureMode === "immediate" ? "is-active" : ""}
+                          className={quickOcrCaptureMode === "windows" ? "is-active" : ""}
                           onClick={() => {
-                            onQuickOcrCaptureModeChange("immediate");
+                            onQuickOcrCaptureModeChange("windows");
                             setQuickOcrModeMenuOpen(false);
                           }}
                           role="menuitemradio"
-                          aria-checked={quickOcrCaptureMode === "immediate"}
-                          data-quick-ocr-mode-option="immediate"
+                          aria-checked={quickOcrCaptureMode === "windows"}
+                          data-quick-ocr-mode-option="windows"
                         >
-                          <strong>{isEn ? "Immediate selection" : "立即框选"}</strong>
-                          <span>{isEn ? "Open the Windows Snipping Tool region selector right away" : "点击后立即进入 Windows 区域截图"}</span>
+                          <strong>{isEn ? "Windows Snipping Tool (default)" : "Windows 截图工具（默认）"}</strong>
+                          <span>{isEn ? "VisualTeX opens the Windows region selector automatically" : "由 VisualTeX 自动打开 Windows 区域截图"}</span>
                         </button>
                         <button
                           type="button"
-                          className={quickOcrCaptureMode === "system-screenshot" ? "is-active" : ""}
+                          className={quickOcrCaptureMode === "pixpin" ? "is-active" : ""}
                           onClick={() => {
-                            onQuickOcrCaptureModeChange("system-screenshot");
+                            onQuickOcrCaptureModeChange("pixpin");
                             setQuickOcrModeMenuOpen(false);
                           }}
                           role="menuitemradio"
-                          aria-checked={quickOcrCaptureMode === "system-screenshot"}
-                          data-quick-ocr-mode-option="system-screenshot"
+                          aria-checked={quickOcrCaptureMode === "pixpin"}
+                          data-quick-ocr-mode-option="pixpin"
                         >
-                          <strong>{isEn ? "Wait for system screenshot" : "等待系统截图"}</strong>
-                          <span>{isEn ? "Switch pages first, then use your Windows screenshot shortcut" : "先切到目标页面，再使用 Windows 系统截图快捷键"}</span>
+                          <strong>{isEn ? "PixPin" : "PixPin"}</strong>
+                          <span>{isEn ? "VisualTeX launches PixPin and reads the captured clipboard image directly" : "由 VisualTeX 调用 PixPin，并直接读取截图后的剪贴板图片"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={quickOcrCaptureMode === "clipboard" ? "is-active" : ""}
+                          onClick={() => {
+                            onQuickOcrCaptureModeChange("clipboard");
+                            setQuickOcrModeMenuOpen(false);
+                          }}
+                          role="menuitemradio"
+                          aria-checked={quickOcrCaptureMode === "clipboard"}
+                          data-quick-ocr-mode-option="clipboard"
+                        >
+                          <strong>{isEn ? "Other screenshot tool / clipboard" : "其他截图工具 / 剪贴板"}</strong>
+                          <span>{isEn ? "Wait for ShareX, Greenshot, or any tool that copies a new image" : "等待 ShareX、Greenshot 或其他工具复制一张新图片"}</span>
                         </button>
                       </div>
                     )}

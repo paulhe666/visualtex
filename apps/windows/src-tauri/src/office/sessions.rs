@@ -1029,6 +1029,12 @@ mod tests {
         input.object_mode = Some("mathTypeOle".to_string());
         input.numbered = Some(true);
         input.math_type_number_position = Some("right".to_string());
+        let line_id = Uuid::new_v4().to_string();
+        input.lines = Some(vec![FormulaLine {
+            id: line_id.clone(),
+            latex: "x=1".to_string(),
+        }]);
+        input.active_line_id = Some(line_id);
         let session = store.create(input).unwrap();
         assert_eq!(session.math_type_number_position, "right");
 

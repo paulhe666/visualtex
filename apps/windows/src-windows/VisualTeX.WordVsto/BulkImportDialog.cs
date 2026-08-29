@@ -98,6 +98,7 @@ internal sealed class BulkImportDialog : Form
         {
             "Word 原生 OMML（推荐）",
             "VisualTeX OLE",
+            "MathType OLE",
         });
         _objectMode.SelectedIndex = 0;
         options.Controls.Add(_objectMode);
@@ -214,10 +215,18 @@ internal sealed class BulkImportDialog : Form
 
     internal WordBulkFormulaObjectMode SelectedObjectMode
     {
-        get => _objectMode.SelectedIndex == 1
-            ? WordBulkFormulaObjectMode.Ole
-            : WordBulkFormulaObjectMode.Omml;
-        set => _objectMode.SelectedIndex = value == WordBulkFormulaObjectMode.Ole ? 1 : 0;
+        get => _objectMode.SelectedIndex switch
+        {
+            1 => WordBulkFormulaObjectMode.Ole,
+            2 => WordBulkFormulaObjectMode.MathType,
+            _ => WordBulkFormulaObjectMode.Omml,
+        };
+        set => _objectMode.SelectedIndex = value switch
+        {
+            WordBulkFormulaObjectMode.Ole => 1,
+            WordBulkFormulaObjectMode.MathType => 2,
+            _ => 0,
+        };
     }
 
     private bool ParseAndPreview(bool showError)

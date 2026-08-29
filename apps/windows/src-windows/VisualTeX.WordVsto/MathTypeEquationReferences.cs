@@ -472,21 +472,19 @@ internal static class MathTypeEquationReferences
         if (string.IsNullOrWhiteSpace(formulaId))
             throw new ArgumentException("FormulaId is required.", nameof(formulaId));
 
-        Table? table = null;
-        Cell? numberCell = null;
         Range? ownerRange = null;
-        Range? numberCellRange = null;
+        Range? visibleNumberRange = null;
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
         Range? bookmarkRange = null;
         try
         {
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId);
-            if (table is null) return Array.Empty<EquationReferenceBookmarkAlias>();
-            ownerRange = table.Range.Duplicate;
-            numberCell = table.Cell(1, 3);
-            numberCellRange = numberCell.Range.Duplicate;
-            numberCellRange.End = Math.Max(numberCellRange.Start, numberCellRange.End - 1);
+            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId);
+            visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                document,
+                formulaId);
+            if (ownerRange is null || visibleNumberRange is null)
+                return Array.Empty<EquationReferenceBookmarkAlias>();
 
             var aliases = new List<EquationReferenceBookmarkAlias>();
             bookmarks = document.Bookmarks;
@@ -503,9 +501,10 @@ internal static class MathTypeEquationReferences
 
             // Compatibility aliases inherited from an earlier MathType phase do
             // not encode the VisualTeX FormulaId, so locate only ZEqnNum aliases by
-            // their ownership of this formula's visible number cell. The native
-            // VTEqNum_<FormulaId> identity above is captured directly by name; this
-            // avoids relying on Word's field-result bookmark boundary quirks.
+            // their ownership of this formula's visible number slot. That slot is
+            // the third cell for native OMML and the trailing tab position for OLE.
+            // The native VTEqNum_<FormulaId> identity above is captured directly by
+            // name; this avoids relying on Word's field-result boundary quirks.
             for (var index = 1; index <= bookmarks.Count; index++)
             {
                 Release(bookmarkRange);
@@ -517,8 +516,8 @@ internal static class MathTypeEquationReferences
                     continue;
 
                 bookmarkRange = bookmark.Range;
-                if (bookmarkRange.Start < numberCellRange.Start
-                    || bookmarkRange.End > numberCellRange.End)
+                if (bookmarkRange.Start < visibleNumberRange.Start
+                    || bookmarkRange.End > visibleNumberRange.End)
                     continue;
                 if (!HasExternalReferenceToBookmark(document, name, ownerRange))
                     continue;
@@ -539,10 +538,8 @@ internal static class MathTypeEquationReferences
             Release(bookmarkRange);
             Release(bookmark);
             Release(bookmarks);
-            Release(numberCellRange);
+            Release(visibleNumberRange);
             Release(ownerRange);
-            Release(numberCell);
-            Release(table);
         }
     }
 
@@ -621,8 +618,6 @@ internal static class MathTypeEquationReferences
 
         Bookmarks? bookmarks = null;
         Bookmark? nativeBookmark = null;
-        Table? table = null;
-        Cell? numberCell = null;
         Range? numberOnlyRange = null;
         Range? visibleRange = null;
         Bookmark? aliasBookmark = null;
@@ -636,12 +631,11 @@ internal static class MathTypeEquationReferences
             nativeBookmark = bookmarks[nativeName];
             numberOnlyRange = nativeBookmark.Range.Duplicate;
 
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+            visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    formulaId)
                 ?? throw new InvalidDataException(
-                    $"Converted VisualTeX formula {formulaId} has no numbered equation table.");
-            numberCell = table.Cell(1, 3);
-            visibleRange = numberCell.Range.Duplicate;
-            visibleRange.End = Math.Max(visibleRange.Start, visibleRange.End - 1);
+                    $"Converted VisualTeX formula {formulaId} has no visible equation-number slot.");
 
             var restored = 0;
             foreach (var alias in aliases
@@ -669,8 +663,6 @@ internal static class MathTypeEquationReferences
             Release(aliasBookmark);
             Release(visibleRange);
             Release(numberOnlyRange);
-            Release(numberCell);
-            Release(table);
             Release(nativeBookmark);
             Release(bookmarks);
         }
@@ -829,21 +821,18 @@ internal static class MathTypeEquationReferences
                 var rawFormulaId = alias.Substring(nativeNumberPrefix.Length);
                 if (!Guid.TryParseExact(rawFormulaId, "N", out var formulaGuid))
                     continue;
-                Table? ownerTable = null;
-                Range? ownerTableRange = null;
+                Range? ownerRange = null;
                 try
                 {
-                    ownerTable = WordEquationNumbering.FindNumberedEquationTable(
+                    ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
                         document,
                         formulaGuid.ToString("D"));
-                    if (ownerTable is null) continue;
-                    ownerTableRange = ownerTable.Range;
-                    sourceOwnerRanges[alias] = (ownerTableRange.Start, ownerTableRange.End);
+                    if (ownerRange is null) continue;
+                    sourceOwnerRanges[alias] = (ownerRange.Start, ownerRange.End);
                 }
                 finally
                 {
-                    Release(ownerTableRange);
-                    Release(ownerTable);
+                    Release(ownerRange);
                 }
             }
 

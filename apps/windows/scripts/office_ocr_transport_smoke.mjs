@@ -37,6 +37,50 @@ globalThis.fetch = async (input, init = {}) => {
     );
   }
 
+  if (url === "/api/v1/ocr/providers" && (!init.method || init.method === "GET")) {
+    return new Response(
+      JSON.stringify({
+        activeProvider: "local",
+        openAiCompatible: {
+          protocol: "responses",
+          baseUrl: "https://api.openai.com/v1",
+          model: "",
+          prompt: "formula prompt",
+          hasApiKey: false,
+        },
+        ollama: {
+          baseUrl: "http://127.0.0.1:11434",
+          model: "",
+          prompt: "formula prompt",
+        },
+        mathpix: {
+          baseUrl: "https://api.mathpix.com",
+          appId: "",
+          hasAppKey: false,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  if (url === "/api/v1/ocr/providers" && init.method === "PUT") {
+    const configuration = JSON.parse(String(init.body));
+    return new Response(
+      JSON.stringify({
+        ...configuration,
+        openAiCompatible: {
+          ...configuration.openAiCompatible,
+          hasApiKey: Boolean(configuration.openAiCompatible.apiKey),
+        },
+        mathpix: {
+          ...configuration.mathpix,
+          hasAppKey: Boolean(configuration.mathpix.appKey),
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   if (url === "/api/v1/ocr/warmup") {
     return new Response(null, { status: 204 });
   }
@@ -44,6 +88,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === "/api/v1/ocr/recognize") {
     return new Response(
       JSON.stringify({
+        provider: "local",
         model: "PP-FormulaNet_plus-M",
         elapsedMs: 12,
         processedWidth: 100,
@@ -107,6 +152,30 @@ assert.equal(
   token,
 );
 
+const providerConfiguration = await invoke("get_ocr_provider_configuration");
+assert.equal(providerConfiguration.activeProvider, "local");
+assert.equal(providerConfiguration.openAiCompatible.hasApiKey, false);
+const savedProviderConfiguration = await invoke("save_ocr_provider_configuration", {
+  configuration: {
+    ...providerConfiguration,
+    activeProvider: "openai-compatible",
+    openAiCompatible: {
+      ...providerConfiguration.openAiCompatible,
+      model: "vision-model",
+      apiKey: "secret",
+    },
+  },
+});
+assert.equal(savedProviderConfiguration.activeProvider, "openai-compatible");
+assert.equal(savedProviderConfiguration.openAiCompatible.hasApiKey, true);
+const providerPut = calls.find(
+  (call) => call.url === "/api/v1/ocr/providers" && call.init.method === "PUT",
+);
+assert.ok(providerPut);
+assert.equal(providerPut.init.headers["Content-Type"], "application/json");
+assert.equal(providerPut.init.headers["X-VisualTeX-Install-Token"], token);
+assert.equal(JSON.parse(String(providerPut.init.body)).openAiCompatible.model, "vision-model");
+
 const result = await invoke("recognize_formula_image", {
   request: {
     bytes: [1, 2, 3],
@@ -114,6 +183,7 @@ const result = await invoke("recognize_formula_image", {
     model: "PP-FormulaNet_plus-M",
   },
 });
+assert.equal(result.provider, "local");
 assert.equal(result.formulas[0].latex, "x^2");
 const recognitionCall = calls.find(
   (call) => call.url === "/api/v1/ocr/recognize",

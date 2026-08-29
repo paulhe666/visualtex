@@ -133,18 +133,18 @@ export function tutorialSteps(language: Language, platform: DesktopPlatform): Tu
             : "完整 macOS 包已内置 Python、PaddleOCR 与默认 M 模型；首次安装只在本机校验并解压。"
           : platform === "windows"
             ? isEn
-              ? "The Windows installer checks for a compatible 64-bit Python 3.9–3.13 runtime. OCR setup is available after that prerequisite is present."
-              : "Windows 安装程序会检测兼容的 64 位 Python 3.9–3.13；具备该环境后即可安装 OCR。"
+              ? "Open Formula image OCR and choose local PP-FormulaNet, an OpenAI-compatible endpoint, Ollama, or Mathpix. Only the local provider requires a compatible 64-bit Python 3.9–3.13 runtime."
+              : "打开“图片公式识别”，可选择本地 PP-FormulaNet、OpenAI 兼容接口、Ollama 或 Mathpix；只有本地提供器需要兼容的 64 位 Python 3.9–3.13。"
             : isEn
-              ? "Open Formula image OCR from the app menu and follow the local runtime setup."
-              : "从应用菜单打开“图片公式识别”，并按提示准备本地运行环境。",
+              ? "Open Formula image OCR from the app menu and choose the available local or API provider."
+              : "从应用菜单打开“图片公式识别”，并选择可用的本地或 API 提供器。",
     },
     {
       id: "paste-image",
       title: isEn ? "Paste images directly afterward" : "之后直接粘贴图片",
       description: isEn
-        ? "Once OCR is ready, paste an image into a formula field and the result returns to the saved cursor."
-        : "OCR 准备好后，把光标放进公式框即可粘贴图片识别，结果会插回原光标位置。",
+        ? "After saving an OCR provider, paste an image into a formula field and the result returns to the saved cursor."
+        : "保存 OCR 提供器后，把光标放进公式框即可粘贴图片识别，结果会插回原光标位置。",
     },
   ];
 

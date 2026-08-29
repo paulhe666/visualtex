@@ -14,6 +14,8 @@
     <RootNamespace>VisualTeX.WordVsto</RootNamespace>
     <ComVisible>true</ComVisible>
     <UseWindowsForms>true</UseWindowsForms>
+    <OfficeMathFontRoot>$(MSBuildThisFileDirectory)..\artifacts\office-fonts</OfficeMathFontRoot>
+    <OfficeMathFontPrepareScript>$(MSBuildThisFileDirectory)..\..\scripts\prepare_windows_office_math_font.ps1</OfficeMathFontPrepareScript>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
@@ -28,6 +30,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TrueDisplay.cs" Link="WordEquationNumbering.TrueDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
@@ -55,5 +58,26 @@
     </COMReference>
     <PackageReference Include="Microsoft.Office.Interop.Word" Version="15.0.4797.1004" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Content Include="$(OfficeMathFontRoot)\latinmodern-math.otf" Link="latinmodern-math.otf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt" Link="GUST-FONT-LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(OfficeMathFontRoot)\README-Latin-Modern-Math.txt" Link="README-Latin-Modern-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
+  <Target Name="EnsureOfficeMathFontPrepared" BeforeTargets="PrepareForBuild">
+    <Exec
+      Condition="!Exists('$(OfficeMathFontRoot)\latinmodern-math.otf') Or !Exists('$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt')"
+      Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(OfficeMathFontPrepareScript)&quot;"
+      WorkingDirectory="$(MSBuildThisFileDirectory)..\.." />
+    <Error
+      Condition="!Exists('$(OfficeMathFontRoot)\latinmodern-math.otf')"
+      Text="Latin Modern Math is not prepared. Run scripts\prepare_windows_office_math_font.ps1 before building the Word VSTO project." />
+    <Error
+      Condition="!Exists('$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt')"
+      Text="The Latin Modern Math license file is missing. Run scripts\prepare_windows_office_math_font.ps1 before building the Word VSTO project." />
+  </Target>
 </Project>

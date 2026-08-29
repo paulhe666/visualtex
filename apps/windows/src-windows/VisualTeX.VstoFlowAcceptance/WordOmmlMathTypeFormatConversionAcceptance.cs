@@ -1301,7 +1301,7 @@ internal static partial class Program
                 "consecutive numbered MathType→OMML acceptance");
 
             Console.WriteLine(
-                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent 1x3 OMML numbering tables with one center-cell OMath each, no source-host blank paragraph, and save/reopen persistence.");
+                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent genuine wdOMathDisplay/m:oMathPara formulas with external dynamic REF Shapes, zero Word tables, preserved cross-reference aliases, and repeated save/reopen persistence.");
         }
         finally
         {
@@ -1324,79 +1324,236 @@ internal static partial class Program
             $"Consecutive numbered MathType→OMML {stage} did not retain nine OMath equations.");
         AssertEqual(0, CountMathTypeOleShapes(document),
             $"Consecutive numbered MathType→OMML {stage} left a MathType source behind.");
-        AssertEqual(9, document.Tables.Count,
-            $"Consecutive numbered MathType→OMML {stage} did not create nine independent numbering tables.");
+        AssertEqual(0, document.Tables.Count,
+            $"Consecutive numbered MathType→OMML {stage} recreated a forbidden Word numbering table.");
         AssertEqual(9, CountManagedNumberedOmml(document),
             $"Consecutive numbered MathType→OMML {stage} lost managed numbering ownership.");
+        AssertEqual(9, document.Shapes.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not retain one external REF Shape per formula.");
 
-        for (var index = 1; index <= document.Tables.Count; index++)
+        var ordered = new List<(string FormulaId, int Start)>();
+        foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
         {
-            Word.Table? table = null;
-            Word.Range? tableRange = null;
-            Word.Cell? leftCell = null;
-            Word.Cell? centerCell = null;
-            Word.Cell? rightCell = null;
-            Word.Range? leftRange = null;
-            Word.Range? centerRange = null;
-            Word.Range? rightRange = null;
+            Word.Bookmark? bookmark = null;
+            Word.Range? equationRange = null;
             try
             {
-                table = document.Tables[index];
-                AssertEqual(1, table.Rows.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} has an extra row.");
-                AssertEqual(3, table.Columns.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} does not have three columns.");
-                tableRange = table.Range;
-                AssertEqual(1, tableRange.OMaths.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} swallowed another formula.");
-                leftCell = table.Cell(1, 1);
-                centerCell = table.Cell(1, 2);
-                rightCell = table.Cell(1, 3);
-                leftRange = leftCell.Range;
-                centerRange = centerCell.Range;
-                rightRange = rightCell.Range;
-                AssertEqual(0, leftRange.OMaths.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} has a formula in the left cell.");
-                AssertEqual(1, centerRange.OMaths.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} does not own exactly one center-cell formula.");
-                AssertEqual(0, rightRange.OMaths.Count,
-                    $"Consecutive numbered MathType→OMML {stage} table {index} has a formula in the number cell.");
-
-                for (var paragraphIndex = 1; paragraphIndex <= document.Paragraphs.Count; paragraphIndex++)
-                {
-                    Word.Paragraph? paragraph = null;
-                    Word.Range? paragraphRange = null;
-                    try
-                    {
-                        paragraph = document.Paragraphs[paragraphIndex];
-                        paragraphRange = paragraph.Range;
-                        if ((bool)paragraphRange.get_Information(Word.WdInformation.wdWithInTable)
-                            || paragraphRange.End != tableRange.Start)
-                            continue;
-                        var text = (paragraphRange.Text ?? string.Empty)
-                            .Trim('\r', '\a', '\v', '\f', '\t', ' ');
-                        AssertTrue(
-                            text.Length > 0,
-                            $"Consecutive numbered MathType→OMML {stage} left an empty source paragraph above table {index}.");
-                    }
-                    finally
-                    {
-                        Release(paragraphRange);
-                        Release(paragraph);
-                    }
-                }
+                bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
+                if (bookmark is null) continue;
+                var metadata = WordOmmlFormulaStore.TryRead(document, bookmark);
+                if (metadata?.Numbered != true
+                    || !string.Equals(
+                        metadata.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal))
+                    continue;
+                equationRange = WordOmmlFormulaStore
+                    .GetEquationRangeVerifiedForStructuralEdit(
+                        document,
+                        formulaId,
+                        metadata);
+                ordered.Add((formulaId, equationRange.Start));
             }
             finally
             {
-                Release(rightRange);
-                Release(centerRange);
-                Release(leftRange);
-                Release(rightCell);
-                Release(centerCell);
-                Release(leftCell);
-                Release(tableRange);
-                Release(table);
+                Release(equationRange);
+                Release(bookmark);
             }
+        }
+        ordered.Sort((left, right) => left.Start.CompareTo(right.Start));
+        AssertEqual(9, ordered.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not resolve nine managed formula identities.");
+        var orderedIdSet = ordered
+            .Select(item => item.FormulaId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var targetByFormulaId = WordEquationNumbering
+            .GetEquationReferenceTargets(document)
+            .Where(target => orderedIdSet.Contains(target.FormulaId))
+            .ToDictionary(
+                target => target.FormulaId,
+                target => target.NumberText.Trim(),
+                StringComparer.OrdinalIgnoreCase);
+        AssertEqual(9, targetByFormulaId.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not expose nine dynamic reference targets.");
+
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            var formulaId = ordered[index].FormulaId;
+            AssertConsecutiveNumberedOmmlFormulaStructure(
+                document,
+                formulaId,
+                $"consecutive MathType→OMML {stage} formula {index + 1}");
+
+            Word.Range? visibleRange = null;
+            Word.Fields? fields = null;
+            Word.Field? reference = null;
+            Word.Range? result = null;
+            try
+            {
+                visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    formulaId)
+                    ?? throw new InvalidDataException(
+                        $"Consecutive numbered MathType→OMML {stage} formula {index + 1} lost its visible external REF.");
+                AssertEqual(Word.WdStoryType.wdTextFrameStory, visibleRange.StoryType,
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} does not keep its REF outside OMath.");
+                fields = visibleRange.Fields;
+                AssertEqual(1, fields.Count,
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} has an invalid external REF count.");
+                reference = fields[1];
+                reference.Update();
+                result = reference.Result;
+                var actualNumber = NormalizeNumberedOmmlLabel(result.Text);
+                AssertEqual(
+                    targetByFormulaId[formulaId],
+                    actualNumber,
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} does not match its dynamic reference target.");
+                var trailingOrdinal = System.Text.RegularExpressions.Regex.Match(
+                    actualNumber,
+                    @"(?<ordinal>\d+)\s*$",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+                AssertTrue(trailingOrdinal.Success,
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} has no trailing ordinal: '{actualNumber}'.");
+                AssertEqual(
+                    (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    trailingOrdinal.Groups["ordinal"].Value,
+                    $"Consecutive numbered MathType→OMML {stage} numbering is not continuous at formula {index + 1}.");
+            }
+            finally
+            {
+                Release(result);
+                Release(reference);
+                Release(fields);
+                Release(visibleRange);
+            }
+        }
+    }
+
+    private static void AssertConsecutiveNumberedOmmlFormulaStructure(
+        Word.Document document,
+        string formulaId,
+        string context)
+    {
+        Word.Bookmark? formulaBookmark = null;
+        Word.Range? equationRange = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Fields? equationFields = null;
+        Word.Paragraphs? formulaParagraphs = null;
+        Word.Paragraph? formulaParagraph = null;
+        Word.Range? formulaParagraphRange = null;
+        Word.Range? visibleRange = null;
+        Word.Fields? visibleFields = null;
+        Word.Field? reference = null;
+        Word.Range? fieldCode = null;
+        Word.Shape? shape = null;
+        Word.Range? shapeAnchor = null;
+        Word.Paragraphs? anchorParagraphs = null;
+        Word.Paragraph? anchorParagraph = null;
+        Word.Range? anchorParagraphRange = null;
+        try
+        {
+            formulaBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                document,
+                formulaId)
+                ?? throw new InvalidDataException(
+                    context + ": the managed OMML identity bookmark is missing.");
+            var metadata = WordOmmlFormulaStore.TryRead(document, formulaBookmark)
+                ?? throw new InvalidDataException(
+                    context + ": OMML metadata is missing.");
+            AssertTrue(metadata.Numbered
+                    && string.Equals(
+                        metadata.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal),
+                context + ": metadata no longer describes a numbered block formula.");
+            equationRange = WordOmmlFormulaStore
+                .GetEquationRangeVerifiedForStructuralEdit(
+                    document,
+                    formulaId,
+                    metadata);
+            AssertTrue(!(bool)equationRange.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                context + ": the formula is still inside a legacy table.");
+            maths = equationRange.OMaths;
+            AssertEqual(1, maths.Count,
+                context + ": the formula does not contain exactly one OMath.");
+            math = maths[1];
+            AssertEqual(Word.WdOMathType.wdOMathDisplay, math.Type,
+                context + ": the formula is not genuine Word Display math.");
+            equationFields = equationRange.Fields;
+            AssertEqual(0, equationFields.Count,
+                context + ": a field leaked inside OMath.");
+
+            formulaParagraphs = equationRange.Paragraphs;
+            AssertEqual(1, formulaParagraphs.Count,
+                context + ": the formula spans more than one Word paragraph.");
+            formulaParagraph = formulaParagraphs[1];
+            formulaParagraphRange = formulaParagraph.Range;
+            var ownerXml = formulaParagraphRange.WordOpenXML ?? string.Empty;
+            AssertTrue(ownerXml.IndexOf("<m:oMathPara", StringComparison.OrdinalIgnoreCase) >= 0,
+                context + ": m:oMathPara is missing.");
+            AssertTrue(ownerXml.IndexOf("<m:eqArr", StringComparison.OrdinalIgnoreCase) < 0,
+                context + ": the obsolete m:eqArr/#(...) wrapper returned.");
+            AssertTrue(ownerXml.IndexOf("<w:fldChar", StringComparison.OrdinalIgnoreCase) < 0,
+                context + ": field controls leaked into the formula paragraph.");
+            AssertTrue(ownerXml.IndexOf(" REF ", StringComparison.OrdinalIgnoreCase) < 0,
+                context + ": the dynamic REF leaked into the formula paragraph.");
+            AssertTrue(ownerXml.IndexOf("<w:drawing", StringComparison.OrdinalIgnoreCase) < 0,
+                context + ": the external number Shape leaked into the formula paragraph.");
+
+            visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                document,
+                formulaId)
+                ?? throw new InvalidDataException(
+                    context + ": the external equation-number range is missing.");
+            AssertEqual(Word.WdStoryType.wdTextFrameStory, visibleRange.StoryType,
+                context + ": the visible equation number is not external Word text.");
+            visibleFields = visibleRange.Fields;
+            AssertEqual(1, visibleFields.Count,
+                context + ": the external label does not contain exactly one REF field.");
+            reference = visibleFields[1];
+            fieldCode = reference.Code;
+            AssertTrue((fieldCode.Text ?? string.Empty).IndexOf(
+                    "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                    StringComparison.OrdinalIgnoreCase) >= 0,
+                context + ": the external field targets the wrong equation-number bookmark.");
+            AssertEqual(0, fieldCode.OMaths.Count,
+                context + ": the external REF code is inside OMath.");
+
+            shape = FindNumberedOmmlShape(document, formulaId, context);
+            shapeAnchor = shape.Anchor;
+            anchorParagraphs = shapeAnchor.Paragraphs;
+            AssertEqual(1, anchorParagraphs.Count,
+                context + ": the Shape anchor spans more than one paragraph.");
+            anchorParagraph = anchorParagraphs[1];
+            anchorParagraphRange = anchorParagraph.Range;
+            AssertEqual(anchorParagraphRange.End, formulaParagraphRange.Start,
+                context + ": the dedicated Shape anchor is not immediately before the display formula.");
+            AssertEqual(0, anchorParagraphRange.OMaths.Count,
+                context + ": mathematical content leaked into the Shape anchor paragraph.");
+            AssertEqual(0, anchorParagraphRange.Fields.Count,
+                context + ": fields leaked into the Shape anchor paragraph.");
+        }
+        finally
+        {
+            Release(anchorParagraphRange);
+            Release(anchorParagraph);
+            Release(anchorParagraphs);
+            Release(shapeAnchor);
+            Release(shape);
+            Release(fieldCode);
+            Release(reference);
+            Release(visibleFields);
+            Release(visibleRange);
+            Release(formulaParagraphRange);
+            Release(formulaParagraph);
+            Release(formulaParagraphs);
+            Release(equationFields);
+            Release(math);
+            Release(maths);
+            Release(equationRange);
+            Release(formulaBookmark);
         }
     }
 
@@ -2287,9 +2444,10 @@ internal static partial class Program
                 FormulaOleContract.WordOmmlMode);
             AssertEqual(1, plan.Targets.Count,
                 "Display-paragraph regression did not capture the MathType display equation.");
+            var preparedTargets = PrepareOmmlMathTypeTargets(plan, emfPath);
             var result = service.ApplyFormulaFormatConversionPlan(
                 plan,
-                PrepareOmmlMathTypeTargets(plan, emfPath));
+                preparedTargets);
             AssertEqual(1, result.FormulaCount,
                 "Display MathType→OMML regression failed: " + string.Join(" | ", result.Failures));
             AssertEqual(0, result.FailedFormulaCount,
@@ -2303,48 +2461,49 @@ internal static partial class Program
 
             if (numbered)
             {
-                AssertEqual(1, probe.Tables.Count,
-                    "Numbered MathType→OMML conversion did not create exactly one numbering table.");
-                numberedTable = probe.Tables[1];
-                numberedTableRange = numberedTable.Range.Duplicate;
-                AssertTrue(
-                    convertedRange.Start >= numberedTableRange.Start
-                    && convertedRange.End <= numberedTableRange.End,
-                    "Numbered MathType→OMML conversion left the OMath outside its numbering table.");
+                AssertEqual(0, probe.Tables.Count,
+                    "Numbered MathType→OMML conversion created a legacy numbering table.");
+                AssertEqual(0, probe.Shapes.Count,
+                    "Numbered MathType→OMML conversion created a floating number Shape.");
+                var convertedFormulaId = preparedTargets[plan.Targets[0].Id]
+                    .Session.FormulaId;
+                AssertOmmlTabNumberingHost(
+                    probe,
+                    convertedFormulaId,
+                    context: "numbered MathType→OMML native #SEQ paragraph",
+                    updateReference: true);
 
+                var formulaParagraphIndex = -1;
                 for (var index = 1; index <= paragraphs.Count; index++)
                 {
-                    Word.Paragraph? candidate = null;
+                    Release(formulaParagraph);
+                    formulaParagraph = paragraphs[index];
                     Word.Range? candidateRange = null;
                     try
                     {
-                        candidate = paragraphs[index];
-                        candidateRange = candidate.Range;
-                        if ((bool)candidateRange.get_Information(Word.WdInformation.wdWithInTable)
-                            || candidateRange.End != numberedTableRange.Start)
-                            continue;
-                        precedingParagraph = candidate;
-                        candidate = null;
-                        break;
+                        candidateRange = formulaParagraph.Range;
+                        if (convertedRange.Start >= candidateRange.Start
+                            && convertedRange.End <= candidateRange.End)
+                        {
+                            formulaParagraphIndex = index;
+                            break;
+                        }
                     }
-                    finally
-                    {
-                        Release(candidateRange);
-                        Release(candidate);
-                    }
+                    finally { Release(candidateRange); }
                 }
-                AssertTrue(precedingParagraph is not null,
-                    "Numbered MathType→OMML conversion has no body paragraph directly before its numbering table.");
+                AssertTrue(formulaParagraphIndex > 1,
+                    "Converted numbered display OMML has no preceding body paragraph to validate.");
+                precedingParagraph = paragraphs[formulaParagraphIndex - 1];
                 Word.Range? precedingRange = null;
                 try
                 {
-                    precedingRange = precedingParagraph!.Range;
+                    precedingRange = precedingParagraph.Range;
                     var precedingText = (precedingRange.Text ?? string.Empty)
                         .Trim('\r', '\a', '\v', '\f', '\t', ' ');
                     AssertEqual("VT-DISPLAY-BEFORE", precedingText,
-                        "Numbered MathType→OMML left an empty body paragraph above the numbering table.");
+                        "Numbered MathType→OMML inserted a visible blank paragraph above the native #SEQ formula.");
                     Console.WriteLine(
-                        $"[NUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] tableStart={numberedTableRange.Start}; preceding={precedingRange.Start}:{precedingRange.End} '{precedingText}'; no blank body paragraph remains above the table.");
+                        $"[NUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; formula={convertedRange.Start}:{convertedRange.End}; preceding='{precedingText}'; tables={probe.Tables.Count}; shapes={probe.Shapes.Count}.");
                 }
                 finally { Release(precedingRange); }
             }

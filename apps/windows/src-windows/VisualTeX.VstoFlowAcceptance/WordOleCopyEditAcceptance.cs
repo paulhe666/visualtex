@@ -213,16 +213,13 @@ internal static partial class Program
         Word.InlineShapes? sourceShapes = null;
         Word.InlineShape? sourceShape = null;
         Word.Range? sourceRange = null;
-        Word.Tables? sourceTables = null;
-        Word.Table? sourceTable = null;
-        Word.Range? sourceTableRange = null;
+        Word.Range? sourceOwnerRange = null;
         Word.Document? temporaryDocument = null;
         Word.InlineShape? firstShape = null;
         Word.InlineShape? secondShape = null;
         Word.Range? firstRange = null;
         Word.Range? secondRange = null;
-        Word.Table? firstTable = null;
-        Word.Range? firstTableRange = null;
+        Word.Range? firstOwnerRange = null;
         try
         {
             sourceDocument.Activate();
@@ -242,8 +239,6 @@ internal static partial class Program
                         || !string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
                         continue;
                     candidateRange = candidate.Range;
-                    if (!(bool)candidateRange.get_Information(Word.WdInformation.wdWithInTable))
-                        continue;
                     sourceMetadata = metadata;
                     sourceShape = candidate;
                     candidate = null;
@@ -263,19 +258,24 @@ internal static partial class Program
             }
 
             sourceRange = sourceShape.Range;
-            sourceTables = sourceRange.Tables;
-            sourceTable = sourceTables[1];
-            sourceTableRange = sourceTable.Range.Duplicate;
-            sourceTableRange.Copy();
+            sourceOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    sourceDocument,
+                    sourceMetadata.FormulaId)
+                ?? throw new InvalidOperationException(
+                    "The numbered VisualTeX source has no table-or-tab numbering owner.");
+            sourceOwnerRange.Copy();
 
             temporaryDocument = application.Documents.Add();
             temporaryDocument.Activate();
             application.Selection.Paste();
-            if (temporaryDocument.Tables.Count != 1)
+            if (temporaryDocument.InlineShapes.Count != 1)
                 throw new InvalidOperationException(
-                    $"The numbered-copy probe expected one pasted table, actual count: {temporaryDocument.Tables.Count}.");
+                    $"The numbered-copy probe expected one pasted formula, actual count: {temporaryDocument.InlineShapes.Count}.");
+            if (temporaryDocument.Tables.Count != 0)
+                throw new InvalidOperationException(
+                    "The pasted numbered VisualTeX OLE unexpectedly reverted to a table host.");
 
-            firstShape = temporaryDocument.Tables[1].Cell(1, 2).Range.InlineShapes[1];
+            firstShape = temporaryDocument.InlineShapes[1];
             firstRange = firstShape.Range;
             firstRange.Select();
             var service = new WordFormulaService(application);
@@ -287,17 +287,23 @@ internal static partial class Program
                     "The first pasted numbered VisualTeX OLE formula was not recognized.");
             var firstFormulaId = firstSelection.FormulaId!;
 
-            firstTable = temporaryDocument.Tables[1];
-            firstTableRange = firstTable.Range.Duplicate;
-            firstTableRange.Copy();
+            firstOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    temporaryDocument,
+                    firstFormulaId)
+                ?? throw new InvalidOperationException(
+                    "The first pasted numbered formula has no tab-paragraph owner.");
+            firstOwnerRange.Copy();
             application.Selection.EndKey(Word.WdUnits.wdStory);
             application.Selection.TypeParagraph();
             application.Selection.Paste();
-            if (temporaryDocument.Tables.Count != 2)
+            if (temporaryDocument.InlineShapes.Count != 2)
                 throw new InvalidOperationException(
-                    $"The numbered-copy probe expected two tables after duplication, actual count: {temporaryDocument.Tables.Count}.");
+                    $"The numbered-copy probe expected two formulas after duplication, actual count: {temporaryDocument.InlineShapes.Count}.");
+            if (temporaryDocument.Tables.Count != 0)
+                throw new InvalidOperationException(
+                    "Duplicating the numbered VisualTeX formula created a legacy table host.");
 
-            secondShape = temporaryDocument.Tables[2].Cell(1, 2).Range.InlineShapes[1];
+            secondShape = temporaryDocument.InlineShapes[2];
             secondRange = secondShape.Range;
             secondRange.Select();
             var secondSelection = service.ReadSelection();
@@ -327,12 +333,16 @@ internal static partial class Program
             Release(firstRange);
             firstRange = null;
             Release(firstShape);
-            firstShape = temporaryDocument.Tables[1].Cell(1, 2).Range.InlineShapes[1];
+            firstShape = FindVisualTeXOleByFormulaIdForNumberToggle(
+                temporaryDocument,
+                firstFormulaId);
             firstRange = firstShape.Range;
             Release(secondRange);
             secondRange = null;
             Release(secondShape);
-            secondShape = temporaryDocument.Tables[2].Cell(1, 2).Range.InlineShapes[1];
+            secondShape = FindVisualTeXOleByFormulaIdForNumberToggle(
+                temporaryDocument,
+                secondFormulaId);
             secondRange = secondShape.Range;
 
             if (!WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
@@ -348,14 +358,24 @@ internal static partial class Program
                 throw new InvalidOperationException(
                     "The copied numbered formula does not own its new numbering artifacts.");
 
+            AssertVisualTeXNumberedTabHost(
+                temporaryDocument,
+                firstFormulaId,
+                updateReference: true,
+                context: "original numbered OLE after copy repair");
+            AssertVisualTeXNumberedTabHost(
+                temporaryDocument,
+                secondFormulaId,
+                updateReference: true,
+                context: "duplicated numbered OLE after copy repair");
+
             Console.WriteLine(
-                "Word numbered VisualTeX OLE copy identity probe passed: the duplicated numbered table "
+                "Word numbered VisualTeX OLE copy identity probe passed: the duplicated tab-paragraph formula "
                 + "received an independent FormulaId and complete numbering bookmarks without stealing the original anchors.");
         }
         finally
         {
-            Release(firstTableRange);
-            Release(firstTable);
+            Release(firstOwnerRange);
             Release(secondRange);
             Release(firstRange);
             Release(secondShape);
@@ -365,9 +385,7 @@ internal static partial class Program
                 try { temporaryDocument.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(temporaryDocument);
-            Release(sourceTableRange);
-            Release(sourceTable);
-            Release(sourceTables);
+            Release(sourceOwnerRange);
             Release(sourceRange);
             Release(sourceShape);
             Release(sourceShapes);

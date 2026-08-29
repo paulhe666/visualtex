@@ -9,6 +9,7 @@ using Extensibility;
 using Microsoft.Office.Core;
 using Microsoft.Win32;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WordVsto;
 using WinForms = System.Windows.Forms;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using Word = Microsoft.Office.Interop.Word;
@@ -310,17 +311,45 @@ internal static partial class Program
             return active;
         }
 
-        return new Word.Application
+        // Register the pinned font before WINWORD.EXE is created. Office Math and
+        // Word's PDF exporter snapshot available math fonts during process startup;
+        // registering the same file only after Word starts can leave equations on
+        // Cambria fallback even though the OMML run names say Latin Modern Math.
+        Console.WriteLine("Acceptance Word startup: verifying Latin Modern Math.");
+        WordOfficeMathFontLoader.EnsureLoaded();
+        Console.WriteLine(
+            $"Acceptance Word startup: font ready path='{WordOfficeMathFontLoader.LoadedPath}', sessionRegistration={WordOfficeMathFontLoader.SessionRegistrationUsed}.");
+        Console.WriteLine("Acceptance Word startup: creating WINWORD COM application.");
+        var showInteractiveWordAlerts = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_WORD_ALERTS"),
+            "1",
+            StringComparison.Ordinal);
+        var created = new Word.Application
         {
             Visible = visible,
-            DisplayAlerts = Word.WdAlertLevel.wdAlertsNone,
+            DisplayAlerts = showInteractiveWordAlerts
+                ? Word.WdAlertLevel.wdAlertsAll
+                : Word.WdAlertLevel.wdAlertsNone,
         };
+        if (showInteractiveWordAlerts)
+            Console.WriteLine("Acceptance Word startup: interactive Word alerts ENABLED.");
+        Console.WriteLine("Acceptance Word startup: WINWORD COM application created.");
+        try
+        {
+            var hwnd = Convert.ToInt32(((dynamic)created).Hwnd);
+            _ = GetWindowThreadProcessId(new IntPtr(hwnd), out var processId);
+            Console.WriteLine(
+                $"Acceptance Word application: PID={processId}, Hwnd={hwnd}, fontPath='{WordOfficeMathFontLoader.LoadedPath}', sessionRegistration={WordOfficeMathFontLoader.SessionRegistrationUsed}.");
+        }
+        catch { }
+        return created;
     }
 
     private static void QuitWordApplicationIfOwned(Word.Application? application)
     {
         if (application is null || AttachActiveWord) return;
         application.Quit(Word.WdSaveOptions.wdDoNotSaveChanges);
+        WordOfficeMathFontLoader.UnloadSessionRegistration();
     }
 
     private static string ResolveAcceptanceArtifactRoot(
@@ -929,6 +958,46 @@ internal static partial class Program
             {
                 RunWordFormulaToLatex(client, artifactRoot);
             }
+            else if (string.Equals(mode, "word-formula-font", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormulaFontAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-tab-numbering", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTabNumberingAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbered-omml-true-display-complex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberedOmmlTrueDisplayComplexAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-bad-eqarr-migration", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlDisplayMigrationAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-legacy-shape-migration", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlLegacyShapeMigrationAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mixed-legacy-numbering-migration", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMixedLegacyNumberingMigrationAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbered-omml-font-size", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberedOmmlFontSizeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbered-omml-empty-row", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberedOmmlEmptyRowAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-dialog-options", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportDialogOptionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-mathtype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportMathTypeAcceptance(client, artifactRoot);
+            }
             else if (string.Equals(mode, "word-bulk-import-latex-spacing", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordBulkImportLatexSpacing(artifactRoot);
@@ -958,6 +1027,82 @@ internal static partial class Program
             else if (string.Equals(mode, "word-editor-native-close", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordEditorNativeClose(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbered-omml-tab-scale", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberedOmmlTabScaleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-tab-format-roundtrip", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTabFormatConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-numbering-migration", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNumberingMigrationAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-visualtex-omml-tab-numbering", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXOmmlTabAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-seq-lifecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeSequenceLifecycleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mixed-visualtex-sequence", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMixedVisualTeXSequenceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-number-toggle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeNumberToggleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-alias-recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeAliasRecoveryAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-f9", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeF9Acceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-hash-production", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeHashProductionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-hash-number-production", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlHashNumberProductionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-hash-complex-font", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeHashComplexFontAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-hash-copy-paste", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeHashCopyPasteAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-native-hash-scale", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNativeHashScaleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-true-display-tab-prototype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTrueDisplayTabPrototypeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-hash-number-prototype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlHashNumberPrototypeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-true-display-shape-prototype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTrueDisplayShapePrototypeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-true-display-frame-prototype", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTrueDisplayFramePrototypeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-visualtex-number-parenthesis", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXNumberParenthesisAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-visualtex-number-toggle", StringComparison.OrdinalIgnoreCase))
             {

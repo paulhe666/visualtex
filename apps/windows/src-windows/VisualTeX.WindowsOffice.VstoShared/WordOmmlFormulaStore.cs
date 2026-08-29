@@ -239,6 +239,47 @@ internal static class WordOmmlFormulaStore
             .ToArray();
     }
 
+    internal static IReadOnlyList<string> StoredFormulaIds(Document document)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        var formulaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        object? parts = null;
+        object? selected = null;
+        try
+        {
+            parts = ((dynamic)document).CustomXMLParts;
+            selected = ((dynamic)parts).SelectByNamespace(NamespaceUri);
+            var count = (int)((dynamic)selected).Count;
+            for (var index = 1; index <= count; index++)
+            {
+                object? part = null;
+                try
+                {
+                    part = ((dynamic)selected)[index];
+                    var partXml = (string?)((dynamic)part).XML;
+                    if (!TryDecodePartXml(partXml, out var metadata)
+                        || !Guid.TryParse(metadata.FormulaId, out var parsed))
+                        continue;
+                    RememberPart(document, part, metadata);
+                    formulaIds.Add(parsed.ToString("D"));
+                }
+                catch
+                {
+                    // An unreadable custom XML part is not a safe logical formula
+                    // identity. Leave it untouched and exclude it from copy/dedup
+                    // decisions rather than guessing from malformed metadata.
+                }
+                finally { Release(part); }
+            }
+            return formulaIds.ToArray();
+        }
+        finally
+        {
+            Release(selected);
+            Release(parts);
+        }
+    }
+
     internal static IReadOnlyList<string> FormulaIds(Document document)
     {
         var result = new List<string>();
@@ -512,6 +553,10 @@ internal static class WordOmmlFormulaStore
                     if ((bool)((dynamic)existing).LoadXML(xml))
                     {
                         RememberPart(document, existing, metadata);
+                        RemoveDuplicateMetadataParts(
+                            document,
+                            metadata.FormulaId,
+                            ReadPartId(existing));
                         return;
                     }
                 }
@@ -529,8 +574,15 @@ internal static class WordOmmlFormulaStore
             // Word may reject CustomXMLPart.LoadXML after an OMath rebuild.
             // Add the replacement first, then remove the old part so a failed
             // update never destroys the last valid metadata copy.
-            if (existing is not null) ((dynamic)existing).Delete();
+            if (existing is not null)
+            {
+                try { ((dynamic)existing).Delete(); } catch { }
+            }
             RememberPart(document, added, metadata);
+            RemoveDuplicateMetadataParts(
+                document,
+                metadata.FormulaId,
+                ReadPartId(added));
         }
         finally
         {
@@ -599,14 +651,17 @@ internal static class WordOmmlFormulaStore
 
     internal static void Delete(Document document, string formulaId)
     {
-        object? part = null;
-        try
-        {
-            part = FindPart(document, formulaId);
-            if (part is not null) ((dynamic)part).Delete();
-            ForgetPart(document, formulaId);
-        }
-        finally { Release(part); }
+        // A Word OMath rebuild can make CustomXMLPart.LoadXML fall back to
+        // add-then-delete. On a few builds the old part survives that replacement,
+        // so deleting only FindPart's freshest match leaves a stale duplicate that
+        // TryRead later revives as a ghost formula. Explicit formula deletion must
+        // remove every metadata part with this FormulaId, then clear the cache.
+        ForgetPart(document, formulaId);
+        RemoveDuplicateMetadataParts(
+            document,
+            formulaId,
+            keepPartId: null);
+        ForgetPart(document, formulaId);
     }
 
     internal static Bookmark Wrap(
@@ -666,6 +721,60 @@ internal static class WordOmmlFormulaStore
         finally { Release(anchorRange); }
     }
 
+    private static bool NumberedFormulaIdentityMatchesEquationRange(
+        Document document,
+        string formulaId,
+        FormulaMetadata? metadata,
+        Range equationRange)
+    {
+        if (metadata is null
+            || !metadata.Numbered
+            || !string.Equals(
+                metadata.DisplayMode,
+                "block",
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        Bookmarks? bookmarks = null;
+        Bookmark? numberBookmark = null;
+        Range? numberRange = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            if (!bookmarks.Exists(numberName)) return false;
+            numberBookmark = bookmarks[numberName];
+            numberRange = numberBookmark.Range;
+
+            // Current native #(SEQ) OMML keeps VTEqNum inside its OMath. If a
+            // paragraph insertion drags only the collapsed VTOMML anchor backward,
+            // the adjacent equation can still appear canonical by position while
+            // this durable number identity remains with the real formula. Treat
+            // that mismatch as anchor drift and recover by semantic fingerprint.
+            if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    equationRange.WordOpenXML))
+                return numberRange.StoryType == WdStoryType.wdMainTextStory
+                    && numberRange.Start >= equationRange.Start
+                    && numberRange.End <= equationRange.End;
+
+            // Legacy Shape/table hosts place VTEqNum outside the semantic OMath.
+            // They are valid migration input, but a canonical-position shortcut is
+            // not enough to identify them; force the same fingerprint recovery used
+            // for any other drifted structural host.
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(numberRange);
+            Release(numberBookmark);
+            Release(bookmarks);
+        }
+    }
+
     internal static Range GetEquationRange(Bookmark bookmark)
     {
         Range? bookmarkRange = null;
@@ -700,9 +809,64 @@ internal static class WordOmmlFormulaStore
                 bestRange = FindAdjacentEquationRange(maths, anchor);
             }
 
-            var storedMetadata = bestRange is null
-                ? TryRead(document, bookmark)
-                : null;
+            FormulaMetadata? storedMetadata = null;
+            if (bestRange is not null
+                && TryGetFormulaId(bookmark, out var anchoredFormulaId))
+            {
+                var adjacentIsNativeNumbered = false;
+                try
+                {
+                    adjacentIsNativeNumbered =
+                        WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                            bestRange.WordOpenXML);
+                }
+                catch { }
+                if (adjacentIsNativeNumbered)
+                {
+                    storedMetadata = TryRead(document, anchoredFormulaId);
+                    if (!NumberedFormulaIdentityMatchesEquationRange(
+                            document,
+                            anchoredFormulaId,
+                            storedMetadata,
+                            bestRange))
+                    {
+                        Release(bestRange);
+                        bestRange = null;
+                    }
+                }
+            }
+            if (bestRange is null && storedMetadata is null)
+                storedMetadata = TryRead(document, bookmark);
+
+            // Current numbered OMML has a stronger physical identity than its
+            // content fingerprint: VTEqNum_<FormulaId> lives inside the native
+            // #(SEQ) OMath. Prefer that identity before content recovery so two
+            // identical formulas can never collapse onto the same physical OMath.
+            if (bestRange is null
+                && storedMetadata?.Numbered == true
+                && string.Equals(
+                    storedMetadata.DisplayMode,
+                    "block",
+                    StringComparison.OrdinalIgnoreCase)
+                && TryGetFormulaId(bookmark, out var numberedFormulaId))
+            {
+                bestRange = FindNumberedEquationRangeByNumberIdentity(
+                    document,
+                    numberedFormulaId);
+                if (bestRange is not null && !document.ReadOnly)
+                {
+                    try
+                    {
+                        repairedBookmark = Wrap(
+                            document,
+                            bestRange,
+                            storedMetadata,
+                            replaceExisting: true);
+                    }
+                    catch { }
+                }
+            }
+
             var recoveredByFingerprint = false;
             if (bestRange is null
                 && !string.IsNullOrWhiteSpace(storedMetadata?.NativeOmmlFingerprint))
@@ -722,10 +886,11 @@ internal static class WordOmmlFormulaStore
                     bestRange = FindUniqueEquationRangeByFingerprint(
                         document,
                         storedMetadata.NativeOmmlFingerprint!,
-                        requireDisplay: string.Equals(
-                            storedMetadata.DisplayMode,
-                            "block",
-                            StringComparison.Ordinal));
+                        requireDisplay: !storedMetadata.Numbered
+                            && string.Equals(
+                                storedMetadata.DisplayMode,
+                                "block",
+                                StringComparison.Ordinal));
                     recoveredByFingerprint = bestRange is not null;
                 }
             }
@@ -814,7 +979,37 @@ internal static class WordOmmlFormulaStore
                         StringComparison.OrdinalIgnoreCase);
                 var canonicalAnchor = anchor == adjacent.Start
                     || anchor == adjacent.Start - 1;
-                if (fingerprintMatches || canonicalAnchor)
+                var identityMatches = NumberedFormulaIdentityMatchesEquationRange(
+                    document,
+                    formulaId,
+                    metadata,
+                    adjacent);
+                var adjacentIsDirectNativeNumbered = false;
+                if (metadata.Numbered
+                    && string.Equals(
+                        metadata.DisplayMode,
+                        "block",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        adjacentIsDirectNativeNumbered =
+                            WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                                adjacent.WordOpenXML);
+                    }
+                    catch { }
+                }
+
+                // For current native #(SEQ), FormulaId ownership is carried by the
+                // VTEqNum_<FormulaId> bookmark inside the mathematical number slot.
+                // Semantic fingerprints are deliberately content-only, so two equal
+                // equations have the same fingerprint. Never let a matching formula
+                // body override a VTEqNum identity mismatch after paragraph insertion
+                // or body-REF edits; fall through to number-identity recovery below.
+                var adjacentAccepted = adjacentIsDirectNativeNumbered
+                    ? identityMatches
+                    : fingerprintMatches || (canonicalAnchor && identityMatches);
+                if (adjacentAccepted)
                 {
                     if (!fingerprintMatches
                         && !string.IsNullOrWhiteSpace(adjacentFingerprint))
@@ -835,6 +1030,28 @@ internal static class WordOmmlFormulaStore
             Release(adjacent);
             adjacent = null;
 
+            // For current numbered OMML, VTEqNum_<FormulaId> lives inside the
+            // native #(SEQ) slot of the physical OMath. A paragraph insertion can
+            // leave the collapsed VTOMML_* anchor at the old boundary while that
+            // number identity remains attached to the correct equation. Recover
+            // from it before using the semantic fingerprint: identical equations
+            // intentionally share the same fingerprint and therefore cannot be
+            // disambiguated by content alone.
+            recovered = FindNumberedEquationRangeByNumberIdentity(
+                document,
+                formulaId);
+            if (recovered is not null)
+            {
+                repairedBookmark = Wrap(
+                    document,
+                    recovered,
+                    metadata,
+                    replaceExisting: true);
+                var identityResult = recovered;
+                recovered = null;
+                return identityResult;
+            }
+
             // Structural edits can drag a collapsed VTOMML bookmark into the
             // table created for the preceding formula. Search only complete
             // native OMath ranges and identify the formula by its durable
@@ -853,10 +1070,11 @@ internal static class WordOmmlFormulaStore
                 recovered = FindUniqueEquationRangeByFingerprint(
                     document,
                     expectedFingerprint!,
-                    requireDisplay: string.Equals(
-                        metadata.DisplayMode,
-                        "block",
-                        StringComparison.Ordinal));
+                    requireDisplay: !metadata.Numbered
+                        && string.Equals(
+                            metadata.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal));
             }
             if (recovered is null)
                 throw new InvalidDataException(
@@ -879,6 +1097,91 @@ internal static class WordOmmlFormulaStore
             Release(documentMaths);
             Release(bookmarkRange);
             Release(bookmark);
+        }
+    }
+
+    private static Range? FindNumberedEquationRangeByNumberIdentity(
+        Document document,
+        string formulaId)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? numberBookmark = null;
+        Range? numberRange = null;
+        OMaths? localMaths = null;
+        OMath? localMath = null;
+        Range? localMathRange = null;
+        OMaths? documentMaths = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            if (!bookmarks.Exists(numberName)) return null;
+            numberBookmark = bookmarks[numberName];
+            numberRange = numberBookmark.Range;
+            if (numberRange.StoryType != WdStoryType.wdMainTextStory)
+                return null;
+
+            // Fast path: Word normally exposes the containing professional OMath
+            // directly from the number bookmark range.
+            localMaths = numberRange.OMaths;
+            if (localMaths.Count == 1)
+            {
+                localMath = localMaths[1];
+                localMathRange = localMath.Range.Duplicate;
+                if (numberRange.Start >= localMathRange.Start
+                    && numberRange.End <= localMathRange.End
+                    && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                        localMathRange.WordOpenXML))
+                {
+                    var result = localMathRange;
+                    localMathRange = null;
+                    return result;
+                }
+            }
+
+            // Some Word builds expose OMaths.Count=0 for a bookmark that begins
+            // exactly on the mathematical field result. Fall back to document OMath
+            // containment, but still require the direct VisualTeXEquation SEQ host.
+            documentMaths = document.OMaths;
+            for (var index = 1; index <= documentMaths.Count; index++)
+            {
+                OMath? candidate = null;
+                Range? candidateRange = null;
+                try
+                {
+                    candidate = documentMaths[index];
+                    candidateRange = candidate.Range.Duplicate;
+                    if (numberRange.Start < candidateRange.Start
+                        || numberRange.End > candidateRange.End)
+                        continue;
+                    if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                            candidateRange.WordOpenXML))
+                        continue;
+                    var result = candidateRange;
+                    candidateRange = null;
+                    return result;
+                }
+                finally
+                {
+                    Release(candidateRange);
+                    Release(candidate);
+                }
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(documentMaths);
+            Release(localMathRange);
+            Release(localMath);
+            Release(localMaths);
+            Release(numberRange);
+            Release(numberBookmark);
+            Release(bookmarks);
         }
     }
 
@@ -1303,17 +1606,92 @@ internal static class WordOmmlFormulaStore
         FormulaMetadata metadata)
     {
         if (part is null) return;
-        string? partId = null;
-        try { partId = (string?)((dynamic)part).Id; } catch { }
+        var partId = ReadPartId(part);
         if (string.IsNullOrWhiteSpace(partId)) return;
         var cache = MetadataCaches.GetValue(document, _ => new DocumentMetadataCache());
         lock (cache.Gate)
         {
+            if (cache.Entries.TryGetValue(metadata.FormulaId, out var existing)
+                && CompareMetadataFreshness(metadata, existing.Metadata) < 0)
+                return;
             cache.Entries[metadata.FormulaId] = new CachedMetadataPart
             {
                 PartId = partId!,
                 Metadata = CloneMetadata(metadata),
             };
+        }
+    }
+
+    private static string? ReadPartId(object? part)
+    {
+        if (part is null) return null;
+        try { return (string?)((dynamic)part).Id; }
+        catch { return null; }
+    }
+
+    private static int CompareMetadataFreshness(
+        FormulaMetadata left,
+        FormulaMetadata right)
+    {
+        static DateTimeOffset ParseTimestamp(string? value)
+        {
+            return DateTimeOffset.TryParse(
+                    value,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out var parsed)
+                ? parsed
+                : DateTimeOffset.MinValue;
+        }
+
+        var updated = ParseTimestamp(left.UpdatedAt)
+            .CompareTo(ParseTimestamp(right.UpdatedAt));
+        if (updated != 0) return updated;
+        return ParseTimestamp(left.CreatedAt)
+            .CompareTo(ParseTimestamp(right.CreatedAt));
+    }
+
+    private static void RemoveDuplicateMetadataParts(
+        Document document,
+        string formulaId,
+        string? keepPartId)
+    {
+        object? parts = null;
+        object? selected = null;
+        try
+        {
+            parts = ((dynamic)document).CustomXMLParts;
+            selected = ((dynamic)parts).SelectByNamespace(NamespaceUri);
+            var count = (int)((dynamic)selected).Count;
+            for (var index = count; index >= 1; index--)
+            {
+                object? part = null;
+                try
+                {
+                    part = ((dynamic)selected)[index];
+                    var partId = ReadPartId(part);
+                    if (!string.IsNullOrWhiteSpace(keepPartId)
+                        && string.Equals(
+                            partId,
+                            keepPartId,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var partXml = (string?)((dynamic)part).XML;
+                    if (!TryDecodePartXml(partXml, out var candidate)
+                        || !string.Equals(
+                            candidate.FormulaId,
+                            formulaId,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    try { ((dynamic)part).Delete(); } catch { }
+                }
+                finally { Release(part); }
+            }
+        }
+        finally
+        {
+            Release(selected);
+            Release(parts);
         }
     }
 
@@ -1367,6 +1745,7 @@ internal static class WordOmmlFormulaStore
             selected = ((dynamic)parts).SelectByNamespace(NamespaceUri);
             var count = (int)((dynamic)selected).Count;
             object? matched = null;
+            FormulaMetadata? matchedMetadata = null;
             for (var index = 1; index <= count; index++)
             {
                 object? part = null;
@@ -1376,19 +1755,26 @@ internal static class WordOmmlFormulaStore
                     var partXml = (string?)((dynamic)part).XML;
                     if (!TryDecodePartXml(partXml, out var metadata)) continue;
                     RememberPart(document, part, metadata);
-                    if (matched is null
-                        && string.Equals(
+                    if (!string.Equals(
                             metadata.FormulaId,
                             formulaId,
                             StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (matched is null
+                        || matchedMetadata is null
+                        || CompareMetadataFreshness(metadata, matchedMetadata) >= 0)
                     {
+                        Release(matched);
                         matched = part;
+                        matchedMetadata = metadata;
                         part = null;
                     }
                 }
                 finally { Release(part); }
             }
             lock (cache.Gate) cache.Hydrated = true;
+            if (matched is not null && matchedMetadata is not null)
+                RememberPart(document, matched, matchedMetadata);
             return matched;
         }
         finally

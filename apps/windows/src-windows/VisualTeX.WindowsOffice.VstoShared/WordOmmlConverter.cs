@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using System.Xml.Xsl;
 using Microsoft.Office.Interop.Word;
 using Microsoft.Win32;
+using VisualTeX.WindowsOffice.Contracts;
 using Application = Microsoft.Office.Interop.Word.Application;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -61,6 +62,9 @@ internal static class WordOmmlConverter
         "∯∰∱∲∳⨋⨌⨍⨎⨏⨐⨑⨒⨓⨔⨕⨖⨗⨘⨙⨚⨛⨜";
     private const string FormulaBookmarkName = "VisualTeXFormula";
     private const string InlineScratchPlaceholder = "\uE001";
+    private const string VisualTeXEquationNumberPlaceholderPrefix = "981730";
+    private const string VisualTeXNativeNumberBookmarkPrefix = "VTEqNum_";
+    private const string VisualTeXEquationSequenceName = "VisualTeXEquation";
     private static readonly object TransformLock = new();
     private static readonly object InlineScratchLock = new();
     private static Document? _inlineScratchDocument;
@@ -72,15 +76,18 @@ internal static class WordOmmlConverter
         private Document? _document;
         private readonly string _path;
         private readonly IReadOnlyDictionary<string, BatchEntry> _entries;
+        private readonly string _mathFontName;
 
         internal BatchSource(
             Document document,
             string path,
-            IReadOnlyDictionary<string, BatchEntry> entries)
+            IReadOnlyDictionary<string, BatchEntry> entries,
+            string mathFontName)
         {
             _document = document;
             _path = path;
             _entries = entries;
+            _mathFontName = mathFontName;
         }
 
         internal string GetSourceFingerprint(string formulaId)
@@ -110,7 +117,9 @@ internal static class WordOmmlConverter
                 groupEntries.Add(entry);
             }
 
-            var path = CreateTemporaryAdjacentInlineGroupDocx(groupEntries);
+            var path = CreateTemporaryAdjacentInlineGroupDocx(
+                groupEntries,
+                _mathFontName);
             Document? sourceDocument = null;
             Range? sourceRange = null;
             Range? target = null;
@@ -314,12 +323,15 @@ internal static class WordOmmlConverter
 
     internal static WholeDocumentSource CreateWholeDocumentSource(
         Application application,
-        string documentXml)
+        string documentXml,
+        string? mathFontName = null)
     {
         if (application is null) throw new ArgumentNullException(nameof(application));
         if (string.IsNullOrWhiteSpace(documentXml))
             throw new InvalidDataException("The bulk OMML document XML is empty.");
-        var path = CreateTemporaryDocumentDocx(documentXml);
+        var path = CreateTemporaryDocumentDocx(
+            documentXml,
+            NormalizeMathFontName(mathFontName));
         Document? document = null;
         try
         {
@@ -367,7 +379,9 @@ internal static class WordOmmlConverter
 
     internal static BatchSource CreateBatchSource(
         Application application,
-        IReadOnlyList<(string FormulaId, string MathMl)> formulas)
+        IReadOnlyList<(string FormulaId, string MathMl)> formulas,
+        Func<string, string, string>? transformOmml = null,
+        string? mathFontName = null)
     {
         if (application is null) throw new ArgumentNullException(nameof(application));
         if (formulas is null) throw new ArgumentNullException(nameof(formulas));
@@ -385,6 +399,8 @@ internal static class WordOmmlConverter
             if (string.IsNullOrWhiteSpace(formula.FormulaId))
                 throw new InvalidDataException("The OMML batch formula id is missing.");
             var omml = TransformMathMlToOmml(formula.MathMl);
+            if (transformOmml is not null)
+                omml = transformOmml(formula.FormulaId, omml);
             entries.Add(
                 formula.FormulaId,
                 new BatchEntry(
@@ -394,7 +410,10 @@ internal static class WordOmmlConverter
                     index));
         }
 
-        var path = CreateTemporaryBatchDocx(entries.Values.ToList());
+        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
+        var path = CreateTemporaryBatchDocx(
+            entries.Values.ToList(),
+            normalizedMathFontName);
         Document? document = null;
         try
         {
@@ -405,7 +424,11 @@ internal static class WordOmmlConverter
                 AddToRecentFiles: false,
                 Visible: false,
                 OpenAndRepair: false);
-            var source = new BatchSource(document, path, entries);
+            var source = new BatchSource(
+                document,
+                path,
+                entries,
+                normalizedMathFontName);
             document = null;
             return source;
         }
@@ -428,14 +451,20 @@ internal static class WordOmmlConverter
         bool display,
         out string sourceFingerprint,
         bool includeLeadingTab = false,
-        bool replaceTarget = false)
+        bool replaceTarget = false,
+        Func<string, string>? transformOmml = null,
+        string? mathFontName = null)
     {
         var omml = TransformMathMlToOmml(mathMl);
+        if (transformOmml is not null)
+            omml = transformOmml(omml);
         sourceFingerprint = ComputeOmmlFingerprint(omml);
+        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
         var tempPath = CreateTemporaryDocx(
             omml,
             includeLeadingTab: display && includeLeadingTab,
-            forceInline: !display);
+            forceInline: !display,
+            mathFontName: normalizedMathFontName);
         // Import the bookmarked formula range directly from the DOCX. This keeps
         // the native OMML fidelity of the old path without opening and closing a
         // second hidden Word document for every edit.
@@ -451,7 +480,8 @@ internal static class WordOmmlConverter
                         application,
                         targetDocument,
                         insertionRange,
-                        tempPath)
+                        tempPath,
+                        normalizedMathFontName)
                     : InsertBookmarkedFile(
                         targetDocument,
                         insertionRange,
@@ -546,25 +576,118 @@ internal static class WordOmmlConverter
         }
     }
 
+    internal static Range ReplaceWithPreparedOmml(
+        Application application,
+        Document targetDocument,
+        Range targetRange,
+        string omml,
+        bool display,
+        string? mathFontName = null)
+    {
+        if (application is null) throw new ArgumentNullException(nameof(application));
+        if (targetDocument is null) throw new ArgumentNullException(nameof(targetDocument));
+        if (targetRange is null) throw new ArgumentNullException(nameof(targetRange));
+        if (string.IsNullOrWhiteSpace(omml))
+            throw new InvalidDataException("The prepared OMML replacement is empty.");
+
+        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
+        var tempPath = CreateTemporaryDocx(
+            omml,
+            includeLeadingTab: false,
+            forceInline: !display,
+            mathFontName: normalizedMathFontName);
+        Document? sourceDocument = null;
+        OMaths? sourceMaths = null;
+        OMath? sourceMath = null;
+        Range? sourceRange = null;
+        Range? target = null;
+        OMath? insertedMath = null;
+        Range? result = null;
+        try
+        {
+            sourceDocument = application.Documents.Open(
+                FileName: tempPath,
+                ConfirmConversions: false,
+                ReadOnly: true,
+                AddToRecentFiles: false,
+                Visible: false,
+                OpenAndRepair: false);
+            sourceMaths = sourceDocument.OMaths;
+            if (sourceMaths.Count != 1)
+                throw new InvalidDataException(
+                    "The prepared OMML replacement document did not contain exactly one equation.");
+            sourceMath = sourceMaths[1];
+            sourceRange = sourceMath.Range;
+
+            target = targetRange.Duplicate;
+            var insertionStart = target.Start;
+            // Word can replace one professional OMath with another through
+            // FormattedText without linearizing either equation. This preserves
+            // radicals, fractions, matrices and the display-math separators while
+            // avoiding the placeholder/BuildUp corruption seen in older builds.
+            target.FormattedText = sourceRange.FormattedText;
+            insertedMath = FindMathAtPosition(
+                    targetDocument,
+                    insertionStart,
+                    target.End)
+                ?? throw new InvalidOperationException(
+                    "Word did not materialize the prepared OMML replacement.");
+            var targetType = display
+                ? WdOMathType.wdOMathDisplay
+                : WdOMathType.wdOMathInline;
+            if (insertedMath.Type != targetType)
+                insertedMath.Type = targetType;
+            result = insertedMath.Range.Duplicate;
+            RemoveImportedFormulaBookmark(targetDocument, result);
+            var returned = result;
+            result = null;
+            return returned;
+        }
+        finally
+        {
+            Release(result);
+            Release(insertedMath);
+            Release(target);
+            Release(sourceRange);
+            Release(sourceMath);
+            Release(sourceMaths);
+            if (sourceDocument is not null)
+            {
+                try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(sourceDocument);
+            // Opening the temporary prepared-OMML document can make it Word's
+            // ActiveDocument even when Visible=false. Once that document closes,
+            // some Word builds expose no ActiveDocument until the caller manually
+            // activates the real document; the next editor Apply then fails before
+            // it can resolve its source. Restore the supplied target explicitly.
+            try { targetDocument.Activate(); } catch { }
+            try { File.Delete(tempPath); } catch { }
+        }
+    }
+
     private static Range InsertBookmarkedFileThroughScratchDocument(
         Application application,
         Document targetDocument,
         Range insertionRange,
-        string filePath)
+        string filePath,
+        string mathFontName)
     {
         lock (InlineScratchLock)
             return InsertBookmarkedFileThroughScratchDocumentCore(
                 application,
                 targetDocument,
                 insertionRange,
-                filePath);
+                filePath,
+                mathFontName);
     }
 
     private static Range InsertBookmarkedFileThroughScratchDocumentCore(
         Application application,
         Document targetDocument,
         Range insertionRange,
-        string filePath)
+        string filePath,
+        string mathFontName)
     {
         Document? scratchDocument = null;
         Range? scratchInsertion = null;
@@ -576,7 +699,9 @@ internal static class WordOmmlConverter
         Range? result = null;
         try
         {
-            scratchDocument = GetOrCreateInlineScratchDocument(application);
+            scratchDocument = GetOrCreateInlineScratchDocument(
+                application,
+                mathFontName);
             scratchInsertion = scratchDocument.Content;
             var scratchStart = scratchInsertion.Start;
             scratchInsertion.Text = "L" + InlineScratchPlaceholder + "R";
@@ -637,7 +762,9 @@ internal static class WordOmmlConverter
         }
     }
 
-    private static Document GetOrCreateInlineScratchDocument(Application application)
+    private static Document GetOrCreateInlineScratchDocument(
+        Application application,
+        string mathFontName)
     {
         if (_inlineScratchDocument is not null)
         {
@@ -646,7 +773,10 @@ internal static class WordOmmlConverter
             {
                 scratchApplication = _inlineScratchDocument.Application;
                 if (IsSameComObject(scratchApplication, application))
+                {
+                    ApplyDocumentMathFont(_inlineScratchDocument, mathFontName);
                     return _inlineScratchDocument;
+                }
             }
             catch
             {
@@ -665,6 +795,7 @@ internal static class WordOmmlConverter
         }
 
         _inlineScratchDocument = application.Documents.Add(Visible: false);
+        ApplyDocumentMathFont(_inlineScratchDocument, mathFontName);
         try { _inlineScratchDocument.Saved = true; } catch { }
         return _inlineScratchDocument;
     }
@@ -1937,7 +2068,7 @@ internal static class WordOmmlConverter
 
     internal static string TransformOmmlToMathMl(string wordOpenXml, bool display)
     {
-        var omml = ExtractSingleOMath(wordOpenXml);
+        var omml = StripVisualTeXNativeEquationNumber(wordOpenXml);
         var transform = GetOmmlToMathMlTransform();
         var inputSettings = new XmlReaderSettings
         {
@@ -2398,7 +2529,7 @@ internal static class WordOmmlConverter
 
     internal static string ComputeOmmlFingerprint(string wordOpenXml)
     {
-        var normalized = ExtractSingleOMath(wordOpenXml);
+        var normalized = StripVisualTeXNativeEquationNumber(wordOpenXml);
         var document = XDocument.Parse(normalized, LoadOptions.PreserveWhitespace);
         XNamespace word = WordNamespace;
         XNamespace math = MathNamespace;
@@ -2475,6 +2606,237 @@ internal static class WordOmmlConverter
         }
     }
 
+    internal static string BuildImmutableHashSequenceNumberedOmml(
+        string semanticOmml,
+        string sequenceName,
+        string numberBookmarkName,
+        string visibleBookmarkName,
+        string captionBookmarkName,
+        string prefix,
+        int restartHeadingLevel,
+        string initialSequenceResult)
+    {
+        if (string.IsNullOrWhiteSpace(semanticOmml))
+            throw new ArgumentException(
+                "The semantic OMML payload must not be empty.",
+                nameof(semanticOmml));
+        if (!Regex.IsMatch(
+                sequenceName ?? string.Empty,
+                @"^[A-Za-z][A-Za-z0-9_]{0,39}$",
+                RegexOptions.CultureInvariant))
+            throw new ArgumentException(
+                "The Word SEQ identifier is invalid.",
+                nameof(sequenceName));
+        if (restartHeadingLevel < 0 || restartHeadingLevel > 9)
+            throw new ArgumentOutOfRangeException(
+                nameof(restartHeadingLevel),
+                "A Word heading reset level must be between 0 and 9.");
+        if (string.IsNullOrWhiteSpace(initialSequenceResult)
+            || initialSequenceResult.Any(character =>
+                character is '\r' or '\n' or '\u0013' or '\u0014' or '\u0015'))
+            throw new ArgumentException(
+                "The initial SEQ result is invalid.",
+                nameof(initialSequenceResult));
+        prefix ??= string.Empty;
+        if (prefix.Any(character =>
+                character is '\r' or '\n' or '\u0013' or '\u0014' or '\u0015'))
+            throw new ArgumentException(
+                "The equation-number prefix contains an invalid Word field-control character.",
+                nameof(prefix));
+
+        var normalizedFormulaId = ValidateManagedEquationBookmarkName(
+            numberBookmarkName,
+            VisualTeXNativeNumberBookmarkPrefix,
+            nameof(numberBookmarkName));
+        if (!string.Equals(
+                normalizedFormulaId,
+                ValidateManagedEquationBookmarkName(
+                    visibleBookmarkName,
+                    "VTEq_",
+                    nameof(visibleBookmarkName)),
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                normalizedFormulaId,
+                ValidateManagedEquationBookmarkName(
+                    captionBookmarkName,
+                    "VTEqCap_",
+                    nameof(captionBookmarkName)),
+                StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException(
+                "All VisualTeX equation-number bookmarks must carry the same FormulaId.");
+
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+        var equation = XElement.Parse(
+            ExtractSingleOMath(semanticOmml),
+            LoadOptions.PreserveWhitespace);
+        var formulaNodes = equation
+            .Elements()
+            .Select(element => new XElement(element))
+            .Cast<object>()
+            .ToList();
+        if (formulaNodes.Count == 0)
+            throw new InvalidDataException(
+                "A numbered OMML display equation must contain a nonempty mathematical body.");
+
+        var representativeRunProperties = equation
+            .Descendants(word + "rPr")
+            .FirstOrDefault(properties => properties.Element(word + "sz") is not null)
+            ?? equation.Descendants(word + "rPr").FirstOrDefault();
+        XElement WrapperRunProperties(bool noProof = false, bool italic = false)
+        {
+            var properties = new XElement(word + "rPr");
+            foreach (var name in new[] { word + "rFonts", word + "sz", word + "szCs" })
+            {
+                var property = representativeRunProperties?.Element(name);
+                if (property is not null)
+                    properties.Add(new XElement(property));
+            }
+            if (italic)
+                properties.Add(new XElement(word + "i"));
+            if (noProof)
+                properties.Add(new XElement(word + "noProof"));
+            return properties;
+        }
+        XElement WrapperControlProperties() =>
+            new(
+                math + "ctrlPr",
+                // Match Word's own professional #({SEQ ...}) serialization. The
+                // control run is italic, while the visible numeric result is not.
+                // Marking field-control runs with m:nor makes Word treat the hidden
+                // instruction as ordinary mathematical content and expands the
+                // equation-number slot leftward instead of keeping it at the right
+                // margin.
+                WrapperRunProperties(italic: true));
+        XElement FieldBoundaryRun(XElement content) =>
+            new(
+                math + "r",
+                WrapperRunProperties(italic: true),
+                content);
+        XElement FieldInstructionRun(XElement content) =>
+            new(
+                math + "r",
+                WrapperRunProperties(),
+                content);
+        XElement FieldResultRun(XElement content) =>
+            new(
+                math + "r",
+                WrapperRunProperties(noProof: true),
+                content);
+        XElement TextRun(string text) =>
+            new(
+                math + "r",
+                WrapperRunProperties(),
+                new XElement(math + "t", text));
+        XElement HashSeparatorRun() =>
+            // Keep the hash itself Word-canonical. Word is allowed to merge this run
+            // into the preceding simple formula run during normalization; the native
+            // number parser therefore recognizes both a standalone '#' token and a
+            // formula-tail run whose final character is '#'. Adding m:nor here makes
+            // Word treat the separator as ordinary math and destroys right-margin
+            // #() label geometry.
+            TextRun("#");
+
+        var sequenceSwitch = restartHeadingLevel > 0
+            ? $" \\s {restartHeadingLevel}"
+            : string.Empty;
+        var sequenceInstruction =
+            // Word itself adds MERGEFORMAT when a SEQ field is inserted with
+            // PreserveFormatting=true before professional BuildUp. Keep the same
+            // canonical field instruction so the #() number remains a right-margin
+            // label after save/reopen instead of behaving like ordinary math text.
+            $" SEQ {sequenceName}{sequenceSwitch} \\* ARABIC \\* MERGEFORMAT ";
+        var fieldElements = new List<object>
+        {
+            // Keep the number alias outermost: VTEqNum must cover the complete
+            // chapter prefix plus the live SEQ result read by ordinary body REF.
+            new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "31801"),
+                new XAttribute(word + "name", numberBookmarkName)),
+            new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "31802"),
+                new XAttribute(word + "name", visibleBookmarkName)),
+            new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "31803"),
+                new XAttribute(word + "name", captionBookmarkName)),
+        };
+        if (!string.IsNullOrEmpty(prefix))
+            fieldElements.Add(TextRun(prefix));
+        fieldElements.Add(FieldBoundaryRun(new XElement(
+            word + "fldChar",
+            // Word's own Ctrl+F9/BuildUp #(SEQ) field is not imported as dirty.
+            // Setting w:dirty=true on an XML-inserted field makes interactive Word
+            // show the "fields may refer to other files" update-confirmation dialog
+            // even in a brand-new document. VisualTeX explicitly updates this SEQ
+            // after insertion, so the dirty flag is both unnecessary and harmful.
+            new XAttribute(word + "fldCharType", "begin"))));
+        fieldElements.Add(FieldInstructionRun(new XElement(
+            word + "instrText",
+            new XAttribute(XNamespace.Xml + "space", "preserve"),
+            sequenceInstruction)));
+        fieldElements.Add(FieldBoundaryRun(new XElement(
+            word + "fldChar",
+            new XAttribute(word + "fldCharType", "separate"))));
+        fieldElements.Add(FieldResultRun(new XElement(math + "t", initialSequenceResult)));
+        fieldElements.Add(FieldBoundaryRun(new XElement(
+            word + "fldChar",
+            new XAttribute(word + "fldCharType", "end"))));
+        fieldElements.Add(new XElement(
+            word + "bookmarkEnd",
+            new XAttribute(word + "id", "31803")));
+        fieldElements.Add(new XElement(
+            word + "bookmarkEnd",
+            new XAttribute(word + "id", "31802")));
+        fieldElements.Add(new XElement(
+            word + "bookmarkEnd",
+            new XAttribute(word + "id", "31801")));
+
+        var delimiter = new XElement(
+            math + "d",
+            new XElement(
+                math + "dPr",
+                WrapperControlProperties()),
+            new XElement(math + "e", fieldElements));
+        var equationBody = new XElement(math + "e", formulaNodes);
+        equationBody.Add(
+            HashSeparatorRun(),
+            delimiter);
+        return new XElement(
+                math + "oMath",
+                new XElement(
+                    math + "eqArr",
+                    new XElement(
+                        math + "eqArrPr",
+                        new XElement(
+                            math + "maxDist",
+                            new XAttribute(math + "val", "1")),
+                        WrapperControlProperties()),
+                    equationBody))
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static string ValidateManagedEquationBookmarkName(
+        string? bookmarkName,
+        string expectedPrefix,
+        string parameterName)
+    {
+        var value = bookmarkName ?? string.Empty;
+        if (!value.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            || value.Length != expectedPrefix.Length + 32)
+            throw new ArgumentException(
+                $"The VisualTeX bookmark must use the {expectedPrefix}<32-hex-FormulaId> form.",
+                parameterName);
+        var identifier = value.Substring(expectedPrefix.Length);
+        if (!Guid.TryParseExact(identifier, "N", out var parsed))
+            throw new ArgumentException(
+                $"The VisualTeX bookmark must use the {expectedPrefix}<32-hex-FormulaId> form.",
+                parameterName);
+        return parsed.ToString("N");
+    }
+
     internal static string ExtractSingleOMath(string omml)
     {
         if (string.IsNullOrWhiteSpace(omml))
@@ -2497,6 +2859,232 @@ internal static class WordOmmlConverter
         if (equation is null)
             throw new InvalidDataException("Office MathML conversion did not produce an m:oMath node.");
         return equation.ToString(SaveOptions.DisableFormatting);
+    }
+
+    internal static bool HasVisualTeXNativeEquationNumber(string wordOpenXml)
+    {
+        var equation = XElement.Parse(
+            ExtractSingleOMath(wordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        return TryResolveVisualTeXNativeEquationNumber(
+            equation,
+            out _,
+            out _,
+            out _);
+    }
+
+    internal static bool HasVisualTeXDirectSequenceEquationNumber(
+        string wordOpenXml,
+        string? formulaId = null)
+    {
+        var equation = XElement.Parse(
+            ExtractSingleOMath(wordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        return TryResolveVisualTeXDirectSequenceEquationNumber(
+            equation,
+            formulaId);
+    }
+
+    internal static string StripVisualTeXNativeEquationNumber(string wordOpenXml) =>
+        StripVisualTeXNativeEquationNumberCore(
+            wordOpenXml,
+            allowUnboundDirectSequence: false);
+
+    internal static string StripVisualTeXNativeEquationNumberForManagedRepair(
+        string wordOpenXml) =>
+        StripVisualTeXNativeEquationNumberCore(
+            wordOpenXml,
+            allowUnboundDirectSequence: true);
+
+    // Compatibility name used by the managed-numbering repair and its XML
+    // regression tests. Both entry points deliberately require the caller to have
+    // already proven VisualTeX ownership through metadata/FormulaId before an
+    // otherwise unbound direct SEQ wrapper is stripped.
+    internal static string StripManagedVisualTeXNativeEquationNumber(
+        string wordOpenXml) =>
+        StripVisualTeXNativeEquationNumberForManagedRepair(wordOpenXml);
+
+    private static string StripVisualTeXNativeEquationNumberCore(
+        string wordOpenXml,
+        bool allowUnboundDirectSequence)
+    {
+        var equation = XElement.Parse(
+            ExtractSingleOMath(wordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        XNamespace math = MathNamespace;
+        var removed = 0;
+        while (TryResolveVisualTeXNativeEquationNumber(
+                   equation,
+                   out var body,
+                   out var separatorIndex,
+                   out _,
+                   allowUnboundDirectSequence)
+               && body is not null
+               && separatorIndex >= 0)
+        {
+            var bodyElements = body.Elements().ToArray();
+            var formulaElements = bodyElements
+                .Take(separatorIndex)
+                .Select(element => new XElement(element))
+                .ToList();
+            var separator = bodyElements[separatorIndex];
+            var separatorText = string.Concat(
+                separator.Elements(math + "t").Select(text => text.Value));
+            if (separatorText.Length > 1
+                && separatorText.EndsWith("#", StringComparison.Ordinal))
+            {
+                var mergedTail = new XElement(separator);
+                var tailTexts = mergedTail.Elements(math + "t").ToArray();
+                if (tailTexts.Length > 0)
+                {
+                    var lastText = tailTexts[tailTexts.Length - 1];
+                    if (lastText.Value.EndsWith("#", StringComparison.Ordinal))
+                        lastText.Value = lastText.Value.Substring(0, lastText.Value.Length - 1);
+                    if (tailTexts.Any(text => !string.IsNullOrEmpty(text.Value)))
+                        formulaElements.Add(mergedTail);
+                }
+            }
+            if (formulaElements.Count == 0)
+                throw new InvalidDataException(
+                    "The generated VisualTeX equation-number wrapper contains no formula body.");
+            equation = new XElement(math + "oMath", formulaElements);
+            removed++;
+            if (removed > 8)
+                throw new InvalidDataException(
+                    "The VisualTeX native equation-number wrapper is recursively malformed.");
+        }
+        return equation.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static bool TryResolveVisualTeXNativeEquationNumber(
+        XElement equation,
+        out XElement? body,
+        out int separatorIndex,
+        out XElement? numberDelimiter,
+        bool allowUnboundDirectSequence = false)
+    {
+        body = null;
+        separatorIndex = -1;
+        numberDelimiter = null;
+        XNamespace math = MathNamespace;
+        var equationArray = equation.Elements(math + "eqArr").SingleOrDefault();
+        if (equationArray is null) return false;
+        var entries = equationArray.Elements(math + "e").ToArray();
+        if (entries.Length != 1) return false;
+        var candidateBody = entries[0];
+        var children = candidateBody.Elements().ToArray();
+        for (var index = 0; index + 1 < children.Length; index++)
+        {
+            var candidateSeparator = children[index];
+            if (candidateSeparator.Name != math + "r") continue;
+            var separatorText = string.Concat(
+                candidateSeparator.Elements(math + "t").Select(text => text.Value));
+            if (!separatorText.EndsWith("#", StringComparison.Ordinal)) continue;
+            var candidateNumber = children[index + 1];
+            if (candidateNumber.Name != math + "d") continue;
+            var numberText = string.Concat(
+                candidateNumber.Descendants(math + "t").Select(text => text.Value));
+            var generatedPlaceholder = numberText.IndexOf(
+                VisualTeXEquationNumberPlaceholderPrefix,
+                StringComparison.Ordinal) >= 0;
+            XNamespace word = WordNamespace;
+            var fieldCode = string.Concat(
+                candidateNumber
+                    .Descendants(word + "instrText")
+                    .Select(text => text.Value));
+            var generatedReference = numberText.IndexOf(
+                    "REF " + VisualTeXNativeNumberBookmarkPrefix,
+                    StringComparison.OrdinalIgnoreCase) >= 0
+                || fieldCode.IndexOf(
+                    "REF " + VisualTeXNativeNumberBookmarkPrefix,
+                    StringComparison.OrdinalIgnoreCase) >= 0;
+            var generatedDirectSequence =
+                IsVisualTeXDirectSequenceDelimiter(candidateNumber, formulaId: null)
+                && (allowUnboundDirectSequence
+                    || candidateNumber
+                        .Descendants(word + "bookmarkStart")
+                        .Any(element =>
+                            ((string?)element.Attribute(word + "name") ?? string.Empty)
+                                .StartsWith(
+                                    VisualTeXNativeNumberBookmarkPrefix,
+                                    StringComparison.OrdinalIgnoreCase)));
+            if (!generatedPlaceholder && !generatedReference && !generatedDirectSequence)
+                continue;
+            body = candidateBody;
+            separatorIndex = index;
+            numberDelimiter = candidateNumber;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryResolveVisualTeXDirectSequenceEquationNumber(
+        XElement equation,
+        string? formulaId)
+    {
+        XNamespace math = MathNamespace;
+        var equationArray = equation.Elements(math + "eqArr").SingleOrDefault();
+        if (equationArray is null) return false;
+        var entries = equationArray.Elements(math + "e").ToArray();
+        if (entries.Length != 1) return false;
+        var children = entries[0].Elements().ToArray();
+        for (var index = 0; index + 1 < children.Length; index++)
+        {
+            var separator = children[index];
+            if (separator.Name != math + "r") continue;
+            var separatorText = string.Concat(
+                separator.Elements(math + "t").Select(text => text.Value));
+            if (!separatorText.EndsWith("#", StringComparison.Ordinal)) continue;
+            var delimiter = children[index + 1];
+            if (delimiter.Name != math + "d") continue;
+            if (IsVisualTeXDirectSequenceDelimiter(delimiter, formulaId))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsVisualTeXDirectSequenceDelimiter(
+        XElement delimiter,
+        string? formulaId)
+    {
+        XNamespace word = WordNamespace;
+        XNamespace math = MathNamespace;
+        // Word accepts w:instrText when the prepared OMath is imported, but its
+        // native math normalizer commonly serializes that field instruction back as
+        // m:r/m:t while COM still exposes the same live Field.Code.Text. Recognize
+        // both spellings; never rewrite either representation in place.
+        var fieldCode = string.Concat(
+            delimiter.Descendants(word + "instrText").Select(text => text.Value))
+            + string.Concat(
+                delimiter.Descendants(math + "t").Select(text => text.Value));
+        if (!Regex.IsMatch(
+                fieldCode,
+                @"\bSEQ\s+(?:""VisualTeXEquation""|VisualTeXEquation)\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return false;
+        if (Regex.IsMatch(
+                fieldCode,
+                @"\bREF\s+VTEqNum_",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return false;
+
+        // OMath.Range.WordOpenXML is not a stable bookmark boundary API: after a
+        // paragraph is inserted before an existing equation, Word can omit a
+        // bookmarkStart that shares the OMath start while the bookmark remains
+        // healthy in Document.Bookmarks and the full document XML. A null FormulaId
+        // therefore means structure-only recognition. Callers that own a FormulaId
+        // validate its bookmark through COM range containment separately.
+        if (string.IsNullOrWhiteSpace(formulaId))
+            return true;
+        if (!Guid.TryParse(formulaId, out var formulaGuid)) return false;
+        var expectedBookmark =
+            VisualTeXNativeNumberBookmarkPrefix + formulaGuid.ToString("N");
+        return delimiter
+            .Descendants(word + "bookmarkStart")
+            .Any(element => string.Equals(
+                (string?)element.Attribute(word + "name") ?? string.Empty,
+                expectedBookmark,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     internal static string BuildDocumentXml(
@@ -2670,7 +3258,90 @@ internal static class WordOmmlConverter
         return transform;
     }
 
-    private static string CreateTemporaryDocumentDocx(string documentXml)
+    private static string NormalizeMathFontName(string? mathFontName) =>
+        string.IsNullOrWhiteSpace(mathFontName)
+            ? "Cambria Math"
+            : mathFontName.Trim();
+
+    private static void ApplyDocumentMathFont(
+        Document document,
+        string mathFontName)
+    {
+        var normalized = NormalizeMathFontName(mathFontName);
+        string current;
+        try { current = document.OMathFontName ?? string.Empty; }
+        catch (COMException error)
+        {
+            throw new InvalidOperationException(
+                "Word could not read the temporary document's Office Math font.",
+                error);
+        }
+        if (string.Equals(current, normalized, StringComparison.OrdinalIgnoreCase))
+            return;
+        try { document.OMathFontName = normalized; }
+        catch (COMException error)
+        {
+            throw new InvalidOperationException(
+                $"Word could not apply '{normalized}' to the temporary OMML document.",
+                error);
+        }
+        var applied = document.OMathFontName ?? string.Empty;
+        if (!string.Equals(applied, normalized, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Word rejected '{normalized}' as the temporary OMML document's math font.");
+    }
+
+    private static void WriteMinimalDocxScaffold(
+        ZipArchive archive,
+        string mathFontName)
+    {
+        var normalized = NormalizeMathFontName(mathFontName);
+        WriteEntry(
+            archive,
+            "[Content_Types].xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            + "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+            + "<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>"
+            + "</Types>");
+        WriteEntry(
+            archive,
+            "_rels/.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
+            + "</Relationships>");
+        WriteEntry(
+            archive,
+            "word/_rels/document.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            + "<Relationship Id=\"rIdSettings\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/>"
+            + "</Relationships>");
+
+        XNamespace word = WordNamespace;
+        XNamespace math = MathNamespace;
+        var settings = new XElement(
+            word + "settings",
+            new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+            new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+            new XElement(
+                math + "mathPr",
+                new XElement(
+                    math + "mathFont",
+                    new XAttribute(math + "val", normalized))));
+        WriteEntry(
+            archive,
+            "word/settings.xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + settings.ToString(SaveOptions.DisableFormatting));
+    }
+
+    private static string CreateTemporaryDocumentDocx(
+        string documentXml,
+        string? mathFontName = null)
     {
         var path = Path.Combine(
             Path.GetTempPath(),
@@ -2681,28 +3352,16 @@ internal static class WordOmmlConverter
             FileAccess.ReadWrite,
             FileShare.None);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: false);
-        WriteEntry(
+        WriteMinimalDocxScaffold(
             archive,
-            "[Content_Types].xml",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-            + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-            + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-            + "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
-            + "</Types>");
-        WriteEntry(
-            archive,
-            "_rels/.rels",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-            + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
-            + "</Relationships>");
+            NormalizeMathFontName(mathFontName));
         WriteEntry(archive, "word/document.xml", documentXml);
         return path;
     }
 
     private static string CreateTemporaryAdjacentInlineGroupDocx(
-        IReadOnlyList<BatchEntry> entries)
+        IReadOnlyList<BatchEntry> entries,
+        string mathFontName)
     {
         var body = new StringBuilder("<w:p>");
         for (var index = 0; index < entries.Count; index++)
@@ -2723,11 +3382,12 @@ internal static class WordOmmlConverter
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             + $"<w:document xmlns:w=\"{WordNamespace}\" xmlns:m=\"{MathNamespace}\">"
             + $"<w:body>{body}<w:sectPr/></w:body></w:document>";
-        return CreateTemporaryDocumentDocx(documentXml);
+        return CreateTemporaryDocumentDocx(documentXml, mathFontName);
     }
 
     private static string CreateTemporaryBatchDocx(
-        IReadOnlyList<BatchEntry> entries)
+        IReadOnlyList<BatchEntry> entries,
+        string mathFontName)
     {
         var path = Path.Combine(
             Path.GetTempPath(),
@@ -2738,22 +3398,7 @@ internal static class WordOmmlConverter
             FileAccess.ReadWrite,
             FileShare.None);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: false);
-        WriteEntry(
-            archive,
-            "[Content_Types].xml",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-            + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-            + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-            + "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
-            + "</Types>");
-        WriteEntry(
-            archive,
-            "_rels/.rels",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-            + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
-            + "</Relationships>");
+        WriteMinimalDocxScaffold(archive, mathFontName);
 
         var body = new StringBuilder();
         foreach (var entry in entries)
@@ -2783,7 +3428,8 @@ internal static class WordOmmlConverter
     private static string CreateTemporaryDocx(
         string omml,
         bool includeLeadingTab,
-        bool forceInline)
+        bool forceInline,
+        string mathFontName)
     {
         var path = Path.Combine(
             Path.GetTempPath(),
@@ -2794,22 +3440,7 @@ internal static class WordOmmlConverter
             FileAccess.ReadWrite,
             FileShare.None);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: false);
-        WriteEntry(
-            archive,
-            "[Content_Types].xml",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-            + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-            + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-            + "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
-            + "</Types>");
-        WriteEntry(
-            archive,
-            "_rels/.rels",
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-            + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
-            + "</Relationships>");
+        WriteMinimalDocxScaffold(archive, mathFontName);
         WriteEntry(
             archive,
             "word/document.xml",

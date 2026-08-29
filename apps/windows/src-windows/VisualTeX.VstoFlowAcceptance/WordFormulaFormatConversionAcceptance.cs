@@ -57,9 +57,8 @@ internal static partial class Program
                 sourceDocument = application.ActiveDocument
                     ?? throw new InvalidOperationException("No active Word document is available as the real VisualTeX source fixture.");
                 Word.InlineShape? seedShape = null;
-                Word.Table? seedTable = null;
+                Word.Range? seedOwnerRange = null;
                 Word.Bookmark? seedCaptionBookmark = null;
-                Word.Range? seedTableRange = null;
                 Word.Range? seedCaptionRange = null;
                 try
                 {
@@ -72,19 +71,13 @@ internal static partial class Program
                         if (metadata?.Numbered != true
                             || !string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
                             continue;
-                        seedTable = WordEquationNumbering.FindNumberedEquationTable(
+                        Release(seedOwnerRange);
+                        seedOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
                             sourceDocument,
                             metadata.FormulaId);
-                        if (seedTable is null) continue;
-                        if (seedTable.Rows.Count != 1 || seedTable.Columns.Count != 3)
-                        {
-                            Release(seedTable);
-                            seedTable = null;
-                            continue;
-                        }
-                        seedTableRange = seedTable.Range;
-                        var hostStart = seedTableRange.Start;
-                        var hostEnd = seedTableRange.End;
+                        if (seedOwnerRange is null) continue;
+                        var hostStart = seedOwnerRange.Start;
+                        var hostEnd = seedOwnerRange.End;
                         var captionName = WordEquationNumbering.NativeCaptionBookmarkName(metadata.FormulaId);
                         if (sourceDocument.Bookmarks.Exists(captionName))
                         {
@@ -102,9 +95,8 @@ internal static partial class Program
                 finally
                 {
                     Release(seedCaptionRange);
-                    Release(seedTableRange);
                     Release(seedCaptionBookmark);
-                    Release(seedTable);
+                    Release(seedOwnerRange);
                     Release(seedShape);
                 }
             }
@@ -225,39 +217,26 @@ internal static partial class Program
             AssertEqual(3, CountVisualTeXNumberingBookmarkTriples(document),
                 "Consecutive-numbered conversion setup did not create three numbered VisualTeX hosts.");
 
-            // Reproduce the real Word quirk from 文档2: after an earlier MathType
-            // numbered equation, the first newly-created VisualTeX numbered host can
-            // retain one completely empty trailing table row. Conversion must accept
-            // and normalize that benign 2x3 host instead of treating it as corruption.
-            Word.InlineShape? firstSourceShape = null;
-            Word.Table? firstSourceTable = null;
-            Word.Row? addedEmptyRow = null;
-            try
+            // Fresh VisualTeX OLE formulas now follow MathType's native Word
+            // geometry. Verify every source before format conversion so this
+            // acceptance cannot silently regress to the legacy 1x3 table host.
+            for (var sourceIndex = 1; sourceIndex <= document.InlineShapes.Count; sourceIndex++)
             {
-                firstSourceShape = document.InlineShapes[includeExistingMathType ? 2 : 1];
-                var firstMetadata = WordFormulaMetadataReader.TryRead(firstSourceShape)
-                    ?? throw new InvalidDataException(
-                        "The first VisualTeX source lost metadata before the empty-row regression setup.");
-                firstSourceTable = WordEquationNumbering.FindNumberedEquationTable(
+                Word.InlineShape? sourceShape = null;
+                try
+                {
+                    sourceShape = document.InlineShapes[sourceIndex];
+                    if (!WordFormulaMetadataReader.IsNativeOle(sourceShape)) continue;
+                    var sourceMetadata = WordFormulaMetadataReader.TryRead(sourceShape)
+                        ?? throw new InvalidDataException(
+                            $"VisualTeX source {sourceIndex} lost metadata before format conversion.");
+                    AssertVisualTeXNumberedTabHost(
                         document,
-                        firstMetadata.FormulaId)
-                    ?? throw new InvalidDataException(
-                        "The first VisualTeX source lost its numbered table before the empty-row regression setup.");
-                addedEmptyRow = firstSourceTable.Rows.Add();
-                AssertEqual(2, firstSourceTable.Rows.Count,
-                    "The empty-row regression setup did not produce a 2x3 VisualTeX numbering table.");
-                AssertEqual(3, firstSourceTable.Columns.Count,
-                    "The empty-row regression setup changed the VisualTeX numbering-table column count.");
-                AssertEqual(1, firstSourceTable.Range.InlineShapes.Count,
-                    "The empty-row regression setup unexpectedly duplicated the formula object.");
-                Console.WriteLine(
-                    "[CONSECUTIVE NUMBERED] Reproduced benign 2x3 host: first VisualTeX numbering table has one empty trailing row.");
-            }
-            finally
-            {
-                Release(addedEmptyRow);
-                Release(firstSourceTable);
-                Release(firstSourceShape);
+                        sourceMetadata.FormulaId,
+                        updateReference: true,
+                        context: $"format-conversion source {sourceIndex}");
+                }
+                finally { Release(sourceShape); }
             }
 
             var sourceFixturePath = Path.Combine(

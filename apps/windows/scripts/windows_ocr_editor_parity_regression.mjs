@@ -6,6 +6,8 @@ async function source(path) {
 }
 
 const app = await source("src/App.tsx");
+const ocrDialog = await source("src/components/OcrDialog.tsx");
+const ocrService = await source("src/ocr/ocrService.ts");
 const quickOcr = await source("src/ocr/quickOcr.ts");
 const quickRuntime = await source("src/ocr/windowsQuickOcrRuntime.ts");
 const desktopApp = await source("src/desktop/DesktopApp.tsx");
@@ -21,6 +23,7 @@ const tauriLib = await source("src-tauri/src/lib.rs");
 const appLifecycle = await source("src-tauri/src/app_lifecycle.rs");
 const quickOcrNative = await source("src-tauri/src/windows_quick_ocr.rs");
 const silentOcrNative = await source("src-tauri/src/windows_silent_ocr_hotkey.rs");
+const ocrProviderNative = await source("src-tauri/src/ocr_provider.rs");
 const officeServer = await source("src-tauri/src/office/server.rs");
 const officeState = await source("src-tauri/src/office/state.rs");
 
@@ -35,8 +38,17 @@ assert.ok(quickOcrNative.includes("restore_visualtex_foreground_window"));
 assert.ok(quickOcrNative.includes("SetForegroundWindow(hwnd)"));
 assert.ok(quickOcrNative.includes("if unsafe { GetForegroundWindow() } == hwnd"));
 assert.ok(!quickOcr.includes("minimizeForOcrCapture"));
-assert.ok(quickOcr.includes("captureWindowsClipboardImage(true)"));
-assert.ok(quickOcr.includes("captureWindowsClipboardImage(false)"));
+assert.ok(quickOcr.includes('"windows" | "pixpin" | "clipboard"'));
+assert.ok(quickOcr.includes("captureWindowsClipboardImage(captureMode)"));
+assert.ok(quickOcrNative.includes("ms-screenclip:"));
+assert.ok(quickOcrNative.includes("PixPin.exe"));
+assert.ok(quickOcrNative.includes("Get-Process -Name 'PixPin'"));
+assert.ok(quickOcrNative.includes("Start-Process -FilePath $pixpin | Out-Null"));
+assert.ok(quickOcrNative.includes("pixpin.screenShot(ShotAction.Copy)"));
+assert.ok(quickOcrNative.includes('"clipboard" | "system-screenshot"'));
+assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="windows"'));
+assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="pixpin"'));
+assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="clipboard"'));
 
 // Silent OCR must be a native closed loop: global hotkey -> screenshot -> OCR
 // -> selected source wrapper -> clipboard. It must not depend on a live React
@@ -48,6 +60,8 @@ assert.ok(silentOcrNative.includes("format_silent_ocr_latex"));
 assert.ok(silentOcrNative.includes("write_clipboard_text"));
 assert.ok(silentOcrNative.includes("silent-ocr.json"));
 assert.ok(silentOcrNative.includes("copy_format"));
+assert.ok(silentOcrNative.includes("capture_mode"));
+assert.ok(silentOcrNative.includes("&capture_mode"));
 assert.ok(silentOcrNative.includes('"display-bracket"'));
 assert.ok(silentOcrNative.includes('"align-star"'));
 assert.ok(silentOcrNative.includes('"equation-star-split"'));
@@ -67,6 +81,36 @@ assert.ok(desktopApp.includes("CheckCircle2"));
 assert.ok(desktopApp.includes('"识别成功"'));
 assert.ok(latestStyles.includes(".silent-ocr-hud-page"));
 assert.ok(latestStyles.includes("visualtex-silent-ocr-spin"));
+
+// Every OCR entry point shares one native provider router. Local PP-FormulaNet
+// remains the default, while OpenAI-compatible, Ollama and Mathpix requests are
+// normalized to the existing formulas[].latex result. Secrets stay in the
+// native backend and are protected with Windows DPAPI before persistence.
+assert.ok(ocrProviderNative.includes('pub(crate) const LOCAL_PROVIDER: &str = "local"'));
+assert.ok(ocrProviderNative.includes('OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible"'));
+assert.ok(ocrProviderNative.includes('OLLAMA_PROVIDER: &str = "ollama"'));
+assert.ok(ocrProviderNative.includes('MATHPIX_PROVIDER: &str = "mathpix"'));
+assert.ok(ocrProviderNative.includes("CryptProtectData"));
+assert.ok(ocrProviderNative.includes("CryptUnprotectData"));
+assert.ok(ocrProviderNative.includes("Refusing to send"));
+assert.ok(ocrProviderNative.includes('"responses"'));
+assert.ok(ocrProviderNative.includes('"chat/completions"'));
+assert.ok(ocrProviderNative.includes('"api/chat"'));
+assert.ok(ocrProviderNative.includes('"v3/text"'));
+assert.ok(ocrProviderNative.includes("MATHPIX_MAX_BASE64_IMAGE_BYTES"));
+assert.ok(ocrProviderNative.includes('"improve_mathpix": false'));
+assert.ok(ocrProviderNative.includes('"formulas"'));
+assert.ok(tauriLib.includes("get_ocr_provider_configuration"));
+assert.ok(tauriLib.includes("save_ocr_provider_configuration"));
+assert.ok(officeServer.includes('"/ocr/providers"'));
+assert.ok(ocrService.includes("getOcrProviderConfiguration"));
+assert.ok(ocrService.includes("saveOcrProviderConfiguration"));
+assert.ok(app.includes("providerConfiguration.activeProvider === \"local\""));
+assert.ok(officeDialog.includes("providerConfiguration.activeProvider === \"local\""));
+assert.ok(ocrDialog.includes('value="openai-compatible"'));
+assert.ok(ocrDialog.includes('value="ollama"'));
+assert.ok(ocrDialog.includes('value="mathpix"'));
+assert.ok(ocrDialog.includes("Save provider"));
 
 // Office controls are a dedicated row above the complete editor/tile area.
 // Formatting is moved to the far-left side of the Formula tools row in the

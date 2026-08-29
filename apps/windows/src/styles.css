@@ -2490,6 +2490,209 @@ kbd {
   white-space: nowrap;
 }
 
+.ocr-provider-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-soft));
+}
+
+.ocr-provider-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ocr-provider-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ocr-provider-heading strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.ocr-provider-heading span:not(.ocr-provider-icon) {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-provider-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+}
+
+.ocr-provider-icon.is-local {
+  background: color-mix(in srgb, var(--success) 13%, transparent);
+  color: var(--success);
+}
+
+.ocr-provider-icon.is-api {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ocr-provider-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.ocr-provider-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ocr-provider-field.is-wide,
+.ocr-provider-protocol-note,
+.ocr-provider-clear-secret {
+  grid-column: 1 / -1;
+}
+
+.ocr-provider-field > span {
+  color: var(--text-muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.ocr-provider-field input,
+.ocr-provider-field select,
+.ocr-provider-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  font-size: 9px;
+}
+
+.ocr-provider-field input,
+.ocr-provider-field select {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.ocr-provider-field textarea {
+  min-height: 72px;
+  padding: 8px 9px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.ocr-provider-field input:focus,
+.ocr-provider-field select:focus,
+.ocr-provider-field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ocr-provider-field input:disabled,
+.ocr-provider-field select:disabled,
+.ocr-provider-field textarea:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.ocr-provider-clear-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.ocr-provider-clear-secret input {
+  accent-color: var(--accent);
+}
+
+.ocr-provider-protocol-note {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.ocr-provider-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding-top: 2px;
+}
+
+.ocr-provider-actions > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 7.5px;
+  line-height: 1.45;
+}
+
+.ocr-provider-actions > span svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.ocr-provider-actions button {
+  min-width: 112px;
+  height: 32px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.ocr-api-runtime-card {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-api-provider-details {
+  flex-wrap: wrap;
+}
+
+.ocr-api-provider-details code {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-api-privacy-note {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
 .ocr-model-field,
 .ocr-latex-editor {
   display: flex;
@@ -5157,6 +5360,26 @@ textarea:disabled {
   .ocr-dialog-body {
     grid-template-columns: minmax(0, 1fr);
     padding: 14px;
+  }
+
+  .ocr-provider-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-provider-field,
+  .ocr-provider-field.is-wide,
+  .ocr-provider-protocol-note,
+  .ocr-provider-clear-secret {
+    grid-column: 1;
+  }
+
+  .ocr-provider-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ocr-provider-actions button {
+    width: 100%;
   }
 
   .range-setting input[type="range"] {

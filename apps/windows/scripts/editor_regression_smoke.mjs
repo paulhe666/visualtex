@@ -200,7 +200,11 @@ async function main() {
       })`);
     };
 
-    const resetEditorDocument = async (values = [""], activeIndex = 0) => {
+    const resetEditorDocument = async (
+      values = [""],
+      activeIndex = 0,
+      latexCodeFormat = null,
+    ) => {
       await evaluate(`(() => {
         const storageKey = "visualtex-editor";
         const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
@@ -213,10 +217,12 @@ async function main() {
           0,
           Math.min(${activeIndex}, Math.max(0, lines.length - 1)),
         );
+        const latexCodeFormat = ${JSON.stringify(latexCodeFormat)};
         persisted.state = {
           ...(persisted.state || {}),
           lines,
           activeLineId: lines[activeIndex]?.id ?? null,
+          ...(latexCodeFormat ? { latexCodeFormat } : {}),
         };
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       })()`);
@@ -701,6 +707,67 @@ async function main() {
         `Multi-line formulas are not left-aligned: ${JSON.stringify(multiLineAlignment)}`,
       );
     }
+
+    // OCR align/aligned output is stored as independent FormulaLines with one
+    // zero-width marker per row. Verify the actual rendered marker coordinates,
+    // not merely the presence of marker text or equal math-field left edges.
+    const ocrAlignmentMarker = "\\class{visualtex-align-marker}{\\kern0pt}";
+    const ocrAlignedRows = [
+      `x${ocrAlignmentMarker}=a+b+c`,
+      `y${ocrAlignmentMarker}=\\frac{p}{q}`,
+      `z${ocrAlignmentMarker}=r`,
+    ];
+    await resetEditorDocument(ocrAlignedRows, 0, "aligned");
+    const ocrAlignmentState = await waitForEvaluation(
+      `(() => {
+        const fields = [...document.querySelectorAll(".formula-line math-field")];
+        const entries = fields.map((field) => {
+          const host = field.closest(".mathfield-host");
+          const marker = field.shadowRoot?.querySelector(".visualtex-align-marker");
+          const fieldBounds = field.getBoundingClientRect();
+          const markerBounds = marker?.getBoundingClientRect();
+          return {
+            value: field.value,
+            fieldLeft: fieldBounds.left,
+            markerLeft: markerBounds?.left ?? null,
+            marginLeft: Number.parseFloat(field.style.marginLeft || "0") || 0,
+            hostAligned: host?.classList.contains("has-explicit-align-marker") ?? false,
+          };
+        });
+        const markerLefts = entries
+          .map((entry) => entry.markerLeft)
+          .filter((value) => Number.isFinite(value));
+        const markerSpread = markerLefts.length
+          ? Math.max(...markerLefts) - Math.min(...markerLefts)
+          : Number.POSITIVE_INFINITY;
+        const markerTextPreserved = entries.every((entry) =>
+          entry.value.includes("visualtex-align-marker"),
+        );
+        return {
+          ready:
+            fields.length === 3 &&
+            markerLefts.length === 3 &&
+            entries.every((entry) => entry.hostAligned) &&
+            markerTextPreserved &&
+            markerSpread <= 1,
+          count: fields.length,
+          entries,
+          markerSpread,
+          markerTextPreserved,
+        };
+      })()`,
+      "OCR x/y/z alignment markers share one rendered anchor",
+      10000,
+    );
+    if (!ocrAlignmentState.ready || ocrAlignmentState.markerSpread > 1) {
+      throw new Error(
+        `OCR FormulaLines do not share one rendered alignment anchor: ${JSON.stringify(ocrAlignmentState)}`,
+      );
+    }
+    console.log(
+      `OCR editor alignment acceptance: markerSpread=${ocrAlignmentState.markerSpread}px, entries=${JSON.stringify(ocrAlignmentState.entries)}`,
+    );
+    await resetEditorDocument([""], 0, "raw");
 
     for (const operatorCase of [
       { latex: "\\sum_{i=0}^{n} a_i", command: "\\sum", label: "sum" },
@@ -1369,7 +1436,7 @@ async function main() {
       const value = document.querySelector("math-field")?.value ?? "";
       return {
         ready:
-          source.trim() === "速度$$v=x^{\\\\text{中文}}$$" &&
+          source.trim() === "速度$v=x^{\\\\text{中文}}$" &&
           value === "\\\\text{速度}v=x^{\\\\text{中文}}" &&
           persisted.state?.latexCodeFormat === "inline-text-double-dollar",
         source,

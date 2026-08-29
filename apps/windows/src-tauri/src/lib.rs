@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 mod app_lifecycle;
 mod ocr_install;
+mod ocr_provider;
 #[cfg(windows)]
 mod ocr_models;
 mod ocr_storage;
@@ -246,6 +247,7 @@ pub(crate) struct OcrState {
     #[cfg(windows)]
     model_download_control: Arc<ocr_models::ModelDownloadControl>,
     desired_warmup_model: Arc<Mutex<Option<String>>>,
+    providers: ocr_provider::OcrProviderState,
     events: OcrEventBus,
 }
 
@@ -262,6 +264,7 @@ impl Default for OcrState {
             #[cfg(windows)]
             model_download_control: Arc::new(ocr_models::ModelDownloadControl::default()),
             desired_warmup_model: Arc::new(Mutex::new(None)),
+            providers: ocr_provider::OcrProviderState::default(),
             events: OcrEventBus::default(),
         }
     }
@@ -291,6 +294,15 @@ fn is_final_ocr_state_owner(worker: &Arc<Mutex<Option<OcrWorker>>>) -> bool {
     Arc::strong_count(worker) == 1
 }
 
+async fn wait_for_ocr_cancellation(generation: Arc<AtomicU64>, expected: u64) {
+    loop {
+        if generation.load(Ordering::SeqCst) != expected {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+}
+
 impl Drop for OcrState {
     fn drop(&mut self) {
         // OcrState is cloned into Tauri state and the Office companion server.
@@ -307,6 +319,25 @@ impl Drop for OcrState {
 }
 
 impl OcrState {
+    pub(crate) fn provider_configuration(
+        &self,
+        app: &AppHandle,
+    ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+        self.providers.configuration(app)
+    }
+
+    pub(crate) fn save_provider_configuration(
+        &self,
+        app: &AppHandle,
+        configuration: ocr_provider::OcrProviderConfigurationUpdate,
+    ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+        self.providers.save_configuration(app, configuration)
+    }
+
+    pub(crate) fn active_provider(&self, app: &AppHandle) -> Result<String, String> {
+        self.providers.active_provider(app)
+    }
+
     fn begin_runtime_mutation(&self, operation: &str) -> Result<RuntimeMutationLease, String> {
         if self.storage_change_running.load(Ordering::SeqCst) {
             return Err(format!(
@@ -457,6 +488,26 @@ impl OcrState {
         app: AppHandle,
         request: OcrImageRequest,
     ) -> Result<OcrRecognitionResult, String> {
+        let provider = self.providers.active_provider(&app)?;
+        if provider == ocr_provider::LOCAL_PROVIDER {
+            return self.recognize_local(app, request).await;
+        }
+
+        let expected_generation = self.cancel_generation.load(Ordering::SeqCst);
+        let cancellation_generation = self.cancel_generation.clone();
+        tokio::select! {
+            result = self.providers.recognize_remote(&app, &request) => result,
+            _ = wait_for_ocr_cancellation(cancellation_generation, expected_generation) => {
+                Err(OCR_CANCELLED.to_string())
+            }
+        }
+    }
+
+    async fn recognize_local(
+        &self,
+        app: AppHandle,
+        request: OcrImageRequest,
+    ) -> Result<OcrRecognitionResult, String> {
         let mutation = self.begin_runtime_mutation("recognizing a formula")?;
         if !ALLOWED_MODELS.contains(&request.model.as_str()) {
             return Err(format!("Unsupported PP-FormulaNet model: {}", request.model));
@@ -506,6 +557,14 @@ impl OcrState {
 
     pub(crate) fn cancel(&self, app: &AppHandle) -> Result<(), String> {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        if self
+            .providers
+            .active_provider(app)
+            .unwrap_or_else(|_| ocr_provider::LOCAL_PROVIDER.to_string())
+            != ocr_provider::LOCAL_PROVIDER
+        {
+            return Ok(());
+        }
         let terminate_result = terminate_worker_process(&self.worker_pid);
 
         // Killing the worker is the only reliable way to interrupt a Paddle
@@ -559,6 +618,13 @@ impl OcrState {
             // stale second model. Pure background launches still prewarm from
             // the persisted preference after the delay.
             tokio::time::sleep(Duration::from_secs(15)).await;
+            if state
+                .active_provider(&app)
+                .map(|provider| provider != ocr_provider::LOCAL_PROVIDER)
+                .unwrap_or(false)
+            {
+                return;
+            }
             let frontend_already_selected = state
                 .desired_warmup_model
                 .lock()
@@ -590,6 +656,9 @@ impl OcrState {
         app: AppHandle,
         model: String,
     ) -> Result<(), String> {
+        if self.active_provider(&app)? != ocr_provider::LOCAL_PROVIDER {
+            return Ok(());
+        }
         let mutation = self.begin_runtime_mutation("warming up an OCR model")?;
         if !ALLOWED_MODELS.contains(&model.as_str()) {
             return Err(format!("Unsupported PP-FormulaNet model: {model}"));
@@ -1084,6 +1153,7 @@ struct OcrFormulaResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrRecognitionResult {
+    provider: String,
     model: String,
     elapsed_ms: u64,
     processed_width: u32,
@@ -3528,6 +3598,7 @@ fn run_recognition(
     }
 
     Ok(OcrRecognitionResult {
+        provider: ocr_provider::LOCAL_PROVIDER.to_string(),
         model: response.model.unwrap_or_else(|| request.model.clone()),
         elapsed_ms: response.elapsed_ms.unwrap_or_default(),
         processed_width: response.processed_width.unwrap_or_default(),
@@ -3672,6 +3743,23 @@ fn open_ocr_install_logs(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_ocr_provider_configuration(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+    state.provider_configuration(&app)
+}
+
+#[tauri::command]
+fn save_ocr_provider_configuration(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    configuration: ocr_provider::OcrProviderConfigurationUpdate,
+) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+    state.save_provider_configuration(&app, configuration)
+}
+
+#[tauri::command]
 async fn recognize_formula_image(
     app: AppHandle,
     state: State<'_, OcrState>,
@@ -3771,8 +3859,15 @@ fn configure_silent_ocr(
     enabled: bool,
     model: String,
     copy_format: String,
+    capture_mode: String,
 ) -> Result<String, String> {
-    windows_silent_ocr_hotkey::configure(&app, enabled, &model, &copy_format)
+    windows_silent_ocr_hotkey::configure(
+        &app,
+        enabled,
+        &model,
+        &copy_format,
+        &capture_mode,
+    )
 }
 
 fn shutdown_runtime(app: &AppHandle, started: &AtomicBool, reason: &str) {
@@ -3918,6 +4013,8 @@ pub fn run() {
             get_ocr_install_status,
             cancel_ocr_install,
             open_ocr_install_logs,
+            get_ocr_provider_configuration,
+            save_ocr_provider_configuration,
             recognize_formula_image,
             cancel_ocr_recognition,
             restart_ocr_worker,
@@ -4316,7 +4413,7 @@ mod protocol_tests {
             "The existing VisualTeX OCR environment uses a 32-bit interpreter"
         ));
         assert!(should_replace_with_bundled_python(
-            "The existing VisualTeX OCR environment uses Python 3.13.5"
+            "Unsupported VisualTeX OCR Python 3.13.5 (64-bit). It must be replaced by the bundled x64 Python 3.12 runtime."
         ));
         assert!(should_replace_with_bundled_python(
             "The existing VisualTeX OCR private Python is missing the app-local Microsoft OpenMP runtime vcomp140.dll"

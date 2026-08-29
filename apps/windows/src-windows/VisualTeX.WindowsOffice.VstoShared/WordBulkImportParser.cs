@@ -17,6 +17,7 @@ internal enum WordBulkFormulaObjectMode
 {
     Omml,
     Ole,
+    MathType,
 }
 
 internal enum WordBulkBlockKind

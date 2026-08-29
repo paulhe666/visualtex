@@ -111,6 +111,29 @@ export async function invoke<T>(
         ),
       );
     }
+    case "get_ocr_provider_configuration":
+      return readJson<T>(
+        await fetch("/api/v1/ocr/providers", {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: authenticatedHeaders(),
+        }),
+      );
+    case "save_ocr_provider_configuration": {
+      const configuration = args?.configuration;
+      if (!configuration || typeof configuration !== "object") {
+        throw new Error("OCR provider configuration is required.");
+      }
+      return readJson<T>(
+        await fetch("/api/v1/ocr/providers", {
+          method: "PUT",
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: authenticatedHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify(configuration),
+        }),
+      );
+    }
     case "install_ocr_runtime":
       return readJson<T>(
         await fetch("/api/v1/ocr/install", {

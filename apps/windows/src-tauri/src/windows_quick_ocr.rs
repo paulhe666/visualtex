@@ -61,8 +61,71 @@ fn encode_powershell(script: &str) -> String {
     BASE64_STANDARD.encode(bytes)
 }
 
-fn capture_script(launch_capture: bool, timeout_ms: u64) -> String {
-    let launch = if launch_capture { "$true" } else { "$false" };
+pub(crate) fn normalize_capture_mode(value: &str) -> Result<&'static str, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "windows" | "immediate" => Ok("windows"),
+        "pixpin" => Ok("pixpin"),
+        "clipboard" | "system-screenshot" => Ok("clipboard"),
+        _ => Err("Unsupported Windows OCR screenshot provider".to_string()),
+    }
+}
+
+fn capture_script(capture_mode: &str, timeout_ms: u64) -> String {
+    let launch = match capture_mode {
+        "windows" => r#"
+Start-Process -FilePath 'explorer.exe' -ArgumentList 'ms-screenclip:' -WindowStyle Hidden | Out-Null
+"#,
+        "pixpin" => r#"
+$pixpinCandidates = New-Object System.Collections.Generic.List[string]
+$runningPixPin = Get-Process -Name 'PixPin' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -ne $runningPixPin) {
+    try {
+        if (-not [string]::IsNullOrWhiteSpace($runningPixPin.Path)) {
+            [void]$pixpinCandidates.Add($runningPixPin.Path)
+        }
+    } catch {}
+}
+try {
+    $pixpinCommand = Get-Command 'PixPin.exe' -ErrorAction Stop
+    if ($null -ne $pixpinCommand -and -not [string]::IsNullOrWhiteSpace($pixpinCommand.Source)) {
+        [void]$pixpinCandidates.Add($pixpinCommand.Source)
+    }
+} catch {}
+foreach ($candidateSpec in @(
+    @{ Root = $env:LOCALAPPDATA; Relative = 'PixPin\PixPin.exe' },
+    @{ Root = $env:LOCALAPPDATA; Relative = 'Programs\PixPin\PixPin.exe' },
+    @{ Root = $env:ProgramFiles; Relative = 'PixPin\PixPin.exe' },
+    @{ Root = ${env:ProgramFiles(x86)}; Relative = 'PixPin\PixPin.exe' }
+)) {
+    $root = [string]$candidateSpec.Root
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        continue
+    }
+    $candidate = Join-Path $root ([string]$candidateSpec.Relative)
+    [void]$pixpinCandidates.Add($candidate)
+}
+$pixpin = $pixpinCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($pixpin)) {
+    throw 'PixPin.exe was not found. Install PixPin or start a portable PixPin instance, then retry.'
+}
+# PixPin's official documentation requires an already-running instance for the
+# Windows -r scripting command. Cold-start it when needed, wait until the process
+# exists, and only then send the interactive screenshot-and-copy script.
+if ($null -eq $runningPixPin) {
+    Start-Process -FilePath $pixpin | Out-Null
+    $startupDeadline = [DateTime]::UtcNow.AddSeconds(8)
+    do {
+        Start-Sleep -Milliseconds 120
+        $runningPixPin = Get-Process -Name 'PixPin' -ErrorAction SilentlyContinue | Select-Object -First 1
+    } while ($null -eq $runningPixPin -and [DateTime]::UtcNow -lt $startupDeadline)
+    if ($null -eq $runningPixPin) {
+        throw 'PixPin was started but no running PixPin instance became available for the screenshot script.'
+    }
+}
+Start-Process -FilePath $pixpin -ArgumentList @('-r', 'pixpin.screenShot(ShotAction.Copy)') -WindowStyle Hidden | Out-Null
+"#,
+        _ => "",
+    };
     format!(
         r#"
 $ErrorActionPreference = 'Stop'
@@ -77,10 +140,7 @@ public static class VisualTeXClipboardNative {{
 '@
 
 $before = [VisualTeXClipboardNative]::GetClipboardSequenceNumber()
-if ({launch}) {{
-    Start-Process -FilePath 'explorer.exe' -ArgumentList 'ms-screenclip:' -WindowStyle Hidden | Out-Null
-}}
-
+{launch}
 $deadline = [DateTime]::UtcNow.AddMilliseconds({timeout_ms})
 while ([DateTime]::UtcNow -lt $deadline) {{
     Start-Sleep -Milliseconds 120
@@ -118,11 +178,12 @@ exit 2
 }
 
 fn capture_windows_clipboard_image(
-    launch_capture: bool,
+    capture_mode: &str,
     timeout_ms: u64,
 ) -> Result<Option<WindowsQuickOcrCapture>, String> {
+    let capture_mode = normalize_capture_mode(capture_mode)?;
     let timeout_ms = timeout_ms.clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
-    let script = capture_script(launch_capture, timeout_ms);
+    let script = capture_script(capture_mode, timeout_ms);
     let encoded = encode_powershell(&script);
     let output = Command::new("powershell.exe")
         .args([
@@ -264,10 +325,10 @@ fn restore_visualtex_foreground_window() -> Result<(), String> {
 }
 
 pub(crate) fn capture_windows_quick_ocr_bytes(
-    launch_capture: bool,
+    capture_mode: &str,
     timeout_ms: u64,
 ) -> Result<Option<Vec<u8>>, String> {
-    let Some(capture) = capture_windows_clipboard_image(launch_capture, timeout_ms)? else {
+    let Some(capture) = capture_windows_clipboard_image(capture_mode, timeout_ms)? else {
         return Ok(None);
     };
     BASE64_STANDARD
@@ -352,7 +413,7 @@ pub(crate) fn write_clipboard_text(text: &str) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn capture_windows_quick_ocr(
     app: AppHandle,
-    launch_capture: bool,
+    capture_mode: String,
     timeout_ms: u64,
 ) -> Result<Option<WindowsQuickOcrCapture>, String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -365,7 +426,7 @@ pub(crate) async fn capture_windows_quick_ocr(
         tokio::time::sleep(Duration::from_millis(180)).await;
     }
     let capture_result = tauri::async_runtime::spawn_blocking(move || {
-        capture_windows_clipboard_image(launch_capture, timeout_ms)
+        capture_windows_clipboard_image(&capture_mode, timeout_ms)
     })
     .await
     .map_err(|error| format!("Windows screenshot bridge task failed: {error}"))
@@ -403,7 +464,7 @@ mod tests {
 
     #[test]
     fn powershell_script_uses_native_screenclip_and_clipboard_sequence() {
-        let script = capture_script(true, 60_000);
+        let script = capture_script("windows", 60_000);
         assert!(script.contains("ms-screenclip:"));
         assert!(script.contains("GetClipboardSequenceNumber"));
         assert!(script.contains("Clipboard]::ContainsImage"));
@@ -411,8 +472,26 @@ mod tests {
     }
 
     #[test]
-    fn wait_only_script_does_not_launch_screenclip() {
-        let script = capture_script(false, 60_000);
-        assert!(script.contains("if ($false)"));
+    fn pixpin_script_cold_starts_then_uses_official_copy_action() {
+        let script = capture_script("pixpin", 60_000);
+        assert!(script.contains("PixPin.exe"));
+        assert!(script.contains("Get-Process -Name 'PixPin'"));
+        assert!(script.contains("Start-Process -FilePath $pixpin | Out-Null"));
+        assert!(script.contains("pixpin.screenShot(ShotAction.Copy)"));
+        assert!(!script.contains("ms-screenclip:"));
+    }
+
+    #[test]
+    fn wait_only_script_does_not_launch_a_capture_provider() {
+        let script = capture_script("clipboard", 60_000);
+        assert!(!script.contains("ms-screenclip:"));
+        assert!(!script.contains("ShotAction.Copy"));
+    }
+
+    #[test]
+    fn capture_mode_normalizes_legacy_names() {
+        assert_eq!(normalize_capture_mode("immediate").unwrap(), "windows");
+        assert_eq!(normalize_capture_mode("system-screenshot").unwrap(), "clipboard");
+        assert!(normalize_capture_mode("unknown").is_err());
     }
 }

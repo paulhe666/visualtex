@@ -83,6 +83,11 @@ $referenceRoot = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.netframew
 
 New-Item $resourceRoot -ItemType Directory -Force | Out-Null
 
+& (Join-Path $PSScriptRoot "prepare_windows_office_math_font.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Preparing the pinned Latin Modern Math Office font failed."
+}
+
 $architectures = @(
     [ordered]@{ PackagePlatform = "x64"; OlePlatform = "x64" },
     [ordered]@{ PackagePlatform = "x86"; OlePlatform = "Win32" }
@@ -180,6 +185,14 @@ foreach ($architecture in $architectures) {
             sha256 = (Get-FileHash $oleServerOutput -Algorithm SHA256).Hash
         }
         dependencies = $dependencyEntries
+        officeMathFont = [ordered]@{
+            file = "latinmodern-math.otf"
+            sha256 = (Get-FileHash (Join-Path $wordOutputDirectory "latinmodern-math.otf") -Algorithm SHA256).Hash
+            licenseFile = "GUST-FONT-LICENSE.txt"
+            licenseSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "GUST-FONT-LICENSE.txt") -Algorithm SHA256).Hash
+            readmeFile = "README-Latin-Modern-Math.txt"
+            readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-Latin-Modern-Math.txt") -Algorithm SHA256).Hash
+        }
     }
     $manifestFileName = "VisualTeX-WindowsOffice-VSTO-$packagePlatform.sha256.json"
     $hashManifest | ConvertTo-Json -Depth 4 | Set-Content `
