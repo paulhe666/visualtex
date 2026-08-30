@@ -666,6 +666,27 @@ internal static class MathTypeNativePreviewRenderer
         return commandLine!.IndexOf("-mtrpc", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
+    internal static bool IsControlledMathTypeRpcHelperProcess(int processId)
+    {
+        Process? process = null;
+        try
+        {
+            process = Process.GetProcessById(processId);
+            process.Refresh();
+            if (process.HasExited || process.MainWindowHandle != IntPtr.Zero)
+                return false;
+            return IsMathTypeRpcHelper(process);
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            process?.Dispose();
+        }
+    }
+
     private static bool IsMathTypeRpcHelper(Process process)
     {
         var commandLine = TryReadProcessCommandLine(process.Id);

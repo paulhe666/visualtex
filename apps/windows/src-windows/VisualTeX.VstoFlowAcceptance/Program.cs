@@ -970,6 +970,38 @@ internal static partial class Program
             {
                 RunWordNumberedOmmlTrueDisplayComplexAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-omml-1x3-number-lifecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTableNumberLifecycleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-1x3-number-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTableNumberStressAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-converted-visualtex-numbering-scaffold", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordConvertedVisualTeXNumberingScaffoldAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-to-visualtex-numbered-core", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeToVisualTeXNumberedCoreAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-1x3-native-edit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTableNativeEditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-1x3-complex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTableComplexAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-1x3-navigable-reference", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlTableNavigableReferenceAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-hash-to-1x3-migration", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlHashToTableMigrationAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-bad-eqarr-migration", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlDisplayMigrationAcceptance(artifactRoot);

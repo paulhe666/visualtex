@@ -11383,6 +11383,12 @@ internal sealed partial class WordFormulaService
         OMath? math = null;
         Range? equationRange = null;
         InlineShapes? shapes = null;
+        Tables? ownerTables = null;
+        Table? ownerTable = null;
+        Cell? formulaCell = null;
+        Range? formulaCellRange = null;
+        OMaths? tableMaths = null;
+        OMath? tableMath = null;
         try
         {
             ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
@@ -11391,8 +11397,39 @@ internal sealed partial class WordFormulaService
                 ?? throw new InvalidDataException(
                     $"The numbered OMML formula {formulaId} has no numbering owner paragraph.");
             if ((bool)ownerRange.get_Information(WdInformation.wdWithInTable))
-                throw new InvalidDataException(
-                    $"The numbered OMML formula {formulaId} unexpectedly remains inside a table.");
+            {
+                // Current native numbered OMML deliberately owns one exact 1x3
+                // table: true Display OMath in cell (1,2), ordinary direct SEQ
+                // number in cell (1,3). Resolve the live center OMath from that
+                // physical owner instead of applying the retired table-free/#SEQ
+                // invariant. FindNumberingOwnerRange already resolved the table
+                // through the durable VTEq_ visible-number bookmark.
+                ownerTables = ownerRange.Tables;
+                if (ownerTables.Count != 1)
+                    throw new InvalidDataException(
+                        $"The numbered OMML table owner for {formulaId} is ambiguous.");
+                ownerTable = ownerTables[1];
+                if (ownerTable.Rows.Count != 1 || ownerTable.Columns.Count != 3)
+                    throw new InvalidDataException(
+                        $"The numbered OMML table owner for {formulaId} is not the managed 1x3 host.");
+                formulaCell = ownerTable.Cell(1, 2);
+                formulaCellRange = formulaCell.Range;
+                tableMaths = formulaCellRange.OMaths;
+                if (tableMaths.Count != 1)
+                    throw new InvalidDataException(
+                        $"The numbered OMML center cell for {formulaId} contains {tableMaths.Count} equations instead of exactly one.");
+                tableMath = tableMaths[1];
+                if (tableMath.Type != WdOMathType.wdOMathDisplay)
+                    throw new InvalidDataException(
+                        $"The numbered OMML center cell for {formulaId} is not true Word Display math.");
+                if (formulaCellRange.Fields.Count != 0)
+                    throw new InvalidDataException(
+                        $"The numbered OMML center cell for {formulaId} contains a number field.");
+                equationRange = tableMath.Range.Duplicate;
+                var tableResult = equationRange;
+                equationRange = null;
+                return tableResult;
+            }
             shapes = ownerRange.InlineShapes;
             if (shapes.Count != 0)
                 throw new InvalidDataException(
@@ -11451,6 +11488,12 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            Release(tableMath);
+            Release(tableMaths);
+            Release(formulaCellRange);
+            Release(formulaCell);
+            Release(ownerTable);
+            Release(ownerTables);
             Release(shapes);
             Release(equationRange);
             Release(math);
@@ -11479,13 +11522,32 @@ internal sealed partial class WordFormulaService
             ResetDisplayFormulaPosition(equationRange);
         else
             RemoveInlineBaselineSentinel(document, metadata.FormulaId);
-        if (!metadata.Numbered) return;
         // The exact equation range is already available. Re-reading it through
         // the bookmark and enumerating all document OMaths only to estimate a
         // height made this local operation scale with total formula count.
         var height = (float)Math.Max(
             11,
             FormulaFontSize.ResolveSemanticFontSize(metadata) * 1.55);
+        if (!metadata.Numbered)
+        {
+            // An edit can simultaneously toggle a numbered native-OMML formula to
+            // unnumbered. In the current direct-SEQ 1x3 host that structural cleanup
+            // must dismantle the table back to one standalone wdOMathDisplay. The
+            // old early return left the now-unnumbered formula stranded in its 1x3
+            // shell. Re-enter the normal numbering reconciler; when no artifacts
+            // exist it is still a cheap local paragraph-format operation.
+            WordEquationNumbering.TryReconcileFormula(
+                document,
+                equationRange,
+                height,
+                metadata,
+                numberingOrderMayHaveChanged,
+                reuseExistingNumberedTableFormatting,
+                knownNumberedTable,
+                deferNativeOmmlShapeFinalization,
+                deferNativeOmmlShapeCreation);
+            return;
+        }
         if (numberingScaffoldOnly)
         {
             WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(

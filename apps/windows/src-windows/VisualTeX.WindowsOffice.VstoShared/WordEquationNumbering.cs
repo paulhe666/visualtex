@@ -872,6 +872,14 @@ internal static partial class WordEquationNumbering
                 Range? refreshedNumberRange = null;
                 try
                 {
+                    if (TryUpdateDirectTableSequenceNumber(
+                            document,
+                            item.FormulaId,
+                            nativeSequenceName,
+                            item.Ordinal,
+                            item.Prefix,
+                            formatOnly: true))
+                        continue;
                     if (TryRefreshOrAtomicallyRebuildNativeHashSequenceV2(
                             document,
                             item.FormulaId,
@@ -1291,6 +1299,8 @@ internal static partial class WordEquationNumbering
                 return Fail($"visible-bookmark-start-count-mismatch representations={allVisibleStartMatches.Length} unique={visibleStartMatches.Length} expected={visibleSet.Count}");
             var hashSequenceFormulaIds = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
+            var directTableFormulaIds = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
             foreach (var visibleStart in visibleStartMatches)
             {
                 var normalizedFormulaId = visibleStart.Groups["guid"].Value;
@@ -1455,7 +1465,160 @@ internal static partial class WordEquationNumbering
                 var visibleNumberIsInTable = tableStart >= 0
                     && tableStart > precedingTableEnd;
                 if (visibleNumberIsInTable)
-                    return Fail($"legacy-numbering-table formulaId={formulaId}");
+                {
+                    // Current numbered OMML uses one minimal 1x3 table only as a
+                    // layout container. Cell (1,2) owns the one genuine display
+                    // OMath and no fields; cell (1,3) owns TAB + direct ordinary
+                    // SEQ + paragraph mark. Accept that exact structure as healthy
+                    // rather than sending every Update Numbers command through the
+                    // legacy-table migration/reconciliation path.
+                    var tableEnd = xml.IndexOf(
+                        "</w:tbl>",
+                        visibleStart.Index,
+                        StringComparison.OrdinalIgnoreCase);
+                    if (tableEnd <= visibleStart.Index)
+                        return Fail($"direct-table-end-missing formulaId={formulaId}");
+                    tableEnd += "</w:tbl>".Length;
+                    if (tableEnd - tableStart > 524288)
+                        return Fail($"direct-table-too-large formulaId={formulaId}");
+                    var tableXml = xml.Substring(tableStart, tableEnd - tableStart);
+                    var rowCount = Regex.Matches(
+                        tableXml,
+                        @"<w:tr(?:\s|>)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    var cellStarts = Regex.Matches(
+                            tableXml,
+                            @"<w:tc(?:\s|>)",
+                            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+                        .Cast<Match>()
+                        .ToArray();
+                    if (rowCount != 1 || cellStarts.Length != 3)
+                        return Fail(
+                            $"direct-table-dimensions formulaId={formulaId} rows={rowCount} cells={cellStarts.Length}");
+                    string ReadCellXml(int cellIndex)
+                    {
+                        var cellStart = cellStarts[cellIndex].Index;
+                        var cellEnd = tableXml.IndexOf(
+                            "</w:tc>",
+                            cellStart,
+                            StringComparison.OrdinalIgnoreCase);
+                        return cellEnd <= cellStart
+                            ? string.Empty
+                            : tableXml.Substring(
+                                cellStart,
+                                cellEnd + "</w:tc>".Length - cellStart);
+                    }
+                    var leftCellXml = ReadCellXml(0);
+                    var centerCellXml = ReadCellXml(1);
+                    var rightCellXml = ReadCellXml(2);
+                    if (string.IsNullOrEmpty(leftCellXml)
+                        || string.IsNullOrEmpty(centerCellXml)
+                        || string.IsNullOrEmpty(rightCellXml))
+                        return Fail($"direct-table-cell-end-missing formulaId={formulaId}");
+                    var centerMathCount = Regex.Matches(
+                        centerCellXml,
+                        @"<m:oMath(?:\s|>)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    var centerDisplayCount = Regex.Matches(
+                        centerCellXml,
+                        @"<m:oMathPara(?:\s|>)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    var centerFieldCount = Regex.Matches(
+                        centerCellXml,
+                        @"<w:fldChar\b",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    if (centerMathCount != 1
+                        || centerDisplayCount != 1
+                        || centerFieldCount != 0)
+                        return Fail(
+                            $"direct-table-center-invalid formulaId={formulaId} math={centerMathCount} display={centerDisplayCount} fields={centerFieldCount}");
+                    var formulaBookmarkName =
+                        WordOmmlFormulaStore.BookmarkName(formulaId);
+                    // VTEqNum_<FormulaId> in cell (1,3) is the durable physical
+                    // owner of current numbered OMML: it resolves this exact 1x3
+                    // table, whose center cell has already been proven to contain
+                    // exactly one Display OMath. Word can normalize the zero-length
+                    // VTOMML_* convenience anchor from the start of cell (1,2)'s
+                    // paragraph to the row boundary immediately before that cell,
+                    // especially after MathType→OMML batch conversion. Accept that
+                    // serialization only when the anchor remains uniquely inside
+                    // this same table; do not make an unstable collapsed bookmark
+                    // carry the formula's primary identity.
+                    var formulaBookmarkMatches = Regex.Matches(
+                        tableXml,
+                        $@"<w:bookmarkStart\b(?=[^>]*\bw:name=""{Regex.Escape(formulaBookmarkName)}"")[^>]*/?>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    if (formulaBookmarkMatches.Count != 1)
+                        return Fail(
+                            $"direct-table-formula-identity-missing formulaId={formulaId} count={formulaBookmarkMatches.Count}");
+                    var expectedVisibleBookmark = EquationBookmarkPrefix + normalizedFormulaId;
+                    var expectedNumberBookmark = NativeNumberBookmarkPrefix + normalizedFormulaId;
+                    var expectedCaptionBookmark = NativeCaptionBookmarkPrefix + normalizedFormulaId;
+                    bool RightCellHasBookmark(string bookmarkName) => Regex.IsMatch(
+                        rightCellXml,
+                        $@"<w:bookmarkStart\b(?=[^>]*\bw:name=""{Regex.Escape(bookmarkName)}"")[^>]*/?>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var hasDirectSequence = Regex.IsMatch(
+                        rightCellXml,
+                        @"\bSEQ\s+(?:&quot;|"")?VisualTeXEquation(?:&quot;|"")?\b",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var directTableHasRightTabStop = Regex.IsMatch(
+                        rightCellXml,
+                        @"<w:tab\b(?=[^>]*\bw:val=""right"")(?=[^>]*\bw:pos=""(?<pos>\d+)"")[^>]*/>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var hasLayoutTab = Regex.IsMatch(
+                        rightCellXml,
+                        @"<w:tab\s*/>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var hasMathInRightCell = Regex.IsMatch(
+                        rightCellXml,
+                        @"<m:oMath(?:\s|>)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var hasRefInRightCell = Regex.IsMatch(
+                        rightCellXml,
+                        @"\bREF\s+VTEqNum_",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var rightSequenceCount = Regex.Matches(
+                        rightCellXml,
+                        @"\bSEQ\s+(?:&quot;|"")?VisualTeXEquation(?:&quot;|"")?\b",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    var gridWidths = Regex.Matches(
+                            tableXml,
+                            @"<w:gridCol\b(?=[^>]*\bw:w=""(?<width>\d+)"")[^>]*/>",
+                            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+                        .Cast<Match>()
+                        .Select(match => int.TryParse(
+                            match.Groups["width"].Value,
+                            out var width) ? width : -1)
+                        .ToArray();
+                    var rightTabMatch = Regex.Match(
+                        rightCellXml,
+                        @"<w:tab\b(?=[^>]*\bw:val=""right"")(?=[^>]*\bw:pos=""(?<pos>\d+)"")[^>]*/>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var rightTabMatchesColumn = gridWidths.Length == 3
+                        && gridWidths[0] > 0
+                        && gridWidths[1] > 0
+                        && gridWidths[2] == gridWidths[0]
+                        && rightTabMatch.Success
+                        && int.TryParse(
+                            rightTabMatch.Groups["pos"].Value,
+                            out var rightTabPosition)
+                        && rightTabPosition == gridWidths[2];
+                    if (!hasDirectSequence
+                        || rightSequenceCount != 1
+                        || !RightCellHasBookmark(expectedVisibleBookmark)
+                        || !RightCellHasBookmark(expectedNumberBookmark)
+                        || !RightCellHasBookmark(expectedCaptionBookmark)
+                        || !directTableHasRightTabStop
+                        || !hasLayoutTab
+                        || hasMathInRightCell
+                        || hasRefInRightCell
+                        || !rightTabMatchesColumn)
+                        return Fail(
+                            $"direct-table-right-invalid formulaId={formulaId} seq={hasDirectSequence}/{rightSequenceCount} visible={RightCellHasBookmark(expectedVisibleBookmark)} num={RightCellHasBookmark(expectedNumberBookmark)} cap={RightCellHasBookmark(expectedCaptionBookmark)} rightTab={directTableHasRightTabStop} layoutTab={hasLayoutTab} math={hasMathInRightCell} ref={hasRefInRightCell} grid={string.Join("/", gridWidths)} tabPos={(rightTabMatch.Success ? rightTabMatch.Groups["pos"].Value : "-")}");
+                    directTableFormulaIds.Add(formulaId);
+                    continue;
+                }
 
                 var paragraphStart = LastElementStart("w:p", visibleStart.Index);
                 var precedingParagraphEnd = xml.LastIndexOf(
@@ -1580,13 +1743,13 @@ internal static partial class WordEquationNumbering
                 counts.TryGetValue(formulaId, out var currentCount);
                 counts[formulaId] = currentCount + 1;
             }
-            foreach (var formulaId in hashSequenceFormulaIds)
+            foreach (var formulaId in hashSequenceFormulaIds.Concat(directTableFormulaIds))
             {
                 // Preserve the historical reference-count contract used by format
                 // conversion: one means "no external body reference" and values
                 // above one prove external dynamic references exist. Native #SEQ
-                // has no generated visible REF, so account for its own number slot
-                // virtually instead of inserting a real REF back into the formula.
+                // and the current direct-SEQ 1x3 OMML host have no generated visible
+                // REF, so account for their own visible number slot virtually.
                 counts.TryGetValue(formulaId, out var externalCount);
                 counts[formulaId] = externalCount + 1;
             }
@@ -3143,6 +3306,13 @@ internal static partial class WordEquationNumbering
         Document document,
         string formulaId)
     {
+        var nativeTableTypingRange =
+            EnsureNormalTypingParagraphAfterNativeOmmlTable(
+                document,
+                formulaId);
+        if (nativeTableTypingRange is not null)
+            return nativeTableTypingRange;
+
         // Current numbered OMML keeps SEQ and all number aliases inside the
         // display OMath itself. It has no hidden caption paragraph or Shape anchor,
         // so the legacy caption/frame routine below must not touch it. Create or
@@ -3975,6 +4145,16 @@ internal static partial class WordEquationNumbering
                         formulaId,
                         metadata);
 
+                if (IsHealthyNativeOmmlDirectTableHost(
+                        document,
+                        formulaRange,
+                        formulaId,
+                        updateField: true))
+                {
+                    finalized++;
+                    continue;
+                }
+
                 if (!IsNativeHashSequenceHostForFinalizationV2(
                         document,
                         formulaRange,
@@ -4006,6 +4186,15 @@ internal static partial class WordEquationNumbering
                             metadata);
                 }
 
+                if (IsHealthyNativeOmmlDirectTableHost(
+                        document,
+                        formulaRange,
+                        formulaId,
+                        updateField: true))
+                {
+                    finalized++;
+                    continue;
+                }
                 if (!IsNativeHashSequenceHostForFinalizationV2(
                         document,
                         formulaRange,
@@ -5241,6 +5430,43 @@ internal static partial class WordEquationNumbering
             {
                 activeRange = ResolveSingleNativeOmmlRange(formulaRange);
                 var metadata = WordOmmlFormulaStore.TryRead(document, formulaId);
+                if (IsNumberedEquationTable(activeRange))
+                {
+                    Range? standaloneRange = null;
+                    try
+                    {
+                        standaloneRange = TryConvertStandardNumberedOmmlTableToStandaloneDisplayParagraph(
+                            document,
+                            activeRange,
+                            formulaId,
+                            metadata);
+                        if (standaloneRange is null)
+                            throw new InvalidOperationException(
+                                "VisualTeX could not safely remove the managed 1x3 OMML numbering table.");
+                        Release(activeRange);
+                        activeRange = ResolveSingleNativeOmmlRange(standaloneRange);
+                    }
+                    finally { Release(standaloneRange); }
+                    ConfigureEquationParagraph(activeRange, numbered: false);
+                    EnsureNumberedOmmlIsDisplay(activeRange);
+                    if (metadata is not null)
+                    {
+                        repairedBookmark = WordOmmlFormulaStore.Wrap(
+                            document,
+                            activeRange,
+                            metadata,
+                            replaceExisting: true);
+                        WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, activeRange);
+                        WordOmmlFormulaStore.Save(document, metadata);
+                    }
+                    formulaRange.SetRange(activeRange.Start, activeRange.End);
+                    // Table dismantling stages the professional OMath through a
+                    // temporary hidden Word document. Re-activate the real target
+                    // after that staging document is closed so the next immediate
+                    // VisualTeX edit does not observe a transient/no ActiveDocument.
+                    try { document.Activate(); } catch { }
+                    return;
+                }
                 if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(
                         activeRange.WordOpenXML)
                     || HasManagedNativeOmmlHashSequenceHost(
@@ -6798,6 +7024,7 @@ internal static partial class WordEquationNumbering
                     field = fields[index];
                     code = field.Code;
                     if (IsReferenceToBookmark(code.Text, targetBookmarkName)) return true;
+                    if (tableLayout && IsVisualTeXSequenceFieldCode(code.Text)) return true;
                 }
                 finally
                 {
@@ -9472,6 +9699,14 @@ internal static partial class WordEquationNumbering
         bool formatOnly,
         bool cleanupLegacyFrames = true)
     {
+        if (TryUpdateDirectTableSequenceNumber(
+                document,
+                formulaId,
+                nativeSequenceName,
+                ordinal,
+                prefix,
+                formatOnly))
+            return;
         if (TryRefreshOrAtomicallyRebuildNativeHashSequenceV2(
                 document,
                 formulaId,

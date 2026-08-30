@@ -128,6 +128,11 @@ internal sealed partial class WordFormulaService
                     ?? throw new InvalidOperationException(
                         $"Converted VisualTeX formula {entry.Metadata.FormulaId} could not be resolved from its frozen range before numbering finalization.");
                 range = shape.Range;
+                if (string.Equals(
+                        plan.SourceMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal))
+                    NormalizeConvertedVisualTeXParagraphFromMathTypeStyle(range);
                 Paragraphs? liveParagraphs = null;
                 Paragraph? liveParagraph = null;
                 Range? liveParagraphRange = null;
@@ -224,6 +229,52 @@ internal sealed partial class WordFormulaService
         finally { Release(finalShapes); }
 
         return builtNumbered;
+    }
+
+    private static void NormalizeConvertedVisualTeXParagraphFromMathTypeStyle(Range formulaRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Style? style = null;
+        try
+        {
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            object styleObject = paragraphRange.get_Style();
+            style = styleObject as Style;
+            var styleName = style?.NameLocal
+                ?? Convert.ToString(styleObject)
+                ?? string.Empty;
+            if (styleName.IndexOf(
+                    "MTDisplayEquation",
+                    StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+
+            // MathType's display style owns its center/right tabs at the style
+            // level. When a MathType paragraph is reused as the exact insertion
+            // boundary for a VisualTeX OLE target, Word may optimize away the
+            // direct TabStops that VisualTeX subsequently writes because the same
+            // effective tabs are inherited from MTDisplayEquation. That leaves a
+            // VisualTeX formula semantically dependent on MathType's style and the
+            // strict OpenXML health check sees TAB characters with no direct
+            // center/right definitions. Detach only this known MathType style;
+            // ConfigureEquationParagraph immediately reapplies VisualTeX's own
+            // direct paragraph geometry afterwards.
+            object normalStyle = WdBuiltinStyle.wdStyleNormal;
+            paragraphRange.set_Style(ref normalStyle);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-visualtex-detached-mathtype-style range={paragraphRange.Start}:{paragraphRange.End} style={styleName}");
+        }
+        finally
+        {
+            Release(style);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
     }
 
     private static InlineShape? ResolveConvertedVisualTeXByEmbeddedIdentity(

@@ -144,7 +144,7 @@ internal static partial class Program
                 updateReference: true);
 
             Console.WriteLine(
-                "Word bad-package OMML migration acceptance passed: the obsolete m:eqArr/#(REF) wrapper was stripped and replaced once by Word-native #(SEQ), VTEqNum stayed inside the mathematical number slot, and F9/save/reopen remained stable with zero Shape/Table objects.");
+                "Word bad-package OMML migration acceptance passed: the obsolete m:eqArr/#(REF) wrapper was stripped, the semantic formula returned to a pure center-cell wdOMathDisplay, and one ordinary direct SEQ/VTEqNum number was rebuilt in the minimal 1x3 right cell; F9/save/reopen remained stable with zero Shape objects.");
         }
         finally
         {

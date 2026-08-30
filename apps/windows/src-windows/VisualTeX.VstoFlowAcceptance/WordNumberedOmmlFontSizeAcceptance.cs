@@ -132,7 +132,7 @@ internal static partial class Program
                 "Save/reopen changed the final native display run size.");
 
             Console.WriteLine(
-                "Word numbered OMML font-size acceptance passed: 14→12→16 pt retained genuine wdOMathDisplay/m:oMathPara geometry, external REF numbering and zero tables without artificial fraction scaling, including save/reopen.");
+                "Word numbered OMML font-size acceptance passed: 14→12→16 pt retained genuine center-cell wdOMathDisplay/m:oMathPara geometry while the ordinary right-cell number kept paragraph-inherited Word typography, with external REF numbering and the minimal 1x3 host stable through save/reopen.");
         }
         finally
         {

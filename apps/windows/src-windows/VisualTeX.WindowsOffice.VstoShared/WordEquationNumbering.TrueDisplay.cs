@@ -11,7 +11,7 @@ internal static partial class WordEquationNumbering
 {
     private const string NativeHashSequenceMigrationPlaceholder = "\uE00A";
 
-    private static bool ConfigureNumberedNativeOmmlDisplay(
+    private static bool ConfigureNumberedNativeOmmlDisplayHashRetired(
         Document document,
         Range formulaRange,
         float formulaHeightPoints,

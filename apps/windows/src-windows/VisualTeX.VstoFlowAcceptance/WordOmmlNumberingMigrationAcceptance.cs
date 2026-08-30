@@ -69,6 +69,7 @@ internal static partial class Program
                 "The legacy OMML migration fixture did not start as a benign 2x3 table.");
             AssertEqual(3, legacyTable.Columns.Count,
                 "The legacy OMML migration fixture changed the table column count.");
+            TraceLegacyOmmlCenterParagraphs(legacyTable);
 
             WordEquationNumbering.ReconcileFormula(
                 document,
@@ -87,15 +88,15 @@ internal static partial class Program
             FinalizeNumberedOmmlShapesAcrossOfficeTurns(
                 document,
                 expectedFormulaCount: 1,
-                context: "legacy 2x3 OMML native #SEQ finalization");
+                context: "legacy 2x3 OMML direct-SEQ 1x3 finalization");
             TraceOmmlMigrationIdentity(document, formulaId);
-            AssertOmmlTabNumberingHost(
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
                 document,
                 formulaId,
-                context: "legacy 2x3 OMML first reconcile",
-                updateReference: true);
-            AssertEqual(0, document.Tables.Count,
-                "Legacy OMML migration left a numbering table in the document.");
+                "legacy 2x3 OMML first reconcile to minimal 1x3");
+            AssertEqual(1, document.Tables.Count,
+                "Legacy 2x3 OMML did not converge to exactly one minimal 1x3 table.");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -106,16 +107,16 @@ internal static partial class Program
                 AddToRecentFiles: false,
                 Visible: false);
             document.Activate();
-            AssertOmmlTabNumberingHost(
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
                 document,
                 formulaId,
-                context: "legacy OMML migration save/reopen",
-                updateReference: true);
-            AssertEqual(0, document.Tables.Count,
-                "Saved/reopened migrated OMML unexpectedly regained a numbering table.");
+                "legacy 2x3 OMML migration save/reopen");
+            AssertEqual(1, document.Tables.Count,
+                "Saved/reopened migrated OMML did not retain exactly one minimal 1x3 host.");
 
             Console.WriteLine(
-                "Word OMML numbering migration acceptance passed: one reconcile migrated the benign legacy 2x3 host to a pure wdOMathDisplay/m:oMathPara formula with Word-native #(SEQ), preserved FormulaId/VTEqNum identity and external body REF behavior, and save/reopen remained Shape/Table-free.");
+                "Word OMML numbering migration acceptance passed: one reconcile trimmed the benign legacy 2x3 host to the minimal direct-SEQ 1x3 layout, retained a pure center-cell wdOMathDisplay/m:oMathPara plus FormulaId/VTEqNum identity, and save/reopen preserved the single-row host without hidden caption paragraphs or Shapes.");
         }
         finally
         {
@@ -133,6 +134,74 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void TraceLegacyOmmlCenterParagraphs(Word.Table table)
+    {
+        Word.Cell? cell = null;
+        Word.Range? cellRange = null;
+        Word.Paragraphs? paragraphs = null;
+        try
+        {
+            cell = table.Cell(1, 2);
+            cellRange = cell.Range;
+            paragraphs = cellRange.Paragraphs;
+            Console.WriteLine($"  [legacy center] paragraphs={paragraphs.Count}, cell={cellRange.Start}:{cellRange.End}.");
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Word.Paragraph? paragraph = null;
+                Word.Range? range = null;
+                Word.OMaths? maths = null;
+                Word.Fields? fields = null;
+                Word.Bookmarks? bookmarks = null;
+                Word.InlineShapes? shapes = null;
+                Word.Frames? frames = null;
+                try
+                {
+                    paragraph = paragraphs[index];
+                    range = paragraph.Range;
+                    maths = range.OMaths;
+                    fields = range.Fields;
+                    bookmarks = range.Bookmarks;
+                    shapes = range.InlineShapes;
+                    frames = range.Frames;
+                    var names = new List<string>();
+                    for (var bookmarkIndex = 1; bookmarkIndex <= bookmarks.Count; bookmarkIndex++)
+                    {
+                        Word.Bookmark? bookmark = null;
+                        try
+                        {
+                            bookmark = bookmarks[bookmarkIndex];
+                            names.Add(bookmark.Name);
+                        }
+                        finally { Release(bookmark); }
+                    }
+                    var text = (range.Text ?? string.Empty)
+                        .Replace("\r", "<P>")
+                        .Replace("\a", "<CELL>")
+                        .Replace("\t", "<TAB>")
+                        .Replace("\v", "<BR>");
+                    Console.WriteLine(
+                        $"  [legacy center] p#{index}={range.Start}:{range.End} text='{text}' maths={maths.Count} fields={fields.Count} bookmarks={bookmarks.Count}[{string.Join(",", names)}] shapes={shapes.Count} frames={frames.Count}.");
+                }
+                finally
+                {
+                    Release(frames);
+                    Release(shapes);
+                    Release(bookmarks);
+                    Release(fields);
+                    Release(maths);
+                    Release(range);
+                    Release(paragraph);
+                }
+            }
+        }
+        finally
+        {
+            Release(paragraphs);
+            Release(cellRange);
+            Release(cell);
         }
     }
 

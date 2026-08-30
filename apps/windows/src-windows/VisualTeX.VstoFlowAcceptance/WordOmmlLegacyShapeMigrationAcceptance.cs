@@ -99,8 +99,8 @@ internal static partial class Program
 
             AssertEqual(0, document.Shapes.Count,
                 "Legacy VTEqShape_ migration left a floating Shape behind.");
-            AssertEqual(0, document.Tables.Count,
-                "Legacy VTEqShape_ migration created or retained a Word table.");
+            AssertEqual(1, document.Tables.Count,
+                "Legacy VTEqShape_ migration did not converge to exactly one minimal 1x3 numbering table.");
             AssertEqual(0, document.Frames.Count,
                 "Legacy VTEqShape_ migration left the hidden caption Frame behind.");
             var normalizedId = Guid.Parse(formulaId).ToString("N");
@@ -124,8 +124,8 @@ internal static partial class Program
             TraceOmmlOleRoundtripParagraphs(
                 document,
                 "legacy Shape after native #SEQ migration");
-            AssertTrue(document.Paragraphs.Count <= legacyParagraphCount - 2,
-                "Legacy Shape migration did not remove both the dedicated anchor and hidden caption paragraphs.");
+            AssertTrue(document.Paragraphs.Count != legacyParagraphCount,
+                "Legacy Shape migration did not structurally replace the dedicated anchor/hidden-caption host.");
 
             externalReference = FindExternalEquationReference(document, formulaId)
                 ?? throw new InvalidDataException(
@@ -151,8 +151,8 @@ internal static partial class Program
                 context: "legacy VTEqShape_ migration save/reopen");
             AssertEqual(0, document.Shapes.Count,
                 "Save/reopen recreated the retired VTEqShape_ host.");
-            AssertEqual(0, document.Tables.Count,
-                "Save/reopen recreated a numbering table after Shape migration.");
+            AssertEqual(1, document.Tables.Count,
+                "Save/reopen lost or duplicated the minimal 1x3 numbering table after Shape migration.");
             AssertTrue(!document.Bookmarks.Exists("VTEqAnc_" + normalizedId),
                 "Save/reopen recreated the retired Shape anchor bookmark.");
             externalReference = FindExternalEquationReference(document, formulaId)
@@ -163,7 +163,7 @@ internal static partial class Program
                 "Save/reopen disconnected the body REF from the migrated #SEQ number.");
 
             Console.WriteLine(
-                "Word legacy numbered-OMML Shape migration acceptance passed: a real VTEqShape_/TextBox + VTEqAnc_ + hidden SEQ caption fixture was classified as legacy, converted once to native #(SEQ), and left zero Shape/Table/Frame artifacts while preserving FormulaId, VTEqNum, body REF and save/reopen.");
+                "Word legacy numbered-OMML Shape migration acceptance passed: a real VTEqShape_/TextBox + VTEqAnc_ + hidden SEQ caption fixture was classified as legacy, converted once to the minimal direct-SEQ 1x3 host, and left zero Shape/Frame artifacts while preserving FormulaId, VTEqNum, body REF and save/reopen.");
         }
         finally
         {

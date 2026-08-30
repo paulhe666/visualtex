@@ -729,18 +729,36 @@ internal static partial class Program
 
     private static int CountMathTypeOleShapes(Word.Document document)
     {
-        var count = 0;
-        for (var index = 1; index <= document.InlineShapes.Count; index++)
+        const int RpcCallRejected = unchecked((int)0x80010001);
+        for (var attempt = 0; attempt < 80; attempt++)
         {
-            Word.InlineShape? shape = null;
+            Word.InlineShapes? shapes = null;
             try
             {
-                shape = document.InlineShapes[index];
-                if (MathTypeOleInterop.IsMathTypeOle(shape)) count++;
+                shapes = document.InlineShapes;
+                var count = 0;
+                for (var index = 1; index <= shapes.Count; index++)
+                {
+                    Word.InlineShape? shape = null;
+                    try
+                    {
+                        shape = shapes[index];
+                        if (MathTypeOleInterop.IsMathTypeOle(shape)) count++;
+                    }
+                    finally { Release(shape); }
+                }
+                return count;
             }
-            finally { Release(shape); }
+            catch (System.Runtime.InteropServices.COMException error)
+                when (error.ErrorCode == RpcCallRejected && attempt < 79)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(100);
+            }
+            finally { Release(shapes); }
         }
-        return count;
+        throw new TimeoutException(
+            "Word remained busy while the installed acceptance counted MathType OLE objects.");
     }
 
     private static int CountVisualTeXNumberingBookmarks(Word.Document document)

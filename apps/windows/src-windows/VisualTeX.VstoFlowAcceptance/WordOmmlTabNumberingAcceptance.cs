@@ -197,9 +197,10 @@ internal static partial class Program
             metadata);
     }
 
-    // Kept under the historical helper name because the legacy-table and bad-eqArr
-    // migration acceptances call the same assertion. Its contract is now the final
-    // Word-native #(SEQ) display host, never the retired table/tab/Shape layout.
+    // Kept under the historical helper name because many migration/round-trip
+    // acceptances call it. The current producer is the minimal direct-SEQ 1x3 host;
+    // older native #(SEQ) equations remain valid migration input and are still
+    // asserted by the compatibility branches below.
     private static void AssertOmmlTabNumberingHost(
         Word.Document document,
         string formulaId,
@@ -207,6 +208,30 @@ internal static partial class Program
         bool updateReference,
         bool requireDocumentTableFree = true)
     {
+        Word.Range? currentRange = null;
+        try
+        {
+            var metadata = WordOmmlFormulaStore.TryRead(document, formulaId);
+            if (metadata is not null)
+            {
+                currentRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                    document,
+                    formulaId,
+                    metadata);
+                if ((bool)currentRange.get_Information(Word.WdInformation.wdWithInTable))
+                {
+                    if (updateReference) document.Fields.Update();
+                    AssertOmmlTableNumberLifecyclePhase(
+                        document.Application,
+                        document,
+                        formulaId,
+                        context);
+                    return;
+                }
+            }
+        }
+        finally { Release(currentRange); }
+
         if (TryAssertNativeHashNumberingHostV3(
                 document,
                 formulaId,
@@ -1012,11 +1037,11 @@ internal static partial class Program
     {
         // The compatibility entry point retains its historical name, but the
         // current producer no longer creates or finalizes floating Shapes. A
-        // migrated numbered OMML is complete when Word exposes one genuine display
-        // OMath containing the direct VisualTeXEquation SEQ plus its FormulaId-bound
-        // aliases. Retry only for Word's transient COM normalization window.
+        // migrated numbered OMML is complete when Word exposes either the current
+        // minimal direct-SEQ 1x3 host or an older healthy native #(SEQ) host.
+        // Retry only for Word's transient COM normalization window.
         var finalized = 0;
-        var nativeHashHealthy = 0;
+        var numberedOmmlHealthy = 0;
         for (var turn = 1; turn <= 5; turn++)
         {
             System.Windows.Forms.Application.DoEvents();
@@ -1024,19 +1049,19 @@ internal static partial class Program
             System.Windows.Forms.Application.DoEvents();
             finalized = WordEquationNumbering
                 .FinalizeNumberedOmmlDisplayShapeLayouts(document);
-            nativeHashHealthy = CountHealthyNativeHashSequenceOmml(document);
+            numberedOmmlHealthy = CountHealthyNativeHashSequenceOmml(document);
             Console.WriteLine(
-                $"  {context}: native #SEQ finalization turn {turn} finalized={finalized}/{expectedFormulaCount}, healthy={nativeHashHealthy}/{expectedFormulaCount}, shapes={document.Shapes.Count}.");
-            if (nativeHashHealthy >= expectedFormulaCount
+                $"  {context}: numbered-OMML finalization turn {turn} finalized={finalized}/{expectedFormulaCount}, healthy={numberedOmmlHealthy}/{expectedFormulaCount}, shapes={document.Shapes.Count}, tables={document.Tables.Count}.");
+            if (numberedOmmlHealthy >= expectedFormulaCount
                 && finalized >= expectedFormulaCount)
             {
                 AssertEqual(0, document.Shapes.Count,
-                    context + ": native #SEQ finalization created a floating Shape.");
+                    context + ": numbered-OMML finalization created a floating Shape.");
                 return;
             }
         }
         throw new InvalidDataException(
-            context + $": Word did not expose {expectedFormulaCount} healthy native #(SEQ) OMML formula(s) across five Office turns; finalized={finalized}, healthy={nativeHashHealthy}.");
+            context + $": Word did not expose {expectedFormulaCount} healthy numbered OMML formula(s) across five Office turns; finalized={finalized}, healthy={numberedOmmlHealthy}.");
     }
 
     private static int CountHealthyNativeHashSequenceOmml(Word.Document document)
@@ -1064,6 +1089,16 @@ internal static partial class Program
                 if (maths.Count != 1) continue;
                 math = maths[1];
                 if (math.Type != Word.WdOMathType.wdOMathDisplay) continue;
+                if ((bool)equationRange.get_Information(Word.WdInformation.wdWithInTable))
+                {
+                    AssertOmmlTableNumberLifecyclePhase(
+                        document.Application,
+                        document,
+                        formulaId,
+                        "numbered-OMML finalization health");
+                    healthy++;
+                    continue;
+                }
                 if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                         equationRange.WordOpenXML,
                         formulaId))

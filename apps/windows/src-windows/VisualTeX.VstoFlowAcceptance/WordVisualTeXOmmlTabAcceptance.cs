@@ -310,41 +310,61 @@ internal static partial class Program
             math = maths[1];
             AssertEqual(Word.WdOMathType.wdOMathDisplay, math.Type,
                 context + ": numbered OMML is not genuine Word display math.");
-            AssertEqual(1, equationRange.Fields.Count,
-                context + ": native #(SEQ) OMath must contain exactly one field.");
-            Word.Field? sequenceField = null;
-            Word.Range? sequenceCode = null;
-            try
-            {
-                sequenceField = equationRange.Fields[1];
-                sequenceCode = sequenceField.Code;
-                AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
-                    context + ": the OMath field is not SEQ VisualTeXEquation.");
-                AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
-                        "REF VTEqNum_",
-                        StringComparison.OrdinalIgnoreCase) < 0,
-                    context + ": REF leaked inside the native #() field code.");
-            }
-            finally
-            {
-                Release(sequenceCode);
-                Release(sequenceField);
-            }
 
             var openXml = equationRange.WordOpenXML ?? string.Empty;
-            AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(openXml),
-                context + ": native #(SEQ) equation-number wrapper is missing.");
-            AssertTrue(openXml.IndexOf("VTEqNum_", StringComparison.OrdinalIgnoreCase) >= 0,
-                context + ": VTEqNum bookmark is missing from native formula OMML.");
-            AssertTrue(openXml.IndexOf("981730", StringComparison.Ordinal) < 0,
-                context + ": retired generated number placeholder leaked into OMML.");
             const string MathNamespace =
                 "http://schemas.openxmlformats.org/officeDocument/2006/math";
             var mathNs = (XNamespace)MathNamespace;
-            var numberedXml = XDocument.Parse(openXml, LoadOptions.PreserveWhitespace);
-            AssertEqual(1, numberedXml.Descendants(mathNs + "eqArr").Count(),
-                context + ": Word native #() did not retain its one legal m:eqArr.");
-            var semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(openXml);
+            string semanticOmml;
+            var directTableHost = (bool)equationRange.get_Information(
+                Word.WdInformation.wdWithInTable);
+            if (directTableHost)
+            {
+                // Current production host: number fields and all VTEq aliases live
+                // only in right cell (1,3). The center m:oMath must be semantically
+                // identical to an ordinary display equation and contain no field.
+                AssertEqual(0, equationRange.Fields.Count,
+                    context + ": direct-SEQ table leaked a field into m:oMath.");
+                AssertTrue(!WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml),
+                    context + ": direct-SEQ table formula still contains a mathematical number wrapper.");
+                AssertTrue(openXml.IndexOf("VTEqNum_", StringComparison.OrdinalIgnoreCase) < 0,
+                    context + ": VTEqNum leaked from the right table cell into formula OMML.");
+                semanticOmml = WordOmmlConverter.ExtractSingleOMath(openXml);
+            }
+            else
+            {
+                AssertEqual(1, equationRange.Fields.Count,
+                    context + ": native #(SEQ) OMath must contain exactly one field.");
+                Word.Field? sequenceField = null;
+                Word.Range? sequenceCode = null;
+                try
+                {
+                    sequenceField = equationRange.Fields[1];
+                    sequenceCode = sequenceField.Code;
+                    AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
+                        context + ": the OMath field is not SEQ VisualTeXEquation.");
+                    AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
+                            "REF VTEqNum_",
+                            StringComparison.OrdinalIgnoreCase) < 0,
+                        context + ": REF leaked inside the native #() field code.");
+                }
+                finally
+                {
+                    Release(sequenceCode);
+                    Release(sequenceField);
+                }
+
+                AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(openXml),
+                    context + ": native #(SEQ) equation-number wrapper is missing.");
+                AssertTrue(openXml.IndexOf("VTEqNum_", StringComparison.OrdinalIgnoreCase) >= 0,
+                    context + ": VTEqNum bookmark is missing from native formula OMML.");
+                AssertTrue(openXml.IndexOf("981730", StringComparison.Ordinal) < 0,
+                    context + ": retired generated number placeholder leaked into OMML.");
+                var numberedXml = XDocument.Parse(openXml, LoadOptions.PreserveWhitespace);
+                AssertEqual(1, numberedXml.Descendants(mathNs + "eqArr").Count(),
+                    context + ": Word native #() did not retain its one legal m:eqArr.");
+                semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(openXml);
+            }
             var semanticXml = XDocument.Parse(semanticOmml, LoadOptions.PreserveWhitespace);
             AssertTrue(semanticXml.Descendants(mathNs + "f").Any(),
                 context + ": native fraction structure was lost after stripping numbering.");
@@ -410,10 +430,27 @@ internal static partial class Program
         Word.Document document,
         Word.Range equationRange)
     {
+        Word.Table? table = null;
+        Word.Rows? rows = null;
+        Word.Columns? columns = null;
         Word.Range? visibleNumber = null;
         Word.Range? prefix = null;
         try
         {
+            // In the current direct-SEQ 1x3 host the center OMath is already the
+            // complete semantic formula body: numbering lives exclusively in cell
+            // (1,3), so there is no # separator to trim from the mathematical Range.
+            if ((bool)equationRange.get_Information(Word.WdInformation.wdWithInTable)
+                && equationRange.Tables.Count > 0
+                && equationRange.Fields.Count == 0)
+            {
+                table = equationRange.Tables[1];
+                rows = table.Rows;
+                columns = table.Columns;
+                if (rows.Count == 1 && columns.Count == 3)
+                    return equationRange.Duplicate;
+            }
+
             Word.Bookmark? formulaBookmark = null;
             string formulaId;
             try
@@ -445,6 +482,9 @@ internal static partial class Program
         {
             Release(prefix);
             Release(visibleNumber);
+            Release(columns);
+            Release(rows);
+            Release(table);
         }
     }
 

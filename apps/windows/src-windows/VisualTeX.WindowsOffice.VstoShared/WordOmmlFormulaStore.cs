@@ -674,6 +674,15 @@ internal static class WordOmmlFormulaStore
         Bookmark? bookmark = null;
         Range? anchorRange = null;
         Range? preceding = null;
+        Tables? equationTables = null;
+        Table? equationTable = null;
+        Rows? equationRows = null;
+        Columns? equationColumns = null;
+        Cell? centerCell = null;
+        Range? centerCellRange = null;
+        Paragraphs? centerParagraphs = null;
+        Paragraph? centerParagraph = null;
+        Range? centerParagraphRange = null;
         try
         {
             var anchorPosition = equationRange.Start;
@@ -686,9 +695,61 @@ internal static class WordOmmlFormulaStore
                     anchorPosition--;
             }
 
-            object anchorStart = anchorPosition;
-            object anchorEnd = anchorPosition;
-            anchorRange = document.Range(ref anchorStart, ref anchorEnd);
+            // A collapsed main-story Range at a Word cell boundary is ambiguous:
+            // Word can serialize it between </w:tc> and the next <w:tc>, which made
+            // VTOMML_<FormulaId> drift to the row level after MathType→OMML batch
+            // conversion. For the managed native 1x3 host, derive the bookmark from
+            // cell (1,2)'s own Paragraph.Range so the container affinity is explicit.
+            var anchoredInCenterCell = false;
+            try
+            {
+                if ((bool)equationRange.get_Information(WdInformation.wdWithInTable))
+                {
+                    equationTables = equationRange.Tables;
+                    if (equationTables.Count > 0)
+                    {
+                        equationTable = equationTables[1];
+                        equationRows = equationTable.Rows;
+                        equationColumns = equationTable.Columns;
+                        if (equationRows.Count == 1 && equationColumns.Count == 3)
+                        {
+                            centerCell = equationTable.Cell(1, 2);
+                            centerCellRange = centerCell.Range;
+                            if (equationRange.Start >= centerCellRange.Start
+                                && equationRange.End <= centerCellRange.End)
+                            {
+                                centerParagraphs = centerCellRange.Paragraphs;
+                                if (centerParagraphs.Count == 1)
+                                {
+                                    centerParagraph = centerParagraphs[1];
+                                    centerParagraphRange = centerParagraph.Range.Duplicate;
+                                    centerParagraphRange.Collapse(WdCollapseDirection.wdCollapseStart);
+                                    anchorRange = centerParagraphRange;
+                                    centerParagraphRange = null;
+                                    anchoredInCenterCell = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                anchoredInCenterCell = false;
+                Release(anchorRange);
+                anchorRange = null;
+            }
+
+            if (!anchoredInCenterCell)
+            {
+                // Outside the managed table, preserve the equation Range's native
+                // story affinity. Only the legacy inline-baseline sentinel needs an
+                // explicit one-character shift before the equation.
+                anchorRange = equationRange.Duplicate;
+                anchorRange.Collapse(WdCollapseDirection.wdCollapseStart);
+                if (anchorPosition != equationRange.Start)
+                    anchorRange.SetRange(anchorPosition, anchorPosition);
+            }
             bookmarks = document.Bookmarks;
             var name = BookmarkName(metadata.FormulaId);
             if (replaceExisting && bookmarks.Exists(name))
@@ -700,6 +761,15 @@ internal static class WordOmmlFormulaStore
         }
         finally
         {
+            Release(centerParagraphRange);
+            Release(centerParagraph);
+            Release(centerParagraphs);
+            Release(centerCellRange);
+            Release(centerCell);
+            Release(equationColumns);
+            Release(equationRows);
+            Release(equationTable);
+            Release(equationTables);
             Release(preceding);
             Release(anchorRange);
             Release(bookmark);
@@ -757,10 +827,56 @@ internal static class WordOmmlFormulaStore
                     && numberRange.Start >= equationRange.Start
                     && numberRange.End <= equationRange.End;
 
-            // Legacy Shape/table hosts place VTEqNum outside the semantic OMath.
-            // They are valid migration input, but a canonical-position shortcut is
-            // not enough to identify them; force the same fingerprint recovery used
-            // for any other drifted structural host.
+            // Current 1x3 native OMML keeps the semantic OMath in cell (1,2) and
+            // the durable VTEqNum_<FormulaId> identity in cell (1,3). This is a
+            // stronger physical identity than the semantic fingerprint, especially
+            // when two equations have identical mathematical content. Accept the
+            // adjacent OMath only when both ranges belong to the exact same managed
+            // three-column table.
+            Tables? equationTables = null;
+            Tables? numberTables = null;
+            Table? equationTable = null;
+            Table? numberTable = null;
+            Range? equationTableRange = null;
+            Range? numberTableRange = null;
+            try
+            {
+                if ((bool)equationRange.get_Information(WdInformation.wdWithInTable)
+                    && (bool)numberRange.get_Information(WdInformation.wdWithInTable))
+                {
+                    equationTables = equationRange.Tables;
+                    numberTables = numberRange.Tables;
+                    if (equationTables.Count > 0 && numberTables.Count > 0)
+                    {
+                        equationTable = equationTables[1];
+                        numberTable = numberTables[1];
+                        if (equationTable.Columns.Count == 3
+                            && equationTable.Rows.Count == 1
+                            && numberTable.Columns.Count == 3
+                            && numberTable.Rows.Count == 1)
+                        {
+                            equationTableRange = equationTable.Range;
+                            numberTableRange = numberTable.Range;
+                            if (equationTableRange.Start == numberTableRange.Start
+                                && equationTableRange.End == numberTableRange.End)
+                                return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                Release(numberTableRange);
+                Release(equationTableRange);
+                Release(numberTable);
+                Release(equationTable);
+                Release(numberTables);
+                Release(equationTables);
+            }
+
+            // Shape-era hosts have no same-container VTEqNum identity and remain
+            // migration input only; fall back to fingerprint recovery for them.
             return false;
         }
         catch
@@ -1120,6 +1236,56 @@ internal static class WordOmmlFormulaStore
             numberRange = numberBookmark.Range;
             if (numberRange.StoryType != WdStoryType.wdMainTextStory)
                 return null;
+
+            // Current 1x3 host: VTEqNum lives in cell (1,3), while the one semantic
+            // display OMath lives in cell (1,2). Resolve that physical owner before
+            // any fingerprint fallback so identical formulas remain distinguishable.
+            Tables? numberTables = null;
+            Table? numberTable = null;
+            Cell? formulaCell = null;
+            Range? formulaCellRange = null;
+            OMaths? tableMaths = null;
+            OMath? tableMath = null;
+            Range? tableMathRange = null;
+            try
+            {
+                if ((bool)numberRange.get_Information(WdInformation.wdWithInTable))
+                {
+                    numberTables = numberRange.Tables;
+                    if (numberTables.Count > 0)
+                    {
+                        numberTable = numberTables[1];
+                        if (numberTable.Rows.Count == 1 && numberTable.Columns.Count == 3)
+                        {
+                            formulaCell = numberTable.Cell(1, 2);
+                            formulaCellRange = formulaCell.Range;
+                            tableMaths = formulaCellRange.OMaths;
+                            if (tableMaths.Count == 1)
+                            {
+                                tableMath = tableMaths[1];
+                                tableMathRange = tableMath.Range.Duplicate;
+                                if (tableMath.Type == WdOMathType.wdOMathDisplay)
+                                {
+                                    var tableResult = tableMathRange;
+                                    tableMathRange = null;
+                                    return tableResult;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                Release(tableMathRange);
+                Release(tableMath);
+                Release(tableMaths);
+                Release(formulaCellRange);
+                Release(formulaCell);
+                Release(numberTable);
+                Release(numberTables);
+            }
 
             // Fast path: Word normally exposes the containing professional OMath
             // directly from the number bookmark range.

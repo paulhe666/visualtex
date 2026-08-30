@@ -107,10 +107,10 @@ internal static partial class Program
             FinalizeNumberedOmmlShapesAcrossOfficeTurns(
                 document,
                 expectedFormulaCount: 2,
-                context: "mixed legacy numbered OMML native #SEQ finalization");
+                context: "mixed legacy numbered OMML direct-SEQ 1x3 finalization");
 
-            AssertEqual(0, document.Tables.Count,
-                "One document-level migration pass left a legacy numbering table behind.");
+            AssertEqual(2, document.Tables.Count,
+                "One document-level migration pass did not converge the two OMML formulas to exactly two minimal 1x3 tables.");
             AssertVisualTeXNumberedTabHost(
                 document,
                 oleFormulaId,
@@ -152,8 +152,8 @@ internal static partial class Program
                 Visible: false);
             document.Activate();
 
-            AssertEqual(0, document.Tables.Count,
-                "The mixed migrated document regained legacy numbering tables after save/reopen.");
+            AssertEqual(2, document.Tables.Count,
+                "The mixed migrated document lost or duplicated the two minimal OMML 1x3 tables after save/reopen.");
             AssertVisualTeXNumberedTabHost(
                 document,
                 oleFormulaId,
@@ -183,7 +183,7 @@ internal static partial class Program
                 "mixed migration bad-eqArr OMML external REF save/reopen");
 
             Console.WriteLine(
-                "Word mixed legacy numbering migration acceptance passed: one document-level migration upgraded a legacy VisualTeX OLE table, a legacy OMML table and a broken m:eqArr/# formula to the final table-free hosts while preserving FormulaIds, dynamic SEQ/REF targets, external references and save/reopen stability.");
+                "Word mixed legacy numbering migration acceptance passed: one document-level migration restored the legacy VisualTeX OLE to its ordinary tab paragraph and converged both OMML legacy forms to minimal direct-SEQ 1x3 hosts while preserving FormulaIds, dynamic SEQ/REF targets, external references and save/reopen stability.");
         }
         finally
         {
@@ -313,17 +313,8 @@ internal static partial class Program
         Word.Document document,
         string formulaId)
     {
-        Word.Application? application = null;
-        Word.Bookmark? bookmark = null;
         Word.Range? equationRange = null;
-        Word.Range? semanticRange = null;
-        Word.OMaths? maths = null;
-        Word.OMath? math = null;
-        Word.Paragraphs? paragraphs = null;
-        Word.Paragraph? paragraph = null;
-        Word.Range? paragraphRange = null;
-        Word.Range? before = null;
-        Word.Range? after = null;
+        Word.Tables? tables = null;
         Word.Table? table = null;
         Word.Row? emptyRow = null;
         try
@@ -331,116 +322,36 @@ internal static partial class Program
             var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
                 ?? throw new InvalidDataException(
                     "The mixed OMML table fixture lost metadata before legacy degradation.");
-            bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
-                ?? throw new InvalidDataException(
-                    "The mixed OMML table fixture lost its formula bookmark before legacy degradation.");
-            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
-            var semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(
-                equationRange.WordOpenXML);
-
-            // Current numbered OMML owns a live mathematical SEQ field, so a legacy
-            // fixture cannot be manufactured by writing TABs into that OMath. First
-            // replace the complete #(SEQ) equation atomically with its pure semantic
-            // OMath, then build the historical 1x3/2x3 table around that plain range.
-            WordEquationNumbering.RemoveNativeOmmlHashSequenceAliasesForReplacement(
+            equationRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
                 document,
-                formulaId);
-            bookmark.Delete();
-            Release(bookmark);
-            bookmark = null;
-            application = document.Application;
-            string mathFontName;
-            try { mathFontName = document.OMathFontName ?? string.Empty; }
-            catch { mathFontName = string.Empty; }
-            semanticRange = WordOmmlConverter.ReplaceWithPreparedOmml(
-                application,
-                document,
-                equationRange,
-                semanticOmml,
-                display: false,
-                mathFontName);
-            Release(equationRange);
-            equationRange = semanticRange;
-            semanticRange = null;
-
-            maths = equationRange.OMaths;
-            AssertEqual(1, maths.Count,
-                "The mixed OMML table fixture does not contain exactly one semantic OMath.");
-            math = maths[1];
-            if (math.Type != Word.WdOMathType.wdOMathInline)
-                math.Type = Word.WdOMathType.wdOMathInline;
-            Release(equationRange); equationRange = math.Range.Duplicate;
-
-            before = document.Range(equationRange.Start, equationRange.Start);
-            before.Text = "\t";
-            Release(equationRange); equationRange = math.Range.Duplicate;
-            after = document.Range(equationRange.End, equationRange.End);
-            after.Text = "\t";
-
-            paragraphs = equationRange.Paragraphs;
-            paragraph = paragraphs[1];
-            paragraphRange = paragraph.Range;
-
-            object separator = Word.WdTableFieldSeparator.wdSeparateByTabs;
-            object rows = 1;
-            object columns = 3;
-            table = paragraphRange.ConvertToTable(
-                ref separator,
-                ref rows,
-                ref columns);
+                formulaId,
+                metadata);
+            AssertTrue((bool)equationRange.get_Information(Word.WdInformation.wdWithInTable),
+                "The mixed OMML table source is not the current managed 1x3 host.");
+            tables = equationRange.Tables;
+            AssertEqual(1, tables.Count,
+                "The mixed OMML table source does not own exactly one managed table.");
+            table = tables[1];
             AssertEqual(1, table.Rows.Count,
-                "Converting the numbered OMML paragraph did not create the expected historical 1x3 table.");
+                "The mixed OMML table source did not start with one row.");
             AssertEqual(3, table.Columns.Count,
-                "Converting the numbered OMML paragraph did not create exactly three historical columns.");
-            emptyRow = table.Rows.Add();
+                "The mixed OMML table source did not start with three columns.");
 
-            var center = table.Cell(1, 2);
-            Word.Range? centerRange = null;
-            Word.OMaths? centerMaths = null;
-            Word.OMath? centerMath = null;
-            Word.Range? centerMathRange = null;
-            Word.Bookmark? repaired = null;
-            try
-            {
-                centerRange = center.Range;
-                centerMaths = centerRange.OMaths;
-                AssertEqual(1, centerMaths.Count,
-                    "The historical OMML table lost its native equation while being materialized.");
-                centerMath = centerMaths[1];
-                centerMathRange = centerMath.Range;
-                WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, centerMathRange);
-                repaired = WordOmmlFormulaStore.Wrap(
-                    document,
-                    centerMathRange,
-                    metadata,
-                    replaceExisting: true);
-                WordOmmlFormulaStore.Save(document, metadata);
-            }
-            finally
-            {
-                Release(repaired);
-                Release(centerMathRange);
-                Release(centerMath);
-                Release(centerMaths);
-                Release(centerRange);
-                Release(center);
-            }
+            // The historical 2x3 bug was a benign empty row below an otherwise
+            // healthy numbered host. Materialize exactly that defect and keep the
+            // current direct-SEQ/FormulaId payload intact; the mixed test is about
+            // document-wide detection and convergence, while the dedicated legacy
+            // 2x3 acceptance separately proves the older pre-direct-SEQ payload.
+            emptyRow = table.Rows.Add();
+            AssertEqual(2, table.Rows.Count,
+                "The mixed OMML table fixture did not gain the benign legacy second row.");
         }
         finally
         {
             Release(emptyRow);
             Release(table);
-            Release(after);
-            Release(before);
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(math);
-            Release(maths);
-            Release(semanticRange);
+            Release(tables);
             Release(equationRange);
-            Release(bookmark);
-            Release(application);
         }
     }
 
@@ -449,7 +360,6 @@ internal static partial class Program
         Word.Document document,
         string formulaId)
     {
-        Word.Bookmark? bookmark = null;
         Word.Range? equationRange = null;
         Word.Range? badRange = null;
         Word.Bookmark? repaired = null;
@@ -458,15 +368,32 @@ internal static partial class Program
             var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
                 ?? throw new InvalidDataException(
                     "The mixed bad-eqArr fixture lost metadata before legacy degradation.");
-            bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
-                ?? throw new InvalidDataException(
-                    "The mixed bad-eqArr fixture lost its formula bookmark before legacy degradation.");
-            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            equationRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                document,
+                formulaId,
+                metadata);
+
+            // A current numbered OMML starts in the managed 1x3 host. Temporarily
+            // exercise the production unnumbering path to dismantle that table into
+            // one standalone semantic display paragraph. The external REF field may
+            // show an error result during this fixture-only interval, but its field
+            // code remains REF VTEqNum_<FormulaId> and will reconnect as soon as the
+            // historical bad-eqArr aliases below are materialized.
+            metadata.Numbered = false;
+            WordOmmlFormulaStore.Save(document, metadata);
+            WordEquationNumbering.ReconcileFormula(
+                document,
+                equationRange,
+                WordOmmlFormulaStore.EstimateHeightPoints(equationRange),
+                metadata,
+                numberingOrderMayHaveChanged: false);
+            AssertTrue(!(bool)equationRange.get_Information(Word.WdInformation.wdWithInTable),
+                "The mixed bad-eqArr fixture could not dismantle the current 1x3 host first.");
+            AssertEqual(Word.WdOMathType.wdOMathDisplay, equationRange.OMaths[1].Type,
+                "Temporary unnumbering degraded the bad-eqArr fixture source from wdOMathDisplay.");
+
             var semanticOmml = WordOmmlConverter.ExtractSingleOMath(
                 equationRange.WordOpenXML);
-            WordEquationNumbering.RemoveVisibleEquationNumberForFormula(
-                document,
-                formulaId);
             var badOmml = BuildLegacyBadEqArrOmml(
                 semanticOmml,
                 formulaId);
@@ -480,6 +407,8 @@ internal static partial class Program
                 badOmml,
                 display: true,
                 mathFontName);
+
+            metadata.Numbered = true;
             repaired = WordOmmlFormulaStore.Wrap(
                 document,
                 badRange,
@@ -487,6 +416,8 @@ internal static partial class Program
                 replaceExisting: true);
             WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, badRange);
             WordOmmlFormulaStore.Save(document, metadata);
+            AssertTrue(!(bool)badRange.get_Information(Word.WdInformation.wdWithInTable),
+                "The mixed bad-eqArr fixture unexpectedly remained inside a table.");
             AssertTrue(
                 WordOmmlConverter.HasVisualTeXNativeEquationNumber(badRange.WordOpenXML),
                 "The mixed fixture did not materialize the historical m:eqArr/# numbering wrapper.");
@@ -496,7 +427,6 @@ internal static partial class Program
             Release(repaired);
             Release(badRange);
             Release(equationRange);
-            Release(bookmark);
         }
     }
 }

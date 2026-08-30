@@ -88,8 +88,11 @@ internal static partial class Program
             Release(externalReference); externalReference = null;
             Release(referenceFields); referenceFields = null;
             Release(referenceInsertion); referenceInsertion = null;
-            var paragraphCount = document.Paragraphs.Count;
             TraceOmmlOleRoundtripParagraphs(document, "before OMML→OLE");
+            AssertEqual(1, document.Tables.Count,
+                "The source numbered OMML must own exactly one direct-SEQ 1x3 table.");
+            AssertEqual(0, document.Frames.Count,
+                "The source numbered OMML unexpectedly owns a hidden caption Frame.");
 
             bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
                 ?? throw new InvalidDataException("OMML roundtrip source bookmark is missing.");
@@ -112,10 +115,10 @@ internal static partial class Program
                 updateReference: true,
                 context: "OMML→VisualTeX OLE tab conversion");
             TraceOmmlOleRoundtripParagraphs(document, "after OMML→OLE");
-            AssertEqual(
-                paragraphCount + 1,
-                document.Paragraphs.Count,
-                "OMML→VisualTeX OLE did not create exactly one clipped native SEQ caption paragraph.");
+            AssertEqual(0, document.Tables.Count,
+                "OMML→VisualTeX OLE left the native OMML 1x3 table behind.");
+            AssertEqual(1, document.Frames.Count,
+                "OMML→VisualTeX OLE must own exactly one clipped native SEQ caption Frame.");
             AssertExternalEquationReference(document, formulaId, "OMML→VisualTeX OLE");
 
             oleShape = FindVisualTeXOleByFormulaIdForNumberToggle(document, formulaId);
@@ -142,10 +145,10 @@ internal static partial class Program
                 formulaId,
                 updateReference: true,
                 context: "VisualTeX OLE→OMML tab conversion");
-            AssertEqual(
-                paragraphCount,
-                document.Paragraphs.Count,
-                "VisualTeX OLE→OMML introduced an extra body/blank paragraph.");
+            AssertEqual(1, document.Tables.Count,
+                "VisualTeX OLE→OMML did not restore exactly one direct-SEQ 1x3 table.");
+            AssertEqual(0, document.Frames.Count,
+                "VisualTeX OLE→OMML left the OLE clipped caption Frame behind.");
             AssertExternalEquationReference(document, formulaId, "VisualTeX OLE→OMML");
 
             document.Save();
@@ -161,14 +164,14 @@ internal static partial class Program
                 formulaId,
                 updateReference: true,
                 context: "OMML tab format roundtrip save/reopen");
-            AssertEqual(
-                paragraphCount,
-                document.Paragraphs.Count,
-                "OMML tab format roundtrip changed paragraph count after save/reopen.");
+            AssertEqual(1, document.Tables.Count,
+                "OMML tab roundtrip save/reopen did not retain exactly one 1x3 table.");
+            AssertEqual(0, document.Frames.Count,
+                "OMML tab roundtrip save/reopen recreated a hidden caption Frame.");
             AssertExternalEquationReference(document, formulaId, "save/reopen");
 
             Console.WriteLine(
-                "OMML↔VisualTeX OLE numbered roundtrip acceptance passed: OMML used native #(SEQ) with zero Shape/Table, OLE used its clipped SEQ caption plus center/right-tab REF row, and returning to OMML removed that caption while preserving dynamic numbering, body references, paragraph count and save/reopen.");
+                "OMML↔VisualTeX OLE numbered roundtrip acceptance passed: OMML used the minimal direct-SEQ 1x3 host with no hidden caption Frame, OLE used its clipped SEQ caption plus center/right-tab REF row, and returning to OMML removed that Frame while preserving dynamic numbering, body references and save/reopen.");
         }
         finally
         {

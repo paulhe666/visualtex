@@ -230,6 +230,7 @@ internal static partial class Program
         var deadline = DateTime.UtcNow.AddSeconds(120);
         var completionMarker = "format-conversion-complete " + directionMarker;
         var stoppedMarker = "format-conversion-stopped " + directionMarker;
+        var failedMarker = "format-conversion-failed";
         var peakAdditionalMathTypeProcesses = 0;
         while (DateTime.UtcNow < deadline)
         {
@@ -241,10 +242,20 @@ internal static partial class Program
             peakAdditionalMathTypeProcesses = Math.Max(
                 peakAdditionalMathTypeProcesses,
                 startedMathType.Length);
-            if (!allowTransientMathTypeProcess && startedMathType.Length > 0)
+            var controlledRpcHelpers = startedMathType
+                .Where(MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess)
+                .ToArray();
+            if (controlledRpcHelpers.Length > 1)
                 throw new InvalidOperationException(
-                    "Installed OMML↔MathType conversion started MathType.exe: "
-                    + string.Join(", ", startedMathType));
+                    "Installed OMML↔MathType conversion started more than one controlled -mtrpc helper: "
+                    + string.Join(", ", controlledRpcHelpers));
+            var unexpectedMathType = startedMathType
+                .Except(controlledRpcHelpers)
+                .ToArray();
+            if (!allowTransientMathTypeProcess && unexpectedMathType.Length > 0)
+                throw new InvalidOperationException(
+                    "Installed OMML↔MathType conversion started unexpected MathType.exe: "
+                    + string.Join(", ", unexpectedMathType));
             if (!File.Exists(tracePath)) continue;
             string trace;
             try { trace = File.ReadAllText(tracePath); }
@@ -254,6 +265,11 @@ internal static partial class Program
                 throw new InvalidOperationException(
                     "Installed Ribbon conversion reported a stopped transaction: "
                     + trace.Substring(stoppedIndex).Trim());
+            var failedIndex = trace.IndexOf(failedMarker, StringComparison.Ordinal);
+            if (failedIndex >= 0)
+                throw new InvalidOperationException(
+                    "Installed Ribbon conversion reported a failed transaction: "
+                    + trace.Substring(failedIndex).Trim());
             if (trace.IndexOf(completionMarker, StringComparison.Ordinal) < 0)
                 continue;
             for (var settle = 0; settle < 50; settle++)
@@ -268,10 +284,22 @@ internal static partial class Program
                     remainingMathType.Length);
                 if (remainingMathType.Length == 0)
                     return peakAdditionalMathTypeProcesses;
+                var remainingControlledRpcHelpers = remainingMathType
+                    .Where(MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess)
+                    .ToArray();
+                if (remainingControlledRpcHelpers.Length > 1)
+                    throw new InvalidOperationException(
+                        "Installed OMML↔MathType conversion retained more than one controlled -mtrpc helper: "
+                        + string.Join(", ", remainingControlledRpcHelpers));
+                var remainingUnexpected = remainingMathType
+                    .Except(remainingControlledRpcHelpers)
+                    .ToArray();
+                if (remainingUnexpected.Length == 0)
+                    return peakAdditionalMathTypeProcesses;
                 if (!allowTransientMathTypeProcess)
                     throw new InvalidOperationException(
-                        "Installed OMML↔MathType conversion left MathType.exe running: "
-                        + string.Join(", ", remainingMathType));
+                        "Installed OMML↔MathType conversion left unexpected MathType.exe running: "
+                        + string.Join(", ", remainingUnexpected));
             }
             throw new InvalidOperationException(
                 "Installed Ribbon conversion completed but its transient MathType native-preview helper did not exit.");
@@ -2461,51 +2489,49 @@ internal static partial class Program
 
             if (numbered)
             {
-                AssertEqual(0, probe.Tables.Count,
-                    "Numbered MathType→OMML conversion created a legacy numbering table.");
+                AssertEqual(1, probe.Tables.Count,
+                    "Numbered MathType→OMML conversion did not create exactly one managed 1x3 numbering table.");
                 AssertEqual(0, probe.Shapes.Count,
                     "Numbered MathType→OMML conversion created a floating number Shape.");
+                AssertEqual(0, probe.Frames.Count,
+                    "Numbered MathType→OMML conversion left a hidden caption Frame outside the 1x3 host.");
                 var convertedFormulaId = preparedTargets[plan.Targets[0].Id]
                     .Session.FormulaId;
-                AssertOmmlTabNumberingHost(
+                AssertOmmlTableNumberLifecyclePhase(
+                    application,
                     probe,
                     convertedFormulaId,
-                    context: "numbered MathType→OMML native #SEQ paragraph",
-                    updateReference: true);
+                    "numbered MathType→OMML direct-SEQ 1x3 host");
 
-                var formulaParagraphIndex = -1;
-                for (var index = 1; index <= paragraphs.Count; index++)
-                {
-                    Release(formulaParagraph);
-                    formulaParagraph = paragraphs[index];
-                    Word.Range? candidateRange = null;
-                    try
-                    {
-                        candidateRange = formulaParagraph.Range;
-                        if (convertedRange.Start >= candidateRange.Start
-                            && convertedRange.End <= candidateRange.End)
-                        {
-                            formulaParagraphIndex = index;
-                            break;
-                        }
-                    }
-                    finally { Release(candidateRange); }
-                }
-                AssertTrue(formulaParagraphIndex > 1,
-                    "Converted numbered display OMML has no preceding body paragraph to validate.");
-                precedingParagraph = paragraphs[formulaParagraphIndex - 1];
+                numberedTable = probe.Tables[1];
+                numberedTableRange = numberedTable.Range.Duplicate;
+                Word.Range? precedingProbe = null;
+                Word.Paragraphs? precedingParagraphs = null;
                 Word.Range? precedingRange = null;
                 try
                 {
+                    var precedingStart = Math.Max(
+                        probe.Content.Start,
+                        numberedTableRange.Start - 1);
+                    precedingProbe = probe.Range(precedingStart, numberedTableRange.Start);
+                    precedingParagraphs = precedingProbe.Paragraphs;
+                    AssertTrue(precedingParagraphs.Count > 0,
+                        "Converted numbered display OMML has no preceding body paragraph to validate.");
+                    precedingParagraph = precedingParagraphs[1];
                     precedingRange = precedingParagraph.Range;
                     var precedingText = (precedingRange.Text ?? string.Empty)
                         .Trim('\r', '\a', '\v', '\f', '\t', ' ');
                     AssertEqual("VT-DISPLAY-BEFORE", precedingText,
-                        "Numbered MathType→OMML inserted a visible blank paragraph above the native #SEQ formula.");
+                        "Numbered MathType→OMML inserted a visible blank paragraph above the managed 1x3 formula.");
                     Console.WriteLine(
-                        $"[NUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; formula={convertedRange.Start}:{convertedRange.End}; preceding='{precedingText}'; tables={probe.Tables.Count}; shapes={probe.Shapes.Count}.");
+                        $"[NUMBERED MATHTYPE DISPLAY→OMML 1X3] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; formula={convertedRange.Start}:{convertedRange.End}; preceding='{precedingText}'; tables={probe.Tables.Count}; frames={probe.Frames.Count}; shapes={probe.Shapes.Count}.");
                 }
-                finally { Release(precedingRange); }
+                finally
+                {
+                    Release(precedingRange);
+                    Release(precedingParagraphs);
+                    Release(precedingProbe);
+                }
             }
             else
             {
@@ -2841,12 +2867,32 @@ internal static partial class Program
     private static void SelectDocumentEnd(Word.Document document)
     {
         Word.Range? range = null;
-        try
+        for (var attempt = 0; attempt < 60; attempt++)
         {
-            range = document.Range(document.Content.End - 1, document.Content.End - 1);
-            range.Select();
+            try
+            {
+                Release(range);
+                range = null;
+                var end = document.Content.End - 1;
+                range = document.Range(end, end);
+                range.Select();
+                Release(range);
+                return;
+            }
+            catch (System.Runtime.InteropServices.COMException error)
+                when (error.HResult == unchecked((int)0x80010001) && attempt < 59)
+            {
+                Release(range);
+                range = null;
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(150);
+            }
+            finally
+            {
+                if (attempt == 59)
+                    Release(range);
+            }
         }
-        finally { Release(range); }
     }
 
     private static void AppendAcceptanceText(Word.Document document, string text)
