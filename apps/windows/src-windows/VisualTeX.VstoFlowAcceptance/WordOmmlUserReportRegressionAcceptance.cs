@@ -1098,7 +1098,7 @@ internal static partial class Program
                 document);
             AssertEqual(formulaIds.Length, refreshed,
                 "Document-open OMML layout refresh did not process every managed formula.");
-            AssertManagedOmmlTableSeparatorsCompacted(
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
                 document,
                 formulaIds,
                 "existing visible separator repair");
@@ -1127,7 +1127,7 @@ internal static partial class Program
                 Visible: false,
                 OpenAndRepair: false);
             document.Activate();
-            AssertManagedOmmlTableSeparatorsCompacted(
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
                 document,
                 formulaIds,
                 "existing separator repair save/reopen");

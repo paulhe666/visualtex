@@ -1144,10 +1144,6 @@ internal static partial class Program
             {
                 RunWordOmmlTrueDisplayShapePrototypeAcceptance(artifactRoot);
             }
-            else if (string.Equals(mode, "word-omml-true-display-frame-prototype", StringComparison.OrdinalIgnoreCase))
-            {
-                RunWordOmmlTrueDisplayFramePrototypeAcceptance(artifactRoot);
-            }
             else if (string.Equals(mode, "word-visualtex-number-parenthesis", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordVisualTeXNumberParenthesisAcceptance(artifactRoot);
