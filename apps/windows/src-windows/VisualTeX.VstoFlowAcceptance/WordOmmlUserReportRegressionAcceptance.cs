@@ -1031,6 +1031,275 @@ internal static partial class Program
         }
     }
 
+    private static void RunWordOmmlExistingSeparatorRepairAcceptance(
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            document.Activate();
+            var service = new WordFormulaService(application);
+            for (var index = 0; index < 3; index++)
+            {
+                SelectDocumentEnd(document);
+                Word.Range? insertion = null;
+                try
+                {
+                    insertion = application.Selection.Range.Duplicate;
+                    service.InsertOmml(
+                        CreateNumberedOmmlTabSession(
+                            Guid.NewGuid().ToString("D"),
+                            document.FullName,
+                            insertion.Start,
+                            insertion.End,
+                            @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
+                            originalMetadata: null),
+                        QuadraticFormulaMathMl());
+                }
+                finally { Release(insertion); }
+            }
+
+            var formulaIds = WordOmmlFormulaStore.FormulaIds(document).ToArray();
+            AssertEqual(3, formulaIds.Length,
+                "Existing-separator repair fixture did not create three numbered OMML formulas.");
+            ExpandManagedOmmlTableSeparatorsForFixture(
+                document,
+                formulaIds,
+                "live expanded fixture");
+
+            var beforePath = Path.Combine(
+                artifactRoot,
+                "OMML-Visible-Table-Separators-Before-Repair.docx");
+            document.SaveAs2(
+                beforePath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                beforePath,
+                ConfirmConversions: false,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false,
+                OpenAndRepair: false);
+            document.Activate();
+            AssertManagedOmmlTableSeparatorsExpanded(
+                document,
+                formulaIds,
+                "expanded fixture save/reopen");
+
+            var refreshed = WordEquationNumbering.RefreshNumberedOmmlTabLayouts(
+                document);
+            AssertEqual(formulaIds.Length, refreshed,
+                "Document-open OMML layout refresh did not process every managed formula.");
+            AssertManagedOmmlTableSeparatorsCompacted(
+                document,
+                formulaIds,
+                "existing visible separator repair");
+            foreach (var formulaId in formulaIds)
+                AssertOmmlTableNumberLifecyclePhase(
+                    application,
+                    document,
+                    formulaId,
+                    "existing separator repair live");
+
+            var repairedPath = Path.Combine(
+                artifactRoot,
+                "OMML-Visible-Table-Separators-After-Repair.docx");
+            document.SaveAs2(
+                repairedPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                repairedPath,
+                ConfirmConversions: false,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false,
+                OpenAndRepair: false);
+            document.Activate();
+            AssertManagedOmmlTableSeparatorsCompacted(
+                document,
+                formulaIds,
+                "existing separator repair save/reopen");
+            foreach (var formulaId in formulaIds)
+                AssertOmmlTableNumberLifecyclePhase(
+                    application,
+                    document,
+                    formulaId,
+                    "existing separator repair save/reopen");
+            Console.WriteLine(
+                "Existing visible OMML separator repair passed: three 10.5pt/12pt body paragraphs matching the user document were compacted to sterile 1pt fixed-line table separators by the real document-open refresh path and remained compact after save/reopen.");
+        }
+        finally
+        {
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); }
+                catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void ExpandManagedOmmlTableSeparatorsForFixture(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds,
+        string stage)
+    {
+        var tables = new List<(int Start, int End)>();
+        foreach (var formulaId in formulaIds)
+        {
+            Word.Table? table = null;
+            Word.Range? range = null;
+            try
+            {
+                table = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        formulaId)
+                    ?? throw new InvalidDataException(
+                        $"{stage}: formula {formulaId} lost its numbered table.");
+                range = table.Range.Duplicate;
+                tables.Add((range.Start, range.End));
+            }
+            finally
+            {
+                Release(range);
+                Release(table);
+            }
+        }
+
+        var ordered = tables.OrderBy(item => item.Start).ToArray();
+        for (var index = 1; index < ordered.Length; index++)
+        {
+            Word.Range? separator = null;
+            Word.Font? font = null;
+            Word.ParagraphFormat? format = null;
+            try
+            {
+                separator = document.Range(
+                    ordered[index - 1].End,
+                    ordered[index].Start);
+                AssertEqual("\r", separator.Text,
+                    $"{stage}: table pair {index}/{index + 1} has an unexpected separator topology.");
+                object normalStyle = Word.WdBuiltinStyle.wdStyleNormal;
+                separator.set_Style(ref normalStyle);
+                font = separator.Font;
+                try { font.Reset(); } catch { }
+                font.Size = 10.5f;
+                font.Hidden = 0;
+                font.Position = 0;
+                format = separator.ParagraphFormat;
+                try { format.Reset(); } catch { }
+                format.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceSingle;
+                format.LineSpacing = 12f;
+                format.SpaceBefore = 0f;
+                format.SpaceAfter = 0f;
+            }
+            finally
+            {
+                Release(format);
+                Release(font);
+                Release(separator);
+            }
+        }
+        AssertManagedOmmlTableSeparatorsExpanded(document, formulaIds, stage);
+    }
+
+    private static void AssertManagedOmmlTableSeparatorsExpanded(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds,
+        string stage)
+    {
+        var tables = new List<(int Start, int End)>();
+        foreach (var formulaId in formulaIds)
+        {
+            Word.Table? table = null;
+            Word.Range? range = null;
+            try
+            {
+                table = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        formulaId)
+                    ?? throw new InvalidDataException(
+                        $"{stage}: formula {formulaId} lost its numbered table.");
+                range = table.Range.Duplicate;
+                tables.Add((range.Start, range.End));
+            }
+            finally
+            {
+                Release(range);
+                Release(table);
+            }
+        }
+        var ordered = tables.OrderBy(item => item.Start).ToArray();
+        for (var index = 1; index < ordered.Length; index++)
+        {
+            Word.Range? separator = null;
+            Word.Font? font = null;
+            Word.ParagraphFormat? format = null;
+            Word.Tables? nestedTables = null;
+            Word.OMaths? maths = null;
+            Word.Fields? fields = null;
+            Word.Bookmarks? bookmarks = null;
+            Word.InlineShapes? shapes = null;
+            Word.Frames? frames = null;
+            try
+            {
+                separator = document.Range(
+                    ordered[index - 1].End,
+                    ordered[index].Start);
+                AssertEqual("\r", separator.Text,
+                    $"{stage}: table pair {index}/{index + 1} does not have one body separator.");
+                nestedTables = separator.Tables;
+                maths = separator.OMaths;
+                fields = separator.Fields;
+                bookmarks = separator.Bookmarks;
+                shapes = separator.InlineShapes;
+                frames = separator.Frames;
+                AssertTrue(nestedTables.Count == 0
+                           && maths.Count == 0
+                           && fields.Count == 0
+                           && bookmarks.Count == 0
+                           && shapes.Count == 0
+                           && frames.Count == 0,
+                    $"{stage}: expanded separator owns unexpected managed content.");
+                font = separator.Font;
+                format = separator.ParagraphFormat;
+                AssertTrue(font.Size >= 9f,
+                    $"{stage}: separator was not expanded to the user-reported visible size; font={font.Size:0.###}pt.");
+                AssertTrue(format.LineSpacing >= 10f,
+                    $"{stage}: separator was not expanded to the user-reported visible height; line={format.LineSpacing:0.###}pt.");
+                Console.WriteLine(
+                    $"[VISIBLE 1X3 SEPARATOR FIXTURE] stage={stage} pair={index}/{index + 1} range={separator.Start}:{separator.End} font={font.Size:0.###}pt line={format.LineSpacing:0.###}pt.");
+            }
+            finally
+            {
+                Release(frames);
+                Release(shapes);
+                Release(bookmarks);
+                Release(fields);
+                Release(maths);
+                Release(nestedTables);
+                Release(format);
+                Release(font);
+                Release(separator);
+            }
+        }
+    }
+
     private static void RunWordOmmlDeferredFinalizationCostAcceptance(string artifactRoot)
     {
         AssertTrue(!AttachActiveWord,
