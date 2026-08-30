@@ -7,6 +7,7 @@ namespace VisualTeX.WordVsto;
 internal static partial class WordEquationNumbering
 {
     private const float NativeOmmlTableSideWidthPoints = 60f;
+    private const float NativeOmmlTableHeightSafetyPoints = 0.9f;
 
     private static bool ConfigureNumberedNativeOmmlDisplay(
         Document document,
@@ -22,7 +23,6 @@ internal static partial class WordEquationNumbering
         bool deferFieldUpdate = false,
         bool deferExternalShapeCreation = false)
     {
-        _ = formulaHeightPoints;
         _ = reuseExistingScaffold;
         _ = deferFieldUpdate;
         _ = deferExternalShapeCreation;
@@ -77,6 +77,19 @@ internal static partial class WordEquationNumbering
             DeleteBookmarkOnly(document, NativeCaptionBookmarkName(formulaId));
             DeleteBookmarkOnly(document, NativeNumberBookmarkName(formulaId));
 
+            float? nativeDisplayHeightPoints = null;
+            var activeRangeAlreadyInTable = false;
+            try
+            {
+                activeRangeAlreadyInTable = (bool)activeRange.get_Information(
+                    WdInformation.wdWithInTable);
+            }
+            catch { }
+            if (!activeRangeAlreadyInTable)
+                nativeDisplayHeightPoints = TryMeasureNativeDisplayHeightPoints(
+                    document,
+                    activeRange);
+
             table = EnsureNativeOmmlNumberTableHost(
                 document,
                 activeRange,
@@ -85,7 +98,33 @@ internal static partial class WordEquationNumbering
             Release(activeRange);
             activeRange = refreshedTableFormula;
             EnsureNumberedOmmlIsDisplay(activeRange);
-            ConfigureNativeOmmlNumberTableGeometry(document, table, activeRange);
+            var needsHeightRepair = NeedsNativeOmmlTableHeightRepair(table);
+            if (!nativeDisplayHeightPoints.HasValue
+                && needsHeightRepair)
+            {
+                // Upgrade only legacy Auto-height 1x3 hosts. New hosts persist an
+                // AtLeast row height, so ordinary F9/open/layout refreshes never
+                // reopen a scratch document or pay this compatibility cost.
+                try
+                {
+                    nativeDisplayHeightPoints =
+                        WordOmmlConverter.MeasurePreparedDisplayHeightPoints(
+                            document.Application,
+                            document,
+                            activeRange.WordOpenXML ?? string.Empty,
+                            document.OMathFontName);
+                }
+                catch { }
+            }
+            var minimumDisplayHeightPoints = nativeDisplayHeightPoints
+                ?? (!activeRangeAlreadyInTable || needsHeightRepair
+                    ? formulaHeightPoints
+                    : (float?)null);
+            ConfigureNativeOmmlNumberTableGeometry(
+                document,
+                table,
+                activeRange,
+                minimumDisplayHeightPoints);
             traceStage("native-1x3-table");
 
             var numberPlan = ResolveDirectTableNumberPlan(
@@ -1196,10 +1235,127 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    private static float? TryMeasureNativeDisplayHeightPoints(
+        Document document,
+        Range formulaRange)
+    {
+        Window? window = null;
+        Microsoft.Office.Interop.Word.View? view = null;
+        Zoom? zoom = null;
+        try
+        {
+            window = document.ActiveWindow;
+            object scrollStart = true;
+            try { window.ScrollIntoView(formulaRange, ref scrollStart); } catch { }
+            try { document.Repaginate(); } catch { }
+            window.GetPoint(
+                out _,
+                out _,
+                out _,
+                out var heightPixels,
+                formulaRange);
+            view = window.View;
+            zoom = view.Zoom;
+            var zoomPercentage = zoom.Percentage;
+            var dpi = 96u;
+            try
+            {
+                var detected = GetDpiForWindow(new IntPtr(window.Hwnd));
+                if (detected > 0) dpi = detected;
+            }
+            catch (EntryPointNotFoundException) { }
+            if (heightPixels <= 0 || zoomPercentage <= 0 || dpi == 0)
+                return null;
+            var heightPoints = heightPixels
+                * 72f
+                * 100f
+                / dpi
+                / zoomPercentage;
+            return heightPoints > 0f
+                && !float.IsNaN(heightPoints)
+                && !float.IsInfinity(heightPoints)
+                    ? heightPoints
+                    : null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(zoom);
+            Release(view);
+            Release(window);
+        }
+    }
+
+    private static bool NeedsNativeOmmlTableHeightRepair(Table table)
+    {
+        Rows? rows = null;
+        Row? row = null;
+        try
+        {
+            rows = table.Rows;
+            if (rows.Count != 1) return false;
+            row = rows[1];
+            return row.HeightRule == WdRowHeightRule.wdRowHeightAuto
+                || row.Height <= 0f
+                || row.Height >= 1000000f;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(row);
+            Release(rows);
+        }
+    }
+
+    internal static void ApplyNativeOmmlTableMinimumDisplayHeight(
+        Table table,
+        float minimumDisplayHeightPoints)
+    {
+        Rows? rows = null;
+        try
+        {
+            rows = table.Rows;
+            ApplyNativeOmmlTableMinimumDisplayHeight(
+                rows,
+                minimumDisplayHeightPoints);
+        }
+        finally { Release(rows); }
+    }
+
+    private static void ApplyNativeOmmlTableMinimumDisplayHeight(
+        Rows rows,
+        float? minimumDisplayHeightPoints)
+    {
+        if (!minimumDisplayHeightPoints.HasValue
+            || float.IsNaN(minimumDisplayHeightPoints.Value)
+            || float.IsInfinity(minimumDisplayHeightPoints.Value)
+            || minimumDisplayHeightPoints.Value <= 0f)
+            return;
+        Row? row = null;
+        try
+        {
+            if (rows.Count != 1) return;
+            row = rows[1];
+            row.HeightRule = WdRowHeightRule.wdRowHeightAtLeast;
+            row.Height = Math.Max(
+                1f,
+                minimumDisplayHeightPoints.Value
+                + NativeOmmlTableHeightSafetyPoints);
+        }
+        finally { Release(row); }
+    }
+
     private static void ConfigureNativeOmmlNumberTableGeometry(
         Document document,
         Table table,
-        Range formulaRange)
+        Range formulaRange,
+        float? minimumDisplayHeightPoints = null)
     {
         Sections? sections = null;
         Section? section = null;
@@ -1251,6 +1407,9 @@ internal static partial class WordEquationNumbering
             try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch { }
             try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch { }
             try { rows.AllowBreakAcrossPages = 0; } catch { }
+            ApplyNativeOmmlTableMinimumDisplayHeight(
+                rows,
+                minimumDisplayHeightPoints);
 
             columns = table.Columns;
             if (columns.Count != 3 || rows.Count != 1)

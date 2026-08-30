@@ -1381,6 +1381,7 @@ internal sealed partial class WordFormulaService
         InlineShape? shape = null;
         Bookmark? bookmark = null;
         Range? equationRange = null;
+        Table? numberedHeightTable = null;
         UndoRecord? undoRecord = null;
         try
         {
@@ -1416,6 +1417,25 @@ internal sealed partial class WordFormulaService
                     // fraction, radical, matrix and large-operator display geometry
                     // from this one semantic run size.
                     ApplyOmmlTypography(equationRange, target, metadata);
+                    var measuredDisplayHeight =
+                        WordOmmlConverter.MeasurePreparedDisplayHeightPoints(
+                            _application,
+                            document,
+                            equationRange.WordOpenXML ?? string.Empty,
+                            document.OMathFontName);
+                    if (measuredDisplayHeight.HasValue)
+                    {
+                        numberedHeightTable =
+                            WordEquationNumbering.FindNumberedEquationTable(
+                                document,
+                                metadata.FormulaId);
+                        if (numberedHeightTable is not null)
+                            WordEquationNumbering.ApplyNativeOmmlTableMinimumDisplayHeight(
+                                numberedHeightTable,
+                                measuredDisplayHeight.Value);
+                        Release(numberedHeightTable);
+                        numberedHeightTable = null;
+                    }
                     TryReconcileOmml(document, bookmark, equationRange, metadata);
 
                     Release(equationRange);
@@ -1514,6 +1534,7 @@ internal sealed partial class WordFormulaService
         {
             EndUndoRecord(undoRecord);
             Release(undoRecord);
+            Release(numberedHeightTable);
             Release(equationRange);
             Release(bookmark);
             Release(shape);
@@ -5038,6 +5059,21 @@ internal sealed partial class WordFormulaService
             }
             format = paragraphRange.ParagraphFormat;
             format.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+            // A numbered 1x3 formula can be adjacent to VisualTeX's mandatory
+            // compact table separator (1pt exact line spacing). When the table is
+            // removed during OMML→LaTeX conversion Word may reuse that paragraph's
+            // pPr for the newly inserted visible source text. Font normalization
+            // alone is not enough: 10.5pt LaTeX rendered inside a 1pt exact line
+            // box is visibly crushed. Repair only this unmistakable compact-tail
+            // signature; preserve ordinary/custom user line spacing otherwise.
+            if (format.LineSpacingRule == WdLineSpacing.wdLineSpaceExactly
+                && format.LineSpacing <= 2.01f)
+            {
+                format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                format.SpaceBefore = 0f;
+                format.SpaceAfter = 0f;
+                try { format.DisableLineHeightGrid = -1; } catch { }
+            }
             tabStops = format.TabStops;
             tabStops.ClearAll();
         }
@@ -5057,6 +5093,9 @@ internal sealed partial class WordFormulaService
         FormulaMetadata metadata)
     {
         Microsoft.Office.Interop.Word.Font? font = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        ParagraphFormat? paragraphFormat = null;
         try
         {
             font = range.Font;
@@ -5066,8 +5105,33 @@ internal sealed partial class WordFormulaService
             font.Subscript = 0;
             var size = FormulaFontSize.ResolveSemanticFontSize(metadata);
             if (size > 0) font.Size = (float)size;
+
+            // Also protect unnumbered/cross-format LaTeX restores that happen to
+            // land in a compact VisualTeX structural paragraph. Only the 1-2pt
+            // exact-spacing sentinel is normalized, so intentional user paragraph
+            // formatting remains untouched.
+            paragraphs = range.Paragraphs;
+            if (paragraphs.Count == 1)
+            {
+                paragraph = paragraphs[1];
+                paragraphFormat = paragraph.Range.ParagraphFormat;
+                if (paragraphFormat.LineSpacingRule == WdLineSpacing.wdLineSpaceExactly
+                    && paragraphFormat.LineSpacing <= 2.01f)
+                {
+                    paragraphFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                    paragraphFormat.SpaceBefore = 0f;
+                    paragraphFormat.SpaceAfter = 0f;
+                    try { paragraphFormat.DisableLineHeightGrid = -1; } catch { }
+                }
+            }
         }
-        finally { Release(font); }
+        finally
+        {
+            Release(paragraphFormat);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(font);
+        }
     }
 
     private static void ReleaseFormulaToLatexTargets(
@@ -9783,6 +9847,7 @@ internal sealed partial class WordFormulaService
         var replaceHealthyStandaloneDisplayAtomically = false;
         var replaceHealthyHashSequenceAtomically = false;
         string? preparedDirectTableOmml = null;
+        float? preparedDirectTableDisplayHeightPoints = null;
         string? preparedStandaloneDisplayOmml = null;
         string? preparedHashSequenceOmml = null;
         var operationSucceeded = false;
@@ -9952,6 +10017,12 @@ internal sealed partial class WordFormulaService
                     sourceFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
                         semanticOmml);
                     preparedDirectTableOmml = semanticOmml;
+                    preparedDirectTableDisplayHeightPoints =
+                        WordOmmlConverter.MeasurePreparedDisplayHeightPoints(
+                            _application,
+                            document,
+                            semanticOmml,
+                            document.OMathFontName);
                     if (oldBookmark is not null)
                     {
                         oldBookmark.Delete();
@@ -10152,6 +10223,15 @@ internal sealed partial class WordFormulaService
                 ref performanceCheckpoint);
             ValidateInsertedOmml(equationRange);
             ApplyOmmlTypography(equationRange, session.FontSizePt, metadata);
+            if (replaceHealthyDirectTableAtomically
+                && session.Numbered
+                && numberedTable is not null
+                && preparedDirectTableDisplayHeightPoints.HasValue)
+            {
+                WordEquationNumbering.ApplyNativeOmmlTableMinimumDisplayHeight(
+                    numberedTable,
+                    preparedDirectTableDisplayHeightPoints.Value);
+            }
             metadata.NativeOmmlFingerprint = sourceFingerprint;
             TraceAcceptancePerformance(
                 "ReplaceOmml",

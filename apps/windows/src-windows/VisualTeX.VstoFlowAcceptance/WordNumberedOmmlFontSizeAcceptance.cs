@@ -15,6 +15,8 @@ internal static partial class Program
         Word.Document? document = null;
         Word.Bookmark? bookmark = null;
         Word.Range? equationRange = null;
+        float? twelvePointRowHeight = null;
+        float? sixteenPointRowHeight = null;
         try
         {
             application = CreateWordApplication(visible: false);
@@ -97,7 +99,18 @@ internal static partial class Program
                     $"Numbered OMML {target:0.##} pt geometry is empty.");
                 AssertNear(target, metric.FontSizePt, 0.35f,
                     $"Numbered OMML native display runs did not retain {target:0.##} pt.");
+                var rowHeight = ReadNumberedOmmlMinimumRowHeight(
+                    equationRange,
+                    $"numbered OMML {target:0.##} pt row");
+                if (Math.Abs(target - 12f) < 0.01f)
+                    twelvePointRowHeight = rowHeight;
+                else if (Math.Abs(target - 16f) < 0.01f)
+                    sixteenPointRowHeight = rowHeight;
             }
+            AssertTrue(twelvePointRowHeight.HasValue && sixteenPointRowHeight.HasValue,
+                "The numbered OMML font-size acceptance did not capture both row heights.");
+            AssertTrue(sixteenPointRowHeight.Value > twelvePointRowHeight.Value + 1f,
+                $"Increasing numbered OMML from 12 to 16 pt did not grow the clipping-safe row: {twelvePointRowHeight:0.##} -> {sixteenPointRowHeight:0.##} pt.");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -130,6 +143,16 @@ internal static partial class Program
                 "numbered OMML 16 pt reopened body");
             AssertNear(16f, reopenedMetric.FontSizePt, 0.35f,
                 "Save/reopen changed the final native display run size.");
+            var reopenedRowHeight = ReadNumberedOmmlMinimumRowHeight(
+                equationRange,
+                "numbered OMML 16 pt reopened row");
+            AssertNear(
+                sixteenPointRowHeight ?? reopenedRowHeight,
+                reopenedRowHeight,
+                0.1f,
+                "Save/reopen changed the clipping-safe numbered OMML row height.");
+            Console.WriteLine(
+                $"  numbered OMML dynamic row heights: 12pt={twelvePointRowHeight:0.##}pt, 16pt={sixteenPointRowHeight:0.##}pt, reopened={reopenedRowHeight:0.##}pt.");
 
             Console.WriteLine(
                 "Word numbered OMML font-size acceptance passed: 14→12→16 pt retained genuine center-cell wdOMathDisplay/m:oMathPara geometry while the ordinary right-cell number kept paragraph-inherited Word typography, with external REF numbering and the minimal 1x3 host stable through save/reopen.");
@@ -146,6 +169,39 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static float ReadNumberedOmmlMinimumRowHeight(
+        Word.Range equationRange,
+        string context)
+    {
+        Word.Tables? tables = null;
+        Word.Table? table = null;
+        Word.Rows? rows = null;
+        Word.Row? row = null;
+        try
+        {
+            tables = equationRange.Tables;
+            AssertEqual(1, tables.Count, context + ": formula is not in exactly one table.");
+            table = tables[1];
+            rows = table.Rows;
+            AssertEqual(1, rows.Count, context + ": numbered OMML table is not one row.");
+            row = rows[1];
+            AssertEqual(
+                Word.WdRowHeightRule.wdRowHeightAtLeast,
+                row.HeightRule,
+                context + ": clipping-safe row is not persisted as AtLeast.");
+            AssertTrue(row.Height > 0f && row.Height < 1000f,
+                context + $": invalid minimum row height {row.Height:0.###}pt.");
+            return row.Height;
+        }
+        finally
+        {
+            Release(row);
+            Release(rows);
+            Release(table);
+            Release(tables);
         }
     }
 }

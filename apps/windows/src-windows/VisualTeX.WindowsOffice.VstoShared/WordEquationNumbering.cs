@@ -10355,7 +10355,9 @@ internal static partial class WordEquationNumbering
 
         var targetBookmarkName = NativeNumberBookmarkName(formulaId);
         Fields? fields = null;
-        var frozen = 0;
+        var frozen = WordEquationReferenceFields.FreezeNavigableReferences(
+            document,
+            targetBookmarkName);
         try
         {
             fields = document.Fields;

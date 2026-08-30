@@ -174,6 +174,79 @@ internal static class WordEquationReferenceFields
         }
     }
 
+    internal static int FreezeNavigableReferences(
+        Document document,
+        string targetBookmarkName)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (string.IsNullOrWhiteSpace(targetBookmarkName)) return 0;
+
+        Fields? outerFields = null;
+        var frozen = 0;
+        try
+        {
+            outerFields = document.Fields;
+            for (var outerIndex = outerFields.Count; outerIndex >= 1; outerIndex--)
+            {
+                Field? outerField = null;
+                Range? outerCode = null;
+                Fields? nestedFields = null;
+                Field? nestedField = null;
+                Range? nestedCode = null;
+                try
+                {
+                    outerField = outerFields[outerIndex];
+                    if (outerField.Type != WdFieldType.wdFieldGoToButton)
+                        continue;
+                    outerCode = outerField.Code;
+                    nestedFields = outerCode.Fields;
+                    var matches = false;
+                    for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                    {
+                        Release(nestedCode);
+                        nestedCode = null;
+                        Release(nestedField);
+                        nestedField = nestedFields[nestedIndex];
+                        if (nestedField.Type != WdFieldType.wdFieldRef)
+                            continue;
+                        nestedCode = nestedField.Code;
+                        if (!TryReadVisualTeXNumberBookmark(
+                                nestedCode.Text,
+                                out var bookmarkName)
+                            || !string.Equals(
+                                bookmarkName,
+                                targetBookmarkName,
+                                StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        try { nestedField.Update(); } catch { }
+                        matches = true;
+                        break;
+                    }
+                    if (!matches) continue;
+
+                    // The nested REF lives in GOTOBUTTON.Code, so document.Fields
+                    // never enumerates it as an ordinary top-level REF. Unlinking
+                    // only after the nested result is current lets Word replace the
+                    // complete navigable field tree with exactly the visible number.
+                    // This is the required semantic when the target equation itself
+                    // is restored to plain LaTeX and its bookmark is about to vanish.
+                    outerField.Unlink();
+                    frozen++;
+                }
+                finally
+                {
+                    Release(nestedCode);
+                    Release(nestedField);
+                    Release(nestedFields);
+                    Release(outerCode);
+                    Release(outerField);
+                }
+            }
+        }
+        finally { Release(outerFields); }
+        return frozen;
+    }
+
     internal static int UpdateNavigableReferences(
         Document document,
         ISet<string>? targetBookmarkNames = null)

@@ -42,6 +42,9 @@ internal static partial class Program
             RunMixedOmmlThenOleToLatexAcceptance(client);
             using (var host = new WordPerformanceHost(documentPath: null))
             {
+                WordEquationNumbering.SetEquationNumberFormatPreference(
+                    host.Document,
+                    EquationNumberFormat.ContinuousId);
                 var formulas = PopulateFormulaToLatexDocument(client, host);
                 var oleInline = formulas.Single(item =>
                     item.ObjectMode == FormulaOleContract.NativeOleMode
@@ -232,6 +235,9 @@ internal static partial class Program
                 "The mixed-order fixture did not convert both OMML formulas first.");
             AssertFormulaObjectCounts(host.Document, expectedOle: 1, expectedOmml: 0);
             AssertDocumentContains(host.Document, "$$p=2$$");
+            AssertLatexParagraphEscapedCompactStructuralSpacing(
+                host.Document,
+                "$$p=2$$");
             AssertDocumentContains(host.Document, "$q=3$");
             AssertDocumentDoesNotContain(host.Document, "$$u=v$$");
 
@@ -834,6 +840,50 @@ internal static partial class Program
         }
         throw new TimeoutException(
             $"Word formula-to-LaTeX command did not complete. Expected {expectedCompletions} completion records. Last log:\n{last}");
+    }
+
+    private static void AssertLatexParagraphEscapedCompactStructuralSpacing(
+        Word.Document document,
+        string latexSource)
+    {
+        Word.Range? search = null;
+        Word.Find? find = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.ParagraphFormat? format = null;
+        try
+        {
+            search = document.Content.Duplicate;
+            find = search.Find;
+            find.ClearFormatting();
+            find.Text = latexSource;
+            find.Forward = true;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            AssertTrue(find.Execute(),
+                $"Formula-to-LaTeX paragraph '{latexSource}' was not found.");
+            paragraphs = search.Paragraphs;
+            AssertEqual(1, paragraphs.Count,
+                $"Formula-to-LaTeX source '{latexSource}' spans multiple paragraphs.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            format = paragraphRange.ParagraphFormat;
+            AssertTrue(
+                format.LineSpacingRule != Word.WdLineSpacing.wdLineSpaceExactly
+                || format.LineSpacing > 2.01f,
+                $"Visible LaTeX source '{latexSource}' inherited VisualTeX's compact 1pt structural line box.");
+            Console.WriteLine(
+                $"  formula-to-LaTeX line-height '{latexSource}': rule={format.LineSpacingRule} line={format.LineSpacing:0.###}pt font={paragraphRange.Font.Size:0.###}pt.");
+        }
+        finally
+        {
+            Release(format);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(find);
+            Release(search);
+        }
     }
 
     private static void AssertFormulaObjectCounts(

@@ -17,6 +17,9 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordOmmlConverter
 {
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr windowHandle);
+
     private const int MaximumFormulaXmlCharacters = 16 * 1024 * 1024;
     private const int MaximumFormulaXmlDepth = 256;
     private const int MaximumFormulaXmlElements = 250_000;
@@ -740,6 +743,172 @@ internal static class WordOmmlConverter
             }
             Release(sourceDocument);
             try { File.Delete(tempPath); } catch { }
+        }
+    }
+
+    internal static float? MeasurePreparedDisplayHeightPoints(
+        Application application,
+        Document targetDocument,
+        string omml,
+        string? mathFontName = null)
+    {
+        if (application is null) throw new ArgumentNullException(nameof(application));
+        if (targetDocument is null) throw new ArgumentNullException(nameof(targetDocument));
+        if (string.IsNullOrWhiteSpace(omml)) return null;
+
+        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
+        string semanticOmml;
+        try
+        {
+            semanticOmml = ApplyExplicitTransferMathFont(
+                ExtractSingleOMath(omml),
+                normalizedMathFontName);
+        }
+        catch
+        {
+            return null;
+        }
+        Range? content = null;
+        Range? separatorInsertion = null;
+        Range? formulaInsertion = null;
+        Range? measuredRange = null;
+        Range? cleanupRange = null;
+        Window? window = null;
+        Microsoft.Office.Interop.Word.View? view = null;
+        Zoom? zoom = null;
+        var scratchBoundary = -1;
+        var measurementStage = "prepare-target-scratch";
+        var previousScreenUpdating = true;
+        var screenUpdatingSuspended = false;
+        int? previousVerticalScroll = null;
+        int? previousHorizontalScroll = null;
+        try
+        {
+            targetDocument.Activate();
+            try
+            {
+                previousScreenUpdating = application.ScreenUpdating;
+                application.ScreenUpdating = false;
+                screenUpdatingSuspended = true;
+            }
+            catch { }
+            content = targetDocument.Content;
+            scratchBoundary = Math.Max(content.Start, content.End - 1);
+            Release(content);
+            content = null;
+
+            // Create one ordinary terminal paragraph without touching the current
+            // selection. The caller runs this inside its existing Word undo record
+            // with ScreenUpdating disabled. Everything from scratchBoundary to the
+            // final document mark is removed in finally, so no temporary source,
+            // bookmark or paragraph survives the measurement.
+            separatorInsertion = targetDocument.Range(
+                scratchBoundary,
+                scratchBoundary);
+            separatorInsertion.InsertBefore("\r");
+            formulaInsertion = targetDocument.Range(
+                scratchBoundary + 1,
+                scratchBoundary + 1);
+            measurementStage = "insert-target-scratch";
+            measuredRange = ReplaceWithPreparedOmml(
+                application,
+                targetDocument,
+                formulaInsertion,
+                semanticOmml,
+                display: true,
+                mathFontName: normalizedMathFontName);
+            measurementStage = "repaginate-target-scratch";
+            try { targetDocument.Repaginate(); } catch { }
+            window = targetDocument.ActiveWindow;
+            try { previousVerticalScroll = window.VerticalPercentScrolled; } catch { }
+            try { previousHorizontalScroll = window.HorizontalPercentScrolled; } catch { }
+            object scrollStart = true;
+            try { window.ScrollIntoView(measuredRange, ref scrollStart); } catch { }
+            measurementStage = "get-point-target-scratch";
+            window.GetPoint(
+                out _,
+                out _,
+                out _,
+                out var heightPixels,
+                measuredRange);
+            view = window.View;
+            zoom = view.Zoom;
+            var zoomPercentage = zoom.Percentage;
+            var dpi = 96u;
+            try
+            {
+                var detected = GetDpiForWindow(new IntPtr(window.Hwnd));
+                if (detected > 0) dpi = detected;
+            }
+            catch (EntryPointNotFoundException) { }
+            if (heightPixels <= 0 || zoomPercentage <= 0 || dpi == 0)
+                return null;
+            var heightPoints = heightPixels
+                * 72f
+                * 100f
+                / dpi
+                / zoomPercentage;
+            return heightPoints > 0f
+                && !float.IsNaN(heightPoints)
+                && !float.IsInfinity(heightPoints)
+                    ? heightPoints
+                    : null;
+        }
+        catch (Exception error)
+        {
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal))
+                Console.WriteLine(
+                    $"[PREPARED OMML HEIGHT FAILED] stage={measurementStage} type={error.GetType().Name} hresult=0x{error.HResult:X8} message={error.Message}");
+            return null;
+        }
+        finally
+        {
+            Release(zoom);
+            Release(view);
+            Release(measuredRange);
+            Release(formulaInsertion);
+            Release(separatorInsertion);
+            if (scratchBoundary >= 0)
+            {
+                try
+                {
+                    content = targetDocument.Content;
+                    var cleanupEnd = Math.Max(
+                        scratchBoundary,
+                        content.End - 1);
+                    cleanupRange = targetDocument.Range(
+                        scratchBoundary,
+                        cleanupEnd);
+                    cleanupRange.Delete();
+                }
+                catch { }
+            }
+            Release(cleanupRange);
+            Release(content);
+            try { targetDocument.Activate(); } catch { }
+            if (window is not null)
+            {
+                try
+                {
+                    if (previousHorizontalScroll.HasValue)
+                        window.HorizontalPercentScrolled = previousHorizontalScroll.Value;
+                }
+                catch { }
+                try
+                {
+                    if (previousVerticalScroll.HasValue)
+                        window.VerticalPercentScrolled = previousVerticalScroll.Value;
+                }
+                catch { }
+            }
+            Release(window);
+            if (screenUpdatingSuspended)
+            {
+                try { application.ScreenUpdating = previousScreenUpdating; } catch { }
+            }
         }
     }
 
