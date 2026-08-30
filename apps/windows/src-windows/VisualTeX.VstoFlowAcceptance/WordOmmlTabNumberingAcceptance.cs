@@ -50,6 +50,10 @@ internal static partial class Program
                 formulaId,
                 context: "fresh numbered OMML insertion",
                 updateReference: true);
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
+                document,
+                new[] { formulaId },
+                "fresh numbered OMML insertion");
 
             // Mirror the production DocumentBeforeSave compatibility finalizer
             // before any edit. For native #(SEQ), this only refreshes the unchanged
@@ -104,6 +108,10 @@ internal static partial class Program
                 formulaId,
                 context: "numbered OMML edit/reconcile",
                 updateReference: true);
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
+                document,
+                new[] { formulaId },
+                "numbered OMML edit/reconcile");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -120,6 +128,10 @@ internal static partial class Program
                 formulaId,
                 context: "numbered OMML save/reopen",
                 updateReference: true);
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
+                document,
+                new[] { formulaId },
+                "numbered OMML save/reopen");
 
             document.Save();
             Console.WriteLine(

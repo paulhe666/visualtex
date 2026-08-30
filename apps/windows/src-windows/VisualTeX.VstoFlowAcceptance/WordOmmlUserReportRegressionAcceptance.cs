@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Xml.Linq;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
@@ -304,6 +305,10 @@ internal static partial class Program
                 document,
                 formulaIds,
                 "MathType→OMML after conversion");
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
+                document,
+                formulaIds,
+                "MathType→OMML after conversion");
             if (!deferLiveGeometryAssertions)
             {
                 foreach (var formulaId in formulaIds)
@@ -437,6 +442,12 @@ internal static partial class Program
                 expectInjectedRollback
                     ? "MathType→OMML after rollback"
                     : "MathType→OMML after re-edit");
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
+                document,
+                formulaIds,
+                expectInjectedRollback
+                    ? "MathType→OMML after rollback"
+                    : "MathType→OMML after re-edit");
             if (!deferLiveGeometryAssertions)
             {
                 foreach (var formulaId in formulaIds)
@@ -474,6 +485,12 @@ internal static partial class Program
             AssertEqual(formulas.Length, document.Tables.Count,
                 "Save/reopen after converted OMML re-edit changed the 1x3 table count.");
             AssertManagedNativeOmmlInterTableSeparatorsCompact(
+                document,
+                formulaIds,
+                expectInjectedRollback
+                    ? "MathType→OMML rollback save/reopen"
+                    : "MathType→OMML re-edit save/reopen");
+            AssertManagedOmmlMathRunsUseDocumentMathFont(
                 document,
                 formulaIds,
                 expectInjectedRollback
@@ -1487,6 +1504,76 @@ internal static partial class Program
                 @"\int_{-\infty}^{\infty}e^{-x^2}\,dx=\sqrt{\pi}",
                 "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msubsup><mo>∫</mo><mrow><mo>−</mo><mi>∞</mi></mrow><mi>∞</mi></msubsup><msup><mi>e</mi><mrow><mo>−</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></msup><mi>d</mi><mi>x</mi><mo>=</mo><msqrt><mi>π</mi></msqrt></math>"),
         };
+
+    private static void AssertManagedOmmlMathRunsUseDocumentMathFont(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds,
+        string stage)
+    {
+        const string MathNamespace =
+            "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        const string WordNamespace =
+            "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var expected = (document.OMathFontName ?? string.Empty).Trim();
+        AssertTrue(!string.IsNullOrWhiteSpace(expected),
+            stage + ": document OMathFontName is empty.");
+        var explicitMathRunFonts = 0;
+        var explicitControlFonts = 0;
+        foreach (var formulaId in formulaIds)
+        {
+            var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
+                ?? throw new InvalidDataException(
+                    $"{stage}: formula {formulaId} lost metadata before font verification.");
+            Word.Range? range = null;
+            try
+            {
+                range = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                    document,
+                    formulaId,
+                    metadata);
+                var xml = range.WordOpenXML ?? string.Empty;
+                var package = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+                XNamespace math = MathNamespace;
+                XNamespace word = WordNamespace;
+
+                foreach (var run in package.Descendants(math + "r"))
+                {
+                    if (run.Element(math + "rPr")?.Element(math + "nor") is not null)
+                        continue;
+                    var fonts = run.Element(word + "rPr")?.Element(word + "rFonts");
+                    if (fonts is null) continue;
+                    explicitMathRunFonts++;
+                    AssertExplicitMathFont(fonts, word, expected, stage, formulaId);
+                }
+                foreach (var control in package.Descendants(math + "ctrlPr"))
+                {
+                    var fonts = control.Element(word + "rPr")?.Element(word + "rFonts");
+                    if (fonts is null) continue;
+                    explicitControlFonts++;
+                    AssertExplicitMathFont(fonts, word, expected, stage, formulaId);
+                }
+            }
+            finally { Release(range); }
+        }
+        Console.WriteLine(
+            $"[OMML MATH FONT STABLE] stage={stage} documentMathFont='{expected}' explicitMathRuns={explicitMathRunFonts} explicitControls={explicitControlFonts} formulas={formulaIds.Count}.");
+    }
+
+    private static void AssertExplicitMathFont(
+        XElement fonts,
+        XNamespace word,
+        string expected,
+        string stage,
+        string formulaId)
+    {
+        foreach (var attributeName in new[] { "ascii", "hAnsi" })
+        {
+            var value = ((string?)fonts.Attribute(word + attributeName) ?? string.Empty).Trim();
+            if (value.Length == 0) continue;
+            AssertTrue(string.Equals(value, expected, StringComparison.OrdinalIgnoreCase),
+                $"{stage}: formula {formulaId} carries explicit {attributeName} math font '{value}', expected document math font '{expected}'.");
+        }
+    }
 
     private static void DumpUserReportMathTypeSourceStructure(
         Word.Document document,

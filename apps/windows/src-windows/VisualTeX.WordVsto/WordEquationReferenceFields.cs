@@ -22,6 +22,11 @@ internal static class WordEquationReferenceFields
         internal WdUnderline? Underline { get; set; }
         internal WdColor? Color { get; set; }
         internal float? Size { get; set; }
+        internal int? Position { get; set; }
+        internal string? Name { get; set; }
+        internal string? NameAscii { get; set; }
+        internal string? NameFarEast { get; set; }
+        internal string? NameBi { get; set; }
     }
 
     internal static void InsertNavigableReference(
@@ -219,7 +224,10 @@ internal static class WordEquationReferenceFields
                             continue;
 
                         nestedResult = nestedField.Result;
-                        var formatting = CaptureFormatting(nestedResult);
+                        var formatting = CaptureReferenceHostFormatting(
+                            document,
+                            outerField,
+                            nestedResult);
 
                         // The REF is nested inside GOTOBUTTON.Code and therefore is
                         // not part of document.Fields' top-level enumeration. Update
@@ -315,6 +323,69 @@ internal static class WordEquationReferenceFields
         return true;
     }
 
+    private static CharacterFormatting CaptureReferenceHostFormatting(
+        Document document,
+        Field outerField,
+        Range fallbackRange)
+    {
+        Range? outerCode = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? probe = null;
+        try
+        {
+            outerCode = outerField.Code;
+            if (outerCode.StoryType != WdStoryType.wdMainTextStory)
+                return CaptureFormatting(fallbackRange);
+            paragraphs = outerCode.Paragraphs;
+            if (paragraphs.Count != 1)
+                return CaptureFormatting(fallbackRange);
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            var fieldStart = Math.Max(
+                paragraphRange.Start,
+                outerCode.Start - 1);
+
+            // The visible character immediately before GOTOBUTTON (for example
+            // the user-typed prefix or '(') is the most faithful source of the
+            // surrounding body formatting. It is outside Word's field tree, so a
+            // field update cannot silently make it bold or switch its typeface.
+            if (fieldStart > paragraphRange.Start)
+            {
+                probe = document.Range(fieldStart - 1, fieldStart);
+                var text = probe.Text ?? string.Empty;
+                if (text.Length > 0 && text[0] != '\r' && text[0] != '\a')
+                    return CaptureFormatting(probe);
+                Release(probe);
+                probe = null;
+            }
+
+            // At paragraph start there may be no preceding character. The paragraph
+            // mark still carries the body style and is likewise outside the nested
+            // REF result that Word can rematerialize during renumbering.
+            if (paragraphRange.End > paragraphRange.Start)
+            {
+                probe = paragraphRange.Duplicate;
+                probe.SetRange(paragraphRange.End - 1, paragraphRange.End);
+                return CaptureFormatting(probe);
+            }
+            return CaptureFormatting(fallbackRange);
+        }
+        catch
+        {
+            return CaptureFormatting(fallbackRange);
+        }
+        finally
+        {
+            Release(probe);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(outerCode);
+        }
+    }
+
     private static CharacterFormatting CaptureFormatting(Range range)
     {
         Microsoft.Office.Interop.Word.Font? font = null;
@@ -353,6 +424,25 @@ internal static class WordEquationReferenceFields
                 if (value > 0 && value < 1000) formatting.Size = value;
             }
             catch { }
+            try
+            {
+                var value = font.Position;
+                if (value != (int)WdConstants.wdUndefined) formatting.Position = value;
+            }
+            catch { }
+            static string? ReadName(Func<string?> read)
+            {
+                try
+                {
+                    var value = read();
+                    return string.IsNullOrWhiteSpace(value) ? null : value;
+                }
+                catch { return null; }
+            }
+            formatting.Name = ReadName(() => font.Name);
+            formatting.NameAscii = ReadName(() => font.NameAscii);
+            formatting.NameFarEast = ReadName(() => font.NameFarEast);
+            formatting.NameBi = ReadName(() => font.NameBi);
             return formatting;
         }
         finally { Release(font); }
@@ -383,6 +473,26 @@ internal static class WordEquationReferenceFields
             if (formatting.Size.HasValue)
             {
                 try { font.Size = formatting.Size.Value; } catch { }
+            }
+            if (formatting.Position.HasValue)
+            {
+                try { font.Position = formatting.Position.Value; } catch { }
+            }
+            if (!string.IsNullOrWhiteSpace(formatting.Name))
+            {
+                try { font.Name = formatting.Name; } catch { }
+            }
+            if (!string.IsNullOrWhiteSpace(formatting.NameAscii))
+            {
+                try { font.NameAscii = formatting.NameAscii; } catch { }
+            }
+            if (!string.IsNullOrWhiteSpace(formatting.NameFarEast))
+            {
+                try { font.NameFarEast = formatting.NameFarEast; } catch { }
+            }
+            if (!string.IsNullOrWhiteSpace(formatting.NameBi))
+            {
+                try { font.NameBi = formatting.NameBi; } catch { }
             }
             try { font.Hidden = 0; } catch { }
         }

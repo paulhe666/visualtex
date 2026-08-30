@@ -57,8 +57,15 @@ internal static partial class Program
                 document,
                 formulaId,
                 "02-after-reference-insert");
+            SetNavigableOmmlReferenceBoldForRegression(
+                document,
+                formulaId,
+                bold: -1);
 
-            // Exercise a real renumber that changes text length/content. The outer
+            // Exercise a real renumber that changes text length/content. Word can
+            // rematerialize nested REF formatting during this operation; the final
+            // reference must recover the surrounding body-text formatting rather
+            // than preserving the deliberately injected bold result above. The outer
             // GOTOBUTTON must survive while the nested REF follows VTEqNum_.
             WordEquationNumbering.SetEquationNumberFormatPreference(
                 document,
@@ -109,6 +116,67 @@ internal static partial class Program
         }
     }
 
+    private static void SetNavigableOmmlReferenceBoldForRegression(
+        Word.Document document,
+        string formulaId,
+        int bold)
+    {
+        Word.Fields? fields = null;
+        Word.Field? outer = null;
+        Word.Range? outerCode = null;
+        Word.Fields? nestedFields = null;
+        Word.Field? nested = null;
+        Word.Range? nestedCode = null;
+        Word.Range? nestedResult = null;
+        Word.Font? font = null;
+        try
+        {
+            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(outerCode); outerCode = null;
+                Release(outer); outer = fields[index];
+                if (outer.Type != Word.WdFieldType.wdFieldGoToButton) continue;
+                outerCode = outer.Code;
+                var outerText = outerCode.Text ?? string.Empty;
+                if (outerText.IndexOf(targetName, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                nestedFields = outerCode.Fields;
+                for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                {
+                    Release(nestedCode); nestedCode = null;
+                    Release(nested); nested = nestedFields[nestedIndex];
+                    if (nested.Type != Word.WdFieldType.wdFieldRef) continue;
+                    nestedCode = nested.Code;
+                    if ((nestedCode.Text ?? string.Empty).IndexOf(
+                            targetName,
+                            StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    nestedResult = nested.Result;
+                    font = nestedResult.Font;
+                    font.Bold = bold;
+                    Console.WriteLine(
+                        $"  injected navigable-reference bold={bold} target={targetName}.");
+                    return;
+                }
+            }
+            throw new InvalidDataException(
+                "Could not locate the navigable nested REF for the bold-format regression.");
+        }
+        finally
+        {
+            Release(font);
+            Release(nestedResult);
+            Release(nestedCode);
+            Release(nested);
+            Release(nestedFields);
+            Release(outerCode);
+            Release(outer);
+            Release(fields);
+        }
+    }
+
     private static void AssertNavigableOmmlTableReference(
         Word.Application application,
         Word.Document document,
@@ -124,6 +192,7 @@ internal static partial class Program
         Word.Field? nestedRef = null;
         Word.Range? nestedCode = null;
         Word.Range? nestedResult = null;
+        Word.Font? nestedResultFont = null;
         Word.Bookmarks? bookmarks = null;
         Word.Bookmark? numberBookmark = null;
         Word.Range? numberRange = null;
@@ -173,6 +242,11 @@ internal static partial class Program
             var expected = ReadVisibleEquationNumber(document, formulaId).Trim('(', ')');
             AssertEqual(expected, NormalizeEquationNumberText(nestedResult.Text),
                 context + ": nested REF result does not match the current equation number.");
+            nestedResultFont = nestedResult.Font;
+            AssertEqual(0, nestedResultFont.Bold,
+                context + ": nested REF result became bold after equation-number refresh.");
+            AssertNear(0f, nestedResultFont.Position, 0.1f,
+                context + ": nested REF result gained a baseline offset.");
 
             bookmarks = document.Bookmarks;
             AssertTrue(bookmarks.Exists(targetName), context + ": VTEqNum target bookmark is missing.");
@@ -228,7 +302,7 @@ internal static partial class Program
             AssertEqual(table.Range.Start, selection.Range.Tables[1].Range.Start,
                 context + ": GOTOBUTTON navigation landed in a different table from the center formula.");
             Console.WriteLine(
-                $"  {context}: target={targetName}, number='{expected}', targetRange={numberRange.Start}:{numberRange.End}, selection={selection.Start}:{selection.End}, table={table.Range.Start}:{table.Range.End}.");
+                $"  {context}: target={targetName}, number='{expected}', bold={nestedResultFont.Bold}, font='{nestedResultFont.Name}', targetRange={numberRange.Start}:{numberRange.End}, selection={selection.Start}:{selection.End}, table={table.Range.Start}:{table.Range.End}.");
         }
         finally
         {
@@ -239,6 +313,7 @@ internal static partial class Program
             Release(numberRange);
             Release(numberBookmark);
             Release(bookmarks);
+            Release(nestedResultFont);
             Release(nestedResult);
             Release(nestedCode);
             Release(nestedRef);

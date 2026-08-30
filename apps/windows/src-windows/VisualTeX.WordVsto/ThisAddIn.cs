@@ -314,10 +314,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _mouseDoubleClickY;
     private DateTimeOffset _mouseDoubleClickAt;
     private int _formulaFontInvalidationPending;
+    private double _cachedSelectedFormulaFontSize = double.NaN;
+    private string? _cachedEquationNumberFormatId;
+    private int _lastFormulaRibbonOwnerStart = int.MinValue;
+    private int _lastFormulaRibbonOwnerEnd = int.MinValue;
     private int _normalizingTypingCaret;
     private int _typingCaretNormalizationPending;
     private int _typingCaretNormalizationGeneration;
     private int _formulaFormatMutationDepth;
+    private bool _acceptanceSelectionDiagnostics;
+    private int _acceptanceSelectionChangeCount;
+    private int _acceptanceFormulaStateReadCount;
+    private int _acceptanceDeferredCaretPassCount;
+    private int _acceptanceEquationFormatReadCount;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
     private bool _mathTypePreviewSessionAcquired;
@@ -356,6 +365,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             out var officeMathFontError);
         _formulaService = new WordFormulaService(_application);
         _dispatcher = new OfficeUiDispatcher();
+        _acceptanceSelectionDiagnostics = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+            "1",
+            StringComparison.Ordinal);
         _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
@@ -363,6 +376,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _mathTypePreviewSessionAcquired = true;
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
+        _application.WindowActivate += OnWindowActivate;
         _application.DocumentOpen += OnDocumentOpen;
         _application.DocumentBeforeSave += OnDocumentBeforeSave;
         string? doubleClickError = null;
@@ -405,6 +419,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public void OnRibbonLoad(object ribbonUi)
     {
         _ribbonUi = ribbonUi;
+        Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+        _cachedEquationNumberFormatId = null;
         InvalidateFormulaFontControls();
         InvalidateEquationNumberFormatControls();
     }
@@ -414,7 +430,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            var size = _formulaService?.GetSelectedFormulaFontSize();
+            var size = GetCachedSelectedFormulaFontSize();
             return size.HasValue
                 ? FormulaFontSize.FormatDisplay(size.Value)
                 : string.Empty;
@@ -423,7 +439,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     }
     public bool GetFormulaFontSizeEnabled(Office.IRibbonControl control)
     {
-        try { return _formulaService?.GetSelectedFormulaFontSize().HasValue == true; }
+        try { return GetCachedSelectedFormulaFontSize().HasValue; }
         catch { return false; }
     }
     public void OnFormulaFontSizeChanged(Office.IRibbonControl control, string value) =>
@@ -474,8 +490,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            var current = _formulaService?.GetEquationNumberFormatId()
-                ?? EquationNumberFormat.ContinuousId;
+            var current = _cachedEquationNumberFormatId;
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                if (_acceptanceSelectionDiagnostics)
+                    Interlocked.Increment(ref _acceptanceEquationFormatReadCount);
+                current = _formulaService?.GetEquationNumberFormatId()
+                    ?? EquationNumberFormat.ContinuousId;
+                _cachedEquationNumberFormatId = current;
+            }
             return string.Equals(current, control?.Tag, StringComparison.Ordinal);
         }
         catch { return false; }
@@ -553,6 +576,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var applied = (_formulaService
                     ?? throw new InvalidOperationException("Word formula service is unavailable."))
                 .SetSelectedFormulaFontSize(value);
+            Volatile.Write(ref _cachedSelectedFormulaFontSize, applied);
             SetStatus($"公式字号已设置为 {FormulaFontSize.Describe(applied)}。");
         }
         catch (Exception error)
@@ -562,18 +586,212 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         finally { InvalidateFormulaFontControls(); }
     }
 
-    private void ScheduleFormulaFontControlsInvalidation()
+    private float? GetCachedSelectedFormulaFontSize()
+    {
+        var cached = Volatile.Read(ref _cachedSelectedFormulaFontSize);
+        if (!double.IsNaN(cached)) return (float)cached;
+        var size = _formulaService?.GetSelectedFormulaFontSize();
+        Volatile.Write(
+            ref _cachedSelectedFormulaFontSize,
+            size.HasValue ? size.Value : double.NaN);
+        return size;
+    }
+
+    private void ScheduleFormulaFontControlsInvalidation(Selection selection)
     {
         var dispatcher = _dispatcher;
-        if (dispatcher is null
-            || Interlocked.Exchange(ref _formulaFontInvalidationPending, 1) != 0)
+        if (dispatcher is null) return;
+
+        if (!TryResolveFormulaRibbonOwnerBounds(selection, out var ownerStart, out var ownerEnd))
+        {
+            _lastFormulaRibbonOwnerStart = int.MinValue;
+            _lastFormulaRibbonOwnerEnd = int.MinValue;
+            // Ordinary prose-to-prose caret movement cannot change formula controls.
+            // If the controls are already disabled, do absolutely no Word/OMML work.
+            if (double.IsNaN(Volatile.Read(ref _cachedSelectedFormulaFontSize)))
+                return;
+            Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+            InvalidateFormulaFontControls();
+            return;
+        }
+
+        if (ownerStart == _lastFormulaRibbonOwnerStart
+            && ownerEnd == _lastFormulaRibbonOwnerEnd
+            && !double.IsNaN(Volatile.Read(ref _cachedSelectedFormulaFontSize)))
+            return;
+        _lastFormulaRibbonOwnerStart = ownerStart;
+        _lastFormulaRibbonOwnerEnd = ownerEnd;
+        Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+        if (Interlocked.Exchange(ref _formulaFontInvalidationPending, 1) != 0)
             return;
         dispatcher.Post(() =>
         {
             Interlocked.Exchange(ref _formulaFontInvalidationPending, 0);
+            try
+            {
+                if (_acceptanceSelectionDiagnostics)
+                    Interlocked.Increment(ref _acceptanceFormulaStateReadCount);
+                var size = _formulaService?.GetSelectedFormulaFontSize();
+                Volatile.Write(
+                    ref _cachedSelectedFormulaFontSize,
+                    size.HasValue ? size.Value : double.NaN);
+            }
+            catch
+            {
+                Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+            }
             InvalidateFormulaFontControls();
-            InvalidateEquationNumberFormatControls();
         });
+    }
+
+    private static bool TryResolveFormulaRibbonOwnerBounds(
+        Selection selection,
+        out int ownerStart,
+        out int ownerEnd)
+    {
+        ownerStart = int.MinValue;
+        ownerEnd = int.MinValue;
+        Range? selectionRange = null;
+        Document? document = null;
+        Range? probe = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Tables? tables = null;
+        Table? table = null;
+        Rows? tableRows = null;
+        Columns? tableColumns = null;
+        Cell? centerCell = null;
+        Range? centerRange = null;
+        Cell? numberCell = null;
+        Range? numberRange = null;
+        Fields? numberFields = null;
+        Field? numberField = null;
+        Range? numberCode = null;
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? mathRange = null;
+        Range? content = null;
+        try
+        {
+            selectionRange = selection.Range;
+            shapes = selectionRange.InlineShapes;
+            if (shapes.Count == 1)
+            {
+                shape = shapes[1];
+                shapeRange = shape.Range;
+                ownerStart = shapeRange.Start;
+                ownerEnd = shapeRange.End;
+                return true;
+            }
+
+            document = selectionRange.Document;
+
+            // A numbered OMML 1x3 contains many nested OMath ranges. A collapsed
+            // caret can therefore appear to move between different inner OMaths
+            // even though the user is still in the same formula. Resolve the
+            // stable center-cell Display OMath first so Ribbon state is read only
+            // once when entering this managed equation host.
+            if ((bool)selectionRange.get_Information(WdInformation.wdWithInTable))
+            {
+                tables = selectionRange.Tables;
+                if (tables.Count == 1)
+                {
+                    table = tables[1];
+                    tableRows = table.Rows;
+                    tableColumns = table.Columns;
+                    if (tableRows.Count == 1 && tableColumns.Count == 3)
+                    {
+                        numberCell = table.Cell(1, 3);
+                        numberRange = numberCell.Range;
+                        numberFields = numberRange.Fields;
+                        if (numberFields.Count == 1)
+                        {
+                            numberField = numberFields[1];
+                            numberCode = numberField.Code;
+                            var codeText = numberCode.Text ?? string.Empty;
+                            if (codeText.IndexOf(
+                                    "SEQ VisualTeXEquation",
+                                    StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                centerCell = table.Cell(1, 2);
+                                centerRange = centerCell.Range;
+                                maths = centerRange.OMaths;
+                                if (maths.Count == 1)
+                                {
+                                    math = maths[1];
+                                    mathRange = math.Range;
+                                    ownerStart = mathRange.Start;
+                                    ownerEnd = mathRange.End;
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                ReleaseComObject(mathRange); mathRange = null;
+                ReleaseComObject(math); math = null;
+                ReleaseComObject(maths); maths = null;
+            }
+
+            content = document.Content;
+            var contentStart = content.Start;
+            var contentEnd = content.End;
+            var probeStart = Math.Max(contentStart, selectionRange.Start - 1);
+            var probeEnd = Math.Min(
+                contentEnd,
+                Math.Max(selectionRange.End + 1, selectionRange.Start + 1));
+            probe = document.Range(probeStart, probeEnd);
+            maths = probe.OMaths;
+            var bestSpan = -1;
+            for (var index = 1; index <= maths.Count; index++)
+            {
+                ReleaseComObject(mathRange);
+                mathRange = null;
+                ReleaseComObject(math);
+                math = maths[index];
+                mathRange = math.Range;
+                if (selectionRange.Start < mathRange.Start - 1
+                    || selectionRange.Start > mathRange.End + 1)
+                    continue;
+                var span = mathRange.End - mathRange.Start;
+                if (span <= bestSpan) continue;
+                bestSpan = span;
+                ownerStart = mathRange.Start;
+                ownerEnd = mathRange.End;
+            }
+            return bestSpan >= 0;
+        }
+        catch
+        {
+            ownerStart = int.MinValue;
+            ownerEnd = int.MinValue;
+            return false;
+        }
+        finally
+        {
+            ReleaseComObject(mathRange);
+            ReleaseComObject(math);
+            ReleaseComObject(maths);
+            ReleaseComObject(numberCode);
+            ReleaseComObject(numberField);
+            ReleaseComObject(numberFields);
+            ReleaseComObject(numberRange);
+            ReleaseComObject(numberCell);
+            ReleaseComObject(centerRange);
+            ReleaseComObject(centerCell);
+            ReleaseComObject(tableColumns);
+            ReleaseComObject(tableRows);
+            ReleaseComObject(table);
+            ReleaseComObject(tables);
+            ReleaseComObject(shapeRange);
+            ReleaseComObject(shape);
+            ReleaseComObject(shapes);
+            ReleaseComObject(probe);
+            ReleaseComObject(content);
+            ReleaseComObject(document);
+            ReleaseComObject(selectionRange);
+        }
     }
 
     private void InvalidateFormulaFontControls()
@@ -614,6 +832,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             || Interlocked.Exchange(ref _typingCaretNormalizationPending, 1) != 0)
             return;
         var generation = Volatile.Read(ref _typingCaretNormalizationGeneration);
+        if (_acceptanceSelectionDiagnostics)
+            Interlocked.Increment(ref _acceptanceDeferredCaretPassCount);
         dispatcher.Post(() =>
         {
             Interlocked.Exchange(ref _typingCaretNormalizationPending, 0);
@@ -661,8 +881,30 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Interlocked.Exchange(ref _formulaFormatMutationDepth, 0);
     }
 
-    private void OnDocumentOpen(Document document) =>
+    private void OnWindowActivate(Document document, Window window)
+    {
+        _cachedEquationNumberFormatId = null;
+        Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+        _lastFormulaRibbonOwnerStart = int.MinValue;
+        _lastFormulaRibbonOwnerEnd = int.MinValue;
+        InvalidateEquationNumberFormatControls();
+        Selection? selection = null;
+        try
+        {
+            selection = _application?.Selection;
+            if (selection is not null)
+                ScheduleFormulaFontControlsInvalidation(selection);
+        }
+        catch { }
+        finally { ReleaseComObject(selection); }
+    }
+
+    private void OnDocumentOpen(Document document)
+    {
+        _cachedEquationNumberFormatId = null;
+        InvalidateEquationNumberFormatControls();
         RefreshNumberedOmmlTabLayoutsAfterOpen(document);
+    }
 
     private void RefreshNumberedOmmlTabLayoutsAfterOpen(Document document)
     {
@@ -711,9 +953,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void OnWindowSelectionChange(Selection selection)
     {
+        if (_acceptanceSelectionDiagnostics)
+            Interlocked.Increment(ref _acceptanceSelectionChangeCount);
         // Defer Ribbon callbacks until Word finishes entering/leaving a native
         // math zone. Synchronous OMML inspection here can disturb its caret.
-        ScheduleFormulaFontControlsInvalidation();
+        ScheduleFormulaFontControlsInvalidation(selection);
         if (Volatile.Read(ref _formulaFormatMutationDepth) > 0)
         {
             ClearNativeOleTarget();
@@ -756,12 +1000,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 ClearNativeOleTarget();
                 return;
             }
-            // During a mouse click Word can raise SelectionChange while the OLE
-            // object is still selected, then collapse the caret at the object
-            // tail without raising a second event. Re-check on the Office UI
-            // queue after Word finishes that transition.
-            ScheduleTypingCaretNormalization();
-
             // Do not inspect OMML metadata here. Word fires SelectionChange while
             // entering its native equation editor, and touching the OMath at that
             // point can disturb the caret state. MathType is even more sensitive:
@@ -789,6 +1027,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     return;
                 }
             }
+
+            // The deferred caret retry exists only for Word's OLE selection→caret
+            // transition. Ordinary prose and native OMML clicks already completed
+            // their synchronous O(1) checks above and must not queue a second COM
+            // pass after every mouse click.
+            ScheduleTypingCaretNormalization();
 
             range = selection.Range;
             window = application.ActiveWindow;
@@ -2831,6 +3075,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var count = await dispatcher.InvokeAsync(
                     () => service.SetEquationNumberFormat(format.Id))
                 .ConfigureAwait(false);
+            _cachedEquationNumberFormatId = format.Id;
             SetStatus($"公式编号格式已设置为“{format.DisplayName}”，并同步更新了 {count} 个 VisualTeX / MathType 带编号公式。");
         }
         catch (Exception error)
@@ -3014,6 +3259,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try { Marshal.ReleaseComObject(value); } catch { }
     }
 
+    internal void ResetSelectionChangeDiagnosticsForAcceptance()
+    {
+        Interlocked.Exchange(ref _acceptanceSelectionChangeCount, 0);
+        Interlocked.Exchange(ref _acceptanceFormulaStateReadCount, 0);
+        Interlocked.Exchange(ref _acceptanceDeferredCaretPassCount, 0);
+        Interlocked.Exchange(ref _acceptanceEquationFormatReadCount, 0);
+    }
+
+    internal (int SelectionChanges, int FormulaStateReads, int DeferredCaretPasses, int EquationFormatReads)
+        ReadSelectionChangeDiagnosticsForAcceptance() =>
+        (
+            Volatile.Read(ref _acceptanceSelectionChangeCount),
+            Volatile.Read(ref _acceptanceFormulaStateReadCount),
+            Volatile.Read(ref _acceptanceDeferredCaretPassCount),
+            Volatile.Read(ref _acceptanceEquationFormatReadCount));
+
     private void Dispose()
     {
         _lifetime?.Cancel();
@@ -3030,6 +3291,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try { _application.WindowBeforeDoubleClick -= OnWindowBeforeDoubleClick; } catch { }
             try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }
+            try { _application.WindowActivate -= OnWindowActivate; } catch { }
             try { _application.DocumentOpen -= OnDocumentOpen; } catch { }
             try { _application.DocumentBeforeSave -= OnDocumentBeforeSave; } catch { }
         }

@@ -1741,6 +1741,22 @@ internal sealed partial class WordFormulaService
                         formula => formula.Session.FormulaId,
                         formula => formula,
                         StringComparer.OrdinalIgnoreCase);
+                var requestedMathFonts = ommlPreparedByFormulaId.Values
+                    .Select(item => ResolveDocumentOmmlMathFont(
+                        item.Session.ToMetadata().FormulaLetterFont))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (requestedMathFonts.Length != 1)
+                    throw new InvalidDataException(
+                        "One Word OMML conversion batch cannot request multiple document-level math fonts.");
+                var documentMathMetadata = ommlPreparedByFormulaId.Values
+                    .First()
+                    .Session
+                    .ToMetadata();
+                documentMathMetadata.Validate();
+                ApplyDocumentOmmlMathFont(document, documentMathMetadata);
+                var targetMathFontName = requestedMathFonts[0];
+
                 var ommlFormulas = plan.Targets.Select(target =>
                 {
                     var formula = prepared[target.Id];
@@ -1767,7 +1783,8 @@ internal sealed partial class WordFormulaService
                             omml,
                             preparedFormula.Session.FontSizePt,
                             typographyMetadata);
-                    });
+                    },
+                    mathFontName: targetMathFontName);
                 document.Activate();
                 Release(selection);
                 selection = _application.Selection;

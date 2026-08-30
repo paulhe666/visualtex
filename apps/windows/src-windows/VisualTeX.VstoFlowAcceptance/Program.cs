@@ -994,6 +994,10 @@ internal static partial class Program
             {
                 RunWordOmmlDeferredFinalizationCostAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-selection-change-idle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordSelectionChangeIdleAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-converted-visualtex-numbering-scaffold", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordConvertedVisualTeXNumberingScaffoldAcceptance(artifactRoot);

@@ -3620,7 +3620,8 @@ internal sealed partial class WordFormulaService
                         transformOmml: omml => ApplyOmmlTypographyXml(
                             omml,
                             session.FontSizePt,
-                            metadata));
+                            metadata),
+                        mathFontName: document.OMathFontName);
             }
             else
             {
@@ -3656,7 +3657,8 @@ internal sealed partial class WordFormulaService
                         transformOmml: omml => ApplyOmmlTypographyXml(
                             omml,
                             session.FontSizePt,
-                            metadata));
+                            metadata),
+                        mathFontName: document.OMathFontName);
             }
 
             if (normalizeMathTypeDisplayParagraph
@@ -6018,7 +6020,8 @@ internal sealed partial class WordFormulaService
                             omml,
                             preparedFormula.Session.FontSizePt,
                             typographyMetadata);
-                    });
+                    },
+                    mathFontName: document.OMathFontName);
                 batchSourceStopwatch.Stop();
                 if (string.Equals(
                         Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
@@ -7071,7 +7074,8 @@ internal sealed partial class WordFormulaService
                         transformOmml: omml => ApplyOmmlTypographyXml(
                             omml,
                             session.FontSizePt,
-                            metadata));
+                            metadata),
+                        mathFontName: document.OMathFontName);
                 TraceOmmlStage("insert");
                 ApplyOmmlTypography(equationRange, session.FontSizePt, metadata);
                 TraceOmmlStage("font-size");
@@ -10138,7 +10142,8 @@ internal sealed partial class WordFormulaService
                     transformOmml: omml => ApplyOmmlTypographyXml(
                         omml,
                         session.FontSizePt,
-                        metadata));
+                        metadata),
+                    mathFontName: document.OMathFontName);
             }
             TraceAcceptancePerformance(
                 "ReplaceOmml",

@@ -3506,6 +3506,66 @@ internal static class WordOmmlConverter
             + settings.ToString(SaveOptions.DisableFormatting));
     }
 
+    private static string ApplyExplicitTransferMathFont(
+        string omml,
+        string mathFontName)
+    {
+        if (string.IsNullOrWhiteSpace(omml)) return omml;
+        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
+        var document = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+
+        static void SetRunFonts(
+            XElement wordRunProperties,
+            XNamespace wordNamespace,
+            string fontName)
+        {
+            var fonts = wordRunProperties.Element(wordNamespace + "rFonts");
+            if (fonts is null)
+            {
+                fonts = new XElement(wordNamespace + "rFonts");
+                wordRunProperties.AddFirst(fonts);
+            }
+            fonts.SetAttributeValue(wordNamespace + "ascii", fontName);
+            fonts.SetAttributeValue(wordNamespace + "hAnsi", fontName);
+        }
+
+        foreach (var run in document.Descendants(math + "r"))
+        {
+            // m:nor is deliberate ordinary text inside math (for example \mathrm).
+            // Keep its body/text font untouched; only native mathematical glyph
+            // runs need the document's selected OpenType MATH font forced during
+            // cross-document FormattedText transfer.
+            var mathRunProperties = run.Element(math + "rPr");
+            if (mathRunProperties?.Element(math + "nor") is not null)
+                continue;
+            var wordRunProperties = run.Element(word + "rPr");
+            if (wordRunProperties is null)
+            {
+                wordRunProperties = new XElement(word + "rPr");
+                if (mathRunProperties is not null)
+                    mathRunProperties.AddAfterSelf(wordRunProperties);
+                else
+                    run.AddFirst(wordRunProperties);
+            }
+            SetRunFonts(wordRunProperties, word, normalizedMathFontName);
+        }
+
+        foreach (var controlProperties in document.Descendants(math + "ctrlPr"))
+        {
+            var wordRunProperties = controlProperties.Element(word + "rPr");
+            if (wordRunProperties is null)
+            {
+                wordRunProperties = new XElement(word + "rPr");
+                controlProperties.Add(wordRunProperties);
+            }
+            SetRunFonts(wordRunProperties, word, normalizedMathFontName);
+        }
+
+        return document.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
+    }
+
     private static string CreateTemporaryDocumentDocx(
         string documentXml,
         string? mathFontName = null)
@@ -3534,7 +3594,9 @@ internal static class WordOmmlConverter
         for (var index = 0; index < entries.Count; index++)
         {
             body.Append("<w:p>")
-                .Append(ExtractSingleOMath(entries[index].Omml))
+                .Append(ApplyExplicitTransferMathFont(
+                    ExtractSingleOMath(entries[index].Omml),
+                    mathFontName))
                 .Append("</w:p>");
         }
         // The opened source document supplies one terminal ordinary paragraph.
@@ -3556,7 +3618,9 @@ internal static class WordOmmlConverter
         for (var index = 0; index < entries.Count; index++)
         {
             var entry = entries[index];
-            body.Append(ExtractSingleOMath(entry.Omml));
+            body.Append(ApplyExplicitTransferMathFont(
+                ExtractSingleOMath(entry.Omml),
+                mathFontName));
             if (index + 1 < entries.Count)
             {
                 // Keep an explicit ordinary Word run between sibling OMath nodes.
@@ -3592,7 +3656,9 @@ internal static class WordOmmlConverter
         var body = new StringBuilder();
         foreach (var entry in entries)
         {
-            var equation = ExtractSingleOMath(entry.Omml);
+            var equation = ApplyExplicitTransferMathFont(
+                ExtractSingleOMath(entry.Omml),
+                mathFontName);
             body.Append("<w:p><w:r><w:t>L</w:t></w:r>")
                 .Append("<w:bookmarkStart w:id=\"")
                 .Append(entry.BookmarkId)
@@ -3638,7 +3704,10 @@ internal static class WordOmmlConverter
         WriteEntry(
             archive,
             "word/document.xml",
-            BuildDocumentXml(omml, includeLeadingTab, forceInline));
+            BuildDocumentXml(
+                ApplyExplicitTransferMathFont(omml, mathFontName),
+                includeLeadingTab,
+                forceInline));
         return path;
     }
 
