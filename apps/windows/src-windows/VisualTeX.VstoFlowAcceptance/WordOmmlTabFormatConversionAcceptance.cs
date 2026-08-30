@@ -159,6 +159,7 @@ internal static partial class Program
                 ReadOnly: false,
                 AddToRecentFiles: false,
                 Visible: false);
+            document.Activate();
             AssertNumberedOmmlTabHost(
                 document,
                 formulaId,

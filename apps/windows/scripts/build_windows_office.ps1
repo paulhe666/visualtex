@@ -29,6 +29,53 @@ function Stop-BuildOleServerProcesses {
     Start-Sleep -Milliseconds 300
 }
 
+function Copy-FileWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [int]$MaximumAttempts = 20,
+        [int]$DelayMilliseconds = 250
+    )
+
+    # MSBuild may materialize output/resource files as NTFS hard links. In that
+    # case Source and Destination are two paths to the same file and Copy-Item
+    # fails with a misleading sharing-violation error. A content match also means
+    # an ordinary destination is already current, so no overwrite is necessary.
+    if (Test-Path $Destination) {
+        try {
+            $sourceInfo = Get-Item $Source
+            $destinationInfo = Get-Item $Destination
+            if ($sourceInfo.Length -eq $destinationInfo.Length) {
+                $sourceHash = (Get-FileHash $Source -Algorithm SHA256).Hash
+                $destinationHash = (Get-FileHash $Destination -Algorithm SHA256).Hash
+                if ([string]::Equals(
+                        $sourceHash,
+                        $destinationHash,
+                        [StringComparison]::OrdinalIgnoreCase)) {
+                    Write-Host "Resource package already matches build output; copy skipped: $Destination"
+                    return
+                }
+            }
+        }
+        catch [System.IO.IOException] {
+            # A transient scanner can hold either path while the package has just
+            # been emitted. Fall through to the bounded copy retry below.
+        }
+    }
+
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        try {
+            Copy-Item $Source $Destination -Force
+            return
+        }
+        catch [System.IO.IOException] {
+            if ($attempt -ge $MaximumAttempts) { throw }
+            Write-Host "Copy attempt $attempt/$MaximumAttempts was temporarily blocked; retrying: $Destination"
+            Start-Sleep -Milliseconds $DelayMilliseconds
+        }
+    }
+}
+
 $dotnet = $null
 foreach ($candidate in @(
     (Join-Path $env:LOCALAPPDATA "Microsoft\dotnet\dotnet.exe"),
@@ -133,7 +180,9 @@ foreach ($architecture in $architectures) {
     $packageFileName = "VisualTeX-WindowsOffice-VSTO-$packagePlatform.msi"
     $msi = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Installer\bin\$packagePlatform\$Configuration\$packageFileName"
     if (-not (Test-Path $msi)) { throw "$packagePlatform VisualTeX VSTO MSI was not produced: $msi" }
-    Copy-Item $msi (Join-Path $resourceRoot $packageFileName) -Force
+    Copy-FileWithRetry `
+        -Source $msi `
+        -Destination (Join-Path $resourceRoot $packageFileName)
 
     $wordOutput = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\$packagePlatform\$Configuration\$vstoTargetFramework\VisualTeX.WordVsto.dll"
     $powerPointOutput = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\$packagePlatform\$Configuration\$vstoTargetFramework\VisualTeX.PowerPointVsto.dll"

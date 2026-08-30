@@ -2695,9 +2695,16 @@ internal static partial class WordEquationNumbering
                     formulaFontSizePoints,
                     metadata.FormulaId);
             }
+            var isNativeDirectTable = ContainsNativeOmml(formulaRange)
+                && IsHealthyNativeOmmlDirectTableHost(
+                    document,
+                    formulaRange,
+                    metadata.FormulaId,
+                    updateField: false);
             if (ContainsNativeOmml(formulaRange)
                 && !deferNativeOmmlShapeFinalization
-                && !isNativeHashSequence)
+                && !isNativeHashSequence
+                && !isNativeDirectTable)
                 TryFinalizeNativeDisplayNumberShapeLayout(
                     document,
                     metadata.FormulaId);
@@ -3544,6 +3551,13 @@ internal static partial class WordEquationNumbering
         Document document,
         string formulaId)
     {
+        // Current numbered OMML is a direct-SEQ 1x3 table. Its source paragraph is
+        // intentionally retained until formula, number and FormulaId ownership are
+        // all durable, then removed here. Do not let it fall through to the retired
+        // hidden-caption/Shape spacing path.
+        if (CleanupNativeOmmlTablePrecedingParagraph(document, formulaId))
+            return;
+
         Bookmarks? bookmarks = null;
         Bookmark? captionBookmark = null;
         Range? captionRange = null;

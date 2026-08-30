@@ -47,9 +47,7 @@ public sealed partial class ThisAddIn
             document = _application?.ActiveDocument;
             if (document is null || document.ReadOnly) return;
             _ommlDisplayMigrationRunning = true;
-            var migrated = MigrateManagedOmmlDisplayTypes(document);
-            if (migrated > 0)
-                ScheduleNumberedOmmlDisplayShapeFinalization(document);
+            _ = MigrateManagedOmmlDisplayTypes(document);
         }
         catch (COMException)
         {

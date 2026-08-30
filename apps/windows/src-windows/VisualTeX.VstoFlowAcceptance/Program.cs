@@ -978,6 +978,18 @@ internal static partial class Program
             {
                 RunWordOmmlTableNumberStressAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-omml-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeToOmmlReeditRegressionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-empty-line-insertion-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlEmptyLineInsertionRegressionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-deferred-finalization-cost", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlDeferredFinalizationCostAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-converted-visualtex-numbering-scaffold", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordConvertedVisualTeXNumberingScaffoldAcceptance(artifactRoot);

@@ -661,9 +661,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 document);
             if (refreshed > 0)
             {
+                // RefreshNumberedOmmlTabLayouts now completes the direct-SEQ 1x3
+                // host synchronously. The retired Shape/TextBox design needed five
+                // later dispatcher turns; scheduling those scans for current tables
+                // only keeps Word's UI thread busy after the document is usable.
                 WordDoubleClickHook.TraceMessage(
                     $"document-open-omml-tab-layout-refreshed formulas={refreshed}");
-                ScheduleNumberedOmmlDisplayShapeFinalization(document);
             }
         }
         catch (Exception error)
@@ -674,84 +677,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WordDoubleClickHook.TraceMessage(
                 $"document-open-omml-tab-layout-refresh-failed: {error}");
         }
-    }
-
-    private void ScheduleNumberedOmmlDisplayShapeFinalization(Document sourceDocument)
-    {
-        var dispatcher = _dispatcher;
-        var application = _application;
-        if (dispatcher is null || application is null) return;
-
-        string fullName;
-        string name;
-        try { fullName = sourceDocument.FullName ?? string.Empty; }
-        catch { fullName = string.Empty; }
-        try { name = sourceDocument.Name ?? string.Empty; }
-        catch { name = string.Empty; }
-
-        void PostFinalizationTurn(int turn)
-        {
-            dispatcher.Post(() =>
-            {
-                Documents? documents = null;
-                Document? candidate = null;
-                Document? target = null;
-                var targetResolved = false;
-                try
-                {
-                    documents = application.Documents;
-                    for (var index = 1; index <= documents.Count; index++)
-                    {
-                        ReleaseComObject(candidate);
-                        candidate = documents[index];
-                        string candidateFullName;
-                        string candidateName;
-                        try { candidateFullName = candidate.FullName ?? string.Empty; }
-                        catch { candidateFullName = string.Empty; }
-                        try { candidateName = candidate.Name ?? string.Empty; }
-                        catch { candidateName = string.Empty; }
-                        var matches = !string.IsNullOrWhiteSpace(fullName)
-                            ? string.Equals(
-                                candidateFullName,
-                                fullName,
-                                StringComparison.OrdinalIgnoreCase)
-                            : string.Equals(
-                                candidateName,
-                                name,
-                                StringComparison.OrdinalIgnoreCase);
-                        if (!matches) continue;
-                        target = candidate;
-                        candidate = null;
-                        targetResolved = true;
-                        break;
-                    }
-                    if (target is null) return;
-                    var finalized =
-                        WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(
-                            target);
-                    WordDoubleClickHook.TraceMessage(
-                        $"document-open-omml-display-shapes-finalized turn={turn} formulas={finalized}");
-                }
-                catch (Exception error)
-                {
-                    WordDoubleClickHook.TraceMessage(
-                        $"document-open-omml-display-shape-finalization-failed turn={turn}: {error}");
-                }
-                finally
-                {
-                    ReleaseComObject(target);
-                    ReleaseComObject(candidate);
-                    ReleaseComObject(documents);
-                    if (targetResolved && turn < 5)
-                        PostFinalizationTurn(turn + 1);
-                }
-            });
-        }
-
-        // Turn 1 recommits the dedicated empty anchor paragraph, turn 2 creates the
-        // deferred external REF Shape, and turns 3-5 reacquire it after Word commits
-        // DrawingML for geometry/no-line/no-fill (including transient E_FAIL retries).
-        PostFinalizationTurn(1);
     }
 
     private void OnDocumentBeforeSave(
@@ -769,24 +694,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             WordDoubleClickHook.TraceMessage(
                 $"document-before-save-baseline-normalization-failed: {error}");
-        }
-        try
-        {
-            // A freshly created numbered Display OMath may finish committing its
-            // external DrawingML REF Shape one dispatcher turn after insertion.
-            // Reacquire/finalize those managed Shapes at the durable save boundary
-            // so an immediate Ctrl+S cannot persist Word's transient decoration.
-            var finalized =
-                WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(
-                    document);
-            if (finalized > 0)
-                WordDoubleClickHook.TraceMessage(
-                    $"document-before-save-omml-display-shapes-finalized formulas={finalized}");
-        }
-        catch (Exception error)
-        {
-            WordDoubleClickHook.TraceMessage(
-                $"document-before-save-omml-display-shape-finalization-failed: {error}");
         }
     }
 
@@ -1556,26 +1463,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (mathMl is null)
                         throw new InvalidOperationException(
                             "VisualTeX Word OMML MathML payload is unavailable.");
-                    var ommlResult = session.Mode == "edit"
+                    // InsertOmml/ReplaceOmml synchronously validate the exact
+                    // FormulaId-bound 1x3 host before returning. Do not enqueue the
+                    // retired five-turn whole-document Shape finalizer: every later
+                    // mouse click would otherwise contend with those UI-thread scans.
+                    return session.Mode == "edit"
                         ? service.ReplaceOmml(session, mathMl)
                         : service.InsertOmml(session, mathMl);
-                    if (session.Numbered
-                        && string.Equals(
-                            session.DisplayMode,
-                            "block",
-                            StringComparison.Ordinal))
-                    {
-                        Document? activeDocument = null;
-                        try
-                        {
-                            activeDocument = _application?.ActiveDocument;
-                            if (activeDocument is not null)
-                                ScheduleNumberedOmmlDisplayShapeFinalization(
-                                    activeDocument);
-                        }
-                        finally { ReleaseComObject(activeDocument); }
-                    }
-                    return ommlResult;
                 }
                 if (string.Equals(
                         session.ObjectMode,
@@ -2872,22 +2766,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        var application = _application;
-        if (dispatcher is null || service is null || application is null) return;
+        if (dispatcher is null || service is null) return;
         try
         {
-            var count = await dispatcher.InvokeAsync(() =>
-                {
-                    var updated = service.UpdateEquationNumbers();
-                    Document? document = null;
-                    try
-                    {
-                        document = application.ActiveDocument;
-                        ScheduleNumberedOmmlDisplayShapeFinalization(document);
-                    }
-                    finally { ReleaseComObject(document); }
-                    return updated;
-                })
+            var count = await dispatcher.InvokeAsync(
+                    service.UpdateEquationNumbers)
                 .ConfigureAwait(false);
             SetStatus($"已更新 {count} 个 VisualTeX / MathType 公式编号及相关引用。");
         }

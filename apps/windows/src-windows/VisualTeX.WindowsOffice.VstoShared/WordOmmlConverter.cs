@@ -184,6 +184,171 @@ internal static class WordOmmlConverter
             }
         }
 
+        internal IReadOnlyList<Range> ReplaceDisplayParagraphGroup(
+            Application application,
+            Document targetDocument,
+            Range targetRange,
+            IReadOnlyList<string> formulaIds)
+        {
+            if (formulaIds is null || formulaIds.Count == 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(formulaIds),
+                    "A display OMML group requires at least one formula.");
+            var entries = new List<BatchEntry>(formulaIds.Count);
+            foreach (var formulaId in formulaIds)
+            {
+                if (!_entries.TryGetValue(formulaId, out var entry))
+                    throw new InvalidDataException(
+                        $"The OMML batch source does not contain formula {formulaId}.");
+                entries.Add(entry);
+            }
+
+            var path = CreateTemporaryDisplayGroupDocx(entries, _mathFontName);
+            Document? sourceDocument = null;
+            Range? sourceRange = null;
+            Range? formattedSource = null;
+            Range? target = null;
+            Range? insertedRange = null;
+            OMaths? sourceMaths = null;
+            OMaths? maths = null;
+            OMath? math = null;
+            Range? mathRange = null;
+            var results = new List<Range>(formulaIds.Count);
+            try
+            {
+                sourceDocument = application.Documents.Open(
+                    FileName: path,
+                    ConfirmConversions: false,
+                    ReadOnly: true,
+                    AddToRecentFiles: false,
+                    Visible: false,
+                    OpenAndRepair: false);
+                sourceRange = sourceDocument.Content.Duplicate;
+                // Preserve every formula paragraph mark while excluding only the
+                // source document's final empty paragraph mark/section boundary.
+                // A bookmark whose endpoints sit inside paragraphs does not carry
+                // those boundaries reliably through cross-document FormattedText;
+                // Word then merges an adjacent display group into one OMath.
+                if (sourceRange.End > sourceRange.Start)
+                    sourceRange.End--;
+                sourceMaths = sourceRange.OMaths;
+                if (sourceMaths.Count != formulaIds.Count)
+                    throw new InvalidDataException(
+                        $"The temporary display group contains {sourceMaths.Count}/{formulaIds.Count} OMath objects.");
+                formattedSource = sourceRange.FormattedText;
+
+                target = targetRange.Duplicate;
+                var insertionStart = target.Start;
+                // Replace the entire contiguous MathType owner range in one
+                // FormattedText assignment. This still makes Word tear down every
+                // Equation.DSMT4/MTPlaceRef tree as one transaction, while unlike
+                // Range.InsertFile the live target Range expands to the complete
+                // multi-paragraph payload rather than only the first OMath.
+                target.FormattedText = formattedSource;
+                try { targetDocument.Activate(); } catch { }
+                var insertionEnd = target.End;
+                insertedRange = targetDocument.Range(insertionStart, insertionEnd);
+                maths = insertedRange.OMaths;
+                if (maths.Count != formulaIds.Count)
+                    throw new InvalidOperationException(
+                        $"Word materialized {maths.Count} display OMath objects for a group of {formulaIds.Count} formulas.");
+                for (var index = 1; index <= maths.Count; index++)
+                {
+                    Release(mathRange); mathRange = null;
+                    Release(math); math = maths[index];
+                    if (math.Type != WdOMathType.wdOMathDisplay)
+                        math.Type = WdOMathType.wdOMathDisplay;
+                    mathRange = math.Range.Duplicate;
+                    if (mathRange.Start < insertionStart
+                        || mathRange.End > insertionEnd)
+                        throw new InvalidOperationException(
+                            "A grouped display OMath escaped the atomic replacement range.");
+                    results.Add(targetDocument.Range(mathRange.Start, mathRange.End));
+                }
+                return results;
+            }
+            catch
+            {
+                foreach (var result in results) Release(result);
+                throw;
+            }
+            finally
+            {
+                Release(mathRange);
+                Release(math);
+                Release(maths);
+                Release(sourceMaths);
+                Release(insertedRange);
+                Release(target);
+                Release(formattedSource);
+                Release(sourceRange);
+                if (sourceDocument is not null)
+                {
+                    try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                }
+                Release(sourceDocument);
+                try { File.Delete(path); } catch { }
+            }
+        }
+
+        internal Range ReplaceTargetParagraphAtomicallyWithCleanParagraph(
+            Document targetDocument,
+            Range targetParagraphRange)
+        {
+            var sourceDocument = _document
+                ?? throw new ObjectDisposedException(nameof(BatchSource));
+            Paragraphs? sourceParagraphs = null;
+            Paragraph? sourceParagraph = null;
+            Range? sourceRange = null;
+            Range? target = null;
+            Range? result = null;
+            try
+            {
+                sourceParagraphs = sourceDocument.Paragraphs;
+                if (sourceParagraphs.Count == 0)
+                    throw new InvalidDataException(
+                        "The OMML batch source has no clean terminal paragraph.");
+                sourceParagraph = sourceParagraphs[sourceParagraphs.Count];
+                sourceRange = sourceParagraph.Range.Duplicate;
+                if (!string.Equals(sourceRange.Text, "\r", StringComparison.Ordinal)
+                    || sourceRange.OMaths.Count != 0
+                    || sourceRange.InlineShapes.Count != 0
+                    || sourceRange.Fields.Count != 0
+                    || sourceRange.Tables.Count != 0)
+                    throw new InvalidDataException(
+                        "The OMML batch source terminal paragraph is not structurally empty.");
+
+                target = targetParagraphRange.Duplicate;
+                var start = target.Start;
+                if (target.Paragraphs.Count != 1
+                    || target.End <= target.Start
+                    || !string.Equals(
+                        target.Text?.Substring(Math.Max(0, target.Text.Length - 1)),
+                        "\r",
+                        StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "The MathType source is not one complete Word paragraph.");
+
+                // Replace the complete, prevalidated MathType display paragraph in
+                // one Word operation. This lets Word tear down the Equation.DSMT4
+                // OLE and the outer MTPlaceRef/nested sequence tree as one owner,
+                // instead of exposing any partially deleted field hierarchy.
+                target.FormattedText = sourceRange.FormattedText;
+                result = targetDocument.Range(start, start);
+                var returned = result;
+                result = null;
+                return returned;
+            }
+            finally
+            {
+                Release(result);
+                Release(target);
+                Release(sourceRange);
+                Release(sourceParagraph);
+                Release(sourceParagraphs);
+            }
+        }
+
         internal Range Insert(
             Document targetDocument,
             Range insertionRange,
@@ -213,7 +378,9 @@ internal static class WordOmmlConverter
                         $"The OMML batch bookmark {entry.BookmarkName} is missing.");
                 bookmark = bookmarks[entry.BookmarkName];
                 sourceRange = bookmark.Range;
-                formattedSource = sourceRange.FormattedText;
+                formattedSource = sourceRange.FormattedText
+                    ?? throw new InvalidDataException(
+                        $"The OMML batch bookmark {entry.BookmarkName} has no formatted source range.");
                 target = insertionRange.Duplicate;
                 if (!replaceTarget)
                     target.Collapse(WdCollapseDirection.wdCollapseStart);
@@ -3359,6 +3526,28 @@ internal static class WordOmmlConverter
         return path;
     }
 
+    private static string CreateTemporaryDisplayGroupDocx(
+        IReadOnlyList<BatchEntry> entries,
+        string mathFontName)
+    {
+        var body = new StringBuilder();
+        for (var index = 0; index < entries.Count; index++)
+        {
+            body.Append("<w:p>")
+                .Append(ExtractSingleOMath(entries[index].Omml))
+                .Append("</w:p>");
+        }
+        // The opened source document supplies one terminal ordinary paragraph.
+        // ReplaceDisplayParagraphGroup excludes only that final paragraph mark and
+        // copies the complete preceding multi-paragraph topology.
+        body.Append("<w:p/>");
+        var documentXml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + $"<w:document xmlns:w=\"{WordNamespace}\" xmlns:m=\"{MathNamespace}\">"
+            + $"<w:body>{body}<w:sectPr/></w:body></w:document>";
+        return CreateTemporaryDocumentDocx(documentXml, mathFontName);
+    }
+
     private static string CreateTemporaryAdjacentInlineGroupDocx(
         IReadOnlyList<BatchEntry> entries,
         string mathFontName)
@@ -3416,6 +3605,11 @@ internal static class WordOmmlConverter
                 .Append("\"/>")
                 .Append("<w:r><w:t>R</w:t></w:r></w:p>");
         }
+        // Keep one explicit pristine Normal paragraph at the end. Besides making
+        // the DOCX conventional, this gives MathType→OMML conversion a clean
+        // paragraph mark that can replace the source OLE paragraph's hidden live
+        // layout state without opening another scratch document.
+        body.Append("<w:p/>");
         WriteEntry(
             archive,
             "word/document.xml",
@@ -3457,6 +3651,33 @@ internal static class WordOmmlConverter
     }
 
     private static OMath? FindMathAtPosition(
+        Document document,
+        int position,
+        int preferredEnd)
+    {
+        const int rpcCallRejected = unchecked((int)0x80010001);
+        const int rpcServerCallRetryLater = unchecked((int)0x8001010A);
+        const int maximumAttempts = 40;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return FindMathAtPositionCore(document, position, preferredEnd);
+            }
+            catch (COMException error)
+                when ((error.HResult == rpcCallRejected
+                        || error.HResult == rpcServerCallRetryLater)
+                    && attempt < maximumAttempts - 1)
+            {
+                // InsertFile/FormattedText can return just before Word has committed
+                // the new native equation tree. Retrying the read-only locator is
+                // safer than replaying the insertion and cannot duplicate content.
+                System.Threading.Thread.Sleep(50);
+            }
+        }
+    }
+
+    private static OMath? FindMathAtPositionCore(
         Document document,
         int position,
         int preferredEnd)

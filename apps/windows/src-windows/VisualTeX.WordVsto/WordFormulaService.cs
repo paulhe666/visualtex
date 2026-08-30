@@ -3550,7 +3550,8 @@ internal sealed partial class WordFormulaService
         bool numberingScaffoldOnly = false,
         bool deferFinalFingerprint = false,
         WordOmmlConverter.BatchSource? ommlBatchSource = null,
-        bool preserveExistingDisplayParagraphBoundary = false)
+        bool preserveExistingDisplayParagraphBoundary = false,
+        bool normalizeMathTypeDisplayParagraph = false)
     {
         var metadata = session.ToMetadata();
         metadata.Validate();
@@ -3658,6 +3659,19 @@ internal sealed partial class WordFormulaService
                             metadata));
             }
 
+            if (normalizeMathTypeDisplayParagraph
+                && string.Equals(
+                    session.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal))
+            {
+                NormalizeConvertedOmmlParagraphFromMathTypeStyle(equationRange);
+                TraceAcceptancePerformance(
+                    "InsertOmml",
+                    "detach-mathtype-style",
+                    performanceWatch,
+                    ref performanceCheckpoint);
+            }
             TraceAcceptancePerformance(
                 "InsertOmml",
                 "insert-native-omml",
@@ -3793,12 +3807,20 @@ internal sealed partial class WordFormulaService
                     StringComparison.Ordinal)
                 && !deferNumberingLayout
                 && !numberingScaffoldOnly;
-            if (finalizeNumberedOmmlNumberOutsideTransaction)
+            var directTableAlreadyComplete =
+                finalizeNumberedOmmlNumberOutsideTransaction
+                && WordEquationNumbering
+                    .HasReusableNumberedNativeOmmlDirectTableHost(
+                        document,
+                        equationRange,
+                        metadata.FormulaId);
+            if (finalizeNumberedOmmlNumberOutsideTransaction
+                && !directTableAlreadyComplete)
             {
-                // Reacquire the durable formula only after the OMath undo transaction
-                // and replacement Range RCWs have unwound, then validate/finalize the
-                // native #(SEQ) host. This compatibility-named finalizer no longer
-                // creates DrawingML, a TextBox, an anchor paragraph, or a visible REF.
+                // Only retired/migration structures require a compatibility pass
+                // after the insertion transaction. A current direct-SEQ 1x3 host
+                // is already fully built and validated; re-enumerating it through
+                // the old Shape-named finalizer adds visible latency for no effect.
                 EndUndoRecord(undoRecord);
                 Release(undoRecord);
                 undoRecord = null;
@@ -9681,18 +9703,23 @@ internal sealed partial class WordFormulaService
         Document? document = null;
         try
         {
-            var result = ReplaceOmmlCore(session, mathMl, out document);
+            var result = ReplaceOmmlCore(
+                session,
+                mathMl,
+                out document,
+                out var directTableAlreadyFinalized);
             if (document is not null
+                && !directTableAlreadyFinalized
                 && session.Numbered
                 && string.Equals(
                     session.DisplayMode,
                     "block",
                     StringComparison.Ordinal))
             {
-                // Run Shape geometry/style work only after ReplaceOmmlCore has
-                // closed its undo record and released every OMath replacement RCW.
-                // Doing this inside reconciliation can leave Word's otherwise valid
-                // external REF drawing exposed only as a permanent E_FAIL proxy.
+                // Legacy/migration hosts can still require one targeted structural
+                // finalization after the replacement transaction has released its
+                // OMath RCWs. A current direct-SEQ 1x3 edit is already complete in
+                // ReplaceOmmlCore and deliberately skips this extra COM pass.
                 var finalizedNativeNumbers =
                     WordEquationNumbering.FinalizeConvertedNumberedOmmlDisplayShapes(
                         document,
@@ -9703,14 +9730,8 @@ internal sealed partial class WordFormulaService
                         "1",
                         StringComparison.Ordinal))
                 {
-                    // Word can keep the freshly replaced display OMath's floating
-                    // Shape geometry locked for one or more outer Office turns even
-                    // after the durable pure-display/REF structure is complete.
-                    // ThisAddIn posts those turns after the service call returns;
-                    // direct acceptances do the same explicitly. Treat this as a
-                    // deferred layout commit, not as a failed formula replacement.
                     Console.WriteLine(
-                        $"    numbered-OMML Shape finalization deferred formulaId={session.FormulaId}");
+                        $"    numbered-OMML compatibility finalization deferred formulaId={session.FormulaId}");
                 }
             }
             return result;
@@ -9721,9 +9742,11 @@ internal sealed partial class WordFormulaService
     private OfficeObjectResult ReplaceOmmlCore(
         OfficeSessionDocument session,
         string mathMl,
-        out Document? finalizedDocument)
+        out Document? finalizedDocument,
+        out bool directTableAlreadyFinalized)
     {
         finalizedDocument = null;
+        directTableAlreadyFinalized = false;
         var metadata = session.ToMetadata();
         metadata.Validate();
         Document? document = null;
@@ -9752,7 +9775,11 @@ internal sealed partial class WordFormulaService
         var moveCaretOutsideAfterInlineOmmlEdit = false;
         var oldNumberingArtifactsRemoved = false;
         var replaceTargetWithOmml = false;
+        var replaceHealthyDirectTableAtomically = false;
+        var replaceHealthyStandaloneDisplayAtomically = false;
         var replaceHealthyHashSequenceAtomically = false;
+        string? preparedDirectTableOmml = null;
+        string? preparedStandaloneDisplayOmml = null;
         string? preparedHashSequenceOmml = null;
         var operationSucceeded = false;
         var performanceWatch = Stopwatch.StartNew();
@@ -9765,10 +9792,13 @@ internal sealed partial class WordFormulaService
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
             ApplyDocumentOmmlMathFont(document, metadata);
-            if (session.DisplayMode == "block" && session.Numbered)
-                numberedTable = WordEquationNumbering.FindNumberedEquationTable(
-                    document,
-                    session.FormulaId);
+            // Resolve the source numbering host independently of the target's
+            // Numbered flag. A numbered 1x3 formula that is being changed to
+            // unnumbered still has to replace only its center OMath first, then
+            // dismantle the table through the validated numbering reconciler.
+            numberedTable = WordEquationNumbering.FindNumberedEquationTable(
+                document,
+                session.FormulaId);
             viewState = CaptureViewState();
             try
             {
@@ -9887,12 +9917,73 @@ internal sealed partial class WordFormulaService
             }
             if (oldShape is null)
             {
-                var numberedBlock = session.Numbered
-                    && string.Equals(
-                        session.DisplayMode,
-                        "block",
-                        StringComparison.Ordinal);
-                if (numberedBlock)
+                var blockTarget = string.Equals(
+                    session.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal);
+                var numberedBlock = session.Numbered && blockTarget;
+
+                // Detect the *source* 1x3 host before branching on the target's
+                // Numbered flag. This is required for numbered→unnumbered edits:
+                // first replace only the center OMath, then let reconciliation
+                // dismantle the still-intact table. Sending that case through the
+                // generic placeholder path lets Word absorb a cell/paragraph mark.
+                replaceHealthyDirectTableAtomically = blockTarget
+                    && WordEquationNumbering
+                        .HasReusableNumberedNativeOmmlDirectTableHost(
+                            document,
+                            oldRange,
+                            metadata.FormulaId);
+                if (replaceHealthyDirectTableAtomically)
+                {
+                    // Current numbered OMML is an exact 1x3 host: the center cell
+                    // owns one true Display OMath and the right cell owns the direct
+                    // SEQ field. Replace only that complete center OMath. Never
+                    // flatten the cell paragraph into TAB text or touch VTEq*.
+                    var semanticOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+                    semanticOmml = ApplyOmmlTypographyXml(
+                        semanticOmml,
+                        session.FontSizePt,
+                        metadata);
+                    sourceFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                        semanticOmml);
+                    preparedDirectTableOmml = semanticOmml;
+                    if (oldBookmark is not null)
+                    {
+                        oldBookmark.Delete();
+                        Release(oldBookmark);
+                        oldBookmark = null;
+                    }
+                    Release(insertion);
+                    insertion = oldRange.Duplicate;
+                }
+                else if (blockTarget
+                    && HasReusableStandaloneDisplayOmmlHost(document, oldRange))
+                {
+                    // A table that has just been dismantled can leave non-serialized
+                    // live layout state on its standalone paragraph. Replacing the
+                    // whole OMath from clean semantic OMML before renumbering avoids
+                    // copying that stale table state into a new 1x3 host, which can
+                    // otherwise crash Word when all fields are updated.
+                    replaceHealthyStandaloneDisplayAtomically = true;
+                    var semanticOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+                    semanticOmml = ApplyOmmlTypographyXml(
+                        semanticOmml,
+                        session.FontSizePt,
+                        metadata);
+                    sourceFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                        semanticOmml);
+                    preparedStandaloneDisplayOmml = semanticOmml;
+                    if (oldBookmark is not null)
+                    {
+                        oldBookmark.Delete();
+                        Release(oldBookmark);
+                        oldBookmark = null;
+                    }
+                    Release(insertion);
+                    insertion = oldRange.Duplicate;
+                }
+                else if (numberedBlock)
                 {
                     replaceHealthyHashSequenceAtomically =
                         WordEquationNumbering
@@ -9902,12 +9993,9 @@ internal sealed partial class WordFormulaService
                                 metadata.FormulaId);
                     if (replaceHealthyHashSequenceAtomically)
                     {
-                        // A healthy current numbered formula already is one genuine
-                        // wdOMathDisplay whose m:eqArr owns the direct SEQ field and
-                        // all VTEq*/VTEqNum aliases. Word forbids replacing parts of
-                        // that mathematical field with ordinary text. Build the new
-                        // semantic OMath and its #(SEQ) wrapper entirely off-document,
-                        // then replace the old OMath in one FormattedText operation.
+                        // A retired but still valid numbered formula can own one
+                        // mathematical #(SEQ) host. Replace that complete OMath
+                        // atomically, then let reconciliation migrate it to 1x3.
                         var semanticOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
                         semanticOmml = ApplyOmmlTypographyXml(
                             semanticOmml,
@@ -9938,9 +10026,8 @@ internal sealed partial class WordFormulaService
                     }
                     else
                     {
-                        // Legacy inline/tab, table, Shape and bad-eqArr hosts still
-                        // use the compatibility staging paragraph before structural
-                        // reconciliation migrates them to the native #(SEQ) host.
+                        // Only legacy paragraph/tab, Shape and malformed eqArr
+                        // hosts use the compatibility staging placeholder.
                         WordEquationNumbering.RemoveVisibleEquationNumberForFormula(
                             document,
                             metadata.FormulaId);
@@ -9956,7 +10043,7 @@ internal sealed partial class WordFormulaService
                 }
                 else
                 {
-                    // Never ask Word to overwrite a live OMath range directly.
+                    // Never ask Word to overwrite a live standalone OMath directly.
                     // Replace the complete resolved equation with one ordinary
                     // placeholder, then replace that exact character with OMML.
                     if (oldBookmark is not null) oldBookmark.Delete();
@@ -9993,7 +10080,38 @@ internal sealed partial class WordFormulaService
                 performanceWatch,
                 ref performanceCheckpoint);
 
-            if (replaceHealthyHashSequenceAtomically)
+            if (replaceHealthyDirectTableAtomically)
+            {
+                if (preparedDirectTableOmml is null)
+                    throw new InvalidOperationException(
+                        "The direct-table OMML replacement payload was not prepared.");
+                equationRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                    _application,
+                    document,
+                    insertion,
+                    preparedDirectTableOmml,
+                    display: true,
+                    mathFontName: document.OMathFontName);
+                // FormattedText replacement returned a complete new OMath. From
+                // this point onward any later failure must restore the captured
+                // original center formula, while preserving the pre-existing table.
+                originalOmmlRemoved = true;
+            }
+            else if (replaceHealthyStandaloneDisplayAtomically)
+            {
+                if (preparedStandaloneDisplayOmml is null)
+                    throw new InvalidOperationException(
+                        "The standalone-display OMML replacement payload was not prepared.");
+                equationRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                    _application,
+                    document,
+                    insertion,
+                    preparedStandaloneDisplayOmml,
+                    display: true,
+                    mathFontName: document.OMathFontName);
+                originalOmmlRemoved = true;
+            }
+            else if (replaceHealthyHashSequenceAtomically)
             {
                 if (preparedHashSequenceOmml is null)
                     throw new InvalidOperationException(
@@ -10036,6 +10154,19 @@ internal sealed partial class WordFormulaService
                 performanceWatch,
                 ref performanceCheckpoint);
             replacement = WordOmmlFormulaStore.Wrap(document, equationRange, metadata);
+            if (replaceHealthyDirectTableAtomically
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_VSTO_OMML_FAIL_STAGE"),
+                    "after-direct-table-replacement",
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Injected failure after direct-table OMML replacement.");
+
             // An OLE -> OMML conversion has no pre-existing CustomXML fallback,
             // so persist provisional metadata before deleting the source OLE. A
             // normal OMML edit keeps its old durable metadata until the final
@@ -10062,6 +10193,8 @@ internal sealed partial class WordFormulaService
             }
             if (session.DisplayMode == "block"
                 && session.Numbered
+                && !replaceHealthyDirectTableAtomically
+                && !replaceHealthyStandaloneDisplayAtomically
                 && !replaceHealthyHashSequenceAtomically)
             {
                 // Legacy hosts are staged as an inline OMath before the numbering
@@ -10086,7 +10219,8 @@ internal sealed partial class WordFormulaService
                     metadata.FormulaId,
                     moveCaretOutsideMath: false,
                     followingTextVisibility: inlineFollowingTextVisibility);
-            if (session.DisplayMode == "block")
+            if (session.DisplayMode == "block"
+                && !(replaceHealthyDirectTableAtomically && session.Numbered))
                 TryReconcileOmml(
                     document,
                     replacement!,
@@ -10106,6 +10240,27 @@ internal sealed partial class WordFormulaService
                 "reconcile",
                 performanceWatch,
                 ref performanceCheckpoint);
+            if (oldShape is not null
+                && session.Numbered
+                && string.Equals(
+                    session.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal))
+            {
+                // An OLE→OMML conversion stages the replacement in the source OLE
+                // paragraph, then moves the finished Display OMath into its 1x3
+                // table. Consume that now-empty source paragraph only after the
+                // direct SEQ and FormulaId are durable. Leaving it before a table at
+                // the document boundary makes Word reopen the table at page X=0.
+                WordEquationNumbering.CleanupNumberedDisplayInsertionSpacing(
+                    document,
+                    metadata.FormulaId);
+                TraceAcceptancePerformance(
+                    "ReplaceOmml",
+                    "cleanup-ole-source-spacing",
+                    performanceWatch,
+                    ref performanceCheckpoint);
+            }
 
             // Numbered tab/field reconciliation can shift and recreate ordinary
             // paragraph runs around the OMath. The pre-reconcile Range RCW may then
@@ -10166,15 +10321,36 @@ internal sealed partial class WordFormulaService
                 ref performanceCheckpoint);
             finalSelection = equationRange.Duplicate;
             var result = Result(session, document);
+            directTableAlreadyFinalized =
+                replaceHealthyDirectTableAtomically
+                && session.Numbered
+                && string.Equals(
+                    session.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal);
             operationSucceeded = true;
             return result;
         }
         catch
         {
-            TryDelete(replacement, deleteContents: true);
-            if (replacement is null) TryDelete(equationRange);
-            if (numberedTable is not null) TryDelete(numberedTable);
-            else if (oldShape is not null) TryDelete(replacementParagraphRange);
+            if (replaceHealthyDirectTableAtomically)
+            {
+                // This table existed before the edit and may contain every durable
+                // number/reference identity. Remove only the provisional formula
+                // bookmark and replacement OMath so the captured original OMath can
+                // be restored into the same center cell below.
+                TryDelete(replacement, deleteContents: false);
+                TryDelete(equationRange);
+            }
+            else
+            {
+                TryDelete(replacement, deleteContents: true);
+                if (replacement is null) TryDelete(equationRange);
+            }
+            // numberedTable is always a source host resolved before mutation. It is
+            // never temporary cleanup state and must not be deleted on failure.
+            if (oldShape is not null && numberedTable is null)
+                TryDelete(replacementParagraphRange);
             if (document is not null)
             {
                 try
@@ -10206,11 +10382,25 @@ internal sealed partial class WordFormulaService
                                         originalOmmlMetadata.FormulaId,
                                         moveCaretOutsideMath: false);
                                 else
-                                    TryReconcileOmml(
-                                        document,
-                                        restoredBookmark,
-                                        restoredRange,
-                                        originalOmmlMetadata);
+                                {
+                                    var restoredHealthyDirectTable =
+                                        originalOmmlMetadata.Numbered
+                                        && string.Equals(
+                                            originalOmmlMetadata.DisplayMode,
+                                            "block",
+                                            StringComparison.Ordinal)
+                                        && WordEquationNumbering
+                                            .HasReusableNumberedNativeOmmlDirectTableHost(
+                                                document,
+                                                restoredRange,
+                                                originalOmmlMetadata.FormulaId);
+                                    if (!restoredHealthyDirectTable)
+                                        TryReconcileOmml(
+                                            document,
+                                            restoredBookmark,
+                                            restoredRange,
+                                            originalOmmlMetadata);
+                                }
                             }
                             else if (metadataSaved)
                             {
@@ -11369,6 +11559,67 @@ internal sealed partial class WordFormulaService
             Release(pageSetup);
             Release(section);
             Release(sections);
+            Release(math);
+            Release(maths);
+        }
+    }
+
+    private static bool HasReusableStandaloneDisplayOmmlHost(
+        Document document,
+        Range formulaRange)
+    {
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? mathRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? prefix = null;
+        Range? suffix = null;
+        InlineShapes? shapes = null;
+        Fields? fields = null;
+        try
+        {
+            if ((bool)formulaRange.get_Information(WdInformation.wdWithInTable))
+                return false;
+            maths = formulaRange.OMaths;
+            if (maths.Count != 1) return false;
+            math = maths[1];
+            if (math.Type != WdOMathType.wdOMathDisplay) return false;
+            mathRange = math.Range.Duplicate;
+            if (mathRange.Start != formulaRange.Start
+                || mathRange.End != formulaRange.End)
+                return false;
+            fields = formulaRange.Fields;
+            shapes = formulaRange.InlineShapes;
+            if (fields.Count != 0 || shapes.Count != 0) return false;
+
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            if (formulaRange.Start < paragraphRange.Start
+                || formulaRange.End > paragraphRange.End)
+                return false;
+            prefix = document.Range(paragraphRange.Start, formulaRange.Start);
+            suffix = document.Range(formulaRange.End, paragraphRange.End);
+            return !ContainsVisibleBodyText(prefix.Text)
+                && !ContainsVisibleBodyText(suffix.Text);
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(fields);
+            Release(shapes);
+            Release(suffix);
+            Release(prefix);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(mathRange);
             Release(math);
             Release(maths);
         }
@@ -16073,16 +16324,41 @@ internal sealed partial class WordFormulaService
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(document.FullName)) return document.FullName;
+            var fullName = ReadWordStateWithRetry(() => document.FullName);
+            if (!string.IsNullOrWhiteSpace(fullName)) return fullName;
         }
         catch { }
-        return document.Name;
+        return ReadWordStateWithRetry(() => document.Name);
     }
 
     private static void EnsureWritable(Document document)
     {
-        if (document.ReadOnly)
+        if (ReadWordStateWithRetry(() => document.ReadOnly))
             throw new UnauthorizedAccessException("The active Word document is read-only.");
+    }
+
+    private static T ReadWordStateWithRetry<T>(Func<T> read)
+    {
+        const int rpcCallRejected = unchecked((int)0x80010001);
+        const int rpcServerCallRetryLater = unchecked((int)0x8001010A);
+        const int officeBusy = unchecked((int)0x800AC472);
+        const int maximumAttempts = 40;
+        for (var attempt = 0; ; attempt++)
+        {
+            try { return read(); }
+            catch (COMException error)
+                when ((error.HResult == rpcCallRejected
+                        || error.HResult == rpcServerCallRetryLater
+                        || error.HResult == officeBusy)
+                    && attempt < maximumAttempts - 1)
+            {
+                // Word can reject harmless state reads for a few UI turns while a
+                // just-created document, OLE server or imported OMath is settling.
+                // Retry only the idempotent property read; callers still execute
+                // every document mutation exactly once.
+                System.Threading.Thread.Sleep(50);
+            }
+        }
     }
 
     private static bool HasLeadingTab(Document document, Range formulaRange)

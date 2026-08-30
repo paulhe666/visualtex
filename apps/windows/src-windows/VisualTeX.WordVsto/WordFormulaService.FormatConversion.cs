@@ -277,6 +277,97 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static void NormalizeConvertedOmmlParagraphFromMathTypeStyle(
+        Range formulaRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Style? style = null;
+        ParagraphFormat? format = null;
+        TabStops? tabs = null;
+        try
+        {
+            // Resolve the paragraph only after Word has materialized the native
+            // OMath. A collapsed insertion range at a paragraph boundary can point
+            // to the wrong side, while formulaRange.Paragraphs[1] is the definitive
+            // owner that will later be converted into the 1x3 table.
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            object styleObject = paragraphRange.get_Style();
+            style = styleObject as Style;
+            var styleName = style?.NameLocal
+                ?? Convert.ToString(styleObject)
+                ?? string.Empty;
+            if (styleName.IndexOf(
+                    "MTDisplayEquation",
+                    StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+
+            // The source MathType paragraph has already been proven to contain no
+            // user prose or second object. Detach its generated paragraph style now,
+            // before numbered OMML converts this paragraph into a table. Otherwise
+            // Word retains an MTDisplayEquation live layout origin and places the
+            // table at page X=0 even though the serialized tblPr has no indent.
+            object normalStyle = WdBuiltinStyle.wdStyleNormal;
+            paragraphRange.set_Style(ref normalStyle);
+            format = paragraphRange.ParagraphFormat;
+            try { format.Reset(); } catch { }
+            format.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+            format.LeftIndent = 0f;
+            format.RightIndent = 0f;
+            format.FirstLineIndent = 0f;
+            format.SpaceBefore = 0f;
+            format.SpaceAfter = 0f;
+            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+            tabs = format.TabStops;
+            tabs.ClearAll();
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-omml-detached-mathtype-style range={paragraphRange.Start}:{paragraphRange.End} style={styleName}");
+        }
+        finally
+        {
+            Release(tabs);
+            Release(format);
+            Release(style);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static bool ConvertedOmmlDirectTablesAreAlreadyComplete(
+        Document document,
+        IReadOnlyList<FormulaMetadata> metadataItems)
+    {
+        foreach (var metadata in metadataItems)
+        {
+            Range? formulaRange = null;
+            try
+            {
+                formulaRange = WordOmmlFormulaStore
+                    .GetEquationRangeVerifiedForStructuralEdit(
+                        document,
+                        metadata.FormulaId,
+                        metadata);
+                if (!WordEquationNumbering
+                        .HasReusableNumberedNativeOmmlDirectTableHost(
+                            document,
+                            formulaRange,
+                            metadata.FormulaId))
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+            finally { Release(formulaRange); }
+        }
+        return true;
+    }
+
     private static InlineShape? ResolveConvertedVisualTeXByEmbeddedIdentity(
         Document document,
         string formulaId,
@@ -378,6 +469,99 @@ internal sealed partial class WordFormulaService
         return false;
     }
 
+    private sealed class BlockMathTypeOmmlGroup
+    {
+        internal int Start { get; set; }
+        internal int End { get; set; }
+        internal IReadOnlyList<WordFormulaFormatConversionTarget> Targets { get; set; } =
+            Array.Empty<WordFormulaFormatConversionTarget>();
+    }
+
+    private IReadOnlyList<BlockMathTypeOmmlGroup> BuildContiguousBlockMathTypeOmmlGroups(
+        Document document,
+        IReadOnlyList<WordFormulaFormatConversionTarget> targets)
+    {
+        var entries = new List<(
+            WordFormulaFormatConversionTarget Target,
+            int Start,
+            int End)>();
+        foreach (var target in targets.Where(item => string.Equals(
+                     item.DisplayMode,
+                     "block",
+                     StringComparison.Ordinal)))
+        {
+            InlineShape? shape = null;
+            Range? shapeRange = null;
+            Paragraphs? paragraphs = null;
+            Paragraph? paragraph = null;
+            Range? paragraphRange = null;
+            try
+            {
+                shape = FindMathTypeOleByRange(
+                        document,
+                        target.SourceObjectId,
+                        allowGlobalFallback: false)
+                    ?? throw new InvalidOperationException(
+                        "A MathType block source moved before grouped OMML conversion was planned.");
+                shapeRange = shape.Range;
+                paragraphs = shapeRange.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidOperationException(
+                        "A MathType block source no longer occupies one paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range.Duplicate;
+                if (!IsSafeMathTypeDisplayParagraph(paragraphRange))
+                    throw new InvalidOperationException(
+                        "A MathType block source paragraph contains ordinary user text.");
+                entries.Add((target, paragraphRange.Start, paragraphRange.End));
+            }
+            finally
+            {
+                Release(paragraphRange);
+                Release(paragraph);
+                Release(paragraphs);
+                Release(shapeRange);
+                Release(shape);
+            }
+        }
+
+        var groups = new List<BlockMathTypeOmmlGroup>();
+        var current = new List<(
+            WordFormulaFormatConversionTarget Target,
+            int Start,
+            int End)>();
+        foreach (var entry in entries.OrderBy(item => item.Start))
+        {
+            if (current.Count == 0
+                || current[current.Count - 1].End == entry.Start)
+            {
+                current.Add(entry);
+                continue;
+            }
+            if (current.Count > 1)
+            {
+                groups.Add(new BlockMathTypeOmmlGroup
+                {
+                    Start = current[0].Start,
+                    End = current[current.Count - 1].End,
+                    Targets = current.Select(item => item.Target).ToArray(),
+                });
+            }
+            current.Clear();
+            current.Add(entry);
+        }
+        if (current.Count > 1)
+        {
+            groups.Add(new BlockMathTypeOmmlGroup
+            {
+                Start = current[0].Start,
+                End = current[current.Count - 1].End,
+                Targets = current.Select(item => item.Target).ToArray(),
+            });
+        }
+        return groups;
+    }
+
     private static IReadOnlyList<IReadOnlyList<WordFormulaFormatConversionTarget>>
         BuildAdjacentInlineOmmlGroups(
             IReadOnlyList<WordFormulaFormatConversionTarget> targets)
@@ -421,6 +605,149 @@ internal sealed partial class WordFormulaService
         if (current.Count > 1)
             groups.Add(current.Select(entry => entry.Target).ToArray());
         return groups;
+    }
+
+    private int ApplyBlockMathTypeToOmmlGroup(
+        Document document,
+        WordFormulaFormatConversionPlan plan,
+        BlockMathTypeOmmlGroup group,
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+        WordOmmlConverter.BatchSource ommlBatchSource)
+    {
+        if (group.Targets.Count < 2)
+            throw new ArgumentOutOfRangeException(nameof(group));
+        var ordered = group.Targets
+            .OrderBy(target => target.SourceStart)
+            .ToArray();
+        UndoRecord? undoRecord = null;
+        Range? targetRange = null;
+        IReadOnlyList<Range>? insertedRanges = null;
+        var undoEnded = false;
+        var metadataSaved = new List<string>();
+        try
+        {
+            undoRecord = BeginUndoRecord(
+                "VisualTeX Convert Consecutive MathType Display Formulas");
+            if (undoRecord is null)
+                throw new InvalidOperationException(
+                    "Word 无法建立连续 MathType 公式转换撤销事务。为避免转换失败时丢失原公式，本次转换已停止。");
+
+            foreach (var target in ordered)
+                ValidateSimpleSourceHost(
+                    document,
+                    plan.SourceMode,
+                    target);
+            var targetCountBefore = CountSimpleFormatObjects(
+                document,
+                FormulaOleContract.WordOmmlMode);
+            targetRange = document.Range(group.Start, group.End);
+            var formulaIds = ordered
+                .Select(target => prepared[target.Id].Session.FormulaId)
+                .ToArray();
+            insertedRanges = ommlBatchSource.ReplaceDisplayParagraphGroup(
+                _application,
+                document,
+                targetRange,
+                formulaIds);
+            document.Activate();
+            if (insertedRanges.Count != ordered.Length)
+                throw new InvalidOperationException(
+                    $"Word retained {insertedRanges.Count}/{ordered.Length} block OMML formulas after atomic MathType replacement.");
+
+            for (var index = 0; index < ordered.Length; index++)
+            {
+                var target = ordered[index];
+                var formula = prepared[target.Id];
+                var session = formula.Session;
+                session.Mode = "create";
+                session.SourceDocumentId = plan.DocumentId;
+                session.SourceObjectId =
+                    $"{RangeReferencePrefix}{insertedRanges[index].Start}:{insertedRanges[index].End}";
+                session.DisplayMode = "block";
+                session.ObjectMode = FormulaOleContract.WordOmmlMode;
+                session.Numbered = target.Numbered;
+                session.MathTypeNumberPosition = target.MathTypeNumberPosition;
+                session.FontSizePt = target.FontSizePt;
+                session.OriginalMetadata = null;
+
+                var metadata = session.ToMetadata();
+                metadata.NativeOmmlFingerprint =
+                    ommlBatchSource.GetSourceFingerprint(session.FormulaId);
+                ApplyDocumentOmmlMathFont(document, metadata);
+                ApplyOmmlTypography(
+                    insertedRanges[index],
+                    session.FontSizePt,
+                    metadata);
+                Bookmark? bookmark = null;
+                try
+                {
+                    bookmark = WordOmmlFormulaStore.Wrap(
+                        document,
+                        insertedRanges[index],
+                        metadata);
+                    if (!WordOmmlFormulaStore.IsCanonicalAnchor(
+                            bookmark,
+                            insertedRanges[index]))
+                    {
+                        Release(bookmark);
+                        bookmark = WordOmmlFormulaStore.Wrap(
+                            document,
+                            insertedRanges[index],
+                            metadata,
+                            replaceExisting: true);
+                    }
+                    WordOmmlFormulaStore.SaveNew(document, metadata);
+                    metadataSaved.Add(metadata.FormulaId);
+                }
+                finally { Release(bookmark); }
+            }
+
+            EndUndoRecord(undoRecord);
+            undoEnded = true;
+            var targetCountAfter = CountSimpleFormatObjects(
+                document,
+                FormulaOleContract.WordOmmlMode);
+            if (targetCountAfter != targetCountBefore + ordered.Length)
+                throw new InvalidOperationException(
+                    $"Word retained {targetCountAfter - targetCountBefore}/{ordered.Length} block OMML targets after atomic replacement.");
+            foreach (var source in ordered)
+                EnsureSimpleFormatSourceRemoved(
+                    document,
+                    plan.SourceMode,
+                    source,
+                    "block-group-post-transaction");
+
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-block-omml-group-complete count={ordered.Length} range={group.Start}:{group.End}");
+            return ordered.Length;
+        }
+        catch
+        {
+            if (!undoEnded)
+            {
+                EndUndoRecord(undoRecord);
+                undoEnded = true;
+            }
+            if (!TryUndoFormulaToLatexConversion(document))
+                throw new InvalidOperationException(
+                    "连续 MathType→OMML 转换失败，而且 Word 无法自动恢复原公式。请立即停止编辑当前文档。");
+            foreach (var formulaId in metadataSaved)
+            {
+                try { WordOmmlFormulaStore.Delete(document, formulaId); }
+                catch { }
+            }
+            foreach (var source in ordered)
+                ValidateSimpleSourceHost(document, plan.SourceMode, source);
+            throw;
+        }
+        finally
+        {
+            if (insertedRanges is not null)
+                foreach (var range in insertedRanges) Release(range);
+            Release(targetRange);
+            if (!undoEnded) EndUndoRecord(undoRecord);
+            Release(undoRecord);
+        }
     }
 
     private int ApplyAdjacentMathTypeToOmmlGroup(
@@ -964,7 +1291,21 @@ internal sealed partial class WordFormulaService
                     var actual = CountConsecutivePlainBlankParagraphsBeforePosition(
                         document,
                         tableRange.Start);
-                    if (actual <= target.PrecedingPlainBlankParagraphCount)
+                    // Two independent Word tables can never be truly adjacent:
+                    // deleting the final intervening paragraph makes Word merge
+                    // their rows into one 2x3 table. MathType source paragraphs can
+                    // legitimately report zero preceding blanks, but once both
+                    // formulas have become 1x3 hosts one structural separator must
+                    // remain. Delete only surplus source paragraphs above that floor.
+                    var requiresTableSeparator =
+                        PlainBlankRunImmediatelyFollowsTable(
+                            document,
+                            tableRange.Start,
+                            actual);
+                    var expected = Math.Max(
+                        target.PrecedingPlainBlankParagraphCount,
+                        requiresTableSeparator ? 1 : 0);
+                    if (actual <= expected)
                         break;
                     if (!DeletePlainBlankParagraphImmediatelyBeforePosition(
                             document,
@@ -981,6 +1322,34 @@ internal sealed partial class WordFormulaService
             }
         }
         return removed;
+    }
+
+    private static bool PlainBlankRunImmediatelyFollowsTable(
+        Document document,
+        int position,
+        int plainBlankCount)
+    {
+        if (plainBlankCount <= 0) return false;
+        Range? content = null;
+        Range? probe = null;
+        try
+        {
+            content = document.Content;
+            var runStart = position - plainBlankCount;
+            if (runStart <= content.Start || runStart > content.End)
+                return false;
+            probe = document.Range(runStart - 1, runStart);
+            return (bool)probe.get_Information(WdInformation.wdWithInTable);
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(probe);
+            Release(content);
+        }
     }
 
     private static bool DeletePlainBlankParagraphImmediatelyBeforePosition(
@@ -1502,6 +1871,27 @@ internal sealed partial class WordFormulaService
                 finally { Release(sourceBookmarks); }
             }
 
+            var blockMathTypeOmmlGroups = targetIsOmml
+                && string.Equals(
+                    plan.SourceMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                ? BuildContiguousBlockMathTypeOmmlGroups(document, plan.Targets)
+                : Array.Empty<BlockMathTypeOmmlGroup>();
+            var blockOmmlGroupByMember =
+                new Dictionary<string, BlockMathTypeOmmlGroup>(StringComparer.Ordinal);
+            foreach (var group in blockMathTypeOmmlGroups)
+            {
+                foreach (var member in group.Targets)
+                    blockOmmlGroupByMember[member.Id] = group;
+            }
+            var processedBlockOmmlTargets = new HashSet<string>(StringComparer.Ordinal);
+            if (blockMathTypeOmmlGroups.Count > 0)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-block-omml-groups groups={blockMathTypeOmmlGroups.Count} formulas={blockOmmlGroupByMember.Count}");
+            }
+
             var adjacentInlineOmmlGroups = targetIsOmml
                 && string.Equals(
                     plan.SourceMode,
@@ -1558,6 +1948,28 @@ internal sealed partial class WordFormulaService
                 }
                 try
                 {
+                    if (blockOmmlGroupByMember.TryGetValue(
+                            target.Id,
+                            out var blockGroup))
+                    {
+                        if (processedBlockOmmlTargets.Contains(target.Id))
+                            continue;
+                        stage = "block-omml-group";
+                        if (ommlBatchSource is null)
+                            throw new InvalidOperationException(
+                                "The OMML batch source is unavailable for a consecutive MathType display group.");
+                        var convertedBlockGroupCount = ApplyBlockMathTypeToOmmlGroup(
+                            document,
+                            plan,
+                            blockGroup,
+                            prepared,
+                            ommlBatchSource);
+                        result.FormulaCount += convertedBlockGroupCount;
+                        foreach (var member in blockGroup.Targets)
+                            processedBlockOmmlTargets.Add(member.Id);
+                        continue;
+                    }
+
                     if (adjacentOmmlGroupByMember.TryGetValue(target.Id, out var adjacentGroup))
                     {
                         if (processedAdjacentOmmlTargets.Contains(target.Id))
@@ -1659,6 +2071,17 @@ internal sealed partial class WordFormulaService
                             StringComparison.Ordinal);
                     var preserveFormulaCrossReferences =
                         referenceAliasesByTargetId.ContainsKey(target.Id);
+                    var useAtomicMathTypeParagraphReplacement =
+                        targetIsOmml
+                        && ommlBatchSource is not null
+                        && string.Equals(
+                            plan.SourceMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            target.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal);
                     var insertionStart = useDirectSingleNativeOmmlDelete
                         ? DeleteSingleNativeOmmlSourceDirect(document, target)
                         : useDirectSingleManagedNumberedOmmlDelete
@@ -1667,12 +2090,17 @@ internal sealed partial class WordFormulaService
                                 target,
                                 sourceReferenceCounts,
                                 preserveFormulaCrossReferences)
-                            : DeleteSimpleSourceHost(
-                                document,
-                                plan.SourceMode,
-                                target,
-                                sourceReferenceCounts,
-                                preserveFormulaCrossReferences);
+                            : useAtomicMathTypeParagraphReplacement
+                                ? ReplaceMathTypeDisplaySourceParagraphAtomically(
+                                    document,
+                                    target,
+                                    ommlBatchSource!)
+                                : DeleteSimpleSourceHost(
+                                    document,
+                                    plan.SourceMode,
+                                    target,
+                                    sourceReferenceCounts,
+                                    preserveFormulaCrossReferences);
                     if (useDirectSingleNativeOmmlDelete)
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-direct-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
@@ -1766,10 +2194,23 @@ internal sealed partial class WordFormulaService
                         InsertOmml(
                             session,
                             formula.MathMl!,
+                            // Keep numbered targets as pure OMath until every
+                            // MathType source and MTPlaceRef field has been removed.
+                            // Mixing a new VisualTeX direct SEQ table with a remaining
+                            // numbered Equation.DSMT4 paragraph crashes Word 2021.
                             deferNumberingLayout: true,
                             deferFinalFingerprint: true,
                             ommlBatchSource: ommlBatchSource,
-                            preserveExistingDisplayParagraphBoundary: true);
+                            preserveExistingDisplayParagraphBoundary: true,
+                            normalizeMathTypeDisplayParagraph:
+                                string.Equals(
+                                    plan.SourceMode,
+                                    FormulaOleContract.MathTypeOleMode,
+                                    StringComparison.Ordinal)
+                                && string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.Ordinal));
                     }
                     else
                     {
@@ -2024,45 +2465,91 @@ internal sealed partial class WordFormulaService
                     // one batch. This mirrors the pre-1.2.5 numbering strategy: local structural
                     // work on known formulas, one incremental refresh, full Reconcile only as a
                     // malformed-document fallback.
+                    var builtNumbered = 0;
                     var builtNumberedBatch =
-                        WordEquationNumbering.TryBuildConvertedOmmlNumberingBatch(
+                        ConvertedOmmlDirectTablesAreAlreadyComplete(
                             document,
-                            convertedOmmlNumberingMetadata,
-                            out var builtNumbered);
-                    var finalizedNumberedNativeSequences = builtNumberedBatch
-                        ? WordEquationNumbering.FinalizeConvertedNumberedOmmlDisplayShapes(
-                            document,
-                            convertedOmmlNumberingMetadata
-                                .Select(metadata => metadata.FormulaId)
-                                .ToArray())
-                        : 0;
-                    if (builtNumberedBatch
-                        && finalizedNumberedNativeSequences
-                            == convertedOmmlNumberingMetadata.Length
-                        && WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
-                            document,
-                            out var finalizedNumbered))
+                            convertedOmmlNumberingMetadata);
+                    if (builtNumberedBatch)
                     {
-                        var removedBlankParagraphs =
-                            RestoreConvertedOmmlPrecedingBlankParagraphCounts(
-                                document,
-                                plan,
-                                prepared);
+                        // Numbered MathType→OMML now creates the final 1x3 host in
+                        // the per-formula transaction. Rebuilding the same four
+                        // tables a second time was the remaining wwlib heap-corruption
+                        // trigger. Count the already-complete hosts and proceed only
+                        // to targeted field finalization.
+                        builtNumbered = convertedOmmlNumberingMetadata.Length;
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-local-batch targetMode={plan.TargetMode} built={builtNumbered} nativeSequences={finalizedNumberedNativeSequences} finalized={finalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
+                            $"format-conversion-numbering-direct-tables-reused count={builtNumbered}");
                     }
                     else
                     {
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-local-batch-fallback targetMode={plan.TargetMode}");
-                        var fallbackFinalizedNumbered = WordEquationNumbering.UpdateEquationNumbers(document);
+                        builtNumberedBatch =
+                            WordEquationNumbering.TryBuildConvertedOmmlNumberingBatch(
+                                document,
+                                convertedOmmlNumberingMetadata,
+                                out builtNumbered);
+                    }
+                    var directTableHostsComplete = builtNumberedBatch
+                        && builtNumbered == convertedOmmlNumberingMetadata.Length
+                        && ConvertedOmmlDirectTablesAreAlreadyComplete(
+                            document,
+                            convertedOmmlNumberingMetadata);
+                    if (directTableHostsComplete)
+                    {
+                        // TryBuildConvertedOmmlNumberingBatch already plans the final
+                        // ordinal/prefix, builds the exact 1x3 direct-SEQ host, repairs
+                        // FormulaId ownership, stamps the live fingerprint and saves
+                        // metadata. Running the retired Shape finalizer plus a second
+                        // document-wide SEQ/REF rewrite over these fresh tables corrupts
+                        // Word 2021 when two or more converted MathType rows are present.
+                        // Keep only the source-paragraph spacing normalization here;
+                        // reference aliases and final fingerprint verification continue
+                        // below through their dedicated, non-structural paths.
                         var removedBlankParagraphs =
                             RestoreConvertedOmmlPrecedingBlankParagraphCounts(
                                 document,
                                 plan,
                                 prepared);
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-fallback-finalized targetMode={plan.TargetMode} numbered={fallbackFinalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
+                            $"format-conversion-numbering-direct-table-complete targetMode={plan.TargetMode} built={builtNumbered} removedBlankParagraphs={removedBlankParagraphs}");
+                    }
+                    else
+                    {
+                        var finalizedNumberedNativeSequences = builtNumberedBatch
+                            ? WordEquationNumbering.FinalizeConvertedNumberedOmmlDisplayShapes(
+                                document,
+                                convertedOmmlNumberingMetadata
+                                    .Select(metadata => metadata.FormulaId)
+                                    .ToArray())
+                            : 0;
+                        if (builtNumberedBatch
+                            && finalizedNumberedNativeSequences
+                                == convertedOmmlNumberingMetadata.Length
+                            && WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
+                                document,
+                                out var finalizedNumbered))
+                        {
+                            var removedBlankParagraphs =
+                                RestoreConvertedOmmlPrecedingBlankParagraphCounts(
+                                    document,
+                                    plan,
+                                    prepared);
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-numbering-local-batch targetMode={plan.TargetMode} built={builtNumbered} nativeSequences={finalizedNumberedNativeSequences} finalized={finalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
+                        }
+                        else
+                        {
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-numbering-local-batch-fallback targetMode={plan.TargetMode}");
+                            var fallbackFinalizedNumbered = WordEquationNumbering.UpdateEquationNumbers(document);
+                            var removedBlankParagraphs =
+                                RestoreConvertedOmmlPrecedingBlankParagraphCounts(
+                                    document,
+                                    plan,
+                                    prepared);
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-numbering-fallback-finalized targetMode={plan.TargetMode} numbered={fallbackFinalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
+                        }
                     }
                 }
                 else if (targetIsVisualTeX)
@@ -2191,8 +2678,13 @@ internal sealed partial class WordFormulaService
                     try { TryDeleteBookmark(document, bookmarkName); } catch { }
                 }
             }
-            try { document?.Activate(); } catch { }
+            // The hidden OMML batch source can become Word's ActiveDocument even
+            // though it is opened Visible=false. Closing it after activating the
+            // real target leaves some Word builds with no ActiveDocument at all;
+            // the next VisualTeX edit then fails before resolving its formula.
+            // Dispose every hidden source first, then restore the user's document.
             ommlBatchSource?.Dispose();
+            try { document?.Activate(); } catch { }
             if (paginationSuspended)
             {
                 try { _application.Options.Pagination = previousPagination; } catch { }
@@ -3564,6 +4056,55 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private int ReplaceMathTypeDisplaySourceParagraphAtomically(
+        Document document,
+        WordFormulaFormatConversionTarget target,
+        WordOmmlConverter.BatchSource batchSource)
+    {
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? cleanParagraph = null;
+        try
+        {
+            shape = FindMathTypeOleByRange(
+                    document,
+                    target.SourceObjectId,
+                    allowGlobalFallback: false)
+                ?? throw new InvalidOperationException(
+                    "The MathType source formula moved before atomic paragraph replacement.");
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The MathType display source no longer occupies one paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            if (!IsSafeMathTypeDisplayParagraph(paragraphRange))
+                throw new InvalidOperationException(
+                    "The MathType display paragraph contains ordinary user text; conversion was stopped.");
+            var start = paragraphRange.Start;
+            cleanParagraph = batchSource
+                .ReplaceTargetParagraphAtomicallyWithCleanParagraph(
+                    document,
+                    paragraphRange);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-mathtype-paragraph-atomically-replaced formulaId={target.SourceFormulaId} range={paragraphRange.Start}:{paragraphRange.End} start={cleanParagraph.Start}");
+            return start;
+        }
+        finally
+        {
+            Release(cleanParagraph);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
     private int DeleteSimpleSourceHost(
         Document document,
         string sourceMode,
@@ -3857,12 +4398,18 @@ internal sealed partial class WordFormulaService
             if (!IsSafeMathTypeDisplayParagraph(paragraphRange))
                 throw new InvalidOperationException(
                     "The MathType display paragraph contains ordinary user text; conversion was stopped.");
+            // Delete the complete MathType paragraph body in one Word operation,
+            // retaining only its final paragraph mark. Word 2021 can crash when the
+            // outer MTPlaceRef tree, its nested fields and the Equation.DSMT4 OLE
+            // are dismantled in separate mutations; replacing the full body lets
+            // Word tear down the entire field/object owner atomically.
             contentRange = paragraphRange.Duplicate;
             mathTypeStart = contentRange.Start;
-            var text = contentRange.Text ?? string.Empty;
+            var paragraphText = contentRange.Text ?? string.Empty;
             if (contentRange.End > contentRange.Start
-                && text.Length > 0
-                && (text[text.Length - 1] == '\r' || text[text.Length - 1] == '\a'))
+                && paragraphText.Length > 0
+                && (paragraphText[paragraphText.Length - 1] == '\r'
+                    || paragraphText[paragraphText.Length - 1] == '\a'))
                 contentRange.SetRange(contentRange.Start, contentRange.End - 1);
             contentRange.Delete();
             return mathTypeStart;

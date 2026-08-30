@@ -1056,8 +1056,12 @@ internal static partial class Program
         Word.Document? document = null;
         try
         {
-            application = CreateWordApplication(visible: true);
-            document = application.Documents.Add();
+            // This structural round-trip does not require a foreground Word window.
+            // A second visible Word instance can block indefinitely behind the
+            // user's active Word/OLE window before COM activation returns, which
+            // tests foreground arbitration rather than formula conversion.
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add(Visible: false);
             document.Content.Text = "VT-CONSECUTIVE-BEFORE\r";
             var service = new WordFormulaService(application);
 
@@ -1129,7 +1133,7 @@ internal static partial class Program
             AssertEqual(0, result.FailedFormulaCount,
                 "Consecutive numbered MathType→OMML conversion reported a failure: "
                 + string.Join(" | ", result.Failures));
-            AssertConsecutiveNumberedOmmlStructure(document, "live conversion");
+            AssertConsecutiveNumberedOmmlStructure(application, document, "live conversion");
             var secondOmmlFormulaId = preparedTargets[secondPlanTarget.Id].Session.FormulaId;
             AssertConvertedMathTypeReferenceAlias(
                 application,
@@ -1150,7 +1154,7 @@ internal static partial class Program
                 outputPath,
                 ReadOnly: false,
                 AddToRecentFiles: false);
-            AssertConsecutiveNumberedOmmlStructure(document, "save/reopen");
+            AssertConsecutiveNumberedOmmlStructure(application, document, "save/reopen");
             AssertConvertedMathTypeReferenceAlias(
                 application,
                 document,
@@ -1277,7 +1281,7 @@ internal static partial class Program
                 + string.Join(" | ", secondMathTypeToOmmlResult.Failures));
             var finalSecondOmmlFormulaId = secondMathTypeToOmmlPrepared[secondMathTypeTarget.Id]
                 .Session.FormulaId;
-            AssertConsecutiveNumberedOmmlStructure(document, "second live conversion");
+            AssertConsecutiveNumberedOmmlStructure(application, document, "second live conversion");
             AssertConvertedMathTypeReferenceAlias(
                 application,
                 document,
@@ -1304,7 +1308,7 @@ internal static partial class Program
                 finalRoundTripPath,
                 ReadOnly: false,
                 AddToRecentFiles: false);
-            AssertConsecutiveNumberedOmmlStructure(document, "second save/reopen");
+            AssertConsecutiveNumberedOmmlStructure(application, document, "second save/reopen");
             AssertConvertedMathTypeReferenceAlias(
                 application,
                 document,
@@ -1329,7 +1333,7 @@ internal static partial class Program
                 "consecutive numbered MathType→OMML acceptance");
 
             Console.WriteLine(
-                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent genuine wdOMathDisplay/m:oMathPara formulas with external dynamic REF Shapes, zero Word tables, preserved cross-reference aliases, and repeated save/reopen persistence.");
+                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent direct-SEQ 1x3 hosts with one genuine center-cell wdOMathDisplay each, zero Shape/TextBox artifacts, preserved cross-reference aliases, and repeated save/reopen persistence.");
         }
         finally
         {
@@ -1345,6 +1349,7 @@ internal static partial class Program
     }
 
     private static void AssertConsecutiveNumberedOmmlStructure(
+        Word.Application application,
         Word.Document document,
         string stage)
     {
@@ -1352,12 +1357,12 @@ internal static partial class Program
             $"Consecutive numbered MathType→OMML {stage} did not retain nine OMath equations.");
         AssertEqual(0, CountMathTypeOleShapes(document),
             $"Consecutive numbered MathType→OMML {stage} left a MathType source behind.");
-        AssertEqual(0, document.Tables.Count,
-            $"Consecutive numbered MathType→OMML {stage} recreated a forbidden Word numbering table.");
+        AssertEqual(9, document.Tables.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not retain one direct-SEQ 1x3 table per formula.");
         AssertEqual(9, CountManagedNumberedOmml(document),
             $"Consecutive numbered MathType→OMML {stage} lost managed numbering ownership.");
-        AssertEqual(9, document.Shapes.Count,
-            $"Consecutive numbered MathType→OMML {stage} did not retain one external REF Shape per formula.");
+        AssertEqual(0, document.Shapes.Count,
+            $"Consecutive numbered MathType→OMML {stage} recreated a retired Shape/TextBox number.");
 
         var ordered = new List<(string FormulaId, int Start)>();
         foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
@@ -1407,7 +1412,8 @@ internal static partial class Program
         for (var index = 0; index < ordered.Count; index++)
         {
             var formulaId = ordered[index].FormulaId;
-            AssertConsecutiveNumberedOmmlFormulaStructure(
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
                 document,
                 formulaId,
                 $"consecutive MathType→OMML {stage} formula {index + 1}");
@@ -1422,16 +1428,23 @@ internal static partial class Program
                     document,
                     formulaId)
                     ?? throw new InvalidDataException(
-                        $"Consecutive numbered MathType→OMML {stage} formula {index + 1} lost its visible external REF.");
-                AssertEqual(Word.WdStoryType.wdTextFrameStory, visibleRange.StoryType,
-                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} does not keep its REF outside OMath.");
+                        $"Consecutive numbered MathType→OMML {stage} formula {index + 1} lost its visible direct-SEQ label.");
+                AssertEqual(Word.WdStoryType.wdMainTextStory, visibleRange.StoryType,
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} moved its number outside the main document story.");
+                AssertTrue((bool)visibleRange.get_Information(Word.WdInformation.wdWithInTable),
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} moved its number outside the 1x3 table.");
                 fields = visibleRange.Fields;
                 AssertEqual(1, fields.Count,
-                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} has an invalid external REF count.");
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} has an invalid direct SEQ count.");
                 reference = fields[1];
                 reference.Update();
-                result = reference.Result;
-                var actualNumber = NormalizeNumberedOmmlLabel(result.Text);
+                // Heading-aware direct-table numbering stores the heading prefix
+                // as ordinary Word text before the SEQ field, while the field result
+                // itself is only the local ordinal. Compare the complete visible
+                // label so 0.1/2.3.4 references are validated rather than truncated
+                // to the final SEQ result (1/4).
+                var actualNumber = NormalizeNumberedOmmlLabel(visibleRange.Text)
+                    .Trim('(', ')');
                 AssertEqual(
                     targetByFormulaId[formulaId],
                     actualNumber,
@@ -1715,9 +1728,7 @@ internal static partial class Program
         Word.Bookmark? nativeBookmark = null;
         Word.Range? aliasRange = null;
         Word.Range? nativeRange = null;
-        Word.Table? numberedTable = null;
-        Word.Cell? numberCell = null;
-        Word.Range? numberCellRange = null;
+        Word.Range? visibleNumberRange = null;
         Word.Fields? fields = null;
         Word.Field? field = null;
         Word.Range? code = null;
@@ -1737,16 +1748,18 @@ internal static partial class Program
             nativeBookmark = bookmarks[nativeName];
             aliasRange = aliasBookmark.Range;
             nativeRange = nativeBookmark.Range;
-            numberedTable = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+            visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    formulaId)
                 ?? throw new InvalidDataException(
-                    $"MathType→OMML {stage} cannot resolve numbered table for {formulaId}.");
-            numberCell = numberedTable.Cell(1, 3);
-            numberCellRange = numberCell.Range.Duplicate;
-            numberCellRange.End = Math.Max(numberCellRange.Start, numberCellRange.End - 1);
-            AssertEqual(numberCellRange.Start, aliasRange.Start,
+                    $"MathType→OMML {stage} cannot resolve the visible number range for {formulaId}.");
+            AssertEqual(visibleNumberRange.Start, aliasRange.Start,
                 $"MathType→OMML {stage} restored {alias} at the wrong visible-number start position.");
-            AssertEqual(numberCellRange.End, aliasRange.End,
+            AssertEqual(visibleNumberRange.End, aliasRange.End,
                 $"MathType→OMML {stage} restored {alias} at the wrong visible-number end position.");
+            AssertTrue(nativeRange.Start >= aliasRange.Start
+                       && nativeRange.End <= aliasRange.End,
+                $"MathType→OMML {stage} restored {alias} outside the durable VTEqNum number identity.");
             AssertEqual(
                 expectedReferenceText.Trim(),
                 (aliasRange.Text ?? string.Empty).Trim(),
@@ -1805,9 +1818,7 @@ internal static partial class Program
             Release(code);
             Release(field);
             Release(fields);
-            Release(numberCellRange);
-            Release(numberCell);
-            Release(numberedTable);
+            Release(visibleNumberRange);
             Release(nativeRange);
             Release(aliasRange);
             Release(nativeBookmark);
@@ -2128,7 +2139,11 @@ internal static partial class Program
         Word.Document? document = null;
         try
         {
-            application = CreateWordApplication(visible: true);
+            // Keep this structural conversion acceptance hidden. The test still
+            // creates real Equation.DSMT4 objects and verifies their metafile
+            // presentations, but a visible automation window can be captured by
+            // Office's modal activation wizard before the first OMath is inserted.
+            application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             document.Content.Text = "OMML MathType format-conversion acceptance\r";
             var service = new WordFormulaService(application);
