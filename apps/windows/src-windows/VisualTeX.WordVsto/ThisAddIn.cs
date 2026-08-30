@@ -629,7 +629,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 currentSelection = application.Selection;
                 if (Interlocked.CompareExchange(ref _normalizingTypingCaret, 1, 0) != 0)
                     return;
-                try { service.NormalizeTypingCaretAfterInlineFormula(currentSelection); }
+                try
+                {
+                    // SelectionChange can arrive one Word UI turn before the new
+                    // right-cell paragraph/field boundary is fully materialized.
+                    // Reuse this existing single deferred caret pass as a targeted
+                    // retry; it never enumerates documents or sibling formulas.
+                    var redirected = WordEquationNumbering
+                        .TryRedirectManagedNativeOmmlNumberEndEnter(currentSelection);
+                    if (!redirected)
+                        service.NormalizeTypingCaretAfterInlineFormula(currentSelection);
+                    else
+                        ClearNativeOleTarget();
+                }
                 finally { Interlocked.Exchange(ref _normalizingTypingCaret, 0); }
             }
             catch { }
@@ -719,10 +731,30 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         Window? window = null;
         try
         {
+            var redirectedNumberEndEnter = false;
             if (Interlocked.CompareExchange(ref _normalizingTypingCaret, 1, 0) == 0)
             {
-                try { service.NormalizeTypingCaretAfterInlineFormula(selection); }
+                try
+                {
+                    // Pressing Enter at the end of a direct-SEQ 1x3 number does not
+                    // leave the table in Word: Word splits the right cell and drags
+                    // the SEQ/VTEq* tree into a second cell paragraph. Repair only
+                    // that exact structural state, then place the caret in an ordinary
+                    // body paragraph after the table. This is O(1) for normal clicks;
+                    // no OMML metadata is touched unless the right cell has already
+                    // acquired an extra empty paragraph.
+                    redirectedNumberEndEnter =
+                        WordEquationNumbering
+                            .TryRedirectManagedNativeOmmlNumberEndEnter(selection);
+                    if (!redirectedNumberEndEnter)
+                        service.NormalizeTypingCaretAfterInlineFormula(selection);
+                }
                 finally { Interlocked.Exchange(ref _normalizingTypingCaret, 0); }
+            }
+            if (redirectedNumberEndEnter)
+            {
+                ClearNativeOleTarget();
+                return;
             }
             // During a mouse click Word can raise SelectionChange while the OLE
             // object is still selected, then collapse the caret at the object

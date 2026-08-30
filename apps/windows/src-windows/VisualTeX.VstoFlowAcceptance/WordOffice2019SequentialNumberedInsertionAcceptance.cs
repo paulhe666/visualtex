@@ -57,6 +57,9 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
+            WordEquationNumbering.SetEquationNumberFormatPreference(
+                document,
+                EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
             var firstSession = CreateNumberedOmmlSession(
                 document,
@@ -98,15 +101,17 @@ internal static partial class Program
                 "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
                 + "<mi>y</mi><mo>=</mo><mn>2</mn></math>");
 
-            AssertSequentialNumberedInsertion(document, scenarioName);
+            AssertSequentialNumberedInsertion(
+                application,
+                document,
+                firstSession.FormulaId,
+                secondSession.FormulaId,
+                scenarioName);
             AssertNumberedSpacingCleanup(document, scenarioName);
             if (!captureInsideNumberedTable)
             {
-                AssertCompactTailExpandsForTyping(
-                    application,
-                    service,
+                AssertTerminalTypingParagraphIsOrdinary(
                     document,
-                    secondSession.FormulaId,
                     scenarioName);
             }
             else
@@ -197,6 +202,9 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
+            WordEquationNumbering.SetEquationNumberFormatPreference(
+                document,
+                EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
 
             var firstSession = CreateNumberedOmmlSession(
@@ -244,9 +252,6 @@ internal static partial class Program
             var artifactPath = Path.Combine(
                 artifactRoot,
                 "word-office2019-middle-insertion.docx");
-            document.SaveAs2(
-                artifactPath,
-                Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine(
                 $"    [diag] middle insertion: tables={document.Tables.Count}; "
                 + $"omaths={document.OMaths.Count}; paragraphs={document.Paragraphs.Count}");
@@ -295,7 +300,23 @@ internal static partial class Program
             AssertTrue(
                 middleBookmarkRange.Start < secondBookmarkRange.Start,
                 "Middle-insert acceptance still moved the new formula to the document tail.");
-            AssertNumberedSpacingCleanup(document, "middle-insertion");
+
+            // Inserting into the ordinary paragraph after formula #1 must leave a
+            // genuine typing paragraph after the new middle formula, followed by
+            // the mandatory compact paragraph before the old formula #2. This is
+            // the same user-facing contract as Enter at the end of a right-cell
+            // number: the ordinary line is deletable, while deleting it must not
+            // merge the two independent 1x3 tables.
+            AssertMiddleInsertionTypingParagraphIsDeletable(
+                document,
+                middleSession.FormulaId,
+                secondSession.FormulaId);
+            AssertNumberedSpacingCleanup(
+                document,
+                "middle-insertion-after-typing-line-delete");
+            document.SaveAs2(
+                artifactPath,
+                Word.WdSaveFormat.wdFormatXMLDocument);
 
         }
         finally
@@ -344,13 +365,85 @@ internal static partial class Program
     private static string WordRangeReference(int start, int end) =>
         $"{WordRangeReferencePrefix}{start}:{end}";
 
+    private static void AssertMiddleInsertionTypingParagraphIsDeletable(
+        Word.Document document,
+        string middleFormulaId,
+        string followingFormulaId)
+    {
+        Word.Table? middleTable = null;
+        Word.Table? followingTable = null;
+        Word.Range? middleTableRange = null;
+        Word.Range? followingTableRange = null;
+        Word.Range? typingRange = null;
+        try
+        {
+            middleTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    middleFormulaId)
+                ?? throw new InvalidDataException(
+                    "Middle-insert acceptance lost the newly inserted 1x3 table.");
+            followingTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    followingFormulaId)
+                ?? throw new InvalidDataException(
+                    "Middle-insert acceptance lost the following 1x3 table.");
+            middleTableRange = middleTable.Range;
+            followingTableRange = followingTable.Range;
+            AssertEqual(
+                middleTableRange.End + 2,
+                followingTableRange.Start,
+                "Middle insertion did not leave exactly one ordinary typing paragraph plus one compact table separator.");
+            AssertNormalTypingBodyParagraph(
+                document,
+                middleTableRange.End,
+                middleTableRange.End + 1,
+                "middle-insertion: ordinary typing paragraph");
+            AssertCompactBodyParagraph(
+                document,
+                middleTableRange.End + 1,
+                followingTableRange.Start,
+                "middle-insertion: mandatory table separator");
+
+            var tableCount = document.Tables.Count;
+            var mathCount = document.OMaths.Count;
+            typingRange = document.Range(
+                middleTableRange.End,
+                middleTableRange.End + 1);
+            typingRange.Delete();
+            AssertEqual(tableCount, document.Tables.Count,
+                "Deleting the middle insertion typing paragraph merged two 1x3 tables.");
+            AssertEqual(mathCount, document.OMaths.Count,
+                "Deleting the middle insertion typing paragraph removed a formula.");
+
+            Release(middleTableRange);
+            middleTableRange = middleTable.Range;
+            Release(followingTableRange);
+            followingTableRange = followingTable.Range;
+            AssertCompactBodyParagraph(
+                document,
+                middleTableRange.End,
+                followingTableRange.Start,
+                "middle-insertion: retained separator after deleting typing line");
+        }
+        finally
+        {
+            Release(typingRange);
+            Release(followingTableRange);
+            Release(middleTableRange);
+            Release(followingTable);
+            Release(middleTable);
+        }
+    }
+
     private static void AssertNumberedSpacingCleanup(
         Word.Document document,
         string scenarioName)
     {
+        var tableRanges = new List<(int Start, int End)>();
         for (var index = 1; index <= document.Tables.Count; index++)
         {
             Word.Table? table = null;
+            Word.Range? tableRange = null;
             try
             {
                 table = document.Tables[index];
@@ -358,12 +451,40 @@ internal static partial class Program
                     1,
                     table.Rows.Count,
                     $"{scenarioName}: numbered table {index} retained an empty structural row.");
+                AssertEqual(
+                    3,
+                    table.Columns.Count,
+                    $"{scenarioName}: numbered table {index} is not the current 1x3 host.");
+                tableRange = table.Range;
+                tableRanges.Add((tableRange.Start, tableRange.End));
             }
-            finally { Release(table); }
+            finally
+            {
+                Release(tableRange);
+                Release(table);
+            }
         }
+        tableRanges.Sort((left, right) => left.Start.CompareTo(right.Start));
+        AssertTrue(tableRanges.Count > 0,
+            $"{scenarioName}: no numbered 1x3 table was retained.");
+        AssertEqual(document.Content.Start, tableRanges[0].Start,
+            $"{scenarioName}: an unexpected body paragraph remains before the first numbered table.");
+
+        for (var index = 1; index < tableRanges.Count; index++)
+        {
+            AssertCompactBodyParagraph(
+                document,
+                tableRanges[index - 1].End,
+                tableRanges[index].Start,
+                $"{scenarioName}: inter-table separator {index}");
+        }
+        AssertNormalTypingBodyParagraph(
+            document,
+            tableRanges[tableRanges.Count - 1].End,
+            document.Content.End,
+            $"{scenarioName}: terminal typing paragraph");
 
         var ordinaryParagraphCount = 0;
-        Word.Range? lastOrdinaryParagraph = null;
         for (var index = 1; index <= document.Paragraphs.Count; index++)
         {
             Word.Paragraph? paragraph = null;
@@ -376,10 +497,7 @@ internal static partial class Program
                 if ((bool)range.get_Information(Word.WdInformation.wdWithInTable))
                     continue;
                 frames = range.Frames;
-                if (frames.Count > 0) continue;
-                ordinaryParagraphCount++;
-                Release(lastOrdinaryParagraph);
-                lastOrdinaryParagraph = range.Duplicate;
+                if (frames.Count == 0) ordinaryParagraphCount++;
             }
             finally
             {
@@ -388,77 +506,124 @@ internal static partial class Program
                 Release(paragraph);
             }
         }
-        try
-        {
-            AssertEqual(
-                1,
-                ordinaryParagraphCount,
-                $"{scenarioName}: an ordinary blank paragraph remained between numbered formulas.");
-            AssertTrue(
-                lastOrdinaryParagraph is not null,
-                $"{scenarioName}: Word lost its required terminal paragraph.");
-            AssertEqual(
-                document.Content.End,
-                lastOrdinaryParagraph!.End,
-                $"{scenarioName}: the only ordinary paragraph is not the terminal paragraph.");
-            AssertTrue(
-                lastOrdinaryParagraph.Font.Size <= 1.1f,
-                $"{scenarioName}: the terminal structural paragraph still occupies normal line height.");
-            AssertEqual(
-                Word.WdLineSpacing.wdLineSpaceExactly,
-                lastOrdinaryParagraph.ParagraphFormat.LineSpacingRule,
-                $"{scenarioName}: the terminal structural paragraph is not compacted.");
-            AssertTrue(
-                lastOrdinaryParagraph.ParagraphFormat.LineSpacing <= 1.1f,
-                $"{scenarioName}: the terminal structural paragraph line spacing is too large.");
-        }
-        finally { Release(lastOrdinaryParagraph); }
+        AssertEqual(
+            tableRanges.Count,
+            ordinaryParagraphCount,
+            $"{scenarioName}: a visible or duplicate body paragraph remains around the numbered tables.");
     }
 
-    private static void AssertCompactTailExpandsForTyping(
-        Word.Application application,
-        WordFormulaService service,
+    private static void AssertCompactBodyParagraph(
         Word.Document document,
-        string tailFormulaId,
+        int start,
+        int end,
+        string context)
+    {
+        Word.Range? range = null;
+        Word.Font? font = null;
+        Word.ParagraphFormat? format = null;
+        try
+        {
+            range = document.Range(start, end);
+            AssertEqual("\r", range.Text,
+                context + ": expected exactly one structural paragraph mark.");
+            AssertTrue(!(bool)range.get_Information(
+                           Word.WdInformation.wdWithInTable)
+                       && range.Tables.Count == 0
+                       && range.OMaths.Count == 0
+                       && range.Fields.Count == 0
+                       && range.Bookmarks.Count == 0
+                       && range.InlineShapes.Count == 0
+                       && range.Frames.Count == 0,
+                context + ": structural paragraph owns table, formula, field, bookmark, OLE, or Frame content.");
+            font = range.Font;
+            format = range.ParagraphFormat;
+            AssertTrue(font.Size <= 1.1f,
+                context + $": paragraph remains visible at {font.Size:0.###}pt.");
+            AssertEqual(
+                Word.WdLineSpacing.wdLineSpaceExactly,
+                format.LineSpacingRule,
+                context + ": paragraph is not exact-height.");
+            AssertTrue(format.LineSpacing <= 1.1f,
+                context + $": paragraph remains {format.LineSpacing:0.###}pt high.");
+        }
+        finally
+        {
+            Release(format);
+            Release(font);
+            Release(range);
+        }
+    }
+
+    private static void AssertNormalTypingBodyParagraph(
+        Word.Document document,
+        int start,
+        int end,
+        string context)
+    {
+        Word.Range? range = null;
+        Word.Font? font = null;
+        Word.ParagraphFormat? format = null;
+        try
+        {
+            range = document.Range(start, end);
+            AssertEqual("\r", range.Text,
+                context + ": expected exactly one empty paragraph mark.");
+            AssertTrue(!(bool)range.get_Information(
+                           Word.WdInformation.wdWithInTable)
+                       && range.Tables.Count == 0
+                       && range.OMaths.Count == 0
+                       && range.Fields.Count == 0
+                       && range.Bookmarks.Count == 0
+                       && range.InlineShapes.Count == 0
+                       && range.Frames.Count == 0,
+                context + ": typing paragraph owns table, formula, field, bookmark, OLE, or Frame content.");
+            font = range.Font;
+            format = range.ParagraphFormat;
+            AssertTrue(font.Size > 1.1f,
+                context + ": typing paragraph inherited the internal 1pt separator font.");
+            AssertEqual(
+                Word.WdLineSpacing.wdLineSpaceSingle,
+                format.LineSpacingRule,
+                context + ": typing paragraph is not a normal single-line paragraph.");
+        }
+        finally
+        {
+            Release(format);
+            Release(font);
+            Release(range);
+        }
+    }
+
+    private static void AssertTerminalTypingParagraphIsOrdinary(
+        Word.Document document,
         string scenarioName)
     {
         Word.Paragraph? lastParagraph = null;
         Word.Range? lastRange = null;
-        Word.Selection? selection = null;
         try
         {
             lastParagraph = document.Paragraphs[document.Paragraphs.Count];
-            lastRange = lastParagraph.Range;
-            selection = application.Selection;
-            selection.SetRange(lastRange.Start, lastRange.Start);
-            service.NormalizeTypingCaretAfterInlineFormula(selection);
-            Release(lastRange);
-            lastRange = lastParagraph.Range;
-            AssertTrue(
-                lastRange.Font.Size > 1.1f,
-                $"{scenarioName}: selecting the compact terminal paragraph did not restore normal typing size.");
-            AssertEqual(
-                Word.WdLineSpacing.wdLineSpaceSingle,
-                lastRange.ParagraphFormat.LineSpacingRule,
-                $"{scenarioName}: selecting the compact terminal paragraph did not restore normal line spacing.");
-
-            // Restore the compact structural state so the saved acceptance artifact
-            // matches the idle document state seen by users after insertion.
-            WordEquationNumbering.CleanupNumberedDisplayInsertionSpacing(
+            lastRange = lastParagraph.Range.Duplicate;
+            AssertEqual(document.Content.End, lastRange.End,
+                $"{scenarioName}: the final typing paragraph does not end at the document boundary.");
+            AssertNormalTypingBodyParagraph(
                 document,
-                tailFormulaId);
-            AssertNumberedSpacingCleanup(document, scenarioName + "-recompact");
+                lastRange.Start,
+                lastRange.End,
+                $"{scenarioName}: final typing paragraph");
         }
         finally
         {
-            Release(selection);
             Release(lastRange);
             Release(lastParagraph);
         }
     }
 
     private static void AssertSequentialNumberedInsertion(
+        Word.Application application,
         Word.Document document,
+        string firstFormulaId,
+        string secondFormulaId,
         string scenarioName)
     {
         AssertEqual(
@@ -469,123 +634,78 @@ internal static partial class Program
             2,
             document.OMaths.Count,
             $"{scenarioName}: one native formula was swallowed during sequential insertion.");
+        AssertEqual(0, document.Shapes.Count,
+            $"{scenarioName}: sequential insertion recreated a retired Shape/TextBox number.");
+        AssertEqual(0, document.Frames.Count,
+            $"{scenarioName}: sequential insertion recreated a retired caption Frame.");
 
-        var tableRanges = new List<(int Start, int End)>();
-        for (var index = 1; index <= document.Tables.Count; index++)
-        {
-            Word.Table? table = null;
-            Word.Cell? centerCell = null;
-            Word.Range? centerRange = null;
-            Word.Range? tableRange = null;
-            try
-            {
-                table = document.Tables[index];
-                centerCell = table.Cell(1, 2);
-                centerRange = centerCell.Range;
-                AssertEqual(
-                    1,
-                    centerRange.OMaths.Count,
-                    $"{scenarioName}: numbered table {index} does not own exactly one center-cell OMath.");
-                tableRange = table.Range;
-                tableRanges.Add((tableRange.Start, tableRange.End));
-            }
-            finally
-            {
-                Release(tableRange);
-                Release(centerRange);
-                Release(centerCell);
-                Release(table);
-            }
-        }
+        AssertOmmlTableNumberLifecyclePhase(
+            application,
+            document,
+            firstFormulaId,
+            scenarioName + " first 1x3 host");
+        AssertOmmlTableNumberLifecyclePhase(
+            application,
+            document,
+            secondFormulaId,
+            scenarioName + " second 1x3 host");
+        AssertManagedNativeOmmlInterTableSeparatorsCompact(
+            document,
+            new[] { firstFormulaId, secondFormulaId },
+            scenarioName + " sequential insertion");
 
-        var captionRanges = new List<(int Start, int End)>();
-        Word.Bookmarks? bookmarks = null;
+        Word.Table? firstTable = null;
+        Word.Table? secondTable = null;
+        Word.Range? firstTableRange = null;
+        Word.Range? secondTableRange = null;
+        Word.Range? firstNumberRange = null;
+        Word.Range? secondNumberRange = null;
         try
         {
-            bookmarks = document.Bookmarks;
-            for (var index = 1; index <= bookmarks.Count; index++)
-            {
-                Word.Bookmark? bookmark = null;
-                Word.Range? range = null;
-                try
-                {
-                    bookmark = bookmarks[index];
-                    if (!bookmark.Name.StartsWith("VTEqCap_", StringComparison.Ordinal))
-                        continue;
-                    range = bookmark.Range;
-                    captionRanges.Add((range.Start, range.End));
-                }
-                finally
-                {
-                    Release(range);
-                    Release(bookmark);
-                }
-            }
+            firstTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    firstFormulaId)
+                ?? throw new InvalidDataException(
+                    $"{scenarioName}: the first FormulaId lost its 1x3 host.");
+            secondTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    secondFormulaId)
+                ?? throw new InvalidDataException(
+                    $"{scenarioName}: the second FormulaId lost its 1x3 host.");
+            firstTableRange = firstTable.Range;
+            secondTableRange = secondTable.Range;
+            AssertTrue(firstTableRange.Start < secondTableRange.Start,
+                $"{scenarioName}: the second formula was inserted before the captured first formula.");
+            AssertTrue(firstTableRange.End < secondTableRange.Start,
+                $"{scenarioName}: the two 1x3 hosts overlap or were merged.");
+
+            firstNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    firstFormulaId)
+                ?? throw new InvalidDataException(
+                    $"{scenarioName}: the first right-cell number is missing.");
+            secondNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    secondFormulaId)
+                ?? throw new InvalidDataException(
+                    $"{scenarioName}: the second right-cell number is missing.");
+            AssertEqual(
+                "1",
+                (firstNumberRange.Text ?? string.Empty).Trim().Trim('(', ')'),
+                $"{scenarioName}: the first formula was renumbered out of document order.");
+            AssertEqual(
+                "2",
+                (secondNumberRange.Text ?? string.Empty).Trim().Trim('(', ')'),
+                $"{scenarioName}: the second formula did not receive sequence number 2.");
         }
-        finally { Release(bookmarks); }
-
-        tableRanges.Sort((left, right) => left.Start.CompareTo(right.Start));
-        captionRanges.Sort((left, right) => left.Start.CompareTo(right.Start));
-        AssertEqual(
-            2,
-            captionRanges.Count,
-            $"{scenarioName}: expected two independent native SEQ caption bookmarks.");
-        AssertTrue(
-            tableRanges[0].End <= captionRanges[0].Start,
-            $"{scenarioName}: the first native SEQ caption was inserted inside its formula table.");
-        AssertTrue(
-            captionRanges[0].End <= tableRanges[1].Start,
-            $"{scenarioName}: the second formula was inserted before the first formula's native SEQ caption.");
-        AssertTrue(
-            tableRanges[1].End <= captionRanges[1].Start,
-            $"{scenarioName}: the second native SEQ caption was inserted inside its formula table.");
-
-        var sequenceResults = new List<(int Position, string Text)>();
-        Word.Fields? fields = null;
-        try
+        finally
         {
-            fields = document.Fields;
-            for (var index = 1; index <= fields.Count; index++)
-            {
-                Word.Field? field = null;
-                Word.Range? code = null;
-                Word.Range? result = null;
-                try
-                {
-                    field = fields[index];
-                    code = field.Code;
-                    if (!(code.Text ?? string.Empty).TrimStart().StartsWith(
-                            "SEQ ",
-                            StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    result = field.Result;
-                    sequenceResults.Add((result.Start, (result.Text ?? string.Empty).Trim()));
-                }
-                finally
-                {
-                    Release(result);
-                    Release(code);
-                    Release(field);
-                }
-            }
+            Release(secondNumberRange);
+            Release(firstNumberRange);
+            Release(secondTableRange);
+            Release(firstTableRange);
+            Release(secondTable);
+            Release(firstTable);
         }
-        finally { Release(fields); }
-
-        var orderedSequenceResults = sequenceResults
-            .OrderBy(item => item.Position)
-            .Select(item => item.Text)
-            .ToArray();
-        AssertEqual(
-            2,
-            orderedSequenceResults.Length,
-            $"{scenarioName}: expected two native Equation SEQ fields.");
-        AssertEqual(
-            "1",
-            orderedSequenceResults[0],
-            $"{scenarioName}: the first formula was renumbered out of document order.");
-        AssertEqual(
-            "2",
-            orderedSequenceResults[1],
-            $"{scenarioName}: the second formula did not receive sequence number 2.");
     }
 }

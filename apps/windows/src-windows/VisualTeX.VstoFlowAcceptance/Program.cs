@@ -986,6 +986,10 @@ internal static partial class Program
             {
                 RunWordOmmlEmptyLineInsertionRegressionAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-omml-number-end-enter-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlNumberEndEnterRegressionAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-deferred-finalization-cost", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlDeferredFinalizationCostAcceptance(artifactRoot);

@@ -3316,15 +3316,16 @@ internal static partial class WordEquationNumbering
         var nativeTableTypingRange =
             EnsureNormalTypingParagraphAfterNativeOmmlTable(
                 document,
-                formulaId);
-        if (nativeTableTypingRange is not null)
+                formulaId,
+                out var nativeDirectTableMatched);
+        if (nativeDirectTableMatched)
             return nativeTableTypingRange;
 
-        // Current numbered OMML keeps SEQ and all number aliases inside the
+        // Retired native #(SEQ) OMML kept SEQ and all number aliases inside the
         // display OMath itself. It has no hidden caption paragraph or Shape anchor,
         // so the legacy caption/frame routine below must not touch it. Create or
-        // reuse the ordinary paragraph immediately after the mathematical paragraph
-        // through the native-hash helper instead.
+        // reuse the ordinary paragraph immediately after that mathematical paragraph
+        // through the native-hash compatibility helper instead.
         var nativeHashTypingRange =
             EnsureNormalTypingParagraphAfterNativeOmmlHashSequence(
                 document,
@@ -3556,7 +3557,12 @@ internal static partial class WordEquationNumbering
         // all durable, then removed here. Do not let it fall through to the retired
         // hidden-caption/Shape spacing path.
         if (CleanupNativeOmmlTablePrecedingParagraph(document, formulaId))
+        {
+            CleanupGeneratedNativeOmmlTypingTailBeforeFollowingTable(
+                document,
+                formulaId);
             return;
+        }
 
         Bookmarks? bookmarks = null;
         Bookmark? captionBookmark = null;
@@ -4115,6 +4121,15 @@ internal static partial class WordEquationNumbering
                     reuseExistingScaffold: true,
                     metadata: metadata,
                     deferNativeOmmlShapeCreation: true);
+                // Repair documents produced by builds that retained the mandatory
+                // separator between adjacent 1x3 tables at ordinary 10.5/12pt line
+                // metrics. The paragraph cannot be deleted without merging the two
+                // tables, but it can be made visually negligible and remains outside
+                // every FormulaId/field/bookmark identity.
+                CompactManagedNativeOmmlTableSeparatorBefore(document, formulaId);
+                CleanupGeneratedNativeOmmlTypingTailBeforeFollowingTable(
+                    document,
+                    formulaId);
                 refreshed++;
             }
             finally { Release(formulaRange); }

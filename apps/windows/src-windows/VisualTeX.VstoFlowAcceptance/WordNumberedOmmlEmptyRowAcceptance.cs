@@ -1,5 +1,4 @@
 using VisualTeX.WindowsOffice.Contracts;
-using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -13,34 +12,27 @@ internal static partial class Program
         var documentPath = Path.Combine(
             artifactRoot,
             "word-numbered-omml-empty-row.docx");
-        var assetRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "VisualTeX",
-            "office",
-            "temp",
-            $"numbered-omml-empty-row-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(assetRoot);
-        var svgPath = Path.Combine(assetRoot, "numbered-omml-empty-row.svg");
-        File.WriteAllText(
-            svgPath,
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"76\" viewBox=\"0 0 240 76\"><text x=\"4\" y=\"50\" font-size=\"34\">x = (-b ± √D) / 2a</text></svg>");
-        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 240, 76);
-        var pngDataUrl = CreatePngDataUrl(
-            "word-numbered-omml-empty-row",
-            240,
-            76);
-        var pngPath = Path.Combine(assetRoot, "numbered-omml-empty-row.png");
-        File.WriteAllBytes(
-            pngPath,
-            Convert.FromBase64String(
-                pngDataUrl.Substring(pngDataUrl.IndexOf(',') + 1)));
+        const string latex = @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}";
+        const string initialMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo>"
+            + "<msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></msqrt>"
+            + "</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>";
+        const string editedMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo>"
+            + "<msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></msqrt>"
+            + "</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac><mo>+</mo><mn>0</mn></math>";
 
         Word.Application? application = null;
         Word.Document? document = null;
-        Word.InlineShape? sourceShape = null;
+        Word.Range? insertion = null;
         Word.Range? sourceRange = null;
         Word.Table? legacyTable = null;
         Word.Row? emptyRow = null;
+        Word.Table? repairedTable = null;
+        Word.Rows? repairedRows = null;
+        Word.Columns? repairedColumns = null;
         try
         {
             application = CreateWordApplication(visible: false);
@@ -53,112 +45,162 @@ internal static partial class Program
 
             var service = new WordFormulaService(application);
             var formulaId = Guid.NewGuid().ToString("D");
-            var insertion = document.Range(
-                document.Content.End - 1,
+            var insertionPosition = Math.Max(
+                document.Content.Start,
                 document.Content.End - 1);
-            try
-            {
-                application.Selection.SetRange(insertion.Start, insertion.End);
-                var createSession = CreateNumberedPerformanceSession(
-                    "create",
-                    formulaId,
-                    document.FullName,
-                    WordRangeReference(insertion.Start, insertion.End),
-                    originalMetadata: null,
-                    latex: @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}");
-                createSession.ExportResult = new OfficeExportDocument
-                {
-                    Width = 240,
-                    Height = 76,
-                    Baseline = 57,
-                    FormulaLetterFont = "katex",
-                    FormulaChineseFont = "system",
-                };
-                service.InsertOle(createSession, pngPath, emfPath);
-            }
-            finally
-            {
-                Release(insertion);
-            }
+            insertion = document.Range(insertionPosition, insertionPosition);
+            application.Selection.SetRange(insertion.Start, insertion.End);
+            var createSession = CreateNumberedOmmlTabSession(
+                formulaId,
+                document.FullName,
+                insertion.Start,
+                insertion.End,
+                latex,
+                originalMetadata: null);
+            service.InsertOmml(createSession, initialMathMl);
+            Release(insertion);
+            insertion = null;
 
-            sourceShape = FindVisualTeXOleByFormulaIdForNumberToggle(
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
                 document,
-                formulaId);
-            var sourceMetadata = WordFormulaMetadataReader.TryRead(sourceShape)
+                formulaId,
+                "empty-row fixture healthy 1x3 source");
+            AssertEqual(1, document.Tables.Count,
+                "The empty-row fixture did not start with exactly one current 1x3 table.");
+
+            var sourceMetadata = WordOmmlFormulaStore.TryRead(document, formulaId)
                 ?? throw new InvalidDataException(
-                    "The numbered VisualTeX OLE source lost its metadata before OMML replacement.");
-            sourceRange = sourceShape.Range;
+                    "The numbered OMML source lost its metadata before the empty-row fixture was created.");
+            sourceRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                document,
+                formulaId,
+                sourceMetadata);
             legacyTable = WordEquationNumbering.FindNumberedEquationTable(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
-                    "The empty-row regression fixture did not start from a managed VisualTeX numbering table.");
+                    "The empty-row regression could not resolve the current managed 1x3 table.");
             emptyRow = legacyTable.Rows.Add();
             AssertEqual(2, legacyTable.Rows.Count,
-                "The empty-row regression fixture did not produce a 2x3 managed numbering table.");
+                "The empty-row regression fixture did not produce a 2x3 managed table.");
             AssertEqual(3, legacyTable.Columns.Count,
-                "The empty-row regression fixture changed the managed numbering-table column count.");
+                "The empty-row regression fixture changed the managed table's column count.");
+            AssertEqual(1, document.Tables.Count,
+                "Adding one benign row duplicated the numbered OMML table.");
+            AssertEqual(1, document.OMaths.Count,
+                "Adding one benign row changed the numbered OMML formula count.");
 
-            var replaceSession = CreateNumberedPerformanceSession(
-                "edit",
-                formulaId,
-                document.FullName,
-                WordRangeReference(sourceRange.Start, sourceRange.End),
-                sourceMetadata,
-                latex: @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}");
-            replaceSession.ObjectMode = FormulaOleContract.WordOmmlMode;
-            replaceSession.ExportResult = new OfficeExportDocument
-            {
-                FormulaLetterFont = "katex",
-                FormulaChineseFont = "system",
-            };
-            service.ReplaceOmml(
-                replaceSession,
-                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
-                + "<mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo>"
-                + "<msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></msqrt>"
-                + "</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>");
-
-            // ReplaceOmml owns the structural migration. The old table RCW is
-            // intentionally stale once Word converts/deletes that host; never call
-            // Delete on it after the replacement has committed.
-            Release(emptyRow); emptyRow = null;
-            Release(legacyTable); legacyTable = null;
-            Release(sourceRange); sourceRange = null;
-            Release(sourceShape); sourceShape = null;
-
-            AssertNumberedOmmlTabHost(
+            // Re-resolve the formula after Rows.Add, because Word can shift every
+            // range endpoint in the table even though the center OMath is unchanged.
+            Release(sourceRange);
+            sourceRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
                 document,
                 formulaId,
-                updateReference: true,
-                context: "OLE-to-OMML replacement with benign empty legacy row");
-            AssertTrue(
-                WordEquationNumbering.FindNumberedEquationTable(document, formulaId) is null,
-                "OLE-to-OMML replacement left a legacy numbering table after tab migration.");
+                sourceMetadata);
+            var replaceSession = CreateNumberedOmmlTabSession(
+                formulaId,
+                document.FullName,
+                sourceRange.Start,
+                sourceRange.End,
+                latex,
+                sourceMetadata);
+
+            // The replacement owns the structural migration. Release every RCW that
+            // points into the malformed 2x3 table before the transaction mutates it.
+            Release(emptyRow);
+            emptyRow = null;
+            Release(legacyTable);
+            legacyTable = null;
+            Release(sourceRange);
+            sourceRange = null;
+
+            service.ReplaceOmml(replaceSession, editedMathMl);
+
+            AssertEqual(1, document.Tables.Count,
+                "Editing a benign 2x3 numbered OMML host did not converge to one table.");
+            AssertEqual(1, document.OMaths.Count,
+                "Editing the benign 2x3 host changed the formula count.");
+            AssertEqual(0, document.Shapes.Count,
+                "Editing the benign 2x3 host recreated a retired Shape/TextBox number.");
+            AssertEqual(0, document.Frames.Count,
+                "Editing the benign 2x3 host recreated a retired caption Frame.");
+            repairedTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    formulaId)
+                ?? throw new InvalidDataException(
+                    "Editing the benign 2x3 host lost the current numbered table.");
+            repairedRows = repairedTable.Rows;
+            repairedColumns = repairedTable.Columns;
+            AssertEqual(1, repairedRows.Count,
+                "Editing the benign 2x3 host left an extra table row.");
+            AssertEqual(3, repairedColumns.Count,
+                "Editing the benign 2x3 host changed the table column count.");
+            Release(repairedColumns);
+            repairedColumns = null;
+            Release(repairedRows);
+            repairedRows = null;
+            Release(repairedTable);
+            repairedTable = null;
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
+                document,
+                formulaId,
+                "benign 2x3 host after OMML edit repair");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
-            Release(document); document = null;
+            Release(document);
+            document = null;
             document = application.Documents.Open(
                 documentPath,
                 ReadOnly: false,
                 AddToRecentFiles: false,
                 Visible: false);
-            AssertNumberedOmmlTabHost(
+            document.Activate();
+            AssertEqual(1, document.Tables.Count,
+                "Save/reopen after empty-row repair changed the table count.");
+            AssertEqual(1, document.OMaths.Count,
+                "Save/reopen after empty-row repair changed the formula count.");
+            AssertEqual(0, document.Shapes.Count,
+                "Save/reopen after empty-row repair recreated a Shape/TextBox.");
+            AssertEqual(0, document.Frames.Count,
+                "Save/reopen after empty-row repair recreated a caption Frame.");
+            repairedTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    formulaId)
+                ?? throw new InvalidDataException(
+                    "Save/reopen after empty-row repair lost the 1x3 table.");
+            repairedRows = repairedTable.Rows;
+            repairedColumns = repairedTable.Columns;
+            AssertEqual(1, repairedRows.Count,
+                "Save/reopen after empty-row repair restored the extra row.");
+            AssertEqual(3, repairedColumns.Count,
+                "Save/reopen after empty-row repair changed the column count.");
+            Release(repairedColumns);
+            repairedColumns = null;
+            Release(repairedRows);
+            repairedRows = null;
+            Release(repairedTable);
+            repairedTable = null;
+            AssertOmmlTableNumberLifecyclePhase(
+                application,
                 document,
                 formulaId,
-                updateReference: true,
-                context: "saved/reopened OLE-to-OMML empty-row replacement");
+                "benign 2x3 repair save/reopen");
 
             Console.WriteLine(
-                "Numbered OLE-to-OMML empty-row acceptance passed: the first replacement removed the benign extra legacy row, migrated the managed 1x3 host to a table-free center/right-tab OMath paragraph, and save/reopen preserved it.");
+                "Numbered OMML empty-row acceptance passed: a current direct-SEQ 1x3 host was deliberately expanded to a benign 2x3 fixture, the next VisualTeX edit converged it back to exactly one 1x3 table without Shape/Frame artifacts, and save/reopen preserved the repaired structure.");
         }
         finally
         {
+            Release(repairedColumns);
+            Release(repairedRows);
+            Release(repairedTable);
             Release(emptyRow);
             Release(legacyTable);
             Release(sourceRange);
-            Release(sourceShape);
+            Release(insertion);
             if (document is not null)
             {
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
@@ -166,7 +208,6 @@ internal static partial class Program
             Release(document);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
-            try { Directory.Delete(assetRoot, recursive: true); } catch { }
             ForceComCleanup();
         }
     }

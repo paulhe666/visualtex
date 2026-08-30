@@ -300,6 +300,10 @@ internal static partial class Program
             AssertEqual(0, CountMathTypePlaceRefFields(document),
                 "MathType→OMML conversion left an MTPlaceRef field behind.");
             DumpUserReportOmmlStructure(document, formulaIds, "after-conversion");
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
+                document,
+                formulaIds,
+                "MathType→OMML after conversion");
             if (!deferLiveGeometryAssertions)
             {
                 foreach (var formulaId in formulaIds)
@@ -427,6 +431,12 @@ internal static partial class Program
                 expectInjectedRollback
                     ? "after-successful-rollback"
                     : "after-successful-reedit");
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
+                document,
+                formulaIds,
+                expectInjectedRollback
+                    ? "MathType→OMML after rollback"
+                    : "MathType→OMML after re-edit");
             if (!deferLiveGeometryAssertions)
             {
                 foreach (var formulaId in formulaIds)
@@ -463,6 +473,23 @@ internal static partial class Program
                 "Save/reopen after converted OMML re-edit lost an equation.");
             AssertEqual(formulas.Length, document.Tables.Count,
                 "Save/reopen after converted OMML re-edit changed the 1x3 table count.");
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
+                document,
+                formulaIds,
+                expectInjectedRollback
+                    ? "MathType→OMML rollback save/reopen"
+                    : "MathType→OMML re-edit save/reopen");
+            ExpandManagedNativeOmmlInterTableSeparatorsForLegacyFixture(
+                document,
+                formulaIds);
+            var refreshedAfterOpen =
+                WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document);
+            AssertEqual(formulaIds.Length, refreshedAfterOpen,
+                "Document-open OMML layout refresh did not visit every converted 1x3 formula.");
+            AssertManagedNativeOmmlInterTableSeparatorsCompact(
+                document,
+                formulaIds,
+                "legacy visible separators after document-open refresh");
             foreach (var formulaId in formulaIds)
                 AssertOmmlTableNumberLifecyclePhase(
                     application,
@@ -547,6 +574,460 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void ExpandManagedNativeOmmlInterTableSeparatorsForLegacyFixture(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        var tables = new List<(int Start, int End)>();
+        foreach (var formulaId in formulaIds)
+        {
+            Word.Table? table = null;
+            Word.Range? tableRange = null;
+            try
+            {
+                table = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        formulaId)
+                    ?? throw new InvalidDataException(
+                        "Legacy-separator fixture lost a managed 1x3 table.");
+                tableRange = table.Range;
+                tables.Add((tableRange.Start, tableRange.End));
+            }
+            finally
+            {
+                Release(tableRange);
+                Release(table);
+            }
+        }
+        tables.Sort((left, right) => left.Start.CompareTo(right.Start));
+        for (var index = 1; index < tables.Count; index++)
+        {
+            Word.Range? separator = null;
+            Word.Font? font = null;
+            Word.ParagraphFormat? format = null;
+            try
+            {
+                separator = document.Range(tables[index - 1].End, tables[index].Start);
+                AssertEqual("\r", separator.Text,
+                    "Legacy-separator fixture expected one structural paragraph between tables.");
+                font = separator.Font;
+                font.Size = 10.5f;
+                font.Hidden = 0;
+                format = separator.ParagraphFormat;
+                format.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceSingle;
+                format.SpaceBefore = 0f;
+                format.SpaceAfter = 0f;
+                Console.WriteLine(
+                    $"[LEGACY VISIBLE OMML TABLE SEPARATOR] index={index} range={separator.Start}:{separator.End} font={font.Size:0.###} lineRule={format.LineSpacingRule}.");
+            }
+            finally
+            {
+                Release(format);
+                Release(font);
+                Release(separator);
+            }
+        }
+    }
+
+    private static void AssertManagedNativeOmmlInterTableSeparatorsCompact(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds,
+        string stage)
+    {
+        var tables = new List<(int Start, int End, string FormulaId)>();
+        foreach (var formulaId in formulaIds)
+        {
+            Word.Table? table = null;
+            Word.Range? tableRange = null;
+            try
+            {
+                table = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        formulaId)
+                    ?? throw new InvalidDataException(
+                        $"{stage}: formula {formulaId} lost its 1x3 table.");
+                tableRange = table.Range;
+                tables.Add((tableRange.Start, tableRange.End, formulaId));
+            }
+            finally
+            {
+                Release(tableRange);
+                Release(table);
+            }
+        }
+
+        tables.Sort((left, right) => left.Start.CompareTo(right.Start));
+        for (var index = 1; index < tables.Count; index++)
+        {
+            var previous = tables[index - 1];
+            var current = tables[index];
+            Word.Range? separator = null;
+            Word.Paragraphs? paragraphs = null;
+            Word.Paragraph? paragraph = null;
+            Word.Range? paragraphRange = null;
+            Word.Font? font = null;
+            Word.ParagraphFormat? format = null;
+            try
+            {
+                separator = document.Range(previous.End, current.Start);
+                AssertEqual("\r", separator.Text,
+                    $"{stage}: formulas {index}/{index + 1} are not separated by exactly one structural paragraph.");
+                AssertTrue(!(bool)separator.get_Information(
+                               Word.WdInformation.wdWithInTable)
+                           && separator.Tables.Count == 0
+                           && separator.OMaths.Count == 0
+                           && separator.Fields.Count == 0
+                           && separator.Bookmarks.Count == 0
+                           && separator.InlineShapes.Count == 0,
+                    $"{stage}: the table separator owns formula, field, bookmark, OLE, or table content.");
+                paragraphs = separator.Paragraphs;
+                AssertEqual(1, paragraphs.Count,
+                    $"{stage}: the table separator is not one body paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range.Duplicate;
+                font = paragraphRange.Font;
+                format = paragraphRange.ParagraphFormat;
+                AssertTrue(font.Size <= 1.25f,
+                    $"{stage}: table separator {index} remains visible at {font.Size:0.###}pt.");
+                AssertEqual(Word.WdLineSpacing.wdLineSpaceExactly,
+                    format.LineSpacingRule,
+                    $"{stage}: table separator {index} is not exact-height.");
+                AssertTrue(format.LineSpacing <= 1.25f,
+                    $"{stage}: table separator {index} remains {format.LineSpacing:0.###}pt high.");
+                Console.WriteLine(
+                    $"[COMPACT OMML TABLE SEPARATOR] stage={stage} index={index} range={separator.Start}:{separator.End} font={font.Size:0.###} line={format.LineSpacing:0.###}.");
+            }
+            finally
+            {
+                Release(format);
+                Release(font);
+                Release(paragraphRange);
+                Release(paragraph);
+                Release(paragraphs);
+                Release(separator);
+            }
+        }
+    }
+
+    private static void RunWordOmmlNumberEndEnterRegressionAcceptance(string artifactRoot)
+    {
+        AssertTrue(!AttachActiveWord,
+            "The number-end Enter regression must not attach to the user's active Word instance.");
+        Directory.CreateDirectory(artifactRoot);
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        Word.Bookmark? visibleBookmark = null;
+        Word.Range? visibleRange = null;
+        Word.Selection? selection = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add(Visible: false);
+            document.Activate();
+            ConfigureOmmlTableNumberPage(document);
+            var service = new WordFormulaService(application);
+            var formulaIds = new List<string>();
+            for (var index = 0; index < 2; index++)
+            {
+                SelectDocumentEnd(document);
+                insertion = application.Selection.Range;
+                var formulaId = Guid.NewGuid().ToString("D");
+                formulaIds.Add(formulaId);
+                var session = CreateNumberedOmmlTabSession(
+                    formulaId,
+                    document.FullName,
+                    insertion.Start,
+                    insertion.End,
+                    index == 0 ? @"e^{i\pi}+1=0" : @"a^2+b^2=c^2",
+                    originalMetadata: null);
+                service.InsertOmml(
+                    session,
+                    index == 0
+                        ? CreateUserReportedMathTypeFormulaSet()[1].MathMl
+                        : CreateUserReportedMathTypeFormulaSet()[2].MathMl);
+                Release(insertion);
+                insertion = null;
+            }
+
+            DumpNumberedOmmlBodyParagraphs(document, "before-number-end-enter");
+            var visibleName = "VTEq_" + Guid.Parse(formulaIds[0]).ToString("N");
+            visibleBookmark = document.Bookmarks[visibleName];
+            visibleRange = visibleBookmark.Range.Duplicate;
+            selection = application.Selection;
+            selection.SetRange(visibleRange.End, visibleRange.End);
+            Console.WriteLine(
+                $"[NUMBER END ENTER] before selection={selection.Start}:{selection.End} visible={visibleRange.Start}:{visibleRange.End} tables={document.Tables.Count} paragraphs={document.Paragraphs.Count}");
+            selection.TypeParagraph();
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(100);
+            Console.WriteLine(
+                $"[NUMBER END ENTER] native-after selection={selection.Start}:{selection.End} withinTable={selection.get_Information(Word.WdInformation.wdWithInTable)} tables={document.Tables.Count} paragraphs={document.Paragraphs.Count}");
+            AssertTrue((bool)selection.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                "The regression did not reproduce Word's native extra paragraph inside the number cell.");
+            DumpNumberedOmmlBodyParagraphs(document, "after-native-number-end-enter");
+
+            var redirected =
+                WordEquationNumbering.TryRedirectManagedNativeOmmlNumberEndEnter(
+                    selection);
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(100);
+            Console.WriteLine(
+                $"[NUMBER END ENTER] repaired={redirected} selection={selection.Start}:{selection.End} withinTable={selection.get_Information(Word.WdInformation.wdWithInTable)} tables={document.Tables.Count} paragraphs={document.Paragraphs.Count}");
+            DumpNumberedOmmlBodyParagraphs(
+                document,
+                redirected
+                    ? "after-number-end-enter-repair"
+                    : "after-number-end-enter-repair-failure");
+            AssertTrue(redirected,
+                "VisualTeX did not recognize and repair the extra right-cell paragraph created by Enter.");
+            AssertTrue(!(bool)selection.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                "VisualTeX repaired the number cell but left the caret inside the table.");
+            AssertEqual(2, document.Tables.Count,
+                "Repairing number-end Enter merged or duplicated the two 1x3 tables.");
+            AssertEqual(2, document.OMaths.Count,
+                "Repairing number-end Enter changed the formula count.");
+            foreach (var formulaId in formulaIds)
+                AssertOmmlTableNumberLifecyclePhase(
+                    application,
+                    document,
+                    formulaId,
+                    "number-end Enter repaired host");
+            AssertNumberEndEnterTypingParagraphIsDeletable(
+                document,
+                selection,
+                formulaIds[0]);
+
+            for (var index = 1; index <= document.Tables.Count; index++)
+            {
+                Word.Table? table = null;
+                Word.Range? tableRange = null;
+                try
+                {
+                    table = document.Tables[index];
+                    tableRange = table.Range;
+                    Console.WriteLine(
+                        $"[NUMBER END ENTER TABLE] #{index} range={tableRange.Start}:{tableRange.End} rows={table.Rows.Count} columns={table.Columns.Count} codes={FormatCharacterCodes(tableRange.Text)}");
+                }
+                finally
+                {
+                    Release(tableRange);
+                    Release(table);
+                }
+            }
+
+            var path = Path.Combine(artifactRoot, "OMML-Number-End-Enter-Regression.docx");
+            document.SaveAs2(
+                path,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+        }
+        finally
+        {
+            Release(selection);
+            Release(visibleRange);
+            Release(visibleBookmark);
+            Release(insertion);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void AssertNumberEndEnterTypingParagraphIsDeletable(
+        Word.Document document,
+        Word.Selection selection,
+        string precedingFormulaId)
+    {
+        Word.Table? table = null;
+        Word.Range? tableRange = null;
+        Word.Range? selectionRange = null;
+        Word.Paragraphs? typingParagraphs = null;
+        Word.Paragraph? typingParagraph = null;
+        Word.Range? typingRange = null;
+        Word.Font? typingFont = null;
+        Word.ParagraphFormat? typingFormat = null;
+        Word.Range? separatorProbe = null;
+        Word.Paragraphs? separatorParagraphs = null;
+        Word.Paragraph? separatorParagraph = null;
+        Word.Range? separatorRange = null;
+        Word.Font? separatorFont = null;
+        Word.ParagraphFormat? separatorFormat = null;
+        Word.Table? refreshedTable = null;
+        Word.Range? refreshedTableRange = null;
+        Word.Range? retainedSeparatorProbe = null;
+        Word.Paragraphs? retainedSeparatorParagraphs = null;
+        Word.Paragraph? retainedSeparatorParagraph = null;
+        Word.Range? retainedSeparatorRange = null;
+        Word.Font? retainedSeparatorFont = null;
+        Word.ParagraphFormat? retainedSeparatorFormat = null;
+        try
+        {
+            table = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    precedingFormulaId)
+                ?? throw new InvalidDataException(
+                    "The number-end Enter repair lost the preceding 1x3 table.");
+            tableRange = table.Range;
+
+            selectionRange = selection.Range.Duplicate;
+            typingParagraphs = selectionRange.Paragraphs;
+            AssertEqual(1, typingParagraphs.Count,
+                "The redirected caret did not resolve to one ordinary paragraph.");
+            typingParagraph = typingParagraphs[1];
+            typingRange = typingParagraph.Range.Duplicate;
+            typingFont = typingRange.Font;
+            typingFormat = typingRange.ParagraphFormat;
+            AssertEqual(tableRange.End, typingRange.Start,
+                "The ordinary typing paragraph is not immediately after the numbered table.");
+            AssertEqual("\r", typingRange.Text,
+                "The redirected typing paragraph is not truly empty.");
+            AssertTrue(!(bool)typingRange.get_Information(
+                           Word.WdInformation.wdWithInTable)
+                       && typingRange.Tables.Count == 0
+                       && typingRange.OMaths.Count == 0
+                       && typingRange.Fields.Count == 0
+                       && typingRange.Bookmarks.Count == 0
+                       && typingRange.InlineShapes.Count == 0,
+                "The redirected typing paragraph still owns table, formula, field, bookmark, or OLE state.");
+            AssertTrue(typingFont.Size > 1.25f,
+                "The redirected typing paragraph inherited the internal 1pt separator format.");
+            AssertEqual(Word.WdLineSpacing.wdLineSpaceSingle,
+                typingFormat.LineSpacingRule,
+                "The redirected typing paragraph is not an ordinary single-line paragraph.");
+
+            separatorProbe = document.Range(
+                typingRange.End,
+                Math.Min(document.Content.End, typingRange.End + 1));
+            AssertTrue(!(bool)separatorProbe.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                "The mandatory post-typing separator remained inside the next table.");
+            separatorParagraphs = separatorProbe.Paragraphs;
+            AssertEqual(1, separatorParagraphs.Count,
+                "The number-end Enter repair did not retain one structural separator paragraph.");
+            separatorParagraph = separatorParagraphs[1];
+            separatorRange = separatorParagraph.Range.Duplicate;
+            separatorFont = separatorRange.Font;
+            separatorFormat = separatorRange.ParagraphFormat;
+            AssertEqual("\r", separatorRange.Text,
+                "The table separator contains non-structural content.");
+            AssertTrue(separatorRange.Tables.Count == 0
+                       && separatorRange.OMaths.Count == 0
+                       && separatorRange.Fields.Count == 0
+                       && separatorRange.Bookmarks.Count == 0,
+                "The compact table separator owns formula, field, table, or bookmark state.");
+            AssertTrue(separatorFont.Size <= 1.25f,
+                $"The mandatory table separator remains visible at {separatorFont.Size:0.###}pt.");
+            AssertEqual(Word.WdLineSpacing.wdLineSpaceExactly,
+                separatorFormat.LineSpacingRule,
+                "The mandatory table separator is not an exact-height line.");
+            AssertTrue(separatorFormat.LineSpacing <= 1.25f,
+                $"The mandatory table separator remains {separatorFormat.LineSpacing:0.###}pt high.");
+
+            var tableCount = document.Tables.Count;
+            var mathCount = document.OMaths.Count;
+            var compactFontSize = separatorFont.Size;
+            var compactLineSpacing = separatorFormat.LineSpacing;
+            typingRange.Delete();
+            AssertEqual(tableCount, document.Tables.Count,
+                "Deleting the ordinary number-end Enter line merged the two 1x3 tables.");
+            AssertEqual(mathCount, document.OMaths.Count,
+                "Deleting the ordinary number-end Enter line removed a formula.");
+
+            refreshedTable = WordEquationNumbering.FindNumberedEquationTable(
+                    document,
+                    precedingFormulaId)
+                ?? throw new InvalidDataException(
+                    "Deleting the ordinary line lost the preceding 1x3 table.");
+            refreshedTableRange = refreshedTable.Range;
+            retainedSeparatorProbe = document.Range(
+                refreshedTableRange.End,
+                Math.Min(document.Content.End, refreshedTableRange.End + 1));
+            AssertTrue(!(bool)retainedSeparatorProbe.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                "Deleting the ordinary line removed the internal table separator.");
+            retainedSeparatorParagraphs = retainedSeparatorProbe.Paragraphs;
+            AssertEqual(1, retainedSeparatorParagraphs.Count,
+                "Deleting the ordinary line did not leave one compact separator.");
+            retainedSeparatorParagraph = retainedSeparatorParagraphs[1];
+            retainedSeparatorRange = retainedSeparatorParagraph.Range.Duplicate;
+            retainedSeparatorFont = retainedSeparatorRange.Font;
+            retainedSeparatorFormat = retainedSeparatorRange.ParagraphFormat;
+            AssertEqual("\r", retainedSeparatorRange.Text,
+                "The retained table separator is no longer structurally empty.");
+            AssertTrue(retainedSeparatorFont.Size <= 1.25f
+                       && retainedSeparatorFormat.LineSpacingRule
+                           == Word.WdLineSpacing.wdLineSpaceExactly
+                       && retainedSeparatorFormat.LineSpacing <= 1.25f,
+                "Deleting the ordinary line expanded or removed the compact table separator.");
+            Console.WriteLine(
+                $"[NUMBER END ENTER DELETE] ordinary paragraph deleted; tables={document.Tables.Count} maths={document.OMaths.Count} compactSeparator={compactFontSize:0.###}pt/{compactLineSpacing:0.###}pt retained.");
+        }
+        finally
+        {
+            Release(retainedSeparatorFormat);
+            Release(retainedSeparatorFont);
+            Release(retainedSeparatorRange);
+            Release(retainedSeparatorParagraph);
+            Release(retainedSeparatorParagraphs);
+            Release(retainedSeparatorProbe);
+            Release(refreshedTableRange);
+            Release(refreshedTable);
+            Release(separatorFormat);
+            Release(separatorFont);
+            Release(separatorRange);
+            Release(separatorParagraph);
+            Release(separatorParagraphs);
+            Release(separatorProbe);
+            Release(typingFormat);
+            Release(typingFont);
+            Release(typingRange);
+            Release(typingParagraph);
+            Release(typingParagraphs);
+            Release(selectionRange);
+            Release(tableRange);
+            Release(table);
+        }
+    }
+
+    private static void DumpNumberedOmmlBodyParagraphs(
+        Word.Document document,
+        string stage)
+    {
+        Console.WriteLine(
+            $"[NUMBERED OMML BODY] stage={stage} content={document.Content.Start}:{document.Content.End} paragraphs={document.Paragraphs.Count} tables={document.Tables.Count}");
+        for (var index = 1; index <= document.Paragraphs.Count; index++)
+        {
+            Word.Paragraph? paragraph = null;
+            Word.Range? range = null;
+            Word.Font? font = null;
+            Word.ParagraphFormat? format = null;
+            try
+            {
+                paragraph = document.Paragraphs[index];
+                range = paragraph.Range.Duplicate;
+                font = range.Font;
+                format = range.ParagraphFormat;
+                Console.WriteLine(
+                    $"  p#{index}={range.Start}:{range.End} inTable={range.get_Information(Word.WdInformation.wdWithInTable)} tables={range.Tables.Count} maths={range.OMaths.Count} fields={range.Fields.Count} bookmarks={range.Bookmarks.Count} fontSize={font.Size:0.###} hidden={font.Hidden} lineRule={format.LineSpacingRule} line={format.LineSpacing:0.###} before={format.SpaceBefore:0.###} after={format.SpaceAfter:0.###} codes={FormatCharacterCodes(range.Text)}");
+            }
+            finally
+            {
+                Release(format);
+                Release(font);
+                Release(range);
+                Release(paragraph);
+            }
         }
     }
 

@@ -14,7 +14,6 @@ internal static partial class Program
             "word-omml-native-f9.docx");
         Word.Application? application = null;
         Word.Document? document = null;
-        Word.Range? owner = null;
         Word.Field? externalReference = null;
         try
         {
@@ -45,19 +44,35 @@ internal static partial class Program
                 Math.Max(document.Content.Start, document.Content.End - 1),
                 @"c=3");
 
-            owner = WordEquationNumbering.FindNumberingOwnerRange(document, lastId)
-                ?? throw new InvalidDataException(
-                    "Native F9 acceptance could not locate the last formula owner.");
-            var middlePosition = owner.Start;
-            Release(owner); owner = null;
-            InsertNativeF9FormulaAt(
-                application,
-                document,
-                service,
-                middleId,
-                middlePosition,
-                @"b=2");
+            Word.Range? middleInsertion = null;
+            try
+            {
+                // Ask the product for the same ordinary, independently deletable
+                // paragraph a user receives after pressing Enter at the first
+                // formula's number. The returned paragraph-object Range carries
+                // main-story affinity; recreating it from bare integer coordinates
+                // at a 1-character table separator is ambiguous in Word and can
+                // target either neighboring table.
+                middleInsertion = WordEquationNumbering
+                    .EnsureNormalTypingParagraphAfterNumberedDisplay(
+                        document,
+                        firstId)
+                    ?? throw new InvalidDataException(
+                        "Native F9 acceptance could not create a body insertion paragraph between the first and last formulas.");
+                InsertNativeF9FormulaAtRange(
+                    application,
+                    document,
+                    service,
+                    middleId,
+                    middleInsertion,
+                    @"b=2");
+            }
+            finally { Release(middleInsertion); }
+            AssertEqual(3, document.Tables.Count,
+                "Inserting a numbered formula between two 1x3 hosts merged or nested a table.");
             externalReference = InsertExternalEquationReference(document, lastId);
+            AssertEqual(3, WordEquationNumbering.UpdateEquationNumbers(document),
+                "VisualTeX did not finalize all three direct-table numbers after middle insertion.");
             var firstSequenceCode = ReadNativeF9SequenceCode(document, firstId);
             var middleSequenceCode = ReadNativeF9SequenceCode(document, middleId);
             var lastSequenceCode = ReadNativeF9SequenceCode(document, lastId);
@@ -69,15 +84,15 @@ internal static partial class Program
             AssertEqual(
                 firstSequenceCode,
                 ReadNativeF9SequenceCode(document, firstId),
-                "F9 rewrote the first mathematical SEQ instruction.");
+                "F9 rewrote the first direct-table SEQ instruction.");
             AssertEqual(
                 middleSequenceCode,
                 ReadNativeF9SequenceCode(document, middleId),
-                "F9 rewrote the middle mathematical SEQ instruction.");
+                "F9 rewrote the middle direct-table SEQ instruction.");
             AssertEqual(
                 lastSequenceCode,
                 ReadNativeF9SequenceCode(document, lastId),
-                "F9 rewrote the last mathematical SEQ instruction.");
+                "F9 rewrote the last direct-table SEQ instruction.");
             AssertEqual(
                 "3",
                 NormalizeEquationNumberText(externalReference.Result.Text),
@@ -86,28 +101,38 @@ internal static partial class Program
                 externalReference,
                 WordEquationNumbering.NativeNumberBookmarkName(lastId));
 
-            owner = WordEquationNumbering.FindNumberingOwnerRange(document, middleId)
-                ?? throw new InvalidDataException(
-                    "Native F9 acceptance could not locate the middle formula owner before deletion.");
-            var ownerStart = owner.Start;
-            var ownerEnd = owner.End;
-            AssertTrue(ownerEnd > ownerStart,
-                "Native F9 acceptance received an empty owner range.");
-            owner.Delete();
-            Release(owner); owner = null;
+            Word.Table? middleTable = null;
+            try
+            {
+                middleTable = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        middleId)
+                    ?? throw new InvalidDataException(
+                        "Native F9 acceptance could not locate the middle 1x3 table before deletion.");
+                middleTable.Delete();
+            }
+            finally { Release(middleTable); }
             WordOmmlFormulaStore.Delete(document, middleId);
+            AssertEqual(2, document.Tables.Count,
+                "Deleting the middle numbered formula left an empty 1x3 table behind.");
 
+            AssertEqual(2, WordEquationNumbering.UpdateEquationNumbers(document),
+                "VisualTeX did not renumber both remaining direct-table formulas after middle deletion.");
+            var firstSequenceCodeAfterDeletion =
+                ReadNativeF9SequenceCode(document, firstId);
+            var lastSequenceCodeAfterDeletion =
+                ReadNativeF9SequenceCode(document, lastId);
             UpdateMainStoryFieldsLikeSelectAllF9(document);
             AssertNativeF9Number(document, firstId, "1", "after middle deletion first");
             AssertNativeF9Number(document, lastId, "2", "after middle deletion second");
             AssertEqual(
-                firstSequenceCode,
+                firstSequenceCodeAfterDeletion,
                 ReadNativeF9SequenceCode(document, firstId),
-                "Middle deletion/F9 rewrote the first mathematical SEQ instruction.");
+                "F9 rewrote the first direct-table SEQ instruction after VisualTeX renumbered the deletion.");
             AssertEqual(
-                lastSequenceCode,
+                lastSequenceCodeAfterDeletion,
                 ReadNativeF9SequenceCode(document, lastId),
-                "Middle deletion/F9 rewrote the last mathematical SEQ instruction.");
+                "F9 rewrote the last direct-table SEQ instruction after VisualTeX renumbered the deletion.");
             AssertEqual(
                 "2",
                 NormalizeEquationNumberText(externalReference.Result.Text),
@@ -117,8 +142,8 @@ internal static partial class Program
                 WordEquationNumbering.NativeNumberBookmarkName(lastId));
             AssertEqual(0, document.Shapes.Count,
                 "Native F9 lifecycle created a floating Shape.");
-            AssertEqual(0, document.Tables.Count,
-                "Native F9 lifecycle created a Word table.");
+            AssertEqual(2, document.Tables.Count,
+                "Native F9 lifecycle did not retain one direct-SEQ 1x3 table per remaining formula.");
 
             document.Save();
             Release(externalReference); externalReference = null;
@@ -136,13 +161,13 @@ internal static partial class Program
             AssertNativeF9Number(document, firstId, "1", "save/reopened F9 first");
             AssertNativeF9Number(document, lastId, "2", "save/reopened F9 second");
             AssertEqual(
-                firstSequenceCode,
+                firstSequenceCodeAfterDeletion,
                 ReadNativeF9SequenceCode(document, firstId),
-                "Save/reopen/F9 rewrote the first mathematical SEQ instruction.");
+                "Save/reopen/F9 rewrote the first direct-table SEQ instruction.");
             AssertEqual(
-                lastSequenceCode,
+                lastSequenceCodeAfterDeletion,
                 ReadNativeF9SequenceCode(document, lastId),
-                "Save/reopen/F9 rewrote the last mathematical SEQ instruction.");
+                "Save/reopen/F9 rewrote the last direct-table SEQ instruction.");
             externalReference = FindExternalEquationReference(document, lastId)
                 ?? throw new InvalidDataException(
                     "Save/reopen lost the native F9 body REF field.");
@@ -155,13 +180,14 @@ internal static partial class Program
                 externalReference,
                 WordEquationNumbering.NativeNumberBookmarkName(lastId));
 
+            AssertEqual(2, document.Tables.Count,
+                "Save/reopen/F9 did not retain the two remaining direct-SEQ 1x3 tables.");
             Console.WriteLine(
-                "Native OMML F9 acceptance passed: direct main-story field update produced 1/2/3 after middle insertion and 1/2 after middle deletion, then survived save/reopen with no VisualTeX code rewrite, Shape or Table.");
+                "Native OMML F9 acceptance passed: VisualTeX planned 1/2/3 after middle insertion and 1/2 after middle deletion, direct main-story F9 preserved those right-cell SEQ instructions/results and body REF, and save/reopen retained zero Shape objects plus one 1x3 table per formula.");
         }
         finally
         {
             Release(externalReference);
-            Release(owner);
             if (document is not null)
             {
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
@@ -204,6 +230,35 @@ internal static partial class Program
         }
     }
 
+    private static void InsertNativeF9FormulaAtRange(
+        Word.Application application,
+        Word.Document document,
+        WordFormulaService service,
+        string formulaId,
+        Word.Range insertionRange,
+        string latex)
+    {
+        Word.Range? insertion = null;
+        try
+        {
+            insertion = insertionRange.Duplicate;
+            insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+            insertion.Select();
+            var session = CreateNumberedOmmlTabSession(
+                formulaId,
+                document.FullName,
+                insertion.Start,
+                insertion.End,
+                latex,
+                originalMetadata: null);
+            service.InsertOmml(session, QuadraticFormulaMathMl());
+        }
+        finally
+        {
+            Release(insertion);
+        }
+    }
+
     private static void UpdateMainStoryFieldsLikeSelectAllF9(Word.Document document)
     {
         Word.Range? content = null;
@@ -227,20 +282,23 @@ internal static partial class Program
         Word.Document document,
         string formulaId)
     {
-        Word.Bookmark? bookmark = null;
-        Word.Range? formulaRange = null;
+        Word.Range? numberRange = null;
         Word.Fields? fields = null;
         Word.Field? field = null;
         Word.Range? code = null;
         try
         {
-            bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
+            numberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    document,
+                    formulaId)
                 ?? throw new InvalidDataException(
-                    $"Native F9 formula {formulaId} lost its VTOMML identity.");
-            formulaRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
-            fields = formulaRange.Fields;
+                    $"Native F9 formula {formulaId} lost its direct-table visible number.");
+            AssertTrue((bool)numberRange.get_Information(
+                    Word.WdInformation.wdWithInTable),
+                $"Native F9 formula {formulaId} moved its number outside the 1x3 table.");
+            fields = numberRange.Fields;
             AssertEqual(1, fields.Count,
-                $"Native F9 formula {formulaId} does not contain one SEQ field.");
+                $"Native F9 formula {formulaId} does not contain one right-cell SEQ field.");
             field = fields[1];
             code = field.Code;
             return NormalizeFieldCode(code.Text ?? string.Empty);
@@ -250,8 +308,7 @@ internal static partial class Program
             Release(code);
             Release(field);
             Release(fields);
-            Release(formulaRange);
-            Release(bookmark);
+            Release(numberRange);
         }
     }
 

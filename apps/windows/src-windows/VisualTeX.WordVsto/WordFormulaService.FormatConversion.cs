@@ -1320,6 +1320,18 @@ internal sealed partial class WordFormulaService
                     Release(table);
                 }
             }
+
+            // Independent 1x3 Word tables require one intervening body paragraph;
+            // deleting that final paragraph merges the tables into a forbidden 2x3.
+            // MathType source paragraphs use ordinary 10.5/12pt metrics, so after
+            // surplus blanks have been removed, collapse only the mandatory table-
+            // to-table separator to the same 1pt structural line used by ordinary
+            // VisualTeX OMML insertion. User-authored extra blank paragraphs remain
+            // untouched because this helper requires a managed direct-SEQ table on
+            // both sides of the paragraph.
+            WordEquationNumbering.CompactManagedNativeOmmlTableSeparatorBefore(
+                document,
+                formulaId);
         }
         return removed;
     }
