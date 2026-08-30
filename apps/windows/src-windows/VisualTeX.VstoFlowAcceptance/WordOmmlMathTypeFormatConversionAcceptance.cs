@@ -1363,6 +1363,10 @@ internal static partial class Program
             $"Consecutive numbered MathType→OMML {stage} lost managed numbering ownership.");
         AssertEqual(0, document.Shapes.Count,
             $"Consecutive numbered MathType→OMML {stage} recreated a retired Shape/TextBox number.");
+        AssertManagedNativeOmmlInterTableSeparatorsCompact(
+            document,
+            WordOmmlFormulaStore.FormulaIds(document).ToArray(),
+            $"consecutive numbered MathType→OMML {stage}");
 
         var ordered = new List<(string FormulaId, int Start)>();
         foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
