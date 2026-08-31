@@ -514,6 +514,30 @@ internal static partial class Program
                 ? "Installed Word add-in auto-load is suppressed; installed PowerPoint add-in remains enabled for this acceptance."
                 : "Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.");
 
+        // Pure COM/Word performance acceptance does not depend on the desktop
+        // companion. Running it before VisualTeXSessionClient also prevents an
+        // unrelated companion-health or assembly-binding failure from polluting
+        // the timing data we are trying to measure.
+        if (string.Equals(
+                mode,
+                "word-sparse-numbered-omml-performance",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
+                Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
         try
         {
             using var client = new VisualTeXSessionClient();
@@ -1119,6 +1143,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-omml-native-number-toggle", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlNativeNumberToggleAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-sparse-numbered-omml-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-omml-native-alias-recovery", StringComparison.OrdinalIgnoreCase))
             {

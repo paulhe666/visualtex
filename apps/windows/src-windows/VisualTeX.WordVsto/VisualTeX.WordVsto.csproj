@@ -30,6 +30,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.Performance.cs" Link="WordEquationNumbering.Performance.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TrueDisplay.cs" Link="WordEquationNumbering.TrueDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />

@@ -1,5 +1,6 @@
 import type { LatexCommand } from "../types/command";
 import { additionalCommands } from "./additionalCommands.ts";
+import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
 
 const baseCommandRegistry: LatexCommand[] = [
@@ -110,6 +111,7 @@ const baseCommandRegistry: LatexCommand[] = [
 
 export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
+  ...compatibilityCommands,
   ...additionalCommands,
   ...latestSharedCommands,
 ];

@@ -1,3 +1,5 @@
+import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
+
 export type NativeSuggestionPreviewKind =
   | "arguments"
   | "delimiter"
@@ -204,6 +206,13 @@ registerPreviews("state", [
   ["\\hphantom", "A\\hphantom{B}C"],
   ["\\vphantom", "A\\vphantom{\\frac{a}{b}}B"],
 ]);
+
+for (const command of compatibilityCommands) {
+  previewRegistry.set(command.command, {
+    latex: command.previewLatex,
+    kind: "arguments",
+  });
+}
 
 registerPreviews("alias", [
   ["\\bf", "{\\bf ABC}"],

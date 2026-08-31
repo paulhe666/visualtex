@@ -36,7 +36,13 @@ for (const format of latexCodeFormats) {
   );
   assert.deepEqual(
     parseLatexSourceDraft(source, format.id),
-    { valid: true, values: formulas },
+    format.id === "mixed-inline-display"
+      ? {
+          valid: true,
+          values: formulas,
+          modes: formulas.map(() => "display"),
+        }
+      : { valid: true, values: formulas },
     `${format.id} failed strict source parsing:\n${source}`,
   );
 }

@@ -21,7 +21,8 @@ internal static partial class WordEquationNumbering
         int? plannedOrdinal = null,
         string? plannedPrefix = null,
         bool deferFieldUpdate = false,
-        bool deferExternalShapeCreation = false)
+        bool deferExternalShapeCreation = false,
+        bool deferMetadataPersistence = false)
     {
         _ = reuseExistingScaffold;
         _ = deferFieldUpdate;
@@ -37,6 +38,7 @@ internal static partial class WordEquationNumbering
             metadata ??= WordOmmlFormulaStore.TryRead(document, formulaId);
             activeRange = ResolveSingleNativeOmmlRange(formulaRange);
             EnsureNumberedOmmlIsDisplay(activeRange);
+            traceStage("native-resolve-display");
 
             // A document created by the retired #(SEQ) route is valid migration
             // input, but its mathematical number must be stripped before the OMath
@@ -76,6 +78,7 @@ internal static partial class WordEquationNumbering
             DeleteBookmarkOnly(document, EquationBookmarkName(formulaId));
             DeleteBookmarkOnly(document, NativeCaptionBookmarkName(formulaId));
             DeleteBookmarkOnly(document, NativeNumberBookmarkName(formulaId));
+            traceStage("native-clear-artifacts");
 
             float? nativeDisplayHeightPoints = null;
             var activeRangeAlreadyInTable = false;
@@ -89,16 +92,20 @@ internal static partial class WordEquationNumbering
                 nativeDisplayHeightPoints = TryMeasureNativeDisplayHeightPoints(
                     document,
                     activeRange);
+            traceStage("native-measure-display");
 
             table = EnsureNativeOmmlNumberTableHost(
                 document,
                 activeRange,
                 formulaId);
+            traceStage("native-ensure-table");
             var refreshedTableFormula = ResolveSingleNativeOmmlRange(activeRange);
             Release(activeRange);
             activeRange = refreshedTableFormula;
             EnsureNumberedOmmlIsDisplay(activeRange);
-            var needsHeightRepair = NeedsNativeOmmlTableHeightRepair(table);
+            traceStage("native-resolve-table-formula");
+            var needsHeightRepair = activeRangeAlreadyInTable
+                && NeedsNativeOmmlTableHeightRepair(table);
             if (!nativeDisplayHeightPoints.HasValue
                 && needsHeightRepair)
             {
@@ -116,6 +123,7 @@ internal static partial class WordEquationNumbering
                 }
                 catch { }
             }
+            traceStage("native-height-repair");
             var minimumDisplayHeightPoints = nativeDisplayHeightPoints
                 ?? (!activeRangeAlreadyInTable || needsHeightRepair
                     ? formulaHeightPoints
@@ -125,6 +133,7 @@ internal static partial class WordEquationNumbering
                 table,
                 activeRange,
                 minimumDisplayHeightPoints);
+            traceStage("native-geometry");
             traceStage("native-1x3-table");
 
             var numberPlan = ResolveDirectTableNumberPlan(
@@ -133,6 +142,7 @@ internal static partial class WordEquationNumbering
                 formulaId,
                 plannedOrdinal,
                 plannedPrefix);
+            traceStage("direct-number-plan");
             EnsureDirectTableSequenceNumber(
                 document,
                 table,
@@ -150,11 +160,15 @@ internal static partial class WordEquationNumbering
                     table,
                     activeRange,
                     metadata);
-                WordOmmlNativeSource.StampFingerprintFromResolvedRange(
-                    metadata,
-                    activeRange);
-                WordOmmlFormulaStore.Save(document, metadata);
+                if (!deferMetadataPersistence)
+                {
+                    WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                        metadata,
+                        activeRange);
+                    WordOmmlFormulaStore.Save(document, metadata);
+                }
             }
+            traceStage("native-wrap-identity");
 
             formulaRange.SetRange(activeRange.Start, activeRange.End);
             return true;
@@ -238,6 +252,20 @@ internal static partial class WordEquationNumbering
             return (Math.Max(1, plannedOrdinal.Value), plannedPrefix);
 
         var format = ReadEquationNumberFormat(document);
+        if (!format.UsesHeading
+            && TryResolveContinuousDirectTableNumberPlan(
+                document,
+                formulaRange,
+                out var continuousPlan))
+            return continuousPlan;
+        if (format.UsesHeading
+            && TryResolveHeadingDirectTableNumberPlan(
+                document,
+                formulaRange,
+                format,
+                out var headingPlan))
+            return headingPlan;
+
         var sequenceName = GetNativeEquationSequenceName(document);
         var existing = GetNativeEquationCaptionEntries(document, sequenceName)
             .Where(item => !string.Equals(
@@ -273,6 +301,208 @@ internal static partial class WordEquationNumbering
                 plannedPrefix ?? scope.Prefix);
         }
         return (plannedOrdinal ?? 1, plannedPrefix ?? string.Empty);
+    }
+
+    private static bool TryResolveHeadingDirectTableNumberPlan(
+        Document document,
+        Range formulaRange,
+        EquationNumberFormat format,
+        out (int Ordinal, string Prefix) plan)
+    {
+        plan = (1, string.Empty);
+        if (!format.UsesHeading) return false;
+
+        Range? content = null;
+        Range? headingSearch = null;
+        Find? find = null;
+        ParagraphFormat? findFormat = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        ListFormat? listFormat = null;
+        Frames? frames = null;
+        Range? scopeRange = null;
+        Bookmarks? scopeBookmarks = null;
+        try
+        {
+            content = document.Content;
+            var formulaStart = Math.Max(content.Start, formulaRange.Start);
+            var bestHeadingPosition = int.MinValue;
+            string? bestHeadingNumber = null;
+
+            for (var outlineLevel = 1; outlineLevel <= format.HeadingLevel; outlineLevel++)
+            {
+                var searchEnd = formulaStart;
+                while (searchEnd > content.Start)
+                {
+                    Release(frames); frames = null;
+                    Release(listFormat); listFormat = null;
+                    Release(paragraphRange); paragraphRange = null;
+                    Release(paragraph); paragraph = null;
+                    Release(paragraphs); paragraphs = null;
+                    Release(findFormat); findFormat = null;
+                    Release(find); find = null;
+                    Release(headingSearch); headingSearch = null;
+
+                    headingSearch = document.Range(content.Start, searchEnd);
+                    find = headingSearch.Find;
+                    find.ClearFormatting();
+                    find.Text = "^p";
+                    find.Forward = false;
+                    find.Wrap = WdFindWrap.wdFindStop;
+                    find.Format = true;
+                    findFormat = find.ParagraphFormat;
+                    findFormat.OutlineLevel = (WdOutlineLevel)outlineLevel;
+                    if (!find.Execute()) break;
+
+                    paragraphs = headingSearch.Paragraphs;
+                    if (paragraphs.Count == 0)
+                    {
+                        searchEnd = Math.Max(content.Start, headingSearch.Start - 1);
+                        continue;
+                    }
+                    paragraph = paragraphs[1];
+                    paragraphRange = paragraph.Range;
+                    searchEnd = Math.Max(content.Start, paragraphRange.Start);
+                    if ((bool)paragraphRange.get_Information(WdInformation.wdWithInTable))
+                        continue;
+                    try
+                    {
+                        frames = paragraphRange.Frames;
+                        if (frames.Count > 0) continue;
+                    }
+                    catch { }
+
+                    var listNumber = string.Empty;
+                    try
+                    {
+                        listFormat = paragraphRange.ListFormat;
+                        listNumber = NormalizeHeadingNumberText(listFormat.ListString);
+                    }
+                    catch { }
+                    var explicitNumber = !string.IsNullOrWhiteSpace(listNumber)
+                        ? listNumber
+                        : ParseHeadingNumberFromText(paragraphRange.Text, outlineLevel);
+                    if (string.IsNullOrWhiteSpace(explicitNumber))
+                    {
+                        // An unnumbered heading is ambiguous: it can be a synthesized
+                        // chapter in an otherwise unnumbered document or a title that
+                        // the explicit-numbering scheme intentionally skips. Preserve
+                        // the mature full-document resolver for that uncommon case.
+                        return false;
+                    }
+                    if (paragraphRange.Start <= bestHeadingPosition) break;
+                    if (outlineLevel < format.HeadingLevel)
+                        explicitNumber += string.Concat(
+                            Enumerable.Repeat(".0", format.HeadingLevel - outlineLevel));
+                    bestHeadingPosition = paragraphRange.Start;
+                    bestHeadingNumber = explicitNumber;
+                    break;
+                }
+            }
+
+            var prefix = bestHeadingNumber is null
+                ? string.Join(".", Enumerable.Repeat("0", format.HeadingLevel))
+                    + format.Separator
+                : bestHeadingNumber + format.Separator;
+            var scopeStart = bestHeadingPosition == int.MinValue
+                ? content.Start
+                : bestHeadingPosition;
+            if (formulaStart <= scopeStart)
+            {
+                plan = (1, prefix);
+                return true;
+            }
+
+            scopeRange = document.Range(scopeStart, formulaStart);
+            scopeBookmarks = scopeRange.Bookmarks;
+            var priorNumberCount = 0;
+            for (var index = 1; index <= scopeBookmarks.Count; index++)
+            {
+                Bookmark? bookmark = null;
+                try
+                {
+                    bookmark = scopeBookmarks[index];
+                    if (TryFormulaIdFromBookmark(
+                            bookmark.Name,
+                            NativeNumberBookmarkPrefix,
+                            out _))
+                        priorNumberCount++;
+                }
+                finally { Release(bookmark); }
+            }
+            plan = (priorNumberCount + 1, prefix);
+            return true;
+        }
+        catch
+        {
+            plan = (1, string.Empty);
+            return false;
+        }
+        finally
+        {
+            Release(scopeBookmarks);
+            Release(scopeRange);
+            Release(frames);
+            Release(listFormat);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(findFormat);
+            Release(find);
+            Release(headingSearch);
+            Release(content);
+        }
+    }
+
+    private static bool TryResolveContinuousDirectTableNumberPlan(
+        Document document,
+        Range formulaRange,
+        out (int Ordinal, string Prefix) plan)
+    {
+        plan = (1, string.Empty);
+        Range? content = null;
+        Range? prefix = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            content = document.Content;
+            if (formulaRange.Start <= content.Start)
+                return true;
+            prefix = document.Range(content.Start, formulaRange.Start);
+            fields = prefix.Fields;
+            var priorSequenceCount = 0;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code); code = null;
+                Release(field); field = null;
+                field = fields[index];
+                // OLE objects themselves are EMBED fields; their equation number is
+                // a separate SEQ. Reject EMBED before touching Field.Code because
+                // reading embedded-object field code is disproportionately costly.
+                if (field.Type == WdFieldType.wdFieldEmbed) continue;
+                code = field.Code;
+                if (IsVisualTeXSequenceFieldCode(code.Text))
+                    priorSequenceCount++;
+            }
+            plan = (priorSequenceCount + 1, string.Empty);
+            return true;
+        }
+        catch
+        {
+            plan = (1, string.Empty);
+            return false;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(prefix);
+            Release(content);
+        }
     }
 
     private static Table EnsureNativeOmmlNumberTableHost(
@@ -858,7 +1088,7 @@ internal static partial class WordEquationNumbering
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
-        Tables? tables = null;
+        Range? paragraphContent = null;
         InlineShapes? shapes = null;
         OMaths? maths = null;
         Fields? fields = null;
@@ -868,36 +1098,68 @@ internal static partial class WordEquationNumbering
         Range? previousTableProbe = null;
         try
         {
+            var traceSpacing = string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+                "1",
+                StringComparison.Ordinal);
             tableRange = table.Range;
-            if (tableRange.Start <= document.Content.Start) return;
+            if (traceSpacing)
+                TraceNumberingPerformance(
+                    $"[perf] cleanup-before-table enter formulaId={formulaId} table={tableRange.Start}:{tableRange.End}");
+            if (tableRange.Start <= document.Content.Start)
+            {
+                if (traceSpacing) TraceNumberingPerformance("[perf] cleanup-before-table return-at-document-start");
+                return;
+            }
             probe = document.Range(tableRange.Start - 1, tableRange.Start);
-            if ((bool)probe.get_Information(WdInformation.wdWithInTable)) return;
+            if ((bool)probe.get_Information(WdInformation.wdWithInTable))
+            {
+                if (traceSpacing) TraceNumberingPerformance("[perf] cleanup-before-table return-probe-in-table");
+                return;
+            }
             paragraphs = probe.Paragraphs;
-            if (paragraphs.Count != 1) return;
+            if (paragraphs.Count != 1)
+            {
+                if (traceSpacing) TraceNumberingPerformance($"[perf] cleanup-before-table return-paragraph-count={paragraphs.Count}");
+                return;
+            }
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range.Duplicate;
             if (paragraphRange.End != tableRange.Start
                 || !IsNumberingParagraphAdornment(paragraphRange.Text))
+            {
+                if (traceSpacing)
+                    TraceNumberingPerformance(
+                        $"[perf] cleanup-before-table return-paragraph-shape paragraph={paragraphRange.Start}:{paragraphRange.End} text='{(paragraphRange.Text ?? string.Empty).Replace("\r", "<CR>").Replace("\a", "<CELL>")}'");
                 return;
-            tables = paragraphRange.Tables;
-            shapes = paragraphRange.InlineShapes;
-            maths = paragraphRange.OMaths;
-            fields = paragraphRange.Fields;
-            bookmarks = paragraphRange.Bookmarks;
-            frames = paragraphRange.Frames;
-            if (tables.Count != 0
-                || shapes.Count != 0
+            }
+            // Word treats Paragraph.Range.End at a table boundary as having affinity
+            // with the following table. Querying OMaths/Fields/InlineShapes on the
+            // full one-character "\r" paragraph can therefore report objects that
+            // actually live in the next table and falsely protect this generated
+            // blank source paragraph. Inspect only the paragraph content before its
+            // final paragraph mark; for a truly empty paragraph this is a collapsed
+            // range at paragraphRange.Start with no affinity to the following table.
+            paragraphContent = document.Range(
+                paragraphRange.Start,
+                Math.Max(paragraphRange.Start, paragraphRange.End - 1));
+            shapes = paragraphContent.InlineShapes;
+            maths = paragraphContent.OMaths;
+            fields = paragraphContent.Fields;
+            bookmarks = paragraphContent.Bookmarks;
+            frames = paragraphContent.Frames;
+            if (traceSpacing)
+                TraceNumberingPerformance(
+                    $"[perf] cleanup-before-table formulaId={formulaId} paragraph={paragraphRange.Start}:{paragraphRange.End} content={paragraphContent.Start}:{paragraphContent.End} shapes={shapes.Count} maths={maths.Count} fields={fields.Count} bookmarks={bookmarks.Count} frames={frames.Count}");
+            if (shapes.Count != 0
                 || maths.Count != 0
                 || fields.Count != 0
                 || frames.Count != 0)
+            {
+                if (traceSpacing) TraceNumberingPerformance("[perf] cleanup-before-table protected-by-content");
                 return;
+            }
 
-            // The provisional VTOMML_<FormulaId> anchor is created before the
-            // display formula is moved into its permanent 1x3 host. Word keeps a
-            // collapsed bookmark on the source paragraph mark even after the OMath
-            // content has been copied and deleted. Treat only that exact generated
-            // identity as removable; any user/foreign bookmark still protects the
-            // paragraph from deletion.
             var expectedIdentity = WordOmmlFormulaStore.BookmarkName(formulaId);
             var carriesExpectedIdentity = false;
             for (var index = 1; index <= bookmarks.Count; index++)
@@ -938,6 +1200,7 @@ internal static partial class WordEquationNumbering
                     return;
                 }
             }
+            if (traceSpacing) TraceNumberingPerformance("[perf] cleanup-before-table delete-empty-source-paragraph");
             paragraphRange.Delete();
         }
         finally
@@ -949,7 +1212,7 @@ internal static partial class WordEquationNumbering
             Release(fields);
             Release(maths);
             Release(shapes);
-            Release(tables);
+            Release(paragraphContent);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
@@ -1051,9 +1314,11 @@ internal static partial class WordEquationNumbering
 
     private static void CleanupGeneratedNativeOmmlTypingTailBeforeFollowingTable(
         Document document,
-        string formulaId)
+        string formulaId,
+        Table? knownDirectTable = null)
     {
-        Table? table = null;
+        var releaseTable = knownDirectTable is null;
+        Table? table = knownDirectTable;
         Range? tableRange = null;
         Range? typingProbe = null;
         Paragraphs? typingParagraphs = null;
@@ -1068,7 +1333,8 @@ internal static partial class WordEquationNumbering
         Table? nextTable = null;
         try
         {
-            table = FindNumberedEquationTable(document, formulaId);
+            if (table is null)
+                table = FindNumberedEquationTable(document, formulaId);
             if (table is null || !IsManagedNativeOmmlDirectTable(table)) return;
             tableRange = table.Range;
             var contentEnd = document.Content.End;
@@ -1145,7 +1411,7 @@ internal static partial class WordEquationNumbering
             Release(typingParagraphs);
             Release(typingProbe);
             Release(tableRange);
-            Release(table);
+            if (releaseTable) Release(table);
         }
     }
 
@@ -1245,9 +1511,12 @@ internal static partial class WordEquationNumbering
         try
         {
             window = document.ActiveWindow;
-            object scrollStart = true;
-            try { window.ScrollIntoView(formulaRange, ref scrollStart); } catch { }
-            try { document.Repaginate(); } catch { }
+            // GetPoint succeeds for the formula currently being edited without
+            // moving Word's viewport. The old path called ScrollIntoView followed
+            // by Repaginate, which visibly jumped a long document to another page
+            // (often through page 1) and dominated an otherwise local add-number
+            // operation. Off-screen/compatibility-mode ranges simply fall back to
+            // the semantic height estimate supplied by the caller.
             window.GetPoint(
                 out _,
                 out _,
@@ -1643,9 +1912,12 @@ internal static partial class WordEquationNumbering
         string nativeSequenceName,
         int ordinal,
         string prefix,
-        bool formatOnly)
+        bool formatOnly,
+        Bookmarks? knownBookmarks = null,
+        bool trustedHealthyDirectTable = false)
     {
         _ = formatOnly;
+        var releaseBookmarks = knownBookmarks is null;
         Table? table = null;
         Cell? numberCell = null;
         Range? cellRange = null;
@@ -1662,7 +1934,7 @@ internal static partial class WordEquationNumbering
         Range? closing = null;
         try
         {
-            bookmarks = document.Bookmarks;
+            bookmarks = knownBookmarks ?? document.Bookmarks;
             var captionName = NativeCaptionBookmarkName(formulaId);
             var numberName = NativeNumberBookmarkName(formulaId);
             var visibleName = EquationBookmarkName(formulaId);
@@ -1672,50 +1944,114 @@ internal static partial class WordEquationNumbering
                 return false;
             visibleBookmark = bookmarks[visibleName];
             visibleRange = visibleBookmark.Range;
-            if (!(bool)visibleRange.get_Information(WdInformation.wdWithInTable)
-                || visibleRange.Tables.Count == 0)
+            if (!trustedHealthyDirectTable)
+            {
+                if (!(bool)visibleRange.get_Information(WdInformation.wdWithInTable)
+                    || visibleRange.Tables.Count == 0)
+                    return false;
+                table = visibleRange.Tables[1];
+                if (table.Rows.Count != 1 || table.Columns.Count != 3)
+                    return false;
+                numberCell = table.Cell(1, 3);
+                cellRange = numberCell.Range.Duplicate;
+                if (visibleRange.Start < cellRange.Start || visibleRange.End > cellRange.End)
+                    return false;
+            }
+            else if (visibleRange.StoryType != WdStoryType.wdMainTextStory)
+            {
                 return false;
-            table = visibleRange.Tables[1];
-            if (table.Rows.Count != 1 || table.Columns.Count != 3)
-                return false;
-            numberCell = table.Cell(1, 3);
-            cellRange = numberCell.Range.Duplicate;
-            if (visibleRange.Start < cellRange.Start || visibleRange.End > cellRange.End)
-                return false;
+            }
 
             captionBookmark = bookmarks[captionName];
             numberBookmark = bookmarks[numberName];
             captionRange = captionBookmark.Range;
             field = FindNativeEquationFieldInRange(captionRange, nativeSequenceName);
             if (field is null) return false;
-            EnsureSequenceFieldCodeCanBeRewritten(field);
             code = field.Code;
-            code.Text = $" SEQ {LegacyEquationSequenceName} \\r {Math.Max(1, ordinal)} \\* ARABIC ";
-            field.Update();
+            result = field.Result;
+            var expectedOrdinal = Math.Max(1, ordinal).ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+            var codeText = code.Text ?? string.Empty;
+            var restartMatches = System.Text.RegularExpressions.Regex.IsMatch(
+                codeText,
+                $@"\\r\s+{System.Text.RegularExpressions.Regex.Escape(expectedOrdinal)}\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            var resultMatches = string.Equals(
+                NormalizeNativeEquationNumberText(result.Text),
+                expectedOrdinal,
+                StringComparison.Ordinal);
+            var fieldInstructionChanged = false;
+            var fieldResultMayHaveChanged = false;
+            if (!IsNativeEquationSequenceFieldCode(codeText, nativeSequenceName)
+                || !restartMatches)
+            {
+                EnsureSequenceFieldCodeCanBeRewritten(field);
+                code.Text = $" SEQ {LegacyEquationSequenceName} \\r {expectedOrdinal} \\* ARABIC ";
+                field.Update();
+                fieldInstructionChanged = true;
+                fieldResultMayHaveChanged = true;
+            }
+            else if (!resultMatches)
+            {
+                // A format-only switch normally changes the literal heading
+                // prefix, not the SEQ ordinal. Avoiding an unnecessary Field.Update
+                // is important in large Word documents, but still refresh a stale
+                // result when Word has not evaluated the existing instruction.
+                field.Update();
+                fieldResultMayHaveChanged = true;
+            }
 
             // Preserve the cell's leading TAB and opening parenthesis. Only the
             // literal heading prefix between '(' and the field-begin control is
             // replaced when the numbering format changes.
             Release(code);
             code = field.Code;
-            var labelStart = cellRange.Start + 1;
+            var labelStart = trustedHealthyDirectTable
+                ? visibleRange.Start
+                : cellRange!.Start + 1;
             var prefixStart = labelStart + 1;
             var fieldBegin = Math.Max(prefixStart, code.Start - 1);
             prefixRange = document.Range(prefixStart, fieldBegin);
-            prefixRange.Text = prefix;
+            var previousPrefix = prefixRange.Text ?? string.Empty;
+            var prefixLengthChanged = previousPrefix.Length != prefix.Length;
+            if (!string.Equals(previousPrefix, prefix, StringComparison.Ordinal))
+                prefixRange.Text = prefix;
 
             Release(result);
             result = field.Result;
-            Release(cellRange);
-            cellRange = numberCell.Range.Duplicate;
-            var editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
-            var closePosition = Math.Min(editableEnd, result.End + 1);
-            closing = document.Range(closePosition, Math.Min(editableEnd, closePosition + 1));
+            var editableEnd = int.MaxValue;
+            if (!trustedHealthyDirectTable)
+            {
+                Release(cellRange);
+                cellRange = numberCell!.Range.Duplicate;
+                editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
+            }
+            var closePosition = trustedHealthyDirectTable
+                ? result.End + 1
+                : Math.Min(editableEnd, result.End + 1);
+            closing = trustedHealthyDirectTable
+                ? document.Range(closePosition, closePosition + 1)
+                : document.Range(closePosition, Math.Min(editableEnd, closePosition + 1));
+            var closingChanged = false;
             if (!string.Equals(closing.Text, ")", StringComparison.Ordinal))
             {
                 closing.SetRange(closePosition, closePosition);
                 closing.Text = ")";
+                closingChanged = true;
             }
+
+            // The common format switch changes only one same-width separator in
+            // the literal prefix (for example 2.1. -> 2.1-). The three existing
+            // bookmarks already surround the same character positions and Word
+            // preserves them across an equal-length text replacement. Rebuilding
+            // all three aliases per formula was the dominant cost of changing a
+            // five-formula document's number format.
+            if (!fieldInstructionChanged
+                && !fieldResultMayHaveChanged
+                && !prefixLengthChanged
+                && !closingChanged)
+                return true;
 
             DeleteBookmarkOnly(document, captionName);
             DeleteBookmarkOnly(document, numberName);
@@ -1724,17 +2060,23 @@ internal static partial class WordEquationNumbering
             code = field.Code;
             Release(result);
             result = field.Result;
-            Release(cellRange);
-            cellRange = numberCell.Range.Duplicate;
-            editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
-            var fieldEnd = Math.Min(editableEnd, result.End + 1);
-            var labelEnd = Math.Min(editableEnd, fieldEnd + 1);
+            if (!trustedHealthyDirectTable)
+            {
+                Release(cellRange);
+                cellRange = numberCell!.Range.Duplicate;
+                editableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
+            }
+            var fieldEnd = trustedHealthyDirectTable
+                ? result.End + 1
+                : Math.Min(editableEnd, result.End + 1);
+            var labelEnd = trustedHealthyDirectTable
+                ? fieldEnd + 1
+                : Math.Min(editableEnd, fieldEnd + 1);
             var newCaption = document.Range(prefixStart, fieldEnd);
             var newNumber = document.Range(prefixStart, result.End);
             var newVisible = document.Range(labelStart, labelEnd);
             try
             {
-                bookmarks = document.Bookmarks;
                 bookmarks.Add(captionName, newCaption);
                 bookmarks.Add(numberName, newNumber);
                 bookmarks.Add(visibleName, newVisible);
@@ -1764,7 +2106,7 @@ internal static partial class WordEquationNumbering
             Release(visibleBookmark);
             Release(numberBookmark);
             Release(captionBookmark);
-            Release(bookmarks);
+            if (releaseBookmarks) Release(bookmarks);
             Release(cellRange);
             Release(numberCell);
             Release(table);

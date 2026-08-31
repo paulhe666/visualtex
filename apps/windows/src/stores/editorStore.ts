@@ -6,6 +6,7 @@ import type {
   FormulaAlignment,
   FormulaHistoryItem,
   FormulaLine,
+  FormulaLineMode,
   InputBehaviorSettingKey,
   InputBehaviorSettings,
   LatexCodeFormat,
@@ -233,12 +234,14 @@ function normalizeFormulaLineLatex(latex: string) {
 export function createFormulaLine(
   latex = "",
   id: string = createUuid(),
+  mode: FormulaLineMode = "display",
 ): FormulaLine {
   return {
     id,
     latex: normalizeFormulaLineLatex(
       latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? "",
     ),
+    mode: mode === "inline" ? "inline" : "display",
   };
 }
 
@@ -271,6 +274,7 @@ export function normalizeFormulaLines(
               ? candidate.latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? ""
               : "",
           ),
+          mode: candidate.mode === "inline" ? "inline" : "display",
         } satisfies FormulaLine;
       })
       .filter((line): line is NonNullable<typeof line> => line !== null);
@@ -453,6 +457,7 @@ export const useEditorStore = create<EditorState>()(
           nextLines.splice(targetIndex, 0, {
             id: line.id,
             latex: normalizeFormulaLineLatex(line.latex),
+            mode: line.mode === "inline" ? "inline" : "display",
           });
           return {
             lines: nextLines,
@@ -617,6 +622,7 @@ export const useEditorStore = create<EditorState>()(
             document.formulas.map((formula) => ({
               id: formula.id,
               latex: formula.latex,
+              mode: formula.displayMode === "inline" ? "inline" : "display",
             })),
           );
           const settings = document.settings ?? {};
@@ -761,7 +767,7 @@ export const useEditorStore = create<EditorState>()(
           formulas: state.lines.map((line) => ({
             id: line.id,
             latex: line.latex,
-            displayMode: "block",
+            displayMode: line.mode === "inline" ? "inline" : "block",
             alignment: state.formulaAlignment,
             fontSize: Math.round(36 * state.zoom),
             createdAt: now,

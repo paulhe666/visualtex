@@ -694,6 +694,36 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
+    public void ArrayWithIntentionalEmptyCellTransformsToHiddenPlaceholderMatrix()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mtable columnalign=\"center center center\" columnspacing=\"1em\" rowspacing=\"4pt\" "
+            + "columnlines=\"solid none\" rowlines=\"solid none\">"
+            + "<mtr><mtd></mtd><mtd><mi>A</mi></mtd><mtd><mi>B</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>X</mi></mtd><mtd><mn>1</mn></mtd><mtd><mn>2</mn></mtd></mtr>"
+            + "<mtr><mtd><mi>Y</mi></mtd><mtd><mn>3</mn></mtd><mtd><mn>4</mn></mtd></mtr>"
+            + "</mtable></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var matrix = document.Descendants(math + "m").Single();
+        var rows = matrix.Elements(math + "mr").ToArray();
+
+        Assert.Equal(
+            "1",
+            matrix.Element(math + "mPr")?
+                .Element(math + "plcHide")?
+                .Attribute(math + "val")?
+                .Value);
+        Assert.Equal(3, rows.Length);
+        Assert.All(rows, row => Assert.Equal(3, row.Elements(math + "e").Count()));
+        Assert.False(HasVisibleMathText(rows[0].Elements(math + "e").First()));
+        WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(document);
+    }
+
+    [Fact]
     public void InlineNaryOmmlHidesEmptyLimitsWithoutForcingDisplayGrowth()
     {
         const string omml =
@@ -792,8 +822,7 @@ public sealed class WordOmmlTests
     {
         var document = XDocument.Parse(
             "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\">"
-            + "<m:m><m:mPr><m:plcHide m:val=\"1\" /></m:mPr>"
-            + "<m:mr><m:e /></m:mr></m:m>"
+            + "<m:m><m:mPr /><m:mr><m:e /></m:mr></m:m>"
             + "</m:oMath>");
 
         var error = Assert.Throws<InvalidDataException>(() =>

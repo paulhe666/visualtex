@@ -38,12 +38,12 @@ internal static partial class Program
                     AppendNativeHashAcceptancePageBreak(document);
             }
 
-            UpdateNativeHashProductionFields(document, formulaIds);
+            UpdateDirectTableScaleNumbers(service, document, formulaIds);
             var expected = Enumerable.Range(1, 20)
                 .Select(value => value.ToString(
                     System.Globalization.CultureInfo.InvariantCulture))
                 .ToArray();
-            AssertNativeHashProductionNumbers(
+            AssertDirectTableScaleNumbers(
                 document,
                 formulaIds,
                 expected,
@@ -70,13 +70,13 @@ internal static partial class Program
                 referencedIds,
                 new[] { "1", "10", "20" },
                 "20-formula first/middle/last body REF");
-            AssertNativeHashProductionNumbers(
+            AssertDirectTableScaleNumbers(
                 document,
                 formulaIds,
                 expected,
                 "20-formula numbering after body REF insertion");
             Console.WriteLine(
-                $"  native-hash scale stage passed: 20 formulas, pages={pages}, numbers 1..20, body REF 1/10/20");
+                $"  direct-SEQ 1x3 scale stage passed: 20 formulas, pages={pages}, numbers 1..20, body REF 1/10/20");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -92,8 +92,8 @@ internal static partial class Program
                 Visible: false,
                 OpenAndRepair: false);
             document.Activate();
-            UpdateNativeHashProductionFields(document, formulaIds);
-            AssertNativeHashProductionNumbers(
+            UpdateDirectTableScaleNumbers(service, document, formulaIds);
+            AssertDirectTableScaleNumbers(
                 document,
                 formulaIds,
                 expected,
@@ -106,11 +106,13 @@ internal static partial class Program
                 "20-formula save/reopen body REF");
             AssertEqual(0, document.Shapes.Count,
                 "20-formula save/reopen created a floating Shape.");
-            AssertEqual(0, document.Tables.Count,
-                "20-formula save/reopen created a Word table.");
+            AssertEqual(20, document.Tables.Count,
+                "20-formula save/reopen did not retain one direct 1x3 host per formula.");
+            AssertEqual(20, document.OMaths.Count,
+                "20-formula save/reopen changed the OMML formula count.");
 
             Console.WriteLine(
-                "Production OMML native #(SEQ) scale acceptance passed: 20 formulas remained 1..20 across forced page breaks and save/reopen, with body REF 1/10/20 and no Shape/Table.");
+                "Production OMML direct-SEQ 1x3 scale acceptance passed: 20 formulas remained 1..20 across forced page breaks and save/reopen, with body REF 1/10/20, no Shape/TextBox and exactly one 1x3 host per formula.");
         }
         finally
         {
@@ -122,6 +124,93 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void UpdateDirectTableScaleNumbers(
+        WordFormulaService service,
+        Word.Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        var updated = service.UpdateEquationNumbers();
+        AssertTrue(
+            updated >= formulaIds.Count,
+            $"Direct-SEQ scale update returned {updated} formulas; expected at least {formulaIds.Count}.");
+        Word.Fields? fields = null;
+        try
+        {
+            fields = document.Fields;
+            if (fields.Count > 0) fields.Update();
+        }
+        finally { Release(fields); }
+    }
+
+    private static void AssertDirectTableScaleNumbers(
+        Word.Document document,
+        IReadOnlyList<string> formulaIds,
+        IReadOnlyList<string> expectedNumbers,
+        string context)
+    {
+        AssertEqual(formulaIds.Count, expectedNumbers.Count,
+            context + ": formula/expectation count mismatch.");
+        AssertEqual(formulaIds.Count, document.Tables.Count,
+            context + ": each numbered OMML must own exactly one 1x3 table.");
+        AssertEqual(formulaIds.Count, document.OMaths.Count,
+            context + ": OMML formula count changed.");
+        AssertEqual(0, document.Shapes.Count,
+            context + ": a floating Shape/TextBox exists.");
+
+        Word.Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            for (var index = 0; index < formulaIds.Count; index++)
+            {
+                var formulaId = formulaIds[index];
+                var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+                AssertTrue(bookmarks.Exists(numberName),
+                    context + $": {numberName} is missing.");
+                Word.Bookmark? bookmark = null;
+                Word.Range? range = null;
+                Word.Fields? fields = null;
+                Word.OMaths? maths = null;
+                try
+                {
+                    bookmark = bookmarks[numberName];
+                    range = bookmark.Range;
+                    fields = range.Fields;
+                    maths = range.OMaths;
+                    AssertEqual(1, fields.Count,
+                        context + $": {numberName} does not contain exactly one direct SEQ field.");
+                    AssertEqual(0, maths.Count,
+                        context + $": {numberName} leaked into the mathematical OMath.");
+                    AssertEqual(
+                        expectedNumbers[index],
+                        NormalizeNativeHashProductionNumber(range.Text),
+                        context + $": {numberName} result mismatch.");
+                    AssertTrue(
+                        (bool)range.get_Information(Word.WdInformation.wdWithInTable),
+                        context + $": {numberName} is outside the right table cell.");
+                }
+                finally
+                {
+                    Release(maths);
+                    Release(fields);
+                    Release(range);
+                    Release(bookmark);
+                }
+            }
+        }
+        finally { Release(bookmarks); }
+
+        foreach (var representative in new[] { 0, formulaIds.Count / 2, formulaIds.Count - 1 })
+        {
+            AssertOmmlTabNumberingHost(
+                document,
+                formulaIds[representative],
+                context + $" representative {representative + 1}",
+                updateReference: false,
+                requireDocumentTableFree: false);
         }
     }
 

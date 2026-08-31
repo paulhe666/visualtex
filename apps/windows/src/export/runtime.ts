@@ -499,7 +499,7 @@ function blobToBase64(blob: Blob) {
 }
 
 export async function svgToPng(
-  svgResult: SvgExportResult,
+  svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
 ): Promise<PngExportResult> {
   if (typeof document === "undefined" || typeof Image === "undefined") {

@@ -349,11 +349,10 @@ async function main() {
 
     await setField("");
     await key("\\", "Backslash", 220);
-    await key("t", "KeyT", 84);
-    await key("h", "KeyH", 72);
-    await key("e", "KeyE", 69);
-    await key("t", "KeyT", 84);
-    await key("a", "KeyA", 65);
+    // Use a real multi-item prefix. A fully typed exact command such as
+    // `\\theta` now legitimately leaves only one MathLive candidate, so it
+    // cannot verify ArrowDown navigation on current MathLive builds.
+    await key("f", "KeyF", 70);
     const nativePopover = await waitForEvaluation(`(() => {
       const panel = document.getElementById("mathlive-suggestion-popover");
       if (!panel) return { ready: false, visible: false };
@@ -380,15 +379,33 @@ async function main() {
       if (!panel || !selected) return { ready: false };
       window.__visualtexStableNativePanel = panel;
       const style = getComputedStyle(selected);
+      const commands = [...panel.querySelectorAll("li[data-command]")].map(
+        (item) => item.dataset.command ?? "",
+      );
+      const command = selected?.dataset.command ?? "";
       return {
-        ready: true,
-        command: selected?.dataset.command,
+        ready: commands.length >= 2 && Boolean(command),
+        command,
+        commands,
+        selectedIndex: commands.indexOf(command),
         value: document.querySelector("math-field").value,
         background: style.backgroundColor,
         border: style.borderColor,
         color: style.color,
       };
     })()`, "selected MathLive recommendation");
+    if (
+      nativeBeforeArrow.commands.length < 2 ||
+      nativeBeforeArrow.selectedIndex < 0
+    ) {
+      throw new Error(
+        `MathLive did not expose a navigable recommendation list: ${JSON.stringify(nativeBeforeArrow)}`,
+      );
+    }
+    const expectedNativeCommand =
+      nativeBeforeArrow.commands[
+        (nativeBeforeArrow.selectedIndex + 1) % nativeBeforeArrow.commands.length
+      ];
     if (nativeBeforeArrow.background === "rgb(31, 99, 142)") {
       throw new Error("Selected native recommendation still uses a solid dark-blue fill");
     }
@@ -405,7 +422,9 @@ async function main() {
       const samePanelNode = panel === window.__visualtexStableNativePanel;
       const command = selected?.dataset.command;
       return {
-        ready: samePanelNode && command === "\\\\thetasym",
+        ready:
+          samePanelNode &&
+          command === ${JSON.stringify(expectedNativeCommand)},
         samePanelNode,
         command,
         background: style.backgroundColor,
@@ -416,8 +435,10 @@ async function main() {
     if (!nativeAfterArrow.samePanelNode) {
       throw new Error("Arrow navigation replaced the native recommendation panel and can flicker");
     }
-    if (nativeAfterArrow.command !== "\\thetasym") {
-      throw new Error(`ArrowDown did not move the native recommendation selection: ${JSON.stringify(nativeAfterArrow)}`);
+    if (nativeAfterArrow.command !== expectedNativeCommand) {
+      throw new Error(
+        `ArrowDown did not move the native recommendation selection: ${JSON.stringify({ expectedNativeCommand, nativeAfterArrow })}`,
+      );
     }
     if (nativeAfterArrow.background === "rgb(31, 99, 142)") {
       throw new Error("Moved native recommendation still uses a solid dark-blue fill");
@@ -433,11 +454,20 @@ async function main() {
       };
       return {
         ...state,
-        ready: state.lineCount === 1 && state.value.endsWith("thetasym") && !state.nativeVisible && !state.candidateVisible,
+        ready:
+          state.lineCount === 1 &&
+          state.value.trim() === ${JSON.stringify(expectedNativeCommand)} &&
+          !state.nativeVisible &&
+          !state.candidateVisible,
       };
     })()`, "native MathLive recommendation commit");
-    if (nativeCommitState.lineCount !== 1 || !nativeCommitState.value.endsWith("thetasym")) {
-      throw new Error(`Enter did not commit the selected native MathLive recommendation: ${JSON.stringify(nativeCommitState)}`);
+    if (
+      nativeCommitState.lineCount !== 1 ||
+      nativeCommitState.value.trim() !== expectedNativeCommand
+    ) {
+      throw new Error(
+        `Enter did not commit the selected native MathLive recommendation: ${JSON.stringify({ expectedNativeCommand, nativeCommitState })}`,
+      );
     }
     if (nativeCommitState.nativeVisible || nativeCommitState.candidateVisible) {
       throw new Error(`Recommendation remained visible after commit: ${JSON.stringify(nativeCommitState)}`);
@@ -1207,8 +1237,8 @@ async function main() {
           : false,
       };
     })()`);
-    if (formatMenuState.count !== 17) {
-      throw new Error(`Expected 17 LaTeX code formats, found ${formatMenuState.count}`);
+    if (formatMenuState.count !== 18) {
+      throw new Error(`Expected 18 LaTeX code formats, found ${formatMenuState.count}`);
     }
     if (
       formatMenuState.visibleTitleCount !== 0 ||

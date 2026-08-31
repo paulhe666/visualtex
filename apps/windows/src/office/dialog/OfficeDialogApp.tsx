@@ -34,7 +34,7 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyLatex,
+  copyFormulaLines,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type {
@@ -900,11 +900,9 @@ export function OfficeDialogApp() {
       pngBase64 = (
         await svgToPng(
           {
-            svg: base.svg,
             base64: base.svgBase64,
             width: base.width,
             height: base.height,
-            baseline: base.baseline,
           },
           { scale: 2, background: "transparent" },
         )
@@ -1961,7 +1959,7 @@ export function OfficeDialogApp() {
   }, [sessionId]);
 
   const handleCopy = async () => {
-    await copyLatex(latex, latexCodeFormat);
+    await copyFormulaLines(lines, latexCodeFormat);
     addHistory(latex);
     setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
   };

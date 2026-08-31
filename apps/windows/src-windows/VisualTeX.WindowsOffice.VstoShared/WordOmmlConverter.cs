@@ -2155,7 +2155,13 @@ internal static class WordOmmlConverter
                 continue;
 
             var parent = slot.Parent;
-            var hidden = slot.Name == math + "deg"
+            var hidden = slot.Name == math + "e"
+                && parent?.Name == math + "mr"
+                && parent.Parent?.Name == math + "m"
+                && IsMathBooleanEnabled(
+                    parent.Parent.Element(math + "mPr"),
+                    math + "plcHide")
+                || slot.Name == math + "deg"
                 && parent?.Name == math + "rad"
                 && string.Equals(
                     parent.Element(math + "radPr")?

@@ -70,8 +70,8 @@ import type {
   ReplaceDocumentEntry,
 } from "./history/historyTypes";
 import {
-  copyLatex,
-  formatLatex,
+  copyFormulaLines,
+  formatFormulaLines,
   getLatexCodeFormatDefinition,
   latexCodeFormats,
   parseLatexSource,
@@ -215,7 +215,7 @@ function App() {
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatLatex(latex, latexCodeFormat);
+  const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
   const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
   const codeFormatGroups = [
     {
@@ -844,7 +844,7 @@ function App() {
 
   const handleCopy = async () => {
     try {
-      await copyLatex(latex, latexCodeFormat);
+      await copyFormulaLines(lines, latexCodeFormat);
       addHistory(latex);
       setToast(
         isEn

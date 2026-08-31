@@ -48,6 +48,11 @@ import {
 } from "../autocomplete/runtimeCommandRegistry";
 import { CommandSuggestionPopup } from "../autocomplete/CommandSuggestionPopup";
 import {
+  compatibilityRawPlaceholderTemplates,
+  compatibilityWrapperCanonicalTargets,
+  compatibilityWrapperPreviews,
+} from "../autocomplete/compatibilityCommands";
+import {
   createFormulaLine,
   useEditorStore,
 } from "../stores/editorStore";
@@ -60,6 +65,7 @@ import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,
 } from "../shortcuts/greekLetterHotkeys";
+import { resolveNewFormulaLineMode } from "./formulaLineMode";
 import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
@@ -71,15 +77,16 @@ import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
-import { applyCustomSymbolMacrosToMathfield } from "../math/customSymbolRegistry";
+import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
 import {
-  containsCustomSymbolCommand,
   installCustomSymbolGlobalStyle,
   installCustomSymbolShadowStyle,
   refreshCustomSymbolMathfield,
 } from "../math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { ImeCompositionGuard } from "./imeCompositionGuard";
+import { installMathLiveOptionMutationGuard } from "./mathLiveOptionCompatibility";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
 import { hasBoundedOperatorPlaceholderOrder } from "./boundedOperatorTemplate";
 import {
   nativeSuggestionPreviewHasVisibleInk,
@@ -981,6 +988,8 @@ function restoreRawCommandAnchor(
 }
 
 const structuredSuggestionCommands = new Set([
+  ...compatibilityWrapperPreviews.keys(),
+  ...compatibilityRawPlaceholderTemplates.keys(),
   "\\sum",
   "\\prod",
   "\\coprod",
@@ -1027,6 +1036,7 @@ const CASES_ENVIRONMENT_TEMPLATE =
 
 const rawPlaceholderCommandTemplates = new Map<string, string>([
   ...accentCommandTemplates,
+  ...compatibilityRawPlaceholderTemplates,
   [CASES_ENVIRONMENT_COMMAND, CASES_ENVIRONMENT_TEMPLATE],
   ["\\sqrt", "\\sqrt{\\placeholder{}}"],
   ["\\frac", "\\frac{\\placeholder{}}{\\placeholder{}}"],
@@ -1066,6 +1076,7 @@ const reverseModelPlaceholderOrderCommands = new Set([
   "\\stackbin",
 ]);
 const wrapperCommandPreviews = new Map<string, string>([
+  ...compatibilityWrapperPreviews,
   ["\\mathbb", "\\mathbb{ABC}"],
   ["\\mathbf", "\\mathbf{ABC}"],
   ["\\mathit", "\\mathit{ABC}"],
@@ -2815,15 +2826,39 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
   const style = document.createElement("style");
   style.id = visualTexFormulaFontStyleId;
   style.textContent = `
-    .ML__cmr,
-    .ML__mathbf {
+    .ML__cmr:not(.ML__it) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
+      font-style: normal !important;
     }
 
-    .ML__mathit,
+    .ML__cmr:not(.ML__bold):not(.ML__it) {
+      font-weight: 400 !important;
+    }
+
+    .ML__cmr.ML__bold:not(.ML__it),
+    .ML__mathbf:not(.lcGreek) {
+      font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
+      font-style: normal !important;
+      font-weight: 700 !important;
+    }
+
+    .ML__cmr.ML__it,
+    .ML__mathit {
+      font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
+      font-style: italic !important;
+    }
+
+    .ML__cmr.ML__it:not(.ML__bold),
+    .ML__mathit {
+      font-weight: 400 !important;
+    }
+
+    .ML__cmr.ML__bold.ML__it,
     .lcGreek.ML__mathbf,
     .ML__mathbfit {
       font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
+      font-style: italic !important;
+      font-weight: 700 !important;
     }
 
     .ML__text,
@@ -5542,9 +5577,35 @@ function FormulaField(props: FormulaFieldProps) {
           item.classList.contains("ML__popover__current"),
         )?.dataset.command ||
         "";
-      const placeholderCommand = rawQuery || selectedNativeCommand;
-      const placeholderTemplate = exactRawPlaceholderTemplate(placeholderCommand);
-      if (!placeholderTemplate) return false;
+      // Keep Windows' synthetic cases environment on the native candidate
+      // commit path while the user is still typing a prefix. That path records
+      // candidate usage, so subsequent \\b / \\be / \\beg pools preserve the
+      // existing frequency-ranking behavior. Other compatibility structures
+      // can use the prefix-aware placeholder path below.
+      if (
+        selectedNativeCommand === CASES_ENVIRONMENT_COMMAND &&
+        rawQuery !== CASES_ENVIRONMENT_COMMAND
+      ) {
+        return false;
+      }
+      const exactRawTemplate = rawQuery
+        ? exactRawPlaceholderTemplate(rawQuery)
+        : null;
+      const selectedMatchesRawQuery = Boolean(
+        selectedNativeCommand &&
+          (!rawQuery || selectedNativeCommand.startsWith(rawQuery)),
+      );
+      const placeholderCommand = exactRawTemplate
+        ? rawQuery
+        : selectedMatchesRawQuery
+          ? selectedNativeCommand
+          : "";
+      const placeholderTemplate =
+        exactRawTemplate ??
+        (placeholderCommand
+          ? exactRawPlaceholderTemplate(placeholderCommand)
+          : null);
+      if (!placeholderCommand || !placeholderTemplate) return false;
 
       const anchor = rawCommandAnchors.get(field);
       const rawInput = rawLatexInput(field).trim();
@@ -5716,6 +5777,9 @@ function FormulaField(props: FormulaFieldProps) {
       ) {
         return false;
       }
+      const wrapperOutputCommand =
+        compatibilityWrapperCanonicalTargets.get(wrapperCommand.command) ??
+        wrapperCommand.command;
 
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -5740,7 +5804,7 @@ function FormulaField(props: FormulaFieldProps) {
         field.executeCommand(["complete", "reject"]);
         field.mode = "math";
         const insertionStart = field.position;
-        const insertedWrapper = field.insert(`${wrapperCommand.command}{}`, {
+        const insertedWrapper = field.insert(`${wrapperOutputCommand}{}`, {
           mode: "math",
           format: "latex",
           insertionMode: "replaceSelection",
@@ -5776,7 +5840,7 @@ function FormulaField(props: FormulaFieldProps) {
         fontSeries: styleAtAnchor.fontSeries ?? "",
       };
       pendingWrapperInput = {
-        command: wrapperCommand.command,
+        command: wrapperOutputCommand,
         content: "",
         range: [rangeStart, rangeEnd],
         anchorStyle,
@@ -5789,7 +5853,7 @@ function FormulaField(props: FormulaFieldProps) {
           ? anchor.autoExitScriptKey
           : null,
       };
-      field.dataset.pendingWrapperCommand = wrapperCommand.command;
+      field.dataset.pendingWrapperCommand = wrapperOutputCommand;
       field.focus();
       field.shadowRoot
         ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
@@ -6285,28 +6349,23 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onFocus(propsRef.current.index, field);
     };
     host.replaceChildren(field);
-    field.macros = {
-      ...field.macros,
-      bm: {
-        def: "\\boldsymbol{#1}",
-        args: 1,
-        expand: false,
-      },
-    };
-    applyCustomSymbolMacrosToMathfield(field);
+    installMathLiveOptionMutationGuard(field);
+    // WebView2 exposes a richer mounted macro dictionary than MathLive's
+    // deferred pre-mount options (for example, it includes native \\bmod).
+    // Merge compatibility aliases only after mount so Windows does not lose
+    // those native commands, while the mutation guard still handles transient
+    // model initialization safely.
+    field.macros = composeCustomSymbolMacrosForMathfield(
+      field,
+      field.macros,
+      VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS,
+    );
+    defaultInlineShortcutsRef.current = { ...field.inlineShortcuts };
+    field.inlineShortcuts = resolveVisualTexInlineShortcuts(
+      defaultInlineShortcutsRef.current,
+      propsRef.current.inputBehavior.autoEscapeShortcuts,
+    );
     field.menuItems = [];
-    if (
-      /\\bm(?:\s|\{|$)/.test(propsRef.current.latex) ||
-      containsCustomSymbolCommand(propsRef.current.latex)
-    ) {
-      field.setValue(propsRef.current.latex, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-    }
     installMathLiveContourIntegralShadowStyle(field);
     installCustomSymbolShadowStyle(field);
     installVisualTexStructuralPlaceholderStyle(field);
@@ -6314,11 +6373,6 @@ function FormulaField(props: FormulaFieldProps) {
       field,
       propsRef.current.formulaLetterFont,
       propsRef.current.formulaChineseFont,
-    );
-    defaultInlineShortcutsRef.current = { ...field.inlineShortcuts };
-    field.inlineShortcuts = resolveVisualTexInlineShortcuts(
-      defaultInlineShortcutsRef.current,
-      propsRef.current.inputBehavior.autoEscapeShortcuts,
     );
     // MathLive mounts a pre-filled field with the whole formula selected.
     // Collapse that implicit selection so toolbar commands insert at the end
@@ -7684,7 +7738,59 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       });
     };
 
-    const addLineAfter = (index: number) => {
+    const setFormulaLineMode = (
+      lineId: string,
+      mode: FormulaLine["mode"],
+    ) => {
+      if (
+        interactionReadOnly ||
+        latexCodeFormat !== "mixed-inline-display" ||
+        (mode !== "inline" && mode !== "display")
+      ) {
+        return;
+      }
+      const state = useEditorStore.getState();
+      const current = state.lines.find((line) => line.id === lineId);
+      const currentMode = current?.mode === "inline" ? "inline" : "display";
+      if (!current || currentMode === mode) return;
+
+      historyManager.commitPendingTransaction();
+      const selectionByLineId = Object.fromEntries(
+        linesRef.current.flatMap((line) => {
+          const currentField = fieldRefs.current.get(line.id);
+          return currentField?.isConnected
+            ? [[line.id, captureSelection(currentField)] as const]
+            : [];
+        }),
+      );
+      const before = getEditorDocumentSnapshot(selectionByLineId);
+      const after: ReplaceDocumentEntry["after"] = {
+        ...before,
+        lines: before.lines.map((line) =>
+          line.id === lineId ? { ...line, mode } : { ...line },
+        ),
+        activeLineId: lineId,
+      };
+      flushSync(() => state.replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      setActiveLine(lineId);
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: "source-apply",
+        timestamp: Date.now(),
+      });
+      focusLine(lineId, {
+        latex: current.latex,
+        selection: before.selectionByLineId[lineId] ?? null,
+      });
+    };
+
+    const addLineAfter = (
+      index: number,
+      requestedMode?: FormulaLine["mode"],
+    ) => {
       historyManager.commitPendingTransaction();
       const state = useEditorStore.getState();
       const beforeActiveLineId = state.activeLineId;
@@ -7699,7 +7805,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         state.lines[Math.max(0, Math.min(index, state.lines.length - 1))]?.id ??
         beforeActiveLineId;
       const scrollSnapshot = captureEditorScrollSnapshot(anchorLineId);
-      const line = createFormulaLine("");
+      const inheritedMode =
+        requestedMode ??
+        state.lines[Math.max(0, Math.min(index, state.lines.length - 1))]?.mode ??
+        "display";
+      const line = createFormulaLine("", undefined, inheritedMode);
       const afterSelection: MathSelectionSnapshot = {
         ranges: [[0, 0]],
         direction: "none",
@@ -7790,7 +7900,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const lastPastedLatex = normalizedLines.at(-1) ?? "";
       const lastLatex = concatenate(lastPastedLatex, rightLatex);
       const insertedLines = normalizedLines.slice(1).map((latex, index, lines) =>
-        createFormulaLine(index === lines.length - 1 ? lastLatex : latex),
+        createFormulaLine(
+          index === lines.length - 1 ? lastLatex : latex,
+          undefined,
+          currentLine.mode,
+        ),
       );
       const lastLine = insertedLines.at(-1);
       if (!lastLine) return;
@@ -7859,18 +7973,19 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       index: number,
       lineId: string,
       field: MathfieldElement,
+      requestedMode?: FormulaLine["mode"],
     ) => {
       // Raw LaTeX input still belongs to MathLive's command transaction. In
       // ordinary math input, Enter follows Word: a selection is removed first,
       // then the remaining content is split at the selection boundary.
       if (hasRawLatexInput(field)) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
       const selectedRange = field.selection.ranges[0];
       if (field.selection.ranges.length !== 1 || !selectedRange) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
       const splitStart = Math.max(
@@ -7892,7 +8007,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         ),
       );
       if (field.selectionIsCollapsed && splitEnd >= field.lastOffset) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7929,7 +8044,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           canonicalize(`${leftLatex} ${rightLatex}`) !==
             canonicalize(originalLatex))
       ) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7937,7 +8052,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const state = useEditorStore.getState();
       const currentIndex = state.lines.findIndex((line) => line.id === lineId);
       if (currentIndex < 0) {
-        addLineAfter(index);
+        addLineAfter(index, requestedMode);
         return;
       }
 
@@ -7955,7 +8070,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       );
 
       const scrollSnapshot = captureEditorScrollSnapshot(lineId);
-      const nextLine = createFormulaLine(rightLatex);
+      const nextLine = createFormulaLine(
+        rightLatex,
+        undefined,
+        requestedMode ?? before.lines[currentIndex]?.mode ?? "display",
+      );
       const nextLines = before.lines.map((line) =>
         line.id === lineId ? { ...line, latex: leftLatex } : { ...line },
       );
@@ -8716,7 +8835,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        splitLineAtCaret(index, lineId, field);
+        const currentLineMode =
+          currentState.lines.find((line) => line.id === lineId)?.mode ??
+          "display";
+        const requestedMode = resolveNewFormulaLineMode(
+          latexCodeFormat,
+          currentLineMode,
+          event,
+        );
+        splitLineAtCaret(index, lineId, field, requestedMode);
         return;
       }
 
@@ -9849,6 +9976,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         className={
           "editor-surface multi-line-editor" +
           (showLineNumbers ? " has-line-numbers" : "") +
+          (latexCodeFormat === "mixed-inline-display" && !interactionReadOnly
+            ? " has-mixed-line-modes"
+            : "") +
           (interactionReadOnly ? " is-read-only-preview" : "") +
           (previewOnly ? " is-source-preview-only" : "")
         }
@@ -9884,6 +10014,43 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   <span className="formula-line-number">
                     {String(index + 1).padStart(2, "0")}
                   </span>
+                ) : null}
+                {latexCodeFormat === "mixed-inline-display" &&
+                !interactionReadOnly ? (
+                  <div
+                    className="formula-line-mode-toggle"
+                    role="group"
+                    aria-label={
+                      language === "en" ? "Formula row mode" : "公式行模式"
+                    }
+                  >
+                    <button
+                      type="button"
+                      className={line.mode === "inline" ? "is-active" : ""}
+                      title={
+                        language === "en"
+                          ? "Inline · Shift+Enter for new row"
+                          : "行内 · 新建时 Shift+回车"
+                      }
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => setFormulaLineMode(lineId, "inline")}
+                    >
+                      {language === "en" ? "Inline" : "行内"}
+                    </button>
+                    <button
+                      type="button"
+                      className={line.mode !== "inline" ? "is-active" : ""}
+                      title={
+                        language === "en"
+                          ? "Display · Alt+Enter for new row"
+                          : "行间 · 新建时 Alt+回车"
+                      }
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => setFormulaLineMode(lineId, "display")}
+                    >
+                      {language === "en" ? "Display" : "行间"}
+                    </button>
+                  </div>
                 ) : null}
                 <FormulaField
                   key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}`}

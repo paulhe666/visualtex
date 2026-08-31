@@ -559,7 +559,18 @@ assert.ok(wordVstoService.includes("font.Subscript = 0"));
 assert.ok(wordVstoService.includes("font.Superscript = 0"));
 assert.ok(wordVstoService.includes("RemoveInlineBaselineSentinel"));
 assert.ok(wordVstoService.includes("ResolveDisplayInsertionRange"));
-assert.ok(wordVstoService.includes("PrepareNumberedNativeOmmlInsertionHost"));
+assert.ok(
+  wordEquationNumberingTrueDisplay.includes("PrepareNumberedNativeOmmlInsertionHost"),
+);
+assert.ok(wordVstoService.includes("var usePreservedDisplayParagraph ="));
+assert.ok(!wordVstoService.includes("var usePreservedOleDisplayParagraph ="));
+assert.ok(wordVstoService.includes("preserveNativeOmmlSpacing: nativeOmml"));
+assert.ok(wordVstoService.includes("NativeOmmlScreenUpdatingScope.Suspend(_application)"));
+assert.ok(wordEquationNumbering.includes("ScreenUpdatingScope.Suspend(document)"));
+assert.ok(
+  (wordEquationNumbering.match(/TryFastUpdateCanonicalNumberFields\(document\)/g) ?? [])
+    .length >= 1,
+);
 for (const productionNumberingSource of [
   wordVstoService,
   wordEquationNumbering,
@@ -641,7 +652,7 @@ assert.ok(vstoEquationNumberFormatAcceptance.includes("Heading1DotId"));
 assert.ok(vstoEquationNumberFormatAcceptance.includes("Heading1DashId"));
 assert.ok(vstoEquationNumberFormatAcceptance.includes("Heading2DotId"));
 assert.ok(vstoEquationNumberFormatAcceptance.includes("Heading2DashId"));
-assert.ok(vstoEquationNumberFormatAcceptance.includes("InsertLegacyNumberingReference"));
+assert.ok(vstoEquationNumberFormatAcceptance.includes("InsertPlainNumberingReference"));
 assert.ok(vstoEquationNumberFormatAcceptance.includes("survived save/reopen"));
 assert.ok(vstoFormulaToLatexAcceptance.includes("OnRedrawSelectionOleToLatex"));
 assert.ok(vstoFormulaToLatexAcceptance.includes("OnRedrawSelectionOmmlToLatex"));
@@ -874,7 +885,8 @@ assert.ok(powerpointVsto.includes('BeginSelectedSession("crossPlatformPicture", 
 assert.ok(wordVstoService.includes("WordEquationNumbering.TryReconcile"));
 assert.ok(wordVstoService.includes("WordEquationNumbering.Reconcile"));
 assert.ok(wordEquationNumbering.includes("SEQ {nativeSequenceName}"));
-assert.ok(wordEquationNumbering.includes("WdCaptionLabelID.wdCaptionEquation"));
+assert.ok(wordEquationNumbering.includes('LegacyEquationSequenceName = "VisualTeXEquation"'));
+assert.ok(!wordEquationNumbering.includes("WdCaptionLabelID.wdCaptionEquation"));
 assert.ok(wordEquationNumbering.includes("EquationNumberFormatVariableName"));
 assert.ok(wordEquationNumbering.includes("Document.Variables") || wordEquationNumbering.includes("document.Variables"));
 assert.ok(wordEquationNumbering.includes("Heading1DotId"));

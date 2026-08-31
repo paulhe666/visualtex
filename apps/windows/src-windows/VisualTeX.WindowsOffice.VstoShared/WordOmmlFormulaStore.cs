@@ -552,11 +552,14 @@ internal static class WordOmmlFormulaStore
                 {
                     if ((bool)((dynamic)existing).LoadXML(xml))
                     {
+                        // Successful in-place replacement cannot create a duplicate
+                        // CustomXMLPart. The previous unconditional duplicate sweep
+                        // parsed every VisualTeX metadata part in the document after
+                        // each formula edit, making one update O(N) in total formulas.
+                        // Keep duplicate cleanup on the exceptional add-then-delete
+                        // fallback and explicit Delete(), where duplicates can really
+                        // be introduced or must be purged.
                         RememberPart(document, existing, metadata);
-                        RemoveDuplicateMetadataParts(
-                            document,
-                            metadata.FormulaId,
-                            ReadPartId(existing));
                         return;
                     }
                 }
@@ -589,6 +592,51 @@ internal static class WordOmmlFormulaStore
             Release(added);
             Release(parts);
             Release(existing);
+        }
+    }
+
+    internal static bool TrySaveKnownCachedPart(
+        Document document,
+        FormulaMetadata metadata)
+    {
+        metadata.Validate();
+        if (!MetadataCaches.TryGetValue(document, out var cache)) return false;
+        string? cachedPartId = null;
+        lock (cache.Gate)
+        {
+            if (cache.Entries.TryGetValue(metadata.FormulaId, out var cached))
+                cachedPartId = cached.PartId;
+        }
+        if (string.IsNullOrWhiteSpace(cachedPartId)) return false;
+
+        object? parts = null;
+        object? cachedPart = null;
+        try
+        {
+            parts = ((dynamic)document).CustomXMLParts;
+            cachedPart = ((dynamic)parts).SelectByID(cachedPartId!);
+            if (cachedPart is null) return false;
+            if (!(bool)((dynamic)cachedPart).LoadXML(BuildPartXml(metadata)))
+                return false;
+
+            // This fast path is intentionally transaction-local. The caller has
+            // already read and validated this exact cached part earlier in the same
+            // Apply operation, and no user/Undo turn can interleave while Word is
+            // synchronously processing the edit. Avoid re-reading and decoding the
+            // same XML merely to prove the identity again. Any missing/stale part or
+            // LoadXML rejection returns false and the caller falls back to Save(),
+            // which performs the full defensive cache/namespace validation.
+            RememberPart(document, cachedPart, metadata);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(cachedPart);
+            Release(parts);
         }
     }
 

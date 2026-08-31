@@ -114,7 +114,11 @@ async function main() {
     await client.connect();
     await client.send("Runtime.enable");
     await client.send("Page.enable");
-    await sleep(500);
+    // Chromium may expose the page target before its initial navigation has
+    // settled. Navigate explicitly so subsequent Runtime.evaluate calls keep a
+    // stable same-origin execution context.
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(700);
 
     const evaluate = async (expression) => {
       const result = await client.send("Runtime.evaluate", {
@@ -142,7 +146,9 @@ async function main() {
               ? 27
               : key === " "
                 ? 32
-                : 0;
+                : key === "\\"
+                  ? 220
+                  : 0;
       const virtualKey =
         specialVirtualKey ||
         (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
@@ -195,11 +201,30 @@ async function main() {
 
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
-      field.setValue("", { insertionMode: "replaceAll" });
+      field.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        composed: true,
+      }));
+      field.executeCommand(["complete", "reject"]);
+      field.mode = "math";
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.position = field.lastOffset;
       field.focus();
       field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
       return true;
     })()`);
+    // Match the production editor's delayed focus repair window before sending
+    // a physical Backslash key, otherwise the 0/80 ms focus callbacks can turn
+    // the command introducer into ordinary math text in headless Chromium.
+    await sleep(140);
 
     await typeKey("\\", "Backslash", "\\");
     for (const letter of "beg") {

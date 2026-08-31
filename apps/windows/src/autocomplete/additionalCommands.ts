@@ -90,6 +90,8 @@ const complexCommands: LatexCommand[] = [
   makeCommand("cos", "\\cos", "\\cos\\left(\\placeholder{}\\right)", "\\cos x", "余弦", "Cosine", "calculus", 89, ["cosine"], ["余弦"]),
   makeCommand("tan", "\\tan", "\\tan\\left(\\placeholder{}\\right)", "\\tan x", "正切", "Tangent", "calculus", 84, ["tangent"], ["正切"]),
   makeCommand("arcsin", "\\arcsin", "\\arcsin\\left(\\placeholder{}\\right)", "\\arcsin x", "反正弦", "Arcsine", "calculus", 74, ["arcsine"], ["反正弦"]),
+  makeCommand("arccos", "\\arccos", "\\arccos\\left(\\placeholder{}\\right)", "\\arccos x", "反余弦", "Arccosine", "calculus", 74, ["arccosine"], ["反余弦"]),
+  makeCommand("arctan", "\\arctan", "\\arctan\\left(\\placeholder{}\\right)", "\\arctan x", "反正切", "Arctangent", "calculus", 74, ["arctangent"], ["反正切"]),
   makeCommand("min", "\\min", "\\min_{\\placeholder{}}\\placeholder{}", "\\min_x f(x)", "最小值", "Minimum", "calculus", 78, ["minimum"], ["最小值"]),
   makeCommand("max", "\\max", "\\max_{\\placeholder{}}\\placeholder{}", "\\max_x f(x)", "最大值", "Maximum", "calculus", 78, ["maximum"], ["最大值"]),
 
