@@ -4101,7 +4101,6 @@ internal static partial class WordEquationNumbering
             {
                 var metadata = WordOmmlFormulaStore.TryRead(document, formulaId);
                 if (metadata is null
-                    || !metadata.Numbered
                     || !string.Equals(
                         metadata.DisplayMode,
                         "block",
@@ -4112,6 +4111,17 @@ internal static partial class WordEquationNumbering
                         document,
                         formulaId,
                         metadata);
+                if (!metadata.Numbered)
+                {
+                    // Older builds could dismantle a direct-SEQ 1x3 into a valid
+                    // standalone Display OMath while accidentally retaining the
+                    // adjacent VisualTeX table separator's Exactly-1pt paragraph
+                    // metrics. Reuse this existing one-time document-open scan to
+                    // self-heal only that unmistakable managed-OMML signature.
+                    if (NormalizeCompactStandaloneNativeOmmlParagraph(formulaRange))
+                        refreshed++;
+                    continue;
+                }
                 ConfigureNumberedDisplayFormula(
                     document,
                     formulaRange,
@@ -5476,6 +5486,7 @@ internal static partial class WordEquationNumbering
                         activeRange = ResolveSingleNativeOmmlRange(standaloneRange);
                     }
                     finally { Release(standaloneRange); }
+                    NormalizeCompactStandaloneNativeOmmlParagraph(activeRange);
                     ConfigureEquationParagraph(activeRange, numbered: false);
                     EnsureNumberedOmmlIsDisplay(activeRange);
                     if (metadata is not null)
@@ -5654,6 +5665,50 @@ internal static partial class WordEquationNumbering
             Release(characterFont);
             Release(character);
             Release(rangeFont);
+        }
+    }
+
+    private static bool NormalizeCompactStandaloneNativeOmmlParagraph(
+        Range formulaRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        ParagraphFormat? format = null;
+        try
+        {
+            if ((bool)formulaRange.get_Information(WdInformation.wdWithInTable))
+                return false;
+            OMaths? maths = null;
+            try
+            {
+                maths = formulaRange.OMaths;
+                if (maths.Count != 1) return false;
+            }
+            finally { Release(maths); }
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            format = paragraph.Format;
+            // A direct-SEQ 1x3 is separated from adjacent Word tables by a mandatory
+            // VisualTeX structural paragraph using Exactly 1pt line spacing. When
+            // Word dismantles the table it can reuse that paragraph's pPr for the
+            // newly restored standalone Display OMath. Preserve ordinary/custom
+            // paragraph formatting, but never let this unmistakable compact-table
+            // sentinel become the visible formula's line box.
+            if (format.LineSpacingRule != WdLineSpacing.wdLineSpaceExactly
+                || format.LineSpacing > 2.01f)
+                return false;
+            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+            format.SpaceBefore = 0f;
+            format.SpaceAfter = 0f;
+            try { format.DisableLineHeightGrid = -1; } catch { }
+            return true;
+        }
+        finally
+        {
+            Release(format);
+            Release(paragraph);
+            Release(paragraphs);
         }
     }
 

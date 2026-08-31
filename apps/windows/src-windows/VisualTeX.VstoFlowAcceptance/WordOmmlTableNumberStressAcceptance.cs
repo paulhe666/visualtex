@@ -147,6 +147,9 @@ internal static partial class Program
                 "Numbered→unnumbered did not persist Numbered=false.");
             Word.Bookmark? middleBookmark = null;
             Word.Range? unnumberedRange = null;
+            Word.Paragraphs? unnumberedParagraphs = null;
+            Word.Paragraph? unnumberedParagraph = null;
+            Word.ParagraphFormat? unnumberedParagraphFormat = null;
             try
             {
                 middleBookmark = WordOmmlFormulaStore.FindByFormulaId(document, middleId)
@@ -156,6 +159,37 @@ internal static partial class Program
                     "Unnumbered middle formula remained in a table.");
                 AssertEqual(Word.WdOMathType.wdOMathDisplay, unnumberedRange.OMaths[1].Type,
                     "Unnumbered middle formula degraded from true Display OMath.");
+                unnumberedParagraphs = unnumberedRange.Paragraphs;
+                AssertEqual(1, unnumberedParagraphs.Count,
+                    "Unnumbered middle formula no longer occupies one standalone paragraph.");
+                unnumberedParagraph = unnumberedParagraphs[1];
+                unnumberedParagraphFormat = unnumberedParagraph.Format;
+                AssertTrue(
+                    !(unnumberedParagraphFormat.LineSpacingRule == Word.WdLineSpacing.wdLineSpaceExactly
+                      && unnumberedParagraphFormat.LineSpacing <= 2.01f),
+                    $"Unnumbered middle formula inherited the compact 1pt table separator: rule={unnumberedParagraphFormat.LineSpacingRule}, line={unnumberedParagraphFormat.LineSpacing:0.##}pt.");
+                AssertEqual(Word.WdLineSpacing.wdLineSpaceSingle,
+                    unnumberedParagraphFormat.LineSpacingRule,
+                    "Unnumbered middle formula did not restore ordinary single line spacing after dismantling its 1x3 host.");
+
+                // Simulate a document already damaged by an older build. The normal
+                // document-open refresh must self-heal this exact managed-OMML 1pt
+                // signature without requiring the user to edit the formula again.
+                unnumberedParagraphFormat.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceExactly;
+                unnumberedParagraphFormat.LineSpacing = 1f;
+                AssertTrue(WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document) >= 1,
+                    "Document-open OMML refresh did not detect the legacy 1pt standalone formula.");
+                Release(unnumberedParagraphFormat); unnumberedParagraphFormat = null;
+                Release(unnumberedParagraph); unnumberedParagraph = null;
+                Release(unnumberedParagraphs); unnumberedParagraphs = null;
+                unnumberedParagraphs = unnumberedRange.Paragraphs;
+                unnumberedParagraph = unnumberedParagraphs[1];
+                unnumberedParagraphFormat = unnumberedParagraph.Format;
+                AssertEqual(Word.WdLineSpacing.wdLineSpaceSingle,
+                    unnumberedParagraphFormat.LineSpacingRule,
+                    "Document-open OMML refresh did not repair the legacy 1pt standalone formula line box.");
+                Console.WriteLine(
+                    $"  unnumbered OMML line-box repair: rule={unnumberedParagraphFormat.LineSpacingRule}, line={unnumberedParagraphFormat.LineSpacing:0.##}pt.");
 
                 var renumberSession = CreateNumberedOmmlTabSession(
                     middleId,
@@ -170,6 +204,9 @@ internal static partial class Program
             }
             finally
             {
+                Release(unnumberedParagraphFormat);
+                Release(unnumberedParagraph);
+                Release(unnumberedParagraphs);
                 Release(unnumberedRange);
                 Release(middleBookmark);
             }

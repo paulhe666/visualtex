@@ -19,6 +19,9 @@ internal static partial class Program
         Word.Range? formulaRange = null;
         Word.OMaths? maths = null;
         Word.OMath? math = null;
+        Word.Paragraphs? unnumberedParagraphs = null;
+        Word.Paragraph? unnumberedParagraph = null;
+        Word.ParagraphFormat? unnumberedParagraphFormat = null;
         try
         {
             application = CreateWordApplication(visible: false);
@@ -108,6 +111,21 @@ internal static partial class Program
                 "Numbered→unnumbered OMML created a floating Shape.");
             AssertEqual(0, document.Tables.Count,
                 "Numbered→unnumbered OMML created a Word table.");
+            unnumberedParagraphs = formulaRange.Paragraphs;
+            AssertEqual(1, unnumberedParagraphs.Count,
+                "Numbered→unnumbered OMML no longer occupies one standalone paragraph.");
+            unnumberedParagraph = unnumberedParagraphs[1];
+            unnumberedParagraphFormat = unnumberedParagraph.Format;
+            AssertTrue(
+                !(unnumberedParagraphFormat.LineSpacingRule == Word.WdLineSpacing.wdLineSpaceExactly
+                  && unnumberedParagraphFormat.LineSpacing <= 2.01f),
+                $"Numbered→unnumbered OMML inherited VisualTeX's compact structural line box: rule={unnumberedParagraphFormat.LineSpacingRule}, line={unnumberedParagraphFormat.LineSpacing:0.##}pt.");
+            AssertEqual(Word.WdLineSpacing.wdLineSpaceSingle,
+                unnumberedParagraphFormat.LineSpacingRule,
+                "Numbered→unnumbered OMML did not restore ordinary single line spacing after dismantling its 1x3 host.");
+            Release(unnumberedParagraphFormat); unnumberedParagraphFormat = null;
+            Release(unnumberedParagraph); unnumberedParagraph = null;
+            Release(unnumberedParagraphs); unnumberedParagraphs = null;
 
             var unnumberedStart = formulaRange.Start;
             var unnumberedEnd = formulaRange.End;
@@ -157,6 +175,9 @@ internal static partial class Program
         }
         finally
         {
+            Release(unnumberedParagraphFormat);
+            Release(unnumberedParagraph);
+            Release(unnumberedParagraphs);
             Release(math);
             Release(maths);
             Release(formulaRange);
