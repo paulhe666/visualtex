@@ -184,6 +184,8 @@ internal static partial class Program
         Word.Section? section = null;
         Word.PageSetup? setup = null;
         Word.Window? window = null;
+        Word.View? view = null;
+        var restoreFieldCodes = false;
         try
         {
             var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
@@ -312,6 +314,17 @@ internal static partial class Program
                 phase + ": the 1x3 table does not span the writable text width.");
 
             window = document.ActiveWindow;
+            view = window.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                // Physical number geometry is defined by the rendered SEQ result.
+                // Alt+F9 / ShowFieldCodes deliberately lays out the long field-code
+                // instruction instead, so measure with results visible and restore
+                // the user's Word view preference in finally.
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+            }
             object scrollStart = true;
             window.ScrollIntoView(formulaRange, ref scrollStart);
             document.Repaginate();
@@ -357,6 +370,11 @@ internal static partial class Program
         }
         finally
         {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
             Release(window);
             Release(setup);
             Release(section);

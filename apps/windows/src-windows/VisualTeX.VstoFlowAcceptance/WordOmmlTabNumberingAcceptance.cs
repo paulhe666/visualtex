@@ -27,7 +27,6 @@ internal static partial class Program
         {
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add(Visible: false);
-            document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
             application.Selection.SetRange(0, 0);
             WordEquationNumbering.SetEquationNumberFormatPreference(
@@ -54,6 +53,10 @@ internal static partial class Program
                 document,
                 new[] { formulaId },
                 "fresh numbered OMML insertion");
+            document.SaveAs2(
+                documentPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
 
             // Mirror the production DocumentBeforeSave compatibility finalizer
             // before any edit. For native #(SEQ), this only refreshes the unchanged

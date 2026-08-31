@@ -161,6 +161,8 @@ internal static partial class Program
         Word.Sections? sections = null;
         Word.Section? section = null;
         Word.PageSetup? pageSetup = null;
+        Word.View? view = null;
+        var restoreFieldCodes = false;
         try
         {
             document.Repaginate();
@@ -264,6 +266,15 @@ internal static partial class Program
                     context + ": VisualTeX OLE is not using its own exported baseline for display placement.");
                 AssertTrue(objectResultFont.Position <= 0,
                     context + ": numbered VisualTeX OLE was raised above the Word text baseline.");
+            }
+
+            view = document.ActiveWindow.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+                document.Repaginate();
             }
 
             Word.Range? visibleObjectStart = null;
@@ -419,6 +430,11 @@ internal static partial class Program
         }
         finally
         {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
             Release(pageSetup);
             Release(section);
             Release(sections);

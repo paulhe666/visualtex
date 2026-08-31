@@ -691,8 +691,18 @@ internal static partial class Program
         Word.Fields? nestedFields = null;
         Word.Field? nested = null;
         Word.Range? nestedResult = null;
+        Word.Window? window = null;
+        bool? originalShowFieldCodes = null;
         try
         {
+            try
+            {
+                window = document.ActiveWindow;
+                originalShowFieldCodes = window.View.ShowFieldCodes;
+                if (originalShowFieldCodes.Value)
+                    window.View.ShowFieldCodes = false;
+            }
+            catch { }
             var raw = range.Text ?? string.Empty;
             var visibleReference = string.Empty;
             fields = document.Fields;
@@ -750,6 +760,11 @@ internal static partial class Program
         }
         finally
         {
+            if (window is not null && originalShowFieldCodes.HasValue)
+            {
+                try { window.View.ShowFieldCodes = originalShowFieldCodes.Value; } catch { }
+            }
+            Release(window);
             Release(nestedResult);
             Release(nested);
             Release(nestedFields);

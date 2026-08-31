@@ -444,6 +444,10 @@ internal static partial class Program
         using var officeMessageFilter = OfficeComMessageFilter.Register();
         var exerciseInstalledWordAddIn = string.Equals(
                 mode,
+                "word-installed-unsaved-first-omml",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-mathtype-left-right-stability",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -981,6 +985,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-omml-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeToOmmlReeditRegressionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-unsaved-first-vsto-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordUnsavedFirstNumberedOmmlVstoRegressionAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-unsaved-first-omml", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledUnsavedFirstNumberedOmmlAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-omml-empty-line-insertion-regression", StringComparison.OrdinalIgnoreCase))
             {

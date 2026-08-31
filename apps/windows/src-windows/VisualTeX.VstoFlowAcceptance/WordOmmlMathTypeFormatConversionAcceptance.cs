@@ -1425,7 +1425,9 @@ internal static partial class Program
             Word.Range? visibleRange = null;
             Word.Fields? fields = null;
             Word.Field? reference = null;
+            Word.Range? code = null;
             Word.Range? result = null;
+            Word.Range? prefixRange = null;
             try
             {
                 visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
@@ -1444,10 +1446,18 @@ internal static partial class Program
                 reference.Update();
                 // Heading-aware direct-table numbering stores the heading prefix
                 // as ordinary Word text before the SEQ field, while the field result
-                // itself is only the local ordinal. Compare the complete visible
-                // label so 0.1/2.3.4 references are validated rather than truncated
-                // to the final SEQ result (1/4).
-                var actualNumber = NormalizeNumberedOmmlLabel(visibleRange.Text)
+                // itself is only the local ordinal. Reconstruct the visible number
+                // from the literal prefix + Field.Result rather than Range.Text;
+                // the latter exposes the complete SEQ instruction when Alt+F9 /
+                // ShowFieldCodes is enabled.
+                code = reference.Code;
+                result = reference.Result;
+                var prefixStart = Math.Min(visibleRange.End, visibleRange.Start + 1);
+                var fieldBegin = Math.Max(prefixStart, code.Start - 1);
+                prefixRange = document.Range(prefixStart, fieldBegin);
+                var actualNumber = NormalizeNumberedOmmlLabel(
+                        (prefixRange.Text ?? string.Empty)
+                        + (result.Text ?? string.Empty))
                     .Trim('(', ')');
                 AssertEqual(
                     targetByFormulaId[formulaId],
@@ -1466,7 +1476,9 @@ internal static partial class Program
             }
             finally
             {
+                Release(prefixRange);
                 Release(result);
+                Release(code);
                 Release(reference);
                 Release(fields);
                 Release(visibleRange);
@@ -1766,7 +1778,7 @@ internal static partial class Program
                 $"MathType→OMML {stage} restored {alias} outside the durable VTEqNum number identity.");
             AssertEqual(
                 expectedReferenceText.Trim(),
-                (aliasRange.Text ?? string.Empty).Trim(),
+                ReadVisibleEquationNumber(document, formulaId),
                 $"MathType→OMML {stage} restored {alias} over the wrong visible number text.");
 
             fields = document.Fields;
@@ -1831,6 +1843,33 @@ internal static partial class Program
         }
     }
 
+    private static string ReadRangeTextWithFieldResults(
+        Word.Document document,
+        Word.Range range)
+    {
+        Word.View? view = null;
+        var restoreFieldCodes = false;
+        try
+        {
+            view = document.ActiveWindow.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+            }
+            return (range.Text ?? string.Empty).Trim();
+        }
+        finally
+        {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
+        }
+    }
+
     private static void AssertReferenceAliasesOnMathType(
         Word.Application application,
         Word.Document document,
@@ -1853,6 +1892,8 @@ internal static partial class Program
         Word.Field? visualTeXGoTo = null;
         Word.Range? result = null;
         Word.Selection? selection = null;
+        Word.View? view = null;
+        var restoreFieldCodes = false;
         try
         {
             bookmarks = document.Bookmarks;
@@ -1864,9 +1905,13 @@ internal static partial class Program
             visualTeXBookmark = bookmarks[visualTeXAlias];
             mathTypeRange = mathTypeBookmark.Range;
             visualTeXRange = visualTeXBookmark.Range;
-            AssertEqual(expectedMathTypeText.Trim(), (mathTypeRange.Text ?? string.Empty).Trim(),
+            AssertEqual(
+                expectedMathTypeText.Trim(),
+                ReadRangeTextWithFieldResults(document, mathTypeRange),
                 $"{stage} restored the MathType alias over the wrong visible-number span.");
-            AssertEqual(expectedVisualTeXText.Trim(), (visualTeXRange.Text ?? string.Empty).Trim(),
+            AssertEqual(
+                expectedVisualTeXText.Trim(),
+                ReadRangeTextWithFieldResults(document, visualTeXRange),
                 $"{stage} restored the VisualTeX alias over the wrong number-only span.");
 
             fields = document.Fields;
@@ -1977,6 +2022,13 @@ internal static partial class Program
                 $"{stage} lost live GOTOBUTTON {visualTeXAlias} after REF refresh.");
             AssertTrue(expectedGoToSelectionStart >= 0,
                 $"{stage} could not resolve the MTPlaceRef owner of {mathTypeAlias}.");
+            view = document.ActiveWindow.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+            }
             goTo!.DoClick();
             selection = application.Selection;
             AssertEqual(expectedGoToSelectionStart, selection.Start,
@@ -1990,6 +2042,11 @@ internal static partial class Program
         }
         finally
         {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
             Release(selection);
             Release(result);
             Release(visualTeXGoTo);
@@ -2024,6 +2081,8 @@ internal static partial class Program
         Word.Range? result = null;
         Word.Field? goTo = null;
         Word.Selection? selection = null;
+        Word.View? view = null;
+        var restoreFieldCodes = false;
         var referenceFound = false;
         try
         {
@@ -2041,7 +2100,9 @@ internal static partial class Program
                 $"{stage} restored {alias} at the wrong number-only start position.");
             AssertEqual(nativeRange.End, aliasRange.End,
                 $"{stage} restored {alias} at the wrong number-only end position.");
-            AssertEqual(expectedReferenceText.Trim(), (aliasRange.Text ?? string.Empty).Trim(),
+            AssertEqual(
+                expectedReferenceText.Trim(),
+                ReadVisibleEquationNumber(document, formulaId).Trim().Trim('(', ')'),
                 $"{stage} restored {alias} over the wrong number text.");
 
             fields = document.Fields;
@@ -2072,6 +2133,13 @@ internal static partial class Program
             AssertTrue(referenceFound, $"{stage} lost dynamic REF {alias}.");
             AssertTrue(goTo is not null,
                 $"{stage} lost the navigable GOTOBUTTON field for {alias}.");
+            view = document.ActiveWindow.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+            }
             goTo!.DoClick();
             selection = application.Selection;
             AssertTrue(
@@ -2081,6 +2149,11 @@ internal static partial class Program
         }
         finally
         {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
             Release(selection);
             Release(goTo);
             Release(result);

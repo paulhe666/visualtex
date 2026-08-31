@@ -3734,6 +3734,36 @@ internal sealed partial class WordFormulaService
                         "reconcile",
                         performanceWatch,
                         ref performanceCheckpoint);
+
+                    if (session.Numbered)
+                    {
+                        // Numbered OMML reconciliation can move the equation from its
+                        // original body paragraph into the center cell of a newly
+                        // created 1x3 host and replace the collapsed VTOMML bookmark.
+                        // Never keep using the pre-reconcile RCWs after that structural
+                        // move. On a freshly started Word instance the old Range can
+                        // serialize as an empty/non-math paragraph; the final
+                        // fingerprint then fails and the old rollback path can delete
+                        // the live center formula while leaving the right-side SEQ.
+                        Release(equationRange);
+                        equationRange = null;
+                        Release(bookmark);
+                        bookmark = null;
+                        bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                                document,
+                                metadata.FormulaId)
+                            ?? throw new InvalidOperationException(
+                                "Word lost the newly inserted numbered OMML bookmark after building its 1x3 host.");
+                        equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                        var liveMaths = equationRange.OMaths;
+                        try
+                        {
+                            if (liveMaths.Count != 1)
+                                throw new InvalidOperationException(
+                                    "Word lost the newly inserted center OMath after building its 1x3 host.");
+                        }
+                        finally { Release(liveMaths); }
+                    }
                 }
                 if (session.Numbered && !deferNumberingLayout)
                 {
@@ -3788,11 +3818,52 @@ internal sealed partial class WordFormulaService
             // equation through Range.WordOpenXML becomes document-sized work as
             // the batch grows, so the caller refreshes every new VTOMML formula
             // from one document-wide WordOpenXML snapshot after all inserts.
+            if (session.Numbered
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_VSTO_OMML_FAIL_STAGE"),
+                    "after-numbered-insert-reconcile",
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Injected failure after numbered OMML insertion reconciliation.");
             if (!deferFinalFingerprint)
             {
-                WordOmmlNativeSource.StampFingerprintFromResolvedRange(
-                    metadata,
-                    equationRange);
+                try
+                {
+                    WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                        metadata,
+                        equationRange);
+                }
+                catch (InvalidDataException error) when (
+                    session.Numbered
+                    && string.Equals(
+                        session.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal)
+                    && WordEquationNumbering
+                        .HasReusableNumberedNativeOmmlDirectTableHost(
+                            document,
+                            equationRange,
+                            metadata.FormulaId))
+                {
+                    // A freshly started Word process can transiently serialize the
+                    // just-built center OMath Range without its <m:oMath> wrapper on
+                    // the first numbered insertion, even though the live 1x3 host is
+                    // already structurally complete (one Display OMath in cell 2,
+                    // one direct SEQ in cell 3, all FormulaId bookmarks intact).
+                    // The semantic fingerprint was computed from the source OMML
+                    // before insertion and is still authoritative here. Never turn
+                    // this Word serialization race into a destructive insert failure;
+                    // genuine host corruption does not satisfy the structural guard
+                    // above and therefore still propagates the exception.
+                    metadata.NativeOmmlFingerprint = sourceFingerprint;
+                    WordDoubleClickHook.TraceMessage(
+                        $"numbered-omml-final-fingerprint-transient-fallback formulaId={metadata.FormulaId} error={error.Message}");
+                }
             }
             TraceAcceptancePerformance(
                 "InsertOmml",
@@ -3877,8 +3948,73 @@ internal sealed partial class WordFormulaService
         }
         catch
         {
-            TryDelete(bookmark, deleteContents: true);
-            if (bookmark is null) TryDelete(equationRange);
+            // Never delete through a pre-reconcile bookmark/Range. Numbered OMML
+            // host construction can replace both objects while preserving the same
+            // FormulaId; deleting through a stale RCW is exactly how a failed first
+            // insertion could leave a right-cell SEQ with an empty center cell.
+            // Re-resolve the current FormulaId-bound equation first and delete only
+            // that proven live OMath. If it cannot be resolved, leave document
+            // content intact rather than guessing at a stale range.
+            Bookmark? rollbackBookmark = null;
+            Range? rollbackRange = null;
+            Table? rollbackTable = null;
+            try
+            {
+                if (document is not null)
+                {
+                    if (session.Numbered
+                        && string.Equals(
+                            session.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal))
+                    {
+                        rollbackTable = WordEquationNumbering.FindNumberedEquationTable(
+                            document,
+                            metadata.FormulaId);
+                        if (rollbackTable is not null)
+                        {
+                            try { rollbackTable.Delete(); } catch { }
+                            Release(rollbackTable);
+                            rollbackTable = null;
+                        }
+                    }
+
+                    // If no complete numbered table could be resolved (for example
+                    // failure happened before the scaffold existed), remove only a
+                    // freshly re-resolved FormulaId-bound OMath. Never act on the
+                    // stale pre-reconcile bookmark/Range held by the caller.
+                    rollbackBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                        document,
+                        metadata.FormulaId);
+                    if (rollbackBookmark is not null)
+                    {
+                        try { rollbackRange = WordOmmlFormulaStore.GetEquationRange(rollbackBookmark); }
+                        catch { rollbackRange = null; }
+                        try { rollbackBookmark.Delete(); } catch { }
+                        if (rollbackRange is not null)
+                        {
+                            try { rollbackRange.Delete(); } catch { }
+                        }
+                    }
+
+                    if (session.Numbered)
+                    {
+                        try
+                        {
+                            WordEquationNumbering.RemoveFormulaNumberingArtifacts(
+                                document,
+                                metadata.FormulaId);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            finally
+            {
+                Release(rollbackTable);
+                Release(rollbackRange);
+                Release(rollbackBookmark);
+            }
             if (metadataSaved && document is not null)
             {
                 try { WordOmmlFormulaStore.Delete(document, metadata.FormulaId); } catch { }
@@ -12629,6 +12765,7 @@ internal sealed partial class WordFormulaService
         TabStops? tabs = null;
         TabStop? tab = null;
         Field? placeRef = null;
+        Range? shapePrefix = null;
         try
         {
             shapeRange = shape.Range;
@@ -12662,12 +12799,18 @@ internal sealed partial class WordFormulaService
                     "MTDisplayEquation does not contain MathType's center/right tab stops.");
             try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
 
-            var paragraphText = paragraphRange.Text ?? string.Empty;
+            // Do not infer the OLE boundary from Paragraph.Range.Text. When Word's
+            // field-code view is enabled, an embedded equation is exposed as
+            // FIELD-BEGIN + " EMBED Equation..." rather than U+0001 even though
+            // InlineShape.Range still identifies the exact OLE story interval.
+            // Validate the real characters before that interval instead; this is
+            // invariant under Alt+F9 / Field.ShowCodes.
+            shapePrefix = document.Range(paragraphRange.Start, shapeRange.Start);
             if (!numbered)
             {
-                if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
+                if (!string.Equals(shapePrefix.Text, "\t", StringComparison.Ordinal))
                     throw new InvalidOperationException(
-                        "The unnumbered MathType display equation does not begin with Word's native tab + OLE sequence.");
+                        "The unnumbered MathType display equation does not begin with Word's native center tab before its OLE object.");
                 return;
             }
 
@@ -12703,16 +12846,15 @@ internal sealed partial class WordFormulaService
                     if (fieldEnd > shapeRange.Start)
                         throw new InvalidOperationException(
                             "The MathType left equation number is not positioned before the equation object.");
-                    // An empty-result MTPlaceRef exposes its U+0015 field-end
-                    // control at the same story boundary Word reports as the
-                    // following OLE field start. Range(fieldEnd, shape.Start) can
-                    // therefore be collapsed even though Paragraph.Range.Text is
-                    // physically FIELD-END + TAB + U+0001. Validate the actual
-                    // visible paragraph sequence instead of relying on those
-                    // ambiguous COM field coordinates.
-                    var objectTextIndex = paragraphText.IndexOf('\u0001');
-                    if (objectTextIndex <= 0
-                        || paragraphText[objectTextIndex - 1] != '\t')
+                    // An empty-result MTPlaceRef can report a field-end boundary
+                    // that coincides with the following OLE field. The one story
+                    // character immediately before InlineShape.Range is still the
+                    // actual separator TAB in both result and field-code views.
+                    Release(shapePrefix);
+                    shapePrefix = document.Range(
+                        Math.Max(paragraphRange.Start, shapeRange.Start - 1),
+                        shapeRange.Start);
+                    if (!string.Equals(shapePrefix.Text, "\t", StringComparison.Ordinal))
                         throw new InvalidOperationException(
                             "The MathType left-numbered display equation has no tab between its number and equation.");
                 }
@@ -12725,13 +12867,14 @@ internal sealed partial class WordFormulaService
                     if ((separator.Text ?? string.Empty).IndexOf('\t') < 0)
                         throw new InvalidOperationException(
                             "The MathType right-numbered display equation has no tab between its equation and number.");
-                    if (!paragraphText.StartsWith("\t\u0001", StringComparison.Ordinal))
+                    if (!string.Equals(shapePrefix.Text, "\t", StringComparison.Ordinal))
                     {
-                        var prefix = string.Join(
+                        var prefix = shapePrefix.Text ?? string.Empty;
+                        var codes = string.Join(
                             ",",
-                            paragraphText.Take(12).Select(ch => $"U+{(int)ch:X4}"));
+                            prefix.Select(ch => $"U+{(int)ch:X4}"));
                         throw new InvalidOperationException(
-                            $"The MathType right-numbered display equation does not begin with Word's native center tab + OLE sequence. paragraph={paragraphRange.Start}-{paragraphRange.End}; shape={shapeRange.Start}-{shapeRange.End}; prefix={prefix}.");
+                            $"The MathType right-numbered display equation does not begin with Word's native center tab before its OLE object. paragraph={paragraphRange.Start}-{paragraphRange.End}; shape={shapeRange.Start}-{shapeRange.End}; prefix={codes}.");
                     }
                 }
                 if (updateNestedNumberFields)
@@ -12746,6 +12889,7 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            Release(shapePrefix);
             Release(placeRef);
             Release(tab);
             Release(tabs);

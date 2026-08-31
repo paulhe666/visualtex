@@ -3819,7 +3819,13 @@ internal sealed partial class WordFormulaService
                     table = TryGetVisualTeXNumberedTable(shapeRange, target.Metadata);
                     if (table is not null)
                     {
-                        if (!IsSafeOmmlNumberingTableForConversion(table, shapeRange))
+                        var currentDirectTable = WordEquationNumbering
+                            .HasReusableNumberedNativeOmmlDirectTableHost(
+                                document,
+                                shapeRange,
+                                target.SourceFormulaId);
+                        if (!currentDirectTable
+                            && !IsSafeOmmlNumberingTableForConversion(table, shapeRange))
                             throw new InvalidOperationException(
                                 "The legacy OMML numbering table contains ordinary user content or another formula; conversion was refused before modifying the document.");
                     }
@@ -4003,7 +4009,13 @@ internal sealed partial class WordFormulaService
             table = TryGetVisualTeXNumberedTable(sourceRange, target.Metadata);
             if (table is not null)
             {
-                if (!IsSafeOmmlNumberingTableForConversion(table, sourceRange))
+                var currentDirectTable = WordEquationNumbering
+                    .HasReusableNumberedNativeOmmlDirectTableHost(
+                        document,
+                        sourceRange,
+                        target.SourceFormulaId);
+                if (!currentDirectTable
+                    && !IsSafeOmmlNumberingTableForConversion(table, sourceRange))
                     throw new InvalidOperationException(
                         "The legacy managed OMML table contains user content or another formula and cannot use the direct replacement path.");
             }
@@ -4326,7 +4338,13 @@ internal sealed partial class WordFormulaService
                     table = TryGetVisualTeXNumberedTable(shapeRange, target.Metadata);
                     if (table is not null)
                     {
-                        if (!IsSafeOmmlNumberingTableForConversion(table, shapeRange))
+                        var currentDirectTable = WordEquationNumbering
+                            .HasReusableNumberedNativeOmmlDirectTableHost(
+                                document,
+                                shapeRange,
+                                target.SourceFormulaId);
+                        if (!currentDirectTable
+                            && !IsSafeOmmlNumberingTableForConversion(table, shapeRange))
                             throw new InvalidOperationException(
                                 "The legacy OMML numbering table contains ordinary user content or another formula; conversion was refused before modifying the document.");
                         tableRange = table.Range.Duplicate;
@@ -4909,16 +4927,76 @@ internal sealed partial class WordFormulaService
 
     private static bool IsSafeMathTypeDisplayParagraph(Range paragraphRange)
     {
-        var text = paragraphRange.Text ?? string.Empty;
-        foreach (var character in text)
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
         {
-            if (char.IsWhiteSpace(character) || char.IsDigit(character)) continue;
-            if (character < ' ') continue;
-            if (character is '\u0001' or '\u0013' or '\u0014' or '\u0015') continue;
-            if ("()[]{}.-–—_:;,+/\\".IndexOf(character) >= 0) continue;
-            return false;
+            // A display paragraph that carries an unrelated user field is not safe
+            // to replace atomically. Only MathType's own embedded-equation and
+            // MTPlaceRef/MTChap/MTSec/MTEqn field family may be ignored below.
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!IsKnownMathTypeDisplayFieldCode(code.Text))
+                    return false;
+            }
+
+            var text = paragraphRange.Text ?? string.Empty;
+            var fieldDepth = 0;
+            foreach (var character in text)
+            {
+                // In Word's field-code view the literal instruction text becomes
+                // part of Paragraph.Range.Text. Strip complete nested field trees
+                // by their native control characters before looking for user prose.
+                if (character == '\u0013')
+                {
+                    fieldDepth++;
+                    continue;
+                }
+                if (character == '\u0015')
+                {
+                    if (fieldDepth > 0) fieldDepth--;
+                    continue;
+                }
+                if (fieldDepth > 0 || character == '\u0014') continue;
+
+                if (char.IsWhiteSpace(character) || char.IsDigit(character)) continue;
+                if (character < ' ') continue;
+                if (character is '\u0001' or '\uFFFC') continue;
+                if ("()[]{}.-–—_:;,+/\\".IndexOf(character) >= 0) continue;
+                return false;
+            }
+            return fieldDepth == 0;
         }
-        return true;
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static bool IsKnownMathTypeDisplayFieldCode(string? value)
+    {
+        var code = (value ?? string.Empty).Trim();
+        if (code.Length == 0) return false;
+        if (code.IndexOf(
+                "EMBED Equation.DSMT4",
+                StringComparison.OrdinalIgnoreCase) >= 0)
+            return true;
+        if (code.StartsWith(
+                "MACROBUTTON MTPlaceRef",
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+        return code.StartsWith("SEQ MTEqn ", StringComparison.OrdinalIgnoreCase)
+            || code.StartsWith("SEQ MTChap ", StringComparison.OrdinalIgnoreCase)
+            || code.StartsWith("SEQ MTSec ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void RemoveDetachedVisualTeXNumberingArtifacts(

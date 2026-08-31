@@ -30,6 +30,7 @@ internal static partial class Program
             "VISUALTEX_VSTO_OMML_FAIL_STAGE");
         Word.Application? application = null;
         Word.Document? document = null;
+        bool? originalShowFieldCodes = null;
         try
         {
             Environment.SetEnvironmentVariable(
@@ -39,6 +40,9 @@ internal static partial class Program
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add(Visible: false);
             document.Activate();
+            originalShowFieldCodes = document.ActiveWindow.View.ShowFieldCodes;
+            document.ActiveWindow.View.ShowFieldCodes = true;
+            Console.WriteLine("[USER REPORT FIXTURE] Word field-code view forced ON for MathType/OMML regression.");
             ConfigureOmmlTableNumberPage(document);
             WordEquationNumbering.SetEquationNumberFormatPreference(
                 document,
@@ -533,6 +537,10 @@ internal static partial class Program
                 previousOmmlFailureStage);
             if (document is not null)
             {
+                if (originalShowFieldCodes.HasValue)
+                {
+                    try { document.ActiveWindow.View.ShowFieldCodes = originalShowFieldCodes.Value; } catch { }
+                }
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(document);
@@ -540,6 +548,387 @@ internal static partial class Program
             Release(application);
             ForceComCleanup();
             try { File.Delete(emfPath); } catch { }
+        }
+    }
+
+    private static void RunWordUnsavedFirstNumberedOmmlVstoRegressionAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        AssertTrue(!AttachActiveWord,
+            "The unsaved-first numbered OMML regression must own its Word process.");
+        Directory.CreateDirectory(artifactRoot);
+        AssertFailedFreshNumberedOmmlInsertRollsBackAtomically();
+        using var host = new WordPerformanceHost(documentPath: null);
+        AssertTrue(string.IsNullOrWhiteSpace(host.Document.Path),
+            "The unsaved-first regression fixture was unexpectedly saved before insertion.");
+
+        Array startupCustom = Array.Empty<object>();
+        host.AddIn.OnStartupComplete(ref startupCustom);
+        host.Document.Activate();
+        WordEquationNumbering.SetEquationNumberFormatPreference(
+            host.Document,
+            EquationNumberFormat.ContinuousId);
+        host.Application.Selection.SetRange(
+            host.Document.Content.Start,
+            host.Document.Content.Start);
+
+        var existing = SnapshotSessionIds();
+        host.AddIn.OnInsertDisplayOmml(new object());
+        var sessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+        var session = client.GetSessionAsync(sessionId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        AssertEqual("wordOmml", session.ObjectMode,
+            "The first fresh-document OMML command did not create a wordOmml Session.");
+        AssertEqual("create", session.Mode,
+            "The first fresh-document OMML command did not create a create Session.");
+
+        Commit(
+            client,
+            session,
+            "block",
+            "wordOmml",
+            @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
+            numbered: true,
+            mathMl: QuadraticFormulaMathMl());
+        var final = WaitForTerminal(client, sessionId, TimeSpan.FromSeconds(45));
+        client.CloseEditorAsync(sessionId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(15));
+
+        Console.WriteLine(
+            $"[UNSAVED FIRST OMML VSTO] status={final.Status} error={final.Error ?? string.Empty} "
+            + $"tables={host.Document.Tables.Count} maths={host.Document.OMaths.Count} "
+            + $"fields={host.Document.Fields.Count} bookmarks={host.Document.Bookmarks.Count}.");
+        if (!string.Equals(final.Status, "completed", StringComparison.Ordinal))
+        {
+            DumpNumberedOmmlBodyParagraphs(host.Document, "unsaved-first-vsto-failure");
+            throw new InvalidDataException(
+                final.Error ?? "The first numbered OMML insertion in a fresh Word process failed.");
+        }
+
+        var formulaId = final.FormulaId
+            ?? throw new InvalidDataException(
+                "The first numbered OMML insertion completed without a FormulaId.");
+        AssertEqual(1, host.Document.Tables.Count,
+            "The first numbered OMML insertion did not leave exactly one 1x3 host.");
+        AssertEqual(1, host.Document.OMaths.Count,
+            "The first numbered OMML insertion lost its center OMath.");
+        AssertOmmlTableNumberLifecyclePhase(
+            host.Application,
+            host.Document,
+            formulaId,
+            "unsaved fresh Word process first numbered OMML insertion");
+
+        var path = Path.Combine(
+            artifactRoot,
+            "unsaved-first-numbered-omml-vsto.docx");
+        host.Save(path);
+        Console.WriteLine(
+            "Unsaved first numbered OMML VSTO regression passed: a freshly started Word instance, "
+            + "unsaved Document1, real Ribbon Session/Commit path and first numbered display OMML "
+            + "retained one center OMath plus one direct-SEQ 1x3 host.");
+    }
+
+    private static void RunWordInstalledUnsavedFirstNumberedOmmlAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var previousAcceptance = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_ACCEPTANCE");
+        var previousTracePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousPerfTrace = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_TRACE_FORMAT_PERF");
+        var tracePath = Path.Combine(
+            artifactRoot,
+            "installed-unsaved-first-omml.trace.log");
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Microsoft.Office.Core.COMAddIns? addIns = null;
+        Microsoft.Office.Core.COMAddIn? installedAddIn = null;
+        object? callbacksObject = null;
+        try
+        {
+            // The installed COM add-in suppresses itself when the acceptance flag is
+            // present. Clear it before starting this dedicated Word process so this
+            // test exercises the exact Program Files VSTO binary and its real Ribbon
+            // callbacks rather than the manually hosted source assembly.
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", null);
+            try { File.Delete(tracePath); } catch { }
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                tracePath);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_TRACE_FORMAT_PERF",
+                "1");
+            application = StartInstalledWordNormallyAndWaitForAutomation();
+            document = application.Documents.Add();
+            document.Activate();
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(500);
+            callbacksObject = WaitForInstalledWordAddInAutoLoad(
+                application,
+                out addIns,
+                out installedAddIn);
+            dynamic callbacks = callbacksObject;
+            application.Selection.SetRange(
+                document.Content.Start,
+                document.Content.Start);
+            AssertTrue(string.IsNullOrWhiteSpace(document.Path),
+                "The installed first-insert fixture was unexpectedly saved before insertion.");
+
+            var existing = SnapshotSessionIds();
+            callbacks.OnInsertDisplayOmml(null);
+            var sessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+            var session = client.GetSessionAsync(sessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Commit(
+                client,
+                session,
+                "block",
+                "wordOmml",
+                @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
+                numbered: true,
+                mathMl: QuadraticFormulaMathMl());
+            var final = WaitForTerminal(client, sessionId, TimeSpan.FromSeconds(45));
+            client.CloseEditorAsync(sessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            WaitForInstalledRibbonSessionRelease(sessionId);
+
+            Console.WriteLine(
+                $"[INSTALLED UNSAVED FIRST OMML] status={final.Status} error={final.Error ?? string.Empty} "
+                + $"tables={document.Tables.Count} maths={document.OMaths.Count} "
+                + $"fields={document.Fields.Count} bookmarks={document.Bookmarks.Count}.");
+            AssertEqual("completed", final.Status,
+                final.Error ?? "Installed VSTO failed the first numbered OMML insertion in a fresh Word process.");
+            AssertEqual(1, document.Tables.Count,
+                "Installed VSTO first numbered OMML insertion did not leave one 1x3 host.");
+            AssertEqual(1, document.OMaths.Count,
+                "Installed VSTO first numbered OMML insertion lost the center OMath.");
+            var formulaId = final.FormulaId
+                ?? throw new InvalidDataException(
+                    "Installed VSTO first numbered OMML insertion completed without FormulaId.");
+            DumpUserReportOmmlStructure(
+                document,
+                new[] { formulaId },
+                "installed-unsaved-first-numbered-omml");
+            Word.View? lifecycleView = null;
+            var restoreFieldCodes = false;
+            try
+            {
+                lifecycleView = document.ActiveWindow.View;
+                restoreFieldCodes = lifecycleView.ShowFieldCodes;
+                if (restoreFieldCodes)
+                {
+                    // The user's Word may intentionally be in Alt+F9 / field-code
+                    // view. Structural validation must preserve that preference, but
+                    // the physical right-edge assertion is defined for the rendered
+                    // equation-number result, not for the long SEQ instruction text.
+                    lifecycleView.ShowFieldCodes = false;
+                    document.Repaginate();
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(100);
+                }
+                AssertOmmlTableNumberLifecyclePhase(
+                    application,
+                    document,
+                    formulaId,
+                    "installed fresh Word process first numbered OMML insertion");
+            }
+            finally
+            {
+                if (lifecycleView is not null && restoreFieldCodes)
+                {
+                    try { lifecycleView.ShowFieldCodes = true; } catch { }
+                }
+                Release(lifecycleView);
+            }
+            var path = Path.Combine(
+                artifactRoot,
+                "installed-unsaved-first-numbered-omml.docx");
+            document.SaveAs2(
+                path,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            Console.WriteLine(
+                "Installed fresh-process OMML acceptance passed: a new WINWORD process loaded the Program Files add-in, "
+                + "created unsaved Document1 and committed the first numbered display OMML without losing its center formula.");
+        }
+        finally
+        {
+            Release(callbacksObject);
+            Release(installedAddIn);
+            Release(addIns);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_ACCEPTANCE",
+                previousAcceptance);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                previousTracePath);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_TRACE_FORMAT_PERF",
+                previousPerfTrace);
+        }
+    }
+
+    private static Word.Application StartInstalledWordNormallyAndWaitForAutomation()
+    {
+        var existingWordProcesses = Process.GetProcessesByName("WINWORD");
+        try
+        {
+            AssertEqual(0, existingWordProcesses.Length,
+                "The installed first-insert acceptance requires Word to be completely closed before startup.");
+        }
+        finally
+        {
+            foreach (var process in existingWordProcesses) process.Dispose();
+        }
+
+        var candidates = new[]
+        {
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Microsoft Office", "root", "Office16", "WINWORD.EXE"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "Microsoft Office", "root", "Office16", "WINWORD.EXE"),
+        };
+        var wordPath = candidates.FirstOrDefault(File.Exists)
+            ?? throw new FileNotFoundException(
+                "The installed WINWORD.EXE could not be located for fresh-process acceptance.");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = wordPath,
+            UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(wordPath) ?? string.Empty,
+        };
+        startInfo.EnvironmentVariables.Remove("VISUALTEX_VSTO_ACCEPTANCE");
+        startInfo.EnvironmentVariables.Remove("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
+        using var started = Process.Start(startInfo)
+            ?? throw new InvalidOperationException(
+                "Windows did not start WINWORD.EXE for installed first-insert acceptance.");
+
+        Word.Application? application = null;
+        Exception? lastError = null;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(100);
+            try
+            {
+                application = Marshal.GetActiveObject("Word.Application") as Word.Application;
+                if (application is not null) break;
+            }
+            catch (Exception error)
+            {
+                lastError = error;
+            }
+        }
+        if (application is null)
+            throw new TimeoutException(
+                "A normally launched WINWORD.EXE did not publish Word.Application to the ROT within 30 seconds.",
+                lastError);
+        application.Visible = true;
+        application.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+        Console.WriteLine(
+            $"[INSTALLED WORD START] pid={started.Id} path={wordPath} launchedNormally=true.");
+        return application;
+    }
+
+    private static object WaitForInstalledWordAddInAutoLoad(
+        Word.Application application,
+        out Microsoft.Office.Core.COMAddIns addIns,
+        out Microsoft.Office.Core.COMAddIn installedAddIn)
+    {
+        addIns = application.COMAddIns;
+        object addInKey = "VisualTeX.WordVsto";
+        installedAddIn = addIns.Item(ref addInKey);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(100);
+            if (installedAddIn.Connect && installedAddIn.Object is not null)
+            {
+                Console.WriteLine(
+                    "[INSTALLED WORD ADDIN] VisualTeX.WordVsto auto-loaded without modifying COMAddIn.Connect.");
+                return installedAddIn.Object;
+            }
+        }
+        throw new InvalidOperationException(
+            $"VisualTeX.WordVsto did not auto-load in the normally started Word process. Connect={installedAddIn.Connect}, ObjectAvailable={installedAddIn.Object is not null}.");
+    }
+
+    private static void AssertFailedFreshNumberedOmmlInsertRollsBackAtomically()
+    {
+        var previousFailureStage = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_OMML_FAIL_STAGE");
+        using var host = new WordPerformanceHost(documentPath: null);
+        try
+        {
+            Array startupCustom = Array.Empty<object>();
+            host.AddIn.OnStartupComplete(ref startupCustom);
+            host.Document.Activate();
+            WordEquationNumbering.SetEquationNumberFormatPreference(
+                host.Document,
+                EquationNumberFormat.ContinuousId);
+            host.Application.Selection.SetRange(
+                host.Document.Content.Start,
+                host.Document.Content.Start);
+            var formulaId = Guid.NewGuid().ToString("D");
+            var session = CreateNumberedOmmlTabSession(
+                formulaId,
+                host.Document.FullName,
+                host.Document.Content.Start,
+                host.Document.Content.Start,
+                @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
+                originalMetadata: null);
+            var service = new WordFormulaService(host.Application);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_OMML_FAIL_STAGE",
+                "after-numbered-insert-reconcile");
+            var failed = false;
+            try
+            {
+                service.InsertOmml(session, QuadraticFormulaMathMl());
+            }
+            catch (InvalidOperationException error) when (
+                error.Message.IndexOf(
+                    "Injected failure after numbered OMML insertion reconciliation",
+                    StringComparison.Ordinal) >= 0)
+            {
+                failed = true;
+            }
+            AssertTrue(failed,
+                "The fresh numbered OMML rollback injection did not reach the intended post-reconcile stage.");
+            AssertEqual(0, host.Document.Tables.Count,
+                "A failed fresh numbered OMML insertion left a number-only 1x3 table behind.");
+            AssertEqual(0, host.Document.OMaths.Count,
+                "A failed fresh numbered OMML insertion left an orphan OMath behind.");
+            AssertEqual(0, host.Document.Fields.Count,
+                "A failed fresh numbered OMML insertion left a SEQ/REF field behind.");
+            AssertTrue(
+                WordOmmlFormulaStore.FindByFormulaId(host.Document, formulaId) is null,
+                "A failed fresh numbered OMML insertion left its VTOMML identity bookmark behind.");
+            Console.WriteLine(
+                "[UNSAVED FIRST OMML ROLLBACK] injected post-reconcile failure left tables=0 maths=0 fields=0 and no FormulaId bookmark.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_OMML_FAIL_STAGE",
+                previousFailureStage);
         }
     }
 

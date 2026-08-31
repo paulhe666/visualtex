@@ -769,13 +769,34 @@ internal static partial class Program
         string formulaId)
     {
         Word.Range? range = null;
+        Word.View? view = null;
+        var restoreFieldCodes = false;
         try
         {
             range = WordEquationNumbering.FindVisibleEquationNumberTextRange(document, formulaId)
                 ?? throw new InvalidDataException("Visible equation-number range is missing.");
+            view = document.ActiveWindow.View;
+            restoreFieldCodes = view.ShowFieldCodes;
+            if (restoreFieldCodes)
+            {
+                // Bookmark.Text follows the current Alt+F9 state and otherwise
+                // exposes the SEQ instruction instead of its visible numeric result.
+                // Read the rendered label without changing the user's persistent
+                // field-code preference.
+                view.ShowFieldCodes = false;
+                System.Windows.Forms.Application.DoEvents();
+            }
             return NormalizeEquationNumberText(range.Text);
         }
-        finally { Release(range); }
+        finally
+        {
+            if (view is not null && restoreFieldCodes)
+            {
+                try { view.ShowFieldCodes = true; } catch { }
+            }
+            Release(view);
+            Release(range);
+        }
     }
 
     private static string NormalizeEquationNumberText(string? value) =>
