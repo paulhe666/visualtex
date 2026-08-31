@@ -1609,6 +1609,7 @@ internal sealed partial class WordFormulaService
             document = _application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
+            EnsureEquationFieldResultsVisible(document);
             undoRecord = BeginUndoRecord("VisualTeX Update Equation Numbers");
             var visualTeXCount = WordEquationNumbering.UpdateEquationNumbers(document);
             var mathTypeCount = MathTypeEquationNumbering.UpdateEquationNumbers(document);
@@ -1665,6 +1666,7 @@ internal sealed partial class WordFormulaService
             document = _application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
+            EnsureEquationFieldResultsVisible(document);
 
             // Rebuilding a native #(SEQ) OMath for a heading-format change can
             // move Word.Selection into the last replacement range. Preserve the
@@ -1974,6 +1976,8 @@ internal sealed partial class WordFormulaService
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
+            if (session.Numbered)
+                EnsureEquationFieldResultsVisible(document);
             selection = _application.Selection;
             insertion = ResolveSessionInsertionRange(document, session, selection);
             insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
@@ -2289,6 +2293,8 @@ internal sealed partial class WordFormulaService
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
+            if (!inline && session.Numbered)
+                EnsureEquationFieldResultsVisible(document);
             selection = _application.Selection;
 
             stage = "resolve-captured-insertion";
@@ -3600,6 +3606,8 @@ internal sealed partial class WordFormulaService
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
             EnsureSourceDocument(document, session.SourceDocumentId);
+            if (session.Numbered)
+                EnsureEquationFieldResultsVisible(document);
             ApplyDocumentOmmlMathFont(document, metadata);
             selection = _application.Selection;
             insertion = ResolveSessionInsertionRange(document, session, selection);
@@ -16564,6 +16572,40 @@ internal sealed partial class WordFormulaService
     {
         if (ReadWordStateWithRetry(() => document.ReadOnly))
             throw new UnauthorizedAccessException("The active Word document is read-only.");
+    }
+
+    private static void EnsureEquationFieldResultsVisible(Document document)
+    {
+        Window? window = null;
+        Microsoft.Office.Interop.Word.View? view = null;
+        try
+        {
+            window = document.ActiveWindow;
+            if (window is null) return;
+            view = window.View;
+            if (!view.ShowFieldCodes) return;
+
+            // VisualTeX equation numbers and references are genuine Word fields.
+            // When a Word window is left in Alt+F9/ShowFieldCodes mode, Word expands
+            // the complete SEQ/MACROBUTTON instruction inside the numbered row,
+            // making a healthy formula appear corrupted and stretching the layout.
+            // Per-field ShowCodes=false cannot override the window-level setting,
+            // so user-initiated VisualTeX numbering operations normalize the active
+            // view back to rendered field results. The user can still press Alt+F9
+            // afterwards if they intentionally want to inspect field instructions.
+            view.ShowFieldCodes = false;
+        }
+        catch
+        {
+            // Hidden/protected automation windows can reject View mutations. The
+            // formula operation itself remains valid; only interactive presentation
+            // normalization is best-effort in that environment.
+        }
+        finally
+        {
+            Release(view);
+            Release(window);
+        }
     }
 
     private static T ReadWordStateWithRetry<T>(Func<T> read)

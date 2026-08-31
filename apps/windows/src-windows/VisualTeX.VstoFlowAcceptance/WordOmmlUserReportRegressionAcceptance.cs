@@ -137,6 +137,9 @@ internal static partial class Program
                     "[USER REPORT FIXTURE] saved and reopened MathType source before conversion.");
             }
 
+            document.ActiveWindow.View.ShowFieldCodes = true;
+            AssertTrue(document.ActiveWindow.View.ShowFieldCodes,
+                "The MathType→OMML conversion fixture could not re-enter Word field-code view after source creation.");
             DumpUserReportMathTypeSourceStructure(document, "before-conversion");
             AssertEqual(formulas.Length, CountMathTypeOleShapes(document),
                 "The user-report fixture did not create all numbered MathType equations.");
@@ -566,6 +569,9 @@ internal static partial class Program
         Array startupCustom = Array.Empty<object>();
         host.AddIn.OnStartupComplete(ref startupCustom);
         host.Document.Activate();
+        host.Document.ActiveWindow.View.ShowFieldCodes = true;
+        AssertTrue(host.Document.ActiveWindow.View.ShowFieldCodes,
+            "The fresh first-insert fixture could not enter Word field-code view.");
         WordEquationNumbering.SetEquationNumberFormatPreference(
             host.Document,
             EquationNumberFormat.ContinuousId);
@@ -614,6 +620,10 @@ internal static partial class Program
             "The first numbered OMML insertion did not leave exactly one 1x3 host.");
         AssertEqual(1, host.Document.OMaths.Count,
             "The first numbered OMML insertion lost its center OMath.");
+        AssertNumberedOmmlFieldResultsVisible(
+            host.Document,
+            formulaId,
+            "unsaved fresh Word process first numbered OMML insertion");
         AssertOmmlTableNumberLifecyclePhase(
             host.Application,
             host.Document,
@@ -678,6 +688,9 @@ internal static partial class Program
                 document.Content.Start);
             AssertTrue(string.IsNullOrWhiteSpace(document.Path),
                 "The installed first-insert fixture was unexpectedly saved before insertion.");
+            document.ActiveWindow.View.ShowFieldCodes = true;
+            AssertTrue(document.ActiveWindow.View.ShowFieldCodes,
+                "The installed first-insert fixture could not enter Word field-code view.");
 
             var existing = SnapshotSessionIds();
             callbacks.OnInsertDisplayOmml(null);
@@ -710,6 +723,10 @@ internal static partial class Program
             var formulaId = final.FormulaId
                 ?? throw new InvalidDataException(
                     "Installed VSTO first numbered OMML insertion completed without FormulaId.");
+            AssertNumberedOmmlFieldResultsVisible(
+                document,
+                formulaId,
+                "installed fresh Word process first numbered OMML insertion");
             DumpUserReportOmmlStructure(
                 document,
                 new[] { formulaId },
@@ -778,6 +795,49 @@ internal static partial class Program
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_TRACE_FORMAT_PERF",
                 previousPerfTrace);
+        }
+    }
+
+    private static void AssertNumberedOmmlFieldResultsVisible(
+        Word.Document document,
+        string formulaId,
+        string stage)
+    {
+        Word.View? view = null;
+        Word.Table? table = null;
+        Word.Cell? numberCell = null;
+        Word.Range? numberRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        try
+        {
+            view = document.ActiveWindow.View;
+            AssertTrue(!view.ShowFieldCodes,
+                stage + ": VisualTeX left the Word window in field-code view.");
+            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+                ?? throw new InvalidDataException(stage + ": numbered 1x3 host is missing.");
+            numberCell = table.Cell(1, 3);
+            numberRange = numberCell.Range.Duplicate;
+            fields = numberRange.Fields;
+            AssertEqual(1, fields.Count,
+                stage + ": right number cell does not contain exactly one SEQ field.");
+            field = fields[1];
+            AssertTrue(!field.ShowCodes,
+                stage + ": direct SEQ field is still showing its instruction code.");
+            var text = numberRange.Text ?? string.Empty;
+            AssertTrue(text.IndexOf("SEQ VisualTeXEquation", StringComparison.OrdinalIgnoreCase) < 0,
+                stage + ": right number cell still exposes the SEQ instruction text.");
+            AssertTrue(text.IndexOf("(1)", StringComparison.Ordinal) >= 0,
+                stage + $": rendered first equation number is not visible as '(1)': '{text}'.");
+        }
+        finally
+        {
+            Release(field);
+            Release(fields);
+            Release(numberRange);
+            Release(numberCell);
+            Release(table);
+            Release(view);
         }
     }
 
