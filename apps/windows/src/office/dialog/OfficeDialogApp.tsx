@@ -46,7 +46,6 @@ import type {
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
 import { readErrorMessage } from "../../errors/readErrorMessage";
-import { normalizeChineseLatex } from "../../editor/normalizeChineseLatex";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -77,6 +76,11 @@ import {
   serializeFormulaEditorRenderDocument,
   type FormulaEditorLine,
 } from "../shared/formulaEditorDocument";
+import {
+  canonicalOfficeFingerprintLines,
+  isWordOmmlNumberingOnlyEdit,
+  persistedOfficeLines,
+} from "../shared/officeEditPersistence";
 import { messageOfficeParent } from "./dialogMessages";
 import { registerOfficeApplyShortcut } from "./officeApplyShortcut";
 import {
@@ -375,7 +379,7 @@ function documentFingerprint(
     // Session source can be semantically identical but serialize differently;
     // comparing raw text here can otherwise leave initial autosave suppressed
     // forever.
-    lines: lines.map((line) => normalizeChineseLatex(line.latex)),
+    lines: canonicalOfficeFingerprintLines(lines),
     codeFormat,
     displayMode,
     objectMode,
@@ -625,6 +629,56 @@ export function OfficeDialogApp() {
     Boolean(session) &&
     Boolean(originalFingerprintRef.current) &&
     currentFingerprint !== originalFingerprintRef.current;
+  const originalNumbered =
+    session?.mode === "edit"
+      ? session.originalMetadata?.displayMode === "block" &&
+        Boolean(session.originalMetadata?.numbered)
+      : session?.displayMode === "block" && Boolean(session?.numbered);
+  const fingerprintAtOriginalNumbering = useMemo(
+    () =>
+      documentFingerprint(
+        title,
+        lines,
+        latexCodeFormat,
+        displayMode,
+        objectMode,
+        originalNumbered,
+        mathTypeNumberPosition,
+        officeFontSizePt,
+        formulaLetterFont,
+        formulaChineseFont,
+      ),
+    [
+      title,
+      lines,
+      latexCodeFormat,
+      displayMode,
+      objectMode,
+      originalNumbered,
+      mathTypeNumberPosition,
+      officeFontSizePt,
+      formulaLetterFont,
+      formulaChineseFont,
+    ],
+  );
+  const numberingOnlyEdit = isWordOmmlNumberingOnlyEdit({
+    mode: session?.mode,
+    objectMode,
+    displayMode,
+    numbered,
+    originalNumbered,
+    originalFingerprint: originalFingerprintRef.current,
+    fingerprintAtOriginalNumbering,
+  });
+  const persistedLines = persistedOfficeLines(
+    numberingOnlyEdit,
+    session?.originalMetadata?.lines,
+    lines,
+  );
+  const persistedActiveLineId =
+    activeLineId && persistedLines.some((line) => line.id === activeLineId)
+      ? activeLineId
+      : persistedLines[0]?.id ?? null;
 
   useEffect(() => {
     if (!session || loadedSessionIdRef.current === session.id) return;
@@ -844,6 +898,25 @@ export function OfficeDialogApp() {
       session?.originalMetadata?.equationTag,
     ],
   );
+  const persistedRenderedLatex = useMemo(
+    () =>
+      serializeOfficeRenderLatex(
+        persistedLines,
+        persistedOfficeCodeFormat(session?.codeFormat, latexCodeFormat),
+        displayMode,
+        session?.originalMetadata?.equationTag,
+      ),
+    [
+      persistedLines,
+      session?.codeFormat,
+      latexCodeFormat,
+      displayMode,
+      session?.originalMetadata?.equationTag,
+    ],
+  );
+  const sessionRenderedLatex = numberingOnlyEdit
+    ? persistedRenderedLatex
+    : currentRenderedLatex;
 
   const generateSvgExportResult = useCallback((
     sourceLatex: string = currentRenderedLatex,
@@ -1258,8 +1331,8 @@ export function OfficeDialogApp() {
       latestCompleteExportRef.current = null;
       void save({
         title,
-        lines,
-        activeLineId,
+        lines: persistedLines,
+        activeLineId: persistedActiveLineId,
         codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
@@ -1296,11 +1369,18 @@ export function OfficeDialogApp() {
       // MathJax SVG generation is synchronous. Persist it immediately instead
       // of waiting for PNG rasterization, so closing the Office dialog cannot
       // lose the final keystrokes.
-      const exportResult = generateSvgExportResult();
+      const exportResult = generateSvgExportResult(
+        sessionRenderedLatex,
+        displayMode,
+        officeFontSizePt,
+        formulaLetterFont,
+        formulaChineseFont,
+        objectMode,
+      );
       const draftUpdate = {
         title,
-        lines,
-        activeLineId,
+        lines: persistedLines,
+        activeLineId: persistedActiveLineId,
         codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
@@ -1337,8 +1417,11 @@ export function OfficeDialogApp() {
         exportResult &&
         !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
       ) {
-        void generateExportResult()
-          .then((completeExport) => {
+        void generateExportResult(
+          sessionRenderedLatex,
+          displayMode,
+          officeFontSizePt,
+        ).then((completeExport) => {
             if (
               !completeExport?.pngBase64 ||
               runId !== exportRunIdRef.current ||
@@ -1389,9 +1472,14 @@ export function OfficeDialogApp() {
     title,
     lines,
     activeLineId,
+    persistedLines,
+    persistedActiveLineId,
+    sessionRenderedLatex,
     latexCodeFormat,
     displayMode,
     objectMode,
+    formulaLetterFont,
+    formulaChineseFont,
     numbered,
     mathTypeNumberPosition,
     officeFontSizePt,
@@ -1416,11 +1504,18 @@ export function OfficeDialogApp() {
           ? cached.exportResult
           : isIncompleteLatexDraft(latex)
             ? null
-            : generateSvgExportResult();
+            : generateSvgExportResult(
+                sessionRenderedLatex,
+                displayMode,
+                officeFontSizePt,
+                formulaLetterFont,
+                formulaChineseFont,
+                objectMode,
+              );
       return {
         title,
-        lines,
-        activeLineId,
+        lines: persistedLines,
+        activeLineId: persistedActiveLineId,
         codeFormat: persistedOfficeCodeFormat(session?.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
@@ -1515,9 +1610,14 @@ export function OfficeDialogApp() {
     title,
     lines,
     activeLineId,
+    persistedLines,
+    persistedActiveLineId,
+    sessionRenderedLatex,
     latexCodeFormat,
     displayMode,
     objectMode,
+    formulaLetterFont,
+    formulaChineseFont,
     numbered,
     mathTypeNumberPosition,
     officeFontSizePt,
@@ -1816,15 +1916,26 @@ export function OfficeDialogApp() {
           : objectMode === "wordOmml" ||
               objectMode === "mathTypeOle" ||
               (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
-            ? generateSvgExportResult()
-            : await generateExportResult();
+            ? generateSvgExportResult(
+                sessionRenderedLatex,
+                displayMode,
+                officeFontSizePt,
+                formulaLetterFont,
+                formulaChineseFont,
+                objectMode,
+              )
+            : await generateExportResult(
+                sessionRenderedLatex,
+                displayMode,
+                officeFontSizePt,
+              );
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
       }
       const next = await save({
         title,
-        lines,
-        activeLineId,
+        lines: persistedLines,
+        activeLineId: persistedActiveLineId,
         codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
@@ -1848,9 +1959,14 @@ export function OfficeDialogApp() {
       title,
       lines,
       activeLineId,
+      persistedLines,
+      persistedActiveLineId,
+      sessionRenderedLatex,
       latexCodeFormat,
       displayMode,
       objectMode,
+      formulaLetterFont,
+      formulaChineseFont,
       numbered,
       mathTypeNumberPosition,
       officeFontSizePt,
