@@ -2053,11 +2053,13 @@ internal sealed partial class WordFormulaService
                 session.DisplayMode == "inline");
             if (session.DisplayMode == "inline")
             {
-                // Establish the ordinary-text boundary before control returns to
-                // Word. Waiting for SelectionChange leaves the insertion format
-                // temporarily attached to the OLE host, so the first space/text
-                // typed after the object can inherit its negative Font.Position.
-                RestoreTypingBaselineAfter(shape, ensureTypingAnchor: true);
+                // A newly inserted OLE is still inside Word's object-creation COM
+                // transaction. Restore the immediate prose/caret baseline now, but
+                // do not create or rewrite the persistent VTBL typing bookmark yet.
+                // The performance baseline used this path successfully; forcing the
+                // anchor here later made large sequential insert workloads fail in
+                // Bookmark.Delete before measurement even began.
+                RestoreTypingBaselineAfter(shape);
             }
             else
             {
@@ -10028,8 +10030,10 @@ internal sealed partial class WordFormulaService
         var replaceTargetWithOmml = false;
         var replaceHealthyDirectTableAtomically = false;
         var reuseHealthyDirectTableForUnnumberingOnly = false;
+        var rebuiltHealthyDirectTableViaPlaceholder = false;
         var replaceHealthyStandaloneDisplayAtomically = false;
         var reuseHealthyStandaloneDisplayForNumberingOnly = false;
+        var rebuiltHealthyStandaloneDisplayViaPlaceholder = false;
         var fastHealthyStandaloneUnnumberedEdit = false;
         var replaceHealthyHashSequenceAtomically = false;
         string? preparedDirectTableOmml = null;
@@ -10249,9 +10253,13 @@ internal sealed partial class WordFormulaService
                     else
                     {
                         // Current numbered OMML is an exact 1x3 host and its content
-                        // actually changed. Replace only the complete center OMath;
-                        // the surrounding direct-SEQ structure remains untouched
-                        // until an explicit unnumber operation dismantles it.
+                        // actually changed. Preserve the table and the right-cell
+                        // direct SEQ/bookmarks, but never overwrite the live center
+                        // OMath through FormattedText. That later conversion-oriented
+                        // path can materialize an empty OMath in ordinary installed
+                        // Word documents. Replace only the exact center OMath with one
+                        // ordinary character, then import the new professional OMML at
+                        // that same range through WordOmmlConverter.Insert.
                         var semanticOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
                         semanticOmml = ApplyOmmlTypographyXml(
                             semanticOmml,
@@ -10271,16 +10279,24 @@ internal sealed partial class WordFormulaService
                             Release(oldBookmark);
                             oldBookmark = null;
                         }
+                        insertion!.Text = BulkInlineFormulaPlaceholder;
+                        insertion.SetRange(
+                            originalOmmlStart,
+                            originalOmmlStart + BulkInlineFormulaPlaceholder.Length);
+                        originalOmmlRemoved = true;
+                        rebuiltHealthyDirectTableViaPlaceholder = true;
                     }
-                    Release(insertion);
-                    insertion = oldRange.Duplicate;
+                    if (reuseHealthyDirectTableForUnnumberingOnly)
+                    {
+                        Release(insertion);
+                        insertion = oldRange.Duplicate;
+                    }
                 }
                 else if (blockTarget
                     && (session.Numbered || originalOmmlMetadata?.Numbered != false
                         ? HasReusableStandaloneDisplayOmmlHost(document, oldRange)
                         : HasReusableStandaloneDisplayOmmlEditHost(oldRange)))
                 {
-                    replaceHealthyStandaloneDisplayAtomically = true;
                     fastHealthyStandaloneUnnumberedEdit = !session.Numbered
                         && originalOmmlMetadata?.Numbered == false
                         && numberedTable is null;
@@ -10297,17 +10313,17 @@ internal sealed partial class WordFormulaService
                             originalOmmlWordOpenXml);
                     if (reuseHealthyStandaloneDisplayForNumberingOnly)
                     {
+                        replaceHealthyStandaloneDisplayAtomically = true;
                         if (string.Equals(
                                 Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
                                 "1",
                                 StringComparison.Ordinal))
                             Console.WriteLine("    [perf] ReplaceOmml.source-path=standalone-numbering-only-reuse");
-                        // The editor changed only the numbering checkbox. Keep the
-                        // already validated professional OMath byte-for-byte and let
-                        // the direct-SEQ reconciler move that live formula into cell
-                        // (1,2). Re-rendering/replacing the same OMath first costs a
-                        // visible Word round-trip and can reintroduce stale paragraph
-                        // layout state for no semantic benefit.
+                        // A true numbering-only edit does not need to rebuild the
+                        // existing professional OMath. Keep it live and let the
+                        // direct-SEQ reconciler move that exact formula into cell
+                        // (1,2). This is a performance fast path only; correctness
+                        // must not depend on the incoming LaTeX staying byte-identical.
                         sourceFingerprint = originalOmmlMetadata!.NativeOmmlFingerprint!;
                         Release(insertion);
                         insertion = oldRange.Duplicate;
@@ -10318,27 +10334,28 @@ internal sealed partial class WordFormulaService
                                 Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
                                 "1",
                                 StringComparison.Ordinal))
-                            Console.WriteLine("    [perf] ReplaceOmml.source-path=standalone-full-rebuild");
-                        // A table that has just been dismantled can leave
-                        // non-serialized live layout state on its standalone
-                        // paragraph. Real content/typography edits still replace the
-                        // whole OMath from clean semantic OMML before renumbering.
-                        var semanticOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
-                        semanticOmml = ApplyOmmlTypographyXml(
-                            semanticOmml,
-                            session.FontSizePt,
-                            metadata);
-                        sourceFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
-                            semanticOmml);
-                        preparedStandaloneDisplayOmml = semanticOmml;
+                            Console.WriteLine("    [perf] ReplaceOmml.source-path=standalone-placeholder-rebuild");
+                        // Do not replace a live standalone OMath through FormattedText.
+                        // That path was introduced later for conversion/layout repair
+                        // and is not reliable in real, long-lived Word documents: a
+                        // valid MathML payload can materialize as an empty OMath. The
+                        // mature Word edit path removes the complete resolved equation,
+                        // leaves one ordinary placeholder, then asks WordOmmlConverter
+                        // to insert the new OMML at that exact text range. Numbered
+                        // targets are reconciled into the current 1x3 direct-SEQ host
+                        // afterwards, so this does not change the numbering architecture.
                         if (oldBookmark is not null)
                         {
                             oldBookmark.Delete();
                             Release(oldBookmark);
                             oldBookmark = null;
                         }
-                        Release(insertion);
-                        insertion = oldRange.Duplicate;
+                        insertion!.Text = BulkInlineFormulaPlaceholder;
+                        insertion.SetRange(
+                            originalOmmlStart,
+                            originalOmmlStart + BulkInlineFormulaPlaceholder.Length);
+                        originalOmmlRemoved = true;
+                        rebuiltHealthyStandaloneDisplayViaPlaceholder = true;
                     }
                 }
                 else if (numberedBlock)
@@ -10452,19 +10469,27 @@ internal sealed partial class WordFormulaService
                 }
                 else
                 {
-                    if (preparedDirectTableOmml is null)
+                    if (!rebuiltHealthyDirectTableViaPlaceholder
+                        || preparedDirectTableOmml is null)
                         throw new InvalidOperationException(
                             "The direct-table OMML replacement payload was not prepared.");
-                    equationRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                    equationRange = WordOmmlConverter.Insert(
                         _application,
                         document,
-                        insertion,
-                        preparedDirectTableOmml,
+                        insertion!,
+                        mathMl,
                         display: true,
+                        sourceFingerprint: out sourceFingerprint,
+                        replaceTarget: true,
+                        transformOmml: omml => ApplyOmmlTypographyXml(
+                            omml,
+                            session.FontSizePt,
+                            metadata),
                         mathFontName: document.OMathFontName);
-                    // FormattedText replacement returned a complete new OMath. From
-                    // this point onward any later failure must restore the captured
-                    // original center formula, while preserving the pre-existing table.
+                    // The source center OMath was replaced by a one-character text
+                    // range before insertion. Any later failure restores its captured
+                    // WordOpenXML into the same center cell; the pre-existing table
+                    // and right-cell direct-SEQ identities are never deleted.
                     originalOmmlRemoved = true;
                 }
             }
@@ -10839,15 +10864,18 @@ internal sealed partial class WordFormulaService
             // normalization. Otherwise the stored fingerprint can already be
             // stale before the editor is opened again, and a later bookmark
             // drift becomes unrecoverable.
-            if (replaceHealthyStandaloneDisplayAtomically
+            if ((rebuiltHealthyDirectTableViaPlaceholder
+                    || replaceHealthyStandaloneDisplayAtomically
+                    || rebuiltHealthyStandaloneDisplayViaPlaceholder)
                 && !string.IsNullOrWhiteSpace(sourceFingerprint))
             {
-                // This path starts from one already-validated standalone Display
-                // OMath, prepares its complete semantic/typographic OMML once, and
-                // then moves that exact OMath unchanged into cell (1,2). Its source
-                // fingerprint therefore remains authoritative. Serializing the live
-                // center Range again with WordOpenXML is document-sized work and
-                // costs ~300ms in a 100-OMML document for no semantic information.
+                // Both healthy standalone paths materialize one complete semantic
+                // OMath and then either keep it live or move that same OMath into the
+                // direct-SEQ center cell. The Insert path already computed the
+                // fingerprint from the exact transformed OMML that Word imported.
+                // Re-reading Range.WordOpenXML here is document-sized work and costs
+                // ~300ms in a 100-OMML document, undoing the earlier Word performance
+                // work for every ordinary content edit.
                 metadata.NativeOmmlFingerprint = sourceFingerprint;
             }
             else

@@ -297,6 +297,9 @@ const vstoOlePngExtractor = await source(
 const wordEquationNumbering = await source(
   "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.cs",
 );
+const wordEquationNumberingPerformance = await source(
+  "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.Performance.cs",
+);
 const wordEquationNumberingTrueDisplay = await source(
   "src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.TrueDisplay.cs",
 );
@@ -566,10 +569,11 @@ assert.ok(wordVstoService.includes("var usePreservedDisplayParagraph ="));
 assert.ok(!wordVstoService.includes("var usePreservedOleDisplayParagraph ="));
 assert.ok(wordVstoService.includes("preserveNativeOmmlSpacing: nativeOmml"));
 assert.ok(wordVstoService.includes("NativeOmmlScreenUpdatingScope.Suspend(_application)"));
-assert.ok(wordEquationNumbering.includes("ScreenUpdatingScope.Suspend(document)"));
+assert.ok(wordEquationNumberingPerformance.includes("ScreenUpdatingScope.Suspend(document)"));
 assert.ok(
-  (wordEquationNumbering.match(/TryFastUpdateCanonicalNumberFields\(document\)/g) ?? [])
-    .length >= 1,
+  wordEquationNumbering.includes(
+    "TryRefreshHealthyEquationNumbersInPlace(document, out var updated)",
+  ),
 );
 for (const productionNumberingSource of [
   wordVstoService,
@@ -591,6 +595,21 @@ assert.ok(wordVstoService.includes("LegacyInlineMathGuard"));
 assert.ok(wordVstoService.includes("LegacyInlineBaselineSentinel"));
 assert.ok(wordVstoService.includes("font.Hidden = -1"));
 assert.ok(wordVstoService.includes("RestoreOmmlReplacementRollback"));
+const directTableReplacementStart = wordVstoService.indexOf(
+  "if (replaceHealthyDirectTableAtomically)\n            {\n                if (reuseHealthyDirectTableForUnnumberingOnly)",
+);
+const directTableReplacementEnd = wordVstoService.indexOf(
+  "else if (replaceHealthyStandaloneDisplayAtomically)",
+  directTableReplacementStart,
+);
+assert.ok(directTableReplacementStart >= 0 && directTableReplacementEnd > directTableReplacementStart);
+const directTableReplacement = wordVstoService.slice(
+  directTableReplacementStart,
+  directTableReplacementEnd,
+);
+assert.ok(directTableReplacement.includes("WordOmmlConverter.Insert("));
+assert.ok(directTableReplacement.includes("replaceTarget: true"));
+assert.ok(!directTableReplacement.includes("ReplaceWithPreparedOmml("));
 assert.ok(officeSessions.includes("unchanged_edit"));
 assert.ok(officeSessions.includes("document_import"));
 assert.ok(officeSessions.includes('"visualtex-document-json"'));

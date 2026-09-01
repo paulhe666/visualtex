@@ -11,11 +11,7 @@ import {
 } from "../src/office/shared/formulaMetadata.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
-import {
-  canonicalOfficeFingerprintLines,
-  isWordOmmlNumberingOnlyEdit,
-  persistedOfficeLines,
-} from "../src/office/shared/officeEditPersistence.ts";
+import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
 
 function normalize(source: string, codeFormat: string = "raw") {
@@ -227,48 +223,21 @@ assert.deepEqual(
   canonicalOfficeFingerprintLines(numberingEditorLines),
   "Office dirty canonicalization should continue treating MathEditor's automatic upright e/i rewrite as equivalent",
 );
-const numberingCanonicalFingerprint = JSON.stringify({
-  lines: canonicalOfficeFingerprintLines(numberingOriginalLines),
-  numbered: false,
-});
-const numberingOnly = isWordOmmlNumberingOnlyEdit({
-  mode: "edit",
-  objectMode: "wordOmml",
-  displayMode: "block",
-  numbered: true,
-  originalNumbered: false,
-  originalFingerprint: numberingCanonicalFingerprint,
-  fingerprintAtOriginalNumbering: numberingCanonicalFingerprint,
-});
-assert.equal(numberingOnly, true, "Word OMML checkbox-only change must be recognized as numbering-only");
-const numberingPersistedLines = persistedOfficeLines(
-  numberingOnly,
-  numberingOriginalLines,
-  numberingEditorLines,
-);
-assert.deepEqual(
-  numberingPersistedLines,
-  numberingOriginalLines,
-  "Numbering-only Word OMML edit must persist the original LaTeX instead of MathEditor's automatic e/i rewrite",
-);
 const numberingRenderSource = serializeFormulaEditorRenderDocument({
-  lines: numberingPersistedLines,
+  lines: numberingEditorLines,
   codeFormat: "raw",
 });
 const numberingMathMl = latexToMathMl(numberingRenderSource, true);
-assert.match(numberingMathMl, /<mi>e<\/mi>/, "Numbering-only MathML should keep e as the original math variable");
-assert.match(numberingMathMl, /<mi>i<\/mi>/, "Numbering-only MathML should keep i as the original math variable");
-assert.doesNotMatch(
+assert.match(
   numberingMathMl,
-  /mathvariant=["']normal["']>\s*[ei]\s*</,
-  "Numbering-only MathML must not silently persist MathEditor's upright e/i normalization",
+  /mathvariant=["']normal["']>\s*e\s*</,
+  "Numbering-only MathML should persist MathEditor's upright e normalization",
 );
-assert.deepEqual(
-  persistedOfficeLines(false, numberingOriginalLines, numberingEditorLines),
-  numberingEditorLines,
-  "A real content edit must still persist the current editor lines",
+assert.match(
+  numberingMathMl,
+  /mathvariant=["']normal["']>\s*i\s*</,
+  "Numbering-only MathML should persist MathEditor's upright i normalization",
 );
-
 const equation = normalize(String.raw`\begin{equation}E=mc^2\end{equation}`);
 assert.equal(equation.codeFormat, "equation");
 assert.deepEqual(equation.lines, [{ id: "original-line-id", latex: "E=mc^2" }]);

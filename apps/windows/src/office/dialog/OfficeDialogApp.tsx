@@ -76,11 +76,7 @@ import {
   serializeFormulaEditorRenderDocument,
   type FormulaEditorLine,
 } from "../shared/formulaEditorDocument";
-import {
-  canonicalOfficeFingerprintLines,
-  isWordOmmlNumberingOnlyEdit,
-  persistedOfficeLines,
-} from "../shared/officeEditPersistence";
+import { canonicalOfficeFingerprintLines } from "../shared/officeEditPersistence";
 import { messageOfficeParent } from "./dialogMessages";
 import { registerOfficeApplyShortcut } from "./officeApplyShortcut";
 import {
@@ -629,52 +625,10 @@ export function OfficeDialogApp() {
     Boolean(session) &&
     Boolean(originalFingerprintRef.current) &&
     currentFingerprint !== originalFingerprintRef.current;
-  const originalNumbered =
-    session?.mode === "edit"
-      ? session.originalMetadata?.displayMode === "block" &&
-        Boolean(session.originalMetadata?.numbered)
-      : session?.displayMode === "block" && Boolean(session?.numbered);
-  const fingerprintAtOriginalNumbering = useMemo(
-    () =>
-      documentFingerprint(
-        title,
-        lines,
-        latexCodeFormat,
-        displayMode,
-        objectMode,
-        originalNumbered,
-        mathTypeNumberPosition,
-        officeFontSizePt,
-        formulaLetterFont,
-        formulaChineseFont,
-      ),
-    [
-      title,
-      lines,
-      latexCodeFormat,
-      displayMode,
-      objectMode,
-      originalNumbered,
-      mathTypeNumberPosition,
-      officeFontSizePt,
-      formulaLetterFont,
-      formulaChineseFont,
-    ],
-  );
-  const numberingOnlyEdit = isWordOmmlNumberingOnlyEdit({
-    mode: session?.mode,
-    objectMode,
-    displayMode,
-    numbered,
-    originalNumbered,
-    originalFingerprint: originalFingerprintRef.current,
-    fingerprintAtOriginalNumbering,
-  });
-  const persistedLines = persistedOfficeLines(
-    numberingOnlyEdit,
-    session?.originalMetadata?.lines,
-    lines,
-  );
+  // MathEditor's canonicalized LaTeX is the real editor document. Numbering is
+  // only another piece of formula metadata and must not create a second source
+  // persistence path that freezes the pre-edit LaTeX.
+  const persistedLines = lines;
   const persistedActiveLineId =
     activeLineId && persistedLines.some((line) => line.id === activeLineId)
       ? activeLineId
@@ -914,9 +868,7 @@ export function OfficeDialogApp() {
       session?.originalMetadata?.equationTag,
     ],
   );
-  const sessionRenderedLatex = numberingOnlyEdit
-    ? persistedRenderedLatex
-    : currentRenderedLatex;
+  const sessionRenderedLatex = persistedRenderedLatex;
 
   const generateSvgExportResult = useCallback((
     sourceLatex: string = currentRenderedLatex,
