@@ -16,6 +16,8 @@ internal static partial class Program
             artifactRoot,
             "word-sparse-numbered-omml-performance.docx");
 
+        var previousDefaultNumberFormat =
+            WordEquationNumbering.GetDefaultEquationNumberFormatId();
         Word.Application? application = null;
         Word.Document? document = null;
         Word.Bookmark? targetBookmark = null;
@@ -395,6 +397,8 @@ internal static partial class Program
             Release(document);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+                previousDefaultNumberFormat);
             ForceComCleanup();
         }
     }

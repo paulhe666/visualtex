@@ -24,6 +24,7 @@ internal static partial class Program
         ProbeAdjacentOmmlGroupInsertion();
         RunDirection(targetVisualTeX: true);
         RunDirection(targetVisualTeX: false);
+        RunNumberedDisplayGroupTrailingSourceRegression();
         RunDisplayToVisualTeXBoundary();
         Console.WriteLine("[ADJACENT FORMAT PASS] zero-gap MathType OLE pair survived MT→VisualTeX and MT→OMML without cross-formula contamination; every unnumbered display conversion direction among MathType, VisualTeX and OMML preserved its paragraph boundary without an extra blank line.");
 
@@ -66,6 +67,219 @@ internal static partial class Program
                     foreach (var range in inserted) Release(range);
                 source?.Dispose();
                 Release(target);
+                try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { QuitWordApplicationIfOwned(application); } catch { }
+                Release(document);
+                Release(application);
+                ForceComCleanup();
+            }
+        }
+
+        void RunNumberedDisplayGroupTrailingSourceRegression()
+        {
+            const string thirdLatex = @"x_{n+1}=x_n-\frac{f(x_n)}{f'(x_n)}";
+            const string thirdMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msub><mi>x</mi><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>x</mi><mi>n</mi></msub><mo>−</mo><mfrac><mrow><mi>f</mi><mfenced><msub><mi>x</mi><mi>n</mi></msub></mfenced></mrow><mrow><msup><mi>f</mi><mo>′</mo></msup><mfenced><msub><mi>x</mi><mi>n</mi></msub></mfenced></mrow></mfrac></math>";
+            var tracePath = Path.Combine(
+                artifactRoot,
+                "numbered-display-group-trailing-source.trace.log");
+            var previousTracePath = Environment.GetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH");
+            Word.Application? application = null;
+            Word.Document? document = null;
+            try
+            {
+                try { File.Delete(tracePath); } catch { }
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                    tracePath);
+                application = CreateWordApplication(visible: false);
+                document = application.Documents.Add();
+                // Paragraphs 2 and 3 are deliberately consecutive numbered
+                // MTDisplayEquation hosts. Their MathType number fields make each
+                // paragraph ~190 Word characters even though the OLE shape itself
+                // occupies only ~26. Paragraph 5 is an unrelated trailing MathType
+                // source separated by ordinary prose. Replacing paragraphs 2-3 by
+                // native OMaths makes paragraph 5 drift far into the frozen ranges
+                // of the grouped sources—the exact production failure geometry.
+                document.Content.Text =
+                    "group-before\r\r\r"
+                    + new string('G', 147)
+                    + "\r\rgroup-after\r";
+                var service = new WordFormulaService(application);
+
+                void InsertAtParagraph(
+                    int paragraphIndex,
+                    string latex,
+                    string mathMl,
+                    bool numbered)
+                {
+                    Word.Paragraph? paragraph = null;
+                    Word.Range? insertion = null;
+                    try
+                    {
+                        paragraph = document.Paragraphs[paragraphIndex];
+                        insertion = paragraph.Range.Duplicate;
+                        insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                        insertion.Select();
+                        service.InsertMathTypeOle(
+                            CreateMathTypeCreateSession(
+                                "block",
+                                numbered,
+                                latex),
+                            mathMl,
+                            emfPath,
+                            preserveExistingDisplayParagraphBoundary: true);
+                    }
+                    finally
+                    {
+                        Release(insertion);
+                        Release(paragraph);
+                    }
+                }
+
+                // End-to-start insertion keeps the blank paragraph indexes stable.
+                InsertAtParagraph(5, thirdLatex, thirdMathMl, numbered: false);
+                InsertAtParagraph(3, secondLatex, secondMathMl, numbered: true);
+                InsertAtParagraph(2, firstLatex, firstMathMl, numbered: true);
+                AssertEqual(3, CountMathTypeOleShapes(document),
+                    "Numbered display-group drift setup did not create three MathType sources.");
+
+                var plan = service.CaptureFormulaFormatConversionPlan(
+                    wholeDocument: true,
+                    FormulaOleContract.MathTypeOleMode,
+                    FormulaOleContract.WordOmmlMode);
+                var ordered = plan.Targets.OrderBy(target => target.SourceStart).ToArray();
+                AssertEqual(3, ordered.Length,
+                    "Numbered display-group drift setup did not capture three MathType sources.");
+                AssertTrue(ordered[0].Numbered && ordered[1].Numbered && !ordered[2].Numbered,
+                    "Numbered display-group drift setup did not preserve the 2-numbered + 1-unnumbered source topology.");
+
+                static (int Start, int End) ParseRangeReference(string reference)
+                {
+                    var parts = (reference ?? string.Empty).Split(':');
+                    if (parts.Length < 3
+                        || !int.TryParse(parts[parts.Length - 2], out var start)
+                        || !int.TryParse(parts[parts.Length - 1], out var end))
+                        throw new InvalidDataException(
+                            "Invalid frozen Word range reference: " + reference);
+                    return (start, end);
+                }
+
+                var frozenFirst = ParseRangeReference(ordered[0].SourceObjectId);
+                var frozenSecond = ParseRangeReference(ordered[1].SourceObjectId);
+                var prepared = PrepareOmmlMathTypeTargets(plan, emfPath);
+                var expectedSignatures = ordered.ToDictionary(
+                    target => prepared[target.Id].Session.FormulaId,
+                    target => MathTypeMtefCodec.SemanticSignature(
+                        target.SourceMathMl
+                        ?? throw new InvalidDataException(
+                            "A numbered display-group source lost its MathML.")),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+                AssertEqual(3, result.FormulaCount,
+                    "Numbered display-group + trailing source did not convert all three MathType formulas. Failures: "
+                    + string.Join(" | ", result.Failures));
+                AssertEqual(0, result.FailedFormulaCount,
+                    "Numbered display-group + trailing source reported a conversion failure: "
+                    + string.Join(" | ", result.Failures));
+                AssertEqual(0, CountMathTypeOleShapes(document),
+                    "Numbered display-group + trailing source left a MathType source behind.");
+                AssertEqual(3, document.OMaths.Count,
+                    "Numbered display-group + trailing source did not create three OMath targets.");
+
+                var verified = 0;
+                var numberedHosts = 0;
+                foreach (var entry in expectedSignatures)
+                {
+                    Word.Bookmark? bookmark = null;
+                    Word.Range? range = null;
+                    try
+                    {
+                        bookmark = WordOmmlFormulaStore.FindByFormulaId(document, entry.Key)
+                            ?? throw new InvalidDataException(
+                                $"Numbered display-group target {entry.Key} lost its VTOMML bookmark.");
+                        range = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                        var actualMathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                            range.WordOpenXML,
+                            display: true);
+                        AssertEqual(
+                            entry.Value,
+                            MathTypeMtefCodec.SemanticSignature(actualMathMl),
+                            $"Numbered display-group target {entry.Key} changed semantics.");
+                        var metadata = WordOmmlFormulaStore.TryRead(document, entry.Key);
+                        if (metadata?.Numbered == true)
+                        {
+                            AssertTrue(
+                                WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                                    document,
+                                    range,
+                                    entry.Key),
+                                $"Numbered display-group target {entry.Key} is not the required 1x3 direct-SEQ host.");
+                            numberedHosts++;
+                        }
+                        verified++;
+                    }
+                    finally
+                    {
+                        Release(range);
+                        Release(bookmark);
+                    }
+                }
+                AssertEqual(3, verified,
+                    "Numbered display-group regression did not verify all three OMML targets.");
+                AssertEqual(2, numberedHosts,
+                    "Numbered display-group regression did not retain exactly two 1x3 direct-SEQ hosts.");
+
+                var trace = File.Exists(tracePath)
+                    ? File.ReadAllLines(tracePath)
+                    : Array.Empty<string>();
+                AssertTrue(
+                    trace.Any(line => line.IndexOf(
+                        "format-conversion-block-omml-groups groups=1 formulas=2",
+                        StringComparison.Ordinal) >= 0),
+                    "Numbered display-group regression did not exercise the 2-formula atomic block path.");
+                var trailingLiveLine = trace.FirstOrDefault(line =>
+                    line.IndexOf(
+                        "format-conversion-forward-source-live formulaId=" + ordered[2].SourceFormulaId,
+                        StringComparison.Ordinal) >= 0);
+                AssertTrue(!string.IsNullOrWhiteSpace(trailingLiveLine),
+                    "Numbered display-group regression did not capture the trailing source's live range after group replacement.");
+                var rangeMarker = trailingLiveLine!.IndexOf(" range=", StringComparison.Ordinal);
+                AssertTrue(rangeMarker >= 0,
+                    "Trailing-source trace has no live range: " + trailingLiveLine);
+                var liveRangeText = trailingLiveLine.Substring(rangeMarker + 7).Split(' ')[0];
+                var liveParts = liveRangeText.Split(':');
+                var liveStart = 0;
+                var liveEnd = 0;
+                AssertTrue(liveParts.Length == 2
+                    && int.TryParse(liveParts[0], out liveStart)
+                    && int.TryParse(liveParts[1], out liveEnd),
+                    "Trailing-source live range could not be parsed: " + trailingLiveLine);
+                static bool Overlaps(
+                    (int Start, int End) left,
+                    (int Start, int End) right) =>
+                    left.Start < right.End && left.End > right.Start;
+                var liveTrailing = (Start: liveStart, End: liveEnd);
+                AssertTrue(
+                    Overlaps(liveTrailing, frozenFirst)
+                    || Overlaps(liveTrailing, frozenSecond),
+                    "The regression fixture did not reproduce the stale-range collision: "
+                    + $"frozen1={frozenFirst.Start}:{frozenFirst.End}; "
+                    + $"frozen2={frozenSecond.Start}:{frozenSecond.End}; "
+                    + $"trailingLive={liveStart}:{liveEnd}.");
+
+                Console.WriteLine(
+                    "[NUMBERED DISPLAY GROUP RANGE-DRIFT PASS] Two consecutive numbered MathType paragraphs were replaced atomically; "
+                    + $"the trailing MathType drifted to {liveStart}:{liveEnd} and overlapped a frozen group-member range, "
+                    + "yet all 3 targets converted with exact semantics and both numbered targets remained 1x3 direct-SEQ.");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                    previousTracePath);
                 try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
                 try { QuitWordApplicationIfOwned(application); } catch { }
                 Release(document);

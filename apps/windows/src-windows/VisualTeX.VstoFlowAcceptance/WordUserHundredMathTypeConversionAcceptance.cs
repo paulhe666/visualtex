@@ -876,6 +876,278 @@ internal static partial class Program
         }
     }
 
+    private static void RunActiveMathTypeOmmlSourceAudit()
+    {
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = (Word.Application)Marshal.GetActiveObject("Word.Application");
+            document = application.ActiveDocument
+                ?? throw new InvalidOperationException("No active Word document is available for MathType→OMML source auditing.");
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML SOURCE AUDIT] document={document.Name}; saved={document.Saved}; "
+                + $"targets={plan.Targets.Count}; inlineShapes={document.InlineShapes.Count}; omaths={document.OMaths.Count}");
+
+            var failures = 0;
+            var mismatches = 0;
+            foreach (var pair in plan.Targets
+                         .OrderBy(target => target.SourceStart)
+                         .Select((target, index) => (Target: target, Index: index + 1)))
+            {
+                try
+                {
+                    var sourceMathMl = pair.Target.SourceMathMl
+                        ?? throw new InvalidDataException("MathType source target has no SourceMathMl.");
+                    var omml = WordOmmlConverter.TransformMathMlToOmml(sourceMathMl);
+                    var roundTripMathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                        omml,
+                        display: string.Equals(
+                            pair.Target.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal));
+                    var expectedSignature = MathTypeMtefCodec.SemanticSignature(sourceMathMl);
+                    var actualSignature = MathTypeMtefCodec.SemanticSignature(roundTripMathMl);
+                    if (string.Equals(expectedSignature, actualSignature, StringComparison.Ordinal))
+                        continue;
+                    mismatches++;
+                    Console.WriteLine(
+                        $"ACTIVE-OMML-ROUNDTRIP-MISMATCH|{pair.Index}|start={pair.Target.SourceStart}|display={pair.Target.DisplayMode}|numbered={pair.Target.Numbered}|latex={pair.Target.Latex}|expected={expectedSignature}|actual={actualSignature}|mathml={roundTripMathMl}");
+                }
+                catch (Exception error)
+                {
+                    failures++;
+                    Console.WriteLine(
+                        $"ACTIVE-OMML-PREFLIGHT-ERROR|{pair.Index}|start={pair.Target.SourceStart}|display={pair.Target.DisplayMode}|numbered={pair.Target.Numbered}|latex={pair.Target.Latex}|error={error.GetType().Name}:{error.Message}|mathml={pair.Target.SourceMathMl}");
+                }
+            }
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML SOURCE AUDIT DONE] targets={plan.Targets.Count}; failures={failures}; mismatches={mismatches}");
+            if (failures != 0 || mismatches != 0)
+                throw new InvalidDataException(
+                    $"Active MathType→OMML semantic audit failed: failures={failures}, mismatches={mismatches}.");
+        }
+        finally
+        {
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunActiveMathTypeOmmlCopyDiagnostic(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var tracePath = Path.Combine(artifactRoot, "active-mathtype-omml-copy.trace.log");
+        var outputPath = Path.Combine(artifactRoot, "active-mathtype-omml-copy-after.docx");
+        var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousPerfTrace = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF");
+        var previousCountTrace = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS");
+        var previousNumberPerfTrace = Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE");
+        Word.Application? application = null;
+        Word.Document? sourceDocument = null;
+        Word.Document? cloneDocument = null;
+        Word.Range? sourceContent = null;
+        Word.Range? cloneContent = null;
+        try
+        {
+            try { File.Delete(tracePath); } catch { }
+            try { File.Delete(outputPath); } catch { }
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF", null);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS", null);
+            Environment.SetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE", null);
+
+            application = (Word.Application)Marshal.GetActiveObject("Word.Application");
+            sourceDocument = application.ActiveDocument
+                ?? throw new InvalidOperationException(
+                    "No active Word document is available for MathType→OMML copy diagnostics.");
+            var sourceWasSaved = sourceDocument.Saved;
+            var sourceMathTypeBefore = CountMathTypeOleShapes(sourceDocument);
+            var sourceOmmlBefore = sourceDocument.OMaths.Count;
+            var sourceName = sourceDocument.Name;
+
+            cloneDocument = application.Documents.Add(Visible: false);
+            sourceContent = sourceDocument.Content.Duplicate;
+            cloneContent = cloneDocument.Content.Duplicate;
+            cloneContent.FormattedText = sourceContent.FormattedText;
+            Release(cloneContent);
+            cloneContent = null;
+            Release(sourceContent);
+            sourceContent = null;
+            cloneDocument.Activate();
+            System.Windows.Forms.Application.DoEvents();
+
+            var cloneMathTypeBefore = CountMathTypeOleShapes(cloneDocument);
+            var cloneOmmlBefore = cloneDocument.OMaths.Count;
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML COPY] source={sourceName}; sourceSaved={sourceWasSaved}; "
+                + $"sourceMathType={sourceMathTypeBefore}; sourceOmml={sourceOmmlBefore}; "
+                + $"cloneMathType={cloneMathTypeBefore}; cloneOmml={cloneOmmlBefore}");
+            if (cloneMathTypeBefore != sourceMathTypeBefore
+                || cloneOmmlBefore != sourceOmmlBefore)
+                throw new InvalidDataException(
+                    $"The hidden diagnostic copy did not preserve formula counts: "
+                    + $"MathType {sourceMathTypeBefore}->{cloneMathTypeBefore}, "
+                    + $"OMML {sourceOmmlBefore}->{cloneOmmlBefore}.");
+
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML COPY PLAN] targets={plan.Targets.Count}; "
+                + $"numbered={plan.Targets.Count(target => target.Numbered)}; "
+                + $"display={plan.Targets.Count(target => string.Equals(target.DisplayMode, "block", StringComparison.Ordinal))}; "
+                + $"inline={plan.Targets.Count(target => string.Equals(target.DisplayMode, "inline", StringComparison.Ordinal))}");
+            if (plan.Targets.Count != cloneMathTypeBefore)
+                throw new InvalidDataException(
+                    $"The hidden diagnostic copy captured {plan.Targets.Count}/{cloneMathTypeBefore} MathType sources.");
+
+            var prepared = PrepareOmmlMathTypeTargets(plan, string.Empty);
+            var expectedByFormulaId = plan.Targets.ToDictionary(
+                target => prepared[target.Id].Session.FormulaId,
+                target => new
+                {
+                    Target = target,
+                    Signature = MathTypeMtefCodec.SemanticSignature(
+                        target.SourceMathMl
+                        ?? throw new InvalidDataException(
+                            $"MathType source {target.SourceFormulaId} has no source MathML.")),
+                },
+                StringComparer.OrdinalIgnoreCase);
+            var watch = Stopwatch.StartNew();
+            WordFormulaFormatConversionResult result;
+            try
+            {
+                result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            }
+            catch (Exception error)
+            {
+                Console.WriteLine(
+                    $"[ACTIVE MT→OMML COPY THROW] {error.GetType().FullName}: {error.Message}\n{error}");
+                try
+                {
+                    cloneDocument.SaveAs2(
+                        outputPath,
+                        Word.WdSaveFormat.wdFormatXMLDocument,
+                        AddToRecentFiles: false);
+                }
+                catch (Exception saveError)
+                {
+                    Console.WriteLine(
+                        $"[ACTIVE MT→OMML COPY SAVE-ERROR] {saveError.GetType().Name}: {saveError.Message}");
+                }
+                throw;
+            }
+            watch.Stop();
+
+            var cloneMathTypeAfter = CountMathTypeOleShapes(cloneDocument);
+            var cloneOmmlAfter = cloneDocument.OMaths.Count;
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML COPY RESULT] converted={result.FormulaCount}; failed={result.FailedFormulaCount}; "
+                + $"mathType={cloneMathTypeBefore}->{cloneMathTypeAfter}; "
+                + $"omml={cloneOmmlBefore}->{cloneOmmlAfter}; elapsedMs={watch.ElapsedMilliseconds}; "
+                + $"failures={string.Join(" || ", result.Failures)}");
+
+            if (result.FailedFormulaCount == 0)
+            {
+                var verified = 0;
+                var verifiedNumberedHosts = 0;
+                foreach (var entry in expectedByFormulaId)
+                {
+                    Word.Bookmark? bookmark = null;
+                    Word.Range? range = null;
+                    try
+                    {
+                        bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                                cloneDocument,
+                                entry.Key)
+                            ?? throw new InvalidDataException(
+                                $"Converted OMML formula {entry.Key} lost its VTOMML bookmark.");
+                        range = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                        var actualMathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                            range.WordOpenXML,
+                            display: string.Equals(
+                                entry.Value.Target.DisplayMode,
+                                "block",
+                                StringComparison.Ordinal));
+                        var actualSignature = MathTypeMtefCodec.SemanticSignature(actualMathMl);
+                        if (!string.Equals(
+                                entry.Value.Signature,
+                                actualSignature,
+                                StringComparison.Ordinal))
+                            throw new InvalidDataException(
+                                $"Converted OMML formula {entry.Key} changed semantics. expected={entry.Value.Signature}; actual={actualSignature}; latex={entry.Value.Target.Latex}");
+                        if (entry.Value.Target.Numbered)
+                        {
+                            if (!WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                                    cloneDocument,
+                                    range,
+                                    entry.Key))
+                                throw new InvalidDataException(
+                                    $"Converted numbered OMML formula {entry.Key} is not the required 1x3 direct-SEQ host.");
+                            verifiedNumberedHosts++;
+                        }
+                        verified++;
+                    }
+                    finally
+                    {
+                        Release(range);
+                        Release(bookmark);
+                    }
+                }
+                Console.WriteLine(
+                    $"[ACTIVE MT→OMML COPY VERIFY] semantics={verified}/{expectedByFormulaId.Count}; numberedDirectTables={verifiedNumberedHosts}/{plan.Targets.Count(target => target.Numbered)}");
+            }
+
+            cloneDocument.SaveAs2(
+                outputPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+
+            sourceDocument.Activate();
+            System.Windows.Forms.Application.DoEvents();
+            var sourceMathTypeAfter = CountMathTypeOleShapes(sourceDocument);
+            var sourceOmmlAfter = sourceDocument.OMaths.Count;
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML SOURCE UNCHANGED] saved={sourceDocument.Saved}; "
+                + $"mathType={sourceMathTypeBefore}->{sourceMathTypeAfter}; "
+                + $"omml={sourceOmmlBefore}->{sourceOmmlAfter}");
+            if (sourceMathTypeAfter != sourceMathTypeBefore
+                || sourceOmmlAfter != sourceOmmlBefore
+                || sourceDocument.Saved != sourceWasSaved)
+                throw new InvalidDataException(
+                    "The hidden-copy diagnostic unexpectedly changed the user's active source document.");
+
+            if (result.FailedFormulaCount != 0)
+                throw new InvalidDataException(
+                    $"Hidden-copy MathType→OMML conversion stopped after {result.FormulaCount} formulas: "
+                    + (result.Failures.FirstOrDefault() ?? "unknown failure"));
+        }
+        finally
+        {
+            try { sourceDocument?.Activate(); } catch { }
+            try { cloneDocument?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            Release(cloneContent);
+            Release(sourceContent);
+            Release(cloneDocument);
+            Release(sourceDocument);
+            Release(application);
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", previousTracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF", previousPerfTrace);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS", previousCountTrace);
+            Environment.SetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE", previousNumberPerfTrace);
+            ForceComCleanup();
+        }
+    }
+
     private static void RunUserHundredMathTypeReverseAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);

@@ -34,6 +34,8 @@ internal static partial class Program
                 Numbered: true),
         };
 
+        var previousDefaultNumberFormat =
+            WordEquationNumbering.GetDefaultEquationNumberFormatId();
         Word.Application? application = null;
         Word.Document? sourceDocument = null;
         Word.Range? sourceHostRange = null;
@@ -343,6 +345,8 @@ internal static partial class Program
                 try { QuitWordApplicationIfOwned(application); } catch { }
             }
             Release(application);
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+                previousDefaultNumberFormat);
             ForceComCleanup();
         }
     }

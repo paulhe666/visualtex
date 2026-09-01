@@ -18,13 +18,18 @@ internal sealed partial class WordFormulaService
         Document document,
         WordFormulaFormatConversionPlan plan,
         IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
-        int convertedFormulaCount)
+        IReadOnlyCollection<string> convertedTargetIds)
     {
+        var convertedTargetIdSet = new HashSet<string>(
+            convertedTargetIds,
+            StringComparer.Ordinal);
+        var convertedFormulaCount = convertedTargetIdSet.Count;
         var entries = new List<ConvertedVisualTeXNumberingEntry>();
         var targetByFormulaId = new Dictionary<string, WordFormulaFormatConversionTarget>(
             StringComparer.OrdinalIgnoreCase);
         foreach (var target in plan.Targets)
         {
+            if (!convertedTargetIdSet.Contains(target.Id)) continue;
             if (!prepared.TryGetValue(target.Id, out var formula)) continue;
             var formulaId = formula.Session.FormulaId;
             if (string.IsNullOrWhiteSpace(formulaId)) continue;
@@ -640,6 +645,9 @@ internal sealed partial class WordFormulaService
             var targetCountBefore = CountSimpleFormatObjects(
                 document,
                 FormulaOleContract.WordOmmlMode);
+            var sourceCountBefore = CountSimpleFormatObjects(
+                document,
+                plan.SourceMode);
             targetRange = document.Range(group.Start, group.End);
             var formulaIds = ordered
                 .Select(target => prepared[target.Id].Session.FormulaId)
@@ -702,26 +710,35 @@ internal sealed partial class WordFormulaService
                 finally { Release(bookmark); }
             }
 
-            EndUndoRecord(undoRecord);
-            undoEnded = true;
             var targetCountAfter = CountSimpleFormatObjects(
                 document,
                 FormulaOleContract.WordOmmlMode);
             if (targetCountAfter != targetCountBefore + ordered.Length)
                 throw new InvalidOperationException(
                     $"Word retained {targetCountAfter - targetCountBefore}/{ordered.Length} block OMML targets after atomic replacement.");
-            foreach (var source in ordered)
-                EnsureSimpleFormatSourceRemoved(
-                    document,
-                    plan.SourceMode,
-                    source,
-                    "block-group-post-transaction");
+            var sourceCountAfter = CountSimpleFormatObjects(
+                document,
+                plan.SourceMode);
+            var expectedSourceCountAfter = Math.Max(0, sourceCountBefore - ordered.Length);
+            if (sourceCountAfter != expectedSourceCountAfter)
+                throw new InvalidOperationException(
+                    $"Word retained an unexpected number of MathType sources after grouped display replacement: expected {expectedSourceCountAfter}, actual {sourceCountAfter}.");
 
+            // Do not verify grouped MathType removal through each target's old
+            // Range. Replacing several complete paragraphs changes their aggregate
+            // character length, so a later, unrelated MathType OLE can legitimately
+            // slide into one member's captured range. The group replacement itself
+            // already proves exactly N Display OMaths were materialized; the global
+            // source/target deltas above prove exactly N MathType hosts disappeared.
+            // Keep these checks inside the custom UndoRecord so any genuine count or
+            // materialization failure is still one atomic rollback operation.
+            EndUndoRecord(undoRecord);
+            undoEnded = true;
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-block-omml-group-complete count={ordered.Length} range={group.Start}:{group.End}");
+                $"format-conversion-block-omml-group-complete count={ordered.Length} range={group.Start}:{group.End} sourceCount={sourceCountBefore}->{sourceCountAfter} targetCount={targetCountBefore}->{targetCountAfter}");
             return ordered.Length;
         }
-        catch
+        catch (Exception error)
         {
             if (!undoEnded)
             {
@@ -730,14 +747,24 @@ internal sealed partial class WordFormulaService
             }
             if (!TryUndoFormulaToLatexConversion(document))
                 throw new InvalidOperationException(
-                    "连续 MathType→OMML 转换失败，而且 Word 无法自动恢复原公式。请立即停止编辑当前文档。");
+                    "连续 MathType→OMML 转换失败，而且 Word 无法自动恢复原公式。请立即停止编辑当前文档。",
+                    error);
             foreach (var formulaId in metadataSaved)
             {
                 try { WordOmmlFormulaStore.Delete(document, formulaId); }
                 catch { }
             }
-            foreach (var source in ordered)
-                ValidateSimpleSourceHost(document, plan.SourceMode, source);
+            try
+            {
+                foreach (var source in ordered)
+                    ValidateSimpleSourceHost(document, plan.SourceMode, source);
+            }
+            catch (Exception restoreError)
+            {
+                throw new InvalidOperationException(
+                    "连续 MathType→OMML 转换失败；Word 执行了撤销，但组内源公式没有完整恢复。请立即停止编辑当前文档。",
+                    new AggregateException(error, restoreError));
+            }
             throw;
         }
         finally
@@ -782,6 +809,9 @@ internal sealed partial class WordFormulaService
             var targetCountBefore = CountSimpleFormatObjects(
                 document,
                 FormulaOleContract.WordOmmlMode);
+            var sourceCountBefore = CountSimpleFormatObjects(
+                document,
+                plan.SourceMode);
             var insertionStart = ordered[0].SourceStart;
             foreach (var source in ordered.OrderByDescending(target => target.SourceStart))
             {
@@ -869,26 +899,32 @@ internal sealed partial class WordFormulaService
                 finally { Release(bookmark); }
             }
 
-            EndUndoRecord(undoRecord);
-            undoEnded = true;
             var targetCountAfter = CountSimpleFormatObjects(
                 document,
                 FormulaOleContract.WordOmmlMode);
             if (targetCountAfter != targetCountBefore + ordered.Length)
                 throw new InvalidOperationException(
                     $"Word retained {targetCountAfter - targetCountBefore}/{ordered.Length} OMML targets after adjacent-group conversion.");
-            foreach (var source in ordered)
-                EnsureSimpleFormatSourceRemoved(
-                    document,
-                    plan.SourceMode,
-                    source,
-                    "adjacent-group-post-transaction");
+            var sourceCountAfter = CountSimpleFormatObjects(
+                document,
+                plan.SourceMode);
+            var expectedSourceCountAfter = Math.Max(0, sourceCountBefore - ordered.Length);
+            if (sourceCountAfter != expectedSourceCountAfter)
+                throw new InvalidOperationException(
+                    $"Word retained an unexpected number of MathType sources after adjacent inline replacement: expected {expectedSourceCountAfter}, actual {sourceCountAfter}.");
 
+            // After rebuilding an adjacent inline run, the document-length delta can
+            // move the next unrelated MathType object into an old member's captured
+            // range. Do not use those stale ranges as residual-source identity.
+            // Exact inserted OMath cardinality plus source/target count deltas are
+            // the stable proof that this grouped transaction replaced N hosts.
+            EndUndoRecord(undoRecord);
+            undoEnded = true;
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-adjacent-omml-group-complete count={ordered.Length} start={ordered[0].SourceStart} end={ordered[ordered.Length - 1].SourceStart}");
+                $"format-conversion-adjacent-omml-group-complete count={ordered.Length} start={ordered[0].SourceStart} end={ordered[ordered.Length - 1].SourceStart} sourceCount={sourceCountBefore}->{sourceCountAfter} targetCount={targetCountBefore}->{targetCountAfter}");
             return ordered.Length;
         }
-        catch
+        catch (Exception error)
         {
             if (!undoEnded)
             {
@@ -897,13 +933,23 @@ internal sealed partial class WordFormulaService
             }
             if (!TryUndoFormulaToLatexConversion(document))
                 throw new InvalidOperationException(
-                    "相邻 MathType→OMML 转换失败，而且 Word 无法自动恢复原公式。请立即停止编辑当前文档。");
+                    "相邻 MathType→OMML 转换失败，而且 Word 无法自动恢复原公式。请立即停止编辑当前文档。",
+                    error);
             foreach (var formulaId in metadataSaved)
             {
                 try { WordOmmlFormulaStore.Delete(document, formulaId); } catch { }
             }
-            foreach (var source in ordered)
-                ValidateSimpleSourceHost(document, plan.SourceMode, source);
+            try
+            {
+                foreach (var source in ordered)
+                    ValidateSimpleSourceHost(document, plan.SourceMode, source);
+            }
+            catch (Exception restoreError)
+            {
+                throw new InvalidOperationException(
+                    "相邻 MathType→OMML 转换失败；Word 执行了撤销，但组内源公式没有完整恢复。请立即停止编辑当前文档。",
+                    new AggregateException(error, restoreError));
+            }
             throw;
         }
         finally
@@ -1266,11 +1312,16 @@ internal sealed partial class WordFormulaService
     private static int RestoreConvertedOmmlPrecedingBlankParagraphCounts(
         Document document,
         WordFormulaFormatConversionPlan plan,
-        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared)
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+        IReadOnlyCollection<string> convertedTargetIds)
     {
+        var convertedTargetIdSet = new HashSet<string>(
+            convertedTargetIds,
+            StringComparer.Ordinal);
         var removed = 0;
         foreach (var target in plan.Targets
-                     .Where(item => item.Numbered
+                     .Where(item => convertedTargetIdSet.Contains(item.Id)
+                         && item.Numbered
                          && string.Equals(item.DisplayMode, "block", StringComparison.Ordinal)))
         {
             if (!prepared.TryGetValue(target.Id, out var converted)
@@ -1643,6 +1694,13 @@ internal sealed partial class WordFormulaService
             }
 
             var result = new WordFormulaFormatConversionResult();
+            // A batch intentionally commits each formula independently so a later
+            // Word/OLE failure cannot destroy earlier source objects through one
+            // giant Undo record. Keep an explicit success set: every post-commit
+            // finalizer must operate on this set, never on the original plan. A
+            // partial batch is therefore a supported, structurally complete state
+            // rather than a mixture of provisional targets and untouched sources.
+            var successfulTargetIds = new HashSet<string>(StringComparer.Ordinal);
             var targetIsMathType = string.Equals(
                 plan.TargetMode,
                 FormulaOleContract.MathTypeOleMode,
@@ -1995,7 +2053,10 @@ internal sealed partial class WordFormulaService
                             ommlBatchSource);
                         result.FormulaCount += convertedBlockGroupCount;
                         foreach (var member in blockGroup.Targets)
+                        {
                             processedBlockOmmlTargets.Add(member.Id);
+                            successfulTargetIds.Add(member.Id);
+                        }
                         continue;
                     }
 
@@ -2020,7 +2081,10 @@ internal sealed partial class WordFormulaService
                             ommlBatchSource);
                         result.FormulaCount += convertedGroupCount;
                         foreach (var member in adjacentGroup)
+                        {
                             processedAdjacentOmmlTargets.Add(member.Id);
+                            successfulTargetIds.Add(member.Id);
+                        }
                         continue;
                     }
 
@@ -2340,6 +2404,7 @@ internal sealed partial class WordFormulaService
                     if (traceObjectCounts)
                         TraceSimpleFormatObjectCounts(document, target, "after-commit-stable");
                     result.FormulaCount++;
+                    successfulTargetIds.Add(target.Id);
                 }
                 catch (Exception error)
                 {
@@ -2444,80 +2509,114 @@ internal sealed partial class WordFormulaService
                 finalizeLastMs = totalMs;
             }
 
-            if (result.FailedFormulaCount == 0)
+            // Validate the state that was actually committed, even when a later
+            // formula failed. Unprocessed source hosts are expected to remain; only
+            // a source belonging to successfulTargetIds is evidence of rollback or
+            // Word resurrecting an object after commit.
+            if (forwardSourceBookmarks.Count == plan.Targets.Count)
             {
-                if (forwardSourceBookmarks.Count == plan.Targets.Count)
-                {
-                    var finalSourceObjectCount = CountSimpleFormatObjects(document, plan.SourceMode);
-                    var expectedSourceObjectCount = Math.Max(
-                        0,
-                        initialSourceObjectCount - result.FormulaCount);
-                    if (finalSourceObjectCount != expectedSourceObjectCount)
-                    {
-                        result.FailedFormulaCount++;
-                        result.Failures.Add(
-                            $"Source formula count mismatch after forward conversion: expected {expectedSourceObjectCount}, actual {finalSourceObjectCount}.");
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-source-count-mismatch sourceMode={plan.SourceMode} initial={initialSourceObjectCount} converted={result.FormulaCount} expected={expectedSourceObjectCount} actual={finalSourceObjectCount}");
-                    }
-                }
-                else
-                {
-                    foreach (var target in plan.Targets)
-                    {
-                        if (!IsSimpleFormatSourcePresent(document, plan.SourceMode, target))
-                            continue;
-                        result.FailedFormulaCount++;
-                        result.FormulaCount = Math.Max(0, result.FormulaCount - 1);
-                        result.Failures.Add(
-                            $"{target.Latex}: Word restored the source formula after the conversion transaction completed.");
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-source-reappeared formulaId={target.SourceFormulaId} latex={target.Latex}");
-                        break;
-                    }
-                }
-            }
-            TraceFinalize("source-residual-check");
-            if (result.FailedFormulaCount == 0)
-            {
-                var finalTargetObjectCount = CountSimpleFormatObjects(document, plan.TargetMode);
-                var expectedTargetObjectCount = initialTargetObjectCount + result.FormulaCount;
-                if (finalTargetObjectCount != expectedTargetObjectCount)
+                var finalSourceObjectCount = CountSimpleFormatObjects(document, plan.SourceMode);
+                var expectedSourceObjectCount = Math.Max(
+                    0,
+                    initialSourceObjectCount - successfulTargetIds.Count);
+                if (finalSourceObjectCount != expectedSourceObjectCount)
                 {
                     result.FailedFormulaCount++;
                     result.Failures.Add(
-                        $"Target formula count mismatch after conversion: expected {expectedTargetObjectCount}, actual {finalTargetObjectCount}. Word removed or failed to retain a converted formula.");
+                        $"Source formula count mismatch after partial conversion: expected {expectedSourceObjectCount}, actual {finalSourceObjectCount}.");
                     WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-target-count-mismatch targetMode={plan.TargetMode} initial={initialTargetObjectCount} converted={result.FormulaCount} expected={expectedTargetObjectCount} actual={finalTargetObjectCount}");
+                        $"format-conversion-source-count-mismatch sourceMode={plan.SourceMode} initial={initialSourceObjectCount} committed={successfulTargetIds.Count} expected={expectedSourceObjectCount} actual={finalSourceObjectCount}");
                 }
             }
+            else
+            {
+                foreach (var target in plan.Targets.Where(item => successfulTargetIds.Contains(item.Id)).ToArray())
+                {
+                    if (!IsSimpleFormatSourcePresent(document, plan.SourceMode, target))
+                        continue;
+                    successfulTargetIds.Remove(target.Id);
+                    result.FailedFormulaCount++;
+                    result.Failures.Add(
+                        $"{target.Latex}: Word restored the source formula after the conversion transaction completed.");
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-source-reappeared formulaId={target.SourceFormulaId} latex={target.Latex}");
+                }
+            }
+            result.FormulaCount = successfulTargetIds.Count;
+            TraceFinalize("source-residual-check");
+
+            var finalTargetObjectCount = CountSimpleFormatObjects(document, plan.TargetMode);
+            var expectedTargetObjectCount = initialTargetObjectCount + successfulTargetIds.Count;
+            if (finalTargetObjectCount != expectedTargetObjectCount)
+            {
+                result.FailedFormulaCount++;
+                result.Failures.Add(
+                    $"Target formula count mismatch after partial conversion: expected {expectedTargetObjectCount}, actual {finalTargetObjectCount}. Word removed or failed to retain a converted formula.");
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-target-count-mismatch targetMode={plan.TargetMode} initial={initialTargetObjectCount} committed={successfulTargetIds.Count} expected={expectedTargetObjectCount} actual={finalTargetObjectCount}");
+            }
             TraceFinalize("target-count-check");
+
+            var successfulTargets = plan.Targets
+                .Where(target => successfulTargetIds.Contains(target.Id))
+                .ToArray();
             var convertedOmmlFormulaIds = targetIsOmml
-                ? plan.Targets
+                ? successfulTargets
                     .Select(target => prepared[target.Id].Session.FormulaId)
                     .Where(formulaId => !string.IsNullOrWhiteSpace(formulaId))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
                 : Array.Empty<string>();
             var convertedOmmlNumberingMetadata = targetIsOmml
-                ? plan.Targets
+                ? successfulTargets
                     .Where(target => target.Numbered
                         && string.Equals(target.DisplayMode, "block", StringComparison.Ordinal))
                     .Select(target => prepared[target.Id].Session.ToMetadata())
                     .ToArray()
                 : Array.Empty<FormulaMetadata>();
+
+            // InsertOmml deliberately defers final WordOpenXML fingerprinting during
+            // a batch. Word can normalize a freshly inserted OMath before numbering
+            // is built, so the converter-side source fingerprint is provisional.
+            // Refresh the successful subset from one document snapshot before any
+            // numbered structural edit. This makes a bare Numbered=true OMath a
+            // first-class conversion state without weakening the strict resolver
+            // used for already-finalized managed documents.
+            if (targetIsOmml && convertedOmmlFormulaIds.Length > 0)
+            {
+                try
+                {
+                    var refreshedBeforeNumbering =
+                        WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(
+                            document,
+                            convertedOmmlFormulaIds);
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-omml-provisional-fingerprints refreshed={refreshedBeforeNumbering}/{convertedOmmlFormulaIds.Length}");
+                }
+                catch (Exception provisionalFingerprintError)
+                {
+                    // Canonical VTOMML anchors can still locate the just-created
+                    // formulas. Preserve the original per-item error (if any) and let
+                    // target-specific finalization below report a durable failure if
+                    // the successful subset cannot actually be completed.
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-omml-provisional-fingerprint-refresh-skipped error={provisionalFingerprintError}");
+                }
+            }
             if (result.FormulaCount > 0)
             {
-                if (targetIsMathType)
+                try
                 {
-                    if (!canFinalizeSingleMathTypeNumberLocally)
-                        MathTypeEquationNumbering.UpdateEquationNumbers(document);
-                    else
-                        WordDoubleClickHook.TraceMessage(
-                            "format-conversion-numbering-local-mathtype-single finalized=1");
-                }
-                else if (targetIsOmml)
-                {
+                    if (targetIsMathType)
+                    {
+                        if (!canFinalizeSingleMathTypeNumberLocally)
+                            MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                        else
+                            WordDoubleClickHook.TraceMessage(
+                                "format-conversion-numbering-local-mathtype-single finalized=1");
+                    }
+                    else if (targetIsOmml)
+                    {
                     WordEquationNumbering.RestoreEquationNumberFormatForConversion(
                         document,
                         plan.NumberFormatId);
@@ -2572,7 +2671,8 @@ internal sealed partial class WordFormulaService
                             RestoreConvertedOmmlPrecedingBlankParagraphCounts(
                                 document,
                                 plan,
-                                prepared);
+                                prepared,
+                                successfulTargetIds);
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-numbering-direct-table-complete targetMode={plan.TargetMode} built={builtNumbered} removedBlankParagraphs={removedBlankParagraphs}");
                     }
@@ -2596,7 +2696,8 @@ internal sealed partial class WordFormulaService
                                 RestoreConvertedOmmlPrecedingBlankParagraphCounts(
                                     document,
                                     plan,
-                                    prepared);
+                                    prepared,
+                                    successfulTargetIds);
                             WordDoubleClickHook.TraceMessage(
                                 $"format-conversion-numbering-local-batch targetMode={plan.TargetMode} built={builtNumbered} nativeSequences={finalizedNumberedNativeSequences} finalized={finalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
                         }
@@ -2609,7 +2710,8 @@ internal sealed partial class WordFormulaService
                                 RestoreConvertedOmmlPrecedingBlankParagraphCounts(
                                     document,
                                     plan,
-                                    prepared);
+                                    prepared,
+                                    successfulTargetIds);
                             WordDoubleClickHook.TraceMessage(
                                 $"format-conversion-numbering-fallback-finalized targetMode={plan.TargetMode} numbered={fallbackFinalizedNumbered} removedBlankParagraphs={removedBlankParagraphs}");
                         }
@@ -2625,7 +2727,7 @@ internal sealed partial class WordFormulaService
                             document,
                             plan,
                             prepared,
-                            result.FormulaCount);
+                            successfulTargetIds);
                     if (rebuiltVisualTeXNumbered > 0)
                     {
                         if (!WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
@@ -2637,13 +2739,25 @@ internal sealed partial class WordFormulaService
                             $"format-conversion-numbering-visualtex-batch built={rebuiltVisualTeXNumbered} finalized={finalizedVisualTeXNumbered}");
                     }
                 }
+                }
+                catch (Exception targetFinalizeError)
+                {
+                    result.FailedFormulaCount++;
+                    result.Failures.Add(
+                        $"Converted target finalization failed: {targetFinalizeError.Message}");
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-target-finalize-failed sourceMode={plan.SourceMode} targetMode={plan.TargetMode} committed={successfulTargetIds.Count} error={targetFinalizeError}");
+                }
             }
-            if (referenceAliasesByTargetId.Count > 0 && result.FailedFormulaCount == 0)
+            var successfulReferenceAliasesByTargetId = referenceAliasesByTargetId
+                .Where(entry => successfulTargetIds.Contains(entry.Key))
+                .ToArray();
+            if (successfulReferenceAliasesByTargetId.Length > 0)
             {
                 try
                 {
                     var restoredAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var entry in referenceAliasesByTargetId)
+                    foreach (var entry in successfulReferenceAliasesByTargetId)
                     {
                         int restored;
                         if (targetIsMathType)
@@ -2677,11 +2791,19 @@ internal sealed partial class WordFormulaService
                     var refreshedReferences = MathTypeEquationReferences.RefreshReferences(
                         document,
                         restoredAliases);
-                    var expectedFormattingCount = capturedReferenceFormatting.Values.Sum(items => items.Count);
+                    var successfulCapturedReferenceFormatting =
+                        capturedReferenceFormatting
+                            .Where(entry => restoredAliases.Contains(entry.Key))
+                            .ToDictionary(
+                                entry => entry.Key,
+                                entry => entry.Value,
+                                StringComparer.OrdinalIgnoreCase);
+                    var expectedFormattingCount =
+                        successfulCapturedReferenceFormatting.Values.Sum(items => items.Count);
                     var restoredFormattingCount =
                         MathTypeEquationReferences.RestoreReferenceCharacterFormatting(
                             document,
-                            capturedReferenceFormatting);
+                            successfulCapturedReferenceFormatting);
                     if (restoredFormattingCount != expectedFormattingCount)
                         throw new InvalidDataException(
                             $"Restored {restoredFormattingCount}/{expectedFormattingCount} equation-reference formatting snapshots.");
@@ -2699,8 +2821,7 @@ internal sealed partial class WordFormulaService
             }
             TraceFinalize("numbering-reconcile");
             if (targetIsOmml
-                && result.FormulaCount > 0
-                && result.FailedFormulaCount == 0)
+                && result.FormulaCount > 0)
             {
                 try
                 {

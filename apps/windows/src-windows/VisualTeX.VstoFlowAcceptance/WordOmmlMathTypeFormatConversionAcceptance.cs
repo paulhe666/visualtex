@@ -2534,6 +2534,11 @@ internal static partial class Program
                 application,
                 document,
                 emfPath);
+            AssertMathTypeToOmmlPartialBatchFinalization(
+                application,
+                document,
+                emfPath,
+                artifactRoot);
             AssertVisualTeXOleToOmmlPreservesNumberFormat(
                 application,
                 document,
@@ -2815,6 +2820,188 @@ internal static partial class Program
             Release(shape);
             Release(insertion);
             Release(blankParagraph);
+            if (probe is not null)
+            {
+                try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(probe);
+            try { returnDocument.Activate(); } catch { }
+        }
+    }
+
+    private static void AssertMathTypeToOmmlPartialBatchFinalization(
+        Word.Application application,
+        Word.Document returnDocument,
+        string emfPath,
+        string artifactRoot)
+    {
+        const string firstMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>";
+        const string secondMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi mathvariant=\"normal\">e</mi><mrow><mi mathvariant=\"normal\">i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>";
+        const string thirdMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>";
+
+        var previousAcceptance = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_ACCEPTANCE");
+        var previousFailure = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
+        Word.Document? probe = null;
+        Word.Bookmark? convertedBookmark = null;
+        Word.Range? convertedRange = null;
+        try
+        {
+            probe = application.Documents.Add();
+            probe.Content.Text =
+                "partial-before\r\rpartial-between-one-two\r\rpartial-between-two-three\r\rpartial-after\r";
+            var service = new WordFormulaService(application);
+
+            void InsertAtBlankParagraph(
+                int paragraphIndex,
+                string mathMl,
+                bool numbered)
+            {
+                Word.Paragraph? paragraph = null;
+                Word.Range? insertion = null;
+                try
+                {
+                    paragraph = probe.Paragraphs[paragraphIndex];
+                    insertion = paragraph.Range.Duplicate;
+                    insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                    insertion.Select();
+                    service.InsertMathTypeOle(
+                        CreateOmmlMathTypeAcceptanceSession(
+                            mathMl,
+                            "block",
+                            numbered,
+                            FormulaOleContract.MathTypeOleMode),
+                        mathMl,
+                        emfPath,
+                        preserveExistingDisplayParagraphBoundary: true);
+                }
+                finally
+                {
+                    Release(insertion);
+                    Release(paragraph);
+                }
+            }
+
+            // Insert from the end so earlier blank-paragraph indexes remain stable.
+            InsertAtBlankParagraph(6, thirdMathMl, numbered: false);
+            InsertAtBlankParagraph(4, secondMathMl, numbered: false);
+            InsertAtBlankParagraph(2, firstMathMl, numbered: true);
+            AssertEqual(3, CountMathTypeOleShapes(probe),
+                "Partial MathType→OMML setup did not create exactly three MathType sources.");
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            var ordered = plan.Targets.OrderBy(target => target.SourceStart).ToArray();
+            AssertEqual(3, ordered.Length,
+                "Partial MathType→OMML setup did not capture three sources.");
+            AssertTrue(ordered[0].Numbered,
+                "Partial MathType→OMML setup did not preserve the first source as numbered display MathType.");
+            var prepared = PrepareOmmlMathTypeTargets(plan, emfPath);
+
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", "1");
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                ordered[1].SourceFormulaId);
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+
+            AssertEqual(1, result.FormulaCount,
+                "Partial MathType→OMML conversion did not retain exactly the first committed target. Failures: "
+                + string.Join(" | ", result.Failures));
+            AssertEqual(1, result.FailedFormulaCount,
+                "Partial MathType→OMML conversion should report only the injected second-item failure. Failures: "
+                + string.Join(" | ", result.Failures));
+            AssertEqual(2, CountMathTypeOleShapes(probe),
+                "Partial MathType→OMML conversion did not preserve the failed and unprocessed MathType sources.");
+            AssertEqual(1, probe.OMaths.Count,
+                "Partial MathType→OMML conversion did not retain exactly one committed OMath.");
+            var failureText = string.Join(" | ", result.Failures);
+            AssertTrue(
+                failureText.IndexOf(
+                    "Injected format-conversion failure after deleting the source host.",
+                    StringComparison.OrdinalIgnoreCase) >= 0,
+                "Partial MathType→OMML conversion lost the primary injected failure: " + failureText);
+            AssertTrue(
+                failureText.IndexOf("bookmark drifted", StringComparison.OrdinalIgnoreCase) < 0
+                && failureText.IndexOf("could not be recovered uniquely", StringComparison.OrdinalIgnoreCase) < 0,
+                "Partial MathType→OMML finalization replaced the primary failure with a stale OMML identity error: "
+                + failureText);
+
+            var firstConvertedFormulaId = prepared[ordered[0].Id].Session.FormulaId;
+            var convertedMetadata = WordOmmlFormulaStore.TryRead(
+                    probe,
+                    firstConvertedFormulaId)
+                ?? throw new InvalidDataException(
+                    "Partial MathType→OMML conversion lost the committed target metadata.");
+            convertedBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                    probe,
+                    firstConvertedFormulaId)
+                ?? throw new InvalidDataException(
+                    "Partial MathType→OMML conversion lost the committed VTOMML bookmark.");
+            convertedRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
+                probe,
+                firstConvertedFormulaId,
+                convertedMetadata);
+            AssertTrue(
+                WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                    probe,
+                    convertedRange,
+                    firstConvertedFormulaId),
+                "The successfully committed numbered target in a partial batch was not finalized as the required 1x3 direct-SEQ host.");
+            var liveFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                convertedRange.WordOpenXML);
+            AssertEqual(
+                liveFingerprint,
+                convertedMetadata.NativeOmmlFingerprint ?? string.Empty,
+                "The successfully committed OMML target retained a provisional/stale fingerprint after a later item failed.");
+
+            var remainingPlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(2, remainingPlan.Targets.Count,
+                "Partial MathType→OMML conversion did not leave exactly the failed and unprocessed MathType sources.");
+            var remainingSignatures = remainingPlan.Targets
+                .Select(target => MathTypeMtefCodec.SemanticSignature(
+                    target.SourceMathMl
+                    ?? throw new InvalidDataException("A remaining MathType source lost its MathML.")))
+                .OrderBy(signature => signature, StringComparer.Ordinal)
+                .ToArray();
+            var expectedRemainingSignatures = new[]
+                {
+                    MathTypeMtefCodec.SemanticSignature(secondMathMl),
+                    MathTypeMtefCodec.SemanticSignature(thirdMathMl),
+                }
+                .OrderBy(signature => signature, StringComparer.Ordinal)
+                .ToArray();
+            AssertEqual(
+                string.Join("\n", expectedRemainingSignatures),
+                string.Join("\n", remainingSignatures),
+                "Partial MathType→OMML rollback changed the failed or unprocessed MathType source semantics.");
+
+            var outputPath = Path.Combine(
+                artifactRoot,
+                "MathType-To-OMML-Partial-Batch-Finalization.docx");
+            probe.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                "[PARTIAL MT→OMML] First numbered target finalized as 1x3 direct-SEQ with a live fingerprint; "
+                + "the injected second target rolled back, the third remained untouched, and the primary failure was preserved.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_ACCEPTANCE",
+                previousAcceptance);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
+                previousFailure);
+            Release(convertedRange);
+            Release(convertedBookmark);
             if (probe is not null)
             {
                 try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
