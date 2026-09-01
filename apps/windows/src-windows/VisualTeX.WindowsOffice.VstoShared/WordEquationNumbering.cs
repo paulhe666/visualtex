@@ -5197,6 +5197,20 @@ internal static partial class WordEquationNumbering
         OMath? migratedMath = null;
         Range? migratedMathRange = null;
         Bookmark? oldFormulaBookmark = null;
+        var migrationWatch = System.Diagnostics.Stopwatch.StartNew();
+        long migrationCheckpoint = 0;
+        void TraceMigration(string stage)
+        {
+            if (!string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+                    "1",
+                    StringComparison.Ordinal))
+                return;
+            var elapsed = migrationWatch.ElapsedMilliseconds;
+            TraceNumberingPerformance(
+                $"      [perf] unnumber-local.{stage}: +{elapsed - migrationCheckpoint}ms ({elapsed}ms)");
+            migrationCheckpoint = elapsed;
+        }
         Range? Fail(string reason)
         {
             TraceNumberingPerformance(
@@ -5207,6 +5221,7 @@ internal static partial class WordEquationNumbering
         {
             if (!IsNumberedEquationTable(formulaRange) || !ContainsNativeOmml(formulaRange))
                 return Fail("range-not-numbered-omml-table");
+            TraceMigration("initial-host-probe");
 
             tables = formulaRange.Tables;
             if (tables.Count == 0) return Fail("range-table-collection-empty");
@@ -5235,6 +5250,7 @@ internal static partial class WordEquationNumbering
             numberCellRange = numberCell.Range.Duplicate;
             if (!ContainsOnlyStructuralWordText(leftRange.Text))
                 return Fail("left-cell-has-nonstructural-text");
+            TraceMigration("table-and-cells");
 
             formulaCellMaths = formulaCellRange.OMaths;
             formulaCellShapes = formulaCellRange.InlineShapes;
@@ -5272,6 +5288,7 @@ internal static partial class WordEquationNumbering
             if (!callerOverlapsEquation && !callerMatchesCollapsedBoundary)
                 return Fail(
                     $"caller-range-does-not-own-center-equation caller={formulaRange.Start}:{formulaRange.End} equation={equationRange.Start}:{equationRange.End}");
+            TraceMigration("center-equation");
             // The converter-side fingerprint was captured before Word imported and
             // normalized this OMath, so it can legitimately differ at this exact
             // intermediate point. Identity is already proven by the caller-range
@@ -5342,6 +5359,7 @@ internal static partial class WordEquationNumbering
                     return Fail(
                         $"number-cell-field-count-mismatch cell={numberCellFields.Count} visible={visibleNumberFields.Count}");
             }
+            TraceMigration("number-cell-ownership");
 
             // Remove only the generated visible REF label before flattening. The
             // hidden VTEqNum_* SEQ target and every external REF remain intact.
@@ -5357,10 +5375,12 @@ internal static partial class WordEquationNumbering
                 document,
                 formulaId);
             try { oldFormulaBookmark?.Delete(); } catch { }
+            TraceMigration("remove-number-artifacts");
 
             object separator = WdTableFieldSeparator.wdSeparateByTabs;
             object nestedTables = false;
             convertedRange = table.ConvertToText(ref separator, ref nestedTables);
+            TraceMigration("convert-to-text");
             if (string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
                     "1",
@@ -5421,6 +5441,7 @@ internal static partial class WordEquationNumbering
                         "The converted number-table prefix contains user text.");
                 placeholderRange.Delete();
                 Release(placeholderRange); placeholderRange = null;
+                TraceMigration("strip-cell-separators");
 
                 var directProbe = document.Range(
                     paragraphStart,
@@ -5442,6 +5463,27 @@ internal static partial class WordEquationNumbering
                         migratedMath.Type = WdOMathType.wdOMathDisplay;
                     Release(migratedMathRange); migratedMathRange = migratedMath.Range.Duplicate;
                     Release(equationRange); equationRange = migratedMathRange.Duplicate;
+                    TraceMigration("restore-display-range");
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+                            "1",
+                            StringComparison.Ordinal))
+                    {
+                        ParagraphFormat? probeFormat = null;
+                        TabStops? probeTabs = null;
+                        try
+                        {
+                            probeFormat = paragraph.Format;
+                            probeTabs = probeFormat.TabStops;
+                            TraceNumberingPerformance(
+                                $"      [perf] unnumber-direct-paragraph alignment={(int)probeFormat.Alignment} left={probeFormat.LeftIndent:0.###} right={probeFormat.RightIndent:0.###} first={probeFormat.FirstLineIndent:0.###} lineRule={(int)probeFormat.LineSpacingRule} line={probeFormat.LineSpacing:0.###} before={probeFormat.SpaceBefore:0.###} after={probeFormat.SpaceAfter:0.###} tabs={probeTabs.Count} keep={probeFormat.KeepTogether}/{probeFormat.KeepWithNext} pageBreak={probeFormat.PageBreakBefore} widow={probeFormat.WidowControl}");
+                        }
+                        finally
+                        {
+                            Release(probeTabs);
+                            Release(probeFormat);
+                        }
+                    }
                     var directResult = equationRange.Duplicate;
                     return directResult;
                 }
@@ -5751,11 +5793,26 @@ internal static partial class WordEquationNumbering
     {
         Range? activeRange = null;
         Bookmark? repairedBookmark = null;
+        var unnumberWatch = System.Diagnostics.Stopwatch.StartNew();
+        long unnumberCheckpoint = 0;
+        void TraceUnnumber(string stage)
+        {
+            if (!string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+                    "1",
+                    StringComparison.Ordinal))
+                return;
+            var elapsed = unnumberWatch.ElapsedMilliseconds;
+            TraceNumberingPerformance(
+                $"      [perf] unnumber-post.{stage}: +{elapsed - unnumberCheckpoint}ms ({elapsed}ms)");
+            unnumberCheckpoint = elapsed;
+        }
         try
         {
             if (ContainsNativeOmml(formulaRange))
             {
                 activeRange = ResolveSingleNativeOmmlRange(formulaRange);
+                TraceUnnumber("initial-resolve");
                 var metadata = knownMetadata
                     ?? WordOmmlFormulaStore.TryRead(document, formulaId);
                 if (IsNumberedEquationTable(activeRange))
@@ -5773,24 +5830,40 @@ internal static partial class WordEquationNumbering
                             throw new InvalidOperationException(
                                 "VisualTeX could not safely remove the managed 1x3 OMML numbering table.");
                         Release(activeRange);
-                        activeRange = ResolveSingleNativeOmmlRange(standaloneRange);
+                        // TryConvertStandardNumberedOmmlTableToStandaloneDisplayParagraph
+                        // returns the exact preserved live Display OMath Range after
+                        // ConvertToText and separator cleanup. Re-resolving the same
+                        // OMath through Range.OMaths costs ~100ms in a 100-OMML
+                        // document and adds no identity information here.
+                        activeRange = standaloneRange;
+                        standaloneRange = null;
+                        TraceUnnumber("convert-live-range");
                     }
                     finally { Release(standaloneRange); }
-                    NormalizeCompactStandaloneNativeOmmlParagraph(activeRange);
-                    ConfigureEquationParagraph(activeRange, numbered: false);
-                    EnsureNumberedOmmlIsDisplay(activeRange);
-                    if (metadata is not null)
+                    if (!string.IsNullOrWhiteSpace(preparedStandaloneOmml))
+                    {
+                        FinalizeDirectUnnumberedOmmlParagraph(activeRange);
+                        TraceUnnumber("direct-paragraph-finalize");
+                    }
+                    else
+                    {
+                        NormalizeCompactStandaloneNativeOmmlParagraph(activeRange);
+                        TraceUnnumber("compact-paragraph");
+                        ConfigureEquationParagraph(activeRange, numbered: false);
+                        TraceUnnumber("configure-paragraph");
+                        EnsureNumberedOmmlIsDisplay(activeRange);
+                        TraceUnnumber("ensure-display");
+                    }
+                    if (metadata is not null && !deferMetadataPersistence)
                     {
                         repairedBookmark = WordOmmlFormulaStore.Wrap(
                             document,
                             activeRange,
                             metadata,
                             replaceExisting: true);
-                        if (!deferMetadataPersistence)
-                        {
-                            WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, activeRange);
-                            WordOmmlFormulaStore.Save(document, metadata);
-                        }
+                        TraceUnnumber("wrap-anchor");
+                        WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, activeRange);
+                        WordOmmlFormulaStore.Save(document, metadata);
                     }
                     formulaRange.SetRange(activeRange.Start, activeRange.End);
                     // Table dismantling stages the professional OMath through a
@@ -5961,6 +6034,49 @@ internal static partial class WordEquationNumbering
             Release(characterFont);
             Release(character);
             Release(rangeFont);
+        }
+    }
+
+    private static void FinalizeDirectUnnumberedOmmlParagraph(Range formulaRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        ParagraphFormat? format = null;
+        TabStops? tabStops = null;
+        try
+        {
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The direct-SEQ table did not flatten to one formula paragraph.");
+            paragraph = paragraphs[1];
+            format = paragraph.Format;
+
+            // The managed 1x3 host already normalized indents, spacing, list state
+            // and pagination flags when it was created. ConvertToText preserves
+            // those values; the only structural formatting it carries into the
+            // standalone paragraph is the table's tab-stop set and left alignment.
+            // Clear exactly those two artifacts. Retain the old compact-line guard
+            // for historical tables whose mandatory separator paragraph used an
+            // Exactly-1pt line box.
+            tabStops = format.TabStops;
+            if (tabStops.Count > 0) tabStops.ClearAll();
+            format.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
+            if (format.LineSpacingRule == WdLineSpacing.wdLineSpaceExactly
+                && format.LineSpacing <= 2.01f)
+            {
+                format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                format.SpaceBefore = 0f;
+                format.SpaceAfter = 0f;
+                try { format.DisableLineHeightGrid = -1; } catch { }
+            }
+        }
+        finally
+        {
+            Release(tabStops);
+            Release(format);
+            Release(paragraph);
+            Release(paragraphs);
         }
     }
 

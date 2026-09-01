@@ -645,7 +645,13 @@ internal static class WordOmmlConverter
         {
             try
             {
-                var imported = !display && replaceTarget
+                var directInlineReplacement = !display
+                    && replaceTarget
+                    && !string.Equals(
+                        Environment.GetEnvironmentVariable("VISUALTEX_DIRECT_INLINE_OMML_INSERT"),
+                        "0",
+                        StringComparison.Ordinal);
+                var imported = !display && replaceTarget && !directInlineReplacement
                     ? InsertBookmarkedFileThroughScratchDocument(
                         application,
                         targetDocument,
@@ -1329,6 +1335,7 @@ internal static class WordOmmlConverter
         var omml = ExtractSingleOMath(transformed);
         omml = RestoreExtendedIntegralCharacters(omml, placeholderResult.NaryCharacters);
         omml = NormalizeExplicitUprightRuns(omml, mathMl);
+        omml = NormalizeAppliedFunctionStructures(omml, mathMl);
         omml = NormalizeExplicitTableColumnAlignment(omml, mathMl);
         omml = NormalizeOmmlPlaceholderVisibility(omml);
         omml = NormalizeDisplayNaryOmml(omml, display);
@@ -1648,54 +1655,423 @@ internal static class WordOmmlConverter
 
         XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
         var mathMlDocument = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
-        var uprightTokens = mathMlDocument
-            .Descendants()
-            .Where(element =>
-            {
-                if (element.Name.Namespace != presentationMath) return false;
-                var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
-                return variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
-                    || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
-            })
-            .Select(element => element.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToHashSet(StringComparer.Ordinal);
+
+        static string CanonicalToken(string value) =>
+            new(value
+                .Where(character =>
+                    !char.IsWhiteSpace(character)
+                    && character is not '\u200B' and not '\u200C' and not '\u2060' and not '\uFEFF')
+                .ToArray());
+
+        static bool ContainsLetter(string value) => value.Any(char.IsLetter);
+
+        // m:nor is Office Math's "Normal Text" switch. It is correct for genuine
+        // prose produced by MathML mtext / LaTeX \\text{...}, but it must not be
+        // used merely to make a mathematical identifier upright. Office's stock
+        // MML2OMML transform unfortunately emits m:nor for several named functions
+        // (sin/log/exp/...) and older VisualTeX code also converted explicit
+        // mathvariant=normal identifiers (d/e/i from \\mathrm) to m:nor. Both cases
+        // bypass the document m:mathFont and make the token look like body text.
+        // Collect only source nodes that carry mathematical, not prose, semantics
+        // and normalize those target runs back to plain/upright Office Math.
+        var uprightTokens = new HashSet<string>(StringComparer.Ordinal);
+        var uprightWords = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var element in mathMlDocument.Descendants())
+        {
+            if (element.Name.Namespace != presentationMath
+                || element.Name == presentationMath + "mtext")
+                continue;
+
+            var text = element.Value;
+            if (string.IsNullOrWhiteSpace(text) || !ContainsLetter(text))
+                continue;
+
+            var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
+            var explicitlyUpright =
+                variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
+                || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
+            var namedIdentifier = element.Name == presentationMath + "mi"
+                && CanonicalToken(text).Length > 1;
+            var namedOperator = element.Name == presentationMath + "mo"
+                && string.Equals(
+                    element.Attribute("data-mjx-texclass")?.Value,
+                    "OP",
+                    StringComparison.OrdinalIgnoreCase);
+            var appliedFunction = element.Name == presentationMath + "mi"
+                && element.ElementsAfterSelf()
+                    .FirstOrDefault(candidate => candidate.Name.Namespace == presentationMath)
+                    is XElement next
+                && next.Name == presentationMath + "mo"
+                && string.Equals(next.Value, "\u2061", StringComparison.Ordinal);
+
+            if (!explicitlyUpright && !namedIdentifier && !namedOperator && !appliedFunction)
+                continue;
+
+            var canonical = CanonicalToken(text);
+            if (canonical.Length > 0) uprightTokens.Add(canonical);
+            foreach (Match match in Regex.Matches(text, @"\p{L}+"))
+                uprightWords.Add(match.Value);
+        }
         if (uprightTokens.Count == 0) return omml;
 
         var ommlDocument = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
         XNamespace math = MathNamespace;
         XNamespace word = WordNamespace;
-        foreach (var run in ommlDocument.Descendants(math + "r"))
+
+        void MakeMathUpright(XElement run)
         {
-            var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
-            if (!uprightTokens.Contains(text)) continue;
-
             var properties = run.Element(math + "rPr");
-            var plainStyle = properties?.Element(math + "sty");
-            if (plainStyle?.Attribute(math + "val")?.Value != "p") continue;
+            if (properties is null)
+            {
+                properties = new XElement(math + "rPr");
+                run.AddFirst(properties);
+            }
+            properties.Element(math + "nor")?.Remove();
+            var plainStyle = properties.Element(math + "sty");
+            if (plainStyle is null)
+            {
+                plainStyle = new XElement(math + "sty");
+                properties.AddFirst(plainStyle);
+            }
+            plainStyle.SetAttributeValue(math + "val", "p");
 
-            plainStyle.Remove();
-            if (properties!.Element(math + "nor") is null)
-                properties.AddFirst(new XElement(math + "nor"));
-
-            // Upright identifiers such as e, i and d are mathematical tokens,
-            // not prose. Word otherwise spell-checks the normal-style run and
-            // paints a red proofing underline below an otherwise correct OMML
-            // equation. Preserve the math style while explicitly disabling
-            // proofing for this run.
+            // These are still mathematical tokens, but spell checking them as
+            // prose is distracting. w:noProof does not change glyph selection, so
+            // keep it while the actual glyphs continue to come from m:mathFont.
             var wordProperties = run.Element(word + "rPr");
             if (wordProperties is null)
             {
                 wordProperties = new XElement(word + "rPr");
-                var mathProperties = run.Element(math + "rPr");
-                if (mathProperties is not null) mathProperties.AddAfterSelf(wordProperties);
-                else run.AddFirst(wordProperties);
+                properties.AddAfterSelf(wordProperties);
             }
             if (wordProperties.Element(word + "noProof") is null)
                 wordProperties.Add(new XElement(word + "noProof"));
         }
 
+        foreach (var run in ommlDocument.Descendants(math + "r").ToList())
+        {
+            var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
+            if (string.IsNullOrEmpty(text)) continue;
+            if (uprightTokens.Contains(CanonicalToken(text)))
+            {
+                MakeMathUpright(run);
+                continue;
+            }
+
+            // Office sometimes coalesces limit-style operators into a surrounding
+            // ordinary run (for example "...(x)+lim(x)+max(x)..."). In that case
+            // changing the whole run to plain style would incorrectly upright x and
+            // other variables. Split only the named operator words and preserve all
+            // original characters/properties on the surrounding segments.
+            var matches = Regex.Matches(text, @"\p{L}+")
+                .Cast<Match>()
+                .Where(match => uprightWords.Contains(match.Value))
+                .ToArray();
+            if (matches.Length == 0) continue;
+
+            var replacements = new List<XElement>();
+            var cursor = 0;
+            void AddSegment(string segment, bool upright)
+            {
+                if (segment.Length == 0) return;
+                var replacement = new XElement(run);
+                replacement.Elements(math + "t").Remove();
+                var textElement = new XElement(math + "t", segment);
+                if (char.IsWhiteSpace(segment[0])
+                    || char.IsWhiteSpace(segment[segment.Length - 1]))
+                    textElement.SetAttributeValue(XNamespace.Xml + "space", "preserve");
+                replacement.Add(textElement);
+                if (upright) MakeMathUpright(replacement);
+                replacements.Add(replacement);
+            }
+
+            foreach (var match in matches)
+            {
+                AddSegment(text.Substring(cursor, match.Index - cursor), upright: false);
+                AddSegment(match.Value, upright: true);
+                cursor = match.Index + match.Length;
+            }
+            AddSegment(text.Substring(cursor), upright: false);
+            run.ReplaceWith(replacements);
+        }
+
         return ommlDocument.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
+    }
+
+    internal static string NormalizeAppliedFunctionStructures(string omml, string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(omml)
+            || string.IsNullOrWhiteSpace(mathMl)
+            || (mathMl.IndexOf('\u2061') < 0
+                && mathMl.IndexOf("2061", StringComparison.OrdinalIgnoreCase) < 0))
+            return omml;
+
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        XNamespace math = MathNamespace;
+        var source = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+
+        var applications = new List<(string FunctionToken, string? Open, string? Close, int ArgumentTextElements)>();
+        foreach (var marker in source
+                     .Descendants(presentationMath + "mo")
+                     .Where(element => string.Equals(element.Value, "\u2061", StringComparison.Ordinal)))
+        {
+            var parent = marker.Parent;
+            if (parent is null) continue;
+            var siblings = parent.Elements().ToArray();
+            var markerIndex = Array.IndexOf(siblings, marker);
+            if (markerIndex <= 0 || markerIndex + 1 >= siblings.Length) continue;
+
+            var functionSource = siblings[markerIndex - 1];
+            var functionToken = functionSource
+                .DescendantsAndSelf()
+                .Where(element =>
+                    element.Name == presentationMath + "mi"
+                    || element.Name == presentationMath + "mo")
+                .Select(element => Regex.Match(element.Value, @"\p{L}+"))
+                .FirstOrDefault(match => match.Success)?
+                .Value ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(functionToken)) continue;
+
+            var argumentSource = siblings[markerIndex + 1];
+            string? open = null;
+            string? close = null;
+            if (argumentSource.Name == presentationMath + "mo")
+            {
+                (open, close) = argumentSource.Value switch
+                {
+                    "(" => ("(", ")"),
+                    "[" => ("[", "]"),
+                    "{" => ("{", "}"),
+                    _ => (null, null),
+                };
+            }
+
+            var simpleArgument = argumentSource.Name == presentationMath + "mi"
+                || argumentSource.Name == presentationMath + "mn"
+                || argumentSource.Name == presentationMath + "mo"
+                || argumentSource.Name == presentationMath + "mtext";
+            var argumentTextElements = simpleArgument && open is null
+                ? StringInfo.ParseCombiningCharacters(argumentSource.Value).Length
+                : 0;
+            applications.Add((functionToken, open, close, argumentTextElements));
+        }
+        if (applications.Count == 0) return omml;
+
+        var target = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+
+        static string RunText(XElement run, XNamespace mathNamespace) =>
+            string.Concat(run.Elements(mathNamespace + "t").Select(text => text.Value));
+
+        static XElement CloneRunWithText(
+            XElement sourceRun,
+            XNamespace mathNamespace,
+            string text)
+        {
+            var clone = new XElement(sourceRun);
+            clone.Elements(mathNamespace + "t").Remove();
+            var textElement = new XElement(mathNamespace + "t", text);
+            if (text.Length > 0
+                && (char.IsWhiteSpace(text[0]) || char.IsWhiteSpace(text[text.Length - 1])))
+                textElement.SetAttributeValue(XNamespace.Xml + "space", "preserve");
+            clone.Add(textElement);
+            return clone;
+        }
+
+        static int TextElementEnd(string value, int count)
+        {
+            if (string.IsNullOrEmpty(value) || count <= 0) return 0;
+            var starts = StringInfo.ParseCombiningCharacters(value);
+            if (starts.Length <= count) return value.Length;
+            return starts[count];
+        }
+
+        static int FindMatchingDelimiterEnd(
+            string value,
+            string open,
+            string close,
+            ref int depth,
+            ref bool started)
+        {
+            for (var index = 0; index < value.Length; index++)
+            {
+                var character = value[index].ToString();
+                if (string.Equals(character, open, StringComparison.Ordinal))
+                {
+                    depth++;
+                    started = true;
+                }
+                else if (started && string.Equals(character, close, StringComparison.Ordinal))
+                {
+                    depth--;
+                    if (depth == 0) return index + 1;
+                }
+            }
+            return -1;
+        }
+
+        foreach (var application in applications)
+        {
+            var markerText = target
+                .Descendants(math + "t")
+                .FirstOrDefault(text => text.Value.IndexOf('\u2061') >= 0);
+            var markerRun = markerText?.Parent;
+            if (markerRun?.Name != math + "r") continue;
+            var parent = markerRun.Parent;
+            if (parent is null) continue;
+            var functionElement = markerRun.ElementsBeforeSelf().LastOrDefault();
+            if (functionElement is null) continue;
+            var functionVisibleText = string.Concat(
+                functionElement.Descendants(math + "t").Select(text => text.Value));
+            if (functionVisibleText.IndexOf(
+                    application.FunctionToken,
+                    StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            var markerRunText = RunText(markerRun, math);
+            var markerIndex = markerRunText.IndexOf('\u2061');
+            if (markerIndex < 0) continue;
+            // NormalizeExplicitUprightRuns deliberately split the function name
+            // into its own m:r, so ApplyFunction must begin the following run.
+            // Anything else is an unfamiliar Office-XSL shape and is left intact.
+            if (markerIndex != 0) continue;
+            var afterMarker = markerRunText.Substring(1);
+            var argumentElements = new List<XElement>();
+            var consumed = new List<XElement> { markerRun };
+            XElement? tail = null;
+            var completed = false;
+
+            if (application.Open is not null && application.Close is not null)
+            {
+                var depth = 0;
+                var started = false;
+                var end = FindMatchingDelimiterEnd(
+                    afterMarker,
+                    application.Open,
+                    application.Close,
+                    ref depth,
+                    ref started);
+                if (end >= 0)
+                {
+                    argumentElements.Add(CloneRunWithText(
+                        markerRun,
+                        math,
+                        afterMarker.Substring(0, end)));
+                    if (end < afterMarker.Length)
+                        tail = CloneRunWithText(markerRun, math, afterMarker.Substring(end));
+                    completed = true;
+                }
+                else if (started)
+                {
+                    if (afterMarker.Length > 0)
+                        argumentElements.Add(CloneRunWithText(markerRun, math, afterMarker));
+                    foreach (var sibling in markerRun.ElementsAfterSelf().ToArray())
+                    {
+                        if (sibling.Name == math + "r")
+                        {
+                            var siblingText = RunText(sibling, math);
+                            end = FindMatchingDelimiterEnd(
+                                siblingText,
+                                application.Open,
+                                application.Close,
+                                ref depth,
+                                ref started);
+                            consumed.Add(sibling);
+                            if (end >= 0)
+                            {
+                                if (end > 0)
+                                    argumentElements.Add(CloneRunWithText(
+                                        sibling,
+                                        math,
+                                        siblingText.Substring(0, end)));
+                                if (end < siblingText.Length)
+                                    tail = CloneRunWithText(sibling, math, siblingText.Substring(end));
+                                completed = true;
+                                break;
+                            }
+                            argumentElements.Add(new XElement(sibling));
+                            continue;
+                        }
+
+                        var visible = string.Concat(
+                            sibling.Descendants(math + "t").Select(text => text.Value));
+                        _ = FindMatchingDelimiterEnd(
+                            visible,
+                            application.Open,
+                            application.Close,
+                            ref depth,
+                            ref started);
+                        consumed.Add(sibling);
+                        argumentElements.Add(new XElement(sibling));
+                        if (started && depth == 0)
+                        {
+                            completed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var sourceTextElements = Math.Max(0, application.ArgumentTextElements);
+                if (afterMarker.Length > 0)
+                {
+                    var take = sourceTextElements > 0
+                        ? TextElementEnd(afterMarker, sourceTextElements)
+                        : TextElementEnd(afterMarker, 1);
+                    if (take > 0)
+                    {
+                        argumentElements.Add(CloneRunWithText(
+                            markerRun,
+                            math,
+                            afterMarker.Substring(0, take)));
+                        if (take < afterMarker.Length)
+                            tail = CloneRunWithText(markerRun, math, afterMarker.Substring(take));
+                        completed = true;
+                    }
+                }
+                else
+                {
+                    var sibling = markerRun.ElementsAfterSelf().FirstOrDefault();
+                    if (sibling is not null)
+                    {
+                        consumed.Add(sibling);
+                        if (sibling.Name == math + "r" && sourceTextElements > 0)
+                        {
+                            var siblingText = RunText(sibling, math);
+                            var take = TextElementEnd(siblingText, sourceTextElements);
+                            if (take > 0)
+                            {
+                                argumentElements.Add(CloneRunWithText(
+                                    sibling,
+                                    math,
+                                    siblingText.Substring(0, take)));
+                                if (take < siblingText.Length)
+                                    tail = CloneRunWithText(sibling, math, siblingText.Substring(take));
+                                completed = true;
+                            }
+                        }
+                        else
+                        {
+                            argumentElements.Add(new XElement(sibling));
+                            completed = true;
+                        }
+                    }
+                }
+            }
+
+            if (!completed || argumentElements.Count == 0) continue;
+
+            var function = new XElement(
+                math + "func",
+                new XElement(math + "fName", new XElement(functionElement)),
+                new XElement(math + "e", argumentElements));
+            functionElement.ReplaceWith(function);
+            foreach (var element in consumed)
+                element.Remove();
+            if (tail is not null) function.AddAfterSelf(tail);
+        }
+
+        return target.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
     }
 
     internal static string NormalizeMathMlAccents(string mathMl)

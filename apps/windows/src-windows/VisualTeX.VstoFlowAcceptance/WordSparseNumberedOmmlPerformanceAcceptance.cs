@@ -58,6 +58,33 @@ internal static partial class Program
             AssertEqual(4, initialTableCount,
                 "Sparse-numbering performance fixture did not create four numbered hosts.");
 
+            // The hundred-formula fixture intentionally keeps one real inline OMath
+            // and ninety-nine displays so all three Apply hot paths are measured in
+            // the same document scale the user reported. These are content edits,
+            // not create-time measurements.
+            var inlineEditMilliseconds = MeasureSparseOmmlContentEdit(
+                service,
+                document,
+                formulaIds[99],
+                displayMode: "inline",
+                numbered: false,
+                editedMathMl: QuadraticFormulaMathMl()
+                    .Replace(" display=\"block\"", string.Empty)
+                    .Replace("</mrow></math>", "<mo>+</mo><mn>7</mn></mrow></math>"));
+            AssertTrue(inlineEditMilliseconds < 700,
+                $"Inline OMML content edit exceeded the 700ms target: {inlineEditMilliseconds}ms.");
+
+            var unnumberedDisplayEditMilliseconds = MeasureSparseOmmlContentEdit(
+                service,
+                document,
+                formulaIds[49],
+                displayMode: "block",
+                numbered: false,
+                editedMathMl: QuadraticFormulaMathMl()
+                    .Replace("</mrow></math>", "<mo>+</mo><mn>8</mn></mrow></math>"));
+            AssertTrue(unnumberedDisplayEditMilliseconds < 700,
+                $"Unnumbered display OMML content edit exceeded the 700ms target: {unnumberedDisplayEditMilliseconds}ms.");
+
             var middle = document.Content.End / 2;
             var candidates = new List<(
                 string FormulaId,
@@ -229,8 +256,8 @@ internal static partial class Program
                 target.FormulaId,
                 "sparse-numbering numbered OMML content edit",
                 updateReference: false);
-            AssertTrue(numberedEditWatch.ElapsedMilliseconds < 5000,
-                $"Numbered OMML content edit remained too slow: {numberedEditWatch.ElapsedMilliseconds}ms.");
+            AssertTrue(numberedEditWatch.ElapsedMilliseconds < 800,
+                $"Numbered OMML content edit exceeded the 800ms target: {numberedEditWatch.ElapsedMilliseconds}ms.");
 
             var editedNumberedMetadata = WordOmmlFormulaStore.TryRead(
                     document,
@@ -346,6 +373,7 @@ internal static partial class Program
             document.Save();
             Console.WriteLine(
                 $"Sparse numbered OMML performance passed: totalOMML={initialMathCount}, numbered={initialTableCount + 1}, "
+                + $"inlineEdit={inlineEditMilliseconds}ms, unnumberedDisplayEdit={unnumberedDisplayEditMilliseconds}ms, "
                 + $"addNumber={addNumberWatch.ElapsedMilliseconds}ms, numberedEdit={numberedEditWatch.ElapsedMilliseconds}ms, "
                 + $"removeNumber={removeNumberWatch.ElapsedMilliseconds}ms, restoreNumber={restoreNumberWatch.ElapsedMilliseconds}ms, "
                 + $"update={updateWatch.ElapsedMilliseconds}ms, format={formatWatch.ElapsedMilliseconds}ms, "
@@ -381,6 +409,13 @@ internal static partial class Program
         var body = new StringBuilder(formulaCount * (semanticOmml.Length + 240));
         for (var index = 0; index < formulaCount; index++)
         {
+            if (index == formulaCount - 1)
+            {
+                body.Append("<w:p><w:r><w:t xml:space=\"preserve\">Inline context: </w:t></w:r>")
+                    .Append(semanticOmml)
+                    .Append("<w:r><w:t xml:space=\"preserve\"> end.</w:t></w:r></w:p>");
+                continue;
+            }
             body.Append("<w:p><w:r><w:t xml:space=\"preserve\">Context paragraph ")
                 .Append(index + 1)
                 .Append(" for the sparse numbering performance fixture.</w:t></w:r></w:p>");
@@ -420,7 +455,10 @@ internal static partial class Program
                 try
                 {
                     math = maths[index];
-                    math.Type = Word.WdOMathType.wdOMathDisplay;
+                    var isInline = index == maths.Count;
+                    math.Type = isInline
+                        ? Word.WdOMathType.wdOMathInline
+                        : Word.WdOMathType.wdOMathDisplay;
                     range = math.Range.Duplicate;
                     var formulaId = Guid.NewGuid().ToString("D");
                     var latex = $@"x_{{{index}}}=\frac{{-b\pm\sqrt{{b^2-4ac}}}}{{2a}}";
@@ -434,7 +472,7 @@ internal static partial class Program
                             new() { Id = Guid.NewGuid().ToString("D"), Latex = latex },
                         },
                         CodeFormat = "latex",
-                        DisplayMode = "block",
+                        DisplayMode = isInline ? "inline" : "block",
                         Numbered = false,
                         FontSizePt = 10.5,
                         FormulaLetterFont = "katex",
@@ -531,6 +569,80 @@ internal static partial class Program
                 Release(tableRange);
                 Release(table);
             }
+        }
+    }
+
+    private static long MeasureSparseOmmlContentEdit(
+        WordFormulaService service,
+        Word.Document document,
+        string formulaId,
+        string displayMode,
+        bool numbered,
+        string editedMathMl)
+    {
+        Word.Bookmark? bookmark = null;
+        Word.Range? range = null;
+        Word.Bookmark? updatedBookmark = null;
+        Word.Range? updatedRange = null;
+        Word.OMaths? updatedMaths = null;
+        Word.OMath? updatedMath = null;
+        try
+        {
+            var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
+                ?? throw new InvalidDataException(
+                    "Synthetic OMML performance formula metadata is missing.");
+            bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
+                ?? throw new InvalidDataException(
+                    "Synthetic OMML performance formula bookmark is missing.");
+            range = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            var session = CreateNumberedOmmlTabSession(
+                formulaId,
+                document.FullName,
+                range.Start,
+                range.End,
+                latex: metadata.Latex + "+1",
+                originalMetadata: metadata);
+            session.DisplayMode = displayMode;
+            session.Numbered = numbered;
+            session.FontSizePt = metadata.FontSizePt ?? FormulaFontSize.DefaultPt;
+            if (session.ExportResult is not null)
+            {
+                session.ExportResult.FormulaLetterFont =
+                    metadata.FormulaLetterFont ?? "katex";
+                session.ExportResult.FormulaChineseFont =
+                    metadata.FormulaChineseFont ?? "system";
+            }
+
+            var watch = Stopwatch.StartNew();
+            service.ReplaceOmml(session, editedMathMl);
+            watch.Stop();
+
+            updatedBookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
+                ?? throw new InvalidDataException(
+                    "OMML content edit lost its formula bookmark.");
+            updatedRange = WordOmmlFormulaStore.GetEquationRange(updatedBookmark);
+            AssertTrue(!(bool)updatedRange.get_Information(Word.WdInformation.wdWithInTable),
+                $"{displayMode} unnumbered OMML content edit unexpectedly entered a table.");
+            updatedMaths = updatedRange.OMaths;
+            AssertEqual(1, updatedMaths.Count,
+                $"{displayMode} OMML content edit no longer contains exactly one OMath.");
+            updatedMath = updatedMaths[1];
+            AssertEqual(
+                string.Equals(displayMode, "inline", StringComparison.Ordinal)
+                    ? Word.WdOMathType.wdOMathInline
+                    : Word.WdOMathType.wdOMathDisplay,
+                updatedMath.Type,
+                $"{displayMode} OMML content edit changed the native OMath type.");
+            return watch.ElapsedMilliseconds;
+        }
+        finally
+        {
+            Release(updatedMath);
+            Release(updatedMaths);
+            Release(updatedRange);
+            Release(updatedBookmark);
+            Release(range);
+            Release(bookmark);
         }
     }
 

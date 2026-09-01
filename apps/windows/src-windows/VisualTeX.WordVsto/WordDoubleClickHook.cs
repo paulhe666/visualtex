@@ -12,7 +12,23 @@ internal sealed class WordDoubleClickHook : IDisposable
     private const int SmCxDoubleClick = 36;
     private const int SmCyDoubleClick = 37;
     private static readonly object TraceGate = new();
-    private readonly Func<int, int, bool> _shouldHandle;
+    internal readonly struct NativeOleDecision
+    {
+        internal NativeOleDecision(bool nativeOleTarget, bool suppressSecondButtonDown)
+        {
+            NativeOleTarget = nativeOleTarget;
+            SuppressSecondButtonDown = suppressSecondButtonDown;
+        }
+
+        internal bool NativeOleTarget { get; }
+        internal bool SuppressSecondButtonDown { get; }
+
+        internal static NativeOleDecision PassThrough => new(false, false);
+        internal static NativeOleDecision ObserveNativeOle => new(true, false);
+        internal static NativeOleDecision InterceptNativeOle => new(true, true);
+    }
+
+    private readonly Func<int, int, NativeOleDecision> _shouldHandle;
     private readonly Action<bool, int, int> _callbackAction;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new(false);
@@ -24,7 +40,7 @@ internal sealed class WordDoubleClickHook : IDisposable
     private int _lastClickY = int.MinValue;
 
     public WordDoubleClickHook(
-        Func<int, int, bool> shouldHandle,
+        Func<int, int, NativeOleDecision> shouldHandle,
         Action<bool, int, int> callbackAction)
     {
         _shouldHandle = shouldHandle;
@@ -92,14 +108,23 @@ internal sealed class WordDoubleClickHook : IDisposable
             return CallNextHookEx(_hook, code, wParam, lParam);
         var now = Stopwatch.GetTimestamp();
         var previous = Interlocked.Read(ref _lastClickTimestamp);
-        var elapsedMilliseconds = previous == 0
+        var hasPreviousClick = previous != 0;
+        var elapsedMilliseconds = !hasPreviousClick
             ? double.PositiveInfinity
             : (now - previous) * 1000d / Stopwatch.Frequency;
-        var withinTime = elapsedMilliseconds <= GetDoubleClickTime();
-        var withinX = Math.Abs(input.Pt.X - _lastClickX)
-            <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
-        var withinY = Math.Abs(input.Pt.Y - _lastClickY)
-            <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
+        var withinTime = hasPreviousClick
+            && elapsedMilliseconds <= GetDoubleClickTime();
+        // The sentinel coordinates begin at int.MinValue. Never subtract them in
+        // 32-bit arithmetic on the first click: e.g. x - int.MinValue can overflow
+        // before Math.Abs even runs, terminating the hook thread and leaving every
+        // later MathType/VisualTeX double-click inert. Only compare coordinates when
+        // a real previous click exists, and widen the subtraction to Int64.
+        var withinX = hasPreviousClick
+            && Math.Abs((long)input.Pt.X - _lastClickX)
+                <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
+        var withinY = hasPreviousClick
+            && Math.Abs((long)input.Pt.Y - _lastClickY)
+                <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
 
         _lastClickX = input.Pt.X;
         _lastClickY = input.Pt.Y;
@@ -108,30 +133,34 @@ internal sealed class WordDoubleClickHook : IDisposable
             return CallNextHookEx(_hook, code, wParam, lParam);
 
         Interlocked.Exchange(ref _lastClickTimestamp, 0);
-        bool interceptNativeOle;
-        try { interceptNativeOle = _shouldHandle(input.Pt.X, input.Pt.Y); }
+        NativeOleDecision decision;
+        try { decision = _shouldHandle(input.Pt.X, input.Pt.Y); }
         catch (Exception error)
         {
             TraceMessage($"hit-test-error {error.GetType().Name}: {error.Message}");
-            interceptNativeOle = false;
+            decision = NativeOleDecision.PassThrough;
         }
         TraceMessage(
-            $"double-click elapsedMs={elapsedMilliseconds:0.###} withinX={withinX} withinY={withinY} interceptNativeOle={interceptNativeOle}");
+            $"double-click elapsedMs={elapsedMilliseconds:0.###} withinX={withinX} withinY={withinY} "
+            + $"nativeOleTarget={decision.NativeOleTarget} suppressSecondDown={decision.SuppressSecondButtonDown}");
 
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            // OLE needs its second button-down suppressed so Word cannot invoke
-            // the object's default verb. OMML must keep Word's native click
-            // processing, then be identified from the settled Selection on the
-            // Office UI thread because Office 2021 does not reliably raise
-            // WindowBeforeDoubleClick for native equations.
-            Thread.Sleep(interceptNativeOle ? 40 : 90);
+            // VisualTeX OLE still needs its second button-down suppressed so Word
+            // cannot invoke the object's default verb. MathType is different: the
+            // hook observes the native OLE and dispatches the same VisualTeX edit
+            // callback, but deliberately lets Word receive the second button-down
+            // so WindowBeforeDoubleClick can synchronously cancel native MathType
+            // activation as a second independent completion route. OMML likewise
+            // keeps Word's native click processing and is identified from the
+            // settled Selection on the Office UI thread.
+            Thread.Sleep(decision.NativeOleTarget ? 40 : 90);
             try
             {
                 TraceMessage(
-                    $"callback-begin interceptedNativeOle={interceptNativeOle} "
+                    $"callback-begin interceptedNativeOle={decision.NativeOleTarget} "
                     + $"x={input.Pt.X} y={input.Pt.Y}");
-                _callbackAction(interceptNativeOle, input.Pt.X, input.Pt.Y);
+                _callbackAction(decision.NativeOleTarget, input.Pt.X, input.Pt.Y);
                 TraceMessage("callback-end");
             }
             catch (Exception error)
@@ -140,7 +169,7 @@ internal sealed class WordDoubleClickHook : IDisposable
             }
         });
 
-        if (!interceptNativeOle)
+        if (!decision.SuppressSecondButtonDown)
             return CallNextHookEx(_hook, code, wParam, lParam);
 
         TraceMessage("second-button-down-suppressed");

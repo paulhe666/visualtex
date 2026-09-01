@@ -166,6 +166,12 @@ internal static partial class Program
                 client,
                 editSessionId,
                 TimeSpan.FromSeconds(15));
+            Thread.Sleep(750);
+            var sessionsAfterVisualTeXDoubleClick = SnapshotSessionIds();
+            AssertEqual(
+                1,
+                sessionsAfterVisualTeXDoubleClick.Except(sessionsBefore).Count(),
+                "One real MathType double-click created duplicate VisualTeX edit Sessions.");
             AssertEqual("edit", editSession.Mode,
                 "Real MathType OLE double-click did not create an edit Session.");
             AssertEqual(FormulaOleContract.MathTypeOleMode, editSession.ObjectMode,
@@ -245,18 +251,58 @@ internal static partial class Program
             wordWindowHandle = new IntPtr(window.Hwnd);
             SetWindowPos(wordWindowHandle, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSizeShow);
             SetForegroundWindow(wordWindowHandle);
+            if (GetWindowRect(wordWindowHandle, out var reopenedWordWindowRectangle))
+            {
+                SetCursorPos(
+                    reopenedWordWindowRectangle.Left
+                        + Math.Max(40, (reopenedWordWindowRectangle.Right - reopenedWordWindowRectangle.Left) / 2),
+                    reopenedWordWindowRectangle.Top + 18);
+                mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+            }
             WinForms.Application.DoEvents();
-            Thread.Sleep(500);
+            Thread.Sleep(650);
             range.Select();
+            window.Activate();
+            SetForegroundWindow(wordWindowHandle);
+            WinForms.Application.DoEvents();
+            Thread.Sleep(250);
             window.GetPoint(out left, out top, out width, out height, range);
             if (width <= 0 || height <= 0)
                 throw new InvalidDataException("Word did not return a current reopened MathType OLE rectangle before double-click.");
 
             Console.WriteLine("[MathType real double-click 6/7] Real-double-clicking the edited MathType OLE a second time...");
+            // Saving/reopening can temporarily move foreground ownership away from
+            // Word even after SetForegroundWindow succeeds. Prime the exact OLE
+            // center with one real click, wait past the system double-click window,
+            // then re-resolve both Selection and screen rectangle before sending
+            // the actual double-click. This mirrors the proven installed re-edit
+            // acceptance and prevents a false negative where mouse_event clicks the
+            // stale cursor position instead of the reopened equation.
+            centerX = left + width / 2;
+            centerY = top + height / 2;
+            if (!SetCursorPos(centerX, centerY))
+                throw new InvalidOperationException(
+                    $"Windows refused to move the cursor to the reopened MathType OLE center {centerX},{centerY}.");
+            mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(900);
+            range.Select();
+            window.Activate();
+            SetForegroundWindow(wordWindowHandle);
+            WinForms.Application.DoEvents();
+            Thread.Sleep(250);
+            window.GetPoint(out left, out top, out width, out height, range);
+            if (width <= 0 || height <= 0)
+                throw new InvalidDataException(
+                    "Word did not return a current reopened MathType OLE rectangle after foreground priming.");
+
             var reopenSessionsBefore = SnapshotSessionIds();
             centerX = left + width / 2;
             centerY = top + height / 2;
-            SetCursorPos(centerX, centerY);
+            if (!SetCursorPos(centerX, centerY))
+                throw new InvalidOperationException(
+                    $"Windows refused the final cursor move to the reopened MathType OLE center {centerX},{centerY}.");
             Thread.Sleep(120);
             for (var click = 0; click < 2; click++)
             {

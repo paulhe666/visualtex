@@ -2089,6 +2089,15 @@ internal sealed partial class WordFormulaService
                         && !target.Numbered
                         && !target.SourceIsManagedOmml
                         && !HasLocalVisualTeXOmmlAnchor(document, target);
+                    var useDirectSingleManagedDisplayOmmlDelete = targetIsMathType
+                        && plan.Targets.Count == 1
+                        && sourceIsOmml
+                        && !target.Numbered
+                        && target.SourceIsManagedOmml
+                        && string.Equals(
+                            target.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal);
                     var useDirectSingleManagedNumberedOmmlDelete = targetIsMathType
                         && plan.Targets.Count == 1
                         && sourceIsOmml
@@ -2113,6 +2122,10 @@ internal sealed partial class WordFormulaService
                             StringComparison.Ordinal);
                     var insertionStart = useDirectSingleNativeOmmlDelete
                         ? DeleteSingleNativeOmmlSourceDirect(document, target)
+                        : useDirectSingleManagedDisplayOmmlDelete
+                            ? DeleteSingleManagedDisplayOmmlSourceDirect(
+                                document,
+                                target)
                         : useDirectSingleManagedNumberedOmmlDelete
                             ? DeleteSingleManagedNumberedOmmlSourceDirect(
                                 document,
@@ -2133,6 +2146,9 @@ internal sealed partial class WordFormulaService
                     if (useDirectSingleNativeOmmlDelete)
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-direct-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
+                    else if (useDirectSingleManagedDisplayOmmlDelete)
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-direct-managed-display-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
                     else if (useDirectSingleManagedNumberedOmmlDelete)
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-direct-numbered-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
@@ -2306,7 +2322,8 @@ internal sealed partial class WordFormulaService
                             plan.SourceMode,
                             target,
                             "post-transaction");
-                    if (useDirectSingleManagedNumberedOmmlDelete)
+                    if (useDirectSingleManagedDisplayOmmlDelete
+                        || useDirectSingleManagedNumberedOmmlDelete)
                     {
                         // Keep the managed OMML metadata intact until the new
                         // Equation.DSMT4 object has survived its Word transaction.
@@ -2317,7 +2334,7 @@ internal sealed partial class WordFormulaService
                             document,
                             target.SourceFormulaId);
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-direct-numbered-omml-metadata-deleted formulaId={target.SourceFormulaId}");
+                            $"format-conversion-direct-managed-omml-metadata-deleted formulaId={target.SourceFormulaId} numbered={target.Numbered}");
                     }
                     TracePerf("verify-target");
                     if (traceObjectCounts)
@@ -2341,6 +2358,23 @@ internal sealed partial class WordFormulaService
                                 error);
                         try
                         {
+                            if (targetIsMathType
+                                && plan.Targets.Count == 1
+                                && string.Equals(
+                                    plan.SourceMode,
+                                    FormulaOleContract.WordOmmlMode,
+                                    StringComparison.Ordinal)
+                                && target.SourceIsManagedOmml
+                                && !target.Numbered
+                                && string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.Ordinal))
+                            {
+                                RepairManagedOmmlIdentityAfterDirectRollback(
+                                    document,
+                                    target);
+                            }
                             ValidateSimpleSourceHost(document, plan.SourceMode, target);
                             RemoveResidualFormatConversionBridgeAfterRollback(
                                 document,
@@ -3922,6 +3956,66 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static void RepairManagedOmmlIdentityAfterDirectRollback(
+        Document document,
+        WordFormulaFormatConversionTarget target)
+    {
+        Bookmark? existing = null;
+        Range? candidate = null;
+        Bookmark? repaired = null;
+        try
+        {
+            existing = WordOmmlFormulaStore.FindByFormulaId(
+                document,
+                target.SourceFormulaId);
+            if (existing is not null) return;
+
+            candidate = TryResolveOmmlRangeReference(
+                document,
+                target.SourceObjectId)
+                ?? throw new InvalidOperationException(
+                    "Word restored the managed OMML after rollback, but its original range could not be resolved for VTOMML identity repair.");
+            OMaths? maths = null;
+            OMath? math = null;
+            Range? exactRange = null;
+            try
+            {
+                maths = candidate.OMaths;
+                if (maths.Count != 1)
+                    throw new InvalidOperationException(
+                        "Word rollback restored an ambiguous OMML range while repairing VTOMML identity.");
+                math = maths[1];
+                if (math.Type != WdOMathType.wdOMathDisplay)
+                    throw new InvalidOperationException(
+                        "Word rollback restored the managed block OMML with the wrong OMath type.");
+                exactRange = math.Range.Duplicate;
+                Release(candidate);
+                candidate = exactRange;
+                exactRange = null;
+            }
+            finally
+            {
+                Release(exactRange);
+                Release(math);
+                Release(maths);
+            }
+
+            repaired = WordOmmlFormulaStore.Wrap(
+                document,
+                candidate,
+                target.Metadata,
+                replaceExisting: true);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-managed-omml-rollback-id-repaired formulaId={target.SourceFormulaId} range={candidate.Start}:{candidate.End}");
+        }
+        finally
+        {
+            Release(repaired);
+            Release(candidate);
+            Release(existing);
+        }
+    }
+
     private Range DeleteSingleNativeOmmlSourceRange(
         Document document,
         WordFormulaFormatConversionTarget target)
@@ -3951,6 +4045,80 @@ internal sealed partial class WordFormulaService
             return start;
         }
         finally { Release(sourceRange); }
+    }
+
+    private int DeleteSingleManagedDisplayOmmlSourceDirect(
+        Document document,
+        WordFormulaFormatConversionTarget target)
+    {
+        if (!target.SourceIsManagedOmml
+            || target.Numbered
+            || !string.Equals(target.DisplayMode, "block", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "The managed display OMML fast path requires one unnumbered VisualTeX display OMath.");
+
+        Range? sourceRange = null;
+        OMaths? maths = null;
+        OMath? math = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? prefix = null;
+        Range? suffix = null;
+        try
+        {
+            sourceRange = ResolveSimpleOmmlSourceRange(document, target)
+                ?? throw new InvalidOperationException(
+                    "The managed display OMML source moved before direct replacement.");
+            if ((bool)sourceRange.get_Information(WdInformation.wdWithInTable))
+                throw new InvalidOperationException(
+                    "The managed unnumbered display OMML unexpectedly belongs to a table.");
+            maths = sourceRange.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidOperationException(
+                    "The managed display OMML source no longer contains exactly one OMath.");
+            math = maths[1];
+            if (math.Type != WdOMathType.wdOMathDisplay)
+                throw new InvalidOperationException(
+                    "The managed OMML direct replacement source is no longer Word display math.");
+
+            paragraphs = sourceRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The managed display OMML source spans multiple paragraphs.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            prefix = document.Range(paragraphRange.Start, sourceRange.Start);
+            suffix = document.Range(
+                sourceRange.End,
+                Math.Max(sourceRange.End, paragraphRange.End - 1));
+            if (!IsRollbackParagraphAdornment(prefix.Text)
+                || !IsRollbackParagraphAdornment(suffix.Text))
+                throw new InvalidOperationException(
+                    "The managed display OMML paragraph contains ordinary user text and cannot use direct replacement.");
+
+            var start = sourceRange.Start;
+            // The VTOMML identity belongs to the source host. Keep its CustomXML
+            // metadata until the MathType target has survived the Word transaction,
+            // but remove the bookmark and the native OMath inside the same Undo
+            // record. Word can then restore both atomically if insertion fails.
+            TryDeleteBookmark(
+                document,
+                WordOmmlFormulaStore.BookmarkName(target.SourceFormulaId));
+            sourceRange.Delete();
+            return start;
+        }
+        finally
+        {
+            Release(suffix);
+            Release(prefix);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(math);
+            Release(maths);
+            Release(sourceRange);
+        }
     }
 
     private bool HasLegacyNumberedOmmlTable(

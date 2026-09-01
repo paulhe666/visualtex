@@ -299,7 +299,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private readonly object _nativeOleTargetGate = new();
     private readonly object _mouseDoubleClickGate = new();
     private CancellationTokenSource? _lifetime;
-    private string _lastDoubleClickFormulaId = string.Empty;
+    private string _lastDoubleClickIdentity = string.Empty;
     private DateTimeOffset _lastDoubleClickAt;
     private string? _activeSessionId;
     private CancellationTokenSource? _activeSessionCancellation;
@@ -1006,8 +1006,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // activating its IDataObject on a single click can synchronously open
             // the external OLE server. Cache MathType's rectangle using only its
             // ProgID/CLSID and defer content import until the actual double-click.
-            var isMathTypeOle = MathTypeDoubleClickPreference.IsEnabled()
-                && service.IsSelectedMathTypeOle();
+            // Cache MathType geometry regardless of the preference value. When
+            // VisualTeX double-click editing is disabled we still need the exact
+            // Equation.DSMT4 hit rectangle so the low-level hook can deterministically
+            // invoke MathType's native Open verb instead of relying on Word's flaky
+            // built-in OLE double-click activation.
+            var isMathTypeOle = service.IsSelectedMathTypeOle();
             OfficeSelection? selected = null;
             if (!isMathTypeOle)
             {
@@ -1077,27 +1081,62 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            // The low-level mouse hook owns MathType OLE double-click routing
-            // only while the user preference is enabled. When disabled, return
-            // before ReadSelection() so this Word event cannot cancel or activate
-            // the object indirectly; the complete native double-click must be
-            // released to Word/MathType unchanged.
+            // MathType OLE double-click has two explicit modes. When VisualTeX
+            // editing is enabled, the hook observes the native OLE and this Word
+            // event is a synchronous fallback that opens VisualTeX. When disabled,
+            // a healthy hook suppresses the second button-down and explicitly runs
+            // MathType's native Open verb; only if the hook is unavailable do we
+            // release the full double-click back to Word.
             var selectedMathTypeOle = _formulaService?.IsSelectedMathTypeOle() == true;
             if (selectedMathTypeOle)
             {
                 if (!MathTypeDoubleClickPreference.IsEnabled())
                 {
+                    cancel = _doubleClickHook is not null;
+                    if (!cancel) ClearNativeOleTarget();
+                    WordDoubleClickHook.TraceMessage(
+                        cancel
+                            ? "window-before-double-click-mathtype-native-owned-by-hook"
+                            : "window-before-double-click-mathtype-released-to-native-editor");
+                    return;
+                }
+
+                // Do not make successful MathType double-click editing depend on
+                // the low-level mouse hook completing its second-click callback.
+                // Some real Word sessions keep the hook object alive but fail to
+                // deliver that callback; the old code still cancelled Word's native
+                // double-click here and then returned, leaving the user with no
+                // editor at all. WindowBeforeDoubleClick already proves that Word
+                // resolved the click onto the selected Equation.DSMT4 object, so
+                // use it as a deterministic fallback (and, in practice, primary
+                // completion path). The hook may have started the same session a
+                // few milliseconds earlier; TryBeginDoubleClickSession deduplicates
+                // by FormulaId for one second, so the two routes cannot open two
+                // editors.
+                var selectedMathType = _formulaService?.ReadSelection(selection);
+                if (selectedMathType?.Metadata is null
+                    || string.IsNullOrWhiteSpace(selectedMathType.FormulaId)
+                    || !string.Equals(
+                        selectedMathType.ObjectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal)
+                    || !WordDoubleClickRouting.ShouldOpenVisualTeX(selectedMathType))
+                {
+                    // If the object cannot be safely imported into VisualTeX, do
+                    // not swallow Word's normal MathType activation.
                     cancel = false;
                     ClearNativeOleTarget();
                     WordDoubleClickHook.TraceMessage(
-                        "window-before-double-click-mathtype-released-to-native-editor");
+                        "window-before-double-click-mathtype-fallback-to-native");
                     return;
                 }
-                if (_doubleClickHook is not null)
-                {
-                    cancel = true;
-                    return;
-                }
+
+                cancel = true;
+                ClearNativeOleTarget();
+                var started = TryBeginDoubleClickSession(selectedMathType);
+                WordDoubleClickHook.TraceMessage(
+                    $"window-before-double-click-mathtype-visualtex started={started} hookPresent={_doubleClickHook is not null}");
+                return;
             }
             var selected = _formulaService?.ReadSelection(selection);
             if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
@@ -1130,23 +1169,45 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
-    private bool ShouldInterceptNativeOleDoubleClick(int screenX, int screenY)
+    private WordDoubleClickHook.NativeOleDecision ShouldInterceptNativeOleDoubleClick(
+        int screenX,
+        int screenY)
     {
         RememberMouseDoubleClickPoint(screenX, screenY);
         lock (_nativeOleTargetGate)
         {
-            if (_nativeOleTargetIsMathType
-                && !MathTypeDoubleClickPreference.IsEnabled())
-            {
-                _nativeOleTargetActive = false;
-                _nativeOleTargetIsMathType = false;
-                return false;
-            }
-            return _nativeOleTargetActive
+            var hitsCachedOle = _nativeOleTargetActive
                 && screenX >= _nativeOleTargetLeft
                 && screenX <= _nativeOleTargetRight
                 && screenY >= _nativeOleTargetTop
                 && screenY <= _nativeOleTargetBottom;
+            if (!hitsCachedOle)
+                return WordDoubleClickHook.NativeOleDecision.PassThrough;
+
+            if (_nativeOleTargetIsMathType)
+            {
+                if (!MathTypeDoubleClickPreference.IsEnabled())
+                {
+                    // Native MathType mode is explicit rather than passive. Word's
+                    // own Equation.DSMT4 double-click activation is intermittent on
+                    // Office 2021; suppress this second button-down and let the UI
+                    // callback invoke wdOLEVerbOpen exactly once.
+                    return WordDoubleClickHook.NativeOleDecision.InterceptNativeOle;
+                }
+
+                // MathType must never enter the old black-hole state where the
+                // low-level hook suppresses Word's second button-down and then an
+                // asynchronous callback fails to open VisualTeX. Observe and
+                // dispatch the MathType OLE here, but let Word receive the click so
+                // WindowBeforeDoubleClick can synchronously cancel native MathType
+                // activation and start the same edit Session as a redundant path.
+                return WordDoubleClickHook.NativeOleDecision.ObserveNativeOle;
+            }
+
+            // VisualTeX's own native OLE still needs the historical suppression:
+            // allowing Word to receive its complete double-click can activate the
+            // embedded server before VisualTeX has a chance to open the editor.
+            return WordDoubleClickHook.NativeOleDecision.InterceptNativeOle;
         }
     }
 
@@ -1165,6 +1226,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try
             {
+                if (interceptedNativeOle
+                    && !MathTypeDoubleClickPreference.IsEnabled()
+                    && service.IsSelectedMathTypeOle())
+                {
+                    var openedNative = service.OpenSelectedMathTypeNativeEditor();
+                    WordDoubleClickHook.TraceMessage(
+                        $"addin-native-mathtype-open started={openedNative}");
+                    return openedNative;
+                }
+
                 var selected = interceptedNativeOle
                     ? service.ReadSelection()
                     : service.ReadVisualTeXOmmlAtScreenPoint(screenX, screenY);
@@ -1222,11 +1293,24 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             || !WordDoubleClickRouting.ShouldOpenVisualTeX(selected))
             return false;
 
+        // MathType OLE is third-party owned, so ReadMetadata() deliberately creates
+        // a fresh transient FormulaId on every read. The low-level mouse hook and
+        // WindowBeforeDoubleClick can therefore observe the same Equation.DSMT4
+        // object with two different FormulaIds a few milliseconds apart. Deduplicate
+        // MathType by its stable Word range ObjectId; VisualTeX-owned OLE/OMML keeps
+        // using the durable FormulaId identity.
+        var identity = string.Equals(
+                selected!.ObjectMode,
+                FormulaOleContract.MathTypeOleMode,
+                StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(selected.ObjectId)
+            ? $"mathtype:{selected.ObjectId}"
+            : $"formula:{formulaId}";
         var now = DateTimeOffset.UtcNow;
-        if (formulaId == _lastDoubleClickFormulaId
+        if (string.Equals(identity, _lastDoubleClickIdentity, StringComparison.Ordinal)
             && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
             return false;
-        _lastDoubleClickFormulaId = formulaId!;
+        _lastDoubleClickIdentity = identity;
         _lastDoubleClickAt = now;
         BeginSession("edit", null, null, capturedSelection: selected);
         return true;

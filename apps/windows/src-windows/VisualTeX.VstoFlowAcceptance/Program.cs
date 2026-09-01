@@ -497,6 +497,10 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-user-100-omml-to-mathtype",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-active-user-100-failure-inspect",
                 StringComparison.OrdinalIgnoreCase);
         using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
             ? null
@@ -677,6 +681,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-active-user-100-failure-inspect", StringComparison.OrdinalIgnoreCase))
             {
                 RunActiveUserHundredFailureInspection();
+            }
+            else if (string.Equals(mode, "word-active-mathtype-source-double-click", StringComparison.OrdinalIgnoreCase))
+            {
+                RunActiveMathTypeSourceDoubleClickProbe();
             }
             else if (string.Equals(mode, "word-user-100-mathtype-source-audit", StringComparison.OrdinalIgnoreCase))
             {

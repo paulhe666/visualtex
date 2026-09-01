@@ -1562,6 +1562,23 @@ internal static class MathTypeMtefCodec
             node is XElement
             || node is XText text && !string.IsNullOrWhiteSpace(text.Value));
 
+    private static bool RequiresGroupedScriptBase(XElement element)
+    {
+        var local = element.Name.LocalName;
+        if (local is not ("mrow" or "mstyle" or "semantics" or "mpadded" or "math"))
+            return false;
+        var objectCount = 0;
+        foreach (var child in SignificantChildren(element))
+        {
+            if (child is XElement childElement
+                && childElement.Name.LocalName is "annotation" or "annotation-xml")
+                continue;
+            objectCount++;
+            if (objectCount > 1) return true;
+        }
+        return false;
+    }
+
     private static void EmitContainerChildren(
         XElement element,
         List<byte> output,
@@ -1822,7 +1839,16 @@ internal static class MathTypeMtefCodec
                 output);
             return;
         }
-        EmitNode(children[0], output);
+        // MathType's postfix script template binds to exactly one preceding MTEF
+        // object. Flattening a multi-object MathML mrow here makes a script on
+        // `(1+1/n)` bind only to the final ')' when Equation Native is read back.
+        // Preserve the whole composite base as one nested LINE object before
+        // appending the script template. Atomic bases keep the old path so common
+        // x^2 / a_i equations remain byte- and layout-compatible.
+        if (RequiresGroupedScriptBase(children[0]))
+            EmitLine(children[0], output);
+        else
+            EmitNode(children[0], output);
         output.AddRange(new byte[] { RecordTemplate, 0, selector, 0, 0 });
         output.Add(RecordSub);
         if (selector == TemplateSub)

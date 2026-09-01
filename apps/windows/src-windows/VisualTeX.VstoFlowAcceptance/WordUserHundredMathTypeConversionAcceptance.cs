@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -130,11 +131,663 @@ internal static partial class Program
                     Release(math);
                 }
             }
+
+            // Diagnose the exact live formula under the user's current Selection.
+            // This is deliberately read-only: capture the production conversion
+            // plan, then run only the standalone MathML -> Equation Native ->
+            // MathML round-trip that InsertMathTypeOle validates before mutating
+            // Word. It exposes the real mismatch from the user's unsaved document
+            // instead of testing a reconstructed/equivalent formula elsewhere.
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            Console.WriteLine(
+                $"LIVE-PLAN|selection={application.Selection.Start}:{application.Selection.End}|targets={plan.Targets.Count}");
+            foreach (var target in plan.Targets.OrderBy(item => item.SourceStart))
+            {
+                var sourceMathMl = target.SourceMathMl
+                    ?? throw new InvalidDataException(
+                        $"Live OMML target {target.SourceFormulaId} has no SourceMathML.");
+                var inline = string.Equals(
+                    target.DisplayMode,
+                    "inline",
+                    StringComparison.OrdinalIgnoreCase);
+                var generated = MathTypeMtefCodec.CreateEquationNative(sourceMathMl, inline);
+                var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
+                var generatedMathMl = MathTypeOleStorage.ReadMathMl(compound);
+                var expectedSignature = MathTypeMtefCodec.SemanticSignature(sourceMathMl);
+                var actualSignature = MathTypeMtefCodec.SemanticSignature(generatedMathMl);
+                Console.WriteLine(
+                    $"LIVE-TARGET|start={target.SourceStart}|managed={target.SourceIsManagedOmml}|display={target.DisplayMode}|numbered={target.Numbered}|formulaId={target.SourceFormulaId}|objectId={target.SourceObjectId}|latex={target.Latex}");
+                Console.WriteLine($"LIVE-SOURCE-MATHML|{sourceMathMl}");
+                Console.WriteLine($"LIVE-GENERATED-MATHML|{generatedMathMl}");
+                Console.WriteLine(
+                    $"LIVE-SIGNATURE|match={string.Equals(expectedSignature, actualSignature, StringComparison.Ordinal)}|expected={expectedSignature}|actual={actualSignature}");
+            }
+
+            var wholePlan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            var liveMismatchCount = 0;
+            var liveCodecErrorCount = 0;
+            foreach (var target in wholePlan.Targets.OrderBy(item => item.SourceStart))
+            {
+                try
+                {
+                    var sourceMathMl = target.SourceMathMl
+                        ?? throw new InvalidDataException("No SourceMathML.");
+                    var generated = MathTypeMtefCodec.CreateEquationNative(
+                        sourceMathMl,
+                        inline: string.Equals(target.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase));
+                    var generatedMathMl = MathTypeOleStorage.ReadMathMl(
+                        MathTypeOleStorage.CreateStandaloneCompoundFile(generated));
+                    var expectedSignature = MathTypeMtefCodec.SemanticSignature(sourceMathMl);
+                    var actualSignature = MathTypeMtefCodec.SemanticSignature(generatedMathMl);
+                    if (string.Equals(expectedSignature, actualSignature, StringComparison.Ordinal))
+                        continue;
+                    liveMismatchCount++;
+                    Console.WriteLine(
+                        $"LIVE-AUDIT-MISMATCH|start={target.SourceStart}|display={target.DisplayMode}|managed={target.SourceIsManagedOmml}|latex={target.Latex}|expected={expectedSignature}|actual={actualSignature}|sourceMathMl={sourceMathMl}|generatedMathMl={generatedMathMl}");
+                }
+                catch (Exception error)
+                {
+                    liveCodecErrorCount++;
+                    Console.WriteLine(
+                        $"LIVE-AUDIT-ERROR|start={target.SourceStart}|display={target.DisplayMode}|managed={target.SourceIsManagedOmml}|latex={target.Latex}|{error.GetType().Name}|{error.Message}");
+                }
+            }
+            Console.WriteLine(
+                $"LIVE-AUDIT-SUMMARY|targets={wholePlan.Targets.Count}|mismatches={liveMismatchCount}|errors={liveCodecErrorCount}");
+
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACTIVE_LIVE_CONVERT"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                if (plan.Targets.Count != 1)
+                    throw new InvalidDataException(
+                        $"Live conversion requires exactly one selected OMML target, actual={plan.Targets.Count}.");
+                var target = plan.Targets[0];
+                var sourceMathMl = target.SourceMathMl
+                    ?? throw new InvalidDataException("Live conversion target has no SourceMathML.");
+                var generated = MathTypeMtefCodec.CreateEquationNative(
+                    sourceMathMl,
+                    inline: string.Equals(target.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase));
+                MathTypeNativePreviewRenderer.Result? nativePreview = null;
+                try
+                {
+                    if (!MathTypeNativePreviewRenderer.TryRender(
+                            generated.Mtef,
+                            Path.GetTempPath(),
+                            out nativePreview))
+                        throw new InvalidDataException(
+                            "Live conversion could not render the exact MathType native preview.");
+                    var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal)
+                    {
+                        [target.Id] = new PreparedWordBulkFormula
+                        {
+                            Run = new WordBulkRun
+                            {
+                                Id = target.Id,
+                                IsFormula = true,
+                                Latex = target.Latex,
+                                DisplayMode = target.DisplayMode,
+                            },
+                            Session = CreateOmmlMathTypeAcceptanceSession(
+                                sourceMathMl,
+                                target.DisplayMode,
+                                target.Numbered,
+                                FormulaOleContract.MathTypeOleMode),
+                            MathMl = sourceMathMl,
+                            MathTypeNativePreviewAttempted = true,
+                            MathTypeNativePreview = nativePreview,
+                        },
+                    };
+                    var beforeOmml = document.OMaths.Count;
+                    var beforeMathType = CountMathTypeOleShapes(document);
+                    var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+                    Console.WriteLine(
+                        $"LIVE-CONVERT-RESULT|converted={result.FormulaCount}|failed={result.FailedFormulaCount}|failures={string.Join(" || ", result.Failures)}|omml={beforeOmml}->{document.OMaths.Count}|mathType={beforeMathType}->{CountMathTypeOleShapes(document)}");
+                    Word.InlineShape? convertedShape = null;
+                    try
+                    {
+                        for (var index = 1; index <= document.InlineShapes.Count; index++)
+                        {
+                            Word.InlineShape? candidate = null;
+                            Word.Range? candidateRange = null;
+                            try
+                            {
+                                candidate = document.InlineShapes[index];
+                                if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                                candidateRange = candidate.Range;
+                                if (Math.Abs(candidateRange.Start - target.SourceStart) > 8) continue;
+                                convertedShape = candidate;
+                                candidate = null;
+                                break;
+                            }
+                            finally
+                            {
+                                Release(candidateRange);
+                                Release(candidate);
+                            }
+                        }
+                        if (convertedShape is null)
+                            throw new InvalidDataException(
+                                "Live conversion reported success but no MathType OLE appeared at the selected source range.");
+                        var liveMathMl = MathTypeOleStorage.ReadMathMl(convertedShape);
+                        var expected = MathTypeMtefCodec.SemanticSignature(sourceMathMl);
+                        var actual = MathTypeMtefCodec.SemanticSignature(liveMathMl);
+                        Console.WriteLine(
+                            $"LIVE-CONVERT-VERIFY|match={string.Equals(expected, actual, StringComparison.Ordinal)}|expected={expected}|actual={actual}|mathMl={liveMathMl}");
+                    }
+                    finally { Release(convertedShape); }
+                }
+                finally { nativePreview?.Dispose(); }
+            }
+
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACTIVE_SOURCE_ADDIN_DOUBLECLICK"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                Microsoft.Office.Core.COMAddIns? comAddIns = null;
+                Microsoft.Office.Core.COMAddIn? installedAddIn = null;
+                ThisAddIn? sourceAddIn = null;
+                Word.InlineShape? targetShape = null;
+                Word.Range? targetRange = null;
+                Word.Window? targetWindow = null;
+                Array custom = Array.Empty<object>();
+                var installedWasConnected = false;
+                var sessionClient = new VisualTeXSessionClient();
+                try
+                {
+                    comAddIns = application.COMAddIns;
+                    installedAddIn = comAddIns.Item("VisualTeX.WordVsto");
+                    installedWasConnected = installedAddIn.Connect;
+                    Console.WriteLine(
+                        $"LIVE-SOURCE-ADDIN|installedConnectedBefore={installedWasConnected}");
+
+                    sourceAddIn = new ThisAddIn();
+                    sourceAddIn.OnConnection(
+                        application,
+                        Extensibility.ext_ConnectMode.ext_cm_AfterStartup,
+                        sourceAddIn,
+                        ref custom);
+                    // Keep the installed production add-in connected, but retain
+                    // this temporary source instance's *new* low-level hook. Hooks
+                    // are invoked newest-first, so the source hook can observe the
+                    // live MathType OLE and dispatch VisualTeX without suppressing
+                    // Word's second button-down. The older installed hook may still
+                    // suppress downstream, which is exactly the user's current
+                    // mixed-version situation we need to prove the new observer
+                    // callback survives.
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(650);
+
+                    var nearestDistance = int.MaxValue;
+                    for (var index = 1; index <= document.InlineShapes.Count; index++)
+                    {
+                        Word.InlineShape? candidate = null;
+                        Word.Range? candidateRange = null;
+                        try
+                        {
+                            candidate = document.InlineShapes[index];
+                            if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                            candidateRange = candidate.Range;
+                            var distance = Math.Abs(candidateRange.Start - application.Selection.Start);
+                            if (distance >= nearestDistance) continue;
+                            Release(targetRange); targetRange = null;
+                            Release(targetShape); targetShape = null;
+                            targetShape = candidate;
+                            candidate = null;
+                            targetRange = candidateRange.Duplicate;
+                            nearestDistance = distance;
+                        }
+                        finally
+                        {
+                            Release(candidateRange);
+                            Release(candidate);
+                        }
+                    }
+                    if (targetShape is null || targetRange is null)
+                        throw new InvalidDataException(
+                            "No live MathType OLE is available for current-source add-in double-click testing.");
+
+                    targetRange.Select();
+                    targetWindow = application.ActiveWindow;
+                    targetWindow.Activate();
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(450);
+                    targetWindow.GetPoint(out var left, out var top, out var width, out var height, targetRange);
+                    if (width <= 0 || height <= 0)
+                        throw new InvalidDataException(
+                            "Word returned no visible rectangle for the live MathType OLE under the current-source add-in.");
+                    var hwnd = new IntPtr(targetWindow.Hwnd);
+                    const uint noMoveNoSizeShow = 0x0001 | 0x0002 | 0x0040;
+                    SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSizeShow);
+                    SetForegroundWindow(hwnd);
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(300);
+
+                    SetCursorPos(left + width / 2, top + height / 2);
+                    mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                    mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+                    Thread.Sleep(900);
+                    targetRange.Select();
+                    targetWindow.Activate();
+                    SetForegroundWindow(hwnd);
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+                    targetWindow.GetPoint(out left, out top, out width, out height, targetRange);
+
+                    var sessionsBefore = SnapshotSessionIds();
+                    SetCursorPos(left + width / 2, top + height / 2);
+                    Thread.Sleep(120);
+                    for (var click = 0; click < 2; click++)
+                    {
+                        mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                        mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+                        Thread.Sleep(90);
+                    }
+
+                    var sessionId = WaitForNewSession(
+                        sessionsBefore,
+                        "word",
+                        TimeSpan.FromSeconds(10));
+                    var editSession = WaitForUnchangedEditorReady(
+                        sessionClient,
+                        sessionId,
+                        TimeSpan.FromSeconds(10));
+                    Console.WriteLine(
+                        $"LIVE-SOURCE-ADDIN-DOUBLECLICK|opened=true|session={sessionId}|mode={editSession.Mode}|objectMode={editSession.ObjectMode}|latex={string.Join("\\n", editSession.Lines.Select(line => line.Latex))}|shapeRange={targetRange.Start}:{targetRange.End}|rect={left},{top},{width},{height}");
+                    if (!string.Equals(editSession.Mode, "edit", StringComparison.Ordinal)
+                        || !string.Equals(
+                            editSession.ObjectMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal))
+                        throw new InvalidDataException(
+                            "Current-source MathType double-click opened the wrong VisualTeX Session mode.");
+                    sessionClient.PatchAsync(
+                            sessionId,
+                            new Dictionary<string, object>
+                            {
+                                ["status"] = "cancelled",
+                                ["explicitCancel"] = true,
+                            },
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+                }
+                finally
+                {
+                    if (sourceAddIn is not null)
+                    {
+                        try
+                        {
+                            sourceAddIn.OnDisconnection(
+                                Extensibility.ext_DisconnectMode.ext_dm_UserClosed,
+                                ref custom);
+                        }
+                        catch { }
+                    }
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+                    Console.WriteLine(
+                        $"LIVE-SOURCE-ADDIN|installedConnectedAfter={(installedAddIn?.Connect == true)}");
+                    Release(targetWindow);
+                    Release(targetRange);
+                    Release(targetShape);
+                    Release(installedAddIn);
+                    Release(comAddIns);
+                }
+            }
+
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACTIVE_LIVE_DOUBLECLICK"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                Word.InlineShape? targetShape = null;
+                Word.Range? targetRange = null;
+                Word.Window? targetWindow = null;
+                var sessionClient = new VisualTeXSessionClient();
+                try
+                {
+                    var nearestDistance = int.MaxValue;
+                    for (var index = 1; index <= document.InlineShapes.Count; index++)
+                    {
+                        Word.InlineShape? candidate = null;
+                        Word.Range? candidateRange = null;
+                        try
+                        {
+                            candidate = document.InlineShapes[index];
+                            if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                            candidateRange = candidate.Range;
+                            var distance = Math.Abs(candidateRange.Start - application.Selection.Start);
+                            if (distance >= nearestDistance) continue;
+                            Release(targetRange); targetRange = null;
+                            Release(targetShape); targetShape = null;
+                            targetShape = candidate;
+                            candidate = null;
+                            targetRange = candidateRange.Duplicate;
+                            nearestDistance = distance;
+                        }
+                        finally
+                        {
+                            Release(candidateRange);
+                            Release(candidate);
+                        }
+                    }
+                    if (targetShape is null || targetRange is null)
+                        throw new InvalidDataException("No live MathType OLE is available for direct double-click testing.");
+
+                    targetRange.Select();
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+                    var selectedAsMathType = service.IsSelectedMathTypeOle();
+                    var selectedFormula = service.ReadSelection();
+                    targetWindow = application.ActiveWindow;
+                    targetWindow.Activate();
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(400);
+                    targetWindow.GetPoint(out var left, out var top, out var width, out var height, targetRange);
+                    if (width <= 0 || height <= 0)
+                        throw new InvalidDataException("Word returned no visible rectangle for the live MathType OLE.");
+                    var centerX = left + width / 2;
+                    var centerY = top + height / 2;
+                    var hit = service.IsFormulaAtScreenPoint(selectedFormula, centerX, centerY);
+                    var route = WordDoubleClickRouting.ShouldOpenVisualTeX(selectedFormula);
+                    Console.WriteLine(
+                        $"LIVE-DOUBLECLICK-PROBE|isSelectedMathType={selectedAsMathType}|formulaId={selectedFormula?.FormulaId}|objectMode={selectedFormula?.ObjectMode}|route={route}|hit={hit}|range={targetRange.Start}:{targetRange.End}|rect={left},{top},{width},{height}|latex={selectedFormula?.Metadata?.Latex}");
+                    var hwnd = new IntPtr(targetWindow.Hwnd);
+                    const uint noMoveNoSizeShow = 0x0001 | 0x0002 | 0x0040;
+                    SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSizeShow);
+                    SetForegroundWindow(hwnd);
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+
+                    // Prime Word with one ordinary click, wait beyond the system
+                    // double-click interval, then send the real two-click gesture.
+                    SetCursorPos(left + width / 2, top + height / 2);
+                    mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                    mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+                    Thread.Sleep(900);
+                    targetRange.Select();
+                    targetWindow.Activate();
+                    SetForegroundWindow(hwnd);
+                    System.Windows.Forms.Application.DoEvents();
+                    Thread.Sleep(250);
+                    targetWindow.GetPoint(out left, out top, out width, out height, targetRange);
+
+                    var sessionsBefore = SnapshotSessionIds();
+                    SetCursorPos(left + width / 2, top + height / 2);
+                    Thread.Sleep(120);
+                    for (var click = 0; click < 2; click++)
+                    {
+                        mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                        mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+                        Thread.Sleep(90);
+                    }
+
+                    try
+                    {
+                        var sessionId = WaitForNewSession(
+                            sessionsBefore,
+                            "word",
+                            TimeSpan.FromSeconds(8));
+                        var editSession = WaitForUnchangedEditorReady(
+                            sessionClient,
+                            sessionId,
+                            TimeSpan.FromSeconds(8));
+                        Console.WriteLine(
+                            $"LIVE-DOUBLECLICK-RESULT|opened=true|session={sessionId}|mode={editSession.Mode}|objectMode={editSession.ObjectMode}|latex={string.Join("\\n", editSession.Lines.Select(line => line.Latex))}");
+                        sessionClient.PatchAsync(
+                                sessionId,
+                                new Dictionary<string, object>
+                                {
+                                    ["status"] = "cancelled",
+                                    ["explicitCancel"] = true,
+                                },
+                                CancellationToken.None)
+                            .GetAwaiter().GetResult();
+                    }
+                    catch (TimeoutException error)
+                    {
+                        Console.WriteLine(
+                            $"LIVE-DOUBLECLICK-RESULT|opened=false|error={error.Message}|shapeRange={targetRange.Start}:{targetRange.End}|rect={left},{top},{width},{height}");
+                    }
+                }
+                finally
+                {
+                    Release(targetWindow);
+                    Release(targetRange);
+                    Release(targetShape);
+                }
+            }
         }
         finally
         {
             Release(document);
             Release(application);
+        }
+    }
+
+    private static void RunActiveMathTypeSourceDoubleClickProbe()
+    {
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.InlineShape? targetShape = null;
+        Word.Range? targetRange = null;
+        Word.Window? window = null;
+        ThisAddIn? sourceAddIn = null;
+        Array custom = Array.Empty<object>();
+        var client = new VisualTeXSessionClient();
+        var liveWordHwnd = IntPtr.Zero;
+        var restoreWordMinimized = false;
+        try
+        {
+            application = (Word.Application)Marshal.GetActiveObject("Word.Application");
+            document = application.ActiveDocument
+                ?? throw new InvalidOperationException("No active Word document is available for live MathType double-click testing.");
+
+            var selectionStart = application.Selection.Start;
+            var nearestDistance = int.MaxValue;
+            for (var index = 1; index <= document.InlineShapes.Count; index++)
+            {
+                Word.InlineShape? candidate = null;
+                Word.Range? candidateRange = null;
+                try
+                {
+                    candidate = document.InlineShapes[index];
+                    if (!MathTypeOleInterop.IsMathTypeOle(candidate)) continue;
+                    candidateRange = candidate.Range;
+                    var distance = Math.Abs(candidateRange.Start - selectionStart);
+                    if (distance >= nearestDistance) continue;
+                    Release(targetRange); targetRange = null;
+                    Release(targetShape); targetShape = null;
+                    targetShape = candidate;
+                    candidate = null;
+                    targetRange = candidateRange.Duplicate;
+                    nearestDistance = distance;
+                }
+                finally
+                {
+                    Release(candidateRange);
+                    Release(candidate);
+                }
+            }
+            if (targetShape is null || targetRange is null)
+                throw new InvalidDataException("The active document has no MathType OLE available for live double-click testing.");
+
+            sourceAddIn = new ThisAddIn();
+            sourceAddIn.OnConnection(
+                application,
+                Extensibility.ext_ConnectMode.ext_cm_AfterStartup,
+                sourceAddIn,
+                ref custom);
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(650);
+
+            targetRange.Select();
+            window = application.ActiveWindow;
+            window.Activate();
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(400);
+            window.GetPoint(out var left, out var top, out var width, out var height, targetRange);
+            if (width <= 0 || height <= 0)
+                throw new InvalidDataException("Word returned no visible rectangle for the active MathType OLE.");
+
+            var hwnd = new IntPtr(window.Hwnd);
+            liveWordHwnd = hwnd;
+            const uint noMoveNoSizeShow = 0x0001 | 0x0002 | 0x0040;
+            if (left < -10000 || top < -10000)
+            {
+                // A minimized Word window reports formula coordinates around
+                // (-32000,-32000); SetCursorPos then clamps to (0,0), which never
+                // exercises the real equation. Restore it only for this live mouse
+                // probe and put it back to minimized state in finally.
+                restoreWordMinimized = true;
+                ShowWindow(hwnd, 9); // SW_RESTORE
+                document.Activate();
+                window.Activate();
+                SetForegroundWindow(hwnd);
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(650);
+                SelectWordRangeWithRpcRetry(targetRange);
+                window.GetPoint(out left, out top, out width, out height, targetRange);
+                if (left < -10000 || top < -10000 || width <= 0 || height <= 0)
+                    throw new InvalidDataException(
+                        $"Word remained off-screen after restoring the minimized window: {left},{top},{width},{height}.");
+            }
+            SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSizeShow);
+            SetForegroundWindow(hwnd);
+            if (GetWindowRect(hwnd, out var wordRect))
+            {
+                SetCursorPos(
+                    wordRect.Left + Math.Max(40, (wordRect.Right - wordRect.Left) / 2),
+                    wordRect.Top + 18);
+                mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+            }
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(700);
+
+            // Prime the actual OLE selection only after Word owns the foreground,
+            // then wait beyond the system double-click interval before the pair.
+            SelectWordRangeWithRpcRetry(targetRange);
+            window.Activate();
+            SetForegroundWindow(hwnd);
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(250);
+            window.GetPoint(out left, out top, out width, out height, targetRange);
+            if (width <= 0 || height <= 0)
+                throw new InvalidDataException("Word lost the active MathType rectangle after foreground priming.");
+            SetCursorPos(left + width / 2, top + height / 2);
+            mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(900);
+            SelectWordRangeWithRpcRetry(targetRange);
+            window.Activate();
+            SetForegroundWindow(hwnd);
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(250);
+            window.GetPoint(out left, out top, out width, out height, targetRange);
+
+            Console.WriteLine(
+                $"[ACTIVE MATHTYPE SOURCE DOUBLECLICK PROBE] range={targetRange.Start}:{targetRange.End}; rect={left},{top},{width},{height}; cursor={System.Windows.Forms.Cursor.Position.X},{System.Windows.Forms.Cursor.Position.Y}");
+            var sessionsBefore = SnapshotSessionIds();
+            SetCursorPos(left + width / 2, top + height / 2);
+            Thread.Sleep(120);
+            for (var click = 0; click < 2; click++)
+            {
+                mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+                Thread.Sleep(90);
+            }
+
+            var sessionId = WaitForNewSession(
+                sessionsBefore,
+                "word",
+                TimeSpan.FromSeconds(12));
+            var editSession = WaitForUnchangedEditorReady(
+                client,
+                sessionId,
+                TimeSpan.FromSeconds(12));
+            if (!string.Equals(editSession.Mode, "edit", StringComparison.Ordinal)
+                || !string.Equals(
+                    editSession.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    $"Live MathType double-click opened the wrong Session: mode={editSession.Mode}, objectMode={editSession.ObjectMode}.");
+
+            Console.WriteLine(
+                $"[ACTIVE MATHTYPE SOURCE DOUBLECLICK PASS] document={document.Name}; range={targetRange.Start}:{targetRange.End}; "
+                + $"rect={left},{top},{width},{height}; session={sessionId}; latex={string.Join("\\n", editSession.Lines.Select(line => line.Latex))}");
+
+            client.PatchAsync(
+                    sessionId,
+                    new Dictionary<string, object>
+                    {
+                        ["status"] = "cancelled",
+                        ["explicitCancel"] = true,
+                    },
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            try
+            {
+                client.CloseEditorAsync(sessionId, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+            }
+            catch { }
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(250);
+        }
+        finally
+        {
+            if (sourceAddIn is not null)
+            {
+                try
+                {
+                    sourceAddIn.OnDisconnection(
+                        Extensibility.ext_DisconnectMode.ext_dm_UserClosed,
+                        ref custom);
+                }
+                catch { }
+            }
+            if (restoreWordMinimized && liveWordHwnd != IntPtr.Zero)
+            {
+                try { ShowWindow(liveWordHwnd, 6); } catch { } // SW_MINIMIZE
+            }
+            System.Windows.Forms.Application.DoEvents();
+            Thread.Sleep(200);
+            Release(window);
+            Release(targetRange);
+            Release(targetShape);
+            Release(document);
+            Release(application);
+        }
+    }
+
+    private static void SelectWordRangeWithRpcRetry(Word.Range range)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                range.Select();
+                return;
+            }
+            catch (COMException error)
+                when (error.HResult == unchecked((int)0x80010001) && attempt < 19)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(100);
+            }
         }
     }
 

@@ -40,6 +40,25 @@ internal static partial class Program
             MathTypeMtefCodec.SemanticSignature(uprightReReadBack),
             $"Upright Re/overline standalone MTEF mismatch. actual='{uprightReReadBack}'");
 
+        // A script base can be a compound MathML row rather than one token. The
+        // old writer emitted the row's children directly before tmSUP/tmSUB, so
+        // MathType attached the script only to the final child (for example the
+        // closing parenthesis in (1+1/n)^n). Keep the exact live-user regression
+        // permanently covered at the standalone MTEF boundary.
+        var compoundScriptBaseMathMl = M(
+            "<munder><mi mathvariant=\"normal\">lim</mi><mrow><mi>n</mi><mo>→</mo><mi mathvariant=\"normal\">∞</mi></mrow></munder>"
+            + "<msup><mrow><mo>(</mo><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><mi>n</mi></mfrac><mo>)</mo></mrow><mi>n</mi></msup>"
+            + "<mo>=</mo><mi>e</mi>");
+        var compoundScriptGenerated = MathTypeMtefCodec.CreateEquationNative(
+            compoundScriptBaseMathMl,
+            inline: false);
+        var compoundScriptReadBack = MathTypeOleStorage.ReadMathMl(
+            MathTypeOleStorage.CreateStandaloneCompoundFile(compoundScriptGenerated));
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(compoundScriptBaseMathMl),
+            MathTypeMtefCodec.SemanticSignature(compoundScriptReadBack),
+            $"Compound mrow script-base standalone MTEF mismatch. actual='{compoundScriptReadBack}'");
+
         var before = SnapshotMathTypeProcessIds();
         var generated = MathTypeMtefCodec.CreateEquationNative(mathMl, inline: false);
         var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);

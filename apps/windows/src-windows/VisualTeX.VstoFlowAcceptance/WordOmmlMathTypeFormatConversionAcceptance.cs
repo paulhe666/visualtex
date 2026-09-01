@@ -602,6 +602,64 @@ internal static partial class Program
                 }
                 finally { Release(rollbackRange); }
             }
+            using (var managedRollbackHost = new WordPerformanceHost(documentPath: null))
+            {
+                Word.Bookmark? managedBookmark = null;
+                Word.Range? managedRange = null;
+                try
+                {
+                    const string managedMathMl =
+                        "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+                        + "<mrow><munder><mo data-mjx-texclass=\"OP\" movablelimits=\"true\">lim</mo>"
+                        + "<mrow><mi>n</mi><mo>→</mo><mo>∞</mo></mrow></munder>"
+                        + "<msup><mfenced><mrow><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><mi>n</mi></mfrac>"
+                        + "</mrow></mfenced><mi>n</mi></msup><mo>=</mo>"
+                        + "<mi mathvariant=\"normal\">e</mi></mrow></math>";
+                    managedRollbackHost.Document.Content.Text =
+                        "managed-rollback-before\rmanaged-rollback-after\r";
+                    managedRollbackHost.Document.Range(
+                        managedRollbackHost.Document.Paragraphs[1].Range.End - 1,
+                        managedRollbackHost.Document.Paragraphs[1].Range.End - 1).Select();
+                    var managedService = new WordFormulaService(managedRollbackHost.Application);
+                    var managedSession = CreateOmmlMathTypeAcceptanceSession(
+                        managedMathMl,
+                        "block",
+                        false,
+                        FormulaOleContract.WordOmmlMode);
+                    managedService.InsertOmml(managedSession, managedMathMl);
+                    managedBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                        managedRollbackHost.Document,
+                        managedSession.FormulaId)
+                        ?? throw new InvalidDataException(
+                            "Managed rollback setup lost its VTOMML bookmark.");
+                    managedRange = WordOmmlFormulaStore.GetEquationRange(managedBookmark);
+                    managedRange.Select();
+                    managedRollbackHost.AddIn.OnConvertOmmlToMathTypeSelection(new object());
+                    WaitForAddInIdle(managedRollbackHost.AddIn, TimeSpan.FromSeconds(8));
+                    AssertEqual(1, managedRollbackHost.Document.OMaths.Count,
+                        "Injected managed OMML failure did not restore the source OMath.");
+                    AssertEqual(0, CountMathTypeOleShapes(managedRollbackHost.Document),
+                        "Injected managed OMML failure left a MathType OLE behind.");
+                    Release(managedBookmark);
+                    managedBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                        managedRollbackHost.Document,
+                        managedSession.FormulaId);
+                    AssertTrue(managedBookmark is not null,
+                        "Injected managed OMML failure lost its VTOMML identity.");
+                    var managedText = managedRollbackHost.Document.Content.Text ?? string.Empty;
+                    AssertTrue(
+                        managedText.IndexOf("managed-rollback-before", StringComparison.Ordinal) >= 0
+                        && managedText.IndexOf("managed-rollback-after", StringComparison.Ordinal) >= 0,
+                        "Injected managed OMML rollback damaged adjacent prose.");
+                    Console.WriteLine(
+                        "[MANAGED OMML→MT ROLLBACK] Injected post-delete failure restored the managed block OMath, VTOMML identity and adjacent prose.");
+                }
+                finally
+                {
+                    Release(managedRange);
+                    Release(managedBookmark);
+                }
+            }
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
                 previousInjectedFailure);
@@ -2467,6 +2525,11 @@ internal static partial class Program
                 "Pure Word-native OMML round-trip damaged adjacent prose.");
             AssertNoNewMathTypeProcess(mathTypeProcessesBefore, "full OMML↔MathType acceptance");
 
+            AssertExactLimitOmmlToMathTypeConversion(
+                application,
+                emfPath,
+                mathTypeProcessesBefore);
+
             AssertMathTypeDisplayToOmmlPreservesParagraphStructure(
                 application,
                 document,
@@ -2489,6 +2552,78 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertExactLimitOmmlToMathTypeConversion(
+        Word.Application application,
+        string emfPath,
+        IReadOnlyCollection<int> mathTypeProcessesBefore)
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mrow><munder><mo data-mjx-texclass=\"OP\" movablelimits=\"true\">lim</mo>"
+            + "<mrow><mi>n</mi><mo>→</mo><mo>∞</mo></mrow></munder>"
+            + "<msup><mfenced><mrow><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><mi>n</mi></mfrac>"
+            + "</mrow></mfenced><mi>n</mi></msup><mo>=</mo>"
+            + "<mi mathvariant=\"normal\">e</mi></mrow></math>";
+        Word.Document? document = null;
+        Word.Range? sourceRange = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Content.Text = "before-exact-limit\r";
+            var service = new WordFormulaService(application);
+            var source = new OmmlMathTypeAcceptanceFormula(
+                "exact-user-limit",
+                mathMl,
+                "block",
+                false);
+            InsertManagedOmmlBetweenProse(document, service, source);
+            AssertEqual(1, document.OMaths.Count,
+                "Exact user limit setup did not create one block OMML formula.");
+            sourceRange = document.OMaths[1].Range.Duplicate;
+            sourceRange.Select();
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.MathTypeOleMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Exact user limit OMML was not captured as one MathType conversion target.");
+            AssertTrue(plan.Targets[0].Latex.IndexOf("\\lim", StringComparison.Ordinal) >= 0,
+                "Exact user limit OMML capture lost its \\lim semantics: " + plan.Targets[0].Latex);
+            var result = service.ApplyFormulaFormatConversionPlan(
+                plan,
+                PrepareOmmlMathTypeTargets(plan, emfPath));
+            AssertEqual(0, result.FailedFormulaCount,
+                "Exact user limit OMML→MathType conversion failed: "
+                + string.Join(" | ", result.Failures));
+            AssertEqual(1, result.FormulaCount,
+                "Exact user limit OMML→MathType conversion did not convert one formula.");
+            AssertEqual(0, document.OMaths.Count,
+                "Exact user limit OMML→MathType conversion left the source OMath behind.");
+            AssertEqual(1, CountMathTypeOleShapes(document),
+                "Exact user limit OMML→MathType conversion did not create one Equation.DSMT4 object.");
+            AssertEveryMathTypeProgId(document);
+            AssertNoUnknownMathTypeGlyphTokens(document, "exact user limit OMML→MathType");
+            AssertVisibleMathTypePreviewsWithClipboardRetry(
+                document,
+                "exact user limit OMML→MathType");
+            AssertNoNewMathTypeProcess(
+                mathTypeProcessesBefore,
+                "exact user limit OMML→MathType");
+            Console.WriteLine(
+                "[EXACT USER LIMIT OMML→MATHTYPE] \\lim_{n→∞}((1+1/n)^n)=e converted transactionally with no rollback.");
+        }
+        finally
+        {
+            Release(sourceRange);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
         }
     }
 

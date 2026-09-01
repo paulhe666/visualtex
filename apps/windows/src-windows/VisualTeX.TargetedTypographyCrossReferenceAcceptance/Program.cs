@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
@@ -69,6 +70,7 @@ internal static class Program
                 throwOnError: true)!;
 
             ValidateWordOmmlUprightConversion(fixture, converterType, artifactRoot);
+            ValidateWordMaterializedUprightMathFont(fixture, converterType, artifactRoot);
             if (skipNumberingFont)
             {
                 Log("[Issue 2] SKIP - Word display-number font styling is outside the current task scope.");
@@ -108,6 +110,11 @@ internal static class Program
         var ommlDirectory = Path.Combine(artifactRoot, "omml-cases");
         Directory.CreateDirectory(ommlDirectory);
         var transform = FindStaticMethod(converterType, "TransformMathMlToOmml", 1);
+        var reverseTransform = FindStaticMethod(converterType, "TransformOmmlToMathMl", 2);
+        var latexConverterType = converterType.Assembly.GetType(
+            "VisualTeX.WordVsto.MathMlToLatexConverter",
+            throwOnError: true)!;
+        var toLatex = FindStaticMethod(latexConverterType, "Convert", 1);
         var checkedTokens = 0;
 
         for (var index = 0; index < fixture.Cases.Count; index++)
@@ -140,54 +147,330 @@ internal static class Program
                 $"{item.Name}: Word-visible text contains imaginaryJ.");
 
             var compactVisibleText = RemoveWhitespace(visibleText);
-            var explicitNormalText = string.Concat(
-                document
-                    .Descendants(math + "r")
-                    .Where(run => run.Element(math + "rPr")?.Element(math + "nor") is not null)
-                    .SelectMany(run => run.Elements(math + "t"))
-                    .Select(element => element.Value));
-            var compactExplicitNormalText = RemoveWhitespace(explicitNormalText);
-            XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
-            var explicitNormalMathMlTokens = XDocument.Parse(item.MathMl)
-                .Descendants(presentationMath + "mi")
-                .Where(element =>
+            var plainMathTokens = document
+                .Descendants(math + "r")
+                .Where(run =>
                 {
-                    var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
-                    return variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
-                        || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
+                    var properties = run.Element(math + "rPr");
+                    return properties?.Element(math + "nor") is null
+                        && string.Equals(
+                            properties?.Element(math + "sty")?.Attribute(math + "val")?.Value,
+                            "p",
+                            StringComparison.OrdinalIgnoreCase);
                 })
-                .Select(element => RemoveWhitespace(element.Value))
+                .Select(run => RemoveWhitespace(string.Concat(
+                    run.Elements(math + "t").Select(element => element.Value))))
                 .Where(value => value.Length > 0)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var token in item.NormalMathMlTokens)
-            {
-                var compactToken = RemoveWhitespace(token);
-                Assert(
-                    compactVisibleText.IndexOf(compactToken, StringComparison.OrdinalIgnoreCase) >= 0,
-                    $"{item.Name}: Word OMML no longer contains expected upright token '{token}'.");
-                if (explicitNormalMathMlTokens.Contains(compactToken))
-                {
-                    Assert(
-                        compactExplicitNormalText.IndexOf(compactToken, StringComparison.OrdinalIgnoreCase) >= 0,
-                        $"{item.Name}: Word OMML token '{token}' is not marked with explicit m:nor normal style.");
-                }
-                checkedTokens++;
-            }
-
+            var normalTextTokens = document
+                .Descendants(math + "r")
+                .Where(run => run.Element(math + "rPr")?.Element(math + "nor") is not null)
+                .Select(run => RemoveWhitespace(string.Concat(
+                    run.Elements(math + "t").Select(element => element.Value))))
+                .Where(value => value.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var safeName = string.Concat(
                 item.Name.Select(character => char.IsLetterOrDigit(character) ? character : '_'));
             File.WriteAllText(
                 Path.Combine(ommlDirectory, $"{index + 1:D2}-{safeName}.xml"),
                 omml,
                 new UTF8Encoding(false));
+
+            foreach (var token in item.NormalMathMlTokens)
+            {
+                var compactToken = RemoveWhitespace(token);
+                Assert(
+                    compactVisibleText.IndexOf(compactToken, StringComparison.OrdinalIgnoreCase) >= 0,
+                    $"{item.Name}: Word OMML no longer contains expected upright token '{token}'.");
+                var expectedRunTokens = Regex.Matches(token, @"\p{L}+")
+                    .Cast<Match>()
+                    .Select(match => RemoveWhitespace(match.Value))
+                    .Where(value => value.Length > 0)
+                    .ToArray();
+                if (expectedRunTokens.Length == 0)
+                    expectedRunTokens = new[] { compactToken };
+                foreach (var expectedRunToken in expectedRunTokens)
+                {
+                    Assert(
+                        plainMathTokens.Contains(expectedRunToken),
+                        $"{item.Name}: Word OMML token '{token}' is not a plain/upright Office Math run.");
+                    Assert(
+                        !normalTextTokens.Contains(expectedRunToken),
+                        $"{item.Name}: Word OMML token '{token}' incorrectly uses m:nor Normal Text instead of the math font.");
+                }
+                checkedTokens++;
+            }
+
             Log($"  PASS {index + 1:D2}. {item.Name}");
             Log($"       normalized LaTeX: {item.Normalized}");
             Log($"       Word visible text: {visibleText}");
         }
 
+        XNamespace directMath = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        var directFunctionCases = new[]
+        {
+            new
+            {
+                Name = "unparenthesized sine",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>sin</mi><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+                Function = "sin",
+            },
+            new
+            {
+                Name = "superscripted sine",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>sin</mi><mn>2</mn></msup><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+                Function = "sin",
+            },
+            new
+            {
+                Name = "subscripted logarithm",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msub><mi>log</mi><mi>a</mi></msub><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+                Function = "log",
+            },
+        };
+        foreach (var direct in directFunctionCases)
+        {
+            var converted = (string)(Invoke(transform, null, direct.MathMl)
+                ?? throw new InvalidDataException($"{direct.Name}: OMML conversion returned null."));
+            var convertedXml = XDocument.Parse(converted, LoadOptions.PreserveWhitespace);
+            Assert(!convertedXml.Descendants(directMath + "t").Any(text => text.Value.IndexOf('\u2061') >= 0),
+                $"{direct.Name}: ApplyFunction U+2061 leaked into final OMML.");
+            var function = convertedXml.Descendants(directMath + "func").SingleOrDefault()
+                ?? throw new InvalidDataException($"{direct.Name}: conversion did not create one native m:func.");
+            var functionName = string.Concat(
+                function.Element(directMath + "fName")?.Descendants(directMath + "t").Select(text => text.Value)
+                    ?? Enumerable.Empty<string>());
+            var argument = string.Concat(
+                function.Element(directMath + "e")?.Descendants(directMath + "t").Select(text => text.Value)
+                    ?? Enumerable.Empty<string>());
+            Assert(functionName.IndexOf(direct.Function, StringComparison.OrdinalIgnoreCase) >= 0,
+                $"{direct.Name}: native m:func lost function name '{direct.Function}'.");
+            Assert(!string.IsNullOrWhiteSpace(argument),
+                $"{direct.Name}: native m:func lost its argument.");
+            var roundTripMathMl = (string)(Invoke(reverseTransform, null, converted, false)
+                ?? throw new InvalidDataException($"{direct.Name}: OMML reverse conversion returned null."));
+            var roundTripLatex = (string)(Invoke(toLatex, null, roundTripMathMl)
+                ?? throw new InvalidDataException($"{direct.Name}: MathML-to-LaTeX reverse conversion returned null."));
+            Assert(roundTripLatex.IndexOf(
+                    "\\" + direct.Function,
+                    StringComparison.Ordinal) >= 0,
+                $"{direct.Name}: native m:func round-trip lost the LaTeX operator command: {roundTripLatex}");
+            Log($"  PASS native function structure: {direct.Name} -> m:func, no U+2061, round-trip={roundTripLatex}.");
+        }
+
         Log(
             $"[Issue 1 / Stage 1] PASS - {fixture.Cases.Count} formula classes, "
-            + $"{checkedTokens} upright-token checks, and no MathLive internal command leaked into OMML.");
+            + $"{checkedTokens} upright-token checks, three direct native-function checks, and no MathLive internal command leaked into OMML.");
+    }
+
+    private static void ValidateWordMaterializedUprightMathFont(
+        UprightFixtureRoot fixture,
+        Type converterType,
+        string artifactRoot)
+    {
+        const string expectedMathFont = "Latin Modern Math";
+        var cases = new List<UprightFixtureCase>
+        {
+            fixture.Cases.Single(item => string.Equals(
+                item.Name,
+                "elementary and hyperbolic functions",
+                StringComparison.Ordinal)),
+            fixture.Cases.Single(item => string.Equals(
+                item.Name,
+                "exponential logarithmic and limit operators",
+                StringComparison.Ordinal)),
+            fixture.Cases.Single(item => string.Equals(
+                item.Name,
+                "Euler constant and imaginary unit",
+                StringComparison.Ordinal)),
+            new()
+            {
+                Name = "real Word unparenthesized sine",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>sin</mi><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+            },
+            new()
+            {
+                Name = "real Word superscripted sine",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>sin</mi><mn>2</mn></msup><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+            },
+            new()
+            {
+                Name = "real Word subscripted logarithm",
+                MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msub><mi>log</mi><mi>a</mi></msub><mo data-mjx-texclass=\"NONE\">&#x2061;</mo><mi>x</mi></math>",
+            },
+        };
+        var requiredTokens = new[]
+        {
+            "sin", "cos", "log", "ln", "exp", "lim", "max", "min", "e", "i",
+        };
+        var insert = FindStaticMethod(converterType, "Insert", 10);
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Document? reopened = null;
+        WordRange? insertion = null;
+        WordRange? inserted = null;
+        WordRange? content = null;
+        var path = Path.Combine(artifactRoot, "VisualTeX-Upright-Materialized-Word.docx");
+
+        static void AssertMaterializedRuns(
+            Word.Document target,
+            IEnumerable<string> expectedTokens,
+            string stage)
+        {
+            XNamespace math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            WordRange? targetContent = null;
+            try
+            {
+                targetContent = target.Content;
+                var xml = XDocument.Parse(targetContent.WordOpenXML, LoadOptions.PreserveWhitespace);
+                Assert(!xml.Descendants(math + "t").Any(text => text.Value.IndexOf('\u2061') >= 0),
+                    $"{stage}: Word persisted ApplyFunction U+2061 instead of native m:func structure.");
+                var nativeFunctionNames = xml.Descendants(math + "func")
+                    .Select(function => string.Concat(
+                        function.Element(math + "fName")?.Descendants(math + "t").Select(text => text.Value)
+                            ?? Enumerable.Empty<string>()))
+                    .ToArray();
+                foreach (var functionToken in new[] { "sin", "cos", "log", "ln", "exp" })
+                {
+                    if (!expectedTokens.Contains(functionToken, StringComparer.OrdinalIgnoreCase)) continue;
+                    Assert(nativeFunctionNames.Any(name => name.IndexOf(
+                            functionToken,
+                            StringComparison.OrdinalIgnoreCase) >= 0),
+                        $"{stage}: Word did not retain '{functionToken}' inside native m:func/m:fName.");
+                }
+                var runs = xml.Descendants(math + "r")
+                    .Select(run => new
+                    {
+                        Element = run,
+                        Text = string.Concat(run.Elements(math + "t").Select(text => text.Value)),
+                    })
+                    .ToArray();
+                foreach (var token in expectedTokens)
+                {
+                    var matching = runs.Where(run => Regex.IsMatch(
+                            run.Text,
+                            $@"(?<!\p{{L}}){Regex.Escape(token)}(?!\p{{L}})",
+                            RegexOptions.CultureInvariant))
+                        .ToArray();
+                    Assert(matching.Length > 0,
+                        $"{stage}: Word materialization lost upright token '{token}'.");
+                    Assert(matching.Any(run =>
+                    {
+                        var properties = run.Element.Element(math + "rPr");
+                        return properties?.Element(math + "nor") is null
+                            && string.Equals(
+                                properties?.Element(math + "sty")?.Attribute(math + "val")?.Value,
+                                "p",
+                                StringComparison.OrdinalIgnoreCase);
+                    }), $"{stage}: Word materialized '{token}' as Normal Text/italic instead of plain Office Math.");
+                    Assert(!matching.Any(run =>
+                        run.Element.Element(math + "rPr")?.Element(math + "nor") is not null),
+                        $"{stage}: Word materialized '{token}' with m:nor Normal Text.");
+                    foreach (var run in matching)
+                    {
+                        var fonts = run.Element.Element(word + "rPr")?.Element(word + "rFonts");
+                        if (fonts is null) continue;
+                        var ascii = (string?)fonts.Attribute(word + "ascii");
+                        var hAnsi = (string?)fonts.Attribute(word + "hAnsi");
+                        Assert(string.IsNullOrWhiteSpace(ascii)
+                                || string.Equals(ascii, expectedMathFont, StringComparison.OrdinalIgnoreCase),
+                            $"{stage}: Word materialized '{token}' with ASCII font '{ascii}' instead of {expectedMathFont}.");
+                        Assert(string.IsNullOrWhiteSpace(hAnsi)
+                                || string.Equals(hAnsi, expectedMathFont, StringComparison.OrdinalIgnoreCase),
+                            $"{stage}: Word materialized '{token}' with HAnsi font '{hAnsi}' instead of {expectedMathFont}.");
+                    }
+                }
+            }
+            finally { Release(targetContent); }
+        }
+
+        try
+        {
+            Log("[Issue 1 / Stage 2] Materializing upright functions through real Word and production OMML insertion...");
+            application = new Word.Application
+            {
+                Visible = false,
+                DisplayAlerts = WdAlertLevel.wdAlertsNone,
+            };
+            document = application.Documents.Add();
+            document.OMathFontName = expectedMathFont;
+            Assert(string.Equals(document.OMathFontName, expectedMathFont, StringComparison.OrdinalIgnoreCase),
+                "Word rejected Latin Modern Math before materializing upright functions.");
+
+            foreach (var item in cases)
+            {
+                Release(content); content = document.Content;
+                var position = Math.Max(content.Start, content.End - 1);
+                if (position > content.Start)
+                {
+                    insertion = document.Range(position, position);
+                    insertion.InsertBefore("\r");
+                    Release(insertion); insertion = null;
+                    Release(content); content = document.Content;
+                    position = Math.Max(content.Start, content.End - 1);
+                }
+                insertion = document.Range(position, position);
+                var arguments = new object?[]
+                {
+                    application,
+                    document,
+                    insertion,
+                    item.MathMl,
+                    true,
+                    null,
+                    false,
+                    false,
+                    null,
+                    expectedMathFont,
+                };
+                Release(inserted);
+                inserted = (WordRange)(Invoke(insert, null, arguments)
+                    ?? throw new InvalidDataException($"{item.Name}: production Word OMML insertion returned no range."));
+                Assert(inserted.OMaths.Count == 1,
+                    $"{item.Name}: Word did not materialize exactly one OMath.");
+                Release(insertion); insertion = null;
+            }
+
+            AssertMaterializedRuns(document, requiredTokens, "live Word");
+            document.SaveAs2(path, WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
+            document.Close(WdSaveOptions.wdSaveChanges);
+            Release(document); document = null;
+
+            reopened = application.Documents.Open(
+                path,
+                ReadOnly: true,
+                AddToRecentFiles: false,
+                Visible: false);
+            Assert(string.Equals(reopened.OMathFontName, expectedMathFont, StringComparison.OrdinalIgnoreCase),
+                $"save/reopen changed the document math font from {expectedMathFont} to '{reopened.OMathFontName}'.");
+            AssertMaterializedRuns(reopened, requiredTokens, "save/reopen Word");
+            Log($"[Issue 1 / Stage 2] PASS - real Word kept {string.Join("/", requiredTokens)} as upright Office Math under {expectedMathFont}, before and after save/reopen.");
+            Log($"[Issue 1 / Stage 2] Saved inspectable Word artifact: {path}");
+        }
+        finally
+        {
+            Release(content);
+            Release(inserted);
+            Release(insertion);
+            if (reopened is not null)
+            {
+                try { reopened.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(reopened);
+            if (document is not null)
+            {
+                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            if (application is not null)
+            {
+                try { application.Quit(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(application);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
     }
 
     private static void ValidateNativeCrossReferenceFormatting(

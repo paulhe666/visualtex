@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Xml;
@@ -611,13 +612,32 @@ internal static class WordOmmlFormulaStore
 
         object? parts = null;
         object? cachedPart = null;
+        var tracePerformance = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+            "1",
+            StringComparison.Ordinal);
+        var traceWatch = tracePerformance ? Stopwatch.StartNew() : null;
+        long traceCheckpoint = 0;
+        void Trace(string stage)
+        {
+            if (traceWatch is null) return;
+            var elapsed = traceWatch.ElapsedMilliseconds;
+            Console.WriteLine(
+                $"    [perf] OmmlStore.SaveCached.{stage}: +{elapsed - traceCheckpoint}ms ({elapsed}ms)");
+            traceCheckpoint = elapsed;
+        }
         try
         {
             parts = ((dynamic)document).CustomXMLParts;
+            Trace("parts-get");
             cachedPart = ((dynamic)parts).SelectByID(cachedPartId!);
+            Trace("select-by-id");
             if (cachedPart is null) return false;
-            if (!(bool)((dynamic)cachedPart).LoadXML(BuildPartXml(metadata)))
+            var xml = BuildPartXml(metadata);
+            Trace("build-xml");
+            if (!(bool)((dynamic)cachedPart).LoadXML(xml))
                 return false;
+            Trace("load-xml");
 
             // This fast path is intentionally transaction-local. The caller has
             // already read and validated this exact cached part earlier in the same
@@ -627,6 +647,7 @@ internal static class WordOmmlFormulaStore
             // LoadXML rejection returns false and the caller falls back to Save(),
             // which performs the full defensive cache/namespace validation.
             RememberPart(document, cachedPart, metadata);
+            Trace("remember");
             return true;
         }
         catch
@@ -712,6 +733,40 @@ internal static class WordOmmlFormulaStore
         ForgetPart(document, formulaId);
     }
 
+    internal static Bookmark WrapFreshOmmlReplacement(
+        Document document,
+        Range equationRange,
+        FormulaMetadata metadata)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? anchorRange = null;
+        try
+        {
+            // ReplaceOmml calls this only immediately after a managed inline or
+            // standalone-display OMath has been replaced in place and
+            // ValidateInsertedOmml has proved the live Range. The old VTOMML
+            // bookmark was explicitly deleted before insertion, so the generic
+            // table-affinity probe and Exists/Delete sweep are both redundant.
+            // Keeping the anchor on a duplicate of the live OMath preserves its
+            // native story/cell affinity without asking Word to enumerate table
+            // geometry (~60-75ms in a 100-OMML document).
+            anchorRange = equationRange.Duplicate;
+            anchorRange.Collapse(WdCollapseDirection.wdCollapseStart);
+            bookmarks = document.Bookmarks;
+            bookmark = bookmarks.Add(BookmarkName(metadata.FormulaId), anchorRange);
+            var result = bookmark;
+            bookmark = null;
+            return result;
+        }
+        finally
+        {
+            Release(bookmark);
+            Release(bookmarks);
+            Release(anchorRange);
+        }
+    }
+
     internal static Bookmark Wrap(
         Document document,
         Range equationRange,
@@ -731,6 +786,20 @@ internal static class WordOmmlFormulaStore
         Paragraphs? centerParagraphs = null;
         Paragraph? centerParagraph = null;
         Range? centerParagraphRange = null;
+        var tracePerformance = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
+            "1",
+            StringComparison.Ordinal);
+        var traceWatch = tracePerformance ? Stopwatch.StartNew() : null;
+        long traceCheckpoint = 0;
+        void Trace(string stage)
+        {
+            if (traceWatch is null) return;
+            var elapsed = traceWatch.ElapsedMilliseconds;
+            Console.WriteLine(
+                $"    [perf] OmmlStore.Wrap.{stage}: +{elapsed - traceCheckpoint}ms ({elapsed}ms)");
+            traceCheckpoint = elapsed;
+        }
         try
         {
             var anchorPosition = equationRange.Start;
@@ -742,6 +811,7 @@ internal static class WordOmmlFormulaStore
                 if (string.Equals(preceding.Text, "\v", StringComparison.Ordinal))
                     anchorPosition--;
             }
+            Trace("preceding-probe");
 
             // A collapsed main-story Range at a Word cell boundary is ambiguous:
             // Word can serialize it between </w:tc> and the next <w:tc>, which made
@@ -788,6 +858,7 @@ internal static class WordOmmlFormulaStore
                 anchorRange = null;
             }
 
+            Trace("table-affinity");
             if (!anchoredInCenterCell)
             {
                 // Outside the managed table, preserve the equation Range's native
@@ -799,10 +870,13 @@ internal static class WordOmmlFormulaStore
                     anchorRange.SetRange(anchorPosition, anchorPosition);
             }
             bookmarks = document.Bookmarks;
+            Trace("bookmarks-get");
             var name = BookmarkName(metadata.FormulaId);
             if (replaceExisting && bookmarks.Exists(name))
                 bookmarks[name].Delete();
+            Trace("existing-delete");
             bookmark = bookmarks.Add(name, anchorRange);
+            Trace("bookmark-add");
             var result = bookmark;
             bookmark = null;
             return result;
