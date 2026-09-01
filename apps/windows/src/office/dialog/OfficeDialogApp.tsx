@@ -184,6 +184,18 @@ function normalizeOfficeCodeFormat(codeFormat: string): LatexCodeFormat {
   return "raw";
 }
 
+function persistedOfficeCodeFormat(
+  sourceCodeFormat: string | undefined,
+  editorCodeFormat: LatexCodeFormat,
+) {
+  // "latex" is the legacy persisted spelling of the editor's "raw" mode.
+  // Normalize it only inside the editor. Writing "raw" back on every edit
+  // creates a false metadata change and can force Word OMML numbering-only
+  // edits down a full formula rebuild for no semantic reason.
+  if (sourceCodeFormat === "latex" && editorCodeFormat === "raw") return "latex";
+  return editorCodeFormat;
+}
+
 function normalizeOfficeFormulaDocument(
   lines: FormulaEditorLine[],
   codeFormat: unknown,
@@ -1053,7 +1065,10 @@ export function OfficeDialogApp() {
           title: session.title,
           lines: conversionLines,
           activeLineId: conversionActiveLineId,
-          codeFormat: conversionDocument.codeFormat,
+          codeFormat: persistedOfficeCodeFormat(
+            session.codeFormat,
+            conversionDocument.codeFormat,
+          ),
           displayMode: conversionDisplayMode,
           numbered: conversionNumbered,
           fontSizePt: conversionFontSizePt,
@@ -1132,7 +1147,10 @@ export function OfficeDialogApp() {
                   conversionLines.some((line) => line.id === queuedSession?.activeLineId)
                     ? queuedSession.activeLineId
                     : conversionLines[0]?.id ?? null,
-                codeFormat: conversionDocument.codeFormat,
+                codeFormat: persistedOfficeCodeFormat(
+                  queuedSession.codeFormat,
+                  conversionDocument.codeFormat,
+                ),
                 displayMode: queuedSession.displayMode,
                 numbered:
                   queuedSession.displayMode === "block" && Boolean(queuedSession.numbered),
@@ -1242,7 +1260,7 @@ export function OfficeDialogApp() {
         title,
         lines,
         activeLineId,
-        codeFormat: latexCodeFormat,
+        codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
@@ -1283,7 +1301,7 @@ export function OfficeDialogApp() {
         title,
         lines,
         activeLineId,
-        codeFormat: latexCodeFormat,
+        codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
@@ -1403,7 +1421,7 @@ export function OfficeDialogApp() {
         title,
         lines,
         activeLineId,
-        codeFormat: latexCodeFormat,
+        codeFormat: persistedOfficeCodeFormat(session?.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,
@@ -1807,7 +1825,7 @@ export function OfficeDialogApp() {
         title,
         lines,
         activeLineId,
-        codeFormat: latexCodeFormat,
+        codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
         displayMode,
         objectMode,
         numbered: displayMode === "block" && numbered,

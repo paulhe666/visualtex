@@ -138,8 +138,15 @@ internal static partial class Program
                 document.FullName,
                 unnumberedStart,
                 unnumberedEnd,
-                latex: @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
+                latex: @"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}",
                 originalMetadata: unnumberedMetadata);
+            // Reproduce the real Office editor transition where legacy metadata
+            // says codeFormat="latex", while
+            // the editor internally normalizes the equivalent source mode to
+            // "raw" and may normalize harmless LaTeX spacing. The MathML is still
+            // semantically identical, so renumbering must keep the existing live
+            // OMath instead of rebuilding it.
+            renumberSession.CodeFormat = "raw";
             service.ReplaceOmml(renumberSession, QuadraticFormulaMathMl());
 
             AssertOmmlTabNumberingHost(

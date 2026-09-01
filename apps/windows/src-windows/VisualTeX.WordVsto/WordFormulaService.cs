@@ -10292,7 +10292,9 @@ internal sealed partial class WordFormulaService
                     reuseHealthyStandaloneDisplayForNumberingOnly =
                         CanReuseStandaloneOmmlForNumberingOnly(
                             originalOmmlMetadata,
-                            metadata);
+                            metadata,
+                            mathMl,
+                            originalOmmlWordOpenXml);
                     if (reuseHealthyStandaloneDisplayForNumberingOnly)
                     {
                         if (string.Equals(
@@ -11174,7 +11176,9 @@ internal sealed partial class WordFormulaService
 
     private static bool CanReuseStandaloneOmmlForNumberingOnly(
         FormulaMetadata? original,
-        FormulaMetadata current)
+        FormulaMetadata current,
+        string incomingMathMl,
+        string? originalWordOpenXml)
     {
         if (original is null
             || original.Numbered
@@ -11187,18 +11191,54 @@ internal sealed partial class WordFormulaService
                 current.DisplayMode,
                 "block",
                 StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(original.NativeOmmlFingerprint)
-            || !string.Equals(original.Latex, current.Latex, StringComparison.Ordinal)
-            || !string.Equals(
-                original.CodeFormat,
-                current.CodeFormat,
-                StringComparison.Ordinal))
+            || string.IsNullOrWhiteSpace(original.NativeOmmlFingerprint))
             return false;
 
         var originalSize = FormulaFontSize.ResolveSemanticFontSize(original);
         var currentSize = FormulaFontSize.ResolveSemanticFontSize(current);
-        return Math.Abs(originalSize - currentSize) < 0.001f
-            && !FormulaFontPreferencesChanged(original, current);
+        if (Math.Abs(originalSize - currentSize) >= 0.001f
+            || FormulaFontPreferencesChanged(original, current))
+            return false;
+
+        // Legacy Office metadata persisted raw LaTeX as codeFormat="latex",
+        // while the current editor internally normalizes the same source mode to
+        // "raw". A numbering-only edit must never rebuild a healthy live OMath
+        // merely because that representation label changed. Keep the cheap exact
+        // metadata path first, then fall back to semantic MathML equivalence for
+        // editor normalizations such as e^{iπ} -> \\mathrm{e}^{\\mathrm{i}π}.
+        if (string.Equals(original.Latex, current.Latex, StringComparison.Ordinal)
+            && CodeFormatsRepresentSameRawLatex(original.CodeFormat, current.CodeFormat))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(incomingMathMl)
+            || string.IsNullOrWhiteSpace(originalWordOpenXml))
+            return false;
+        try
+        {
+            var originalMathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                originalWordOpenXml!,
+                display: true);
+            return string.Equals(
+                MathTypeMtefCodec.SemanticSignature(originalMathMl),
+                MathTypeMtefCodec.SemanticSignature(incomingMathMl),
+                StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool CodeFormatsRepresentSameRawLatex(string? left, string? right)
+    {
+        static string Normalize(string? value) =>
+            string.Equals(value, "latex", StringComparison.OrdinalIgnoreCase)
+                ? "raw"
+                : (value ?? string.Empty).Trim();
+        return string.Equals(
+            Normalize(left),
+            Normalize(right),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool CanReuseNumberedOmmlForUnnumberingOnly(
