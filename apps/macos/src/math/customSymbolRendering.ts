@@ -40,6 +40,8 @@ function userTransformParts(transform?: CustomSymbolVectorTransform) {
   const ty = transform.translateY ?? 0;
   const sx = transform.scaleX ?? 1;
   const sy = transform.scaleY ?? 1;
+  const skewX = transform.skewXDeg ?? 0;
+  const skewY = transform.skewYDeg ?? 0;
   const angle = transform.rotateDeg ?? 0;
   const ox = transform.originX ?? 0;
   const oy = transform.originY ?? 0;
@@ -47,6 +49,8 @@ function userTransformParts(transform?: CustomSymbolVectorTransform) {
   if (tx || ty) parts.push(`translate(${number(tx)} ${number(ty)})`);
   if (ox || oy) parts.push(`translate(${number(ox)} ${number(oy)})`);
   if (angle) parts.push(`rotate(${number(angle)})`);
+  if (skewX) parts.push(`skewX(${number(skewX)})`);
+  if (skewY) parts.push(`skewY(${number(skewY)})`);
   if (sx !== 1 || sy !== 1) parts.push(`scale(${number(sx)} ${number(sy)})`);
   if (ox || oy) parts.push(`translate(${number(-ox)} ${number(-oy)})`);
   return parts;
@@ -106,6 +110,14 @@ function geometryMarkup(
       return `<ellipse cx="${number(shape.cx)}" cy="${number(shape.cy)}" rx="${number(shape.rx)}" ry="${number(shape.ry)}" ${paint}${transform}></ellipse>`;
     case "polygon":
       return `<polygon points="${shape.points.map(([x, y]) => `${number(x)},${number(y)}`).join(" ")}" ${paint}${transform}></polygon>`;
+    case "text":
+      return (
+        `<text x="${number(shape.x)}" y="${number(shape.y)}" ` +
+        `font-family="${escapeAttribute(shape.fontFamily)}" font-size="${number(shape.fontSize)}"` +
+        `${shape.fontStyle ? ` font-style="${shape.fontStyle}"` : ""}` +
+        `${shape.fontWeight === undefined ? "" : ` font-weight="${number(shape.fontWeight)}"`} ` +
+        `${paint}${transform}>${escapeAttribute(shape.text)}</text>`
+      );
   }
 }
 

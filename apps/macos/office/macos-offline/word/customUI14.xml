@@ -79,12 +79,13 @@
             </menu>
           </box>
           <box id="VisualTeX.Mac.Word.ReferenceRow" boxStyle="horizontal">
-            <button id="VisualTeX.Mac.Word.CrossReference"
-                    label="插入公式引用"
-                    image="VisualTeXWordCrossReference"
-                    onAction="VTWordRibbonCrossReference"
-                    screentip="引用带编号公式"
-                    supertip="从当前文档的带编号公式中选择目标，并插入可自动更新的 Word REF 字段。"/>
+            <dynamicMenu id="VisualTeX.Mac.Word.CrossReference"
+                         label="插入公式引用"
+                         image="VisualTeXWordCrossReference"
+                         getContent="VTWordRibbonCrossReferenceMenuContent"
+                         invalidateContentOnDrop="true"
+                         screentip="引用带编号公式"
+                         supertip="展开当前文档的 VisualTeX 编号公式列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
             <button id="VisualTeX.Mac.Word.Open"
                     label="打开 VisualTeX"
                     image="VisualTeXWordOpenApp"

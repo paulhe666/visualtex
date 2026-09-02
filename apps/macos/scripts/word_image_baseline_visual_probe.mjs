@@ -7,12 +7,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
+const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
 const expectedDocumentName =
   process.argv.find((value) => value.startsWith("--document="))?.slice("--document=".length) ??
   "50_inline_50_display_meaningful.docx";
+const createDocumentSnapshot = !process.argv.includes("--no-snapshot");
 const scratch = join(
   homedir(),
   "Library/Group Containers/UBF8T346G9.Office/VisualTeX/Scratch",
@@ -80,7 +82,9 @@ function collectWordLayout() {
     "set formulaRange to text range of formulaMath",
     "set formulaFont to font object of formulaRange",
     "set paragraphRange to text object of paragraph 1 of formulaRange",
-    'set outputText to outputText & "OMML" & tab & mathIndex & tab & (start of content of formulaRange) & tab & (end of content of formulaRange) & tab & (start of content of paragraphRange) & tab & (end of content of paragraphRange) & tab & (size of formulaFont) & tab & (font position of formulaFont) & tab & (display type of formulaMath) & tab & (get range information formulaRange information type horizontal position relative to page) & tab & (get range information formulaRange information type vertical position relative to page) & linefeed',
+    "set formulaEndPosition to end of content of formulaRange",
+    "set formulaEndRange to create range sourceDocument start formulaEndPosition end formulaEndPosition",
+    'set outputText to outputText & "OMML" & tab & mathIndex & tab & (start of content of formulaRange) & tab & (end of content of formulaRange) & tab & (start of content of paragraphRange) & tab & (end of content of paragraphRange) & tab & (size of formulaFont) & tab & (font position of formulaFont) & tab & (display type of formulaMath) & tab & (get range information formulaRange information type horizontal position relative to page) & tab & (get range information formulaEndRange information type horizontal position relative to page) & tab & (get range information formulaRange information type vertical position relative to page) & linefeed',
     "end repeat",
     "return outputText",
     "end tell",
@@ -131,7 +135,8 @@ function collectWordLayout() {
         fontPositionPt: parseScalar(fields[7]),
         displayType: fields[8] ?? "",
         pageXPt: parseScalar(fields[9]),
-        pageYPt: parseScalar(fields[10]),
+        pageEndXPt: parseScalar(fields[10]),
+        pageYPt: parseScalar(fields[11]),
       });
     }
   }
@@ -177,7 +182,68 @@ function exportActivePdf() {
   return status;
 }
 
-function sameLinePairs(images, omml) {
+function collectRasterGeometry() {
+  const result = spawnSync(
+    "/usr/bin/swift",
+    [join(repositoryRoot, "scripts/pdf_formula_geometry.swift"), pdfPath, "--raster-only"],
+    {
+      encoding: "utf8",
+      timeout: 120_000,
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      result.stderr.trim() || result.stdout.trim() || "PDF raster geometry probe failed",
+    );
+  }
+  return JSON.parse(result.stdout);
+}
+
+function rasterInkBounds(
+  rasterGeometry,
+  pageXPt,
+  pageEndXPt,
+  targetCenterYPt,
+  verticalRadiusPt,
+) {
+  if (
+    ![pageXPt, pageEndXPt, targetCenterYPt, verticalRadiusPt].every(Number.isFinite) ||
+    pageEndXPt <= pageXPt ||
+    verticalRadiusPt <= 0
+  ) {
+    return null;
+  }
+  const components = (
+    rasterGeometry.rasterComponents ??
+    (rasterGeometry.rasterBands ?? []).flatMap((band) => band.components ?? [])
+  ).filter(
+    (component) =>
+      component.centerX >= pageXPt - 0.75 &&
+      component.centerX <= pageEndXPt + 0.75 &&
+      component.centerY >= targetCenterYPt - verticalRadiusPt &&
+      component.centerY <= targetCenterYPt + verticalRadiusPt,
+  );
+  if (components.length === 0) return null;
+  const minX = Math.min(...components.map((component) => component.minX));
+  const minY = Math.min(...components.map((component) => component.minY));
+  const maxX = Math.max(...components.map((component) => component.maxX));
+  const maxY = Math.max(...components.map((component) => component.maxY));
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+    centerY: (minY + maxY) / 2,
+    targetCenterYPt,
+    verticalRadiusPt,
+    componentCount: components.length,
+  };
+}
+
+function sameLinePairs(images, omml, rasterGeometry) {
   const visualImages = images.filter((image) => image.metadata?.schema === "visualtex-formula");
   return omml.map((nativeEquation) => {
     const candidates = visualImages
@@ -195,12 +261,42 @@ function sameLinePairs(images, omml) {
             : Number.POSITIVE_INFINITY,
       }))
       .sort((left, right) => left.distancePt - right.distancePt);
+    const nearestImage = candidates[0]?.image ?? null;
+    const imageInk = nearestImage && typeof nearestImage.heightPt === "number"
+      ? rasterInkBounds(
+          rasterGeometry,
+          nearestImage.pageXPt,
+          typeof nearestImage.widthPt === "number"
+            ? nearestImage.pageXPt + nearestImage.widthPt
+            : null,
+          nearestImage.pageYPt + nearestImage.heightPt / 2,
+          Math.max(3, nearestImage.heightPt / 2 + 2),
+        )
+      : null;
+    const ommlInk = rasterInkBounds(
+      rasterGeometry,
+      nativeEquation.pageXPt,
+      nativeEquation.pageEndXPt,
+      imageInk?.centerY ?? nativeEquation.pageYPt,
+      Math.max(4, (nearestImage?.heightPt ?? 0) / 2 + 3),
+    );
+    const inkDelta = ommlInk && imageInk
+      ? {
+          topPt: imageInk.minY - ommlInk.minY,
+          bottomPt: imageInk.maxY - ommlInk.maxY,
+          centerPt: imageInk.centerY - ommlInk.centerY,
+          heightPt: imageInk.height - ommlInk.height,
+        }
+      : null;
     return {
       omml: nativeEquation,
-      nearestImage: candidates[0]?.image ?? null,
+      nearestImage,
       horizontalDistancePt: Number.isFinite(candidates[0]?.distancePt)
         ? candidates[0].distancePt
         : null,
+      ommlInk,
+      imageInk,
+      inkDelta,
     };
   });
 }
@@ -211,16 +307,22 @@ if (layout.document.name !== expectedDocumentName) {
     `Expected ${expectedDocumentName}, found ${layout.document.name}. Keep the regression document active.`,
   );
 }
-createSnapshot();
+if (createDocumentSnapshot) createSnapshot();
 const pdfStatus = exportActivePdf();
-const pairs = sameLinePairs(layout.images, layout.omml);
+const rasterGeometry = collectRasterGeometry();
+const pairs = sameLinePairs(layout.images, layout.omml, rasterGeometry);
 const report = {
   generatedAt: new Date().toISOString(),
   document: layout.document,
-  paths: { snapshotPath, pdfPath, reportPath },
+  paths: {
+    snapshotPath: createDocumentSnapshot ? snapshotPath : null,
+    pdfPath,
+    reportPath,
+  },
   pdfStatus,
   images: layout.images,
   omml: layout.omml,
+  rasterGeometry,
   sameLinePairs: pairs,
 };
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -264,8 +366,11 @@ console.log(
             }
           : null,
         horizontalDistancePt: pair.horizontalDistancePt,
+        ommlInk: pair.ommlInk,
+        imageInk: pair.imageInk,
+        inkDelta: pair.inkDelta,
       })),
-      snapshotPath,
+      snapshotPath: createDocumentSnapshot ? snapshotPath : null,
       pdfPath,
       reportPath,
     },

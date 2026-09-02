@@ -4,9 +4,9 @@ import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 const scenario = process.argv[2];
-if (!new Set(["wrapper", "wrapper-bm", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "native-structure-audit", "native-structure-input-over", "native-structure-input-under", "native-structure-input-multi", "native-structure-input-core", "native-space-selection", "candidate-query-reset", "limit-candidate", "raw-placeholder-visual", "placeholder-selection", "pointer-release-stability", "structural-placeholder", "structured-chinese-ime", "accent-placeholder", "caret-probe", "vertical-structure-probe", "vertical-structure-navigation", "scripts", "upright", "formula-formatting", "context-style", "suggestions", "navigation", "geometry", "source-layout", "source-preview-only", "toolbar-compact", "formula-tiles", "cursor-placement", "font-settings", "output-fonts", "configuration", "ocr-model-selection", "ocr-empty-environment", "settings", "layout", "delete", "export"]).has(scenario)) {
+if (!new Set(["wrapper", "wrapper-bm", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "native-structure-audit", "native-structure-input-over", "native-structure-input-under", "native-structure-input-multi", "native-structure-input-core", "native-space-selection", "native-space-ime-replay", "candidate-query-reset", "limit-candidate", "raw-placeholder-visual", "placeholder-selection", "pointer-release-stability", "structural-placeholder", "structured-chinese-ime", "accent-placeholder", "caret-probe", "vertical-structure-probe", "vertical-structure-navigation", "scripts", "upright", "formula-formatting", "font-variant-formatting", "context-style", "suggestions", "navigation", "geometry", "source-layout", "source-preview-only", "toolbar-compact", "formula-tiles", "cursor-placement", "font-settings", "output-fonts", "configuration", "ocr-model-selection", "ocr-empty-environment", "settings", "layout", "delete", "export", "modulo-aligned"]).has(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-bm|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|native-structure-audit|native-structure-input-over|native-structure-input-under|native-structure-input-multi|native-structure-input-core|native-space-selection|candidate-query-reset|limit-candidate|raw-placeholder-visual|placeholder-selection|pointer-release-stability|structural-placeholder|structured-chinese-ime|accent-placeholder|caret-probe|vertical-structure-probe|vertical-structure-navigation|scripts|upright|formula-formatting|context-style|suggestions|navigation|geometry|source-layout|source-preview-only|toolbar-compact|formula-tiles|cursor-placement|font-settings|output-fonts|configuration|ocr-model-selection|ocr-empty-environment|settings|layout|delete|export>",
+    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-bm|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|native-structure-audit|native-structure-input-over|native-structure-input-under|native-structure-input-multi|native-structure-input-core|native-space-selection|native-space-ime-replay|candidate-query-reset|limit-candidate|raw-placeholder-visual|placeholder-selection|pointer-release-stability|structural-placeholder|structured-chinese-ime|accent-placeholder|caret-probe|vertical-structure-probe|vertical-structure-navigation|scripts|upright|formula-formatting|context-style|suggestions|navigation|geometry|source-layout|source-preview-only|toolbar-compact|formula-tiles|cursor-placement|font-settings|output-fonts|configuration|ocr-model-selection|ocr-empty-environment|settings|layout|delete|export>",
   );
 }
 
@@ -2354,13 +2354,12 @@ async function main() {
       })()`, "arrow key selects theta in the native input-selection list");
 
       const nativeSpaceStartedAt = await evaluate(`(() => {
-        window.__visualtexNativeSpaceTiming = {};
-        window.addEventListener("keydown", () => {
-          const handlerStartedAt = performance.now();
-          queueMicrotask(() => {
-            window.__visualtexNativeSpaceTiming.handlerMs =
-              performance.now() - handlerStartedAt;
-          });
+        const field = document.querySelector("math-field");
+        window.__visualtexNativeSpaceTiming = { fieldSpaceCount: 0 };
+        field?.addEventListener("keydown", (event) => {
+          if (event.key === " " || event.code === "Space") {
+            window.__visualtexNativeSpaceTiming.fieldSpaceCount += 1;
+          }
         }, { capture: true, once: true });
         return performance.now();
       })()`);
@@ -2386,17 +2385,20 @@ async function main() {
           sourceVisible: source?.classList.contains("is-visible") ?? false,
           stableVisible: stable?.classList.contains("is-visible") ?? false,
           elapsedMs: performance.now() - ${nativeSpaceStartedAt},
-          handlerMs: window.__visualtexNativeSpaceTiming?.handlerMs ?? null,
+          fieldSpaceCount:
+            window.__visualtexNativeSpaceTiming?.fieldSpaceCount ?? -1,
+          semanticCount:
+            normalized.split("\\\\theta").length - 1,
         };
       })()`, "Space commits the arrow-selected theta item");
 
       if (
         committedState.elapsedMs > 250 ||
-        committedState.handlerMs === null ||
-        committedState.handlerMs > 32
+        committedState.fieldSpaceCount !== 0 ||
+        committedState.semanticCount !== 1
       ) {
         throw new Error(
-          `Native Space selection was delayed: ${JSON.stringify(committedState)}`,
+          `Native Space selection was not uniquely owned by window capture: ${JSON.stringify(committedState)}`,
         );
       }
 
@@ -2405,6 +2407,174 @@ async function main() {
       }
       console.log(JSON.stringify({ initialState, movedState, committedState }, null, 2));
       console.log("Targeted native Space selection regression passed");
+      return;
+    }
+
+    if (scenario === "native-space-ime-replay") {
+      const readAlphaCandidateState = () => evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const panel = document.getElementById("mathlive-suggestion-popover");
+        const current = panel?.querySelector("li.ML__popover__current[data-command]");
+        const raw = [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+          .filter((node) => !node.classList.contains("ML__suggestion"))
+          .map((node) => node.textContent ?? "")
+          .join("");
+        return {
+          ready:
+            raw === "\\\\al" &&
+            [...(panel?.querySelectorAll("li[data-command]") ?? [])]
+              .some((item) => item.dataset.command === "\\\\alpha"),
+          raw,
+          selected: current?.dataset.command ?? "",
+          candidates: [...(panel?.querySelectorAll("li[data-command]") ?? [])]
+            .map((item) => item.dataset.command ?? ""),
+        };
+      })()`);
+
+      const prepareAlpha = async () => {
+        await clearField();
+        await focusField();
+        await typeText("\\al");
+        let state = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const panel = document.getElementById("mathlive-suggestion-popover");
+          const raw = [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join("");
+          const candidates = [...(panel?.querySelectorAll("li[data-command]") ?? [])]
+            .map((item) => item.dataset.command ?? "");
+          return {
+            ready: raw === "\\\\al" && candidates.includes("\\\\alpha"),
+            raw,
+            candidates,
+          };
+        })()`, "native alpha candidate list before replay probe");
+        for (let index = 0; index < 12; index += 1) {
+          state = await readAlphaCandidateState();
+          if (state.selected === "\\alpha") return state;
+          await key("ArrowDown", "ArrowDown", 40);
+        }
+        throw new Error(`Could not select alpha for replay probe: ${JSON.stringify(state)}`);
+      };
+
+      const commitOnce = async () => {
+        await key(" ", "Space", 32);
+        return waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const normalized = (field?.value ?? "").replaceAll(" ", "");
+          return {
+            ready: normalized === "\\\\alpha",
+            value: field?.value ?? "",
+            normalized,
+          };
+        })()`, "single alpha before replay injection");
+      };
+
+      const readReplayState = () => evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const normalized = (field?.value ?? "").replaceAll(" ", "");
+        return {
+          value: field?.value ?? "",
+          normalized,
+          alphaCount: normalized.split("\\\\alpha").length - 1,
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          mode: field?.mode ?? "",
+        };
+      })()`);
+
+      const initial = await prepareAlpha();
+      const committed = await commitOnce();
+      const keypressReplay = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+        if (!sink) return false;
+        for (let index = 0; index < 2; index += 1) {
+          sink.dispatchEvent(new KeyboardEvent("keypress", {
+            key: " ",
+            code: "Space",
+            keyCode: 32,
+            charCode: 32,
+            which: 32,
+            bubbles: true,
+            composed: false,
+            cancelable: true,
+          }));
+        }
+        return true;
+      })()`);
+      await sleep(80);
+      const afterKeypressReplay = await readReplayState();
+
+      await prepareAlpha();
+      await commitOnce();
+      const inputReplay = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+        if (!sink) return false;
+        sink.dispatchEvent(new InputEvent("input", {
+          inputType: "insertText",
+          data: " ",
+          bubbles: true,
+          composed: false,
+          cancelable: true,
+        }));
+        return true;
+      })()`);
+      await sleep(80);
+      const afterInputReplay = await readReplayState();
+
+      await prepareAlpha();
+      await commitOnce();
+      const internalSpaceReplay = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+        if (!sink) return false;
+        const down = new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          keyCode: 32,
+          which: 32,
+          bubbles: true,
+          composed: false,
+          cancelable: true,
+        });
+        const keydownAllowed = sink.dispatchEvent(down);
+        const press = new KeyboardEvent("keypress", {
+          key: " ",
+          code: "Space",
+          keyCode: 32,
+          charCode: 32,
+          which: 32,
+          bubbles: true,
+          composed: false,
+          cancelable: true,
+        });
+        const keypressAllowed = sink.dispatchEvent(press);
+        return {
+          keydownAllowed,
+          keydownPrevented: down.defaultPrevented,
+          keypressAllowed,
+          keypressPrevented: press.defaultPrevented,
+        };
+      })()`);
+      await sleep(80);
+      const afterInternalSpaceReplay = await readReplayState();
+
+      console.log(JSON.stringify({
+        initial,
+        committed,
+        keypressReplay,
+        afterKeypressReplay,
+        inputReplay,
+        afterInputReplay,
+        internalSpaceReplay,
+        afterInternalSpaceReplay,
+      }, null, 2));
+      console.log("Targeted native Space IME replay probe completed");
       return;
     }
 
@@ -5807,11 +5977,105 @@ async function main() {
       return;
     }
 
+    if (scenario === "modulo-aligned") {
+      const issue15Source = String.raw`\begin{aligned}
+\langle p_1,p_0\rangle &\leftarrow \operatorname{umul}(a,b)=ab
+&&\text{Double word product}\\
+p_0 &\leftarrow \operatorname{umullo}(a,b)=(ab)\bmod\beta
+&&\text{Low word}\\
+p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rfloor
+&&\text{High word.}
+\end{aligned}`;
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue(${JSON.stringify(issue15Source)}, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertFromPaste",
+        }));
+        return true;
+      })()`);
+      const issue15State = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const content = field?.shadowRoot?.querySelector('[part="content"]');
+        const box = content?.getBoundingClientRect();
+        const errors = Array.isArray(field?.errors) ? field.errors : [];
+        const value = field?.value ?? "";
+        return {
+          ready:
+            value.includes("\\\\begin{aligned}") &&
+            value.includes("\\\\bmod") &&
+            errors.length === 0 &&
+            !content?.querySelector(".ML__error") &&
+            Number.isFinite(box?.width) &&
+            Number.isFinite(box?.height) &&
+            box.width > 400 &&
+            box.height > 70,
+          value,
+          errors,
+          contentText: content?.textContent ?? "",
+          width: box?.width ?? 0,
+          height: box?.height ?? 0,
+          errorAtoms: content?.querySelectorAll(".ML__error").length ?? -1,
+        };
+      })()`, "Issue #15 aligned formula with \\bmod");
+
+      await clearField();
+      await typeText(String.raw`\bmod`);
+      const suggestionState = await waitForEvaluation(`(() => {
+        const nativeItems = [...document.querySelectorAll(
+          '#mathlive-suggestion-popover li[data-command]',
+        )];
+        const visualItems = [...document.querySelectorAll(
+          '.suggestion-item .suggestion-command',
+        )];
+        return {
+          ready:
+            nativeItems.some((item) => item.dataset.command === "\\\\bmod") ||
+            visualItems.some((item) => item.textContent?.trim() === "\\\\bmod"),
+          nativeCommands: nativeItems.map((item) => item.dataset.command ?? ""),
+          visualCommands: visualItems.map((item) => item.textContent?.trim() ?? ""),
+        };
+      })()`, "\\bmod command suggestion");
+      await key(" ", "Space", 32);
+      await typeText("b");
+      const typedState = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const content = field?.shadowRoot?.querySelector('[part="content"]');
+        const value = field?.value ?? "";
+        const errors = Array.isArray(field?.errors) ? field.errors : [];
+        return {
+          ready:
+            value.includes("\\\\bmod") &&
+            value.includes("b") &&
+            errors.length === 0 &&
+            !content?.querySelector(".ML__error"),
+          value,
+          errors,
+          contentText: content?.textContent ?? "",
+        };
+      })()`, "typed \\bmod operator remains editable");
+
+      console.log(JSON.stringify({ issue15State, suggestionState, typedState }, null, 2));
+      console.log("Targeted modulo/aligned editor regression passed");
+      return;
+    }
+
     if (scenario === "export") {
       const exportLatexLines = [
         String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`,
         String.raw`\frac{a}{b}+x^2`,
         String.raw`\int_0^1 x^2\,\mathrm{d}x`,
+        String.raw`\symbfit{J}+\bm{\alpha}+\abs{x}+\dv{f}{x}`,
       ];
       await evaluate(`(() => {
         const storageKey = "visualtex-editor";
@@ -5832,7 +6096,7 @@ async function main() {
       await waitForEvaluation(`(() => ({
         ready:
           document.querySelector(".document-title-area input")?.value === "Export Test" &&
-          document.querySelectorAll("math-field").length === 3 &&
+          document.querySelectorAll("math-field").length === 4 &&
           [...document.querySelectorAll("math-field")].some((field) => field.value?.includes("\\\\frac")),
         title: document.querySelector(".document-title-area input")?.value ?? "",
         values: [...document.querySelectorAll("math-field")].map((field) => field.value ?? ""),
@@ -5884,7 +6148,8 @@ async function main() {
             text.includes("Export Test") &&
             text.includes("\\\\begin{pmatrix}") &&
             text.includes("\\\\frac{a}{b}+x^2") &&
-            text.includes("\\\\int_0^1"),
+            text.includes("\\\\int_0^1") &&
+            text.includes("\\\\symbfit{J}+\\\\bm{\\\\alpha}+\\\\abs{x}+\\\\dv{f}{x}"),
           filename: item.filename,
           bytes: new TextEncoder().encode(text).length,
           text,
@@ -5951,19 +6216,38 @@ async function main() {
     }
 
     if (scenario === "wrapper-bm") {
-      const runWrapperCase = async ({ command, preview, expected }) => {
+      const runWrapperCase = async ({
+        command,
+        preview = null,
+        expected,
+        pendingCommand = command,
+      }) => {
         await clearField();
         await typeText(command);
-        const previewState = await waitForEvaluation(`(() => {
-          const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-            .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
-          const previewNode = item?.querySelector('[data-visualtex-preview]');
-          return {
-            ready: Boolean(item && previewNode?.dataset.visualtexPreview === ${JSON.stringify(preview)}),
-            command: item?.dataset.command ?? "",
-            previewLatex: previewNode?.dataset.visualtexPreview ?? "",
-          };
-        })()`, `${command} visual preview`);
+        const previewState = preview
+          ? await waitForEvaluation(`(() => {
+              const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
+                .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
+              const previewNode = item?.querySelector('[data-visualtex-preview]');
+              return {
+                ready: Boolean(item && previewNode?.dataset.visualtexPreview === ${JSON.stringify(preview)}),
+                command: item?.dataset.command ?? "",
+                previewLatex: previewNode?.dataset.visualtexPreview ?? "",
+                nativeRegistered: Boolean(item),
+              };
+            })()`, `${command} visual preview`)
+          : await evaluate(`(() => {
+              const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
+                .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
+              const custom = [...document.querySelectorAll('.suggestion-item .suggestion-command')]
+                .find((candidate) => candidate.textContent?.trim() === ${JSON.stringify(command)});
+              return {
+                ready: true,
+                skipped: true,
+                nativeRegistered: Boolean(item),
+                visualTexRegistered: Boolean(custom),
+              };
+            })()`);
         await key(" ", "Space", 32);
         const emptyState = await waitForEvaluation(`(() => {
           const field = document.querySelector("math-field");
@@ -5971,7 +6255,7 @@ async function main() {
           return {
             ready:
               field?.value === "" &&
-              field.dataset.pendingWrapperCommand === ${JSON.stringify(command)} &&
+              field.dataset.pendingWrapperCommand === ${JSON.stringify(pendingCommand)} &&
               host?.classList.contains("has-pending-wrapper-placeholder"),
             value: field?.value ?? "",
             pendingWrapperCommand: field?.dataset.pendingWrapperCommand ?? "",
@@ -6006,6 +6290,50 @@ async function main() {
         preview: String.raw`\mathbfit{ABC}`,
         expected: String.raw`\mathbfit{A}`,
       });
+      const symbfitState = await runWrapperCase({
+        command: String.raw`\symbfit`,
+        preview: String.raw`\symbfit{ABC\alpha}`,
+        expected: String.raw`\symbfit{A}`,
+      });
+      const simbfitAliasState = await runWrapperCase({
+        command: String.raw`\simbfit`,
+        preview: String.raw`\symbfit{ABC\alpha}`,
+        pendingCommand: String.raw`\symbfit`,
+        expected: String.raw`\symbfit{A}`,
+      });
+      const boldmathState = await runWrapperCase({
+        command: String.raw`\boldmath`,
+        preview: String.raw`\mathbfit{A\alpha}`,
+        pendingCommand: String.raw`\mathbfit`,
+        expected: String.raw`\mathbfit{A}`,
+      });
+      const bbbAliasState = await runWrapperCase({
+        command: String.raw`\Bbb`,
+        preview: String.raw`\Bbb{ABC}`,
+        pendingCommand: String.raw`\mathbb`,
+        expected: String.raw`\mathbb{A}`,
+      });
+      const absState = await runWrapperCase({
+        command: String.raw`\abs`,
+        preview: String.raw`\abs{x}`,
+        expected: String.raw`\abs{A}`,
+      });
+
+      await clearField();
+      await typeText(String.raw`\dv`);
+      await key(" ", "Space", 32);
+      const derivativeShortcutState = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const value = field?.value ?? "";
+        const placeholderCount = (value.match(/\\\\placeholder\\{\\}/g) ?? []).length;
+        return {
+          ready: value.includes('\\\\dv{') && placeholderCount === 2 && !field?.selectionIsCollapsed,
+          value,
+          placeholderCount,
+          selection: field ? structuredClone(field.selection) : null,
+        };
+      })()`, "\\dv two-argument shorthand placeholders");
+
       const structuredPlaceholderState = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         field.setValue("p+(z+r)+q+\\\\placeholder{}", {
@@ -6038,8 +6366,8 @@ async function main() {
           persistedLatex: persisted.lines?.[0]?.latex ?? "",
         };
       })()`);
-      console.log(JSON.stringify({ bmState, mathbfitState, structuredPlaceholderState, structuredPlaceholderAfterInput }));
-      console.log("Targeted bm/mathbfit wrapper regression passed");
+      console.log(JSON.stringify({ bmState, mathbfitState, symbfitState, simbfitAliasState, boldmathState, bbbAliasState, absState, derivativeShortcutState, structuredPlaceholderState, structuredPlaceholderAfterInput }));
+      console.log("Targeted font/package shorthand wrapper regression passed");
       return;
     }
 
@@ -6904,7 +7232,7 @@ async function main() {
       return;
     }
 
-    if (scenario === "formula-formatting") {
+    if (scenario === "formula-formatting" || scenario === "font-variant-formatting") {
       await waitForEvaluation(`(() => ({
         ready: [
           '[data-formula-selection-bold]',
@@ -6971,6 +7299,30 @@ async function main() {
           buttons: 0,
           clickCount: 1,
         });
+        await sleep(60);
+        const pointerDelivered = await evaluate(`Boolean(globalThis.__visualTexFormattingTrace?.events?.length)`);
+        if (!pointerDelivered) {
+          await evaluate(`(() => {
+            const button = document.querySelector(${encodedSelector});
+            if (!(button instanceof HTMLElement)) return false;
+            button.dispatchEvent(new PointerEvent('pointerenter', {
+              bubbles: false,
+              pointerId: 1,
+              pointerType: 'mouse',
+              button: 0,
+              buttons: 0,
+            }));
+            button.dispatchEvent(new PointerEvent('pointerdown', {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              pointerType: 'mouse',
+              button: 0,
+              buttons: 1,
+            }));
+            return true;
+          })()`);
+        }
         await sleep(100);
         return evaluate(`(() => {
           const field = document.querySelector('math-field');
@@ -7005,7 +7357,14 @@ async function main() {
           field.focus();
           return true;
         })()`);
-        await sleep(100);
+        await sleep(60);
+        const expectedCanonical = latex.replace(/\s+/g, '');
+        const expectedSerialized = JSON.stringify(expectedCanonical);
+        await waitForEvaluation(`(() => {
+          const field = document.querySelector('math-field');
+          const actual = field?.value?.replace(/\\s+/g, '') ?? '';
+          return { ready: actual === ${expectedSerialized}, actual };
+        })()`, `formula value hydration for ${latex}`);
       };
 
       const readFormattingValue = () => evaluate(`(() => {
@@ -7016,10 +7375,24 @@ async function main() {
       await setFormattingValue('abc');
       const boldTrace = await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldApplied = await readFormattingValue();
-      if (boldApplied !== String.raw`\mathbf{abc}`) {
+      if (boldApplied !== String.raw`\mathbfit{abc}`) {
         throw new Error(
-          `Bold toggle must emit \\mathbf exactly; received ${boldApplied}; trace=${JSON.stringify(boldTrace)}`,
+          `Bold toggle must preserve default math italic as \\mathbfit; received ${boldApplied}; trace=${JSON.stringify(boldTrace)}`,
         );
+      }
+      const boldVisualStyle = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        const node = field?.shadowRoot?.querySelector('.ML__mathbfit, .ML__cmr.ML__bold.ML__it');
+        if (!(node instanceof HTMLElement)) return null;
+        const style = getComputedStyle(node);
+        return { fontStyle: style.fontStyle, fontWeight: style.fontWeight };
+      })()`);
+      if (
+        !boldVisualStyle ||
+        boldVisualStyle.fontStyle !== 'italic' ||
+        Number.parseInt(boldVisualStyle.fontWeight, 10) < 600
+      ) {
+        throw new Error(`Bold-italic visual style is not actually bold + italic: ${JSON.stringify(boldVisualStyle)}`);
       }
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldRemoved = await readFormattingValue();
@@ -7037,6 +7410,51 @@ async function main() {
       const italicRestored = await readFormattingValue();
       if (italicRestored !== 'xyz') {
         throw new Error(`Second italic toggle must restore default math italic; received ${italicRestored}`);
+      }
+
+      await setFormattingValue(String.raw`\mathrm{u}`);
+      await dispatchFormattingToggle('[data-formula-selection-bold]');
+      const uprightBoldApplied = await readFormattingValue();
+      if (uprightBoldApplied !== String.raw`\mathbf{u}`) {
+        throw new Error(`Bold toggle must keep explicit upright math upright; received ${uprightBoldApplied}`);
+      }
+
+      await setFormattingValue(String.raw`\symbfit{J}`);
+      const symbfitVisual = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        const node = field?.shadowRoot?.querySelector('.ML__mathbfit, .ML__cmr.ML__bold.ML__it');
+        if (!(node instanceof HTMLElement)) return { value: field?.value ?? null, style: null };
+        const style = getComputedStyle(node);
+        return {
+          value: field?.value ?? null,
+          style: { fontStyle: style.fontStyle, fontWeight: style.fontWeight },
+        };
+      })()`);
+      if (
+        !symbfitVisual?.value?.replace(/\s+/g, '').includes(String.raw`\symbfit{J}`) ||
+        symbfitVisual.style?.fontStyle !== 'italic' ||
+        Number.parseInt(symbfitVisual.style?.fontWeight ?? '0', 10) < 600
+      ) {
+        throw new Error(`symbfit must preserve source and render bold italic: ${JSON.stringify(symbfitVisual)}`);
+      }
+
+      await setFormattingValue(String.raw`\bm{J}`);
+      const bmVisual = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        const node = field?.shadowRoot?.querySelector('.ML__mathbfit, .ML__cmr.ML__bold.ML__it');
+        if (!(node instanceof HTMLElement)) return { value: field?.value ?? null, style: null };
+        const style = getComputedStyle(node);
+        return {
+          value: field?.value ?? null,
+          style: { fontStyle: style.fontStyle, fontWeight: style.fontWeight },
+        };
+      })()`);
+      if (
+        !bmVisual?.value?.replace(/\s+/g, '').includes(String.raw`\bm{J}`) ||
+        bmVisual.style?.fontStyle !== 'italic' ||
+        Number.parseInt(bmVisual.style?.fontWeight ?? '0', 10) < 600
+      ) {
+        throw new Error(`bm must preserve source and render bold italic: ${JSON.stringify(bmVisual)}`);
       }
 
       await setFormattingValue(String.raw`\mathbf{q}`);
@@ -7061,6 +7479,12 @@ async function main() {
         boldItalic: boldItalicApplied,
         boldRestored: boldUprightRestored,
       };
+
+      if (scenario === "font-variant-formatting") {
+        console.log(JSON.stringify({ selectionBold, selectionItalic }, null, 2));
+        console.log("Targeted bold/italic font variant regression passed");
+        return;
+      }
 
       const removedPersistentControls = await evaluate(`(() => ({
         typingBold: Boolean(document.querySelector('[data-formula-typing-bold]')),

@@ -239,14 +239,403 @@ async function main() {
     }
     process.stdout.write("[custom-symbol-designer] Proof theme purity verified\n");
 
+    const redesignedSurface = await client.evaluate(`(() => {
+      const materialLibrary = document.querySelector('[data-custom-symbol-material-library]');
+      const categories = Array.from(
+        document.querySelectorAll('[data-custom-symbol-material-category]'),
+      ).map((item) => item.getAttribute('data-custom-symbol-material-category'));
+      const fontSize = (selector) => {
+        const element = document.querySelector(selector);
+        return element ? Number.parseFloat(getComputedStyle(element).fontSize) : 0;
+      };
+      return {
+        materialCount: Number(materialLibrary?.getAttribute('data-material-count') || 0),
+        bareMaterialsOnly: materialLibrary?.getAttribute('data-bare-materials-only') || '',
+        categories,
+        hasCompositeFrac: Boolean(document.querySelector('[data-custom-symbol-material-command="frac"]')),
+        hasCompositeSqrt: Boolean(document.querySelector('[data-custom-symbol-material-command="sqrt"]')),
+        hasCompositeMatrix: Boolean(document.querySelector('[data-custom-symbol-material-command="matrix2"]')),
+        hasFontWrapper: Boolean(document.querySelector('[data-custom-symbol-material-command="math-italic"]')),
+        hasInfiniteCanvas: document.querySelector('[data-custom-symbol-canvas-shell]')?.getAttribute('data-custom-symbol-infinite-canvas') === 'true',
+        autoInkBounds: document.querySelector('[data-custom-symbol-canvas-shell]')?.getAttribute('data-custom-symbol-auto-ink-bounds') === 'true',
+        hasOutputBox: Boolean(document.querySelector('[data-custom-symbol-output-box]')),
+        hasCanvasPaper: Boolean(document.querySelector('[data-custom-symbol-canvas-paper]')),
+        explanatoryHints: document.querySelectorAll(
+          '.custom-symbol-system-font-hint, .custom-symbol-metric-hint, .custom-symbol-effect-hint',
+        ).length,
+        headerFont: fontSize('.custom-symbol-designer-header strong'),
+        panelFont: fontSize('.custom-symbol-designer-panel > header strong'),
+        categoryFont: fontSize('[data-custom-symbol-material-category]'),
+        inputFont: fontSize('[data-custom-symbol-material-input]'),
+        undersizedVisibleText: (() => {
+          const dialog = document.querySelector('[data-custom-symbol-designer]');
+          if (!dialog) return [{ text: 'missing-dialog', size: 0 }];
+          const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_TEXT);
+          const undersized = [];
+          let node;
+          while ((node = walker.nextNode())) {
+            const text = node.textContent?.trim() || '';
+            const parent = node.parentElement;
+            if (!text || !parent) continue;
+            if (parent.closest('.math-preview, math-field, svg, [aria-hidden="true"]')) continue;
+            if (['SCRIPT', 'STYLE'].includes(parent.tagName)) continue;
+            const style = getComputedStyle(parent);
+            if (
+              style.display === 'none' ||
+              style.visibility === 'hidden' ||
+              Number(style.opacity) === 0 ||
+              parent.getClientRects().length === 0
+            ) {
+              continue;
+            }
+            const size = Number.parseFloat(style.fontSize);
+            if (Number.isFinite(size) && size < 10) {
+              undersized.push({ text: text.slice(0, 36), size, className: parent.className || parent.tagName });
+            }
+          }
+          return undersized;
+        })(),
+        systemFontOptions: document.querySelectorAll('[data-custom-symbol-system-font-select] option').length,
+        systemGlyphCategories: document.querySelectorAll('[data-custom-symbol-system-glyph-category]').length,
+        systemGlyphCount: document.querySelectorAll('[data-custom-symbol-system-glyph]').length,
+        hasCambria: Array.from(document.querySelectorAll('[data-custom-symbol-system-font-select] option')).some((option) => option.textContent?.includes('Cambria Math')),
+        hasItalicMode: Boolean(document.querySelector('[data-custom-symbol-system-font-italic]')),
+        hasUprightMode: Boolean(document.querySelector('[data-custom-symbol-system-font-upright]')),
+      };
+    })()`);
+    assert.ok(redesignedSurface.materialCount > 20, "The bare-character library must still expose a substantial glyph set");
+    assert.equal(redesignedSurface.bareMaterialsOnly, "true");
+    assert.deepEqual(redesignedSurface.categories, [
+      "common",
+      "calculus",
+      "greek",
+      "relation",
+      "set",
+      "arrow",
+      "physics",
+    ]);
+    assert.equal(redesignedSurface.hasCompositeFrac, false);
+    assert.equal(redesignedSurface.hasCompositeSqrt, false);
+    assert.equal(redesignedSurface.hasCompositeMatrix, false);
+    assert.equal(redesignedSurface.hasFontWrapper, false);
+    assert.equal(redesignedSurface.hasInfiniteCanvas, true);
+    assert.equal(redesignedSurface.autoInkBounds, true);
+    assert.equal(redesignedSurface.hasOutputBox, false);
+    assert.equal(redesignedSurface.hasCanvasPaper, false);
+    assert.equal(redesignedSurface.explanatoryHints, 0);
+    assert.ok(redesignedSurface.headerFont >= 14);
+    assert.ok(redesignedSurface.panelFont >= 11);
+    assert.ok(redesignedSurface.categoryFont >= 10);
+    assert.ok(redesignedSurface.inputFont >= 11);
+    assert.deepEqual(
+      redesignedSurface.undersizedVisibleText,
+      [],
+      `The redesigned character editor still contains undersized visible text: ${JSON.stringify(redesignedSurface.undersizedVisibleText)}`,
+    );
+    assert.ok(redesignedSurface.systemFontOptions >= 5, "The extended glyph library must expose multiple system math fonts");
+    assert.ok(redesignedSurface.systemGlyphCategories >= 8, "The extended glyph library must be categorized");
+    assert.ok(redesignedSurface.systemGlyphCount > 20, "The active extended glyph category must expose a substantial symbol set");
+    assert.equal(redesignedSurface.hasCambria, true, "Cambria Math must be an explicit system-font source");
+    assert.equal(redesignedSurface.hasItalicMode, true);
+    assert.equal(redesignedSurface.hasUprightMode, true);
+
+    const registrationPlaceholders = await client.evaluate(`(() => ({
+      command: document.querySelector('[data-custom-symbol-command-input]')?.getAttribute('placeholder') || '',
+      fallback: document.querySelector('[data-custom-symbol-omml-fallback-input]')?.getAttribute('placeholder') || '',
+    }))()`);
+    assert.equal(
+      registrationPlaceholders.command,
+      String.raw`\selfdefa`,
+      `The command placeholder must display exactly one LaTeX backslash: ${JSON.stringify(registrationPlaceholders)}`,
+    );
+    assert.equal(
+      registrationPlaceholders.fallback,
+      String.raw`\approx`,
+      `The OMML fallback placeholder must display exactly one LaTeX backslash: ${JSON.stringify(registrationPlaceholders)}`,
+    );
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-material-category="calculus"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelectorAll('[data-custom-symbol-material-latex]').length >= 12 && Array.from(document.querySelectorAll('[data-custom-symbol-material-library] .math-preview')).every((preview) => preview.dataset.fitReady === 'true')`,
+      30000,
+    );
+    const calculusTileFit = await client.evaluate(`(() => {
+      const tiles = Array.from(document.querySelectorAll('[data-custom-symbol-material-latex]'));
+      return tiles.map((tile) => {
+        const preview = tile.querySelector('.math-preview-fit-content');
+        const tileRect = tile.getBoundingClientRect();
+        const previewRect = preview?.getBoundingClientRect();
+        return {
+          id: tile.getAttribute('data-custom-symbol-material-command') || '',
+          latex: tile.getAttribute('data-custom-symbol-material-latex') || '',
+          fitReady: tile.querySelector('.math-preview')?.dataset.fitReady || '',
+          tile: { left: tileRect.left, top: tileRect.top, right: tileRect.right, bottom: tileRect.bottom },
+          preview: previewRect
+            ? { left: previewRect.left, top: previewRect.top, right: previewRect.right, bottom: previewRect.bottom, width: previewRect.width, height: previewRect.height }
+            : null,
+        };
+      });
+    })()`);
+    assert.ok(calculusTileFit.length >= 12);
+    for (const item of calculusTileFit) {
+      assert.equal(item.fitReady, 'true', `Material preview did not finish fitting: ${JSON.stringify(item)}`);
+      assert.ok(item.preview && item.preview.width > 2 && item.preview.height > 2, `Material glyph is not visible: ${JSON.stringify(item)}`);
+      assert.ok(item.preview.left >= item.tile.left + 2, `Material glyph is clipped on the left: ${JSON.stringify(item)}`);
+      assert.ok(item.preview.right <= item.tile.right - 2, `Material glyph is clipped on the right: ${JSON.stringify(item)}`);
+      assert.ok(item.preview.top >= item.tile.top + 2, `Material glyph is clipped on the top: ${JSON.stringify(item)}`);
+      assert.ok(item.preview.bottom <= item.tile.bottom - 2, `Material glyph is clipped on the bottom: ${JSON.stringify(item)}`);
+    }
+    process.stdout.write("[custom-symbol-designer] registration placeholders and large-operator tile fitting verified\n");
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-material-category="relation"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelectorAll('[data-custom-symbol-material-latex]').length >= 20`,
+    );
+    const designerContrast = await client.evaluate(`(() => {
+      const canvas = document.querySelector('[data-custom-symbol-canvas-shell]');
+      const materialLibrary = document.querySelector('[data-custom-symbol-material-library]');
+      const firstMaterial = document.querySelector('[data-custom-symbol-material-latex]');
+      const firstPreview = firstMaterial?.querySelector('.math-preview');
+      const equalsTile = document.querySelector('[data-custom-symbol-material-command="equal"]');
+      const approxTile = document.querySelector('[data-custom-symbol-material-command="approx"]');
+      const visibleGlyph = (tile) => {
+        const preview = tile?.querySelector('.math-preview');
+        const latex = preview?.querySelector('.ML__latex');
+        const candidates = Array.from(latex?.querySelectorAll('*') || []).filter((element) => {
+          const text = element.textContent?.trim() || '';
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return Boolean(text) && rect.width > 1 && rect.height > 1 && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+        });
+        const largest = candidates.sort((left, right) => {
+          const a = left.getBoundingClientRect();
+          const b = right.getBoundingClientRect();
+          return b.width * b.height - a.width * a.height;
+        })[0] || latex;
+        const rect = largest?.getBoundingClientRect();
+        const style = largest ? getComputedStyle(largest) : null;
+        return {
+          text: latex?.textContent?.trim() || '',
+          width: rect?.width || 0,
+          height: rect?.height || 0,
+          color: style?.color || '',
+          opacity: style?.opacity || '',
+          visibility: style?.visibility || '',
+          display: style?.display || '',
+          fontSize: style?.fontSize || '',
+          lineHeight: style?.lineHeight || '',
+          previewDisplay: preview ? getComputedStyle(preview).display : '',
+          previewWidth: preview?.getBoundingClientRect().width || 0,
+          previewHeight: preview?.getBoundingClientRect().height || 0,
+          htmlLength: preview?.innerHTML.length || 0,
+          html: preview?.innerHTML.slice(0, 500) || '',
+        };
+      };
+      const styleOf = (element) => element ? getComputedStyle(element) : null;
+      const canvasStyle = styleOf(canvas);
+      const libraryStyle = styleOf(materialLibrary);
+      const materialStyle = styleOf(firstMaterial);
+      const previewStyle = styleOf(firstPreview);
+      return {
+        relationCount: document.querySelectorAll('[data-custom-symbol-material-latex]').length,
+        hasEquals: Boolean(document.querySelector('[data-custom-symbol-material-command="equal"]')),
+        hasApprox: Boolean(document.querySelector('[data-custom-symbol-material-command="approx"]')),
+        canvasBackground: canvasStyle?.backgroundColor || '',
+        canvasColor: canvasStyle?.color || '',
+        libraryBackground: libraryStyle?.backgroundColor || '',
+        materialBackground: materialStyle?.backgroundColor || '',
+        materialBorderColor: materialStyle?.borderTopColor || '',
+        materialColor: materialStyle?.color || '',
+        previewColor: previewStyle?.color || '',
+        equalsGlyph: visibleGlyph(equalsTile),
+        approxGlyph: visibleGlyph(approxTile),
+      };
+    })()`);
+    assert.ok(
+      designerContrast.relationCount >= 20,
+      `Relation character palette unexpectedly empty: ${JSON.stringify(designerContrast)}`,
+    );
+    assert.equal(designerContrast.hasEquals, true);
+    assert.equal(designerContrast.hasApprox, true);
+    assert.notEqual(designerContrast.canvasBackground, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(designerContrast.canvasBackground, designerContrast.canvasColor);
+    assert.notEqual(designerContrast.libraryBackground, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(designerContrast.materialBackground, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(designerContrast.materialBorderColor, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(designerContrast.materialBackground, designerContrast.materialColor);
+    assert.equal(designerContrast.previewColor, designerContrast.materialColor);
+    assert.match(designerContrast.equalsGlyph.text, /=/);
+    assert.match(designerContrast.approxGlyph.text, /≈/);
+    for (const glyph of [designerContrast.equalsGlyph, designerContrast.approxGlyph]) {
+      assert.ok(
+        glyph.htmlLength > 20 && glyph.width >= 8 && glyph.height >= 8,
+        `Character tile markup exists but its glyph is not visibly rendered: ${JSON.stringify(glyph)}`,
+      );
+      assert.equal(glyph.visibility, 'visible');
+      assert.notEqual(glyph.opacity, '0');
+      assert.equal(glyph.color, designerContrast.materialColor);
+    }
+    await client.evaluate(`document.querySelector('[data-custom-symbol-material-category="common"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-material-category="common"]')?.classList.contains('is-active') === true`,
+    );
+    process.stdout.write("[custom-symbol-designer] readable controls, visible symbol palette and theme-safe canvas verified\n");
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-system-glyph-category="math-alphanumeric"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelectorAll('[data-custom-symbol-system-glyph]').length > 900`,
+      30000,
+    );
+    const fullMathematicalAlphabet = await client.evaluate(`(() => ({
+      count: document.querySelectorAll('[data-custom-symbol-system-glyph]').length,
+      hasLastCodePoint: Boolean(document.querySelector('[data-custom-symbol-system-glyph="U+1D7FF"]')),
+    }))()`);
+    assert.ok(
+      fullMathematicalAlphabet.count > 900,
+      `The mathematical alphanumeric browser must expose the complete Unicode block rather than a short prefix: ${JSON.stringify(fullMathematicalAlphabet)}`,
+    );
+    assert.equal(
+      fullMathematicalAlphabet.hasLastCodePoint,
+      true,
+      "The extended glyph browser must reach U+1D7FF",
+    );
+    await client.evaluate(`document.querySelector('[data-custom-symbol-system-glyph-category="basic-italic"]').click()`);
+    await waitUntil(
+      client,
+      `Boolean(document.querySelector('[data-custom-symbol-system-glyph="U+0041"]'))`,
+    );
+    process.stdout.write("[custom-symbol-designer] complete mathematical alphanumeric Unicode block verified\n");
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-material-category="greek"]').click()`);
+    await setReactInput(client, '[data-custom-symbol-material-search]', "approx");
+    await waitUntil(
+      client,
+      `Boolean(document.querySelector('[data-custom-symbol-material-command="approx"]'))`,
+    );
+    const crossCategorySearch = await client.evaluate(`(() => ({
+      activeCategory: document.querySelector('[data-custom-symbol-material-category].is-active')?.getAttribute('data-custom-symbol-material-category') || '',
+      foundApprox: Boolean(document.querySelector('[data-custom-symbol-material-command="approx"]')),
+      foundCompositeFrac: Boolean(document.querySelector('[data-custom-symbol-material-command="frac"]')),
+      visibleSources: Array.from(document.querySelectorAll('[data-custom-symbol-material-latex]')).map(
+        (item) => item.getAttribute('data-custom-symbol-material-latex') || '',
+      ),
+    }))()`);
+    assert.equal(crossCategorySearch.activeCategory, "greek");
+    assert.equal(
+      crossCategorySearch.foundApprox,
+      true,
+      "A non-empty material search must search bare glyphs across categories",
+    );
+    assert.equal(crossCategorySearch.foundCompositeFrac, false);
+    assert.ok(
+      crossCategorySearch.visibleSources.every(
+        (source) =>
+          (Array.from(source).length === 1 || source.startsWith("\\")) &&
+          !/[{}_^&]/.test(source) &&
+          !source.includes("\\begin") &&
+          !source.includes("\\placeholder"),
+      ),
+      `The character material browser leaked a composite formula: ${JSON.stringify(crossCategorySearch.visibleSources)}`,
+    );
+    await setReactInput(client, '[data-custom-symbol-material-search]', "frac");
+    await sleep(100);
+    assert.equal(
+      await client.evaluate(`document.querySelectorAll('[data-custom-symbol-material-latex]').length`),
+      0,
+      "Composite fraction structures must not appear in the character material browser",
+    );
+    await setReactInput(client, '[data-custom-symbol-material-search]', "");
+    await client.evaluate(`document.querySelector('[data-custom-symbol-material-category="common"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-material-category="common"]')?.classList.contains('is-active') === true`,
+    );
+    process.stdout.write("[custom-symbol-designer] cross-category bare-character search and composite-command exclusion verified\n");
+
+    await setReactInput(
+      client,
+      '[data-custom-symbol-system-glyph-search]',
+      "U+0041",
+    );
+    await waitUntil(
+      client,
+      `Boolean(document.querySelector('[data-custom-symbol-system-glyph="U+0041"]'))`,
+    );
+    await client.evaluate(`document.querySelector('[data-custom-symbol-system-glyph="U+0041"]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelectorAll('[data-custom-symbol-layer]').length === 1 && !document.querySelector('[data-custom-symbol-system-glyph][aria-busy="true"]')`,
+    );
+    const browserSystemGlyph = await client.evaluate(`(() => {
+      const selected = document.querySelector('[data-custom-symbol-layer].is-selected');
+      const id = selected?.getAttribute('data-custom-symbol-layer') || '';
+      const artwork = id
+        ? document.querySelector('[data-custom-symbol-artwork-layer="' + id + '"]')
+        : null;
+      const text = artwork?.querySelector('text');
+      return {
+        source: selected?.getAttribute('data-layer-source-latex') || '',
+        hasTextFallback: Boolean(text),
+        fontFamily: text?.getAttribute('font-family') || '',
+        fontStyle: text?.getAttribute('font-style') || '',
+        status: document.querySelector('[data-custom-symbol-system-font-status]')?.textContent || '',
+      };
+    })()`);
+    assert.equal(browserSystemGlyph.source, "A");
+    assert.equal(browserSystemGlyph.hasTextFallback, true);
+    assert.match(browserSystemGlyph.fontFamily, /Cambria Math/);
+    assert.equal(browserSystemGlyph.fontStyle, "italic");
+    assert.match(browserSystemGlyph.status, /browser|浏览器/i);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-system-font-upright]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-system-font-upright]')?.getAttribute('aria-pressed') === 'true'`,
+    );
+    await client.evaluate(`document.querySelector('[data-custom-symbol-system-font-italic]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-system-font-italic]')?.getAttribute('aria-pressed') === 'true'`,
+    );
+    await client.evaluate(`document.querySelector('[data-delete-custom-symbol-layer]').click()`);
+    await waitUntil(
+      client,
+      `document.querySelectorAll('[data-custom-symbol-layer]').length === 0`,
+    );
+    await setReactInput(client, '[data-custom-symbol-system-glyph-search]', "");
+    process.stdout.write("[custom-symbol-designer] system math glyph insertion and browser fallback verified\n");
+
+    const beforeFirstInsertion = await client.evaluate(`(() => {
+      const canvas = document.querySelector('[data-custom-symbol-canvas]');
+      const reference = document.querySelector('[data-custom-symbol-reference]');
+      const rect = reference?.getBoundingClientRect();
+      return {
+        viewBox: canvas?.getAttribute('viewBox') || '',
+        referenceCenter: rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : null,
+      };
+    })()`);
+    assert.ok(beforeFirstInsertion.referenceCenter);
+
     await client.evaluate(`document.querySelector('[data-add-custom-symbol-material]').click()`);
     await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 1`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim()?.endsWith('em') === true`,
+    );
     const first = await client.evaluate(`(() => {
       const layer = document.querySelector('[data-custom-symbol-layer]');
       const canvasLayer = document.querySelector('[data-custom-symbol-canvas-layer]');
       const artworkLayer = document.querySelector('[data-custom-symbol-artwork-layer]');
       const canvas = document.querySelector('[data-custom-symbol-canvas]');
-      const paper = document.querySelector('[data-custom-symbol-canvas-paper]');
+      const shell = document.querySelector('[data-custom-symbol-canvas-shell]');
+      const artworkRect = artworkLayer?.getBoundingClientRect();
+      const shellRect = shell?.getBoundingClientRect();
+      const inkSize = document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim() || '';
       return {
         layerId: layer?.getAttribute("data-custom-symbol-layer") || "",
         hasCanvasLayer: Boolean(canvasLayer),
@@ -254,19 +643,23 @@ async function main() {
         hasBaseline: Boolean(document.querySelector('[data-custom-symbol-baseline]')),
         hasReferenceAlpha: Boolean(document.querySelector('[data-custom-symbol-reference-alpha]')),
         hasFitControl: Boolean(document.querySelector('[data-custom-symbol-fit-view]')),
+        infiniteCanvas: canvas?.getAttribute('data-custom-symbol-infinite-canvas') || '',
+        shellInfiniteCanvas: shell?.getAttribute('data-custom-symbol-infinite-canvas') || '',
+        hasPaper: Boolean(document.querySelector('[data-custom-symbol-canvas-paper]')),
+        hasOutputBox: Boolean(document.querySelector('[data-custom-symbol-output-box]')),
+        hasWorkspaceButton: Boolean(document.querySelector('[data-custom-symbol-fit-workspace]')),
+        gridDots: document.querySelectorAll('.custom-symbol-designer-grid-dot').length,
+        gridPaths: document.querySelectorAll('.custom-symbol-designer-grid-line').length,
+        rotationHandles: document.querySelectorAll('[data-custom-symbol-rotation-handle]').length,
+        rotationHitTargets: document.querySelectorAll('[data-custom-symbol-rotation-hit-target]').length,
+        inkSize,
         viewBox: canvas?.getAttribute("viewBox") || "",
-        paperWidth: Number(paper?.getAttribute("width") || 0),
-        paperHeight: Number(paper?.getAttribute("height") || 0),
-        paperRect: paper ? (() => {
-          const rect = paper.getBoundingClientRect();
-          return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-        })() : null,
-        shellRect: (() => {
-          const shell = document.querySelector('[data-custom-symbol-canvas-shell]');
-          if (!shell) return null;
-          const rect = shell.getBoundingClientRect();
-          return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-        })(),
+        artworkRect: artworkRect
+          ? { left: artworkRect.left, top: artworkRect.top, right: artworkRect.right, bottom: artworkRect.bottom }
+          : null,
+        shellRect: shellRect
+          ? { left: shellRect.left, top: shellRect.top, right: shellRect.right, bottom: shellRect.bottom }
+          : null,
       };
     })()`);
     assert.ok(first.layerId);
@@ -275,16 +668,98 @@ async function main() {
     assert.equal(first.hasBaseline, true);
     assert.equal(first.hasReferenceAlpha, true, "Reference alpha should be visible by default");
     assert.equal(first.hasFitControl, true);
+    assert.equal(first.infiniteCanvas, "true");
+    assert.equal(first.shellInfiniteCanvas, "true");
+    assert.equal(first.hasPaper, false);
+    assert.equal(first.hasOutputBox, false);
+    assert.equal(first.hasWorkspaceButton, false);
+    assert.equal(first.gridDots, 0);
+    assert.equal(first.gridPaths, 2);
+    assert.equal(first.rotationHandles, 1);
+    assert.equal(first.rotationHitTargets, 1);
+    assert.match(first.inkSize, /em$/);
+    assert.notEqual(first.inkSize, "—");
     const firstViewBox = first.viewBox.split(/\s+/).map(Number);
     assert.equal(firstViewBox.length, 4);
     assert.ok(firstViewBox.every(Number.isFinite));
-    assert.ok(firstViewBox[0] < 0 && firstViewBox[1] < 0, "Fit view should leave visible space above and left of the mathematical canvas");
-    assert.ok(firstViewBox[2] > first.paperWidth && firstViewBox[3] > first.paperHeight, "Fit view should leave visible space around the entire mathematical canvas");
-    assert.ok(first.paperRect && first.shellRect);
-    assert.ok(first.paperRect.left >= first.shellRect.left - 1, "Fitted canvas paper must not be clipped on the left");
-    assert.ok(first.paperRect.top >= first.shellRect.top - 1, "Fitted canvas paper must not be clipped on the top");
-    assert.ok(first.paperRect.right <= first.shellRect.right + 1, "Fitted canvas paper must not be clipped on the right");
-    assert.ok(first.paperRect.bottom <= first.shellRect.bottom + 1, "Fitted canvas paper must not be clipped on the bottom");
+    assert.ok(firstViewBox[2] > 0 && firstViewBox[3] > 0);
+    assert.ok(first.artworkRect && first.shellRect);
+    assert.ok(first.artworkRect.left >= first.shellRect.left - 2);
+    assert.ok(first.artworkRect.top >= first.shellRect.top - 2);
+    assert.ok(first.artworkRect.right <= first.shellRect.right + 2);
+    assert.ok(first.artworkRect.bottom <= first.shellRect.bottom + 2);
+
+    const afterFirstInsertion = await client.evaluate(`(() => {
+      const canvas = document.querySelector('[data-custom-symbol-canvas]');
+      const reference = document.querySelector('[data-custom-symbol-reference]');
+      const rect = reference?.getBoundingClientRect();
+      return {
+        viewBox: canvas?.getAttribute('viewBox') || '',
+        referenceCenter: rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : null,
+      };
+    })()`);
+    assert.equal(
+      afterFirstInsertion.viewBox,
+      beforeFirstInsertion.viewBox,
+      "Inserting the first character must not implicitly reframe the canvas viewport",
+    );
+    assert.ok(afterFirstInsertion.referenceCenter);
+    assert.ok(
+      Math.hypot(
+        afterFirstInsertion.referenceCenter.x - beforeFirstInsertion.referenceCenter.x,
+        afterFirstInsertion.referenceCenter.y - beforeFirstInsertion.referenceCenter.y,
+      ) < 1,
+      `The baseline reference must stay visually stationary on first insertion: ${JSON.stringify({ beforeFirstInsertion, afterFirstInsertion })}`,
+    );
+    process.stdout.write("[custom-symbol-designer] first insertion preserves viewport and baseline reference position\n");
+
+    const backspaceTarget = await client.evaluate(`(() => {
+      const layer = document.querySelector('[data-custom-symbol-canvas-layer].is-selected');
+      if (!layer) return null;
+      const rect = layer.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    assert.ok(backspaceTarget);
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: backspaceTarget.x,
+      y: backspaceTarget.y,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: backspaceTarget.x,
+      y: backspaceTarget.y,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    const canvasFocused = await client.evaluate(
+      `document.activeElement === document.querySelector('[data-custom-symbol-canvas]')`,
+    );
+    assert.equal(canvasFocused, true, "Clicking a character should focus the design canvas for keyboard editing");
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 0`);
+    await client.evaluate(`document.querySelector('[data-add-custom-symbol-material]').click()`);
+    await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 1`);
+    process.stdout.write("[custom-symbol-designer] selected canvas layer Backspace deletion verified\n");
 
     await client.evaluate(`document.querySelector('[data-toggle-custom-symbol-reference-alpha]').click()`);
     await waitUntil(client, `!document.querySelector('[data-custom-symbol-reference-alpha]')`);
@@ -301,12 +776,17 @@ async function main() {
 
     const workspaceState = await client.evaluate(`(() => {
       const canvas = document.querySelector('[data-custom-symbol-canvas]');
-      const output = document.querySelector('[data-custom-symbol-output-box]');
       const workspace = (canvas?.getAttribute('data-custom-symbol-workspace') || '').split(/\\s+/).map(Number);
+      const minorGrid = document.querySelector('.custom-symbol-designer-grid-layer.is-minor');
+      const majorGrid = document.querySelector('.custom-symbol-designer-grid-layer.is-major');
       return {
         workspace,
-        outputWidth: Number(output?.getAttribute('width') || 0),
-        outputHeight: Number(output?.getAttribute('height') || 0),
+        hasOutputBox: Boolean(document.querySelector('[data-custom-symbol-output-box]')),
+        hasManualCanvasMetrics: Boolean(
+          document.querySelector('[data-designer-field="canvas-width"], [data-designer-field="canvas-ascent"], [data-designer-field="canvas-descent"]'),
+        ),
+        minorOpacity: minorGrid ? Number.parseFloat(getComputedStyle(minorGrid).opacity) : 1,
+        majorOpacity: majorGrid ? Number.parseFloat(getComputedStyle(majorGrid).opacity) : 1,
         alphaRect: (() => {
           const reference = document.querySelector('[data-custom-symbol-reference]');
           if (!reference) return null;
@@ -316,20 +796,13 @@ async function main() {
       };
     })()`);
     assert.equal(workspaceState.workspace.length, 4);
-    assert.ok(workspaceState.outputWidth >= 3200, "Default output width should leave generous room for mathematical construction");
-    assert.ok(workspaceState.outputHeight >= 4500, "Default output height should leave generous room above and below the baseline");
-    assert.ok(workspaceState.workspace[2] > workspaceState.outputWidth * 3, "Designer workspace should be several times wider than the final output box");
-    assert.ok(workspaceState.workspace[3] > workspaceState.outputHeight * 3, "Designer workspace should be several times taller than the final output box");
-    await client.evaluate(`document.querySelector('[data-custom-symbol-fit-workspace]').click()`);
-    await sleep(80);
-    const workspaceView = await client.evaluate(`document.querySelector('[data-custom-symbol-canvas]')?.getAttribute('viewBox') || ''`);
-    assert.equal(
-      workspaceView.split(/\s+/).map((value) => Math.round(Number(value))).join(','),
-      workspaceState.workspace.map((value) => Math.round(value)).join(','),
-      "Workspace control must reveal the full large design area",
-    );
-    await client.evaluate(`document.querySelector('[data-custom-symbol-fit-view]').click()`);
-    await sleep(80);
+    assert.ok(workspaceState.workspace[2] >= 1_000_000);
+    assert.ok(workspaceState.workspace[3] >= 1_000_000);
+    assert.equal(workspaceState.hasOutputBox, false);
+    assert.equal(workspaceState.hasManualCanvasMetrics, false);
+    assert.ok(workspaceState.minorOpacity >= 0.18 && workspaceState.minorOpacity <= 0.24);
+    assert.ok(workspaceState.majorOpacity >= 0.28 && workspaceState.majorOpacity <= 0.36);
+    process.stdout.write("[custom-symbol-designer] borderless infinite workspace and softened grid verified\n");
 
     await setReactSelect(client, '[data-custom-symbol-reference-select]', String.raw`\displaystyle\sum`);
     await waitUntil(client, `document.querySelector('[data-custom-symbol-reference]')?.getAttribute('data-custom-symbol-reference-label') === 'Σ'`);
@@ -359,22 +832,21 @@ async function main() {
       );
       await client.evaluate(`document.querySelector('[data-custom-symbol-fit-view]').click()`);
       await sleep(70);
-      const fit = await client.evaluate(`(() => {
+      const referenceState = await client.evaluate(`(() => {
         const reference = document.querySelector('[data-custom-symbol-reference]');
-        const output = document.querySelector('[data-custom-symbol-output-box]');
-        if (!reference || !output) return null;
-        const rr = reference.getBoundingClientRect();
-        const or = output.getBoundingClientRect();
+        if (!reference) return null;
+        const rect = reference.getBoundingClientRect();
         return {
-          reference: { left: rr.left, top: rr.top, right: rr.right, bottom: rr.bottom },
-          output: { left: or.left, top: or.top, right: or.right, bottom: or.bottom },
+          label: reference.getAttribute('data-custom-symbol-reference-label') || '',
+          width: rect.width,
+          height: rect.height,
+          visible: getComputedStyle(reference).visibility !== 'hidden',
         };
       })()`);
-      assert.ok(fit, `${label} reference and output box must exist`);
-      assert.ok(fit.reference.left > fit.output.left + 2, `${label} reference must stay inside the output box on the left`);
-      assert.ok(fit.reference.right < fit.output.right - 2, `${label} reference must stay inside the output box on the right`);
-      assert.ok(fit.reference.top > fit.output.top + 2, `${label} reference must stay inside the output box at the top`);
-      assert.ok(fit.reference.bottom < fit.output.bottom - 2, `${label} reference must stay inside the output box at the bottom`);
+      assert.ok(referenceState, `${label} reference must exist`);
+      assert.equal(referenceState.label, label);
+      assert.ok(referenceState.width > 0 && referenceState.height > 0);
+      assert.equal(referenceState.visible, true);
     }
 
     await setReactSelect(client, '[data-custom-symbol-reference-select]', String.raw`\displaystyle\int`);
@@ -404,14 +876,19 @@ async function main() {
     await client.evaluate(`document.querySelector('[data-custom-symbol-layer]').click()`);
     process.stdout.write("[custom-symbol-designer] material/reference integral outline consistency verified\n");
 
-    await client.evaluate(`document.querySelector('[data-metric-preset="large"]').click()`);
-    await waitUntil(client, `Number(document.querySelector('[data-designer-field="canvas-width"]')?.value || 0) >= 4.5`);
-    await client.evaluate(`document.querySelector('[data-metric-preset="standard"]').click()`);
     await setReactSelect(client, '[data-custom-symbol-reference-select]', String.raw`\alpha`);
     await waitUntil(client, `Boolean(document.querySelector('[data-custom-symbol-reference-alpha]'))`);
-    process.stdout.write("[custom-symbol-designer] large workspace, output presets and multi-size references verified\n");
-    process.stdout.write("[custom-symbol-designer] viewport fit/zoom and alpha reference verified\n");
-    process.stdout.write("[custom-symbol-designer] LaTeX glyph added\n");
+    const automaticBounds = await client.evaluate(`(() => ({
+      inkSize: document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim() || '',
+      manualWidth: Boolean(document.querySelector('[data-designer-field="canvas-width"]')),
+      manualAscent: Boolean(document.querySelector('[data-designer-field="canvas-ascent"]')),
+      manualDescent: Boolean(document.querySelector('[data-designer-field="canvas-descent"]')),
+    }))()`);
+    assert.match(automaticBounds.inkSize, /em$/);
+    assert.equal(automaticBounds.manualWidth, false);
+    assert.equal(automaticBounds.manualAscent, false);
+    assert.equal(automaticBounds.manualDescent, false);
+    process.stdout.write("[custom-symbol-designer] automatic ink bounds, viewport locate and reference glyphs verified\n");
 
     await setReactInput(client, '[data-designer-field="layer-x"]', 80);
     await setReactInput(client, '[data-designer-field="layer-scale-x"]', 1.25);
@@ -425,27 +902,118 @@ async function main() {
     assert.match(transformed.transform, /translate\(80 /);
     assert.match(transformed.transform, /rotate\(12\)/);
     assert.match(transformed.transform, /scale\(1\.25 /);
-    process.stdout.write("[custom-symbol-designer] numeric transforms verified\n");
+
+    const advancedControls = await client.evaluate(`(() => ({
+      flipHorizontal: Boolean(document.querySelector('[data-flip-custom-symbol-layer="horizontal"]')),
+      flipVertical: Boolean(document.querySelector('[data-flip-custom-symbol-layer="vertical"]')),
+      skewX: Boolean(document.querySelector('[data-designer-field="layer-skew-x"]')),
+      skewY: Boolean(document.querySelector('[data-designer-field="layer-skew-y"]')),
+      outline: Boolean(document.querySelector('[data-custom-symbol-outline-toggle]')),
+      perspective: Boolean(document.querySelector('[data-custom-symbol-perspective-toggle]')),
+    }))()`);
+    assert.deepEqual(advancedControls, {
+      flipHorizontal: true,
+      flipVertical: true,
+      skewX: true,
+      skewY: true,
+      outline: true,
+      perspective: true,
+    });
+
+    await client.evaluate(`document.querySelector('[data-flip-custom-symbol-layer="horizontal"]').click()`);
+    await waitUntil(client, `document.querySelector('[data-custom-symbol-canvas-layer]')?.getAttribute('transform')?.includes('scale(-1.25')`);
+    await client.evaluate(`document.querySelector('[data-flip-custom-symbol-layer="horizontal"]').click()`);
+    await waitUntil(client, `document.querySelector('[data-custom-symbol-canvas-layer]')?.getAttribute('transform')?.includes('scale(1.25')`);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-math-italic]').click()`);
+    await waitUntil(client, `document.querySelector('[data-custom-symbol-canvas-layer]')?.getAttribute('transform')?.includes('skewX(-12)')`);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-original-slant]').click()`);
+    await waitUntil(client, `!document.querySelector('[data-custom-symbol-canvas-layer]')?.getAttribute('transform')?.includes('skewX(')`);
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-outline-toggle]').click()`);
+    await waitUntil(client, `document.querySelector('[data-custom-symbol-artwork-layer] path')?.getAttribute('fill') === 'none'`);
+    const outlineState = await client.evaluate(`(() => {
+      const path = document.querySelector('[data-custom-symbol-artwork-layer] path');
+      return {
+        fill: path?.getAttribute('fill') || '',
+        stroke: path?.getAttribute('stroke') || '',
+        width: Number(path?.getAttribute('stroke-width') || 0),
+      };
+    })()`);
+    assert.equal(outlineState.fill, "none");
+    assert.notEqual(outlineState.stroke, "none");
+    assert.ok(outlineState.width > 0);
+
+    const shapeCountBeforePerspective = await client.evaluate(`document.querySelectorAll('[data-custom-symbol-artwork-layer] path').length`);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-perspective-toggle]').click()`);
+    await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-artwork-layer] path').length > ${shapeCountBeforePerspective}`);
+    const perspectiveState = await client.evaluate(`(() => ({
+      pathCount: document.querySelectorAll('[data-custom-symbol-artwork-layer] path').length,
+      depthField: Boolean(document.querySelector('[data-designer-field="perspective-depth"]')),
+      angleField: Boolean(document.querySelector('[data-designer-field="perspective-angle"]')),
+      stepsField: Boolean(document.querySelector('[data-designer-field="perspective-steps"]')),
+    }))()`);
+    assert.ok(perspectiveState.pathCount > shapeCountBeforePerspective);
+    assert.equal(perspectiveState.depthField, true);
+    assert.equal(perspectiveState.angleField, true);
+    assert.equal(perspectiveState.stepsField, true);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-perspective-toggle]').click()`);
+    await client.evaluate(`document.querySelector('[data-custom-symbol-outline-toggle]').click()`);
+    await waitUntil(client, `document.querySelector('[data-custom-symbol-artwork-layer] path')?.getAttribute('fill') !== 'none'`);
+    process.stdout.write("[custom-symbol-designer] numeric transforms, flips, slant, hollow outline and perspective verified\n");
+
+    await client.evaluate(`document.querySelector('[data-custom-symbol-fit-view]').click()`);
+    await sleep(80);
 
     const scaleBeforeHandle = await client.evaluate(`(() => ({
       x: Number(document.querySelector('[data-designer-field="layer-scale-x"]')?.value || 1),
       y: Number(document.querySelector('[data-designer-field="layer-scale-y"]')?.value || 1),
+      rotation: Number(document.querySelector('[data-designer-field="layer-rotation"]')?.value || 0),
       handles: document.querySelectorAll('[data-custom-symbol-resize-handle]').length,
       hitTargets: document.querySelectorAll('[data-custom-symbol-resize-hit-target]').length,
+      rotationHandles: document.querySelectorAll('[data-custom-symbol-rotation-handle]').length,
+      rotationHitTargets: document.querySelectorAll('[data-custom-symbol-rotation-hit-target]').length,
     }))()`);
     assert.equal(scaleBeforeHandle.handles, 8, "Selected layer should expose eight visual resize handles");
     assert.equal(scaleBeforeHandle.hitTargets, 8, "Selected layer should expose eight forgiving resize hit targets");
+    assert.equal(scaleBeforeHandle.rotationHandles, 1, "Selected layer should expose a direct rotation handle");
+    assert.equal(scaleBeforeHandle.rotationHitTargets, 1, "The rotation handle should have a forgiving hit target");
+    const dragPriority = await client.evaluate(`(() => {
+      const selection = document.querySelector('[data-custom-symbol-canvas-layer].is-selected .custom-symbol-designer-selection-box');
+      if (!selection) return null;
+      const rect = selection.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const coveringResizeHandles = Array.from(
+        document.querySelectorAll('[data-custom-symbol-resize-hit-target]'),
+      ).filter((target) => {
+        const hit = target.getBoundingClientRect();
+        return x >= hit.left && x <= hit.right && y >= hit.top && y <= hit.bottom;
+      }).map((target) => target.getAttribute('data-custom-symbol-resize-hit-target'));
+      return { width: rect.width, height: rect.height, coveringResizeHandles };
+    })()`);
+    assert.ok(dragPriority, "Selected layer must expose a draggable interior");
+    if (dragPriority.width > 20 && dragPriority.height > 20) {
+      assert.deepEqual(
+        dragPriority.coveringResizeHandles,
+        [],
+        `Resize hit targets must not cover the center drag area: ${JSON.stringify(dragPriority)}`,
+      );
+    }
     const resizeBox = await client.evaluate(`(() => {
       const handle = document.querySelector('[data-custom-symbol-resize-handle="se"]');
       const hitTarget = document.querySelector('[data-custom-symbol-resize-hit-target="se"]');
-      if (!handle || !hitTarget) return null;
+      const anchor = document.querySelector('[data-custom-symbol-resize-handle="nw"]');
+      if (!handle || !hitTarget || !anchor) return null;
       const handleRect = handle.getBoundingClientRect();
       const hitRect = hitTarget.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
       const x = handleRect.right + Math.max(1, (hitRect.right - handleRect.right) * 0.5);
       const y = handleRect.top + handleRect.height / 2;
       return {
         x,
         y,
+        anchorX: anchorRect.left + anchorRect.width / 2,
+        anchorY: anchorRect.top + anchorRect.height / 2,
         outsideVisualHandle: x > handleRect.right,
         insideHitTarget:
           x >= hitRect.left && x <= hitRect.right && y >= hitRect.top && y <= hitRect.bottom,
@@ -456,7 +1024,14 @@ async function main() {
     assert.ok(resizeBox, "Bottom-right resize handle must have a forgiving hit target");
     assert.equal(resizeBox.outsideVisualHandle, true, "Resize regression must begin outside the painted handle");
     assert.equal(resizeBox.insideHitTarget, true, "Resize regression must begin inside the expanded hit target");
-    assert.ok(resizeBox.hitWidth >= resizeBox.visualWidth * 2.5, "Resize hit target should be substantially larger than the painted handle");
+    assert.ok(
+      resizeBox.hitWidth >= resizeBox.visualWidth,
+      "Resize hit target must remain at least as large as the painted handle",
+    );
+    assert.ok(
+      resizeBox.hitWidth <= 15.5,
+      `Resize hit target must stay compact enough for easy dragging: ${JSON.stringify(resizeBox)}`,
+    );
     await client.send("Input.dispatchMouseEvent", {
       type: "mousePressed",
       x: resizeBox.x,
@@ -481,15 +1056,146 @@ async function main() {
       clickCount: 1,
     });
     await sleep(100);
-    const scaleAfterHandle = await client.evaluate(`(() => ({
-      x: Number(document.querySelector('[data-designer-field="layer-scale-x"]')?.value || 1),
-      y: Number(document.querySelector('[data-designer-field="layer-scale-y"]')?.value || 1),
-    }))()`);
+    const scaleAfterHandle = await client.evaluate(`(() => {
+      const anchor = document.querySelector('[data-custom-symbol-resize-handle="nw"]');
+      const anchorRect = anchor?.getBoundingClientRect();
+      return {
+        x: Number(document.querySelector('[data-designer-field="layer-scale-x"]')?.value || 1),
+        y: Number(document.querySelector('[data-designer-field="layer-scale-y"]')?.value || 1),
+        anchorX: anchorRect ? anchorRect.left + anchorRect.width / 2 : null,
+        anchorY: anchorRect ? anchorRect.top + anchorRect.height / 2 : null,
+      };
+    })()`);
     assert.ok(
       scaleAfterHandle.x !== scaleBeforeHandle.x || scaleAfterHandle.y !== scaleBeforeHandle.y,
       "Dragging a resize handle must change the selected layer scale",
     );
-    process.stdout.write("[custom-symbol-designer] forgiving resize hit targets verified\n");
+    const resizeRatioX = Math.abs(scaleAfterHandle.x / scaleBeforeHandle.x);
+    const resizeRatioY = Math.abs(scaleAfterHandle.y / scaleBeforeHandle.y);
+    assert.ok(
+      Math.abs(resizeRatioX - resizeRatioY) < 0.04,
+      `Corner resizing should preserve aspect ratio by default: ${JSON.stringify({ scaleBeforeHandle, scaleAfterHandle })}`,
+    );
+    assert.ok(
+      Math.hypot(
+        scaleAfterHandle.anchorX - resizeBox.anchorX,
+        scaleAfterHandle.anchorY - resizeBox.anchorY,
+      ) < 3.5,
+      `PowerPoint-style corner resizing must keep the opposite anchor fixed: ${JSON.stringify({ resizeBox, scaleAfterHandle })}`,
+    );
+
+    const rotationDrag = await client.evaluate(`(() => {
+      const handle = document.querySelector('[data-custom-symbol-rotation-handle]');
+      const selection = document.querySelector('[data-custom-symbol-canvas-layer].is-selected .custom-symbol-designer-selection-box');
+      if (!handle || !selection) return null;
+      const hr = handle.getBoundingClientRect();
+      const sr = selection.getBoundingClientRect();
+      const centerX = sr.left + sr.width / 2;
+      const centerY = sr.top + sr.height / 2;
+      const startX = hr.left + hr.width / 2;
+      const startY = hr.top + hr.height / 2;
+      const dx = startX - centerX;
+      const dy = startY - centerY;
+      const radians = 55 * Math.PI / 180;
+      return {
+        centerX,
+        centerY,
+        startX,
+        startY,
+        targetX: centerX + dx * Math.cos(radians) - dy * Math.sin(radians),
+        targetY: centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
+      };
+    })()`);
+    assert.ok(rotationDrag, "Direct rotation handle must be measurable");
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: rotationDrag.startX,
+      y: rotationDrag.startY,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: rotationDrag.targetX,
+      y: rotationDrag.targetY,
+      button: "left",
+      buttons: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: rotationDrag.targetX,
+      y: rotationDrag.targetY,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    await sleep(120);
+    const directRotation = await client.evaluate(`(() => ({
+      rotation: Number(document.querySelector('[data-designer-field="layer-rotation"]')?.value || 0),
+      transform: document.querySelector('[data-custom-symbol-canvas-layer].is-selected')?.getAttribute('transform') || '',
+    }))()`);
+    assert.ok(
+      Math.abs(directRotation.rotation - scaleBeforeHandle.rotation) > 35,
+      `Dragging the direct rotation handle must change the angle substantially: ${JSON.stringify({ scaleBeforeHandle, directRotation })}`,
+    );
+    assert.match(directRotation.transform, /rotate\(/);
+
+    await setReactInput(client, '[data-designer-field="layer-rotation"]', 0);
+    const snapRotationDrag = await client.evaluate(`(() => {
+      const handle = document.querySelector('[data-custom-symbol-rotation-handle]');
+      const selection = document.querySelector('[data-custom-symbol-canvas-layer].is-selected .custom-symbol-designer-selection-box');
+      if (!handle || !selection) return null;
+      const hr = handle.getBoundingClientRect();
+      const sr = selection.getBoundingClientRect();
+      const centerX = sr.left + sr.width / 2;
+      const centerY = sr.top + sr.height / 2;
+      const startX = hr.left + hr.width / 2;
+      const startY = hr.top + hr.height / 2;
+      const dx = startX - centerX;
+      const dy = startY - centerY;
+      const radians = 85 * Math.PI / 180;
+      return {
+        startX,
+        startY,
+        targetX: centerX + dx * Math.cos(radians) - dy * Math.sin(radians),
+        targetY: centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
+      };
+    })()`);
+    assert.ok(snapRotationDrag);
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: snapRotationDrag.startX,
+      y: snapRotationDrag.startY,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: snapRotationDrag.targetX,
+      y: snapRotationDrag.targetY,
+      button: "left",
+      buttons: 1,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: snapRotationDrag.targetX,
+      y: snapRotationDrag.targetY,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    await sleep(100);
+    const snappedRotation = Number(
+      await client.evaluate(`document.querySelector('[data-designer-field="layer-rotation"]')?.value || 0`),
+    );
+    assert.equal(
+      snappedRotation,
+      90,
+      `Rotation within 7° of a right angle must snap automatically: ${snappedRotation}`,
+    );
+    process.stdout.write("[custom-symbol-designer] PowerPoint-style resize, direct rotation and automatic 90-degree snap verified\n");
 
     const viewBoxBeforePan = await client.evaluate(`document.querySelector('[data-custom-symbol-canvas]')?.getAttribute('viewBox') || ''`);
     const emptyCanvasPoint = await client.evaluate(`(() => {
@@ -657,7 +1363,38 @@ async function main() {
       croppedBeforeMove.clip,
       "Layer-local crop must move with the layer instead of changing its crop coordinates",
     );
-    process.stdout.write("[custom-symbol-designer] local crop semantics verified\n");
+    await setReactInput(client, '[data-designer-field="layer-rotation"]', 17);
+    const croppedRotationCenter = await client.evaluate(`(() => {
+      const interaction = document.querySelector('[data-custom-symbol-canvas-layer].is-selected');
+      const id = interaction?.getAttribute('data-custom-symbol-canvas-layer') || '';
+      const artwork = id ? document.querySelector('[data-custom-symbol-artwork-layer="' + id + '"]') : null;
+      const clipRect = artwork?.querySelector('clipPath rect');
+      const transform = interaction?.getAttribute('transform') || '';
+      const origin = transform.match(/translate\\(([-0-9.]+) ([-0-9.]+)\\) rotate\\(17\\)/);
+      const x = Number(clipRect?.getAttribute('x') || 0);
+      const y = Number(clipRect?.getAttribute('y') || 0);
+      const width = Number(clipRect?.getAttribute('width') || 0);
+      const height = Number(clipRect?.getAttribute('height') || 0);
+      return {
+        transform,
+        originX: Number(origin?.[1] || NaN),
+        originY: Number(origin?.[2] || NaN),
+        expectedX: x + width / 2,
+        expectedY: y + height / 2,
+      };
+    })()`);
+    assert.ok(Number.isFinite(croppedRotationCenter.originX));
+    assert.ok(Number.isFinite(croppedRotationCenter.originY));
+    assert.ok(
+      Math.abs(croppedRotationCenter.originX - croppedRotationCenter.expectedX) < 0.001,
+      `A cropped glyph must rotate around its visible horizontal center: ${JSON.stringify(croppedRotationCenter)}`,
+    );
+    assert.ok(
+      Math.abs(croppedRotationCenter.originY - croppedRotationCenter.expectedY) < 0.001,
+      `A cropped glyph must rotate around its visible vertical center: ${JSON.stringify(croppedRotationCenter)}`,
+    );
+    await setReactInput(client, '[data-designer-field="layer-rotation"]', 0);
+    process.stdout.write("[custom-symbol-designer] local crop semantics and visual-center rotation verified\n");
 
     await client.evaluate(`document.querySelector('[data-split-custom-symbol-glyph="horizontal"]').click()`);
     await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 4`);
@@ -806,11 +1543,14 @@ async function main() {
     await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 0`);
     await client.evaluate(`document.querySelector('[data-add-custom-symbol-material]').click()`);
     await waitUntil(client, `document.querySelectorAll('[data-custom-symbol-layer]').length === 1`);
-    const preRegistrationMetrics = await client.evaluate(`(() => ({
-      widthEm: Number(document.querySelector('[data-designer-field="canvas-width"]')?.value || 0),
-      ascentEm: Number(document.querySelector('[data-designer-field="canvas-ascent"]')?.value || 0),
-      descentEm: Number(document.querySelector('[data-designer-field="canvas-descent"]')?.value || 0),
-    }))()`);
+    await waitUntil(
+      client,
+      `document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim()?.endsWith('em') === true`,
+    );
+    const preRegistrationInkSize = await client.evaluate(
+      `document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim() || ''`,
+    );
+    assert.match(preRegistrationInkSize, /em$/);
     await setReactInput(client, '[data-custom-symbol-name-input]', "UI registered symbol");
     await setReactSelect(client, '[data-custom-symbol-role-select]', "relation");
     await setReactInput(client, '[data-custom-symbol-omml-fallback-input]', "\\approx");
@@ -865,11 +1605,10 @@ async function main() {
       const symbol = library?.symbols?.[0] || null;
       return {
         symbol,
-        currentCanvasMetrics: {
-          widthEm: Number(document.querySelector('[data-designer-field="canvas-width"]')?.value || 0),
-          ascentEm: Number(document.querySelector('[data-designer-field="canvas-ascent"]')?.value || 0),
-          descentEm: Number(document.querySelector('[data-designer-field="canvas-descent"]')?.value || 0),
-        },
+        currentInkSize: document.querySelector('[data-custom-symbol-ink-size]')?.textContent?.trim() || '',
+        hasManualCanvasMetrics: Boolean(
+          document.querySelector('[data-designer-field="canvas-width"], [data-designer-field="canvas-ascent"], [data-designer-field="canvas-descent"]'),
+        ),
         dirty: document.querySelector('[data-custom-symbol-registration-panel]')?.getAttribute('data-registration-dirty') || "",
         preview: Boolean(document.querySelector('[data-custom-symbol-registered-preview] .math-preview')),
       };
@@ -879,19 +1618,15 @@ async function main() {
     assert.equal(registered.symbol.role, "relation");
     assert.equal(registered.symbol.ommlFallback, "\\approx");
     assert.ok(registered.symbol.artwork.shapes.length > 0);
-    assert.deepEqual(
-      registered.currentCanvasMetrics,
-      preRegistrationMetrics,
-      "Registering a symbol must not shrink the designer work canvas",
-    );
-    assert.deepEqual(
-      registered.symbol.designerSource?.metrics,
-      preRegistrationMetrics,
-      "Editable source must preserve the original large designer canvas metrics",
-    );
+    assert.match(registered.currentInkSize, /em$/);
+    assert.equal(registered.hasManualCanvasMetrics, false);
+    assert.ok(registered.symbol.designerSource?.metrics?.widthEm > 0);
+    assert.ok(registered.symbol.designerSource?.metrics?.ascentEm > 0);
+    assert.ok(registered.symbol.metrics.widthEm > 0);
     assert.ok(
-      registered.symbol.metrics.widthEm < preRegistrationMetrics.widthEm,
-      "Runtime registered width must auto-crop to visible artwork instead of using the designer canvas width",
+      registered.symbol.metrics.widthEm <=
+        registered.symbol.designerSource.metrics.widthEm,
+      "Runtime registered width must be derived from visible ink rather than an exposed fixed canvas box",
     );
     assert.equal(registered.dirty, "false");
     assert.equal(registered.preview, true);
@@ -1068,6 +1803,23 @@ async function main() {
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     })()`);
     assert.equal(mainToolbarDeleteVisible, true, "Registered custom symbols must expose a visible delete button in the main toolbar");
+
+    await client.evaluate(`document.querySelector('[data-tile-category="common"]').click()`);
+    await sleep(100);
+    const commonTileIsolation = await client.evaluate(`(() => ({
+      registeredTile: Boolean(document.querySelector('[data-formula-tile-id="registered-symbol-${archiveState.id}"]')),
+      registeredCommand: Array.from(document.querySelectorAll('[data-formula-tile-latex]')).some(
+        (tile) => tile.getAttribute('data-formula-tile-latex') === "\\\\selfdefa",
+      ),
+    }))()`);
+    assert.deepEqual(
+      commonTileIsolation,
+      { registeredTile: false, registeredCommand: false },
+      "Registered custom symbols must not be injected into the Common tile category",
+    );
+    await client.evaluate(`document.querySelector('[data-tile-category="custom"]').click()`);
+    await waitUntil(client, `Boolean(document.querySelector('[data-registered-custom-symbol-command="selfdefa"]'))`);
+    process.stdout.write("[custom-symbol-designer] registered symbol Common-category isolation verified\n");
 
     await client.evaluate(`(() => {
       const field = document.querySelector("math-field");

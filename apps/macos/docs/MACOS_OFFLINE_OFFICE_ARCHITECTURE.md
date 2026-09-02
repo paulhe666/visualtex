@@ -1,6 +1,6 @@
 # VisualTeX macOS offline Office integration
 
-Status: staged implementation on `feat/macos-offline-office-native`.
+Status: supported macOS architecture on `main`. Runtime behavior must be verified against the current source and installed Office artifacts rather than an obsolete feature branch.
 
 This document defines the native, completely offline macOS Word and PowerPoint integration. The retired Office.js route has been removed from the macOS application after the native DOTM/PPAM workflow became the supported implementation.
 

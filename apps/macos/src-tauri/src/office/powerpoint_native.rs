@@ -1119,6 +1119,19 @@ pub fn start_double_click_monitor(
                     click_x,
                     click_y,
                 ) else {
+                    // A native Word OMath has no InlineShape metadata, so the
+                    // image-only resolver above deliberately returns None.
+                    // Route that settled selection through the same strict VBA
+                    // target resolver used by WindowBeforeDoubleClick. The VBA
+                    // handler remains a no-op for ordinary Word content.
+                    if let Err(error) =
+                        crate::office::macos_offline::run_double_click_edit_macro(
+                            crate::office::sessions::OfficeHost::Word,
+                        )
+                    {
+                        eprintln!("Unable to route the Word native formula double-click: {error}");
+                    }
+                    let _ = crate::office::macos_offline::focus_open_office_editor(&app);
                     return;
                 };
                 if !selection.marker.starts_with(WORD_METADATA_PREFIX) {

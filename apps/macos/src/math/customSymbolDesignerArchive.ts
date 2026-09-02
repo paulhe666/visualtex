@@ -43,6 +43,7 @@ export function createCustomSymbolDesignerSourceArchive(
       visible: layer.visible,
       locked: layer.locked,
       transform: deepClone(layer.transform),
+      ...(layer.effects ? { effects: deepClone(layer.effects) } : {}),
       ...(layer.clipRect ? { clipRect: deepClone(layer.clipRect) } : {}),
     };
     if (layer.kind === "glyph") {
@@ -89,6 +90,7 @@ export function restoreCustomSymbolDesignerDocument(
         visible: layer.visible,
         locked: layer.locked,
         transform: deepClone(layer.transform),
+        effects: layer.effects ? deepClone(layer.effects) : undefined,
         clipRect: layer.clipRect ? deepClone(layer.clipRect) : null,
       };
       if (layer.kind === "glyph") {

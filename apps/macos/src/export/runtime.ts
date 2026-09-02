@@ -9,6 +9,10 @@ import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMml
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import {
+  isSingleCompleteLatexEnvironment,
+  unwrapSingleLatexDisplayMath,
+} from "../math/latexEnvironment.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
@@ -91,37 +95,17 @@ function nonNegativeFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function isSingleCompleteEnvironment(source: string) {
-  const first = source.match(/^\\begin\s*\{([^{}]+)\}/);
-  if (!first) return false;
-
-  const environmentToken = /\\(begin|end)\s*\{([^{}]+)\}/g;
-  const stack: string[] = [];
-  let match: RegExpExecArray | null;
-  let outerEnd = -1;
-
-  while ((match = environmentToken.exec(source))) {
-    const [, kind, name] = match;
-    if (kind === "begin") {
-      stack.push(name);
-      continue;
-    }
-    if (stack.at(-1) !== name) return false;
-    stack.pop();
-    if (stack.length === 0) {
-      outerEnd = environmentToken.lastIndex;
-      break;
-    }
-  }
-
-  return outerEnd >= 0 && source.slice(outerEnd).trim().length === 0;
-}
-
 function prepareLatex(latex: string) {
-  const normalized = normalizeMathLiveCanonicalUprightCommands(
+  let normalized = normalizeMathLiveCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(latex.replace(/\r\n?/g, "\n")),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
+
+  // VisualTeX source formats legitimately serialize display formulas as
+  // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
+  // display mode, so those source delimiters must not become literal glyphs or
+  // be split into extra rows around an inner aligned/align environment.
+  normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
 
   const lines = normalized
     .split("\n")
@@ -133,7 +117,7 @@ function prepareLatex(latex: string) {
   // A document with multiple VisualTeX formula rows may still contain an
   // inner matrix/cases environment on one row; that must not make all rows
   // collapse into a single horizontal TeX expression.
-  if (isSingleCompleteEnvironment(normalized)) return normalized;
+  if (isSingleCompleteLatexEnvironment(normalized)) return normalized;
 
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep
@@ -243,7 +227,24 @@ function applyVisualTexSvgFontPreferences(
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}" transform="scale(1,-1)" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']+)["']/i)?.[1]?.trim();
+    // MathJax often lays out multi-letter operators such as \\arccos or
+    // \\operatorname{rank} as several <use> glyphs inside one translated
+    // parent. Every glyph after the first then owns an additional local
+    // translate(...). Dropping that transform while replacing <use> with a
+    // system-font <text> puts every character at the same origin and produces
+    // the severe overlap/"garbled" appearance seen in Word. Preserve all
+    // glyph-local positioning before applying the y-axis flip required for SVG
+    // text inside MathJax's outer scale(1,-1) coordinate system.
+    const transform = originalTransform
+      ? `${escapeSvgAttribute(originalTransform)} scale(1,-1)`
+      : "scale(1,-1)";
+    const position = `${
+      originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""
+    }${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""}`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${position} transform="${transform}" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
   return output;
 }
@@ -479,7 +480,7 @@ async function encodeCanvasPng(canvas: HTMLCanvasElement) {
 }
 
 export async function svgToPng(
-  svgResult: SvgExportResult,
+  svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
 ): Promise<PngExportResult> {
   if (typeof document === "undefined" || typeof Image === "undefined") {
@@ -520,7 +521,8 @@ export async function svgToPng(
     ? backgroundRgb.slice(1).map((channel) => Number.parseInt(channel, 16))
     : null;
   const pixels = context.getImageData(0, 0, width, height).data;
-  let hasVisibleInk = false;
+  let inkTop = height;
+  let inkBottom = -1;
   for (let index = 0; index < pixels.length; index += 4) {
     const alpha = pixels[index + 3];
     if (alpha < 16) continue;
@@ -531,14 +533,17 @@ export async function svgToPng(
       : pixels[index] < 245 ||
         pixels[index + 1] < 245 ||
         pixels[index + 2] < 245;
-    if (differsFromBackground) {
-      hasVisibleInk = true;
-      break;
-    }
+    if (!differsFromBackground) continue;
+    const row = Math.floor(index / 4 / width);
+    if (row < inkTop) inkTop = row;
+    if (row > inkBottom) inkBottom = row;
   }
-  if (!hasVisibleInk) {
+  if (inkBottom < inkTop) {
     throw new Error("PNG rasterization produced no visible formula ink.");
   }
+  const inkTopRatio = inkTop / height;
+  const inkBottomRatio = (inkBottom + 1) / height;
+  const inkCenterYRatio = (inkTopRatio + inkBottomRatio) / 2;
 
   const blob = await encodeCanvasPng(canvas);
   return {
@@ -546,5 +551,8 @@ export async function svgToPng(
     base64: await blobToBase64(blob),
     width,
     height,
+    inkTopRatio,
+    inkBottomRatio,
+    inkCenterYRatio,
   };
 }

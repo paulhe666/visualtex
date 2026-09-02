@@ -24,7 +24,8 @@ export interface SvgExportResult {
   base64: string;
   width: number;
   height: number;
-  baseline?: number;
+  /** Mathematical baseline measured from the SVG top edge, in CSS pixels. */
+  baseline: number;
 }
 
 export interface PngExportOptions {
@@ -37,4 +38,8 @@ export interface PngExportResult {
   base64: string;
   width: number;
   height: number;
+  /** Normalized painted-ink bounds measured from the rasterized PNG. */
+  inkTopRatio: number;
+  inkBottomRatio: number;
+  inkCenterYRatio: number;
 }

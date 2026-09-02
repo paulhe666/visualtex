@@ -59,7 +59,8 @@ export function documentSnapshotsEquivalent(
     left.lines.every(
       (line, index) =>
         line.id === right.lines[index]?.id &&
-        line.latex === right.lines[index]?.latex,
+        line.latex === right.lines[index]?.latex &&
+        line.mode === right.lines[index]?.mode,
     )
   );
 }
@@ -67,11 +68,18 @@ export function documentSnapshotsEquivalent(
 export function reconcileFormulaLines(
   values: readonly string[],
   currentLines: readonly FormulaLine[],
+  modes?: readonly FormulaLine["mode"][],
 ): FormulaLine[] {
   const normalizedValues = values.length ? values : [""];
   return normalizedValues.map((latex, index) => ({
     id: currentLines[index]?.id ?? createUuid(),
     latex,
+    mode:
+      modes?.[index] === "inline"
+        ? "inline"
+        : modes?.[index] === "display"
+          ? "display"
+          : currentLines[index]?.mode ?? "display",
   }));
 }
 

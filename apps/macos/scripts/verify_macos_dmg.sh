@@ -142,6 +142,7 @@ done
 xmllint --noout \
   "$OFFICE_ROOT/word/customUI14.xml" \
   "$OFFICE_ROOT/powerpoint/customUI14.xml"
+node "$PROJECT_ROOT/scripts/verify_macos_offline_addins.mjs" --offline-root "$OFFICE_ROOT"
 
 if [[ -e "$RESOURCES/office/bridge" || -e "$RESOURCES/office/dialog" || -e "$RESOURCES/office/vendor" || -e "$RESOURCES/office/manifests" ]]; then
   echo "The macOS bundle still contains the obsolete Office.js web integration." >&2
@@ -216,8 +217,8 @@ if ! grep -a -Fq -- '--install-macos-office-addins' "$EXECUTABLE"; then
   echo "The release executable has no clean-install native Office maintenance entry point." >&2
   exit 1
 fi
-if ! grep -a -Fq 'dock-icon-v4.refreshed' "$EXECUTABLE"; then
-  echo "The release executable has no one-time Dock icon migration refresh." >&2
+if ! grep -a -Fq 'dock-icon-v5.refreshed' "$EXECUTABLE"; then
+  echo "The release executable has no current one-time Dock icon migration refresh." >&2
   exit 1
 fi
 

@@ -41,11 +41,17 @@ function assertNoUnknownMathCommand(mathMl, context) {
 }
 
 const extendedIntegralCases = Object.entries(EXTENDED_INTEGRAL_SYMBOLS).map(
-  ([command, character]) => [
+  ([command, replacement]) => ({
     command,
-    character,
-    character.codePointAt(0).toString(16).toUpperCase(),
-  ],
+    replacement,
+    codePoints: replacement.startsWith("\\")
+      ? []
+      : Array.from(replacement).map((character) =>
+          character.codePointAt(0).toString(16).toUpperCase(),
+        ),
+    singleUnicodeCharacter:
+      !replacement.startsWith("\\") && Array.from(replacement).length === 1,
+  }),
 );
 
 for (const [name, latex] of cases) {
@@ -94,7 +100,12 @@ for (const [name, latex] of cases) {
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
-for (const [command, character, codePoint] of extendedIntegralCases) {
+for (const {
+  command,
+  replacement,
+  codePoints,
+  singleUnicodeCharacter,
+} of extendedIntegralCases) {
   const latex = `\\${command}_{\\Sigma} a\\,\\mathrm{d}S`;
   const mathMl = latexToMathMl(latex, true);
   const svgResult = latexToSvg(latex, {
@@ -105,7 +116,23 @@ for (const [command, character, codePoint] of extendedIntegralCases) {
   });
   const svg = svgResult.svg;
 
-  assert.match(mathMl, new RegExp(`&#x${codePoint};`, "i"), `${command} MathML symbol`);
+  if (codePoints.length > 0) {
+    for (const codePoint of new Set(codePoints)) {
+      assert.match(
+        mathMl,
+        new RegExp(`&#x${codePoint};`, "i"),
+        `${command} MathML symbol`,
+      );
+    }
+  } else {
+    assert.match(mathMl, /&#x222B;/i, `${command} semantic integral fallback`);
+    assert.match(mathMl, /&#x22EF;/i, `${command} semantic dots fallback`);
+    assert.doesNotMatch(
+      mathMl,
+      /&#x5C;/i,
+      `${command} semantic fallback must not leak a literal backslash`,
+    );
+  }
   assert.match(mathMl, /<msub>/, `${command} keeps its lower limit`);
   assertNoUnknownMathCommand(mathMl, command);
   assert.doesNotMatch(mathMl, new RegExp(`\\\\${command}(?:<|$)`), `${command} is not literal text`);
@@ -116,30 +143,34 @@ for (const [command, character, codePoint] of extendedIntegralCases) {
     /data-visualtex-integral="[A-Za-z]+"/,
     `${command} OLE SVG uses a VisualTeX vector glyph`,
   );
-  assert.doesNotMatch(
-    svg,
-    new RegExp(`<text[^>]*>${character}</text>`),
-    `${command} OLE SVG must not fall back to a small system-font character`,
-  );
+  if (singleUnicodeCharacter) {
+    assert.doesNotMatch(
+      svg,
+      new RegExp(`<text[^>]*>${replacement}</text>`),
+      `${command} OLE SVG must not fall back to a small system-font character`,
+    );
+  }
   assert.ok(svgResult.height > 30, `${command} display operator keeps large-integral height`);
 
-  const normalizedUnicode = normalizeChineseLatex(`${character}_{S}F`);
-  assert.match(
-    normalizedUnicode,
-    /^\\[A-Za-z]+\s*_\{S\}F$/,
-    `${command} Unicode serialization is restored to canonical LaTeX`,
-  );
-  const reopenedSvg = latexToSvg(normalizedUnicode, {
-    displayMode: true,
-    fontSizePt: 14,
-    paddingPx: 0,
-    background: "transparent",
-  }).svg;
-  assert.match(
-    reopenedSvg,
-    /data-visualtex-integral="[A-Za-z]+"/,
-    `${command} remains resolved after Unicode save/reopen normalization`,
-  );
+  if (singleUnicodeCharacter) {
+    const normalizedUnicode = normalizeChineseLatex(`${replacement}_{S}F`);
+    assert.match(
+      normalizedUnicode,
+      /^\\[A-Za-z]+\s*_\{S\}F$/,
+      `${command} Unicode serialization is restored to canonical LaTeX`,
+    );
+    const reopenedSvg = latexToSvg(normalizedUnicode, {
+      displayMode: true,
+      fontSizePt: 14,
+      paddingPx: 0,
+      background: "transparent",
+    }).svg;
+    assert.match(
+      reopenedSvg,
+      /data-visualtex-integral="[A-Za-z]+"/,
+      `${command} remains resolved after Unicode save/reopen normalization`,
+    );
+  }
 }
 
 assert.throws(

@@ -33,6 +33,7 @@ type RenderTemplate = {
   width?: number;
   height?: number;
   baseline?: number;
+  inkCenterYRatio?: number;
   renderWidthPx?: number;
   renderHeightPx?: number;
   referenceWidthPt?: number;
@@ -112,10 +113,9 @@ async function renderTemplate(
   }
 
   const { svgToPng } = await import("../../export/svgToPng");
-  const pngBase64 = (
-    await svgToPng(svg, { scale: 2, background: "transparent" })
-  ).base64;
-  const baseline = svg.baseline ?? svg.height;
+  const png = await svgToPng(svg, { scale: 2, background: "transparent" });
+  const pngBase64 = png.base64;
+  const baseline = svg.baseline;
   return {
     canonicalLatex,
     ommlBase64: omml.ommlBase64,
@@ -125,6 +125,7 @@ async function renderTemplate(
     width: svg.width,
     height: svg.height,
     baseline,
+    inkCenterYRatio: png.inkCenterYRatio,
     renderWidthPx: svg.width,
     renderHeightPx: svg.height,
     ...calculateReferenceGeometry(svg.width, svg.height, baseline),
@@ -157,6 +158,7 @@ function createMetadata(
     referenceWidthPt: template.referenceWidthPt,
     referenceHeightPt: template.referenceHeightPt,
     referenceBaselinePt: template.referenceBaselinePt,
+    imageInkCenterYRatio: template.inkCenterYRatio,
   });
 }
 

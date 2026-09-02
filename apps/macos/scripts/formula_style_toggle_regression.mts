@@ -35,7 +35,8 @@ const upright: FormulaSelectionStyleState = {
 
 assert.equal(
   toggleFormulaSelectionLatex("abc", "bold", none),
-  String.raw`\mathbf{abc}`,
+  String.raw`\mathbfit{abc}`,
+  "bolding ordinary math must preserve its default italic shape",
 );
 assert.equal(
   toggleFormulaSelectionLatex(String.raw`\mathbf{abc}`, "bold", bold),
@@ -48,6 +49,16 @@ assert.equal(
 assert.equal(
   toggleFormulaSelectionLatex(String.raw`\mathbfit{abc}`, "bold", boldItalic),
   "abc",
+);
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\symbfit{abc}`, "bold", none),
+  "abc",
+  "symbfit must be recognized as an existing bold-italic wrapper",
+);
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\bm{\alpha x}`, "bold", none),
+  String.raw`\alpha x`,
+  "bm must be recognized as an existing bold-italic wrapper",
 );
 assert.equal(
   toggleFormulaSelectionLatex(

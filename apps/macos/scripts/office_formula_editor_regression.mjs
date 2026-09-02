@@ -195,6 +195,42 @@ function normalize(source, codeFormat = "raw") {
   );
 }
 
+const wrappedMultiColumnAlignedSource = String.raw`\[
+\begin{aligned}
+\langle p_1,p_0\rangle &\gets \operatorname{umul}(a,b)=ab
+  && \text{Double word product}\\
+p_0 &\gets \operatorname{umullo}(a,b)=(ab)\bmod\beta
+  && \text{Low word}\\
+p_1 &\gets \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rfloor
+  && \text{High word.}
+\end{aligned}
+\]`;
+for (const source of [
+  wrappedMultiColumnAlignedSource,
+  `$$${wrappedMultiColumnAlignedSource.slice(2, -2)}$$`,
+]) {
+  const normalized = normalize(source);
+  assert.equal(normalized.codeFormat, "aligned");
+  assert.equal(normalized.lines.length, 3);
+  assert.ok(
+    normalized.lines.every(
+      (line) =>
+        (line.latex.match(new RegExp(VISUALTEX_ALIGNMENT_MARKER_LATEX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? [])
+          .length === 3,
+    ),
+    "all three alignment separators in each row must survive display-wrapper import",
+  );
+  const rendered = renderOfficeFormulaArtifacts({
+    lines: normalized.lines,
+    codeFormat: normalized.codeFormat,
+    displayMode: "block",
+    host: "word",
+    includeWordOmml: true,
+  });
+  assert.doesNotMatch(rendered.svg.svg, /data-mml-node="mtext"[^>]*>[\s\S]*?\\\[/);
+  assert.doesNotMatch(rendered.svg.svg, /data-mml-node="mtext"[^>]*>[\s\S]*?\\\]/);
+}
+
 const placeholderDraftInput = {
   lines: [
     {
@@ -593,9 +629,27 @@ const alreadyNormalized = normalizeFormulaEditorDocument(
 );
 assert.equal(alreadyNormalized.codeFormat, "align-star");
 assert.deepEqual(alreadyNormalized.lines, [
-  { id: "line-a", latex: "a=b" },
-  { id: "line-b", latex: "c=d" },
+  { id: "line-a", latex: `a${VISUALTEX_ALIGNMENT_MARKER_LATEX}=b` },
+  { id: "line-b", latex: `c${VISUALTEX_ALIGNMENT_MARKER_LATEX}=d` },
 ]);
+const recoveredEditedAlignment = renderOfficeFormulaArtifacts({
+  lines: [
+    { id: "edited-line-a", latex: "1 = 22 + 333 + q" },
+    { id: "edited-line-b", latex: "44444 = 55 + r" },
+  ],
+  codeFormat: "align",
+  displayMode: "block",
+  host: "word",
+  includeWordOmml: true,
+});
+assert.ok(
+  recoveredEditedAlignment.lines.every((line) =>
+    line.latex.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX),
+  ),
+  "whole-row align edits must recover their missing relationship markers",
+);
+assert.match(recoveredEditedAlignment.canonicalLatex, /1 &= 22 \+ 333 \+ q/);
+assert.match(recoveredEditedAlignment.omml?.omml ?? "", /<m:eqArr>/);
 
 const embeddedEnvironment = normalize(
   String.raw`prefix \begin{align}a&=b\end{align} suffix`,

@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 mod ocr_offline;
 mod office;
 mod quick_ocr;
+mod system_math_glyphs;
 
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
@@ -1774,6 +1775,9 @@ pub fn run() {
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }
+    if let Some(status) = office::macos_offline::run_image_ink_center_cli_if_requested() {
+        std::process::exit(status);
+    }
     let background_mode = office::background::is_background_mode();
     let application_started_at = std::time::Instant::now();
     let maintenance_install = std::env::args_os().any(|argument| {
@@ -1906,6 +1910,8 @@ pub fn run() {
             get_app_window_configuration,
             apply_app_window_configuration,
             switch_main_window_mode,
+            system_math_glyphs::probe_macos_math_fonts,
+            system_math_glyphs::extract_macos_math_glyph,
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,

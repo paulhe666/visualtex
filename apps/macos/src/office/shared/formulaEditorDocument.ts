@@ -4,6 +4,11 @@ import {
   parseLatexSource,
 } from "../../clipboard/LatexCopyService";
 import { createUuid } from "../../runtime/browserCompatibility";
+import { unwrapSingleLatexDisplayMath } from "../../math/latexEnvironment";
+import {
+  ensureVisualTexAlignmentMarkers,
+  usesExplicitAlignmentPoints,
+} from "../../editor/alignmentMarkers";
 import type { LatexCodeFormat } from "../../types/formula";
 
 export interface FormulaEditorLine {
@@ -14,6 +19,17 @@ export interface FormulaEditorLine {
 export interface FormulaEditorDocument {
   lines: FormulaEditorLine[];
   codeFormat: LatexCodeFormat;
+}
+
+function normalizeAlignmentLines(
+  lines: FormulaEditorLine[],
+  codeFormat: LatexCodeFormat,
+) {
+  if (!usesExplicitAlignmentPoints(codeFormat)) return lines;
+  return lines.map((line) => ({
+    ...line,
+    latex: ensureVisualTexAlignmentMarkers(line.latex),
+  }));
 }
 
 function normalizeLogicalFormulaLineWhitespace(value: string) {
@@ -86,6 +102,16 @@ function detectFormulaEnvironment(source: string): DetectedFormulaEnvironment | 
     .trim();
   if (!normalized) return null;
 
+  const displayBody = unwrapSingleLatexDisplayMath(normalized);
+  if (displayBody !== null) {
+    const detectedBody = detectFormulaEnvironment(displayBody);
+    if (detectedBody) return detectedBody;
+    return {
+      codeFormat: "equation-star",
+      source: `\\begin{equation*}${displayBody}\\end{equation*}`,
+    };
+  }
+
   const equation = normalized.match(
     /^\\begin\s*\{(equation\*?)\}([\s\S]*)\\end\s*\{\1\}$/,
   );
@@ -99,19 +125,6 @@ function detectFormulaEnvironment(source: string): DetectedFormulaEnvironment | 
           ? "equation-star-split"
           : "equation-split",
       source: normalized,
-    };
-  }
-
-  const alignedDisplay = normalized.match(
-    /^\\\[\s*(\\begin\s*\{(aligned|alignedat)\}(?:\s*\{[^{}]*\})?[\s\S]*\\end\s*\{\2\})\s*\\\]$/,
-  );
-  if (alignedDisplay) {
-    return {
-      codeFormat: "aligned",
-      source:
-        alignedDisplay[2] === "alignedat"
-          ? replaceEnvironment(alignedDisplay[1], "alignedat", "aligned")
-          : alignedDisplay[1],
     };
   }
 
@@ -197,12 +210,18 @@ export function normalizeFormulaEditorDocument(
     : [{ id: createUuid(), latex: "" }];
 
   if (safeLines.length !== 1) {
-    return { lines: safeLines, codeFormat: fallbackFormat };
+    return {
+      lines: normalizeAlignmentLines(safeLines, fallbackFormat),
+      codeFormat: fallbackFormat,
+    };
   }
 
   const detected = detectFormulaEnvironment(safeLines[0].latex);
   if (!detected) {
-    return { lines: safeLines, codeFormat: fallbackFormat };
+    return {
+      lines: normalizeAlignmentLines(safeLines, fallbackFormat),
+      codeFormat: fallbackFormat,
+    };
   }
   // A caller may already own a normalized logical document. For example, an
   // imported `equation` can legitimately contain one `aligned` environment as
@@ -212,7 +231,10 @@ export function normalizeFormulaEditorDocument(
   // Only unwrap a detected environment when the caller supplied raw source or
   // when the detected wrapper agrees with the caller's existing code format.
   if (fallbackFormat !== "raw" && detected.codeFormat !== fallbackFormat) {
-    return { lines: safeLines, codeFormat: fallbackFormat };
+    return {
+      lines: normalizeAlignmentLines(safeLines, fallbackFormat),
+      codeFormat: fallbackFormat,
+    };
   }
 
   const parsed = parseLatexSource(detected.source, detected.codeFormat)
@@ -224,9 +246,12 @@ export function normalizeFormulaEditorDocument(
 
   return {
     codeFormat: detected.codeFormat,
-    lines: parsed.map((latex, index) => ({
-      id: index === 0 ? safeLines[0].id : createUuid(),
-      latex,
-    })),
+    lines: normalizeAlignmentLines(
+      parsed.map((latex, index) => ({
+        id: index === 0 ? safeLines[0].id : createUuid(),
+        latex,
+      })),
+      detected.codeFormat,
+    ),
   };
 }

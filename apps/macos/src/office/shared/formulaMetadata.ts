@@ -32,6 +32,8 @@ export interface VisualTeXFormulaMetadata {
   referenceHeightPt?: number;
   /** Word inline baseline at the 14 pt reference size; omitted for PowerPoint. */
   referenceBaselinePt?: number;
+  /** Painted PNG ink center measured from the image top, normalized to [0, 1]. */
+  imageInkCenterYRatio?: number;
   createdWithVersion: string;
   updatedWithVersion: string;
   createdAt: string;
@@ -55,6 +57,7 @@ export interface CreateFormulaMetadataInput {
   referenceWidthPt?: number;
   referenceHeightPt?: number;
   referenceBaselinePt?: number;
+  imageInkCenterYRatio?: number;
   appVersion?: string;
   original?: VisualTeXFormulaMetadata | null;
 }
@@ -162,6 +165,11 @@ export function isVisualTeXFormulaMetadata(
         Number.isFinite(candidate.referenceBaselinePt) &&
         candidate.referenceBaselinePt <= 0 &&
         candidate.referenceBaselinePt >= -256)) &&
+    (candidate.imageInkCenterYRatio === undefined ||
+      (typeof candidate.imageInkCenterYRatio === "number" &&
+        Number.isFinite(candidate.imageInkCenterYRatio) &&
+        candidate.imageInkCenterYRatio >= 0 &&
+        candidate.imageInkCenterYRatio <= 1)) &&
     typeof candidate.createdWithVersion === "string" &&
     typeof candidate.updatedWithVersion === "string" &&
     typeof candidate.createdAt === "string" &&
@@ -185,6 +193,7 @@ export function createFormulaMetadata({
   referenceWidthPt,
   referenceHeightPt,
   referenceBaselinePt,
+  imageInkCenterYRatio,
   appVersion = CURRENT_VISUALTEX_VERSION,
   original = null,
 }: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
@@ -228,6 +237,13 @@ export function createFormulaMetadata({
     referenceBaselinePt >= -256
       ? referenceBaselinePt
       : original?.referenceBaselinePt;
+  const resolvedImageInkCenterYRatio =
+    imageInkCenterYRatio !== undefined &&
+    Number.isFinite(imageInkCenterYRatio) &&
+    imageInkCenterYRatio >= 0 &&
+    imageInkCenterYRatio <= 1
+      ? imageInkCenterYRatio
+      : original?.imageInkCenterYRatio;
   const resolvedLatex = sourceLatex?.replace(/\r\n?/g, "\n").trim() ||
     lines.map((line) => line.latex).join("\n");
   return {
@@ -249,6 +265,9 @@ export function createFormulaMetadata({
     ...(resolvedReferenceHeight ? { referenceHeightPt: resolvedReferenceHeight } : {}),
     ...(resolvedReferenceBaseline !== undefined
       ? { referenceBaselinePt: resolvedReferenceBaseline }
+      : {}),
+    ...(resolvedImageInkCenterYRatio !== undefined
+      ? { imageInkCenterYRatio: resolvedImageInkCenterYRatio }
       : {}),
     createdWithVersion: original?.createdWithVersion ?? appVersion,
     updatedWithVersion: appVersion,

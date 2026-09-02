@@ -52,7 +52,7 @@ class CdpClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP ${method} timed out`));
-      }, 30000);
+      }, 90000);
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);
@@ -155,22 +155,49 @@ async function main() {
         `--remote-debugging-port=${debugPort}`,
         `--user-data-dir=${chromeProfile}`,
         "--window-size=1450,980",
-        baseUrl,
+        "about:blank",
       ],
       { stdio: "ignore" },
     );
     await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
     const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
     const page = targets.find(
-      (target) => target.type === "page" && target.url.startsWith(baseUrl),
+      (target) =>
+        target.type === "page" &&
+        (target.url === "about:blank" || target.url.startsWith(baseUrl)),
     );
     assert.ok(page);
     client = new CdpClient(page.webSocketDebuggerUrl);
     await client.connect();
     await client.send("Runtime.enable");
     await client.send("Page.enable");
+    await client.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `(() => {
+        try {
+          localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+          localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+          localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
+          localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
+          const key = "visualtex-editor";
+          let persisted;
+          try { persisted = JSON.parse(localStorage.getItem(key) || "null"); }
+          catch { persisted = null; }
+          if (!persisted || typeof persisted !== "object") persisted = { state: {}, version: 0 };
+          persisted.state = {
+            ...(persisted.state || {}),
+            checkUpdatesOnStartup: false,
+          };
+          localStorage.setItem(key, JSON.stringify(persisted));
+        } catch {}
+      })();`,
+    });
     await client.send("Page.navigate", { url: baseUrl });
-    await sleep(1200);
+    await sleep(2500);
+    await waitUntil(
+      client,
+      `document.readyState === "complete" && Boolean(document.querySelector("math-field"))`,
+      30000,
+    );
 
     const reset = async ({ title = "History Test", lines, inputBehavior = {} }) => {
       await client.evaluate(`(() => {

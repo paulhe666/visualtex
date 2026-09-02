@@ -8,13 +8,23 @@ use base64::{
     engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
 };
-use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
+use flate2::{read::{DeflateDecoder, ZlibDecoder}, write::DeflateEncoder, Compression};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
-use objc2::MainThreadMarker;
+use objc2::{rc::Retained, AnyThread, MainThreadMarker};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSApplication;
+#[cfg(target_os = "macos")]
+use objc2_core_services::{
+    kAnyTransactionID, kAutoGenerateReturnID, keyErrorNumber, keyErrorString,
+};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{
+    NSAppleEventDescriptor, NSAppleEventSendOptions, NSAppleScript, NSString,
+};
 use serde_json::{json, Value};
+#[cfg(target_os = "macos")]
+use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -65,6 +75,7 @@ const MAX_OFFICE_EDITOR_WIDTH: f64 = 2600.0;
 const MAX_OFFICE_EDITOR_HEIGHT: f64 = 1800.0;
 const OFFICE_EDITOR_TITLE_BAR_ALLOWANCE: f64 = 28.0;
 const WORD_POINTER_FILE: &str = "word-active-session.txt";
+const IMAGE_INK_CENTER_CLI_ARGUMENT: &str = "--office-image-ink-center";
 const POWERPOINT_POINTER_FILE: &str = "powerpoint-active-session.txt";
 const WORD_RUNTIME_SUFFIX: &str = "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime";
 const POWERPOINT_RUNTIME_SUFFIX: &str =
@@ -87,10 +98,25 @@ const MAX_IDENTITY_CHARS: usize = 2048;
 const MAX_SHAPE_NAME_CHARS: usize = 128;
 const MAX_WORD_WIDTH_PT: f64 = 500.0;
 const WORD_REFERENCE_FONT_SIZE_PT: f64 = 14.0;
-// MathJax's TeX glyphs render about 9.5% narrower than Word's Cambria Math at
-// the same nominal point size. Scale only Word image formulas so 14 pt means a
-// comparable painted formula size; PowerPoint keeps its existing geometry.
-const WORD_IMAGE_VISUAL_SCALE: f64 = 1.1;
+// MathJax's built-in TeX paths render about 9.5% narrower than Word's Cambria
+// Math at the same nominal point size, so the historical KaTeX/Computer Modern
+// path keeps its 1.1 Word-image calibration. Times is different after VisualTeX
+// replaces the letter glyphs with real Times New Roman SVG <text>: two same-
+// LaTeX Word fixtures measured 36 px vs 35 px and 62 px vs 60 px horizontally,
+// but 12 px vs 11 px vertically. Keep the small horizontal compensation needed
+// by MathJax's TeX layout positions while removing the erroneous 10% vertical
+// enlargement that made Times image formulas taller and shifted their baseline.
+const WORD_TEX_IMAGE_VISUAL_SCALE: f64 = 1.1;
+const WORD_TEX_SHALLOW_DESCENT_FLOOR_PT: f64 = 1.91;
+const WORD_TIMES_IMAGE_WIDTH_SCALE: f64 = 1.067;
+const WORD_TIMES_IMAGE_HEIGHT_SCALE: f64 = 1.0;
+
+fn word_image_visual_scales(formula_letter_font: Option<&str>) -> (f64, f64) {
+    match formula_letter_font {
+        Some("times") => (WORD_TIMES_IMAGE_WIDTH_SCALE, WORD_TIMES_IMAGE_HEIGHT_SCALE),
+        _ => (WORD_TEX_IMAGE_VISUAL_SCALE, WORD_TEX_IMAGE_VISUAL_SCALE),
+    }
+}
 const MIN_WORD_FONT_SIZE_PT: f64 = 1.0;
 const MAX_WORD_FONT_SIZE_PT: f64 = 512.0;
 const POWERPOINT_REFERENCE_FONT_SIZE_PT: f64 = 14.0;
@@ -314,6 +340,8 @@ pub enum MacOfflineDocumentImportCommitItem {
         height: Option<f64>,
         #[serde(default)]
         baseline: Option<f64>,
+        #[serde(default)]
+        ink_center_y_ratio: Option<f64>,
         #[serde(default)]
         source_start: Option<usize>,
         #[serde(default)]
@@ -541,6 +569,25 @@ fn queue_editor_performance(
         epoch_ms: epoch_ms(),
         elapsed_ms,
         generation,
+        details,
+    });
+}
+
+fn queue_editor_performance_at_epoch(
+    host: OfficeHost,
+    session_id: &str,
+    stage: impl Into<String>,
+    record_epoch_ms: u64,
+    details: Value,
+) {
+    let _ = performance_logger().send(OfficeEditorPerformanceRecord {
+        schema: "visualtex-office-editor-performance-v1",
+        session_id: session_id.to_string(),
+        host,
+        stage: stage.into(),
+        epoch_ms: record_epoch_ms,
+        elapsed_ms: 0.0,
+        generation: None,
         details,
     });
 }
@@ -883,6 +930,175 @@ fn word_image_cache_paths(formula_id: &str) -> Result<(PathBuf, PathBuf, PathBuf
         directory.join(format!("{formula_id}.docx")),
         directory.join(format!("{formula_id}.png")),
     ))
+}
+
+fn paeth_predictor(left: u8, up: u8, upper_left: u8) -> u8 {
+    let left = i32::from(left);
+    let up = i32::from(up);
+    let upper_left = i32::from(upper_left);
+    let estimate = left + up - upper_left;
+    let left_distance = (estimate - left).abs();
+    let up_distance = (estimate - up).abs();
+    let upper_left_distance = (estimate - upper_left).abs();
+    if left_distance <= up_distance && left_distance <= upper_left_distance {
+        left as u8
+    } else if up_distance <= upper_left_distance {
+        up as u8
+    } else {
+        upper_left as u8
+    }
+}
+
+fn png_ink_center_y_ratio_from_bytes(bytes: &[u8]) -> Result<f64, String> {
+    const SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < SIGNATURE.len() || &bytes[..8] != SIGNATURE {
+        return Err("Cached formula image is not a PNG file".to_string());
+    }
+
+    let mut offset = 8usize;
+    let mut width = 0usize;
+    let mut height = 0usize;
+    let mut bit_depth = 0u8;
+    let mut color_type = 0u8;
+    let mut interlace = 0u8;
+    let mut compressed = Vec::new();
+    while offset + 12 <= bytes.len() {
+        let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let chunk_start = offset + 8;
+        let chunk_end = chunk_start
+            .checked_add(length)
+            .ok_or_else(|| "PNG chunk length overflowed".to_string())?;
+        let crc_end = chunk_end
+            .checked_add(4)
+            .ok_or_else(|| "PNG chunk boundary overflowed".to_string())?;
+        if crc_end > bytes.len() {
+            return Err("Cached formula PNG has a truncated chunk".to_string());
+        }
+        let chunk_type = &bytes[offset + 4..offset + 8];
+        match chunk_type {
+            b"IHDR" => {
+                if length != 13 {
+                    return Err("Cached formula PNG has an invalid IHDR".to_string());
+                }
+                width = u32::from_be_bytes(bytes[chunk_start..chunk_start + 4].try_into().unwrap()) as usize;
+                height = u32::from_be_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into().unwrap()) as usize;
+                bit_depth = bytes[chunk_start + 8];
+                color_type = bytes[chunk_start + 9];
+                if bytes[chunk_start + 10] != 0 || bytes[chunk_start + 11] != 0 {
+                    return Err("Cached formula PNG uses unsupported compression/filter methods".to_string());
+                }
+                interlace = bytes[chunk_start + 12];
+            }
+            b"IDAT" => compressed.extend_from_slice(&bytes[chunk_start..chunk_end]),
+            b"IEND" => break,
+            _ => {}
+        }
+        offset = crc_end;
+    }
+
+    if width == 0 || height == 0 || width > 200_000 || height > 200_000 {
+        return Err("Cached formula PNG has invalid dimensions".to_string());
+    }
+    if bit_depth != 8 || !matches!(color_type, 4 | 6) || interlace != 0 {
+        return Err("Cached formula PNG is not a supported 8-bit alpha image".to_string());
+    }
+    let bytes_per_pixel = if color_type == 6 { 4usize } else { 2usize };
+    let stride = width
+        .checked_mul(bytes_per_pixel)
+        .ok_or_else(|| "Cached formula PNG row is too large".to_string())?;
+    let expected = height
+        .checked_mul(stride + 1)
+        .ok_or_else(|| "Cached formula PNG is too large".to_string())?;
+    if expected > 512 * 1024 * 1024 {
+        return Err("Cached formula PNG exceeds the decode limit".to_string());
+    }
+
+    let mut inflated = Vec::with_capacity(expected);
+    ZlibDecoder::new(compressed.as_slice())
+        .read_to_end(&mut inflated)
+        .map_err(|error| format!("Unable to inflate cached formula PNG: {error}"))?;
+    if inflated.len() != expected {
+        return Err("Cached formula PNG has an unexpected decoded size".to_string());
+    }
+
+    let mut previous = vec![0u8; stride];
+    let mut current = vec![0u8; stride];
+    let mut minimum_y = None::<usize>;
+    let mut maximum_y = 0usize;
+    for y in 0..height {
+        let row_start = y * (stride + 1);
+        let filter = inflated[row_start];
+        let source = &inflated[row_start + 1..row_start + 1 + stride];
+        for index in 0..stride {
+            let left = if index >= bytes_per_pixel {
+                current[index - bytes_per_pixel]
+            } else {
+                0
+            };
+            let up = previous[index];
+            let upper_left = if index >= bytes_per_pixel {
+                previous[index - bytes_per_pixel]
+            } else {
+                0
+            };
+            current[index] = match filter {
+                0 => source[index],
+                1 => source[index].wrapping_add(left),
+                2 => source[index].wrapping_add(up),
+                3 => source[index].wrapping_add(((u16::from(left) + u16::from(up)) / 2) as u8),
+                4 => source[index].wrapping_add(paeth_predictor(left, up, upper_left)),
+                _ => return Err("Cached formula PNG uses an unsupported row filter".to_string()),
+            };
+        }
+        let alpha_offset = bytes_per_pixel - 1;
+        let row_has_ink = current
+            .chunks_exact(bytes_per_pixel)
+            .any(|pixel| pixel[alpha_offset] >= 16);
+        if row_has_ink {
+            minimum_y.get_or_insert(y);
+            maximum_y = y;
+        }
+        std::mem::swap(&mut previous, &mut current);
+        current.fill(0);
+    }
+
+    let minimum_y = minimum_y.ok_or_else(|| "Cached formula PNG contains no visible ink".to_string())?;
+    let painted_center = (minimum_y + maximum_y + 1) as f64 / 2.0;
+    let ratio = painted_center / height as f64;
+    if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
+        return Err("Cached formula PNG produced an invalid ink center".to_string());
+    }
+    Ok(ratio)
+}
+
+fn cached_formula_ink_center_y_ratio(formula_id: &str) -> Result<f64, String> {
+    let (_, _, png_path) = word_image_cache_paths(formula_id)?;
+    let metadata = fs::symlink_metadata(&png_path)
+        .map_err(|error| format!("Unable to inspect cached formula PNG {}: {error}", png_path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 || metadata.len() > 128 * 1024 * 1024 {
+        return Err("Cached formula PNG has an invalid file type or size".to_string());
+    }
+    let bytes = fs::read(&png_path)
+        .map_err(|error| format!("Unable to read cached formula PNG {}: {error}", png_path.display()))?;
+    png_ink_center_y_ratio_from_bytes(&bytes)
+}
+
+pub fn run_image_ink_center_cli_if_requested() -> Option<i32> {
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let Some(index) = arguments.iter().position(|argument| argument == IMAGE_INK_CENTER_CLI_ARGUMENT) else {
+        return None;
+    };
+    let formula_id = arguments.get(index + 1).map(String::as_str).unwrap_or("");
+    match cached_formula_ink_center_y_ratio(formula_id) {
+        Ok(ratio) => {
+            println!("{ratio:.9}");
+            Some(0)
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            Some(2)
+        }
+    }
 }
 
 fn cleanup_session_files_at(
@@ -1352,6 +1568,11 @@ fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), String> 
     if let Some(value) = metadata.reference_baseline_pt {
         if !value.is_finite() || !(-256.0..=0.0).contains(&value) {
             return Err("VisualTeX metadata referenceBaselinePt is invalid".to_string());
+        }
+    }
+    if let Some(value) = metadata.image_ink_center_y_ratio {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err("VisualTeX metadata imageInkCenterYRatio is invalid".to_string());
         }
     }
     Ok(())
@@ -2245,7 +2466,9 @@ fn set_resident_editor_parked(window: &WebviewWindow, parked: bool) -> Result<()
             // Keep the resident WKWebView continuously alive, exactly as in
             // eb2fcf2a. orderOut()/hide() suspends WebKit and causes the observed
             // multi-second transparent wake-up before the editor can paint.
-            native_window.setAlphaValue(if parked { 0.01 } else { 1.0 });
+            // 1% native opacity is still visible on bright/high-contrast desktop
+            // backgrounds, so park at a much smaller non-zero alpha instead.
+            native_window.setAlphaValue(if parked { 0.001 } else { 1.0 });
             native_window.setIgnoresMouseEvents(parked);
             // A ready Office editor must remain visually above Word/PowerPoint
             // even when macOS refuses a cross-application activation request.
@@ -2961,6 +3184,14 @@ pub fn close_macos_offline_office_editor_window(
     // interaction. Explicitly return the foreground application to the Office
     // host without changing the visibility of the user's main workspace.
     restore_office_host_focus(host);
+    queue_editor_performance(
+        host,
+        &session_id,
+        "editor-visible-complete",
+        0.0,
+        Some(generation),
+        json!({ "parked": true, "officeFocusRequested": true }),
+    );
     if !has_open_office_editor(&app) {
         restore_main_window_level_after_office_editor(&app)?;
     }
@@ -3227,12 +3458,11 @@ fn dynamic_dispatch_text(entries: &[(String, String)]) -> Result<String, String>
     Ok(output)
 }
 
-fn run_vba_callback(host: OfficeHost) -> Result<(), String> {
-    let script = match host {
+fn vba_callback_script(host: OfficeHost) -> &'static str {
+    match host {
         OfficeHost::Word => {
             r#"with timeout of 1800 seconds
 tell application "Microsoft Word"
-if not (exists active document) then error "Microsoft Word has no active document"
 run VB macro macro name "VisualTeX_ApplyPendingResult"
 end tell
 end timeout"#
@@ -3243,8 +3473,37 @@ if not (exists active presentation) then error "Microsoft PowerPoint has no acti
 run VB macro macro name "VisualTeX_ApplyPendingResult" list of parameters {}
 end tell"#
         }
+    }
+}
+
+fn run_vba_callback(host: OfficeHost) -> Result<(), String> {
+    run_office_vba_script(vba_callback_script(host), "Office VBA callback")
+}
+
+fn run_vba_callback_on_main_thread(
+    app: Option<&AppHandle>,
+    host: OfficeHost,
+) -> Result<(), String> {
+    let Some(app) = app else {
+        return run_vba_callback(host);
     };
-    run_office_vba_script(script, "Office VBA callback")
+    if host == OfficeHost::Word {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = sender.send(execute_word_vba_apple_event());
+        })
+        .map_err(|error| format!("Unable to schedule the Office VBA callback: {error}"))?;
+        return receiver
+            .recv_timeout(Duration::from_secs(1_800))
+            .map_err(|error| {
+                format!("The Office VBA callback main-thread callback did not finish: {error}")
+            })?;
+    }
+    run_office_vba_script_on_main_thread(
+        app,
+        vba_callback_script(host),
+        "Office VBA callback",
+    )
 }
 
 pub(crate) fn run_double_click_edit_macro(host: OfficeHost) -> Result<(), String> {
@@ -3275,7 +3534,7 @@ end tell"#,
     )
 }
 
-fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
+fn run_office_vba_script_subprocess(script: &str, label: &str) -> Result<(), String> {
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -3291,6 +3550,127 @@ fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
             format!("The {label} failed: {detail}")
         })
     }
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    // NSAppleScript is main-thread-bound in practice. Keep compiled callback
+    // programs in a main-thread local cache instead of paying ~0.5 s to compile
+    // the same Word/PowerPoint Apply script on every formula edit.
+    static OFFICE_VBA_APPLESCRIPT_CACHE: RefCell<Vec<(String, Retained<NSAppleScript>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(target_os = "macos")]
+fn execute_office_vba_apple_script(script: &str, label: &str) -> Result<(), String> {
+    OFFICE_VBA_APPLESCRIPT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let compiled_index = if let Some(index) = cache
+            .iter()
+            .position(|(cached_source, _)| cached_source == script)
+        {
+            index
+        } else {
+            let source = NSString::from_str(script);
+            let Some(compiled_script) =
+                NSAppleScript::initWithSource(NSAppleScript::alloc(), &source)
+            else {
+                return Err(format!("Unable to initialize the {label}"));
+            };
+            let mut compilation_error = None;
+            if !unsafe { compiled_script.compileAndReturnError(Some(&mut compilation_error)) } {
+                return Err(format!(
+                    "Unable to compile the {label}: {compilation_error:?}"
+                ));
+            }
+            cache.push((script.to_string(), compiled_script));
+            cache.len() - 1
+        };
+
+        let compiled_script = &cache[compiled_index].1;
+        let mut execution_error = None;
+        let _result = unsafe { compiled_script.executeAndReturnError(Some(&mut execution_error)) };
+        if let Some(error) = execution_error {
+            Err(format!("The {label} failed: {error:?}"))
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+const fn apple_event_code(code: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*code)
+}
+
+#[cfg(target_os = "macos")]
+fn execute_word_vba_apple_event() -> Result<(), String> {
+    // Word publishes this command as sWRD/1149 with the macro-name parameter
+    // 5112 in Word.sdef. Sending that event directly avoids the fixed
+    // NSAppleScript execution overhead while invoking the identical VBA entry.
+    let bundle_id = NSString::from_str("com.microsoft.Word");
+    let target = NSAppleEventDescriptor::descriptorWithBundleIdentifier(&bundle_id);
+    let event = NSAppleEventDescriptor::appleEventWithEventClass_eventID_targetDescriptor_returnID_transactionID(
+        apple_event_code(b"sWRD"),
+        apple_event_code(b"1149"),
+        Some(&target),
+        kAutoGenerateReturnID as i16,
+        kAnyTransactionID,
+    );
+    let macro_name = NSString::from_str("VisualTeX_ApplyPendingResult");
+    let macro_descriptor = NSAppleEventDescriptor::descriptorWithString(&macro_name);
+    event.setParamDescriptor_forKeyword(&macro_descriptor, apple_event_code(b"5112"));
+    let reply = event
+        .sendEventWithOptions_timeout_error(NSAppleEventSendOptions::DefaultOptions, 1_800.0)
+        .map_err(|error| format!("The Office VBA callback failed: {error}"))?;
+    if let Some(error_number) = reply.paramDescriptorForKeyword(keyErrorNumber) {
+        let code = error_number.int32Value();
+        if code != 0 {
+            let detail = reply
+                .paramDescriptorForKeyword(keyErrorString)
+                .and_then(|descriptor| descriptor.stringValue())
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "Microsoft Word returned an Apple Event error".to_string());
+            return Err(format!("The Office VBA callback failed ({code}): {detail}"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn run_office_vba_script_on_main_thread(
+    app: &AppHandle,
+    script: &str,
+    label: &str,
+) -> Result<(), String> {
+    // NSAppleScript may wait indefinitely when instantiated on a Tauri worker
+    // thread. Dispatch its complete compile/execute lifetime to AppKit's main
+    // thread, then return only the owned Result through a bounded channel.
+    let script = script.to_string();
+    let label = label.to_string();
+    let callback_label = label.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let result = execute_office_vba_apple_script(&script, &callback_label);
+        let _ = sender.send(result);
+    })
+    .map_err(|error| format!("Unable to schedule the {label}: {error}"))?;
+    receiver
+        .recv_timeout(Duration::from_secs(1_800))
+        .map_err(|error| format!("The {label} main-thread callback did not finish: {error}"))?
+}
+
+fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
+    run_office_vba_script_subprocess(script, label)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn run_office_vba_script_on_main_thread(
+    _app: &AppHandle,
+    script: &str,
+    label: &str,
+) -> Result<(), String> {
+    run_office_vba_script_subprocess(script, label)
 }
 
 fn with_dispatch_pointer<T>(
@@ -3341,9 +3721,19 @@ fn scale_word_reference_geometry(
     {
         return Err("Word formula point-size geometry is invalid".to_string());
     }
-    let baseline = (reference_baseline_pt * point_scale)
-        .round()
-        .clamp(-256.0, 0.0) as i32;
+    // Word exposes Font.Position only as whole points. SVG and imported
+    // picture dimensions are quantized independently, so a mathematical half
+    // point can arrive just below the boundary (the real Times fixture reports
+    // -1.491 pt instead of -1.5 pt). Use a small rounding tolerance for negative
+    // descents; unlike a fixed offset, this changes only boundary cases and
+    // preserves the distinct fraction/integral/sum/root baseline classes.
+    let raw_baseline = reference_baseline_pt * point_scale;
+    let baseline = if raw_baseline < 0.0 {
+        (raw_baseline - 0.01).round()
+    } else {
+        0.0
+    }
+    .clamp(-256.0, 0.0) as i32;
     Ok(WordGeometry {
         width,
         height,
@@ -3355,35 +3745,39 @@ fn scale_word_reference_geometry(
     })
 }
 
-fn calculate_word_svg_geometry(
+fn calculate_word_svg_geometry_with_scale(
     width: f64,
     height: f64,
-    baseline: Option<f64>,
+    baseline: f64,
     font_size_pt: f64,
+    width_scale: f64,
+    height_scale: f64,
 ) -> Result<WordGeometry, String> {
     if !width.is_finite()
         || !height.is_finite()
+        || !baseline.is_finite()
         || width <= 0.0
         || height <= 0.0
-        || baseline.is_some_and(|value| !value.is_finite() || value < 0.0 || value > height)
+        || baseline < 0.0
+        || baseline > height
+        || !width_scale.is_finite()
+        || !(0.5..=2.0).contains(&width_scale)
+        || !height_scale.is_finite()
+        || !(0.5..=2.0).contains(&height_scale)
     {
         return Err("Word formula SVG geometry is invalid".to_string());
     }
-    let natural_width = width * 0.75 * WORD_IMAGE_VISUAL_SCALE;
-    let natural_height = height * 0.75 * WORD_IMAGE_VISUAL_SCALE;
+    let natural_width = width * 0.75 * width_scale;
+    let natural_height = height * 0.75 * height_scale;
     let reference_scale = f64::min(1.0, MAX_WORD_WIDTH_PT / natural_width);
     let reference_width_pt = natural_width * reference_scale;
     let reference_height_pt = natural_height * reference_scale;
-    let reference_baseline_pt = baseline
-        .map(|value| {
-            let descent_ratio = (height - value) / height;
-            // Preserve the fractional descent at the canonical 14 pt size.
-            // Word's Font.Position is integral, so rounding this reference and
-            // rounding again after point-size scaling visibly under-corrects
-            // short subscript formulas such as L_z beside L^2.
-            -(reference_height_pt * descent_ratio).max(0.0)
-        })
-        .unwrap_or(0.0)
+    let descent_ratio = (height - baseline) / height;
+    // Preserve the fractional descent at the canonical 14 pt size. Word's
+    // Font.Position is integral, so rounding this reference and rounding again
+    // after point-size scaling visibly under-corrects short subscript formulas
+    // such as L_z beside L^2.
+    let reference_baseline_pt = (-(reference_height_pt * descent_ratio).max(0.0))
         .clamp(-256.0, 0.0);
     scale_word_reference_geometry(
         reference_width_pt,
@@ -3391,6 +3785,61 @@ fn calculate_word_svg_geometry(
         reference_baseline_pt,
         font_size_pt,
     )
+}
+
+#[cfg(test)]
+fn calculate_word_svg_geometry(
+    width: f64,
+    height: f64,
+    baseline: f64,
+    font_size_pt: f64,
+) -> Result<WordGeometry, String> {
+    calculate_word_svg_geometry_with_scale(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        WORD_TEX_IMAGE_VISUAL_SCALE,
+        WORD_TEX_IMAGE_VISUAL_SCALE,
+    )
+}
+
+fn calculate_word_svg_geometry_for_font(
+    width: f64,
+    height: f64,
+    baseline: f64,
+    font_size_pt: f64,
+    formula_letter_font: Option<&str>,
+) -> Result<WordGeometry, String> {
+    let (width_scale, height_scale) = word_image_visual_scales(formula_letter_font);
+    let geometry = calculate_word_svg_geometry_with_scale(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        width_scale,
+        height_scale,
+    )?;
+    // KaTeX and the non-Times letter-font replacements share MathJax's very
+    // shallow SVG descent for superscript-only expressions. Word's integral
+    // Font.Position then leaves x^2 visibly above adjacent OMML on screen and
+    // by 0.5-0.67 pt in PDF ink measurements. Apply a canonical-size descent
+    // floor only to that shallow class; fractions, integrals, sums and roots
+    // already exceed it and keep their formula-specific baseline. Times uses
+    // real text glyph metrics and retains its independent calibration.
+    if formula_letter_font != Some("times")
+        && geometry.reference_baseline_pt < 0.0
+        && geometry.reference_baseline_pt > -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT
+    {
+        scale_word_reference_geometry(
+            geometry.reference_width_pt,
+            geometry.reference_height_pt,
+            -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT,
+            font_size_pt,
+        )
+    } else {
+        Ok(geometry)
+    }
 }
 
 fn calculate_word_geometry(
@@ -3439,10 +3888,25 @@ fn calculate_word_geometry(
         .unwrap_or(WORD_REFERENCE_FONT_SIZE_PT);
     let baseline = export
         .baseline
-        .filter(|value| value.is_finite() && *value >= 0.0 && *value <= export.height);
+        .filter(|value| value.is_finite() && *value >= 0.0 && *value <= export.height)
+        .ok_or_else(|| {
+            "Word formula export is missing a valid mathematical baseline".to_string()
+        })?;
+    // Never silently fall back to the image bottom for a missing baseline. That
+    // makes simple formulas look acceptable while subscripts, fractions and
+    // tall delimiters are inserted at visibly different vertical positions on
+    // Word versions that round InlineShape.Font.Position differently. Every
+    // current renderer provides a mathematical baseline, so absence means the
+    // artifact is incomplete and must not be committed with corrupt geometry.
     // Document import and edit replacement share this exact 14 pt reference
     // geometry path, including maximum width, descent and baseline rounding.
-    calculate_word_svg_geometry(export.width, export.height, baseline, font_size_pt)
+    calculate_word_svg_geometry_for_font(
+        export.width,
+        export.height,
+        baseline,
+        font_size_pt,
+        Some(session.formula_letter_font.as_str()),
+    )
 }
 
 fn calculate_powerpoint_geometry(
@@ -3999,6 +4463,7 @@ fn materialize_powerpoint_svg(session: &OfficeFormulaSession) -> Result<PathBuf,
 }
 
 fn commit_word(
+    app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
     session: &OfficeFormulaSession,
     metadata: &str,
@@ -4159,6 +4624,16 @@ fn commit_word(
             "referenceBaselinePt",
             format!("{:.6}", geometry.reference_baseline_pt),
         ),
+        (
+            "inkCenterYRatio",
+            session
+                .export_result
+                .as_ref()
+                .and_then(|value| value.ink_center_y_ratio)
+                .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                .map(|value| format!("{value:.8}"))
+                .unwrap_or_default(),
+        ),
     ])?;
     atomic_write_runtime(
         &dispatch_path(OfficeHost::Word, &session.id)?,
@@ -4174,7 +4649,7 @@ fn commit_word(
         json!({}),
     );
     with_dispatch_pointer(OfficeHost::Word, &session.id, || {
-        run_vba_callback(OfficeHost::Word)
+        run_vba_callback_on_main_thread(app, OfficeHost::Word)
     })?;
     queue_editor_performance(
         OfficeHost::Word,
@@ -4752,6 +5227,7 @@ fn calculate_document_image_geometry(
     height: f64,
     baseline: f64,
     font_size_pt: f64,
+    formula_letter_font: Option<&str>,
 ) -> Result<WordGeometry, String> {
     if !width.is_finite()
         || !height.is_finite()
@@ -4763,7 +5239,13 @@ fn calculate_document_image_geometry(
     {
         return Err("Document formula SVG geometry is invalid".to_string());
     }
-    calculate_word_svg_geometry(width, height, Some(baseline), font_size_pt)
+    calculate_word_svg_geometry_for_font(
+        width,
+        height,
+        baseline,
+        font_size_pt,
+        formula_letter_font,
+    )
 }
 
 fn resolve_document_paragraph_transfer(
@@ -5327,6 +5809,7 @@ fn commit_document_import_blocking(
                 width,
                 height,
                 baseline,
+                ink_center_y_ratio,
                 source_start,
                 source_end,
                 source_text,
@@ -5469,9 +5952,16 @@ fn commit_document_import_blocking(
                         .ok_or_else(|| "Image document formula width is missing".to_string())?;
                     let height = height
                         .ok_or_else(|| "Image document formula height is missing".to_string())?;
-                    let baseline = baseline.unwrap_or(height);
-                    let geometry =
-                        calculate_document_image_geometry(width, height, baseline, *font_size_pt)?;
+                    let baseline = baseline.ok_or_else(|| {
+                        "Image document formula is missing its mathematical baseline".to_string()
+                    })?;
+                    let geometry = calculate_document_image_geometry(
+                        width,
+                        height,
+                        baseline,
+                        *font_size_pt,
+                        resolved_metadata.formula_letter_font.as_deref(),
+                    )?;
                     let svg_path = document_formula_file_path(&session_id, formula_id, "svg")?;
                     let png_path = document_formula_file_path(&session_id, formula_id, "png")?;
                     atomic_write(&svg_path, &svg, 0o600)?;
@@ -5500,11 +5990,14 @@ fn commit_document_import_blocking(
                     resolved_metadata.reference_width_pt = Some(geometry.reference_width_pt);
                     resolved_metadata.reference_height_pt = Some(geometry.reference_height_pt);
                     resolved_metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
+                    resolved_metadata.image_ink_center_y_ratio = ink_center_y_ratio
+                        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
                     geometry
                 } else {
                     resolved_metadata.reference_width_pt = None;
                     resolved_metadata.reference_height_pt = None;
                     resolved_metadata.reference_baseline_pt = None;
+                    resolved_metadata.image_ink_center_y_ratio = None;
                     WordGeometry {
                         width: *font_size_pt,
                         height: (*font_size_pt * 1.8).max(18.0),
@@ -5575,6 +6068,14 @@ fn commit_document_import_blocking(
                     format!("{prefix}referenceBaselinePt"),
                     format!("{:.6}", geometry.reference_baseline_pt),
                 ));
+                if let Some(value) = ink_center_y_ratio
+                    .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                {
+                    entries.push((
+                        format!("{prefix}inkCenterYRatio"),
+                        format!("{value:.8}"),
+                    ));
+                }
                 if is_range_replace {
                     entries.push((
                         format!("{prefix}sourceStart"),
@@ -5797,7 +6298,14 @@ fn commit_session_blocking(
             metadata.reference_height_pt = Some(geometry.reference_height_pt);
             metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
             let encoded = encode_metadata(&metadata)?;
-            commit_word(&request, &session, &encoded, &metadata.latex, geometry)
+            commit_word(
+                state.app.as_ref(),
+                &request,
+                &session,
+                &encoded,
+                &metadata.latex,
+                geometry,
+            )
         }
         OfficeHost::Powerpoint => {
             let powerpoint = request
@@ -6070,11 +6578,31 @@ pub fn delete_macos_offline_office_session(
 pub async fn commit_macos_offline_office_session(
     session_id: String,
     patch: Option<Value>,
+    apply_started_epoch_ms: Option<u64>,
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> Result<OfficeFormulaSession, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         validate_uuid(&session_id, "Session id")?;
+        if let Some(started_epoch_ms) = apply_started_epoch_ms {
+            let now = epoch_ms();
+            if started_epoch_ms > 0
+                && started_epoch_ms <= now
+                && now - started_epoch_ms <= 60_000
+            {
+                let session = state
+                    .session_store
+                    .get(&session_id)
+                    .map_err(|error| error.to_string())?;
+                queue_editor_performance_at_epoch(
+                    session.host,
+                    &session_id,
+                    "apply-ui-start",
+                    started_epoch_ms,
+                    json!({}),
+                );
+            }
+        }
         if let Some(patch) = patch {
             state
                 .session_store
@@ -6493,14 +7021,14 @@ mod tests {
         let superscript = calculate_word_svg_geometry(
             22.86186666666666,
             17.56613333333333,
-            Some(16.56613333333333),
+            16.56613333333333,
             11.0,
         )
         .expect("L^2 geometry should resolve");
         let subscript = calculate_word_svg_geometry(
             22.39893333333333,
             17.69493333333333,
-            Some(13.749333333333333),
+            13.749333333333333,
             11.0,
         )
         .expect("L_z geometry should resolve");
@@ -6510,6 +7038,68 @@ mod tests {
         assert_eq!(superscript.baseline, -1);
         assert_eq!(subscript.baseline, -3);
         assert_eq!(subscript.baseline - superscript.baseline, -2);
+    }
+
+    #[test]
+    fn word_times_image_geometry_matches_native_visual_calibration() {
+        // Real 11 pt Times New Roman a^2+b^2 geometry from the reported Word
+        // document. The old uniform 1.1 calibration produced about 38.245 x
+        // 12.379 pt; Word copy-as-picture measured its ink at 36 x 12 px while
+        // the same OMML was 35 x 11 px. Times therefore keeps only the small
+        // horizontal TeX-layout compensation and uses natural vertical scale.
+        // Its -1.49 pt formula-specific descent floors to -2 pt so Word does
+        // not render the image baseline above the adjacent native OMath.
+        let times = calculate_word_svg_geometry_for_font(
+            59.00053333333333,
+            19.0968,
+            16.566133333333333,
+            11.0,
+            Some("times"),
+        )
+        .expect("Times image geometry should resolve");
+        let katex = calculate_word_svg_geometry_for_font(
+            59.00053333333333,
+            19.0968,
+            16.566133333333333,
+            11.0,
+            Some("katex"),
+        )
+        .expect("KaTeX image geometry should retain its historical calibration");
+
+        assert!((times.width - 37.09763891428571).abs() < 0.001);
+        assert!((times.height - 11.25347142857143).abs() < 0.001);
+        assert_eq!(times.baseline, -2);
+        assert!((times.reference_baseline_pt + 1.898).abs() < 0.001);
+        assert!((katex.width - 38.24498857142857).abs() < 0.001);
+        assert!((katex.height - 12.378818571428573).abs() < 0.001);
+        assert_eq!(katex.baseline, -2);
+    }
+
+    #[test]
+    fn word_non_times_fonts_lower_only_shallow_superscript_descent() {
+        for font in ["katex", "cambria", "stix", "palatino", "helvetica"] {
+            let shallow = calculate_word_svg_geometry_for_font(
+                20.83792,
+                17.789648,
+                16.5848,
+                11.0,
+                Some(font),
+            )
+            .expect("non-Times shallow geometry should resolve");
+            let deep = calculate_word_svg_geometry_for_font(
+                17.21108,
+                21.760533,
+                14.1756,
+                11.0,
+                Some(font),
+            )
+            .expect("non-Times fraction geometry should resolve");
+
+            assert_eq!(shallow.baseline, -2, "font={font}");
+            assert!((shallow.reference_baseline_pt + 1.91).abs() < 0.001);
+            assert_eq!(deep.baseline, -5, "font={font}");
+            assert!(deep.reference_baseline_pt < -6.0);
+        }
     }
 
     #[test]
@@ -6924,6 +7514,7 @@ mod tests {
             reference_width_pt: Some(37.5),
             reference_height_pt: Some(15.0),
             reference_baseline_pt: Some(-3.0),
+            image_ink_center_y_ratio: Some(0.47826087),
             created_with_version: "1.1.0".to_string(),
             updated_with_version: "1.1.0".to_string(),
             created_at: "unix-ms:1".to_string(),
@@ -6937,6 +7528,7 @@ mod tests {
         assert_eq!(decoded.reference_width_pt, Some(37.5));
         assert_eq!(decoded.reference_height_pt, Some(15.0));
         assert_eq!(decoded.reference_baseline_pt, Some(-3.0));
+        assert_eq!(decoded.image_ink_center_y_ratio, Some(0.47826087));
     }
 
     fn document_formula_metadata(
@@ -6970,6 +7562,7 @@ mod tests {
             reference_width_pt: None,
             reference_height_pt: None,
             reference_baseline_pt: None,
+            image_ink_center_y_ratio: None,
             created_with_version: "1.2.5".to_string(),
             updated_with_version: "1.2.5".to_string(),
             created_at: "unix-ms:1".to_string(),
@@ -7216,7 +7809,7 @@ c &= e
 
     #[test]
     fn office_geometry_preserves_visual_point_size_and_powerpoint_center() {
-        let word_geometry = calculate_word_svg_geometry(100.0, 20.0, Some(15.0), 14.0)
+        let word_geometry = calculate_word_svg_geometry(100.0, 20.0, 15.0, 14.0)
             .expect("Word image geometry should apply its visual calibration");
         assert!((word_geometry.width - 82.5).abs() < 0.001);
         assert!((word_geometry.height - 16.5).abs() < 0.001);
@@ -7267,6 +7860,9 @@ c &= e
                 width: 300.0,
                 height: 50.0,
                 baseline: None,
+                ink_top_ratio: None,
+                ink_bottom_ratio: None,
+                ink_center_y_ratio: None,
             }),
             original_metadata: Some(VisualTeXFormulaMetadata {
                 schema: "visualtex-formula".to_string(),
@@ -7286,6 +7882,7 @@ c &= e
                 reference_width_pt: None,
                 reference_height_pt: None,
                 reference_baseline_pt: None,
+                image_ink_center_y_ratio: None,
                 created_with_version: "1".to_string(),
                 updated_with_version: "1".to_string(),
                 created_at: "1".to_string(),
@@ -7366,6 +7963,9 @@ c &= e
         let mut word_session = session.clone();
         word_session.host = OfficeHost::Word;
         word_session.font_size_pt = Some(24.0);
+        if let Some(export) = word_session.export_result.as_mut() {
+            export.baseline = Some(40.0);
+        }
         if let Some(metadata) = word_session.original_metadata.as_mut() {
             metadata.font_size_pt = Some(10.5);
         }

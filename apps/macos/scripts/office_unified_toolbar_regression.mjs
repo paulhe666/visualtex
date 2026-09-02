@@ -455,8 +455,95 @@ async function main() {
       })()`);
     };
 
+    const dragElement = async (selector, deltaX, deltaY) => {
+      const rect = await client.evaluate(`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!(element instanceof HTMLElement)) return null;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (style.display === 'none' || rect.width <= 0 || rect.height <= 0) return null;
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      })()`);
+      if (!rect) throw new Error(`Unable to drag missing element: ${selector}`);
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: rect.x,
+        y: rect.y,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: rect.x,
+        y: rect.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: rect.x + deltaX,
+        y: rect.y + deltaY,
+        button: "left",
+        buttons: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: rect.x + deltaX,
+        y: rect.y + deltaY,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(140);
+    };
+
     const wide = await inspect(1600, 900);
     const compact = await inspect(1280, 820);
+    await inspect(700, 500);
+    const initialCompactTileResize = await client.evaluate(`(() => {
+      const tiles = document.querySelector('.classic-tile-toolbar');
+      const handle = document.querySelector('.classic-tile-resizer');
+      const tileRect = tiles?.getBoundingClientRect();
+      const handleRect = handle?.getBoundingClientRect();
+      return {
+        tileWidth: tileRect?.width ?? 0,
+        handleVisible: Boolean(
+          handleRect && handleRect.width > 0 && handleRect.height > 0 &&
+          getComputedStyle(handle).display !== 'none'
+        ),
+      };
+    })()`);
+    await dragElement('.classic-tile-resizer', -72, 0);
+    const resizedCompactTile = await client.evaluate(`(() => {
+      const tiles = document.querySelector('.classic-tile-toolbar');
+      const handle = document.querySelector('.classic-tile-resizer');
+      const tileRect = tiles?.getBoundingClientRect();
+      const handleRect = handle?.getBoundingClientRect();
+      return {
+        tileWidth: tileRect?.width ?? 0,
+        handleLeft: handleRect?.left ?? 0,
+        tileLeft: tileRect?.left ?? 0,
+        storedTileWidth: Number(localStorage.getItem('visualtex-classic-tile-width')),
+      };
+    })()`);
+    assert.equal(
+      initialCompactTileResize.handleVisible,
+      true,
+      JSON.stringify(initialCompactTileResize),
+    );
+    assert.ok(
+      resizedCompactTile.tileWidth >= initialCompactTileResize.tileWidth + 60,
+      JSON.stringify({ initialCompactTileResize, resizedCompactTile }),
+    );
+    assert.ok(
+      Math.abs(resizedCompactTile.handleLeft - resizedCompactTile.tileLeft) <= 8,
+      JSON.stringify(resizedCompactTile),
+    );
+    assert.ok(
+      Math.abs(resizedCompactTile.storedTileWidth - resizedCompactTile.tileWidth) <= 2,
+      JSON.stringify(resizedCompactTile),
+    );
+    await client.evaluate(`document.querySelector('.classic-tile-resizer')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await sleep(100);
     const officeFormulaLineCenter = await client.evaluate(`(() => {
       const rect = document.querySelector('.formula-line')?.getBoundingClientRect();
       return rect

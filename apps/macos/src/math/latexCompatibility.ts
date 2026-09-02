@@ -2,6 +2,7 @@ import {
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
 } from "./extendedIntegralCompatibility.ts";
+import { VISUALTEX_MATHJAX_PACKAGE_MACROS } from "./packageMacroCompatibility.ts";
 export type VisualTexMathJaxMacro = string | readonly [replacement: string, argumentCount: number];
 
 /**
@@ -11,7 +12,25 @@ export type VisualTexMathJaxMacro = string | readonly [replacement: string, argu
  * degraded to upright \\mathbf text.
  */
 const STANDARD_COMPATIBILITY_MACROS = {
+  ...VISUALTEX_MATHJAX_PACKAGE_MACROS,
   bm: ["\\boldsymbol{#1}", 1] as const,
+  symup: ["\\mathrm{#1}", 1] as const,
+  symit: ["\\mathit{#1}", 1] as const,
+  symbf: ["\\mathbf{#1}", 1] as const,
+  symbfup: ["\\mathbf{#1}", 1] as const,
+  symbfit: ["\\boldsymbol{#1}", 1] as const,
+  symbb: ["\\mathbb{#1}", 1] as const,
+  symcal: ["\\mathcal{#1}", 1] as const,
+  symbfcal: ["\\boldsymbol{\\mathcal{#1}}", 1] as const,
+  symscr: ["\\mathscr{#1}", 1] as const,
+  symbfscr: ["\\boldsymbol{\\mathscr{#1}}", 1] as const,
+  symfrak: ["\\mathfrak{#1}", 1] as const,
+  symbffrak: ["\\boldsymbol{\\mathfrak{#1}}", 1] as const,
+  symsfup: ["\\mathsf{#1}", 1] as const,
+  symsfit: ["\\mathsf{\\mathit{#1}}", 1] as const,
+  symbfsfup: ["\\boldsymbol{\\mathsf{#1}}", 1] as const,
+  symbfsfit: ["\\boldsymbol{\\mathsf{\\mathit{#1}}}", 1] as const,
+  symtt: ["\\mathtt{#1}", 1] as const,
 } satisfies Record<string, VisualTexMathJaxMacro>;
 
 export const VISUALTEX_MATHML_MACROS = {

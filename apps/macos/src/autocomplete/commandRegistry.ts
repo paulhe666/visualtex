@@ -1,5 +1,6 @@
 import type { LatexCommand } from "../types/command";
 import { additionalCommands } from "./additionalCommands";
+import { compatibilityCommands } from "./compatibilityCommands";
 
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
@@ -107,6 +108,7 @@ const baseCommandRegistry: LatexCommand[] = [
 
 export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
+  ...compatibilityCommands,
   ...additionalCommands,
 ];
 

@@ -22,7 +22,7 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyLatex,
+  copyFormulaLines,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../types/formula";
@@ -1044,24 +1044,33 @@ export function OfficeDialogApp() {
       preparedBase === undefined ? generateSvgExportResult() : preparedBase;
     if (!base) return null;
     let pngBase64: string | undefined;
+    let inkTopRatio: number | undefined;
+    let inkBottomRatio: number | undefined;
+    let inkCenterYRatio: number | undefined;
     try {
       const { svgToPng } = await import("../../export/svgToPng");
-      pngBase64 = (
-        await svgToPng(
-          {
-            svg: base.svg,
-            base64: base.svgBase64,
-            width: base.width,
-            height: base.height,
-            baseline: base.baseline,
-          },
-          { scale: 2, background: "transparent" },
-        )
-      ).base64;
+      const png = await svgToPng(
+        {
+          base64: base.svgBase64,
+          width: base.width,
+          height: base.height,
+        },
+        { scale: 2, background: "transparent" },
+      );
+      pngBase64 = png.base64;
+      inkTopRatio = png.inkTopRatio;
+      inkBottomRatio = png.inkBottomRatio;
+      inkCenterYRatio = png.inkCenterYRatio;
     } catch {
       // SVG remains a complete Office fallback when PNG rasterization fails.
     }
-    return { ...base, pngBase64 };
+    return {
+      ...base,
+      pngBase64,
+      inkTopRatio,
+      inkBottomRatio,
+      inkCenterYRatio,
+    };
   }, [generateSvgExportResult]);
 
   const getCompleteExportResult = useCallback(
@@ -1643,6 +1652,7 @@ export function OfficeDialogApp() {
     // Keep a synchronous guard as well so a rapid double-click cannot enqueue
     // two commits for the same Office Session.
     if (finalizingRef.current) return false;
+    const applyStartedEpochMs = Date.now();
     historyManager.commitPendingTransaction();
     if (!latex.trim()) {
       setToast(isEn ? "Enter a formula before inserting" : "请输入公式后再插入");
@@ -1654,7 +1664,11 @@ export function OfficeDialogApp() {
       if (isMacosOfflineTauriTransport()) {
         if (!session) throw new Error("Office Session 尚未加载。");
         const update = await buildCurrentSessionUpdate("committing");
-        await commitMacosOfflineOfficeSession(session.id, update);
+        await commitMacosOfflineOfficeSession(
+          session.id,
+          update,
+          applyStartedEpochMs,
+        );
         lastSavedFingerprintRef.current = currentFingerprint;
         if (activeSessionKeyRef.current !== targetSessionKey) return false;
         try {
@@ -1717,10 +1731,14 @@ export function OfficeDialogApp() {
       return;
     }
 
-    silentCommitSessionKeyRef.current = sessionKey;
     let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
+    // Conversion editors stay hidden, so WebKit may never deliver an animation
+    // frame. Use a task, as the hidden-editor readiness check does. Claim the
+    // session only when that task starts: a hydration rerender can cancel an
+    // earlier effect before it runs, and must still be able to schedule it again.
+    const timer = window.setTimeout(() => {
       if (cancelled) return;
+      silentCommitSessionKeyRef.current = sessionKey;
       void handleCommit().then(async (committed) => {
         if (committed || cancelled) return;
         // Direct conversion commands must never fall back to a visible editor.
@@ -1733,10 +1751,10 @@ export function OfficeDialogApp() {
           // A superseding Office Session may already have cleared this one.
         }
       });
-    });
+    }, 0);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
     };
   }, [
     closeOfficeEditorWindow,
@@ -1873,7 +1891,7 @@ export function OfficeDialogApp() {
   }, [autoCommitOnClose, handleCancel, handleCommit, isEn, latex, sessionId]);
 
   const handleCopy = async () => {
-    await copyLatex(latex, latexCodeFormat);
+    await copyFormulaLines(lines, latexCodeFormat);
     addHistory(latex);
     setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
   };

@@ -1,12 +1,18 @@
 import { validateLatex } from "mathlive/ssr";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import {
+  compatibilityCommandNames,
+  compatibilityRequiredArgumentCounts,
+} from "../autocomplete/compatibilityCommands";
+import {
+  ensureVisualTexAlignmentMarkers,
   restoreLatexAlignmentMarkers,
   stripVisualTexAlignmentMarkers,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
 } from "../editor/alignmentMarkers";
-import type { LatexCodeFormat } from "../types/formula";
+import type { FormulaLine, FormulaLineMode, LatexCodeFormat } from "../types/formula";
 
 export type LatexCodeFormatGroup = "single" | "multi";
 
@@ -32,6 +38,15 @@ export const latexCodeFormats: readonly LatexCodeFormatDefinition[] = [
     hint: "\\frac{x}{y}",
     descriptionZh: "每个公式占一行，不添加环境",
     descriptionEn: "One formula per line without wrappers",
+  },
+  {
+    id: "mixed-inline-display",
+    group: "single",
+    titleZh: "混合 LaTeX · 行内 / 行间",
+    titleEn: "Mixed LaTeX · inline / display",
+    hint: "文字$x$  /  $$y$$",
+    descriptionZh: "每行独立选择行内/行间；回车继承，Shift+回车行内，Option+回车行间；行内文字放在 $...$ 外",
+    descriptionEn: "Choose per row; Enter inherits, Shift+Enter is inline, Option+Enter is display; inline text stays outside $...$",
   },
   {
     id: "inline-dollar",
@@ -308,7 +323,9 @@ function formatRows(lines: string[], preserveAlignmentMarkers: boolean): string 
   return lines
     .map((line, index) => {
       const content = preserveAlignmentMarkers
-        ? restoreLatexAlignmentMarkers(line)
+        ? restoreLatexAlignmentMarkers(
+            ensureVisualTexAlignmentMarkers(line),
+          )
         : stripVisualTexAlignmentMarkers(line);
       return index < lines.length - 1 ? `${content} \\\\` : content;
     })
@@ -407,14 +424,48 @@ function splitTopLevelTextSegments(latex: string): InlineTextSegment[] {
   return segments;
 }
 
-function formatInlineTextDoubleDollar(latex: string): string {
+function formatInlineTextWithDelimiter(latex: string, delimiter: "$" | "$$"): string {
   return splitTopLevelTextSegments(latex)
     .map((segment) => {
       if (segment.kind === "text") return segment.value;
       const math = segment.value.trim();
-      return math ? `$$${math}$$` : "";
+      return math ? `${delimiter}${math}${delimiter}` : "";
     })
     .join("");
+}
+
+function formatInlineTextDoubleDollar(latex: string): string {
+  return formatInlineTextWithDelimiter(latex, "$$");
+}
+
+function formatInlineTextDollar(latex: string): string {
+  return formatInlineTextWithDelimiter(latex, "$");
+}
+
+export function formatFormulaLines(
+  formulaLines: readonly FormulaLine[],
+  format: LatexCodeFormat,
+): string {
+  if (format !== "mixed-inline-display") {
+    return formatLatexLines(formulaLines.map((line) => line.latex), format);
+  }
+  const lines = formulaLines
+    .map((line) => ({
+      latex: normalizeMathLiveCanonicalUprightCommands(
+        String(line.latex ?? "").replace(/\r\n?/g, "\n"),
+      ).trim(),
+      mode: line.mode === "inline" ? "inline" as const : "display" as const,
+    }))
+    .filter((line) => line.latex.length > 0);
+  if (!lines.length) return "";
+  return lines
+    .map(({ latex, mode }) => {
+      const plain = stripVisualTexAlignmentMarkers(latex);
+      return mode === "inline"
+        ? formatInlineTextDollar(plain)
+        : `$$${plain}$$`;
+    })
+    .join("\n");
 }
 
 export function formatLatexLines(
@@ -427,6 +478,8 @@ export function formatLatexLines(
   switch (format) {
     case "raw":
       return plainLines.join("\n");
+    case "mixed-inline-display":
+      return plainLines.map((line) => `$$${line}$$`).join("\n");
     case "inline-dollar":
       return plainLines.map((line) => `$${line}$`).join("\n");
     case "inline-text-double-dollar":
@@ -604,6 +657,67 @@ function parseInlineTextDoubleDollarLines(source: string): string[] {
   return values;
 }
 
+function findSingleDollar(source: string, start: number): number {
+  for (let index = start; index < source.length; index += 1) {
+    if (
+      source[index] === "$" &&
+      !isEscaped(source, index) &&
+      source[index - 1] !== "$" &&
+      source[index + 1] !== "$"
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function parseInlineTextDollarLine(line: string): string | null {
+  let result = "";
+  let cursor = 0;
+  while (cursor < line.length) {
+    const opening = findSingleDollar(line, cursor);
+    if (opening < 0) {
+      const text = line.slice(cursor);
+      if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
+      break;
+    }
+    const text = line.slice(cursor, opening);
+    if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
+    const closing = findSingleDollar(line, opening + 1);
+    if (closing < 0) return null;
+    const math = line.slice(opening + 1, closing).trim();
+    if (!math) return null;
+    result += math;
+    cursor = closing + 1;
+  }
+  return result;
+}
+
+interface MixedLatexRow {
+  value: string;
+  mode: FormulaLineMode;
+}
+
+function parseMixedLatexRows(source: string): MixedLatexRow[] | null {
+  const rows: MixedLatexRow[] = [];
+  for (const rawLine of source.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("$$")) {
+      if (!line.endsWith("$$") || line.length <= 4) return null;
+      const value = line.slice(2, -2).trim();
+      if (!value) return null;
+      rows.push({ value, mode: "display" });
+      continue;
+    }
+    if (line.includes("$$")) return null;
+    const value = parseInlineTextDollarLine(rawLine.trim());
+    if (value === null || !value.trim()) return null;
+    rows.push({ value, mode: "inline" });
+  }
+  return rows.length ? rows : null;
+}
+
 function parseMultilineEnvironment(source: string, name: string): string[] {
   const body = extractEnvironmentBodies(source, name)[0];
   if (body === undefined) return [];
@@ -612,11 +726,16 @@ function parseMultilineEnvironment(source: string, name: string): string[] {
 
 function parseByFormat(source: string, format: LatexCodeFormat): string[] {
   switch (format) {
-    case "raw":
-      return source
+    case "raw": {
+      const normalized = source.trim();
+      if (isSingleCompleteLatexEnvironment(normalized)) return [normalized];
+      return normalized
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
+    }
+    case "mixed-inline-display":
+      return parseMixedLatexRows(source)?.map((row) => row.value) ?? [];
     case "inline-dollar":
       return parseInlineDollarLines(source);
     case "inline-text-double-dollar":
@@ -683,6 +802,8 @@ function parseByFormatStrict(
   switch (format) {
     case "raw":
       return values;
+    case "mixed-inline-display":
+      return parseMixedLatexRows(source) ? values : null;
     case "inline-dollar": {
       const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
       return lines.length > 0 && lines.every(
@@ -758,6 +879,7 @@ function parseByFormatStrict(
 }
 
 const requiredCommandArgumentCount = new Map<string, number>([
+  ...compatibilityRequiredArgumentCounts,
   ["frac", 2], ["dfrac", 2], ["tfrac", 2], ["cfrac", 2],
   ["binom", 2], ["overset", 2], ["underset", 2],
   ["stackrel", 2], ["stackbin", 2], ["sqrt", 1], ["text", 1],
@@ -864,7 +986,10 @@ function validateFormulaDraft(latex: string): string | null {
       !(
         error.code === "unknown-command" &&
         typeof error.arg === "string" &&
-        findCustomSymbolByCommand(error.arg)
+        (
+          findCustomSymbolByCommand(error.arg) ||
+          compatibilityCommandNames.has(error.arg.replace(/^\\/, ""))
+        )
       ),
   );
   return errors.length ? errors[0]?.code ?? "invalid-latex" : null;
@@ -873,6 +998,7 @@ function validateFormulaDraft(latex: string): string | null {
 export interface LatexSourceDraftResult {
   valid: boolean;
   values: string[];
+  modes?: FormulaLineMode[];
   error?: string;
 }
 
@@ -882,15 +1008,21 @@ export function parseLatexSourceDraft(
 ): LatexSourceDraftResult {
   const normalized = source.replace(/\r\n?/g, "\n");
   if (!normalized.trim()) return { valid: true, values: [""] };
-  const values = parseByFormatStrict(normalized.trim(), format);
+  const mixedRows =
+    format === "mixed-inline-display"
+      ? parseMixedLatexRows(normalized.trim())
+      : null;
+  const values = mixedRows?.map((row) => row.value) ??
+    parseByFormatStrict(normalized.trim(), format);
   if (!values?.length) {
     return { valid: false, values: [], error: "incomplete-format-wrapper" };
   }
+  const modes = mixedRows?.map((row) => row.mode);
   for (const value of values) {
     const error = validateFormulaDraft(value);
-    if (error) return { valid: false, values, error };
+    if (error) return { valid: false, values, modes, error };
   }
-  return { valid: true, values };
+  return { valid: true, values, modes };
 }
 
 export function parseLatexSource(
@@ -937,4 +1069,11 @@ export async function copyLatex(
   format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,
 ) {
   await navigator.clipboard.writeText(formatLatex(latex, format));
+}
+
+export async function copyFormulaLines(
+  lines: readonly FormulaLine[],
+  format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,
+) {
+  await navigator.clipboard.writeText(formatFormulaLines(lines, format));
 }

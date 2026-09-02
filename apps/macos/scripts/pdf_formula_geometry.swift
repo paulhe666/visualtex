@@ -27,9 +27,13 @@ struct GeometryReport: Codable {
 
 struct RasterComponent: Codable {
     let minX: Double
+    let minY: Double
     let maxX: Double
+    let maxY: Double
     let width: Double
+    let height: Double
     let centerX: Double
+    let centerY: Double
 }
 
 struct RasterBand: Codable {
@@ -46,6 +50,7 @@ struct NumberOnlyReport: Codable {
     let pageHeight: Double
     let equationNumber: FormulaBounds
     let rasterBands: [RasterBand]
+    let rasterComponents: [RasterComponent]
     let pageText: String
 }
 
@@ -53,6 +58,7 @@ struct RasterOnlyReport: Codable {
     let pageWidth: Double
     let pageHeight: Double
     let rasterBands: [RasterBand]
+    let rasterComponents: [RasterComponent]
     let pageText: String
 }
 
@@ -182,6 +188,90 @@ func groupedIndices(_ active: [Bool], maximumGap: Int) -> [(Int, Int)] {
     return groups
 }
 
+func rasterInkComponents(page: PDFPage, scale: Int = 3) -> [RasterComponent] {
+    let bounds = page.bounds(for: .cropBox)
+    let width = max(1, Int(ceil(bounds.width * Double(scale))))
+    let height = max(1, Int(ceil(bounds.height * Double(scale))))
+    var pixels = [UInt8](repeating: 255, count: width * height)
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width,
+        space: CGColorSpaceCreateDeviceGray(),
+        bitmapInfo: CGImageAlphaInfo.none.rawValue
+    ) else { return [] }
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.saveGState()
+    context.scaleBy(x: Double(scale), y: Double(scale))
+    context.translateBy(x: -bounds.minX, y: -bounds.minY)
+    page.draw(with: .cropBox, to: context)
+    context.restoreGState()
+
+    var visited = [Bool](repeating: false, count: width * height)
+    var components: [RasterComponent] = []
+    let neighborOffsets = [
+        (-1, -1), (0, -1), (1, -1),
+        (-1, 0),            (1, 0),
+        (-1, 1),  (0, 1),   (1, 1),
+    ]
+
+    for startIndex in pixels.indices where
+        pixels[startIndex] < 210 && !visited[startIndex] {
+        visited[startIndex] = true
+        var queue = [startIndex]
+        var queueIndex = 0
+        var minXpx = startIndex % width
+        var maxXpx = minXpx
+        var minYpx = startIndex / width
+        var maxYpx = minYpx
+        var darkPixelCount = 0
+
+        while queueIndex < queue.count {
+            let pixelIndex = queue[queueIndex]
+            queueIndex += 1
+            let x = pixelIndex % width
+            let y = pixelIndex / width
+            darkPixelCount += 1
+            minXpx = min(minXpx, x)
+            maxXpx = max(maxXpx, x)
+            minYpx = min(minYpx, y)
+            maxYpx = max(maxYpx, y)
+
+            for (dx, dy) in neighborOffsets {
+                let neighborX = x + dx
+                let neighborY = y + dy
+                guard neighborX >= 0, neighborX < width,
+                      neighborY >= 0, neighborY < height else { continue }
+                let neighborIndex = neighborY * width + neighborX
+                guard !visited[neighborIndex],
+                      pixels[neighborIndex] < 210 else { continue }
+                visited[neighborIndex] = true
+                queue.append(neighborIndex)
+            }
+        }
+
+        guard darkPixelCount >= 2 else { continue }
+        let minX = Double(minXpx) / Double(scale)
+        let minY = Double(minYpx) / Double(scale)
+        let maxX = Double(maxXpx + 1) / Double(scale)
+        let maxY = Double(maxYpx + 1) / Double(scale)
+        components.append(RasterComponent(
+            minX: minX,
+            minY: minY,
+            maxX: maxX,
+            maxY: maxY,
+            width: maxX - minX,
+            height: maxY - minY,
+            centerX: (minX + maxX) / 2,
+            centerY: (minY + maxY) / 2
+        ))
+    }
+    return components
+}
+
 func rasterInkBands(page: PDFPage, scale: Int = 3) -> [RasterBand] {
     let bounds = page.bounds(for: .cropBox)
     let width = max(1, Int(ceil(bounds.width * Double(scale))))
@@ -227,14 +317,31 @@ func rasterInkBands(page: PDFPage, scale: Int = 3) -> [RasterBand] {
             totalDark += dark
         }
         guard totalDark >= 8 else { return nil }
-        let components = groupedIndices(columnActive, maximumGap: 12).map { minXpx, maxXpx in
+        let components = groupedIndices(columnActive, maximumGap: 2).compactMap { minXpx, maxXpx -> RasterComponent? in
+            var componentMinYpx = maxYpx
+            var componentMaxYpx = minYpx
+            var componentHasInk = false
+            for y in minYpx...maxYpx {
+                for x in minXpx...maxXpx where pixels[y * width + x] < 210 {
+                    componentHasInk = true
+                    componentMinYpx = min(componentMinYpx, y)
+                    componentMaxYpx = max(componentMaxYpx, y)
+                }
+            }
+            guard componentHasInk else { return nil }
             let minX = Double(minXpx) / Double(scale)
+            let minY = Double(componentMinYpx) / Double(scale)
             let maxX = Double(maxXpx + 1) / Double(scale)
+            let maxY = Double(componentMaxYpx + 1) / Double(scale)
             return RasterComponent(
                 minX: minX,
+                minY: minY,
                 maxX: maxX,
+                maxY: maxY,
                 width: maxX - minX,
-                centerX: (minX + maxX) / 2
+                height: maxY - minY,
+                centerX: (minX + maxX) / 2,
+                centerY: (minY + maxY) / 2
             )
         }.filter { $0.width >= 0.5 }
         guard !components.isEmpty else { return nil }
@@ -332,6 +439,7 @@ do {
                 pageWidth: pageBounds.width,
                 pageHeight: pageBounds.height,
                 rasterBands: rasterInkBands(page: page),
+                rasterComponents: rasterInkComponents(page: page),
                 pageText: page.string ?? ""
             )
             FileHandle.standardOutput.write(try encoder.encode(report))
@@ -346,6 +454,7 @@ do {
                 pageHeight: pageBounds.height,
                 equationNumber: equationNumber,
                 rasterBands: rasterInkBands(page: page),
+                rasterComponents: rasterInkComponents(page: page),
                 pageText: page.string ?? ""
             )
             FileHandle.standardOutput.write(try encoder.encode(report))

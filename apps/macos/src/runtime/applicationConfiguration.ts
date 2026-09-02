@@ -7,7 +7,8 @@ import type { FormulaDocument } from "../types/formula";
 import type { CommandUsage } from "../types/command";
 import {
   CUSTOM_SYMBOL_STORAGE_KEY,
-  refreshCustomSymbolLibraryFromStorage,
+  readCustomSymbolLibrary,
+  replaceCustomSymbolLibrary,
 } from "../math/customSymbolRegistry";
 
 export const VISUALTEX_CONFIGURATION_SCHEMA = "visualtex-user-configuration";
@@ -99,7 +100,8 @@ const editorSettingKeys = [
 ] as const satisfies readonly (keyof FormulaDocument["settings"])[];
 
 const maximumStorageEntryLength = 2_000_000;
-const maximumConfigurationLength = 8_000_000;
+const maximumCustomSymbolConfigurationLength = 64_000_000;
+const maximumConfigurationLength = 96_000_000;
 const maximumUsageEntries = 4096;
 const maximumUsageMapEntries = 512;
 const maximumUsageKeyLength = 256;
@@ -217,7 +219,11 @@ function normalizeStorage(value: unknown) {
   if (!isRecord(value)) return result;
   for (const key of configurationStorageKeys) {
     const raw = value[key];
-    if (typeof raw !== "string" || raw.length > maximumStorageEntryLength) continue;
+    const maximumLength =
+      key === CUSTOM_SYMBOL_STORAGE_KEY
+        ? maximumCustomSymbolConfigurationLength
+        : maximumStorageEntryLength;
+    if (typeof raw !== "string" || raw.length > maximumLength) continue;
     if (jsonConfigurationStorageKeys.has(key)) {
       try {
         JSON.parse(raw);
@@ -299,6 +305,10 @@ export async function buildVisualTexConfiguration(): Promise<VisualTexUserConfig
   const editorSettings = editorState.toDocument().settings;
   const storage: Record<string, string> = {};
   for (const key of configurationStorageKeys) {
+    if (key === CUSTOM_SYMBOL_STORAGE_KEY) {
+      storage[key] = JSON.stringify(readCustomSymbolLibrary());
+      continue;
+    }
     const value = safeStorage.getItem(key);
     if (value !== null) storage[key] = value;
   }
@@ -332,11 +342,15 @@ export async function applyVisualTexConfiguration(
   }
 
   for (const key of configurationStorageKeys) {
+    if (key === CUSTOM_SYMBOL_STORAGE_KEY) continue;
     const value = configuration.storage[key];
     if (typeof value === "string") safeStorage.setItem(key, value);
     else safeStorage.removeItem(key);
   }
-  refreshCustomSymbolLibraryFromStorage();
+  const customSymbols = configuration.storage[CUSTOM_SYMBOL_STORAGE_KEY];
+  replaceCustomSymbolLibrary(
+    customSymbols ? JSON.parse(customSymbols) : { version: 1, symbols: [] },
+  );
 
   publishSynchronizedTheme(useEditorStore.getState().theme);
   if (isTauri()) {

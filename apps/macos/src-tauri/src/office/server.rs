@@ -526,6 +526,12 @@ pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
         reference_width_pt: original.and_then(|value| value.reference_width_pt),
         reference_height_pt: original.and_then(|value| value.reference_height_pt),
         reference_baseline_pt: original.and_then(|value| value.reference_baseline_pt),
+        image_ink_center_y_ratio: session
+            .export_result
+            .as_ref()
+            .and_then(|value| value.ink_center_y_ratio)
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            .or_else(|| original.and_then(|value| value.image_ink_center_y_ratio)),
         created_with_version: original
             .map(|value| value.created_with_version.clone())
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),

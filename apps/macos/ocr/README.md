@@ -5,7 +5,7 @@ This directory contains the local PaddleOCR PP-FormulaNet runtime used by the Ta
 ## Setup on macOS
 
 ```bash
-cd /Users/lpj/devspace/workspaces/visualtex
+cd apps/macos
 chmod +x ocr/setup_macos.sh
 ./ocr/setup_macos.sh
 ```

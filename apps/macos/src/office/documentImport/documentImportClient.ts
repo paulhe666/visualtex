@@ -69,6 +69,7 @@ export interface DocumentImportFormulaCommitItem
   width?: number;
   height?: number;
   baseline?: number;
+  inkCenterYRatio?: number;
   sourceStart?: number;
   sourceEnd?: number;
   sourceText?: string;

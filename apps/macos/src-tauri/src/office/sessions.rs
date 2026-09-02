@@ -100,6 +100,12 @@ pub struct OfficeExportResult {
     pub width: f64,
     pub height: f64,
     pub baseline: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ink_top_ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ink_bottom_ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ink_center_y_ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,6 +144,8 @@ pub struct VisualTeXFormulaMetadata {
     pub reference_height_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_baseline_pt: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_ink_center_y_ratio: Option<f64>,
     pub created_with_version: String,
     pub updated_with_version: String,
     pub created_at: String,
@@ -987,6 +995,7 @@ mod tests {
             reference_width_pt: None,
             reference_height_pt: None,
             reference_baseline_pt: None,
+            image_ink_center_y_ratio: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

@@ -216,6 +216,32 @@ async function main() {
     await waitUntil(mainClient, `Boolean(document.querySelector("math-field"))`);
     process.stdout.write("[custom-symbol-runtime] main ready\n");
 
+    const optionGuardProbe = await mainClient.evaluate(`(async () => {
+      const compatibility = await import("/src/editor/mathLiveOptionCompatibility.ts");
+      const probe = document.createElement("math-field");
+      probe.value = "x";
+      document.body.appendChild(probe);
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(true)));
+      const original = probe._setOptions.bind(probe);
+      let calls = 0;
+      probe._setOptions = (options) => {
+        calls += 1;
+        if (calls === 1) {
+          throw new TypeError("Cannot set properties of undefined (setting 'mode')");
+        }
+        return original(options);
+      };
+      compatibility.installMathLiveOptionMutationGuard(probe);
+      probe.smartFence = false;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const result = { calls, smartFence: probe.smartFence, connected: probe.isConnected };
+      probe.remove();
+      return result;
+    })()`);
+    assert.ok(optionGuardProbe.calls >= 2, "MathLive option guard must retry a transient missing-mode failure");
+    assert.equal(optionGuardProbe.smartFence, false, "MathLive option retry must apply the requested option");
+    process.stdout.write("[custom-symbol-runtime] transient MathLive option guard verified\n");
+
     await mainClient.send("Target.createTarget", { url: officeUrl });
     let officeTarget;
     for (let attempt = 0; attempt < 100 && !officeTarget; attempt += 1) {
@@ -235,6 +261,32 @@ async function main() {
     })()`);
     assert.equal(officeInitial.count, 0);
     process.stdout.write("[custom-symbol-runtime] office registry ready\n");
+
+    const crossWindowStorageKey = "visualtex.regression.cross-window-removal";
+    const cachedStorageValue = await mainClient.evaluate(`(async () => {
+      const storageModule = await import("/src/runtime/safeStorage.ts");
+      window.__visualtexSafeStorage = storageModule.safeStorage;
+      storageModule.safeStorage.setItemStrict(
+        ${JSON.stringify(crossWindowStorageKey)},
+        "present",
+      );
+      return storageModule.safeStorage.getItem(
+        ${JSON.stringify(crossWindowStorageKey)},
+      );
+    })()`);
+    assert.equal(cachedStorageValue, "present");
+    const officeSawStorageValue = await officeClient.evaluate(`(() => {
+      const key = ${JSON.stringify(crossWindowStorageKey)};
+      const value = localStorage.getItem(key);
+      localStorage.removeItem(key);
+      return value;
+    })()`);
+    assert.equal(officeSawStorageValue, "present");
+    await waitUntil(
+      mainClient,
+      `window.__visualtexSafeStorage?.getItem(${JSON.stringify(crossWindowStorageKey)}) === null`,
+    );
+    process.stdout.write("[custom-symbol-runtime] cross-window storage removal cache invalidation verified\n");
 
     const collisionChecks = await mainClient.evaluate(`(async () => {
       const registration = await import("/src/math/customSymbolRegistration.ts");
