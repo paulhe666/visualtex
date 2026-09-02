@@ -597,6 +597,7 @@ writeFileSync(pdfRequestPath, pdfPath, { mode: 0o600 });
 
 let sourceDocumentName = "";
 let fixtureDocumentName = expectedFixtureDocumentName;
+let fixtureRunCompleted = false;
 try {
   const openResult = appleScript([
     'tell application "Microsoft Word"',
@@ -841,8 +842,9 @@ try {
         }))
       : null,
   }, null, 2));
+  fixtureRunCompleted = true;
 } finally {
-  if (fixtureDocumentName) {
+  if (fixtureDocumentName && fixtureRunCompleted) {
     try {
       appleScript([
         'tell application "Microsoft Word"',

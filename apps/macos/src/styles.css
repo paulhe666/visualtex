@@ -3273,14 +3273,42 @@ kbd {
 .formula-line .mathfield-host {
   width: 100%;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   cursor: text;
 }
 
+.formula-line .mathfield-host::-webkit-scrollbar {
+  height: 7px;
+}
+
+.formula-line .mathfield-host::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: var(--scrollbar-track);
+}
+
+.formula-line .mathfield-host::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+.formula-line .mathfield-host::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.formula-line .mathfield-host.is-horizontally-overflowing {
+  justify-content: flex-start !important;
+  padding-block: 2px;
+}
+
 .formula-line .visual-mathfield {
-  width: fit-content;
-  max-width: 100%;
+  width: max-content;
+  max-width: none;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   display: block;
   min-height: var(--formula-row-height, 69px);
   padding: 15px 22px !important;

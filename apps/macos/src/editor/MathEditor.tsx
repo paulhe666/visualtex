@@ -4571,6 +4571,20 @@ function FormulaField(props: FormulaFieldProps) {
       });
     };
     let resizeFrame = 0;
+    let horizontalOverflowFrame = 0;
+    const measureHorizontalOverflow = () => {
+      if (!field.isConnected) return;
+      const isOverflowing =
+        field.getBoundingClientRect().width > host.clientWidth + 1;
+      host.classList.toggle("is-horizontally-overflowing", isOverflowing);
+      if (!isOverflowing && host.scrollLeft !== 0) host.scrollLeft = 0;
+    };
+    const syncHorizontalOverflow = () => {
+      window.cancelAnimationFrame(horizontalOverflowFrame);
+      horizontalOverflowFrame = window.requestAnimationFrame(
+        measureHorizontalOverflow,
+      );
+    };
     const measureFrameSize = () => {
       const metrics = formulaRowHeightMetrics(
         field.value,
@@ -4619,6 +4633,7 @@ function FormulaField(props: FormulaFieldProps) {
     syncFrameSizeRef.current = syncFrameSize;
     const handleLayoutRefresh = () => {
       syncFrameSize();
+      syncHorizontalOverflow();
     };
     window.addEventListener(
       EDITOR_LAYOUT_REFRESH_EVENT,
@@ -6296,12 +6311,11 @@ function FormulaField(props: FormulaFieldProps) {
     window.addEventListener("pointerup", handlePointerSelectionEnd, true);
     window.addEventListener("pointercancel", handlePointerSelectionEnd, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
-    const resizeObserver = content
-      ? new ResizeObserver(() => {
-          syncFrameSize();
-          schedulePendingWrapperPlaceholderPosition();
-        })
-      : null;
+    const resizeObserver = new ResizeObserver(() => {
+      syncFrameSize();
+      syncHorizontalOverflow();
+      schedulePendingWrapperPlaceholderPosition();
+    });
     const inputMutationObserver = field.shadowRoot
     ? new MutationObserver(() => {
         observeVisualTexActiveAccentPlaceholder(field);
@@ -6315,7 +6329,8 @@ function FormulaField(props: FormulaFieldProps) {
           schedulePendingWrapperPlaceholderPosition();
         })
       : null;
-    if (content) resizeObserver?.observe(content);
+    if (content) resizeObserver.observe(content);
+    resizeObserver.observe(host);
     if (field.shadowRoot) {
       inputMutationObserver?.observe(field.shadowRoot, {
         childList: true,
@@ -6330,19 +6345,22 @@ function FormulaField(props: FormulaFieldProps) {
     // a newly inserted line never paints with the CSS fallback or predicted
     // height and then visibly shrinks on the next animation frame.
     measureFrameSize();
+    measureHorizontalOverflow();
     syncPostOperatorCaretSpacing(field);
     queueMicrotask(() => {
       if (!field.isConnected) return;
       measureFrameSize();
+      measureHorizontalOverflow();
       syncPostOperatorCaretSpacing(field);
     });
 
     return () => {
       window.cancelAnimationFrame(resizeFrame);
+      window.cancelAnimationFrame(horizontalOverflowFrame);
       window.cancelAnimationFrame(pointerPlaceholderFrame);
       window.cancelAnimationFrame(wrapperPlaceholderFrame);
       window.clearTimeout(backslashGuardTimer);
-      resizeObserver?.disconnect();
+      resizeObserver.disconnect();
       inputMutationObserver?.disconnect();
       syncFrameSizeRef.current = null;
       window.removeEventListener(

@@ -495,6 +495,12 @@ async function main() {
       (async () => {
         const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
         const artifacts = module.latexLinesToOmmlArtifacts([String.raw\`\\frac{a}{b}\`], 'inline');
+        const integralArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\int_0^1 f(x)\\,\\mathrm{d}x\`,
+        ], 'block');
+        const sumFractionArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\sum_{i=1}^{\\infty}\\frac{a_i}{b_i}\`,
+        ], 'block');
         const fontArtifacts = module.latexLinesToOmmlArtifacts([
           String.raw\`\\mathrm{x}+\\mathbf{A+1}+\\mathit{x}+\\boldsymbol{\\alpha}+\\mathbb{R}+\\mathcal{G}+\\mathscr{g}+\\mathfrak{g}+\\mathsf{x}+\\mathtt{x}\`,
         ], 'inline');
@@ -507,6 +513,8 @@ async function main() {
         return {
           ommlBase64: artifacts.ommlBase64,
           ommlDocxBase64: artifacts.ommlDocxBase64,
+          integralOmmlDocxBase64: integralArtifacts.ommlDocxBase64,
+          sumFractionOmmlDocxBase64: sumFractionArtifacts.ommlDocxBase64,
           fontOmmlDocxBase64: fontArtifacts.ommlDocxBase64,
           preferredOmml: preferredArtifacts.omml,
           preferredOmmlDocxBase64: preferredArtifacts.ommlDocxBase64,
@@ -524,11 +532,15 @@ async function main() {
     const artifacts = docxEvaluation.result?.value;
     const docxBase64 = artifacts?.ommlDocxBase64;
     const ommlBase64 = artifacts?.ommlBase64;
+    const integralDocxBase64 = artifacts?.integralOmmlDocxBase64;
+    const sumFractionDocxBase64 = artifacts?.sumFractionOmmlDocxBase64;
     const fontDocxBase64 = artifacts?.fontOmmlDocxBase64;
     const preferredOmml = artifacts?.preferredOmml;
     const preferredOmmlDocxBase64 = artifacts?.preferredOmmlDocxBase64;
     expect(typeof docxBase64 === "string" && docxBase64.length > 100, "OMML DOCX export is missing.");
     expect(typeof ommlBase64 === "string" && ommlBase64.length > 100, "OMML Base64URL export is missing.");
+    expect(typeof integralDocxBase64 === "string" && integralDocxBase64.length > 100, "Integral OMML DOCX export is missing.");
+    expect(typeof sumFractionDocxBase64 === "string" && sumFractionDocxBase64.length > 100, "N-ary fraction OMML DOCX export is missing.");
     expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
     expect(typeof preferredOmml === "string" && preferredOmml.length > 100, "Preferred-font OMML export is missing.");
     expect(typeof preferredOmmlDocxBase64 === "string" && preferredOmmlDocxBase64.length > 100, "Preferred-font OMML DOCX export is missing.");
@@ -549,6 +561,28 @@ async function main() {
       { encoding: "utf8" },
     );
     expectIncludes(documentXml, "<m:f>", "Generated DOCX must contain the structural fraction.");
+
+    const integralDocxPath = join(docxDirectory, "integral.docx");
+    await writeFile(integralDocxPath, Buffer.from(integralDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", integralDocxPath]);
+    const integralDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", integralDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(integralDocumentXml, "<m:nary>", "Generated integral DOCX must contain a structural n-ary object.");
+    expectIncludes(integralDocumentXml, '<m:chr m:val="∫"/>', "Generated integral DOCX must retain the integral operator.");
+
+    const sumFractionDocxPath = join(docxDirectory, "sum-fraction.docx");
+    await writeFile(sumFractionDocxPath, Buffer.from(sumFractionDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", sumFractionDocxPath]);
+    const sumFractionDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", sumFractionDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(sumFractionDocumentXml, "<m:nary>", "Generated sum DOCX must contain a structural n-ary object.");
+    expectIncludes(sumFractionDocumentXml, "<m:f>", "Generated sum DOCX must retain its structural fraction.");
 
     const fontDocxPath = join(docxDirectory, "font-variants.docx");
     await writeFile(fontDocxPath, Buffer.from(fontDocxBase64, "base64url"));
@@ -613,6 +647,21 @@ async function main() {
       await writeFile(
         join(nativeDocuments, "11111111-1111-4111-8111-111111111111.docx"),
         Buffer.from(docxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "33333333-3333-4333-8333-333333333333.docx"),
+        Buffer.from(docxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "66666666-6666-4666-8666-666666666666.docx"),
+        Buffer.from(integralDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "77777777-7777-4777-8777-777777777777.docx"),
+        Buffer.from(sumFractionDocxBase64, "base64url"),
         { mode: 0o600 },
       );
       await writeFile(

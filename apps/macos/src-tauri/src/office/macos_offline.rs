@@ -8,7 +8,7 @@ use base64::{
     engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
 };
-use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
+use flate2::{read::{DeflateDecoder, ZlibDecoder}, write::DeflateEncoder, Compression};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use objc2::MainThreadMarker;
@@ -65,6 +65,7 @@ const MAX_OFFICE_EDITOR_WIDTH: f64 = 2600.0;
 const MAX_OFFICE_EDITOR_HEIGHT: f64 = 1800.0;
 const OFFICE_EDITOR_TITLE_BAR_ALLOWANCE: f64 = 28.0;
 const WORD_POINTER_FILE: &str = "word-active-session.txt";
+const IMAGE_INK_CENTER_CLI_ARGUMENT: &str = "--office-image-ink-center";
 const POWERPOINT_POINTER_FILE: &str = "powerpoint-active-session.txt";
 const WORD_RUNTIME_SUFFIX: &str = "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime";
 const POWERPOINT_RUNTIME_SUFFIX: &str =
@@ -329,6 +330,8 @@ pub enum MacOfflineDocumentImportCommitItem {
         height: Option<f64>,
         #[serde(default)]
         baseline: Option<f64>,
+        #[serde(default)]
+        ink_center_y_ratio: Option<f64>,
         #[serde(default)]
         source_start: Option<usize>,
         #[serde(default)]
@@ -900,6 +903,175 @@ fn word_image_cache_paths(formula_id: &str) -> Result<(PathBuf, PathBuf, PathBuf
     ))
 }
 
+fn paeth_predictor(left: u8, up: u8, upper_left: u8) -> u8 {
+    let left = i32::from(left);
+    let up = i32::from(up);
+    let upper_left = i32::from(upper_left);
+    let estimate = left + up - upper_left;
+    let left_distance = (estimate - left).abs();
+    let up_distance = (estimate - up).abs();
+    let upper_left_distance = (estimate - upper_left).abs();
+    if left_distance <= up_distance && left_distance <= upper_left_distance {
+        left as u8
+    } else if up_distance <= upper_left_distance {
+        up as u8
+    } else {
+        upper_left as u8
+    }
+}
+
+fn png_ink_center_y_ratio_from_bytes(bytes: &[u8]) -> Result<f64, String> {
+    const SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < SIGNATURE.len() || &bytes[..8] != SIGNATURE {
+        return Err("Cached formula image is not a PNG file".to_string());
+    }
+
+    let mut offset = 8usize;
+    let mut width = 0usize;
+    let mut height = 0usize;
+    let mut bit_depth = 0u8;
+    let mut color_type = 0u8;
+    let mut interlace = 0u8;
+    let mut compressed = Vec::new();
+    while offset + 12 <= bytes.len() {
+        let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let chunk_start = offset + 8;
+        let chunk_end = chunk_start
+            .checked_add(length)
+            .ok_or_else(|| "PNG chunk length overflowed".to_string())?;
+        let crc_end = chunk_end
+            .checked_add(4)
+            .ok_or_else(|| "PNG chunk boundary overflowed".to_string())?;
+        if crc_end > bytes.len() {
+            return Err("Cached formula PNG has a truncated chunk".to_string());
+        }
+        let chunk_type = &bytes[offset + 4..offset + 8];
+        match chunk_type {
+            b"IHDR" => {
+                if length != 13 {
+                    return Err("Cached formula PNG has an invalid IHDR".to_string());
+                }
+                width = u32::from_be_bytes(bytes[chunk_start..chunk_start + 4].try_into().unwrap()) as usize;
+                height = u32::from_be_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into().unwrap()) as usize;
+                bit_depth = bytes[chunk_start + 8];
+                color_type = bytes[chunk_start + 9];
+                if bytes[chunk_start + 10] != 0 || bytes[chunk_start + 11] != 0 {
+                    return Err("Cached formula PNG uses unsupported compression/filter methods".to_string());
+                }
+                interlace = bytes[chunk_start + 12];
+            }
+            b"IDAT" => compressed.extend_from_slice(&bytes[chunk_start..chunk_end]),
+            b"IEND" => break,
+            _ => {}
+        }
+        offset = crc_end;
+    }
+
+    if width == 0 || height == 0 || width > 200_000 || height > 200_000 {
+        return Err("Cached formula PNG has invalid dimensions".to_string());
+    }
+    if bit_depth != 8 || !matches!(color_type, 4 | 6) || interlace != 0 {
+        return Err("Cached formula PNG is not a supported 8-bit alpha image".to_string());
+    }
+    let bytes_per_pixel = if color_type == 6 { 4usize } else { 2usize };
+    let stride = width
+        .checked_mul(bytes_per_pixel)
+        .ok_or_else(|| "Cached formula PNG row is too large".to_string())?;
+    let expected = height
+        .checked_mul(stride + 1)
+        .ok_or_else(|| "Cached formula PNG is too large".to_string())?;
+    if expected > 512 * 1024 * 1024 {
+        return Err("Cached formula PNG exceeds the decode limit".to_string());
+    }
+
+    let mut inflated = Vec::with_capacity(expected);
+    ZlibDecoder::new(compressed.as_slice())
+        .read_to_end(&mut inflated)
+        .map_err(|error| format!("Unable to inflate cached formula PNG: {error}"))?;
+    if inflated.len() != expected {
+        return Err("Cached formula PNG has an unexpected decoded size".to_string());
+    }
+
+    let mut previous = vec![0u8; stride];
+    let mut current = vec![0u8; stride];
+    let mut minimum_y = None::<usize>;
+    let mut maximum_y = 0usize;
+    for y in 0..height {
+        let row_start = y * (stride + 1);
+        let filter = inflated[row_start];
+        let source = &inflated[row_start + 1..row_start + 1 + stride];
+        for index in 0..stride {
+            let left = if index >= bytes_per_pixel {
+                current[index - bytes_per_pixel]
+            } else {
+                0
+            };
+            let up = previous[index];
+            let upper_left = if index >= bytes_per_pixel {
+                previous[index - bytes_per_pixel]
+            } else {
+                0
+            };
+            current[index] = match filter {
+                0 => source[index],
+                1 => source[index].wrapping_add(left),
+                2 => source[index].wrapping_add(up),
+                3 => source[index].wrapping_add(((u16::from(left) + u16::from(up)) / 2) as u8),
+                4 => source[index].wrapping_add(paeth_predictor(left, up, upper_left)),
+                _ => return Err("Cached formula PNG uses an unsupported row filter".to_string()),
+            };
+        }
+        let alpha_offset = bytes_per_pixel - 1;
+        let row_has_ink = current
+            .chunks_exact(bytes_per_pixel)
+            .any(|pixel| pixel[alpha_offset] >= 16);
+        if row_has_ink {
+            minimum_y.get_or_insert(y);
+            maximum_y = y;
+        }
+        std::mem::swap(&mut previous, &mut current);
+        current.fill(0);
+    }
+
+    let minimum_y = minimum_y.ok_or_else(|| "Cached formula PNG contains no visible ink".to_string())?;
+    let painted_center = (minimum_y + maximum_y + 1) as f64 / 2.0;
+    let ratio = painted_center / height as f64;
+    if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
+        return Err("Cached formula PNG produced an invalid ink center".to_string());
+    }
+    Ok(ratio)
+}
+
+fn cached_formula_ink_center_y_ratio(formula_id: &str) -> Result<f64, String> {
+    let (_, _, png_path) = word_image_cache_paths(formula_id)?;
+    let metadata = fs::symlink_metadata(&png_path)
+        .map_err(|error| format!("Unable to inspect cached formula PNG {}: {error}", png_path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 || metadata.len() > 128 * 1024 * 1024 {
+        return Err("Cached formula PNG has an invalid file type or size".to_string());
+    }
+    let bytes = fs::read(&png_path)
+        .map_err(|error| format!("Unable to read cached formula PNG {}: {error}", png_path.display()))?;
+    png_ink_center_y_ratio_from_bytes(&bytes)
+}
+
+pub fn run_image_ink_center_cli_if_requested() -> Option<i32> {
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let Some(index) = arguments.iter().position(|argument| argument == IMAGE_INK_CENTER_CLI_ARGUMENT) else {
+        return None;
+    };
+    let formula_id = arguments.get(index + 1).map(String::as_str).unwrap_or("");
+    match cached_formula_ink_center_y_ratio(formula_id) {
+        Ok(ratio) => {
+            println!("{ratio:.9}");
+            Some(0)
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            Some(2)
+        }
+    }
+}
+
 fn cleanup_session_files_at(
     directory: &Path,
     remove_document_formula_files: bool,
@@ -1367,6 +1539,11 @@ fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), String> 
     if let Some(value) = metadata.reference_baseline_pt {
         if !value.is_finite() || !(-256.0..=0.0).contains(&value) {
             return Err("VisualTeX metadata referenceBaselinePt is invalid".to_string());
+        }
+    }
+    if let Some(value) = metadata.image_ink_center_y_ratio {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err("VisualTeX metadata imageInkCenterYRatio is invalid".to_string());
         }
     }
     Ok(())
@@ -4260,6 +4437,16 @@ fn commit_word(
             "referenceBaselinePt",
             format!("{:.6}", geometry.reference_baseline_pt),
         ),
+        (
+            "inkCenterYRatio",
+            session
+                .export_result
+                .as_ref()
+                .and_then(|value| value.ink_center_y_ratio)
+                .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                .map(|value| format!("{value:.8}"))
+                .unwrap_or_default(),
+        ),
     ])?;
     atomic_write_runtime(
         &dispatch_path(OfficeHost::Word, &session.id)?,
@@ -5435,6 +5622,7 @@ fn commit_document_import_blocking(
                 width,
                 height,
                 baseline,
+                ink_center_y_ratio,
                 source_start,
                 source_end,
                 source_text,
@@ -5615,11 +5803,14 @@ fn commit_document_import_blocking(
                     resolved_metadata.reference_width_pt = Some(geometry.reference_width_pt);
                     resolved_metadata.reference_height_pt = Some(geometry.reference_height_pt);
                     resolved_metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
+                    resolved_metadata.image_ink_center_y_ratio = ink_center_y_ratio
+                        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
                     geometry
                 } else {
                     resolved_metadata.reference_width_pt = None;
                     resolved_metadata.reference_height_pt = None;
                     resolved_metadata.reference_baseline_pt = None;
+                    resolved_metadata.image_ink_center_y_ratio = None;
                     WordGeometry {
                         width: *font_size_pt,
                         height: (*font_size_pt * 1.8).max(18.0),
@@ -5690,6 +5881,14 @@ fn commit_document_import_blocking(
                     format!("{prefix}referenceBaselinePt"),
                     format!("{:.6}", geometry.reference_baseline_pt),
                 ));
+                if let Some(value) = ink_center_y_ratio
+                    .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                {
+                    entries.push((
+                        format!("{prefix}inkCenterYRatio"),
+                        format!("{value:.8}"),
+                    ));
+                }
                 if is_range_replace {
                     entries.push((
                         format!("{prefix}sourceStart"),
@@ -7101,6 +7300,7 @@ mod tests {
             reference_width_pt: Some(37.5),
             reference_height_pt: Some(15.0),
             reference_baseline_pt: Some(-3.0),
+            image_ink_center_y_ratio: Some(0.47826087),
             created_with_version: "1.1.0".to_string(),
             updated_with_version: "1.1.0".to_string(),
             created_at: "unix-ms:1".to_string(),
@@ -7114,6 +7314,7 @@ mod tests {
         assert_eq!(decoded.reference_width_pt, Some(37.5));
         assert_eq!(decoded.reference_height_pt, Some(15.0));
         assert_eq!(decoded.reference_baseline_pt, Some(-3.0));
+        assert_eq!(decoded.image_ink_center_y_ratio, Some(0.47826087));
     }
 
     fn document_formula_metadata(
@@ -7147,6 +7348,7 @@ mod tests {
             reference_width_pt: None,
             reference_height_pt: None,
             reference_baseline_pt: None,
+            image_ink_center_y_ratio: None,
             created_with_version: "1.2.5".to_string(),
             updated_with_version: "1.2.5".to_string(),
             created_at: "unix-ms:1".to_string(),
@@ -7444,6 +7646,9 @@ c &= e
                 width: 300.0,
                 height: 50.0,
                 baseline: None,
+                ink_top_ratio: None,
+                ink_bottom_ratio: None,
+                ink_center_y_ratio: None,
             }),
             original_metadata: Some(VisualTeXFormulaMetadata {
                 schema: "visualtex-formula".to_string(),
@@ -7463,6 +7668,7 @@ c &= e
                 reference_width_pt: None,
                 reference_height_pt: None,
                 reference_baseline_pt: None,
+                image_ink_center_y_ratio: None,
                 created_with_version: "1".to_string(),
                 updated_with_version: "1".to_string(),
                 created_at: "1".to_string(),

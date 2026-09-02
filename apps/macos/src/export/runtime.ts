@@ -537,7 +537,8 @@ export async function svgToPng(
     ? backgroundRgb.slice(1).map((channel) => Number.parseInt(channel, 16))
     : null;
   const pixels = context.getImageData(0, 0, width, height).data;
-  let hasVisibleInk = false;
+  let inkTop = height;
+  let inkBottom = -1;
   for (let index = 0; index < pixels.length; index += 4) {
     const alpha = pixels[index + 3];
     if (alpha < 16) continue;
@@ -548,14 +549,17 @@ export async function svgToPng(
       : pixels[index] < 245 ||
         pixels[index + 1] < 245 ||
         pixels[index + 2] < 245;
-    if (differsFromBackground) {
-      hasVisibleInk = true;
-      break;
-    }
+    if (!differsFromBackground) continue;
+    const row = Math.floor(index / 4 / width);
+    if (row < inkTop) inkTop = row;
+    if (row > inkBottom) inkBottom = row;
   }
-  if (!hasVisibleInk) {
+  if (inkBottom < inkTop) {
     throw new Error("PNG rasterization produced no visible formula ink.");
   }
+  const inkTopRatio = inkTop / height;
+  const inkBottomRatio = (inkBottom + 1) / height;
+  const inkCenterYRatio = (inkTopRatio + inkBottomRatio) / 2;
 
   const blob = await encodeCanvasPng(canvas);
   return {
@@ -563,5 +567,8 @@ export async function svgToPng(
     base64: await blobToBase64(blob),
     width,
     height,
+    inkTopRatio,
+    inkBottomRatio,
+    inkCenterYRatio,
   };
 }

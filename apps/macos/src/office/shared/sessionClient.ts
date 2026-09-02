@@ -29,6 +29,9 @@ export interface OfficeExportResult {
   width: number;
   height: number;
   baseline?: number;
+  inkTopRatio?: number;
+  inkBottomRatio?: number;
+  inkCenterYRatio?: number;
 }
 
 export interface NativePowerPointCommitSelection {

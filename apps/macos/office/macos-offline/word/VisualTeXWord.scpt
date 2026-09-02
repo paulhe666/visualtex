@@ -196,6 +196,22 @@ on ReadVisualTeXNumberingPreference(ignoredValue)
     end try
 end ReadVisualTeXNumberingPreference
 
+on ReadVisualTeXImageInkCenter(formulaId)
+    try
+        set formulaId to formulaId as text
+        if (count characters of formulaId) is not 36 then error "VisualTeX formula id is invalid" number 7134
+        set fileManager to current application's NSFileManager's defaultManager()
+        set executablePath to "/Applications/VisualTeX.app/Contents/MacOS/visualtex"
+        if not ((fileManager's isExecutableFileAtPath:executablePath) as boolean) then
+            set executablePath to my runningVisualTeXExecutable()
+        end if
+        set ratioText to do shell script quoted form of executablePath & " --office-image-ink-center " & quoted form of formulaId
+        return "ok|" & ratioText
+    on error errorMessage number errorNumber
+        return my errorResponse(errorNumber, errorMessage)
+    end try
+end ReadVisualTeXImageInkCenter
+
 on AppendVisualTeXFile(argumentText)
     try
         set {relativePath, encodedData} to my splitPair(argumentText as text)

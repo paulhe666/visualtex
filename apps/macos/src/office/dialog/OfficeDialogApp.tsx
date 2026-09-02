@@ -1044,22 +1044,33 @@ export function OfficeDialogApp() {
       preparedBase === undefined ? generateSvgExportResult() : preparedBase;
     if (!base) return null;
     let pngBase64: string | undefined;
+    let inkTopRatio: number | undefined;
+    let inkBottomRatio: number | undefined;
+    let inkCenterYRatio: number | undefined;
     try {
       const { svgToPng } = await import("../../export/svgToPng");
-      pngBase64 = (
-        await svgToPng(
-          {
-            base64: base.svgBase64,
-            width: base.width,
-            height: base.height,
-          },
-          { scale: 2, background: "transparent" },
-        )
-      ).base64;
+      const png = await svgToPng(
+        {
+          base64: base.svgBase64,
+          width: base.width,
+          height: base.height,
+        },
+        { scale: 2, background: "transparent" },
+      );
+      pngBase64 = png.base64;
+      inkTopRatio = png.inkTopRatio;
+      inkBottomRatio = png.inkBottomRatio;
+      inkCenterYRatio = png.inkCenterYRatio;
     } catch {
       // SVG remains a complete Office fallback when PNG rasterization fails.
     }
-    return { ...base, pngBase64 };
+    return {
+      ...base,
+      pngBase64,
+      inkTopRatio,
+      inkBottomRatio,
+      inkCenterYRatio,
+    };
   }, [generateSvgExportResult]);
 
   const getCompleteExportResult = useCallback(
@@ -1715,10 +1726,14 @@ export function OfficeDialogApp() {
       return;
     }
 
-    silentCommitSessionKeyRef.current = sessionKey;
     let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
+    // Conversion editors stay hidden, so WebKit may never deliver an animation
+    // frame. Use a task, as the hidden-editor readiness check does. Claim the
+    // session only when that task starts: a hydration rerender can cancel an
+    // earlier effect before it runs, and must still be able to schedule it again.
+    const timer = window.setTimeout(() => {
       if (cancelled) return;
+      silentCommitSessionKeyRef.current = sessionKey;
       void handleCommit().then(async (committed) => {
         if (committed || cancelled) return;
         // Direct conversion commands must never fall back to a visible editor.
@@ -1731,10 +1746,10 @@ export function OfficeDialogApp() {
           // A superseding Office Session may already have cleared this one.
         }
       });
-    });
+    }, 0);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
     };
   }, [
     closeOfficeEditorWindow,

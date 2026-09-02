@@ -196,9 +196,8 @@ async function prepareFormulaArtifactCommitItem(
   let metadata: VisualTeXFormulaMetadata;
   if (outputKind === "image") {
     const { svgToPng } = await import("../../export/svgToPng");
-    const pngBase64 = (
-      await svgToPng(svg, { scale: 2, background: "transparent" })
-    ).base64;
+    const png = await svgToPng(svg, { scale: 2, background: "transparent" });
+    const pngBase64 = png.base64;
     const resolvedBaseline = svg.baseline;
     const reference = calculateReferenceGeometry(
       svg.width,
@@ -218,6 +217,7 @@ async function prepareFormulaArtifactCommitItem(
       formulaChineseFont,
       renderWidthPx: svg.width,
       renderHeightPx: svg.height,
+      imageInkCenterYRatio: png.inkCenterYRatio,
       ...reference,
     });
     return {
@@ -235,6 +235,7 @@ async function prepareFormulaArtifactCommitItem(
       width: svg.width,
       height: svg.height,
       baseline: resolvedBaseline,
+      inkCenterYRatio: png.inkCenterYRatio,
       ...paragraphMetadata,
     };
   }

@@ -142,6 +142,7 @@ done
 xmllint --noout \
   "$OFFICE_ROOT/word/customUI14.xml" \
   "$OFFICE_ROOT/powerpoint/customUI14.xml"
+node "$PROJECT_ROOT/scripts/verify_macos_offline_addins.mjs" --offline-root "$OFFICE_ROOT"
 
 if [[ -e "$RESOURCES/office/bridge" || -e "$RESOURCES/office/dialog" || -e "$RESOURCES/office/vendor" || -e "$RESOURCES/office/manifests" ]]; then
   echo "The macOS bundle still contains the obsolete Office.js web integration." >&2

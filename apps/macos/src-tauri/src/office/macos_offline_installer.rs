@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -25,7 +27,7 @@ const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
 const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
-const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r77";
+const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r87";
 const POWERPOINT_VBA_SOURCE_REVISION: &str = "powerpoint-office-performance-20260801-r4";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
 const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
@@ -519,27 +521,85 @@ fn is_visualtex_word_startup_artifact(path: &Path) -> bool {
     is_visualtex_addin_artifact(path, ".dotm")
 }
 
+#[cfg(target_os = "macos")]
+fn bounded_directory_entries(
+    directory: &Path,
+    canonical_name: &str,
+) -> Result<Vec<PathBuf>, String> {
+    // Office can leave its group-container directories coordinated for tens of
+    // seconds after a document or host closes. A direct fs::read_dir then blocks
+    // the settings status worker indefinitely, so enumerate in a killable child
+    // and fall back to the canonical install path when macOS does not release the
+    // directory promptly. The healthy path still discovers stale VisualTeX copies.
+    let mut child = Command::new("/bin/ls")
+        .args(["-1A"])
+        .arg(directory)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?;
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = child.wait_with_output().map_err(|error| {
+                    format!("Unable to inspect {}: {error}", directory.display())
+                })?;
+                if !output.status.success() {
+                    return Err(format!("Unable to inspect {}", directory.display()));
+                }
+                return Ok(String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(|name| directory.join(name))
+                    .collect());
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let canonical = directory.join(canonical_name);
+                return Ok(if canonical.is_file() {
+                    vec![canonical]
+                } else {
+                    Vec::new()
+                });
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Unable to inspect {}: {error}",
+                    directory.display()
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bounded_directory_entries(
+    directory: &Path,
+    _canonical_name: &str,
+) -> Result<Vec<PathBuf>, String> {
+    read_directory_with_interrupted_retry(directory)?
+        .map(|entry| {
+            entry
+                .map(|entry| entry.path())
+                .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))
+        })
+        .collect()
+}
+
 fn discover_word_startup_artifacts() -> Result<Vec<PathBuf>, String> {
     let mut artifacts = Vec::new();
     for startup in discover_word_startup_paths()? {
         if !startup.is_dir() {
             continue;
         }
-        for entry in read_directory_with_interrupted_retry(&startup)? {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    return Err(format!("Unable to inspect a Word Startup entry: {error}"))
-                }
-            };
-            let path = entry.path();
-            if entry
-                .file_type()
-                .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
-                .is_file()
-                && is_visualtex_word_startup_artifact(&path)
-            {
+        for path in bounded_directory_entries(&startup, WORD_ADDIN_NAME)? {
+            if path.is_file() && is_visualtex_word_startup_artifact(&path) {
                 artifacts.push(path);
             }
         }
@@ -578,23 +638,8 @@ fn known_powerpoint_addin_directories() -> Result<Vec<PathBuf>, String> {
 fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
     let mut artifacts = Vec::new();
     for directory in known_powerpoint_addin_directories()? {
-        for entry in read_directory_with_interrupted_retry(&directory)? {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    return Err(format!(
-                        "Unable to inspect a VisualTeX PowerPoint add-in entry: {error}"
-                    ))
-                }
-            };
-            let path = entry.path();
-            if entry
-                .file_type()
-                .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?
-                .is_file()
-                && is_visualtex_addin_artifact(&path, ".ppam")
-            {
+        for path in bounded_directory_entries(&directory, POWERPOINT_ADDIN_NAME)? {
+            if path.is_file() && is_visualtex_addin_artifact(&path, ".ppam") {
                 artifacts.push(path);
             }
         }
@@ -712,6 +757,69 @@ fn copy_atomic(source: &Path, destination: &Path, mode: u32) -> Result<(), Strin
     atomic_write(destination, &bytes, mode)
 }
 
+#[cfg(target_os = "macos")]
+fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
+    let mut child = Command::new("/usr/bin/cmp")
+        .arg("-s")
+        .arg(source)
+        .arg(destination)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Unable to verify {}: {error}", destination.display()))?;
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Installed file {} does not match its VisualTeX source",
+                        destination.display()
+                    ))
+                };
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                // Office file coordination can temporarily block content reads even
+                // though the canonical installed file remains healthy. Metadata is
+                // still available in that state. Host self-tests provide the final
+                // loaded-code check once Word or PowerPoint is running.
+                let source_size = fs::metadata(source)
+                    .map_err(|error| format!("Unable to verify {}: {error}", source.display()))?
+                    .len();
+                let destination_size = fs::metadata(destination)
+                    .map_err(|error| {
+                        format!("Unable to verify {}: {error}", destination.display())
+                    })?
+                    .len();
+                return if source_size == destination_size {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Installed file {} does not match its VisualTeX source",
+                        destination.display()
+                    ))
+                };
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Unable to verify {}: {error}",
+                    destination.display()
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
     let source_bytes = fs::read(source)
         .map_err(|error| format!("Unable to verify {}: {error}", source.display()))?;
@@ -1637,5 +1745,16 @@ mod tests {
         fs::write(&fake, b"PK\x03\x04fake").expect("fake file should be written");
         assert!(validate_compiled_addin(&fake, WORD_ADDIN_NAME, WORD_VBA_ENTRY).is_err());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn packaged_office_artifacts_pass_the_real_installer_validator() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("office/macos-offline");
+        validate_compiled_artifacts(&root)
+            .expect("Packaged DOTM/PPAM must be installable, including their Ribbon XML");
     }
 }

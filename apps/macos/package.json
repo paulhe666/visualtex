@@ -43,6 +43,7 @@
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
     "test:ime-enter": "tsx scripts/ime_enter_regression.mjs",
     "test:office-formula-editor": "tsx scripts/office_formula_editor_regression.mjs",
+    "test:office-silent-conversion": "npm run build:desktop && node scripts/office_silent_conversion_regression.mjs",
     "test:macos-offline-office": "npm run test:ime-enter && npm run test:office-formula-editor && npm run test:word-image-fonts && npm run test:word-latex-redraw && node scripts/macos_offline_office_smoke.mjs",
     "test:macos-offline-office:full": "node scripts/run_macos_offline_acceptance.mjs",
     "verify:office-performance-budget": "node scripts/verify_office_performance_budget.mjs",

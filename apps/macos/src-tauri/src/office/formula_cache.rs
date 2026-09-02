@@ -237,6 +237,7 @@ mod tests {
             reference_width_pt: Some(60.0),
             reference_height_pt: Some(15.0),
             reference_baseline_pt: Some(-3.0),
+            image_ink_center_y_ratio: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),
             created_at: "2026-07-12T00:00:00Z".to_string(),

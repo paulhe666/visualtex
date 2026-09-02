@@ -7,9 +7,23 @@ import { fileURLToPath } from "node:url";
 if (process.platform !== "darwin") process.exit(0);
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const resourcesRoot = join(appRoot, "office", "macos-offline", "resources");
+const rootArgument = process.argv.indexOf("--offline-root");
+if (rootArgument >= 0 && !process.argv[rootArgument + 1]) {
+  throw new Error("--offline-root requires the packaged Office resource directory");
+}
+const offlineRoot = rootArgument >= 0
+  ? resolve(process.argv[rootArgument + 1])
+  : join(appRoot, "office", "macos-offline");
+const resourcesRoot = join(offlineRoot, "resources");
 const packageVersion = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8")).version;
 const manifest = JSON.parse(readFileSync(join(resourcesRoot, "addins.json"), "utf8"));
+
+// A VBE-compiled template can contain every macro while still lacking the
+// Ribbon package. Validate the final OOXML, including its relationships, before
+// accepting hashes or promoting it into a DMG.
+execFileSync("python3", [join(appRoot, "scripts", "verify_macos_office_ribbon.py"), offlineRoot], {
+  stdio: "inherit",
+});
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -55,7 +69,7 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "App_WindowBeforeDoubleClick",
   "App_WindowSelectionChange",
   "VisualTeX_StabilizeImageEquationNumberSelection",
-  "word-office-performance-20260801-r77",
+  "word-office-performance-20260801-r87",
   "VTTraceWordDoubleClick",
   "VTWordRibbonApplyImageFontSizePreset",
   "VisualTeX_EditImageField",

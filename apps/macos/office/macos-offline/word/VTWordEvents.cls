@@ -15,6 +15,22 @@ Attribute App.VB_VarHelpID = -1
 Private Sub App_WindowSelectionChange(ByVal Sel As Word.Selection)
     On Error Resume Next
     If Sel Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
+    ' Word inserts Return before the external SEQ helper when the caret is placed
+    ' at the visible end of a numbered image row. Repair only that exact empty-line
+    ' mutation first; the helper remains adjacent to its formula and the caret moves
+    ' to the equivalent ordinary paragraph after the helper.
+    If VTRepairNumberedImageReturnAfterFormula(Sel.Range) Then
+        VTInvalidateWordImageFontSizeControl
+        Exit Sub
+    End If
+    ' Word for Mac can create a private _Ref at the framed caption anchor rather
+    ' than around the helper's pure number. Repair only private REF fields in the
+    ' currently selected body paragraph, then leave F9 and hyperlink semantics
+    ' entirely native.
+    If VTRepairSelectedWordNativeEquationCrossReference(Sel.Range) Then
+        VTInvalidateWordImageFontSizeControl
+        Exit Sub
+    End If
     VTCleanupEmptyVisualTeXImageMacroButtons Sel.Range
     VisualTeX_StabilizeImageEquationNumberSelection Sel.Range
     VisualTeX_SynchronizeSelectedImageFormulaSize Sel

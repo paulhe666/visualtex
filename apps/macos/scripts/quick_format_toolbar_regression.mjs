@@ -423,7 +423,61 @@ async function main() {
     );
     assert.ok(state.persistedLines.every((line) => !("alignment" in line)), JSON.stringify(state));
 
-    console.log("Document-level visual formula alignment regression passed");
+    await evaluate(`(() => {
+      const field = document.querySelector('[data-line-id="alignment-line-1"] math-field');
+      if (!field) throw new Error("Missing formula field for horizontal overflow probe");
+      field.value = Array.from({ length: 90 }, (_, index) => "x_{" + index + "}").join("+");
+      field.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    })()`);
+    await sleep(180);
+    const overflowState = await evaluate(`(() => {
+      const host = document.querySelector('[data-line-id="alignment-line-1"] .mathfield-host');
+      const field = host?.querySelector('math-field');
+      if (!host || !field) return null;
+      const before = host.scrollLeft;
+      host.scrollLeft = host.scrollWidth;
+      return {
+        overflowX: getComputedStyle(host).overflowX,
+        hostWidth: host.getBoundingClientRect().width,
+        hostHeight: host.getBoundingClientRect().height,
+        fieldWidth: field.getBoundingClientRect().width,
+        fieldHeight: field.getBoundingClientRect().height,
+        clientWidth: host.clientWidth,
+        clientHeight: host.clientHeight,
+        scrollWidth: host.scrollWidth,
+        scrollHeight: host.scrollHeight,
+        scrollLeftBefore: before,
+        scrollLeftAfter: host.scrollLeft,
+        isOverflowing: host.classList.contains("is-horizontally-overflowing"),
+        justifyContent: getComputedStyle(host).justifyContent,
+      };
+    })()`);
+    assert.ok(overflowState, "Missing horizontal overflow state");
+    assert.equal(overflowState.overflowX, "auto", JSON.stringify(overflowState));
+    assert.equal(overflowState.isOverflowing, true, JSON.stringify(overflowState));
+    assert.equal(overflowState.justifyContent, "flex-start", JSON.stringify(overflowState));
+    assert.ok(
+      overflowState.fieldWidth > overflowState.hostWidth + 20,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollWidth > overflowState.clientWidth + 20,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.clientHeight >= overflowState.fieldHeight - 1,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollHeight <= overflowState.clientHeight + 1,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollLeftAfter > overflowState.scrollLeftBefore + 20,
+      JSON.stringify(overflowState),
+    );
+
+    console.log("Document-level visual formula alignment and horizontal overflow regression passed");
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");
