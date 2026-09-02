@@ -9,6 +9,10 @@ import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMml
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import {
+  isSingleCompleteLatexEnvironment,
+  unwrapSingleLatexDisplayMath,
+} from "../math/latexEnvironment.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
@@ -91,37 +95,17 @@ function nonNegativeFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function isSingleCompleteEnvironment(source: string) {
-  const first = source.match(/^\\begin\s*\{([^{}]+)\}/);
-  if (!first) return false;
-
-  const environmentToken = /\\(begin|end)\s*\{([^{}]+)\}/g;
-  const stack: string[] = [];
-  let match: RegExpExecArray | null;
-  let outerEnd = -1;
-
-  while ((match = environmentToken.exec(source))) {
-    const [, kind, name] = match;
-    if (kind === "begin") {
-      stack.push(name);
-      continue;
-    }
-    if (stack.at(-1) !== name) return false;
-    stack.pop();
-    if (stack.length === 0) {
-      outerEnd = environmentToken.lastIndex;
-      break;
-    }
-  }
-
-  return outerEnd >= 0 && source.slice(outerEnd).trim().length === 0;
-}
-
 function prepareLatex(latex: string) {
-  const normalized = normalizeMathLiveCanonicalUprightCommands(
+  let normalized = normalizeMathLiveCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(latex.replace(/\r\n?/g, "\n")),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
+
+  // VisualTeX source formats legitimately serialize display formulas as
+  // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
+  // display mode, so those source delimiters must not become literal glyphs or
+  // be split into extra rows around an inner aligned/align environment.
+  normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
 
   const lines = normalized
     .split("\n")
@@ -133,7 +117,7 @@ function prepareLatex(latex: string) {
   // A document with multiple VisualTeX formula rows may still contain an
   // inner matrix/cases environment on one row; that must not make all rows
   // collapse into a single horizontal TeX expression.
-  if (isSingleCompleteEnvironment(normalized)) return normalized;
+  if (isSingleCompleteLatexEnvironment(normalized)) return normalized;
 
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep

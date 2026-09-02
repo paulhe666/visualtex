@@ -93,6 +93,8 @@ Private VT_WORD_DOUBLE_CLICK_TRACE_ACTIVE As Boolean
 Private VT_WORD_DOUBLE_CLICK_TRACE_INITIALIZED As Boolean
 Private VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID As String
 Private VT_WORD_LAST_IMAGE_EDIT_AT As Single
+Private VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID As String
+Private VT_WORD_LAST_NATIVE_EDIT_AT As Single
 Private VT_WORD_PERFORMANCE_ACTIVE As Boolean
 Private VT_WORD_PERFORMANCE_STARTED_AT As Single
 Private VT_WORD_PERFORMANCE_BUFFER As String
@@ -107,6 +109,54 @@ Private VT_WORD_NUMBERING_PREFERENCE_CACHE_LOADED As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_AVAILABLE As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_MODE As String
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_SEPARATOR As String
+Private VT_WORD_NATIVE_ROLLBACK_DOCUMENT As Document
+
+Private Sub VTClosePreparedNativeRollbackDocument()
+    On Error Resume Next
+    If Not VT_WORD_NATIVE_ROLLBACK_DOCUMENT Is Nothing Then
+        VT_WORD_NATIVE_ROLLBACK_DOCUMENT.Saved = True
+        VT_WORD_NATIVE_ROLLBACK_DOCUMENT.Close _
+            SaveChanges:=wdDoNotSaveChanges
+    End If
+    Set VT_WORD_NATIVE_ROLLBACK_DOCUMENT = Nothing
+    On Error GoTo 0
+End Sub
+
+Private Sub VTPrepareNativeRollbackDocument( _
+    ByVal sourceDocument As Document)
+
+    On Error GoTo PreparationFailed
+    VTClosePreparedNativeRollbackDocument
+    Set VT_WORD_NATIVE_ROLLBACK_DOCUMENT = _
+        Documents.Add(Visible:=False)
+    VT_WORD_NATIVE_ROLLBACK_DOCUMENT.Saved = True
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    Exit Sub
+
+PreparationFailed:
+    ' Prewarming is only a latency optimization. Apply retains the original
+    ' synchronous Documents.Add fallback when Word cannot prepare this hidden
+    ' rollback container while the editor is opening.
+    VTClosePreparedNativeRollbackDocument
+    On Error Resume Next
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    On Error GoTo 0
+End Sub
+
+Private Function VTTakePreparedNativeRollbackDocument() As Document
+    Dim preparedDocument As Document
+
+    On Error GoTo PreparedDocumentInvalid
+    If VT_WORD_NATIVE_ROLLBACK_DOCUMENT Is Nothing Then Exit Function
+    Set preparedDocument = VT_WORD_NATIVE_ROLLBACK_DOCUMENT
+    If Len(preparedDocument.Name) = 0 Then GoTo PreparedDocumentInvalid
+    Set VT_WORD_NATIVE_ROLLBACK_DOCUMENT = Nothing
+    Set VTTakePreparedNativeRollbackDocument = preparedDocument
+    Exit Function
+
+PreparedDocumentInvalid:
+    VTClosePreparedNativeRollbackDocument
+End Function
 
 Private Function VTWordVbeBuildTemplateActive() As Boolean
     Dim projectDocumentName As String
@@ -14253,6 +14303,10 @@ Public Sub VisualTeX_CreateNativeDisplay()
     VTWordCreate "block", False, True
 End Sub
 
+Public Sub VisualTeX_CreateNativeNumberedDisplay()
+    VTWordCreate "block", True, True
+End Sub
+
 Public Sub VisualTeX_CreateNumberedDisplay()
     VTWordCreate "block", True
 End Sub
@@ -16462,6 +16516,21 @@ Private Function VTImageEditDispatchDebounced( _
          elapsedSeconds <= VT_WORD_IMAGE_EDIT_DEBOUNCE_SECONDS)
 End Function
 
+Private Function VTNativeEditDispatchDebounced( _
+    ByVal formulaId As String) As Boolean
+
+    Dim elapsedSeconds As Double
+
+    If Len(VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID) = 0 Or _
+       StrComp(VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID, formulaId, _
+           vbBinaryCompare) <> 0 Then Exit Function
+    elapsedSeconds = VTTimerElapsedSeconds( _
+        VT_WORD_LAST_NATIVE_EDIT_AT, Timer)
+    VTNativeEditDispatchDebounced = _
+        (elapsedSeconds >= 0# And _
+         elapsedSeconds <= VT_WORD_IMAGE_EDIT_DEBOUNCE_SECONDS)
+End Function
+
 Private Sub VTReadWordImageConversionState( _
     ByVal formulaShape As InlineShape, _
     ByVal formulaId As String, _
@@ -16739,12 +16808,16 @@ Private Sub VTWordOpenNativeSession( _
     Dim observedWordFontSizePt As Double
     Dim bookmarkTrace As String
     Dim launchTiming As String
+    Dim debounceArmed As Boolean
+    Dim openErrorNumber As Long
+    Dim openErrorDescription As String
 
     bookmarkTrace = "nothing"
     If Not nativeBookmark Is Nothing Then bookmarkTrace = nativeBookmark.Name
     VTTraceWordDoubleClick _
         "edit-native-enter", Selection, _
         "bookmark=" & bookmarkTrace
+    On Error GoTo OpenFailed
 
     If nativeBookmark Is Nothing Then
         Err.Raise vbObjectError + 7452, "VisualTeX", "Select one VisualTeX native Word equation."
@@ -16769,6 +16842,17 @@ Private Sub VTWordOpenNativeSession( _
         "formulaId=" & formulaId & _
         " displayMode=" & displayMode & _
         " numbered=" & CStr(numbered)
+    If operationName = "formula" And _
+       VTNativeEditDispatchDebounced(formulaId) Then
+        VTTraceWordDoubleClick _
+            "edit-native-debounced", Selection, "formulaId=" & formulaId
+        Exit Sub
+    End If
+    If operationName = "formula" Then
+        VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID = formulaId
+        VT_WORD_LAST_NATIVE_EDIT_AT = Timer
+        debounceArmed = True
+    End If
 
     ' OMath.Range.Font.Size can report the surrounding paragraph's default
     ' size (commonly 11 pt) even when the visible imported equation and its
@@ -16811,11 +16895,28 @@ Private Sub VTWordOpenNativeSession( _
         referenceWidthPt, _
         referenceHeightPt, _
         operationName)
+    ' Creating Word's hidden rollback document costs roughly 0.15 s on macOS.
+    ' Prepare only its empty container while the editor opens; Apply still
+    ' captures and validates the current OMath immediately before replacement.
+    VTPrepareNativeRollbackDocument documentObject
     launchTiming = _
         VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
     VTTraceWordDoubleClick _
         "edit-native-editor-launched", Selection, _
         "sessionId=" & sessionId & " " & launchTiming
+    Exit Sub
+
+OpenFailed:
+    openErrorNumber = Err.Number
+    openErrorDescription = Err.Description
+    If debounceArmed And _
+       StrComp(VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID, formulaId, _
+           vbBinaryCompare) = 0 Then
+        VT_WORD_LAST_NATIVE_EDIT_FORMULA_ID = ""
+        VT_WORD_LAST_NATIVE_EDIT_AT = 0!
+    End If
+    Err.Raise openErrorNumber, "VisualTeX Word native edit", _
+        openErrorDescription
 End Sub
 
 Public Sub VisualTeX_ConvertSelectedToNativeEquation()
@@ -18198,8 +18299,6 @@ Private Sub VTDocumentImportInsertFormula( _
             Set numberLayoutRange = VTEnsureImageEquationNumber( _
                 candidate, heightPoints, formulaId, captionText, _
                 numberCreated)
-            VTRefreshNumberedImageFormulaFontLayout _
-                candidate, formulaId, fontSizePt
         Else
             VTNormalizeUnnumberedDisplayParagraph candidate.Range
         End If
@@ -20761,7 +20860,6 @@ Private Sub VTCommitWordDispatch( _
     Dim hadPreviousImageScale As Boolean
     Dim hadPreviousInkCenter As Boolean
     Dim formulaStateStored As Boolean
-    Dim deferNativeDisplay As Boolean
     Dim pendingPlaceholderRemoved As Boolean
     Dim pendingPlaceholderStart As Long
     Dim committedImageStart As Long
@@ -21013,17 +21111,12 @@ Private Sub VTCommitWordDispatch( _
     If nativeEquation Then
         transactionStage = "prepare-native-replacement"
         nativeDisplayMode = displayMode
-        ' Word for Mac is significantly more stable when an unnumbered display
-        ' equation is first transferred as inline OMath and promoted only after
-        ' the source image/placeholder transaction has settled. Apply this to
-        ' creates and edits alike so a stale display Range cannot absorb nearby
-        ' content or leave a broken editor Session behind.
-        If displayMode = "block" And Not numbered Then
-            deferNativeDisplay = True
-            nativeDisplayMode = "inline"
-        ElseIf numbered Then
-            nativeDisplayMode = "inline"
-        End If
+        ' Unnumbered display staging DOCX now carries a real m:oMathPara, so keep
+        ' that native display identity through replacement instead of paying for
+        ' an Inline -> Display rebuild after the source transaction settles.
+        ' Numbered OMML still enters as inline because its production eqArr/#/REF
+        ' layout is built explicitly by VTEnsureNativeEquationNumber below.
+        If numbered Then nativeDisplayMode = "inline"
 
         ' Replacing a native equation by first inserting beside it is unsafe in
         ' Word for Mac: Word can merge both equations and mutate the original
@@ -21032,8 +21125,14 @@ Private Sub VTCommitWordDispatch( _
         ' one FormattedText assignment instead.
         If targetIsNative Then
             VTWordPerformanceMark "native-backup-start"
-            Set originalNativeBackupDocument = Documents.Add(Visible:=False)
+            Set originalNativeBackupDocument = _
+                VTTakePreparedNativeRollbackDocument()
+            If originalNativeBackupDocument Is Nothing Then
+                Set originalNativeBackupDocument = _
+                    Documents.Add(Visible:=False)
+            End If
             Set originalNativeBackupRange = originalNativeBackupDocument.Content
+            originalNativeBackupRange.Text = ""
             originalNativeBackupRange.Collapse wdCollapseStart
             originalNativeBackupRange.FormattedText = originalNativeRange.FormattedText
             If originalNativeBackupDocument.OMaths.Count <> 1 Then
@@ -21053,7 +21152,8 @@ Private Sub VTCommitWordDispatch( _
             nativeDocumentPath, _
             nativeDisplayMode, _
             displayMode = "block", _
-            targetIsNative)
+            targetIsNative, _
+            replacementRollbackRange:=originalNativeBackupRange)
         nativeEquationStart = nativeEquationRange.Start
         nativeTargetReplaced = targetIsNative
         VTWordPerformanceMark "native-insert-complete"
@@ -21108,9 +21208,11 @@ Private Sub VTCommitWordDispatch( _
             If numbered Then
                 transactionStage = "normalize-native-number-layout"
                 numberCreated = False
+                VTWordPerformanceMark "native-number-call-start"
                 Set numberLayoutRange = VTEnsureNativeEquationNumber( _
                     nativeEquationRange, heightPoints, formulaId, captionText, _
                     numberCreated)
+                VTWordPerformanceMark "native-number-call-complete"
                 If numberCreated Then Set insertedNumber = numberLayoutRange
                 Set nativeEquationRange = VTNumberedFormulaRangeForId( _
                     targetDocument, formulaId)
@@ -21120,8 +21222,10 @@ Private Sub VTCommitWordDispatch( _
                 End If
             Else
                 transactionStage = "promote-native-display"
+                VTWordPerformanceMark "native-display-promote-start"
                 Set nativeEquationRange = _
                     VTPromoteNativeEquationToDisplay(nativeEquationRange)
+                VTWordPerformanceMark "native-display-promote-complete"
             End If
         Else
             transactionStage = "finalize-native-inline"
@@ -21130,22 +21234,30 @@ Private Sub VTCommitWordDispatch( _
         End If
 
         transactionStage = "apply-native-font-size"
+        VTWordPerformanceMark "native-font-start"
         nativeEquationRange.Font.Size = CSng(fontSizePt)
+        VTWordPerformanceMark "native-font-complete"
         Set nativeEquationRange = VTResolveNativeEquationRange( _
             targetDocument, nativeEquationRange.Start, 16)
+        VTWordPerformanceMark "native-final-resolve-complete"
 
         transactionStage = "bookmark-native-equation"
         VTSetNativeFormulaBookmark targetDocument, nativeEquationRange, formulaId
         nativeBookmarkSet = True
+        VTWordPerformanceMark "native-final-bookmark-complete"
         Set originalNativeMath = VTNativeMathForBookmark( _
             targetDocument.Bookmarks(VTNativeFormulaBookmarkName(formulaId)))
+        VTWordPerformanceMark "native-final-bookmark-resolve-complete"
         If originalNativeMath Is Nothing Then
             Err.Raise vbObjectError + 7460, "VisualTeX", _
                 "Word lost the finalized native equation before structure caching."
         End If
+        VTWordPerformanceMark "native-signature-start"
         VTSetWordNativeSignature _
             targetDocument, formulaId, originalNativeMath
+        VTWordPerformanceMark "native-signature-complete"
         VTDeletePendingBookmark targetDocument, sessionId
+        VTWordPerformanceMark "native-pending-delete-complete"
         VTWordPerformanceMark "native-layout-complete"
 
         On Error Resume Next
@@ -21387,8 +21499,6 @@ Private Sub VTCommitWordDispatch( _
             Set numberLayoutRange = VTEnsureImageEquationNumber( _
                 candidate, heightPoints, formulaId, captionText, numberCreated)
             If numberCreated Then Set insertedNumber = numberLayoutRange
-            VTRefreshNumberedImageFormulaFontLayout _
-                candidate, formulaId, fontSizePt
         Else
             transactionStage = "normalize-image-display-layout"
             VTNormalizeUnnumberedDisplayParagraph candidate.Range
@@ -21614,6 +21724,7 @@ Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
         On Error GoTo 0
     End If
     VTDeletePendingBookmark ActiveDocument, sessionId
+    VTClosePreparedNativeRollbackDocument
 End Sub
 
 Private Function VTFindUniqueInlineShape(ByVal marker As String) As InlineShape
@@ -22300,6 +22411,7 @@ Private Function VTInsertEquationNumber( _
         documentObject, formulaId)
     sequenceOrderChanged = existingHelperField Is Nothing
     initializeSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-initialize-complete"
     phaseStartedAt = Timer
 
     operationStage = "validate-image-paragraph"
@@ -22371,6 +22483,7 @@ Private Function VTInsertEquationNumber( _
     End If
     If suffixRange.End > suffixRange.Start Then suffixRange.Delete
     tailSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-tail-complete"
     phaseStartedAt = Timer
 
     operationStage = "normalize-center-prefix"
@@ -22395,6 +22508,7 @@ Private Function VTInsertEquationNumber( _
     Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
     VTConfigureNumberedEquationParagraph paragraphRange
     centerSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-center-complete"
     phaseStartedAt = Timer
 
     operationStage = "create-external-sequence-helper"
@@ -22410,6 +22524,7 @@ Private Function VTInsertEquationNumber( _
             "The image Equation SEQ helper paragraph is invalid."
     End If
     helperSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-helper-complete"
     phaseStartedAt = Timer
 
     operationStage = "re-resolve-image-after-helper-ordering"
@@ -22436,6 +22551,7 @@ Private Function VTInsertEquationNumber( _
     Set numberRange = VTWriteImageEquationReferenceNumber( _
         documentObject, formulaShape.Range.Duplicate, formulaId)
     visibleSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-visible-complete"
     phaseStartedAt = Timer
 
     ' The normal sequential append has already completed every structural write:
@@ -22449,10 +22565,16 @@ Private Function VTInsertEquationNumber( _
         (Not deferReconcile) And sequenceOrderChanged And _
         VTEquationNumberingMode(documentObject) = _
             VT_WORD_NUMBERING_MODE_SEQUENCE
+    VTWordPerformanceNote _
+        "imageNumberFastInputs", _
+        "defer=" & CStr(deferReconcile) & _
+        " orderChanged=" & CStr(sequenceOrderChanged) & _
+        " mode=" & VTEquationNumberingMode(documentObject)
     If fastSequentialAppend Then
         fastSequentialAppend = VTCanUseEquationTailFastPath( _
             documentObject, sequenceField)
     End If
+    VTWordPerformanceMark "image-number-fast-gate-complete"
     If fastSequentialAppend Then
         operationStage = "fast-finalize-sequential-append"
         Set formulaShape = VTResolveImageFormulaInParagraph( _
@@ -22478,6 +22600,7 @@ Private Function VTInsertEquationNumber( _
         End If
         VTEnsureOrphanWatchScheduled
         finalizeSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+        VTWordPerformanceMark "image-number-fast-finalize-complete"
         If Not IsMissing(performancePhases) Then
             performancePhases = Array( _
                 initializeSeconds, tailSeconds, centerSeconds, _
@@ -22499,6 +22622,7 @@ Private Function VTInsertEquationNumber( _
     Set formulaShape = VTResolveImageFormulaInParagraph( _
         documentObject, paragraphStart)
     finalizeSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "image-number-full-finalize-complete"
     If Not IsMissing(performancePhases) Then
         performancePhases = Array( _
             initializeSeconds, tailSeconds, centerSeconds, _
@@ -23076,10 +23200,55 @@ Private Function VTCanUseEquationTailFastPath( _
 
     If documentObject Is Nothing Or sequenceField Is Nothing Then Exit Function
     If VTHasNativeEquationSequenceAfter( _
-       documentObject, sequenceField) Then Exit Function
+       documentObject, sequenceField) Then
+        VTWordPerformanceMark "equation-tail-fast-blocked-native-after"
+        Exit Function
+    End If
     If VTHasManagedEquationNumberAfter( _
-       documentObject, sequenceField) Then Exit Function
+       documentObject, sequenceField) Then
+        VTWordPerformanceMark "equation-tail-fast-blocked-managed-after"
+        Exit Function
+    End If
     VTCanUseEquationTailFastPath = True
+End Function
+
+Private Function VTHasOtherManagedEquationNumber( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String) As Boolean
+
+    Dim candidateBookmark As Bookmark
+    Dim bookmarkName As String
+    Dim ownNumberBookmarkName As String
+    Dim ownSequenceBookmarkName As String
+
+    If documentObject Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then
+        VTHasOtherManagedEquationNumber = True
+        Exit Function
+    End If
+    ownNumberBookmarkName = VTEquationNumberBookmarkName(formulaId)
+    ownSequenceBookmarkName = _
+        VTEquationSequenceNumberBookmarkName(formulaId)
+    For Each candidateBookmark In documentObject.Bookmarks
+        bookmarkName = candidateBookmark.Name
+        If Left$(bookmarkName, _
+           Len(VT_WORD_NUMBER_BOOKMARK_PREFIX)) = _
+           VT_WORD_NUMBER_BOOKMARK_PREFIX Then
+            If StrComp(bookmarkName, ownNumberBookmarkName, _
+               vbTextCompare) <> 0 Then
+                VTHasOtherManagedEquationNumber = True
+                Exit Function
+            End If
+        ElseIf Left$(bookmarkName, _
+           Len(VT_WORD_SEQUENCE_NUMBER_BOOKMARK_PREFIX)) = _
+           VT_WORD_SEQUENCE_NUMBER_BOOKMARK_PREFIX Then
+            If StrComp(bookmarkName, ownSequenceBookmarkName, _
+               vbTextCompare) <> 0 Then
+                VTHasOtherManagedEquationNumber = True
+                Exit Function
+            End If
+        End If
+    Next candidateBookmark
 End Function
 
 Private Function VTEquationFieldStart( _
@@ -25545,11 +25714,14 @@ Private Sub VTFinalizeParagraphEquationNumber( _
     End If
 
     ' Editing an existing numbered formula does not change sequence order and can
-    ' keep the local fast path. A true tail append is O(1) only in plain sequence
-    ' mode. Chapter/section appends must run the shared heading scan once so a new
-    ' outline boundary can reset the local ordinal even when Word's own Heading
-    ' styles do not reflect that OutlineLevel.
+    ' keep the local fast path. The first and only managed Equation is also fully
+    ' resolved by the local refresh above: its heading prefix was calculated from
+    ' the current OutlineLevel scope, while there are no other managed SEQ/REF
+    ' identities to replay. Later chapter/section appends retain the shared scan
+    ' so custom outline boundaries and following formulas remain exact.
     If Not sequenceOrderChanged Or _
+       Not VTHasOtherManagedEquationNumber( _
+           documentObject, formulaId) Or _
        (numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE And _
         VTCanUseEquationTailFastPath( _
             documentObject, sequenceField)) Then
@@ -27742,8 +27914,13 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     Dim restartLevel As Long
     Dim numberSize As Single
     Dim canUseFreshTailFastPath As Boolean
+    Dim canUseStableEditFastPath As Boolean
+    Dim reusedExternalSequence As Boolean
     Dim fastPathGate As Long
+    Dim existingSequenceOrdinal As Long
     Dim suffixText As String
+    Dim existingSequenceResult As String
+    Dim currentEquationNumberText As String
     Dim operationStage As String
     Dim operationErrorNumber As Long
     Dim operationErrorDescription As String
@@ -27778,6 +27955,14 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     operationStage = "reuse-external-sequence-array"
     Set sequenceField = VTNativeEquationSequenceHelperField( _
         documentObject, formulaId)
+    If Not sequenceField Is Nothing Then
+        existingSequenceResult = VTComparableEquationNumberText( _
+            VTEquationNumberTextForFormula(documentObject, formulaId))
+        existingSequenceOrdinal = VTFirstPositiveIntegerInText( _
+            VTEquationSequenceResultText(sequenceField))
+        reusedExternalSequence = _
+            (existingSequenceOrdinal > 0 And Len(existingSequenceResult) > 0)
+    End If
     Set visibleNumberField = VTNativeEquationArrayReferenceField( _
         exactEquationRange, formulaId)
     If Not sequenceField Is Nothing Then
@@ -27986,12 +28171,15 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     If suffixRange.End > suffixRange.Start Then suffixRange.Delete
 
     prepareSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-prepare-complete"
     phaseStartedAt = Timer
     operationStage = "create-external-sequence-helper"
     Set exactEquationRange = VTResolveNativeEquationRange( _
         documentObject, formulaStart, 64)
-    Set sequenceField = VTEnsureNativeEquationSequenceHelper( _
-        exactEquationRange, formulaId)
+    If sequenceField Is Nothing Then
+        Set sequenceField = VTEnsureNativeEquationSequenceHelper( _
+            exactEquationRange, formulaId)
+    End If
     If sequenceField Is Nothing Then
         Err.Raise vbObjectError + 7563, "VisualTeX", _
             "Word did not create the native Equation SEQ helper."
@@ -28001,6 +28189,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
             "Word did not isolate the native Equation SEQ outside OMath."
     End If
     helperSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-helper-complete"
     phaseStartedAt = Timer
 
     operationStage = "insert-equation-array-marker"
@@ -28028,6 +28217,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
             "Word did not preserve an internal Equation array number slot."
     End If
     markerSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-marker-complete"
     phaseStartedAt = Timer
 
     operationStage = "insert-equation-array-reference"
@@ -28052,6 +28242,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
         End If
     Next candidateField
     referenceSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-reference-complete"
     phaseStartedAt = Timer
 
     operationStage = "build-equation-array"
@@ -28082,13 +28273,18 @@ Private Function VTEnsureNativeEquationArrayNumber( _
         Err.Raise vbObjectError + 7563, "VisualTeX", _
             "The native Equation SEQ left its external helper paragraph."
     End If
+    currentEquationNumberText = VTComparableEquationNumberText( _
+        VTEquationNumberTextForFormula(documentObject, formulaId))
     If VTComparableEquationNumberText( _
            VTEquationSequenceResultText(visibleNumberField)) <> _
-       VTComparableEquationNumberText( _
-           VTEquationNumberTextForFormula( _
-               documentObject, formulaId)) Then
+       currentEquationNumberText Then
         Err.Raise vbObjectError + 7563, "VisualTeX", _
             "The native Equation number REF does not match its external SEQ."
+    End If
+    If reusedExternalSequence And _
+       currentEquationNumberText <> existingSequenceResult Then
+        Err.Raise vbObjectError + 7563, "VisualTeX", _
+            "The native Equation edit changed its external sequence identity."
     End If
     ' BuildUp can rewrite the formula paragraph boundary before the framed helper.
     ' On Word for Mac that rewrite can collapse a full helper caption Bookmark at
@@ -28101,6 +28297,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     VTSetCollapsedEquationCaptionBookmark _
         documentObject, formulaId, helperParagraph
     buildSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-build-complete"
     phaseStartedAt = Timer
 
     operationStage = "finalize-equation-array-identity"
@@ -28145,7 +28342,8 @@ Private Function VTEnsureNativeEquationArrayNumber( _
     ' is already present and there is no later Equation sequence to reconcile.
     canUseFreshTailFastPath = False
     fastPathGate = 0
-    If VTEquationNumberingMode(documentObject) = _
+    If Not reusedExternalSequence And _
+       VTEquationNumberingMode(documentObject) = _
        VT_WORD_NUMBERING_MODE_SEQUENCE Then
         fastPathGate = 1
         sequenceOrdinal = VTFirstPositiveIntegerInText( _
@@ -28205,7 +28403,19 @@ Private Function VTEnsureNativeEquationArrayNumber( _
         End If
     End If
 
-    If canUseFreshTailFastPath Then
+    ' Replacing the formula body of a healthy numbered OMath does not change the
+    ' external SEQ's position or ordinal. The array/REF/bookmarks were rebuilt
+    ' and checked above. Avoid the global reconciler only when the original SEQ
+    ' still has the same ordinal and every final identity is exact; otherwise
+    ' retain the conservative finalization transaction.
+    canUseStableEditFastPath = False
+    If reusedExternalSequence Then
+        canUseStableEditFastPath = True
+        fastPathGate = 20
+    End If
+
+    If canUseFreshTailFastPath Or canUseStableEditFastPath Then
+        VTWordPerformanceMark "native-number-array-local-finalize-start"
         numberSize = VTVisibleEquationNumberFontSize(documentObject)
         If numberSize <= 0! Or _
            numberSize > CSng(VT_WORD_MAX_FORMULA_FONT_SIZE_PT) Then
@@ -28226,6 +28436,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
         End With
         VTEnsureOrphanWatchScheduled
     Else
+        VTWordPerformanceMark "native-number-array-full-finalize-start"
         VTFinalizeParagraphEquationNumber _
             documentObject, exactEquationRange, formulaId
         Set exactEquationRange = VTNumberedFormulaRangeForId( _
@@ -28238,6 +28449,7 @@ Private Function VTEnsureNativeEquationArrayNumber( _
             documentObject, exactEquationRange, formulaId
     End If
     finalizeSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
+    VTWordPerformanceMark "native-number-array-finalize-complete"
     If Not IsMissing(performancePhases) Then
         performancePhases = Array( _
             prepareSeconds, helperSeconds, markerSeconds, _
@@ -28598,7 +28810,9 @@ Private Function VTEnsureNativeEquationNumber( _
     Set formulaRange = equationRange.OMaths(1).Range.Duplicate
     formulaStart = formulaRange.Start
 
+    VTWordPerformanceMark "native-number-enter"
     If formulaRange.Information(wdWithInTable) Then
+        VTWordPerformanceMark "native-number-range-in-table"
         Set layoutTable = formulaRange.Tables(1)
         If layoutTable.Rows.Count = 1 And layoutTable.Columns.Count = 3 Then
             VTEnsureEquationNumberFields layoutTable, formulaId
@@ -28606,6 +28820,7 @@ Private Function VTEnsureNativeEquationNumber( _
             Exit Function
         End If
     End If
+    VTWordPerformanceMark "native-number-range-outside-table"
 
     On Error GoTo ArrayNumberFailed
     If IsMissing(performancePhases) Then
@@ -30971,7 +31186,8 @@ Private Function VTInsertNativeEquationAtRange( _
     ByVal displaySizing As Boolean, _
     ByVal replaceTarget As Boolean, _
     Optional ByRef performancePhases As Variant, _
-    Optional ByRef fastPathDiagnostic As String) As Range
+    Optional ByRef fastPathDiagnostic As String, _
+    Optional ByVal replacementRollbackRange As Variant) As Range
 
     Dim ommlXml As String
     Dim insertionRange As Range
@@ -31097,21 +31313,30 @@ Private Function VTInsertNativeEquationAtRange( _
         If targetRange.OMaths.Count = 1 Then
             Set originalReplacementMath = targetRange.OMaths(1)
         End If
-        Set replacementBackupDocument = Documents.Add(Visible:=False)
-        Set replacementBackupRange = replacementBackupDocument.Content
-        replacementBackupRange.Collapse wdCollapseStart
-        replacementBackupRange.FormattedText = targetRange.FormattedText
-        If replacementBackupDocument.OMaths.Count = 1 Then
-            Set replacementBackupRange = _
-                replacementBackupDocument.OMaths(1).Range.Duplicate
-        ElseIf replacementBackupDocument.InlineShapes.Count = 1 Then
-            Set replacementBackupRange = _
-                replacementBackupDocument.InlineShapes(1).Range.Duplicate
+        ' VTCommitWordDispatch already owns an exact hidden-document backup for
+        ' native edits so it can roll back failures that happen after insertion.
+        ' Reuse that verified Range here instead of creating and copying the same
+        ' OMath into a second hidden document on every Apply. Standalone callers
+        ' retain the original self-contained backup path below.
+        If IsObject(replacementRollbackRange) Then
+            Set replacementBackupRange = replacementRollbackRange.Duplicate
         Else
-            Err.Raise vbObjectError + 7472, "VisualTeX", _
-                "Word could not back up the native-equation replacement target."
+            Set replacementBackupDocument = Documents.Add(Visible:=False)
+            Set replacementBackupRange = replacementBackupDocument.Content
+            replacementBackupRange.Collapse wdCollapseStart
+            replacementBackupRange.FormattedText = targetRange.FormattedText
+            If replacementBackupDocument.OMaths.Count = 1 Then
+                Set replacementBackupRange = _
+                    replacementBackupDocument.OMaths(1).Range.Duplicate
+            ElseIf replacementBackupDocument.InlineShapes.Count = 1 Then
+                Set replacementBackupRange = _
+                    replacementBackupDocument.InlineShapes(1).Range.Duplicate
+            Else
+                Err.Raise vbObjectError + 7472, "VisualTeX", _
+                    "Word could not back up the native-equation replacement target."
+            End If
+            targetDocument.Activate
         End If
-        targetDocument.Activate
     End If
 
     ' Word for Mac 16.89.1 rejects both a bare m:oMath node and a wrapped
@@ -31248,7 +31473,9 @@ Private Function VTInsertNativeEquationAtRange( _
         Set equationRange = _
             VTFinalizeInlineNativeEquation(equationRange)
     Else
-        nativeEquation.Type = wdOMathDisplay
+        If nativeEquation.Type <> wdOMathDisplay Then
+            nativeEquation.Type = wdOMathDisplay
+        End If
         nativeEquation.Justification = wdOMathJcCenter
         Set equationRange = VTResolveNativeEquationRange( _
             targetDocument, resolvedEquationStart, 16)
@@ -31344,11 +31571,21 @@ Private Function VTPromoteNativeEquationToDisplay( _
             "VisualTeX cannot promote a missing native equation to display mode."
     End If
     Set nativeEquation = equationRange.OMaths(1)
-    nativeEquation.Type = wdOMathDisplay
+    VTWordPerformanceMark "native-promote-type-start"
+    If nativeEquation.Type <> wdOMathDisplay Then
+        nativeEquation.Type = wdOMathDisplay
+        VTWordPerformanceMark "native-promote-type-assigned"
+    Else
+        VTWordPerformanceMark "native-promote-type-already-display"
+    End If
+    VTWordPerformanceMark "native-promote-type-complete"
     nativeEquation.Justification = wdOMathJcCenter
+    VTWordPerformanceMark "native-promote-justification-complete"
     Set exactRange = nativeEquation.Range.Duplicate
     exactRange.Font.Position = 0
+    VTWordPerformanceMark "native-promote-position-complete"
     VTNormalizeUnnumberedDisplayParagraph exactRange
+    VTWordPerformanceMark "native-promote-paragraph-complete"
     Set VTPromoteNativeEquationToDisplay = nativeEquation.Range.Duplicate
 End Function
 
@@ -33509,6 +33746,84 @@ Private Function VTNativeMathStructureSignature( _
         CStr(Len(fragment)) & "|" & Hex$(CLng(hashValue))
 End Function
 
+Private Function VTStableTextHash(ByVal value As String) As String
+    Dim hashValue As Double
+    Dim characterValue As Long
+    Dim characterIndex As Long
+
+    If Len(value) = 0 Then Exit Function
+    hashValue = 7#
+    For characterIndex = 1 To Len(value)
+        characterValue = AscW(Mid$(value, characterIndex, 1))
+        If characterValue < 0 Then characterValue = characterValue + 65536
+        hashValue = hashValue * 131# + CDbl(characterValue)
+        hashValue = hashValue - _
+            Fix(hashValue / 2147483629#) * 2147483629#
+    Next characterIndex
+    VTStableTextHash = CStr(Len(value)) & "|" & Hex$(CLng(hashValue))
+End Function
+
+Private Function VTNativeMathFastSignature( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String, _
+    ByVal nativeMath As OMath) As String
+
+    Dim equationRange As Range
+    Dim signatureRange As Range
+    Dim formulaContentRange As Range
+    Dim functionIndex As Long
+    Dim functionTypes As String
+    Dim signatureText As String
+    Dim numberedText As String
+    Dim numbered As Boolean
+
+    If documentObject Is Nothing Or nativeMath Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then Exit Function
+
+    Set equationRange = nativeMath.Range.Duplicate
+    Set signatureRange = equationRange.Duplicate
+    numbered = documentObject.Bookmarks.Exists( _
+        VTEquationNumberBookmarkName(formulaId))
+    If numbered Then
+        numberedText = "1"
+        ' A numbered native Equation contains its generated REF result in the
+        ' outer OMath array. Renumbering must not make an unchanged mathematical
+        ' body look edited, so hash only the formula side of the exact array.
+        On Error Resume Next
+        Set formulaContentRange = _
+            VTNativeEquationFormulaContentRange(equationRange)
+        Err.Clear
+        On Error GoTo 0
+        If Not formulaContentRange Is Nothing Then
+            Set signatureRange = formulaContentRange.Duplicate
+        End If
+    Else
+        numberedText = "0"
+    End If
+
+    signatureText = signatureRange.Text
+    signatureText = Replace$(signatureText, vbCrLf, vbLf)
+    signatureText = Replace$(signatureText, vbCr, vbLf)
+    signatureText = Replace$(signatureText, Chr$(7), "")
+
+    ' Range.Text is inexpensive on Word for Mac. Pair it with the ordered OMath
+    ' function kinds so two structures with the same visible characters (for
+    ' example a built-up fraction and a literal slash expression) cannot share
+    ' a cache identity. This avoids serializing WordOpenXML on every Apply.
+    On Error Resume Next
+    For functionIndex = 1 To nativeMath.Functions.Count
+        functionTypes = functionTypes & "," & _
+            CStr(nativeMath.Functions(functionIndex).Type)
+    Next functionIndex
+    Err.Clear
+    On Error GoTo 0
+
+    VTNativeMathFastSignature = "v2:" & VTStableTextHash( _
+        CStr(nativeMath.Type) & "|" & numberedText & "|" & _
+        CStr(signatureRange.OMaths.Count) & "|" & _
+        functionTypes & "|" & signatureText)
+End Function
+
 Private Sub VTSetWordNativeSignature( _
     ByVal documentObject As Document, _
     ByVal formulaId As String, _
@@ -33516,7 +33831,8 @@ Private Sub VTSetWordNativeSignature( _
 
     Dim signatureValue As String
 
-    signatureValue = VTNativeMathStructureSignature(nativeMath)
+    signatureValue = VTNativeMathFastSignature( _
+        documentObject, formulaId, nativeMath)
     If Len(signatureValue) = 0 Then
         Err.Raise vbObjectError + 7467, "VisualTeX", _
             "Word did not expose a stable native formula structure."
@@ -33539,10 +33855,30 @@ Private Function VTWordNativeSignatureMatches( _
     If Not VTTryGetDocumentVariable( _
        documentObject, VTWordNativeSignatureVariableName(formulaId), _
        storedSignature) Then Exit Function
-    currentSignature = VTNativeMathStructureSignature(nativeMath)
+    currentSignature = VTNativeMathFastSignature( _
+        documentObject, formulaId, nativeMath)
     If Len(currentSignature) = 0 Then Exit Function
-    VTWordNativeSignatureMatches = _
-        (StrComp(storedSignature, currentSignature, vbBinaryCompare) = 0)
+
+    If Left$(storedSignature, 3) = "v2:" Then
+        VTWordNativeSignatureMatches = _
+            (StrComp(storedSignature, currentSignature, _
+                vbBinaryCompare) = 0)
+        Exit Function
+    End If
+
+    ' Existing 1.2.5 documents retain the former OpenXML-derived hash. Pay that
+    ' serialization cost once when such a document is first inspected, then
+    ' migrate its variable to the inexpensive v2 signature.
+    If StrComp(storedSignature, _
+       VTNativeMathStructureSignature(nativeMath), _
+       vbBinaryCompare) = 0 Then
+        VTWordNativeSignatureMatches = True
+        On Error Resume Next
+        VTSetDocumentVariable documentObject, _
+            VTWordNativeSignatureVariableName(formulaId), currentSignature
+        Err.Clear
+        On Error GoTo 0
+    End If
 End Function
 
 Private Function VTWordFormatVariableName(ByVal formulaId As String) As String

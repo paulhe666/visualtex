@@ -46,7 +46,8 @@ rcgen = "0.14.8"
 block2 = "0.6.2"
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSEvent", "NSImage", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "block2"] }
-objc2-foundation = { version = "0.3.2", features = ["NSData", "NSString"] }
+objc2-core-services = "0.3.2"
+objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDate", "NSDictionary", "NSError", "NSAppleEventDescriptor", "NSAppleScript", "NSString", "objc2-core-services"] }
 
 [dev-dependencies]
 tempfile = "3"

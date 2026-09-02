@@ -15,6 +15,13 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
   captureSelection: false,
 });
 
+const symbolMacro = (def: string): MacroDictionary[string] => ({
+  def,
+  args: 0,
+  expand: false,
+  captureSelection: false,
+});
+
 /**
  * MathLive rendering/editing compatibility shared by formula fields and static
  * previews. These are rendering aliases only: `expand: false` keeps supported
@@ -22,6 +29,15 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
  */
 export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
   ...VISUALTEX_MATHLIVE_PACKAGE_MACROS,
+
+  // amsmath modulo commands are accepted by the MathJax/OMML export path but
+  // are absent from MathLive 0.109's editable command dictionary. Keep the
+  // original command tokens in saved LaTeX while supplying equivalent visual
+  // atoms for live fields and static MathLive previews.
+  bmod: symbolMacro("\\mathbin{\\mathrm{mod}}"),
+  mod: symbolMacro("\\;\\mathop{\\mathrm{mod}}\\nolimits\\;"),
+  pmod: macro("\\;\\left(\\mathrm{mod}\\,#1\\right)"),
+  pod: macro("\\;\\left(#1\\right)"),
 
   // The default MathLive bold wrapper is upright. Force mathematical bold
   // aliases through mathbfit so Latin variables retain their italic shape.

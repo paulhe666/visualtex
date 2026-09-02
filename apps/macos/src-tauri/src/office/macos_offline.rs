@@ -11,10 +11,20 @@ use base64::{
 use flate2::{read::{DeflateDecoder, ZlibDecoder}, write::DeflateEncoder, Compression};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
-use objc2::MainThreadMarker;
+use objc2::{rc::Retained, AnyThread, MainThreadMarker};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSApplication;
+#[cfg(target_os = "macos")]
+use objc2_core_services::{
+    kAnyTransactionID, kAutoGenerateReturnID, keyErrorNumber, keyErrorString,
+};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{
+    NSAppleEventDescriptor, NSAppleEventSendOptions, NSAppleScript, NSString,
+};
 use serde_json::{json, Value};
+#[cfg(target_os = "macos")]
+use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -559,6 +569,25 @@ fn queue_editor_performance(
         epoch_ms: epoch_ms(),
         elapsed_ms,
         generation,
+        details,
+    });
+}
+
+fn queue_editor_performance_at_epoch(
+    host: OfficeHost,
+    session_id: &str,
+    stage: impl Into<String>,
+    record_epoch_ms: u64,
+    details: Value,
+) {
+    let _ = performance_logger().send(OfficeEditorPerformanceRecord {
+        schema: "visualtex-office-editor-performance-v1",
+        session_id: session_id.to_string(),
+        host,
+        stage: stage.into(),
+        epoch_ms: record_epoch_ms,
+        elapsed_ms: 0.0,
+        generation: None,
         details,
     });
 }
@@ -3155,6 +3184,14 @@ pub fn close_macos_offline_office_editor_window(
     // interaction. Explicitly return the foreground application to the Office
     // host without changing the visibility of the user's main workspace.
     restore_office_host_focus(host);
+    queue_editor_performance(
+        host,
+        &session_id,
+        "editor-visible-complete",
+        0.0,
+        Some(generation),
+        json!({ "parked": true, "officeFocusRequested": true }),
+    );
     if !has_open_office_editor(&app) {
         restore_main_window_level_after_office_editor(&app)?;
     }
@@ -3421,12 +3458,11 @@ fn dynamic_dispatch_text(entries: &[(String, String)]) -> Result<String, String>
     Ok(output)
 }
 
-fn run_vba_callback(host: OfficeHost) -> Result<(), String> {
-    let script = match host {
+fn vba_callback_script(host: OfficeHost) -> &'static str {
+    match host {
         OfficeHost::Word => {
             r#"with timeout of 1800 seconds
 tell application "Microsoft Word"
-if not (exists active document) then error "Microsoft Word has no active document"
 run VB macro macro name "VisualTeX_ApplyPendingResult"
 end tell
 end timeout"#
@@ -3437,8 +3473,37 @@ if not (exists active presentation) then error "Microsoft PowerPoint has no acti
 run VB macro macro name "VisualTeX_ApplyPendingResult" list of parameters {}
 end tell"#
         }
+    }
+}
+
+fn run_vba_callback(host: OfficeHost) -> Result<(), String> {
+    run_office_vba_script(vba_callback_script(host), "Office VBA callback")
+}
+
+fn run_vba_callback_on_main_thread(
+    app: Option<&AppHandle>,
+    host: OfficeHost,
+) -> Result<(), String> {
+    let Some(app) = app else {
+        return run_vba_callback(host);
     };
-    run_office_vba_script(script, "Office VBA callback")
+    if host == OfficeHost::Word {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = sender.send(execute_word_vba_apple_event());
+        })
+        .map_err(|error| format!("Unable to schedule the Office VBA callback: {error}"))?;
+        return receiver
+            .recv_timeout(Duration::from_secs(1_800))
+            .map_err(|error| {
+                format!("The Office VBA callback main-thread callback did not finish: {error}")
+            })?;
+    }
+    run_office_vba_script_on_main_thread(
+        app,
+        vba_callback_script(host),
+        "Office VBA callback",
+    )
 }
 
 pub(crate) fn run_double_click_edit_macro(host: OfficeHost) -> Result<(), String> {
@@ -3469,7 +3534,7 @@ end tell"#,
     )
 }
 
-fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
+fn run_office_vba_script_subprocess(script: &str, label: &str) -> Result<(), String> {
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -3485,6 +3550,127 @@ fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
             format!("The {label} failed: {detail}")
         })
     }
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    // NSAppleScript is main-thread-bound in practice. Keep compiled callback
+    // programs in a main-thread local cache instead of paying ~0.5 s to compile
+    // the same Word/PowerPoint Apply script on every formula edit.
+    static OFFICE_VBA_APPLESCRIPT_CACHE: RefCell<Vec<(String, Retained<NSAppleScript>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(target_os = "macos")]
+fn execute_office_vba_apple_script(script: &str, label: &str) -> Result<(), String> {
+    OFFICE_VBA_APPLESCRIPT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let compiled_index = if let Some(index) = cache
+            .iter()
+            .position(|(cached_source, _)| cached_source == script)
+        {
+            index
+        } else {
+            let source = NSString::from_str(script);
+            let Some(compiled_script) =
+                NSAppleScript::initWithSource(NSAppleScript::alloc(), &source)
+            else {
+                return Err(format!("Unable to initialize the {label}"));
+            };
+            let mut compilation_error = None;
+            if !unsafe { compiled_script.compileAndReturnError(Some(&mut compilation_error)) } {
+                return Err(format!(
+                    "Unable to compile the {label}: {compilation_error:?}"
+                ));
+            }
+            cache.push((script.to_string(), compiled_script));
+            cache.len() - 1
+        };
+
+        let compiled_script = &cache[compiled_index].1;
+        let mut execution_error = None;
+        let _result = unsafe { compiled_script.executeAndReturnError(Some(&mut execution_error)) };
+        if let Some(error) = execution_error {
+            Err(format!("The {label} failed: {error:?}"))
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+const fn apple_event_code(code: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*code)
+}
+
+#[cfg(target_os = "macos")]
+fn execute_word_vba_apple_event() -> Result<(), String> {
+    // Word publishes this command as sWRD/1149 with the macro-name parameter
+    // 5112 in Word.sdef. Sending that event directly avoids the fixed
+    // NSAppleScript execution overhead while invoking the identical VBA entry.
+    let bundle_id = NSString::from_str("com.microsoft.Word");
+    let target = NSAppleEventDescriptor::descriptorWithBundleIdentifier(&bundle_id);
+    let event = NSAppleEventDescriptor::appleEventWithEventClass_eventID_targetDescriptor_returnID_transactionID(
+        apple_event_code(b"sWRD"),
+        apple_event_code(b"1149"),
+        Some(&target),
+        kAutoGenerateReturnID as i16,
+        kAnyTransactionID,
+    );
+    let macro_name = NSString::from_str("VisualTeX_ApplyPendingResult");
+    let macro_descriptor = NSAppleEventDescriptor::descriptorWithString(&macro_name);
+    event.setParamDescriptor_forKeyword(&macro_descriptor, apple_event_code(b"5112"));
+    let reply = event
+        .sendEventWithOptions_timeout_error(NSAppleEventSendOptions::DefaultOptions, 1_800.0)
+        .map_err(|error| format!("The Office VBA callback failed: {error}"))?;
+    if let Some(error_number) = reply.paramDescriptorForKeyword(keyErrorNumber) {
+        let code = error_number.int32Value();
+        if code != 0 {
+            let detail = reply
+                .paramDescriptorForKeyword(keyErrorString)
+                .and_then(|descriptor| descriptor.stringValue())
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "Microsoft Word returned an Apple Event error".to_string());
+            return Err(format!("The Office VBA callback failed ({code}): {detail}"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn run_office_vba_script_on_main_thread(
+    app: &AppHandle,
+    script: &str,
+    label: &str,
+) -> Result<(), String> {
+    // NSAppleScript may wait indefinitely when instantiated on a Tauri worker
+    // thread. Dispatch its complete compile/execute lifetime to AppKit's main
+    // thread, then return only the owned Result through a bounded channel.
+    let script = script.to_string();
+    let label = label.to_string();
+    let callback_label = label.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let result = execute_office_vba_apple_script(&script, &callback_label);
+        let _ = sender.send(result);
+    })
+    .map_err(|error| format!("Unable to schedule the {label}: {error}"))?;
+    receiver
+        .recv_timeout(Duration::from_secs(1_800))
+        .map_err(|error| format!("The {label} main-thread callback did not finish: {error}"))?
+}
+
+fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
+    run_office_vba_script_subprocess(script, label)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn run_office_vba_script_on_main_thread(
+    _app: &AppHandle,
+    script: &str,
+    label: &str,
+) -> Result<(), String> {
+    run_office_vba_script_subprocess(script, label)
 }
 
 fn with_dispatch_pointer<T>(
@@ -4277,6 +4463,7 @@ fn materialize_powerpoint_svg(session: &OfficeFormulaSession) -> Result<PathBuf,
 }
 
 fn commit_word(
+    app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
     session: &OfficeFormulaSession,
     metadata: &str,
@@ -4462,7 +4649,7 @@ fn commit_word(
         json!({}),
     );
     with_dispatch_pointer(OfficeHost::Word, &session.id, || {
-        run_vba_callback(OfficeHost::Word)
+        run_vba_callback_on_main_thread(app, OfficeHost::Word)
     })?;
     queue_editor_performance(
         OfficeHost::Word,
@@ -6111,7 +6298,14 @@ fn commit_session_blocking(
             metadata.reference_height_pt = Some(geometry.reference_height_pt);
             metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
             let encoded = encode_metadata(&metadata)?;
-            commit_word(&request, &session, &encoded, &metadata.latex, geometry)
+            commit_word(
+                state.app.as_ref(),
+                &request,
+                &session,
+                &encoded,
+                &metadata.latex,
+                geometry,
+            )
         }
         OfficeHost::Powerpoint => {
             let powerpoint = request
@@ -6384,11 +6578,31 @@ pub fn delete_macos_offline_office_session(
 pub async fn commit_macos_offline_office_session(
     session_id: String,
     patch: Option<Value>,
+    apply_started_epoch_ms: Option<u64>,
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> Result<OfficeFormulaSession, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         validate_uuid(&session_id, "Session id")?;
+        if let Some(started_epoch_ms) = apply_started_epoch_ms {
+            let now = epoch_ms();
+            if started_epoch_ms > 0
+                && started_epoch_ms <= now
+                && now - started_epoch_ms <= 60_000
+            {
+                let session = state
+                    .session_store
+                    .get(&session_id)
+                    .map_err(|error| error.to_string())?;
+                queue_editor_performance_at_epoch(
+                    session.host,
+                    &session_id,
+                    "apply-ui-start",
+                    started_epoch_ms,
+                    json!({}),
+                );
+            }
+        }
         if let Some(patch) = patch {
             state
                 .session_store

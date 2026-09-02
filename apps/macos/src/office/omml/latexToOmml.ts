@@ -1039,7 +1039,7 @@ function utf8ToBase64Url(value: string) {
   return bytesToBase64Url(new TextEncoder().encode(value));
 }
 
-function minimalDocxBytes(omml: string) {
+function minimalDocxBytes(omml: string, displayMode: OmmlDisplayMode) {
   const contentTypes =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
@@ -1052,10 +1052,14 @@ function minimalDocxBytes(omml: string) {
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
     "</Relationships>";
+  const mathBody =
+    displayMode === "block"
+      ? `<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${omml}</m:oMathPara>`
+      : omml;
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     `<w:document xmlns:w="${WORD_NAMESPACE}" xmlns:m="${MATH_NAMESPACE}">` +
-    `<w:body><w:p>${omml}</w:p><w:sectPr/></w:body>` +
+    `<w:body><w:p>${mathBody}</w:p><w:sectPr/></w:body>` +
     "</w:document>";
 
   return zipSync(
@@ -1122,6 +1126,6 @@ export function latexLinesToOmmlArtifacts(
   return {
     omml,
     ommlBase64: utf8ToBase64Url(omml),
-    ommlDocxBase64: bytesToBase64Url(minimalDocxBytes(omml)),
+    ommlDocxBase64: bytesToBase64Url(minimalDocxBytes(omml, displayMode)),
   };
 }

@@ -959,7 +959,8 @@ expectIncludes(wordAdapter, "Private Const VT_WORD_TRACE_ENABLED As Boolean = Fa
 expectIncludes(wordAdapter, "If Not VT_WORD_TRACE_ENABLED Then Exit Sub", "Disabled Word tracing must return before touching the document or log");
 expectIncludes(wordAdapter, "VTValidateOmmlFragment ommlXml", "Word must validate structural OMML before inserting it");
 expect(!wordAdapter.includes("targetRange.Document.OMaths.Add(insertionRange)"), "Word native conversion must not recreate formulas through the broken UnicodeMath linear path");
-expectIncludes(wordAdapter, "If displayMode = \"block\" And Not numbered Then", "Every unnumbered display OMML create or edit must begin with a safe inline transaction Range");
+expectIncludes(wordAdapter, "nativeDisplayMode = displayMode", "Unnumbered display OMML replacement must preserve the staging DOCX display identity");
+expectIncludes(wordAdapter, "If numbered Then nativeDisplayMode = \"inline\"", "Only numbered display OMML may enter the explicit inline numbering transaction");
 expectIncludes(wordAdapter, "Set nativeEquationRange = VTResolveNativeEquationRange", "Word must re-resolve OMath after deleting an adjacent source object");
 expectIncludes(wordAdapter, "VTPromoteNativeEquationToDisplay", "Unnumbered display OMML must become display math only after state storage and source-object removal");
 expectIncludes(wordAdapter, "Private Function VTOMathTableVisualAdvance", "The real-host OMML size regression must compare inline and display math in identical table structures");

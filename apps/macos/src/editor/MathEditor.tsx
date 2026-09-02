@@ -5803,13 +5803,19 @@ function FormulaField(props: FormulaFieldProps) {
         traceVisualTexIme("inner.confirmRawNativeCommand.no-raw", field, event);
         return false;
       }
+      const exactAtomicCommand = findRuntimeCommandByCommand(rawQuery);
+      const exactAtomicCommandName =
+        exactAtomicCommand?.insertTemplate === rawQuery ? rawQuery : "";
       const selectedNativeCommand =
+        exactAtomicCommandName ||
         field.dataset.pendingNativeSuggestion ||
         getVisibleNativeSuggestionItems(field).find((item) =>
           item.classList.contains("ML__popover__current"),
         )?.dataset.command ||
         "";
-      // A raw query such as `\\bet` is only a prefix. Commit the complete
+      // An exact atomic command such as `\\bmod` must win over a stale or
+      // personalized prefix candidate (for example `\\mathbf`). For a prefix
+      // such as `\\bet`, commit the complete command selected by MathLive
       // command selected by MathLive (for example `\\beta`), not the prefix
       // itself. If the native list has no selected item, let MathLive handle
       // the key instead of turning an incomplete query into an error atom.

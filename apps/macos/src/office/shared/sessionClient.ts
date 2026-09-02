@@ -251,10 +251,11 @@ export function deleteOfficeSession(sessionId: string) {
 export function commitMacosOfflineOfficeSession(
   sessionId: string,
   update?: UpdateOfficeSessionInput,
+  applyStartedEpochMs?: number,
 ) {
   return invokeTauri<OfficeFormulaSession>(
     "commit_macos_offline_office_session",
-    { sessionId, patch: update },
+    { sessionId, patch: update, applyStartedEpochMs },
   );
 }
 

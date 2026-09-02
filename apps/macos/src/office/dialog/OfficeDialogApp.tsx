@@ -1652,6 +1652,7 @@ export function OfficeDialogApp() {
     // Keep a synchronous guard as well so a rapid double-click cannot enqueue
     // two commits for the same Office Session.
     if (finalizingRef.current) return false;
+    const applyStartedEpochMs = Date.now();
     historyManager.commitPendingTransaction();
     if (!latex.trim()) {
       setToast(isEn ? "Enter a formula before inserting" : "请输入公式后再插入");
@@ -1663,7 +1664,11 @@ export function OfficeDialogApp() {
       if (isMacosOfflineTauriTransport()) {
         if (!session) throw new Error("Office Session 尚未加载。");
         const update = await buildCurrentSessionUpdate("committing");
-        await commitMacosOfflineOfficeSession(session.id, update);
+        await commitMacosOfflineOfficeSession(
+          session.id,
+          update,
+          applyStartedEpochMs,
+        );
         lastSavedFingerprintRef.current = currentFingerprint;
         if (activeSessionKeyRef.current !== targetSessionKey) return false;
         try {

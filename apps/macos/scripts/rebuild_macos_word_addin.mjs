@@ -40,6 +40,7 @@ const outputPath = resolve(
 );
 const outputDocumentName = basename(outputPath);
 const keepWordOpenOnError = process.argv.includes("--keep-word-open-on-error");
+const preserveWord = process.argv.includes("--preserve-word");
 const buildLockRoot = join(scratchRoot, "VisualTeXWordBuild.lock");
 const buildLockOwnerPath = join(buildLockRoot, "pid");
 const offlineOfficeRoot = join(repositoryRoot, "office", "macos-offline");
@@ -66,6 +67,12 @@ for (const moduleName of requestedModuleNames) {
   }
 }
 const incrementalBuild = requestedModuleNames.size > 0;
+// Preserve mode may use an incremental copy of the reviewed DOTM. The
+// production Startup add-in is temporarily unloaded while that isolated copy is
+// edited, then restored before the user's Word document snapshot is checked.
+if (preserveWord && outputPath === basePath) {
+  throw new Error("--preserve-word requires an isolated --output path");
+}
 const selectedWordModuleSources = incrementalBuild
   ? wordModuleSources.filter(([moduleName]) => requestedModuleNames.has(moduleName))
   : wordModuleSources;
@@ -282,6 +289,207 @@ function closeWordWithoutSaving() {
     .filter(Boolean);
   for (const pid of pids) bestEffort("/bin/kill", ["-9", pid]);
   sleep(1_500);
+}
+
+function wordVisualTeXAddinInstalled() {
+  const value = bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "Microsoft Word"',
+    "-e",
+    'if not (exists add in "VisualTeX.dotm") then return "MISSING"',
+    "-e",
+    'return installed of add in "VisualTeX.dotm" as text',
+    "-e",
+    "end tell",
+  ], { timeout: 20_000 }).trim();
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+function setWordVisualTeXAddinInstalled(installed) {
+  if (installed === null) return;
+  run("/usr/bin/osascript", [
+    "-e",
+    'tell application "Microsoft Word"',
+    "-e",
+    'if not (exists add in "VisualTeX.dotm") then error "The production VisualTeX add-in is missing"',
+    "-e",
+    `set installed of add in "VisualTeX.dotm" to ${installed ? "true" : "false"}`,
+    "-e",
+    "end tell",
+  ], { timeout: 20_000 });
+}
+
+function wordDocumentSnapshot() {
+  const raw = osascript([
+    'tell application "Microsoft Word"',
+    'set output to ""',
+    'set documentCount to count of documents',
+    'repeat with documentIndex from 1 to documentCount',
+    'set documentObject to document documentIndex',
+    'set fullNameText to ""',
+    'try',
+    'set fullNameText to full name of documentObject as text',
+    'end try',
+    'set output to output & (name of documentObject as text) & (ASCII character 31) & (saved of documentObject as text) & (ASCII character 31) & fullNameText',
+    'if documentIndex is less than documentCount then set output to output & linefeed',
+    'end repeat',
+    'return output',
+    'end tell',
+  ], 30_000);
+  if (!raw.trim()) return [];
+  return raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [name, saved, fullName = ""] = line.split("\x1f");
+      return { name, saved: saved === "true", fullName };
+    })
+    .sort((left, right) =>
+      `${left.name}\x1f${left.fullName}`.localeCompare(
+        `${right.name}\x1f${right.fullName}`,
+      ),
+    );
+}
+
+function dismissVbeFileDialogIfOpen() {
+  bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "System Events"',
+    "-e",
+    'if not (exists process "Microsoft Word") then return "NO_WORD"',
+    "-e",
+    'tell process "Microsoft Word"',
+    "-e",
+    'repeat with candidateWindow in windows',
+    "-e",
+    "try",
+    "-e",
+    'set candidateName to name of candidateWindow as text',
+    "-e",
+    'if candidateName starts with "导入文件" or candidateName starts with "Import File" then',
+    "-e",
+    'perform action "AXRaise" of candidateWindow',
+    "-e",
+    "delay 0.2",
+    "-e",
+    "key code 53",
+    "-e",
+    "delay 0.5",
+    "-e",
+    'return "CLOSED"',
+    "-e",
+    "end if",
+    "-e",
+    "end try",
+    "-e",
+    "end repeat",
+    "-e",
+    'return "NO_DIALOG"',
+    "-e",
+    "end tell",
+    "-e",
+    "end tell",
+  ], { timeout: 15_000 });
+}
+
+function dismissVbeWarningDialogsIfOpen() {
+  bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "System Events"',
+    "-e",
+    'if not (exists process "Microsoft Word") then return "NO_WORD"',
+    "-e",
+    'tell process "Microsoft Word"',
+    "-e",
+    "set frontmost to true",
+    "-e",
+    "repeat 12 times",
+    "-e",
+    "set warningWindow to missing value",
+    "-e",
+    "repeat with candidateWindow in windows",
+    "-e",
+    "try",
+    "-e",
+    'if description of candidateWindow is "警告" or description of candidateWindow is "Warning" then',
+    "-e",
+    "set warningWindow to candidateWindow",
+    "-e",
+    "exit repeat",
+    "-e",
+    "end if",
+    "-e",
+    "end try",
+    "-e",
+    "end repeat",
+    "-e",
+    "if warningWindow is missing value then exit repeat",
+    "-e",
+    'perform action "AXRaise" of warningWindow',
+    "-e",
+    'if exists button "确定" of warningWindow then click button "确定" of warningWindow',
+    "-e",
+    'if exists button "OK" of warningWindow then click button "OK" of warningWindow',
+    "-e",
+    "delay 0.25",
+    "-e",
+    "end repeat",
+    "-e",
+    'return "DONE"',
+    "-e",
+    "end tell",
+    "-e",
+    "end tell",
+  ], { timeout: 20_000 });
+}
+
+function closeVbeWindowIfOpen() {
+  bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "System Events"',
+    "-e",
+    'if not (exists process "Microsoft Word") then return "NO_WORD"',
+    "-e",
+    'tell process "Microsoft Word"',
+    "-e",
+    'repeat with candidateWindow in windows',
+    "-e",
+    "try",
+    "-e",
+    'if name of candidateWindow contains "Microsoft Visual Basic" then',
+    "-e",
+    'if exists (first button of candidateWindow whose subrole is "AXCloseButton") then click (first button of candidateWindow whose subrole is "AXCloseButton")',
+    "-e",
+    "delay 0.5",
+    "-e",
+    'return "CLOSED"',
+    "-e",
+    "end if",
+    "-e",
+    "end try",
+    "-e",
+    "end repeat",
+    "-e",
+    'return "NO_VBE"',
+    "-e",
+    "end tell",
+    "-e",
+    "end tell",
+  ], { timeout: 15_000 });
+}
+
+function closeBuildDocumentWithoutSaving() {
+  bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "Microsoft Word"',
+    "-e",
+    `if exists document ${JSON.stringify(outputDocumentName)} then close (document ${JSON.stringify(outputDocumentName)}) saving no`,
+    "-e",
+    "end tell",
+  ], { timeout: 20_000 });
+  sleep(500);
 }
 
 function waitForWordUiReady() {
@@ -545,7 +753,12 @@ function openModuleCodeWindow(moduleName) {
     "end try",
     "end if",
     "end repeat",
-    'if openedCode is false then error "Unable to find View > Code in either Chinese or English."',
+    "if openedCode is false then",
+    // F7 is VBE's locale-independent View Code command. Some recent Word for
+    // Mac builds expose the project row but omit View > Code from AX menus.
+    "key code 98",
+    "set openedCode to true",
+    "end if",
     "delay 0.7",
     "end tell",
     "end tell",
@@ -600,6 +813,46 @@ function removeVbaModule(moduleName) {
   ]);
 }
 
+function replaceVbaModuleSourceText(moduleName, modulePath) {
+  const editableSource = readFileSync(modulePath, "utf8")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("Attribute "))
+    .join("\r");
+  if (!editableSource.trim()) {
+    throw new Error(`VBA module source is empty: ${modulePath}`);
+  }
+  openModuleCodeWindow(moduleName);
+  const clipboard = spawnSync("/usr/bin/pbcopy", [], {
+    input: editableSource,
+    encoding: "utf8",
+  });
+  if (clipboard.status !== 0) {
+    throw new Error(
+      clipboard.stderr?.trim() || `Unable to stage ${moduleName} source on the clipboard`,
+    );
+  }
+  osascript([
+    'tell application "Microsoft Word" to activate',
+    'delay 0.3',
+    'tell application "System Events"',
+    'tell process "Microsoft Word"',
+    'set frontmost to true',
+    'set vbeWindow to first window whose name contains "Microsoft Visual Basic"',
+    'perform action "AXRaise" of vbeWindow',
+    'delay 0.2',
+    // openModuleCodeWindow() leaves the code pane as the keyboard target. The
+    // Mac VBE does not expose that pane as AXTextArea, so use its native editor
+    // shortcuts instead of relying on an accessibility role that is absent.
+    'keystroke "a" using {command down}',
+    'delay 0.1',
+    'keystroke "v" using {command down}',
+    'delay 2',
+    'end tell',
+    'end tell',
+  ], 60_000);
+}
+
 function importVbaModule(modulePath) {
   openVbeWindow();
   osascript([
@@ -625,15 +878,37 @@ function importVbaModule(modulePath) {
     "end if",
     "end repeat",
     'if openedImport is false then error "Unable to find File > Import File in either Chinese or English."',
-    "delay 0.9",
+    "delay 0.4",
+    "set importWindow to missing value",
+    "repeat with candidateWindow in windows",
+    "try",
+    "set candidateName to name of candidateWindow as text",
+    'if candidateName starts with "导入文件" or candidateName starts with "Import File" then',
+    "set importWindow to candidateWindow",
+    "exit repeat",
+    "end if",
+    "end try",
+    "end repeat",
+    'if importWindow is missing value then error "The VBE Import File dialog did not appear."',
+    'perform action "AXRaise" of importWindow',
+    "delay 0.3",
     'keystroke "g" using {command down, shift down}',
     "delay 0.6",
     'set pathField to value of attribute "AXFocusedUIElement"',
     `set value of pathField to ${JSON.stringify(modulePath)}`,
     "key code 36",
     "delay 0.9",
+    'perform action "AXRaise" of importWindow',
     "key code 36",
     "delay 1.5",
+    "set importDialogStillOpen to false",
+    "repeat with candidateWindow in windows",
+    "try",
+    "set candidateName to name of candidateWindow as text",
+    'if candidateName starts with "导入文件" or candidateName starts with "Import File" then set importDialogStillOpen to true',
+    "end try",
+    "end repeat",
+    'if importDialogStillOpen then error "The VBE Import File dialog remained open after selecting the module."',
     "end tell",
     "end tell",
   ], 60_000);
@@ -763,10 +1038,34 @@ function compileVbaProject() {
   );
 }
 
+function runIsolatedVbaCompileProbe() {
+  closeVbeWindowIfOpen();
+  const result = osascript([
+    'tell application "Microsoft Word"',
+    `if not (exists document ${JSON.stringify(outputDocumentName)}) then error "The isolated Word template is not open"`,
+    `activate object document ${JSON.stringify(outputDocumentName)}`,
+    'activate',
+    `run VB macro macro name ${JSON.stringify(`${outputDocumentName}!VisualTeX_PerformanceNoop`)}`,
+    'return "PASS"',
+    'end tell',
+  ], 60_000).trim();
+  if (result !== "PASS") {
+    throw new Error(`The isolated Word VBA compile probe returned ${result}`);
+  }
+}
+
 function replaceAndCompileAdapter() {
   for (const [moduleName, modulePath] of selectedWordModuleSources) {
-    if (incrementalBuild) removeVbaModule(moduleName);
-    importVbaModule(modulePath);
+    if (preserveWord && incrementalBuild) {
+      replaceVbaModuleSourceText(moduleName, modulePath);
+    } else {
+      if (incrementalBuild) removeVbaModule(moduleName);
+      importVbaModule(modulePath);
+    }
+  }
+  if (preserveWord && incrementalBuild) {
+    runIsolatedVbaCompileProbe();
+    return;
   }
   const compileAnchor = requestedModuleNames.has("VTWordAdapter")
     ? "VTWordAdapter"
@@ -915,6 +1214,7 @@ function verifyBuiltVba(path) {
     "VisualTeX_EditImageField",
     "VisualTeX_EditSelectedImageFromNativeMonitor",
     "VTEnsureVisualTeXImageMacroButton",
+    "VTNativeMathFastSignature",
     "word-office-performance-20260801-r87",
     "1.2.5",
   ];
@@ -933,15 +1233,35 @@ mkdirSync(dirname(outputPath), { recursive: true });
 if (!existsSync(basePath)) throw new Error(`Base Word template is missing: ${basePath}`);
 
 const originalTrust = readVbaTrust();
+const originalDocumentSnapshot = preserveWord ? wordDocumentSnapshot() : [];
+const originalVisualTeXAddinInstalled = preserveWord
+  ? wordVisualTeXAddinInstalled()
+  : null;
 let buildSucceeded = false;
 try {
-  closeWordWithoutSaving();
-  moveStartupTemplatesOut();
-  if (!incrementalBuild) moveNormalTemplateOut();
-  setVbaTrust(true);
+  if (preserveWord) {
+    if (!originalTrust.enabled) {
+      throw new Error(
+        "--preserve-word requires VBAObjectModelIsTrusted to be enabled before the build",
+      );
+    }
+    dismissVbeFileDialogIfOpen();
+    dismissVbeWarningDialogsIfOpen();
+    closeVbeWindowIfOpen();
+    if (incrementalBuild && originalVisualTeXAddinInstalled === true) {
+      setWordVisualTeXAddinInstalled(false);
+    }
+  } else {
+    closeWordWithoutSaving();
+    moveStartupTemplatesOut();
+    if (!incrementalBuild) moveNormalTemplateOut();
+    setVbaTrust(true);
+  }
   rmSync(outputPath, { force: true });
 
-  run("/usr/bin/open", ["-gj", "-a", "Microsoft Word"]);
+  if (!preserveWord) {
+    run("/usr/bin/open", ["-gj", "-a", "Microsoft Word"]);
+  }
   waitForWordUiReady();
   if (incrementalBuild) {
     copyFileSync(basePath, outputPath);
@@ -968,7 +1288,14 @@ try {
     "end tell",
   ]);
   sleep(2_500);
-  closeWordWithoutSaving();
+  if (preserveWord) {
+    dismissVbeFileDialogIfOpen();
+    dismissVbeWarningDialogsIfOpen();
+    closeVbeWindowIfOpen();
+    closeBuildDocumentWithoutSaving();
+  } else {
+    closeWordWithoutSaving();
+  }
   verifyBuiltVba(outputPath);
 
   const size = statSync(outputPath).size;
@@ -978,9 +1305,27 @@ try {
   process.stdout.write(`Rebuilt and VBE-compiled ${outputPath} (${size} bytes).\n`);
   buildSucceeded = true;
 } finally {
-  if (buildSucceeded || !keepWordOpenOnError) closeWordWithoutSaving();
-  if (!incrementalBuild) restoreNormalTemplate();
-  restoreStartupTemplates();
-  restoreVbaTrust(originalTrust);
-  releaseBuildLock();
+  if (preserveWord) {
+    dismissVbeFileDialogIfOpen();
+    dismissVbeWarningDialogsIfOpen();
+    closeVbeWindowIfOpen();
+    closeBuildDocumentWithoutSaving();
+    setWordVisualTeXAddinInstalled(originalVisualTeXAddinInstalled);
+    const finalDocumentSnapshot = wordDocumentSnapshot();
+    releaseBuildLock();
+    if (
+      JSON.stringify(finalDocumentSnapshot) !==
+      JSON.stringify(originalDocumentSnapshot)
+    ) {
+      throw new Error(
+        `The isolated DOTM build changed the user's open Word documents: ${JSON.stringify({ originalDocumentSnapshot, finalDocumentSnapshot })}`,
+      );
+    }
+  } else {
+    if (buildSucceeded || !keepWordOpenOnError) closeWordWithoutSaving();
+    if (!incrementalBuild) restoreNormalTemplate();
+    restoreStartupTemplates();
+    restoreVbaTrust(originalTrust);
+    releaseBuildLock();
+  }
 }

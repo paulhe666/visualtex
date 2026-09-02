@@ -561,6 +561,10 @@ async function main() {
       { encoding: "utf8" },
     );
     expectIncludes(documentXml, "<m:f>", "Generated DOCX must contain the structural fraction.");
+    expect(
+      !documentXml.includes("<m:oMathPara>"),
+      "Inline OMML staging DOCX must not introduce a display-math paragraph.",
+    );
 
     const integralDocxPath = join(docxDirectory, "integral.docx");
     await writeFile(integralDocxPath, Buffer.from(integralDocxBase64, "base64url"));
@@ -572,6 +576,11 @@ async function main() {
     );
     expectIncludes(integralDocumentXml, "<m:nary>", "Generated integral DOCX must contain a structural n-ary object.");
     expectIncludes(integralDocumentXml, '<m:chr m:val="∫"/>', "Generated integral DOCX must retain the integral operator.");
+    expectIncludes(
+      integralDocumentXml,
+      '<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>',
+      "Display OMML staging DOCX must preserve a native centered oMathPara.",
+    );
 
     const sumFractionDocxPath = join(docxDirectory, "sum-fraction.docx");
     await writeFile(sumFractionDocxPath, Buffer.from(sumFractionDocxBase64, "base64url"));
