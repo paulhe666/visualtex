@@ -309,6 +309,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _nativeOleTargetTop;
     private int _nativeOleTargetRight;
     private int _nativeOleTargetBottom;
+    private int _nativeOleTargetRangeStart = -1;
+    private int _nativeOleTargetRangeEnd = -1;
+    private int _pendingNativeMathTypeRangeStart = -1;
+    private int _pendingNativeMathTypeRangeEnd = -1;
+    private int _claimedNativeMathTypeRangeStart = -1;
+    private int _claimedNativeMathTypeRangeEnd = -1;
+    private DateTimeOffset _claimedNativeMathTypeAt;
     private bool _mouseDoubleClickPointActive;
     private int _mouseDoubleClickX;
     private int _mouseDoubleClickY;
@@ -1006,11 +1013,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // activating its IDataObject on a single click can synchronously open
             // the external OLE server. Cache MathType's rectangle using only its
             // ProgID/CLSID and defer content import until the actual double-click.
-            // Cache MathType geometry regardless of the preference value. When
-            // VisualTeX double-click editing is disabled we still need the exact
-            // Equation.DSMT4 hit rectangle so the low-level hook can deterministically
-            // invoke MathType's native Open verb instead of relying on Word's flaky
-            // built-in OLE double-click activation.
+            // Cache MathType geometry regardless of the preference value. The
+            // first physical click selects the Equation.DSMT4 OLE; defer any content
+            // import until the actual double-click and retain only its range/rect.
             var isMathTypeOle = service.IsSelectedMathTypeOle();
             OfficeSelection? selected = null;
             if (!isMathTypeOle)
@@ -1058,6 +1063,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 _nativeOleTargetTop = top - padding;
                 _nativeOleTargetRight = left + width + padding;
                 _nativeOleTargetBottom = top + height + padding;
+                _nativeOleTargetRangeStart = range.Start;
+                _nativeOleTargetRangeEnd = range.End;
                 _nativeOleTargetIsMathType = isMathTypeOle;
                 _nativeOleTargetActive = true;
             }
@@ -1081,23 +1088,34 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            // MathType OLE double-click has two explicit modes. When VisualTeX
+            // MathType OLE double-click has two explicit owners. When VisualTeX
             // editing is enabled, the hook observes the native OLE and this Word
             // event is a synchronous fallback that opens VisualTeX. When disabled,
-            // a healthy hook suppresses the second button-down and explicitly runs
-            // MathType's native Open verb; only if the hook is unavailable do we
-            // release the full double-click back to Word.
+            // VisualTeX must not cancel, suppress, replay or asynchronously inspect
+            // the double-click: Word and MathType receive the native gesture alone.
             var selectedMathTypeOle = _formulaService?.IsSelectedMathTypeOle() == true;
             if (selectedMathTypeOle)
             {
                 if (!MathTypeDoubleClickPreference.IsEnabled())
                 {
-                    cancel = _doubleClickHook is not null;
+                    // The hook object merely being alive does not prove that it
+                    // claimed this physical double-click. After inserting another
+                    // formula its cached rectangle can still refer to the newly
+                    // created Equation.DSMT4; a direct double-click on an older
+                    // formula then passes through the hook. Cancelling Word here in
+                    // that state creates a black hole: neither Word nor the hook
+                    // opens MathType. Cancel only when this selected equation
+                    // overlaps the short-lived range claim recorded by the hook for
+                    // the current gesture. Otherwise release Word's native behavior.
+                    var hookOwnsCurrentGesture =
+                        _doubleClickHook is not null
+                        && HasRecentClaimedNativeMathTypeGesture(selection);
+                    cancel = hookOwnsCurrentGesture;
                     if (!cancel) ClearNativeOleTarget();
                     WordDoubleClickHook.TraceMessage(
                         cancel
                             ? "window-before-double-click-mathtype-native-owned-by-hook"
-                            : "window-before-double-click-mathtype-released-to-native-editor");
+                            : "window-before-double-click-mathtype-released-to-native-editor-unclaimed");
                     return;
                 }
 
@@ -1188,11 +1206,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 if (!MathTypeDoubleClickPreference.IsEnabled())
                 {
-                    // Native MathType mode is explicit rather than passive. Word's
-                    // own Equation.DSMT4 double-click activation is intermittent on
-                    // Office 2021; suppress this second button-down and let the UI
-                    // callback invoke wdOLEVerbOpen exactly once.
-                    return WordDoubleClickHook.NativeOleDecision.InterceptNativeOle;
+                    // Word 2021 can consume a released Equation.DSMT4 double-click
+                    // without opening MathType or raising WindowBeforeDoubleClick.
+                    // Suppress only the second button-down so Word cannot start a
+                    // competing OLE activation; the callback below schedules exactly
+                    // one native Open verb on a later Office UI turn. Freeze the
+                    // cached Word range now: numbered MathType paragraphs can move
+                    // Selection onto their REF/field text after the first click, so
+                    // the later callback must not rediscover identity from Selection.
+                    _pendingNativeMathTypeRangeStart = _nativeOleTargetRangeStart;
+                    _pendingNativeMathTypeRangeEnd = _nativeOleTargetRangeEnd;
+                    _claimedNativeMathTypeRangeStart = _nativeOleTargetRangeStart;
+                    _claimedNativeMathTypeRangeEnd = _nativeOleTargetRangeEnd;
+                    _claimedNativeMathTypeAt = DateTimeOffset.UtcNow;
+                    return WordDoubleClickHook.NativeOleDecision.OpenNativeOle;
                 }
 
                 // MathType must never enter the old black-hole state where the
@@ -1227,13 +1254,40 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             try
             {
                 if (interceptedNativeOle
-                    && !MathTypeDoubleClickPreference.IsEnabled()
-                    && service.IsSelectedMathTypeOle())
+                    && !MathTypeDoubleClickPreference.IsEnabled())
                 {
-                    var openedNative = service.OpenSelectedMathTypeNativeEditor();
+                    int targetStart;
+                    int targetEnd;
+                    lock (_nativeOleTargetGate)
+                    {
+                        targetStart = _pendingNativeMathTypeRangeStart;
+                        targetEnd = _pendingNativeMathTypeRangeEnd;
+                        if (targetStart >= 0 && targetEnd > targetStart)
+                        {
+                            _pendingNativeMathTypeRangeStart = -1;
+                            _pendingNativeMathTypeRangeEnd = -1;
+                        }
+                    }
+                    if (targetStart >= 0 && targetEnd > targetStart)
+                    {
+                        ClearNativeOleTarget();
+                        QueueNativeMathTypeEditorOpen(
+                            dispatcher,
+                            service,
+                            targetStart,
+                            targetEnd,
+                            screenX,
+                            screenY);
+                        return true;
+                    }
+                    // `interceptedNativeOle` also covers VisualTeX.Formula.1. A
+                    // disabled MathType preference must never swallow VisualTeX's
+                    // own OLE double-click just because both use the same low-level
+                    // hook callback. Only a frozen Equation.DSMT4 range proves that
+                    // this callback belongs to native MathType; otherwise continue
+                    // through the ordinary VisualTeX OLE edit route below.
                     WordDoubleClickHook.TraceMessage(
-                        $"addin-native-mathtype-open started={openedNative}");
-                    return openedNative;
+                        "addin-native-mathtype-open-not-applicable continue-native-ole-route");
                 }
 
                 var selected = interceptedNativeOle
@@ -1286,6 +1340,55 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
+    private static void QueueNativeMathTypeEditorOpen(
+        OfficeUiDispatcher dispatcher,
+        WordFormulaService service,
+        int targetStart,
+        int targetEnd,
+        int screenX,
+        int screenY)
+    {
+        const int delayMilliseconds = 300;
+        WordDoubleClickHook.TraceMessage(
+            $"addin-native-mathtype-open-scheduled delayMs={delayMilliseconds} "
+            + $"range={targetStart}:{targetEnd} x={screenX} y={screenY}");
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            Thread.Sleep(delayMilliseconds);
+            dispatcher.Post(() =>
+            {
+                try
+                {
+                    // The user may change the preference while Word's message queue
+                    // settles, but Selection is deliberately irrelevant here. A
+                    // numbered MathType paragraph can move Selection onto its REF or
+                    // field text after the first click even though the double-click
+                    // unquestionably hit the OLE. Re-resolve the frozen range and
+                    // verify the original screen point before invoking the native verb.
+                    if (MathTypeDoubleClickPreference.IsEnabled())
+                    {
+                        WordDoubleClickHook.TraceMessage(
+                            "addin-native-mathtype-open-skipped preference-changed");
+                        return;
+                    }
+
+                    var openedNative = service.OpenMathTypeNativeEditorAtRange(
+                        targetStart,
+                        targetEnd,
+                        screenX,
+                        screenY);
+                    WordDoubleClickHook.TraceMessage(
+                        $"addin-native-mathtype-open started={openedNative}");
+                }
+                catch (Exception error)
+                {
+                    WordDoubleClickHook.TraceMessage(
+                        $"addin-native-mathtype-open-error {error.GetType().Name}: {error.Message}");
+                }
+            });
+        });
+    }
+
     private bool TryBeginDoubleClickSession(OfficeSelection? selected)
     {
         var formulaId = selected?.FormulaId;
@@ -1314,6 +1417,34 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _lastDoubleClickAt = now;
         BeginSession("edit", null, null, capturedSelection: selected);
         return true;
+    }
+
+    private bool HasRecentClaimedNativeMathTypeGesture(Selection selection)
+    {
+        int targetStart;
+        int targetEnd;
+        DateTimeOffset claimedAt;
+        lock (_nativeOleTargetGate)
+        {
+            targetStart = _claimedNativeMathTypeRangeStart;
+            targetEnd = _claimedNativeMathTypeRangeEnd;
+            claimedAt = _claimedNativeMathTypeAt;
+        }
+        if (targetStart < 0
+            || targetEnd <= targetStart
+            || DateTimeOffset.UtcNow - claimedAt > TimeSpan.FromSeconds(1))
+            return false;
+
+        Range? range = null;
+        try
+        {
+            range = selection.Range;
+            if (range.Start == range.End)
+                return range.Start >= targetStart && range.Start <= targetEnd;
+            return range.Start < targetEnd && range.End > targetStart;
+        }
+        catch { return false; }
+        finally { ReleaseComObject(range); }
     }
 
     private void RememberMouseDoubleClickPoint(int screenX, int screenY)
@@ -1356,6 +1487,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _nativeOleTargetTop = 0;
             _nativeOleTargetRight = 0;
             _nativeOleTargetBottom = 0;
+            _nativeOleTargetRangeStart = -1;
+            _nativeOleTargetRangeEnd = -1;
         }
     }
 

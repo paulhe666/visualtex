@@ -830,6 +830,14 @@ internal static partial class Program
             {
                 RunWordSimpleFormatConversionNumberingAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-single-numbered-omml-to-visualtex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordSingleNumberedOmmlToVisualTeXAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-visualtex-numbered-roundtrip", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlVisualTeXNumberedRoundTripAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlMathTypeFormatConversionAcceptance(artifactRoot);
@@ -1887,7 +1895,18 @@ internal static partial class Program
         var consoleWindow = GetConsoleWindow();
         string? converterSessionId = null;
         var hookTracePath = Path.Combine(artifactRoot, "word-ole-hook-trace.log");
+        var previousOfficePreferencesPath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_OFFICE_PREFERENCES_PATH");
+        var isolatedPreferencesPath = Path.Combine(
+            artifactRoot,
+            "office-preferences-visualtex-ole-mathtype-disabled.json");
+        File.WriteAllText(
+            isolatedPreferencesPath,
+            "{\"powerpointDefaultFontSizePt\":20.0,\"mathtypeDoubleClickEditEnabled\":false}");
         Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", hookTracePath);
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_OFFICE_PREFERENCES_PATH",
+            isolatedPreferencesPath);
         try
         {
             Console.WriteLine("[Word real OLE 1/8] Starting visible Word...");
@@ -2235,6 +2254,9 @@ internal static partial class Program
         {
             if (consoleWindow != IntPtr.Zero) ShowWindow(consoleWindow, 5);
             Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", null);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_OFFICE_PREFERENCES_PATH",
+                previousOfficePreferencesPath);
             if (!string.IsNullOrWhiteSpace(converterSessionId))
             {
                 try

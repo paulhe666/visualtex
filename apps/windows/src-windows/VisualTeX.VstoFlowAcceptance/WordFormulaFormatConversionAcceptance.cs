@@ -10,8 +10,15 @@ internal static partial class Program
     private static void RunWordSimpleFormatConversionNumberingAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
-        var pngPath = Path.Combine(artifactRoot, "simple-format-conversion.png");
-        var svgPath = Path.Combine(artifactRoot, "simple-format-conversion.svg");
+        var olePreviewRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "simple-format-conversion-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(olePreviewRoot);
+        var pngPath = Path.Combine(olePreviewRoot, "simple-format-conversion.png");
+        var svgPath = Path.Combine(olePreviewRoot, "simple-format-conversion.svg");
         WriteAcceptancePng(pngPath, "x+1", 260, 96);
         File.WriteAllText(
             svgPath,
@@ -348,6 +355,59 @@ internal static partial class Program
             WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
                 previousDefaultNumberFormat);
             ForceComCleanup();
+            try { Directory.Delete(olePreviewRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static void RunWordOmmlVisualTeXNumberedRoundTripAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var olePreviewRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "omml-visualtex-numbered-roundtrip-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(olePreviewRoot);
+        var pngPath = Path.Combine(olePreviewRoot, "omml-visualtex-numbered-roundtrip.png");
+        var svgPath = Path.Combine(olePreviewRoot, "omml-visualtex-numbered-roundtrip.svg");
+        WriteAcceptancePng(pngPath, "x+1", 260, 96);
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"96\" viewBox=\"0 0 260 96\"><text x=\"6\" y=\"66\" font-family=\"Cambria Math\" font-size=\"48\">x+1</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 260, 96);
+        var formulas = new[]
+        {
+            (
+                Latex: "x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}",
+                MathMl: "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>",
+                Numbered: true),
+            (
+                Latex: "\\mathrm{e}^{\\mathrm{i}\\pi}+1=0",
+                MathMl: "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi mathvariant=\"normal\">e</mi><mrow><mi mathvariant=\"normal\">i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>",
+                Numbered: true),
+            (
+                Latex: "a^2+b^2=c^2",
+                MathMl: "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>",
+                Numbered: true),
+        };
+        Word.Application? application = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            RunOmmlVisualTeXNumberedRoundTripAcceptance(
+                application,
+                pngPath,
+                emfPath,
+                formulas,
+                artifactRoot);
+        }
+        finally
+        {
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+            try { Directory.Delete(olePreviewRoot, recursive: true); } catch { }
         }
     }
 
@@ -535,6 +595,303 @@ internal static partial class Program
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(document);
+        }
+    }
+
+    private static void RunWordSingleNumberedOmmlToVisualTeXAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        // VisualTeX.Formula.1 intentionally refuses preview files outside the
+        // product-owned Office temp root. Put this acceptance's PNG/SVG/EMF in
+        // the same root used by production Session exports; the DOCX artifact
+        // itself still belongs under artifactRoot.
+        var olePreviewRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "single-numbered-omml-to-visualtex-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(olePreviewRoot);
+        var pngPath = Path.Combine(olePreviewRoot, "single-numbered-omml-to-visualtex.png");
+        var svgPath = Path.Combine(olePreviewRoot, "single-numbered-omml-to-visualtex.svg");
+        WriteAcceptancePng(pngPath, "quadratic", 360, 112);
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"112\" viewBox=\"0 0 360 112\"><text x=\"8\" y=\"76\" font-family=\"Cambria Math\" font-size=\"44\">quadratic</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 360, 112);
+
+        const string sourceLatex = @"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}";
+        const string sourceMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo>"
+            + "<msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt>"
+            + "</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>";
+        const string secondLatex = @"\mathrm{e}^{\mathrm{i}\pi}+1=0";
+        const string secondMathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<msup><mi mathvariant=\"normal\">e</mi><mrow><mi mathvariant=\"normal\">i</mi><mi>π</mi></mrow></msup>"
+            + "<mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>";
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Selection? selection = null;
+        Word.Range? ownerRange = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? captionBookmark = null;
+        Word.Bookmark? firstNumberBookmark = null;
+        Word.Bookmark? secondNumberBookmark = null;
+        Word.Range? captionRange = null;
+        Word.Range? firstNumberRange = null;
+        Word.Range? secondNumberRange = null;
+        Word.Frames? captionFrames = null;
+        Word.Fields? captionFields = null;
+        Word.Field? captionField = null;
+        Word.Range? captionCode = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            var service = new WordFormulaService(application);
+            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
+
+            var sourceFormulaId = Guid.NewGuid().ToString("D");
+            var sourceSession = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                Mode = "create",
+                Host = "word",
+                FormulaId = sourceFormulaId,
+                Title = "Single numbered OMML conversion source",
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = Guid.NewGuid().ToString("D"), Latex = sourceLatex },
+                },
+                CodeFormat = "latex",
+                DisplayMode = "block",
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                Numbered = true,
+                FontSizePt = 12,
+                ExportResult = new OfficeExportDocument
+                {
+                    MathMl = sourceMathMl,
+                    Width = 360,
+                    Height = 112,
+                    Baseline = 84,
+                },
+            };
+            selection = application.Selection;
+            selection.SetRange(document.Content.Start, document.Content.Start);
+            service.InsertOmml(sourceSession, sourceMathMl);
+            Release(selection);
+            selection = null;
+
+            AssertEqual(1, document.OMaths.Count,
+                "Single numbered OMML setup did not create exactly one Word equation.");
+            AssertEqual(0, CountVisualTeXNativeOleShapes(document),
+                "Single numbered OMML setup unexpectedly created a VisualTeX OLE.");
+            AssertEqual(1, CountVisualTeXNumberingBookmarkTriples(document),
+                "Single numbered OMML setup did not create one numbering identity triplet.");
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.NativeOleMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Single numbered OMML conversion did not capture exactly one target.");
+            var target = plan.Targets[0];
+            AssertTrue(target.Numbered,
+                "Single numbered OMML conversion lost numbered state during capture.");
+            AssertTrue(target.SourceIsManagedOmml,
+                "Single numbered OMML conversion did not recognize the managed OMML source.");
+            var targetMathMl = target.SourceMathMl ?? sourceMathMl;
+            var targetSession = CreateSimpleFormatTargetSession(
+                target,
+                FormulaOleContract.NativeOleMode,
+                targetMathMl);
+            targetSession.ExportResult!.Width = 360;
+            targetSession.ExportResult.Height = 112;
+            targetSession.ExportResult.Baseline = 84;
+            var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal)
+            {
+                [target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = targetSession,
+                    MathMl = targetMathMl,
+                    PngPath = pngPath,
+                    EmfPath = emfPath,
+                },
+            };
+
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            AssertEqual(1, result.FormulaCount,
+                "Single numbered OMML→VisualTeX conversion did not commit its target.");
+            AssertEqual(0, result.FailedFormulaCount,
+                $"Single numbered OMML→VisualTeX conversion failed: {string.Join(" | ", result.Failures)}");
+            AssertEqual(0, document.OMaths.Count,
+                "Single numbered OMML→VisualTeX conversion left the source OMath behind.");
+            AssertEqual(1, CountVisualTeXNativeOleShapes(document),
+                "Single numbered OMML→VisualTeX conversion did not leave exactly one VisualTeX OLE.");
+            AssertEqual(0, document.Tables.Count,
+                "Single numbered OMML→VisualTeX conversion left a numbering table behind.");
+            AssertEqual(1, CountVisualTeXNumberingBookmarkTriples(document),
+                "Single numbered OMML→VisualTeX conversion did not converge to one numbering triplet.");
+            AssertTrue(!document.Bookmarks.Exists(WordOmmlFormulaStore.BookmarkName(sourceFormulaId)),
+                "Single numbered OMML→VisualTeX conversion left the source VTOMML identity behind.");
+
+            var convertedFormulaId = targetSession.FormulaId;
+            AssertVisualTeXNumberedTabHost(
+                document,
+                convertedFormulaId,
+                updateReference: true,
+                context: "single numbered OMML→VisualTeX");
+
+            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, convertedFormulaId)
+                ?? throw new InvalidDataException(
+                    "Single numbered OMML→VisualTeX conversion lost its owner paragraph after validation.");
+            bookmarks = document.Bookmarks;
+            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(convertedFormulaId);
+            var numberName = WordEquationNumbering.NativeNumberBookmarkName(convertedFormulaId);
+            AssertTrue(bookmarks.Exists(captionName) && bookmarks.Exists(numberName),
+                "Single numbered OMML→VisualTeX conversion lost its hidden caption identities.");
+            captionBookmark = bookmarks[captionName];
+            firstNumberBookmark = bookmarks[numberName];
+            captionRange = captionBookmark.Range;
+            firstNumberRange = firstNumberBookmark.Range;
+            AssertTrue(captionRange.Start >= ownerRange.End,
+                "Single numbered OMML→VisualTeX hidden SEQ caption overlaps the OLE owner paragraph.");
+            AssertTrue(firstNumberRange.Start >= captionRange.Start
+                && firstNumberRange.End <= captionRange.End,
+                "Single numbered OMML→VisualTeX VTEqNum bookmark escapes its hidden caption.");
+            captionFrames = captionRange.Frames;
+            AssertEqual(1, captionFrames.Count,
+                "Single numbered OMML→VisualTeX hidden SEQ caption is not isolated in exactly one clipping frame.");
+            captionFields = captionRange.Fields;
+            var sequenceCount = 0;
+            for (var index = 1; index <= captionFields.Count; index++)
+            {
+                Release(captionCode);
+                captionCode = null;
+                Release(captionField);
+                captionField = captionFields[index];
+                captionCode = captionField.Code;
+                if ((captionCode.Text ?? string.Empty).IndexOf(
+                        "SEQ VisualTeXEquation",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    sequenceCount++;
+            }
+            AssertEqual(1, sequenceCount,
+                "Single numbered OMML→VisualTeX hidden caption does not own exactly one VisualTeX SEQ field.");
+            AssertEqual("1", (firstNumberRange.Text ?? string.Empty).Trim(),
+                "Single numbered OMML→VisualTeX target did not retain equation number 1.");
+
+            // Reproduce the user's strongest orphan check: inserting a second
+            // numbered OMML must legitimately become equation 2 because the first
+            // converted VisualTeX OLE owns one healthy SEQ, not because an invisible
+            // abandoned source scaffold is still incrementing the sequence.
+            var secondFormulaId = Guid.NewGuid().ToString("D");
+            var secondSession = new OfficeSessionDocument
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                Mode = "create",
+                Host = "word",
+                FormulaId = secondFormulaId,
+                Title = "Second numbered OMML after conversion",
+                Lines = new List<FormulaLine>
+                {
+                    new() { Id = Guid.NewGuid().ToString("D"), Latex = secondLatex },
+                },
+                CodeFormat = "latex",
+                DisplayMode = "block",
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+                Numbered = true,
+                FontSizePt = 12,
+                ExportResult = new OfficeExportDocument
+                {
+                    MathMl = secondMathMl,
+                    Width = 260,
+                    Height = 96,
+                    Baseline = 72,
+                },
+            };
+            selection = application.Selection;
+            var insertion = Math.Max(document.Content.Start, document.Content.End - 1);
+            selection.SetRange(insertion, insertion);
+            service.InsertOmml(secondSession, secondMathMl);
+            Release(selection);
+            selection = null;
+            AssertTrue(WordEquationNumbering.UpdateEquationNumbers(document) >= 2,
+                "Updating numbers after inserting the second OMML did not see both legitimate numbered formulas.");
+
+            Release(bookmarks);
+            bookmarks = document.Bookmarks;
+            Release(firstNumberBookmark);
+            firstNumberBookmark = bookmarks[numberName];
+            Release(firstNumberRange);
+            firstNumberRange = firstNumberBookmark.Range;
+            var secondNumberName = WordEquationNumbering.NativeNumberBookmarkName(secondFormulaId);
+            AssertTrue(bookmarks.Exists(secondNumberName),
+                "Second numbered OMML lost its VTEqNum identity.");
+            secondNumberBookmark = bookmarks[secondNumberName];
+            secondNumberRange = secondNumberBookmark.Range;
+            AssertEqual("1", (firstNumberRange.Text ?? string.Empty).Trim(),
+                "First converted VisualTeX number changed after inserting a second OMML.");
+            AssertEqual("2", (secondNumberRange.Text ?? string.Empty).Trim(),
+                "Second numbered OMML did not receive equation number 2.");
+            AssertEqual(2, CountVisualTeXNumberingBookmarkTriples(document),
+                "Inserting the second numbered OMML revealed an orphan or missing numbering triplet.");
+
+            var outputPath = Path.Combine(
+                artifactRoot,
+                "Single-Numbered-OMML-To-VisualTeX.docx");
+            document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = application.Documents.Open(outputPath, ReadOnly: false, Visible: false);
+            AssertEqual(1, document.OMaths.Count,
+                "Save/reopen changed the post-conversion OMML inventory.");
+            AssertEqual(1, CountVisualTeXNativeOleShapes(document),
+                "Save/reopen changed the converted VisualTeX OLE inventory.");
+            AssertEqual(2, CountVisualTeXNumberingBookmarkTriples(document),
+                "Save/reopen changed the valid numbering identities.");
+            AssertVisualTeXNumberedTabHost(
+                document,
+                convertedFormulaId,
+                updateReference: true,
+                context: "reopened single numbered OMML→VisualTeX");
+            Console.WriteLine(
+                $"[SINGLE NUMBERED OMML→VISUALTEX] Converted one managed numbered OMML to one healthy table-free VisualTeX OLE; a subsequently inserted numbered OMML became 2 with no orphan sequence, and save/reopen preserved both identities. path={outputPath}");
+        }
+        finally
+        {
+            Release(captionCode);
+            Release(captionField);
+            Release(captionFields);
+            Release(captionFrames);
+            Release(secondNumberRange);
+            Release(secondNumberBookmark);
+            Release(firstNumberRange);
+            Release(firstNumberBookmark);
+            Release(captionRange);
+            Release(captionBookmark);
+            Release(bookmarks);
+            Release(ownerRange);
+            Release(selection);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+            try { Directory.Delete(olePreviewRoot, recursive: true); } catch { }
         }
     }
 

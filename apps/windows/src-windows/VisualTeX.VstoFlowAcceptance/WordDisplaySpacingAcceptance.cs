@@ -52,6 +52,11 @@ internal static partial class Program
                 application,
                 document,
                 addIn);
+            InsertAndAssertInlineOmmlBetweenExistingProse(
+                client,
+                application,
+                document,
+                addIn);
 
             var cases = new List<DisplaySpacingCase>
             {
@@ -179,6 +184,131 @@ internal static partial class Program
             return formulaId;
         }
         finally { Release(selection); }
+    }
+
+    private static void InsertAndAssertInlineOmmlBetweenExistingProse(
+        VisualTeXSessionClient client,
+        Word.Application application,
+        Word.Document document,
+        VisualTeX.WordVsto.ThisAddIn addIn)
+    {
+        const string mathMl1 =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\">"
+            + "<mi>a</mi><mo>=</mo><mi>b</mi></math>";
+        const string mathMl2 =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\">"
+            + "<mi>c</mi><mo>=</mo><mi>d</mi></math>";
+        Word.Selection? selection = null;
+        Word.Range? body = null;
+        Word.Range? rightText = null;
+        Word.Bookmark? firstBookmark = null;
+        Word.Bookmark? secondBookmark = null;
+        Word.Range? firstEquation = null;
+        Word.Range? secondEquation = null;
+        try
+        {
+            selection = application.Selection;
+            selection.EndKey(Word.WdUnits.wdStory);
+            selection.TypeParagraph();
+            var paragraphStart = selection.Start;
+            const string left = "左正文";
+            const string middle = "中正文";
+            const string right = "右正文";
+            selection.TypeText(left + middle + right);
+
+            selection.SetRange(paragraphStart + left.Length, paragraphStart + left.Length);
+            var existing = SnapshotSessionIds();
+            addIn.OnInsertInlineOmml(new object());
+            var firstSessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+            var firstSession = client.GetSessionAsync(firstSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Commit(
+                client,
+                firstSession,
+                "inline",
+                FormulaOleContract.WordOmmlMode,
+                "a=b",
+                mathMl: mathMl1);
+            var firstFinal = WaitForTerminal(client, firstSessionId, TimeSpan.FromSeconds(45));
+            AssertEqual("completed", firstFinal.Status,
+                firstFinal.Error ?? "First inline OMML in existing prose did not complete.");
+            client.CloseEditorAsync(firstSessionId, CancellationToken.None).GetAwaiter().GetResult();
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+
+            // Locate the untouched right prose rather than assuming how many story
+            // characters Word assigned to the newly built-up OMath.
+            body = document.Content;
+            rightText = body.Duplicate;
+            var foundRight = rightText.Find.Execute(FindText: right);
+            AssertTrue(foundRight,
+                "First inline OMML insertion lost the right-hand prose before the second insertion.");
+            selection.SetRange(rightText.Start, rightText.Start);
+
+            existing = SnapshotSessionIds();
+            addIn.OnInsertInlineOmml(new object());
+            var secondSessionId = WaitForNewSession(existing, "word", TimeSpan.FromSeconds(30));
+            var secondSession = client.GetSessionAsync(secondSessionId, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Commit(
+                client,
+                secondSession,
+                "inline",
+                FormulaOleContract.WordOmmlMode,
+                "c=d",
+                mathMl: mathMl2);
+            var secondFinal = WaitForTerminal(client, secondSessionId, TimeSpan.FromSeconds(45));
+            AssertEqual("completed", secondFinal.Status,
+                secondFinal.Error ?? "Second inline OMML in existing prose did not complete.");
+            client.CloseEditorAsync(secondSessionId, CancellationToken.None).GetAwaiter().GetResult();
+            WaitForAddInIdle(addIn, TimeSpan.FromSeconds(10));
+
+            var firstFormulaId = firstFinal.FormulaId
+                ?? throw new InvalidDataException("First mid-prose OMML has no formulaId.");
+            var secondFormulaId = secondFinal.FormulaId
+                ?? throw new InvalidDataException("Second mid-prose OMML has no formulaId.");
+            firstBookmark = WordOmmlFormulaStore.FindByFormulaId(document, firstFormulaId)
+                ?? throw new InvalidDataException("First mid-prose OMML bookmark is missing.");
+            secondBookmark = WordOmmlFormulaStore.FindByFormulaId(document, secondFormulaId)
+                ?? throw new InvalidDataException("Second mid-prose OMML bookmark is missing.");
+            firstEquation = WordOmmlFormulaStore.GetEquationRange(firstBookmark);
+            secondEquation = WordOmmlFormulaStore.GetEquationRange(secondBookmark);
+            AssertTrue((firstEquation.Text ?? string.Empty).IndexOf(left, StringComparison.Ordinal) < 0
+                && (firstEquation.Text ?? string.Empty).IndexOf(middle, StringComparison.Ordinal) < 0
+                && (firstEquation.Text ?? string.Empty).IndexOf(right, StringComparison.Ordinal) < 0,
+                "First mid-prose OMML absorbed surrounding body text.");
+            AssertTrue((secondEquation.Text ?? string.Empty).IndexOf(left, StringComparison.Ordinal) < 0
+                && (secondEquation.Text ?? string.Empty).IndexOf(middle, StringComparison.Ordinal) < 0
+                && (secondEquation.Text ?? string.Empty).IndexOf(right, StringComparison.Ordinal) < 0,
+                "Second mid-prose OMML absorbed surrounding body text.");
+
+            Release(body);
+            body = document.Content;
+            var storyText = body.Text ?? string.Empty;
+            AssertTrue(storyText.IndexOf(left, StringComparison.Ordinal) >= 0
+                && storyText.IndexOf(middle, StringComparison.Ordinal) >= 0
+                && storyText.IndexOf(right, StringComparison.Ordinal) >= 0,
+                "Inline OMML insertion changed or removed surrounding prose.");
+            AssertTrue(storyText.IndexOf('\uE000') < 0,
+                "Inline OMML left VisualTeX's U+E000 private-use placeholder in the Word story.");
+            var bookmarks = document.Bookmarks;
+            try
+            {
+                AssertTrue(!bookmarks.Exists("VTBL_" + Guid.Parse(firstFormulaId).ToString("N"))
+                    && !bookmarks.Exists("VTBL_" + Guid.Parse(secondFormulaId).ToString("N")),
+                    "Mid-prose inline OMML left a temporary VTBL bookmark behind.");
+            }
+            finally { Release(bookmarks); }
+        }
+        finally
+        {
+            Release(secondEquation);
+            Release(firstEquation);
+            Release(secondBookmark);
+            Release(firstBookmark);
+            Release(rightText);
+            Release(body);
+            Release(selection);
+        }
     }
 
     private static void AssertInlineOmmlHasNoBoundaryCharacter(

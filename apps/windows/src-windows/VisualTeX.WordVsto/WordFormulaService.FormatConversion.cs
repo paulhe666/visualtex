@@ -2017,6 +2017,7 @@ internal sealed partial class WordFormulaService
             {
                 UndoRecord? formulaUndoRecord = null;
                 string? createdTargetBookmarkName = null;
+                string? localMathTypeSourceBookmarkName = null;
                 VisualTeXRollbackSnapshot? visualTeXRollbackSnapshot = null;
                 var undoRecordEnded = false;
                 var mutationStarted = false;
@@ -2113,6 +2114,22 @@ internal sealed partial class WordFormulaService
                             Release(bookmarks);
                         }
                     }
+                    if (string.Equals(
+                            plan.SourceMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal)
+                        && !forwardSourceBookmarks.ContainsKey(target.Id))
+                    {
+                        // A MathType formula has no durable VisualTeX FormulaId.
+                        // Its captured numeric Word range is only a location hint:
+                        // deleting an earlier display paragraph can move the next
+                        // Equation.DSMT4 into exactly the same Start/End coordinates.
+                        // Bind this concrete source object before mutation and use the
+                        // bookmark itself for all source-removal checks in this one
+                        // formula transaction.
+                        localMathTypeSourceBookmarkName =
+                            CreateMathTypeSourceIdentityBookmark(document, target);
+                    }
                     if (visualTeXRollbackBuffer is not null)
                     {
                         visualTeXRollbackSnapshot = CaptureVisualTeXRollbackSnapshot(
@@ -2147,13 +2164,15 @@ internal sealed partial class WordFormulaService
                         plan.SourceMode,
                         FormulaOleContract.WordOmmlMode,
                         StringComparison.Ordinal);
-                    var useDirectSingleNativeOmmlDelete = targetIsMathType
+                    var useDirectSingleNativeOmmlDelete =
+                        (targetIsMathType || targetIsVisualTeX)
                         && plan.Targets.Count == 1
                         && sourceIsOmml
                         && !target.Numbered
                         && !target.SourceIsManagedOmml
                         && !HasLocalVisualTeXOmmlAnchor(document, target);
-                    var useDirectSingleManagedDisplayOmmlDelete = targetIsMathType
+                    var useDirectSingleManagedDisplayOmmlDelete =
+                        (targetIsMathType || targetIsVisualTeX)
                         && plan.Targets.Count == 1
                         && sourceIsOmml
                         && !target.Numbered
@@ -2162,7 +2181,8 @@ internal sealed partial class WordFormulaService
                             target.DisplayMode,
                             "block",
                             StringComparison.Ordinal);
-                    var useDirectSingleManagedNumberedOmmlDelete = targetIsMathType
+                    var useDirectSingleManagedNumberedOmmlDelete =
+                        (targetIsMathType || targetIsVisualTeX)
                         && plan.Targets.Count == 1
                         && sourceIsOmml
                         && target.Numbered
@@ -2221,6 +2241,12 @@ internal sealed partial class WordFormulaService
                         EnsureForwardMathTypeSourceRemoved(
                             document,
                             liveSourceBookmark,
+                            target,
+                            "delete-source");
+                    else if (!string.IsNullOrWhiteSpace(localMathTypeSourceBookmarkName))
+                        EnsureForwardMathTypeSourceRemoved(
+                            document,
+                            localMathTypeSourceBookmarkName!,
                             target,
                             "delete-source");
                     else
@@ -2323,11 +2349,19 @@ internal sealed partial class WordFormulaService
                     }
                     else
                     {
+                        // A single OMML/MathType -> VisualTeX replacement does not
+                        // need the deferred batch-numbering scaffold. Let the mature
+                        // InsertOle path build the complete center/right-tab + hidden
+                        // SEQ + visible REF structure inside the same per-formula
+                        // transaction. Deferred numbering remains reserved for real
+                        // multi-formula batches where it avoids O(N^2) field work.
+                        var deferVisualTeXNumbering =
+                            targetIsVisualTeX && plan.Targets.Count > 1;
                         InsertOle(
                             session,
                             formula.PngPath!,
                             formula.EmfPath!,
-                            deferNumberingLayout: targetIsVisualTeX,
+                            deferNumberingLayout: deferVisualTeXNumbering,
                             preserveExistingDisplayParagraphBoundary:
                                 string.Equals(
                                     target.DisplayMode,
@@ -2339,6 +2373,12 @@ internal sealed partial class WordFormulaService
                         EnsureForwardMathTypeSourceRemoved(
                             document,
                             insertedSourceBookmark,
+                            target,
+                            "insert-target");
+                    else if (!string.IsNullOrWhiteSpace(localMathTypeSourceBookmarkName))
+                        EnsureForwardMathTypeSourceRemoved(
+                            document,
+                            localMathTypeSourceBookmarkName!,
                             target,
                             "insert-target");
                     else
@@ -2365,6 +2405,18 @@ internal sealed partial class WordFormulaService
                             session.FormulaId,
                             target,
                             insertionStart);
+                        if (plan.Targets.Count == 1
+                            && target.Numbered
+                            && string.Equals(
+                                target.DisplayMode,
+                                "block",
+                                StringComparison.Ordinal))
+                        {
+                            EnsureConvertedVisualTeXNumberingHostHealthy(
+                                document,
+                                session.FormulaId,
+                                target);
+                        }
                     }
                     else
                     {
@@ -2378,6 +2430,12 @@ internal sealed partial class WordFormulaService
                         EnsureForwardMathTypeSourceRemoved(
                             document,
                             committedSourceBookmark,
+                            target,
+                            "post-transaction");
+                    else if (!string.IsNullOrWhiteSpace(localMathTypeSourceBookmarkName))
+                        EnsureForwardMathTypeSourceRemoved(
+                            document,
+                            localMathTypeSourceBookmarkName!,
                             target,
                             "post-transaction");
                     else
@@ -2487,6 +2545,9 @@ internal sealed partial class WordFormulaService
                         && !retainedMathTypeTargetBookmarks.ContainsKey(target.Id))
                         TryDeleteBookmark(document, createdTargetBookmarkName);
                     if (document is not null
+                        && !string.IsNullOrWhiteSpace(localMathTypeSourceBookmarkName))
+                        TryDeleteBookmark(document, localMathTypeSourceBookmarkName!);
+                    if (document is not null
                         && forwardSourceBookmarks.TryGetValue(target.Id, out var sourceLocatorBookmark))
                         TryDeleteBookmark(document, sourceLocatorBookmark);
                     if (visualTeXRollbackSnapshot is not null)
@@ -2513,8 +2574,17 @@ internal sealed partial class WordFormulaService
             // formula failed. Unprocessed source hosts are expected to remain; only
             // a source belonging to successfulTargetIds is evidence of rollback or
             // Word resurrecting an object after commit.
-            if (forwardSourceBookmarks.Count == plan.Targets.Count)
+            if (forwardSourceBookmarks.Count == plan.Targets.Count
+                || string.Equals(
+                    plan.SourceMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
             {
+                // MathType sources are third-party OLEs without a durable VisualTeX
+                // FormulaId. A surviving unrelated Equation.DSMT4 can shift into the
+                // deleted source's old numeric range, so final verification must use
+                // the exact per-item bookmark checks above plus the source object
+                // count, never a stale captured range.
                 var finalSourceObjectCount = CountSimpleFormatObjects(document, plan.SourceMode);
                 var expectedSourceObjectCount = Math.Max(
                     0,
@@ -2722,21 +2792,35 @@ internal sealed partial class WordFormulaService
                     WordEquationNumbering.RestoreEquationNumberFormatForConversion(
                         document,
                         plan.NumberFormatId);
-                    var rebuiltVisualTeXNumbered =
-                        BuildConvertedVisualTeXNumberingBatch(
-                            document,
-                            plan,
-                            prepared,
-                            successfulTargetIds);
-                    if (rebuiltVisualTeXNumbered > 0)
+                    if (plan.Targets.Count == 1)
                     {
-                        if (!WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
-                                document,
-                                out var finalizedVisualTeXNumbered))
-                            throw new InvalidOperationException(
-                                "Converted VisualTeX numbering scaffolds could not be finalized safely.");
+                        // Single-target VisualTeX conversion was finalized by
+                        // InsertOle inside the formula transaction and was locally
+                        // validated before that transaction was accepted. Do not
+                        // dismantle/rebuild it a second time and do not make this
+                        // successful conversion depend on unrelated pre-existing
+                        // numbering damage elsewhere in the document.
                         WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-numbering-visualtex-batch built={rebuiltVisualTeXNumbered} finalized={finalizedVisualTeXNumbered}");
+                            "format-conversion-numbering-visualtex-single-reused");
+                    }
+                    else
+                    {
+                        var rebuiltVisualTeXNumbered =
+                            BuildConvertedVisualTeXNumberingBatch(
+                                document,
+                                plan,
+                                prepared,
+                                successfulTargetIds);
+                        if (rebuiltVisualTeXNumbered > 0)
+                        {
+                            if (!WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
+                                    document,
+                                    out var finalizedVisualTeXNumbered))
+                                throw new InvalidOperationException(
+                                    "Converted VisualTeX numbering scaffolds could not be finalized safely.");
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-numbering-visualtex-batch built={rebuiltVisualTeXNumbered} finalized={finalizedVisualTeXNumbered}");
+                        }
                     }
                 }
                 }
@@ -3536,6 +3620,222 @@ internal sealed partial class WordFormulaService
             lastError);
     }
 
+    private static void EnsureConvertedVisualTeXNumberingHostHealthy(
+        Document document,
+        string formulaId,
+        WordFormulaFormatConversionTarget target)
+    {
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Range? ownerRange = null;
+        Range? visibleRange = null;
+        InlineShapes? ownerShapes = null;
+        ParagraphFormat? ownerFormat = null;
+        TabStops? tabStops = null;
+        TabStop? tabStop = null;
+        Fields? visibleFields = null;
+        Field? visibleField = null;
+        Range? visibleCode = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? visibleBookmark = null;
+        Bookmark? captionBookmark = null;
+        Bookmark? numberBookmark = null;
+        Range? visibleBookmarkRange = null;
+        Range? captionRange = null;
+        Range? numberRange = null;
+        Paragraphs? captionParagraphs = null;
+        Frames? captionFrames = null;
+        Fields? captionFields = null;
+        Field? captionField = null;
+        Range? captionCode = null;
+        try
+        {
+            shape = FindByFormulaId(
+                    document,
+                    formulaId,
+                    sourceObjectIdHint: null,
+                    allowGlobalFallback: false)
+                ?? throw new InvalidOperationException(
+                    "The converted VisualTeX OLE disappeared before numbering validation.");
+            if (!WordFormulaMetadataReader.IsNativeOle(shape))
+                throw new InvalidOperationException(
+                    "The converted numbering owner is not a VisualTeX native OLE.");
+            var metadata = WordFormulaMetadataReader.TryRead(shape)
+                ?? throw new InvalidOperationException(
+                    "The converted VisualTeX OLE has no readable metadata.");
+            if (!string.Equals(
+                    metadata.FormulaId,
+                    formulaId,
+                    StringComparison.OrdinalIgnoreCase)
+                || !metadata.Numbered
+                || !string.Equals(
+                    metadata.DisplayMode,
+                    "block",
+                    StringComparison.OrdinalIgnoreCase)
+                || !target.Numbered
+                || !string.Equals(
+                    target.DisplayMode,
+                    "block",
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "The converted VisualTeX OLE lost its numbered display identity.");
+
+            shapeRange = shape.Range;
+            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    document,
+                    formulaId)
+                ?? throw new InvalidOperationException(
+                    "The converted VisualTeX OLE has no numbering owner paragraph.");
+            visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(
+                    document,
+                    formulaId)
+                ?? throw new InvalidOperationException(
+                    "The converted VisualTeX OLE has no visible equation number.");
+            if ((bool)ownerRange.get_Information(WdInformation.wdWithInTable))
+                throw new InvalidOperationException(
+                    "The converted VisualTeX OLE numbering owner unexpectedly remained inside a table.");
+            if (shapeRange.Start < ownerRange.Start
+                || shapeRange.End > ownerRange.End
+                || visibleRange.Start < shapeRange.End
+                || visibleRange.End > ownerRange.End)
+                throw new InvalidOperationException(
+                    "The converted VisualTeX OLE and its visible number do not share one safe owner paragraph.");
+
+            ownerShapes = ownerRange.InlineShapes;
+            if (ownerShapes.Count != 1)
+                throw new InvalidOperationException(
+                    $"The converted VisualTeX numbering paragraph owns {ownerShapes.Count} OLE objects instead of exactly one.");
+            var ownerText = ownerRange.Text ?? string.Empty;
+            if (ownerText.Count(character => character == '\t') < 2)
+                throw new InvalidOperationException(
+                    "The converted VisualTeX numbering paragraph lost one of its two layout TAB characters.");
+
+            ownerFormat = ownerRange.ParagraphFormat;
+            tabStops = ownerFormat.TabStops;
+            var hasCenterTab = false;
+            var hasRightTab = false;
+            for (var index = 1; index <= tabStops.Count; index++)
+            {
+                Release(tabStop);
+                tabStop = tabStops[index];
+                // Word does not report TabStop.CustomTab consistently for direct
+                // center/right stops on a freshly rebuilt conversion paragraph.
+                // The long-standing production acceptance therefore identifies the
+                // two required stops by alignment and position, not CustomTab.
+                if (tabStop.Alignment == WdTabAlignment.wdAlignTabCenter)
+                    hasCenterTab = true;
+                else if (tabStop.Alignment == WdTabAlignment.wdAlignTabRight)
+                    hasRightTab = true;
+            }
+            if (!hasCenterTab || !hasRightTab)
+                throw new InvalidOperationException(
+                    $"The converted VisualTeX numbering paragraph lost its direct tab stops (center={hasCenterTab}, right={hasRightTab}).");
+
+            var expectedNumberBookmark =
+                WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            visibleFields = visibleRange.Fields;
+            var hasVisibleReference = false;
+            for (var index = 1; index <= visibleFields.Count; index++)
+            {
+                Release(visibleCode);
+                visibleCode = null;
+                Release(visibleField);
+                visibleField = visibleFields[index];
+                visibleCode = visibleField.Code;
+                var code = visibleCode.Text ?? string.Empty;
+                if (code.IndexOf(
+                        "REF " + expectedNumberBookmark,
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hasVisibleReference = true;
+                    break;
+                }
+            }
+            if (!hasVisibleReference)
+                throw new InvalidOperationException(
+                    "The converted VisualTeX visible number is not a REF to its own VTEqNum bookmark.");
+
+            bookmarks = document.Bookmarks;
+            var visibleName = WordEquationNumbering.EquationBookmarkName(formulaId);
+            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(formulaId);
+            if (!bookmarks.Exists(visibleName)
+                || !bookmarks.Exists(captionName)
+                || !bookmarks.Exists(expectedNumberBookmark))
+                throw new InvalidOperationException(
+                    "The converted VisualTeX numbering scaffold is missing VTEq/VTEqCap/VTEqNum identity.");
+            visibleBookmark = bookmarks[visibleName];
+            captionBookmark = bookmarks[captionName];
+            numberBookmark = bookmarks[expectedNumberBookmark];
+            visibleBookmarkRange = visibleBookmark.Range;
+            captionRange = captionBookmark.Range;
+            numberRange = numberBookmark.Range;
+            if (visibleBookmarkRange.Start < shapeRange.End
+                || visibleBookmarkRange.End > ownerRange.End)
+                throw new InvalidOperationException(
+                    "The converted VTEq bookmark crosses the VisualTeX OLE boundary.");
+            if (captionRange.Start < ownerRange.End
+                || numberRange.Start < captionRange.Start
+                || numberRange.End > captionRange.End)
+                throw new InvalidOperationException(
+                    "The converted hidden caption bookmarks overlap the formula paragraph.");
+
+            captionParagraphs = captionRange.Paragraphs;
+            if (captionParagraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The converted hidden SEQ caption spans more than one paragraph.");
+            captionFrames = captionRange.Frames;
+            if (captionFrames.Count != 1)
+                throw new InvalidOperationException(
+                    "The converted hidden SEQ caption is not isolated in its clipping frame.");
+            captionFields = captionRange.Fields;
+            var sequenceCount = 0;
+            for (var index = 1; index <= captionFields.Count; index++)
+            {
+                Release(captionCode);
+                captionCode = null;
+                Release(captionField);
+                captionField = captionFields[index];
+                captionCode = captionField.Code;
+                if ((captionCode.Text ?? string.Empty).IndexOf(
+                        "SEQ VisualTeXEquation",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    sequenceCount++;
+            }
+            if (sequenceCount != 1)
+                throw new InvalidOperationException(
+                    $"The converted VisualTeX hidden caption owns {sequenceCount} VisualTeX SEQ fields instead of exactly one.");
+
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-visualtex-single-numbering-healthy formulaId={formulaId} owner={ownerRange.Start}:{ownerRange.End} caption={captionRange.Start}:{captionRange.End}");
+        }
+        finally
+        {
+            Release(captionCode);
+            Release(captionField);
+            Release(captionFields);
+            Release(captionFrames);
+            Release(captionParagraphs);
+            Release(numberRange);
+            Release(captionRange);
+            Release(visibleBookmarkRange);
+            Release(numberBookmark);
+            Release(captionBookmark);
+            Release(visibleBookmark);
+            Release(bookmarks);
+            Release(visibleCode);
+            Release(visibleField);
+            Release(visibleFields);
+            Release(tabStop);
+            Release(tabStops);
+            Release(ownerFormat);
+            Release(ownerShapes);
+            Release(visibleRange);
+            Release(ownerRange);
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
     private static InlineShape? FindFreshVisualTeXTargetNearPosition(
         Document document,
         int insertionStart,
@@ -3740,6 +4040,49 @@ internal sealed partial class WordFormulaService
         }
         catch { return null; }
         finally { Release(bookmark); }
+    }
+
+    private string CreateMathTypeSourceIdentityBookmark(
+        Document document,
+        WordFormulaFormatConversionTarget target)
+    {
+        InlineShape? shape = null;
+        Range? range = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        try
+        {
+            shape = FindMathTypeOleByRange(
+                    document,
+                    target.SourceObjectId,
+                    allowGlobalFallback: false)
+                ?? throw new InvalidOperationException(
+                    "The MathType source formula moved before identity binding.");
+            if (!MathTypeOleInterop.IsMathTypeOle(shape))
+                throw new InvalidOperationException(
+                    "The source object is no longer a MathType Equation.DSMT4 formula.");
+            range = shape.Range.Duplicate;
+            var bookmarkName = "VTFCI_" + target.Id.Replace("-", string.Empty);
+            bookmarks = document.Bookmarks;
+            if (bookmarks.Exists(bookmarkName))
+            {
+                bookmark = bookmarks[bookmarkName];
+                bookmark.Delete();
+                Release(bookmark);
+                bookmark = null;
+            }
+            bookmark = bookmarks.Add(bookmarkName, range);
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-mathtype-source-identity-bound formulaId={target.SourceFormulaId} bookmark={bookmarkName} range={range.Start}:{range.End}");
+            return bookmarkName;
+        }
+        finally
+        {
+            Release(bookmark);
+            Release(bookmarks);
+            Release(range);
+            Release(shape);
+        }
     }
 
     private static void EnsureForwardMathTypeSourceRemoved(
@@ -4850,11 +5193,65 @@ internal sealed partial class WordFormulaService
             if (shapes.Count != 1) return false;
             maths = ownerRange.OMaths;
             if (maths.Count != 0) return false;
-            if (!IsSafeMathTypeDisplayParagraph(ownerRange)) return false;
             if ((ownerRange.Text ?? string.Empty).Count(character => character == '\t') < 2)
                 return false;
 
             var expectedTarget = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            // This is a VisualTeX OLE host, not a MathType paragraph. Validate only
+            // the two field families that are legal here: the one embedded OLE and
+            // this formula's visible REF. Reusing IsSafeMathTypeDisplayParagraph
+            // rejected every healthy table-free VisualTeX number because that helper
+            // intentionally accepts only Equation.DSMT4/MTPlaceRef fields.
+            fields = ownerRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var fieldCode = code.Text ?? string.Empty;
+                if (field.Type == WdFieldType.wdFieldEmbed)
+                    continue;
+                if (field.Type == WdFieldType.wdFieldRef
+                    && fieldCode.IndexOf(
+                        "REF " + expectedTarget,
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+                return false;
+            }
+
+            // Reject ordinary prose even when field codes are hidden. The owner may
+            // contain only the OLE object-result character, two TABs, the rendered
+            // equation number and its punctuation/heading prefix.
+            var ownerText = ownerRange.Text ?? string.Empty;
+            var fieldDepth = 0;
+            foreach (var character in ownerText)
+            {
+                if (character == '\u0013')
+                {
+                    fieldDepth++;
+                    continue;
+                }
+                if (character == '\u0015')
+                {
+                    if (fieldDepth > 0) fieldDepth--;
+                    continue;
+                }
+                if (fieldDepth > 0 || character == '\u0014') continue;
+                if (char.IsWhiteSpace(character) || char.IsDigit(character)) continue;
+                if (character < ' ' || character is '\u0001' or '\uFFFC') continue;
+                if ("()[]{}.-–—_:;,+/\\".IndexOf(character) >= 0) continue;
+                return false;
+            }
+            if (fieldDepth != 0) return false;
+
+            Release(code);
+            code = null;
+            Release(field);
+            field = null;
+            Release(fields);
+            fields = null;
             fields = visibleRange.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {

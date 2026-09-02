@@ -261,6 +261,9 @@ const wordVsto = await source("src-windows/VisualTeX.WordVsto/ThisAddIn.cs");
 const wordVstoService = await source(
   "src-windows/VisualTeX.WordVsto/WordFormulaService.cs",
 );
+const wordVstoFormatConversion = await source(
+  "src-windows/VisualTeX.WordVsto/WordFormulaService.FormatConversion.cs",
+);
 const officeFormulaSizing = await source(
   "src-windows/VisualTeX.WindowsOffice.Contracts/OfficeFormulaSizing.cs",
 );
@@ -595,6 +598,11 @@ assert.ok(wordVstoService.includes("LegacyInlineMathGuard"));
 assert.ok(wordVstoService.includes("LegacyInlineBaselineSentinel"));
 assert.ok(wordVstoService.includes("font.Hidden = -1"));
 assert.ok(wordVstoService.includes("RestoreOmmlReplacementRollback"));
+assert.ok(wordVstoFormatConversion.includes("(targetIsMathType || targetIsVisualTeX)"));
+assert.ok(wordVstoFormatConversion.includes("targetIsVisualTeX && plan.Targets.Count > 1"));
+assert.ok(wordVstoFormatConversion.includes("EnsureConvertedVisualTeXNumberingHostHealthy"));
+assert.ok(wordVstoFormatConversion.includes("format-conversion-numbering-visualtex-single-reused"));
+assert.ok(!wordVstoFormatConversion.includes("deferNumberingLayout: targetIsVisualTeX"));
 const directTableReplacementStart = wordVstoService.indexOf(
   "if (replaceHealthyDirectTableAtomically)\n            {\n                if (reuseHealthyDirectTableForUnnumberingOnly)",
 );
@@ -730,6 +738,19 @@ assert.ok(wordVsto.includes("DocumentBeforeSave -= OnDocumentBeforeSave"));
 assert.ok(wordDoubleClickHook.includes("WhMouseLl = 14"));
 assert.ok(wordDoubleClickHook.includes("return new IntPtr(1)"));
 assert.ok(wordDoubleClickHook.includes('"WINWORD"'));
+assert.ok(wordDoubleClickHook.includes("OpenNativeOle"));
+assert.ok(wordDoubleClickHook.includes("DispatchCallback"));
+assert.ok(wordVsto.includes("NativeOleDecision.OpenNativeOle"));
+assert.ok(wordVsto.includes("QueueNativeMathTypeEditorOpen"));
+assert.ok(wordVsto.includes("delayMilliseconds = 300"));
+assert.ok(wordVsto.includes("ThreadPool.QueueUserWorkItem"));
+assert.ok(wordVsto.includes("dispatcher.Post"));
+assert.ok(wordVsto.includes("addin-native-mathtype-open-scheduled"));
+assert.ok(wordVsto.includes("_pendingNativeMathTypeRangeStart"));
+assert.ok(wordVsto.includes("_pendingNativeMathTypeRangeEnd"));
+assert.ok(wordVstoService.includes("OpenMathTypeNativeEditorAtRange"));
+assert.ok(!wordVstoService.includes("OpenSelectedMathTypeNativeEditor"));
+assert.ok(wordVstoService.includes("wdOLEVerbOpen"));
 for (const command of [
   "OnConvertSelected",
   "OnDeleteSelected",

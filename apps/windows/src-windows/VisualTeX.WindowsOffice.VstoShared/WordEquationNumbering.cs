@@ -7089,6 +7089,7 @@ internal static partial class WordEquationNumbering
             frame.LockAnchor = true;
             borders = captionRange.Borders;
             borders.Enable = 0;
+            CompressNativeCaptionParagraphFlow(captionRange);
         }
         finally
         {
@@ -7182,6 +7183,7 @@ internal static partial class WordEquationNumbering
             frame.LockAnchor = true;
             borders = captionRange.Borders;
             borders.Enable = 0;
+            CompressNativeCaptionParagraphFlow(captionRange);
         }
         finally
         {
@@ -7195,6 +7197,62 @@ internal static partial class WordEquationNumbering
             Release(paragraph);
             Release(numberFont);
             Release(font);
+        }
+    }
+
+    private static void CompressNativeCaptionParagraphFlow(Range captionRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? paragraphMark = null;
+        ParagraphFormat? format = null;
+        Microsoft.Office.Interop.Word.Font? markFont = null;
+        try
+        {
+            paragraphs = captionRange.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (paragraphRange.End <= paragraphRange.Start) return;
+
+            // The SEQ target remains black 11pt text inside its 0.1pt clipping
+            // Frame so Word's native REF fields inherit normal character styling.
+            // The final paragraph mark sits outside that Frame; at ordinary 11pt
+            // single spacing it creates a full visible blank line below every
+            // numbered VisualTeX OLE. Compress only that body-flow paragraph.
+            format = paragraph.Format;
+            format.SpaceBefore = 0f;
+            format.SpaceAfter = 0f;
+            format.LineSpacingRule = WdLineSpacing.wdLineSpaceExactly;
+            format.LineSpacing = 1f;
+            format.KeepTogether = 0;
+            format.KeepWithNext = 0;
+            format.PageBreakBefore = 0;
+            format.WidowControl = 0;
+            try { format.DisableLineHeightGrid = -1; } catch { }
+
+            paragraphMark = paragraphRange.Document.Range(
+                paragraphRange.End - 1,
+                paragraphRange.End);
+            markFont = paragraphMark.Font;
+            markFont.Hidden = 0;
+            markFont.Size = 1f;
+            markFont.Position = 0;
+        }
+        catch
+        {
+            // The clipping Frame still protects the SEQ target if a protected or
+            // custom paragraph refuses the optional flow compaction.
+        }
+        finally
+        {
+            Release(markFont);
+            Release(format);
+            Release(paragraphMark);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
         }
     }
 
@@ -8213,12 +8271,38 @@ internal static partial class WordEquationNumbering
         Range? range = null;
         Frames? frames = null;
         Frame? frame = null;
+        var originalParagraphStart = -1;
+        var originalParagraphEnd = -1;
+        var originalOwnedWholeParagraph = false;
         try
         {
             bookmarks = document.Bookmarks;
             if (!bookmarks.Exists(name)) return;
             bookmark = bookmarks[name];
             range = bookmark.Range;
+            Paragraphs? originalParagraphs = null;
+            Paragraph? originalParagraph = null;
+            Range? originalParagraphRange = null;
+            try
+            {
+                originalParagraphs = range.Paragraphs;
+                if (originalParagraphs.Count == 1)
+                {
+                    originalParagraph = originalParagraphs[1];
+                    originalParagraphRange = originalParagraph.Range;
+                    originalParagraphStart = originalParagraphRange.Start;
+                    originalParagraphEnd = originalParagraphRange.End;
+                    originalOwnedWholeParagraph = range.Start == originalParagraphStart
+                        && range.End == originalParagraphEnd
+                        && (range.Text ?? string.Empty).EndsWith("\r", StringComparison.Ordinal);
+                }
+            }
+            finally
+            {
+                Release(originalParagraphRange);
+                Release(originalParagraph);
+                Release(originalParagraphs);
+            }
             OMaths? bookmarkMaths = null;
             try
             {
@@ -8296,16 +8380,32 @@ internal static partial class WordEquationNumbering
             }
             else
             {
-                // Word does not reliably remove a bookmark when deleting the
-                // bookmarked range if that range lives in the hidden native-caption
-                // Frame immediately between numbered tables. In batch format
-                // conversion the first source caption can otherwise collapse to a
-                // zero-length VTEqCap_* bookmark and survive after its formula has
-                // been replaced, making the freshly-built target numbering look
-                // unhealthy and triggering a destructive full reconciliation.
-                // Detach ownership explicitly before deleting the caption content.
+                // Frame.Delete preserves the SEQ text but can shrink VTEqCap from
+                // the original full paragraph to only the framed contents. Deleting
+                // that mutated bookmark range leaves its paragraph mark behind as a
+                // real empty line after VisualTeX -> MathType conversion. Freeze the
+                // original whole-paragraph coordinates before touching the Frame and
+                // remove that exact paragraph after detaching bookmark ownership.
                 bookmark.Delete();
-                range.Delete();
+                if (originalOwnedWholeParagraph
+                    && originalParagraphStart >= document.Content.Start
+                    && originalParagraphEnd <= document.Content.End
+                    && originalParagraphEnd > originalParagraphStart)
+                {
+                    Range? completeCaptionParagraph = null;
+                    try
+                    {
+                        completeCaptionParagraph = document.Range(
+                            originalParagraphStart,
+                            originalParagraphEnd);
+                        completeCaptionParagraph.Delete();
+                    }
+                    finally { Release(completeCaptionParagraph); }
+                }
+                else
+                {
+                    range.Delete();
+                }
             }
         }
         finally

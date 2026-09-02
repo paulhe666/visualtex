@@ -14,6 +14,20 @@ internal static partial class Program
             svgPath,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"180\" height=\"64\" viewBox=\"0 0 180 64\"><text x=\"4\" y=\"44\" font-family=\"Times New Roman\" font-size=\"36\">a+b</text></svg>");
         var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 180, 64);
+        var mixedOleRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "mathtype-number-format-mixed-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(mixedOleRoot);
+        var mixedSvgPath = Path.Combine(mixedOleRoot, "mixed-numbered.svg");
+        var mixedPngPath = Path.Combine(mixedOleRoot, "mixed-numbered.png");
+        File.WriteAllText(
+            mixedSvgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"180\" height=\"64\" viewBox=\"0 0 180 64\"><text x=\"4\" y=\"44\" font-family=\"Times New Roman\" font-size=\"36\">x+y</text></svg>");
+        WriteAcceptancePng(mixedPngPath, "x+y", 180, 64);
+        var mixedEmfPath = OfficeOlePreview.CreateVectorEmfFromSvg(mixedSvgPath, 180, 64);
 
         Word.Application? application = null;
         Word.Document? document = null;
@@ -24,6 +38,13 @@ internal static partial class Program
         try
         {
             application = CreateWordApplication(visible: false);
+            AssertVisualTeXNumberedHostDoesNotCorruptFirstMathTypeInsert(
+                application,
+                mixedPngPath,
+                mixedEmfPath);
+            Console.WriteLine("[MathType number formats] VisualTeX-numbered mixed-host direct insertion complete.");
+            AssertMalformedMathTypeTemplateIsNotInherited(application, emfPath);
+            Console.WriteLine("[MathType number formats] malformed-nearest-template rejection complete.");
             AssertFreshNoHeadingMathTypeZeroPrefix(application, emfPath);
             Console.WriteLine("[MathType number formats] fresh no-heading zero-prefix complete.");
             AssertFreshHeadingMathTypeReferenceIsolation(application, emfPath);
@@ -160,6 +181,155 @@ internal static partial class Program
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
+            try { Directory.Delete(mixedOleRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static void AssertVisualTeXNumberedHostDoesNotCorruptFirstMathTypeInsert(
+        Word.Application application,
+        string pngPath,
+        string emfPath)
+    {
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        Word.InlineShape? shape = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            var service = new WordFormulaService(application);
+            AssertEqual(
+                0,
+                service.SetEquationNumberFormat(EquationNumberFormat.Heading1DotId),
+                "Fresh mixed-host fixture should start with no numbered equations.");
+
+            insertion = document.Range(document.Content.Start, document.Content.Start);
+            insertion.Select();
+            var visualTeXSession = CreateSimpleVisualTeXSourceSession(@"x+y", numbered: true);
+            visualTeXSession.SourceDocumentId = document.FullName;
+            visualTeXSession.SourceObjectId = WordRangeReference(insertion.Start, insertion.End);
+            service.InsertOle(visualTeXSession, pngPath, emfPath);
+            AssertEqual(1, CountVisualTeXNativeOleShapes(document),
+                "Mixed-host fixture did not create the leading numbered VisualTeX OLE.");
+            AssertEqual(1, CountInstalledVisualTeXNumberedFormulaHosts(document),
+                "Mixed-host fixture lost the leading VisualTeX numbering host.");
+
+            Release(insertion);
+            insertion = document.Range(document.Content.End - 1, document.Content.End - 1);
+            insertion.Select();
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: true,
+                    latex: @"a+b",
+                    mathTypeNumberPosition: "right"),
+                FirstNumberedMathMl,
+                emfPath);
+            AssertEqual(1, CountMathTypeOleShapes(document),
+                "The first direct MathType insert after a VisualTeX numbered host did not create Equation.DSMT4.");
+            AssertMathTypeNumberTexts(document, "(0.1)");
+            shape = document.InlineShapes[2];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "right",
+                "First right-numbered MathType row after a VisualTeX numbered host");
+
+            Release(insertion);
+            insertion = document.Range(document.Content.End - 1, document.Content.End - 1);
+            insertion.Select();
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: true,
+                    latex: @"c+d",
+                    mathTypeNumberPosition: "left"),
+                SecondNumberedMathMl,
+                emfPath);
+            AssertEqual(2, CountMathTypeOleShapes(document),
+                "The second direct MathType insert after a VisualTeX numbered host did not create Equation.DSMT4.");
+            AssertMathTypeNumberTexts(document, "(0.1)", "(0.2)");
+            Release(shape);
+            shape = document.InlineShapes[3];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "left",
+                "Second left-numbered MathType row after a VisualTeX numbered host");
+
+            var placeRefCount = MathTypeEquationNumbering.CountPlaceRefFields(document);
+            AssertEqual(2, placeRefCount,
+                "Mixed-host direct insertion did not retain exactly two healthy MathType MTPlaceRef fields.");
+        }
+        finally
+        {
+            Release(shape);
+            Release(insertion);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+        }
+    }
+
+    private static void AssertMalformedMathTypeTemplateIsNotInherited(
+        Word.Application application,
+        string emfPath)
+    {
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        Word.Field? malformed = null;
+        Word.Selection? selection = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            var service = new WordFormulaService(application);
+            AssertEqual(
+                0,
+                service.SetEquationNumberFormat(EquationNumberFormat.ContinuousId),
+                "Fresh malformed-template fixture should start with no numbered equations.");
+
+            insertion = document.Range(document.Content.Start, document.Content.Start);
+            malformed = document.Fields.Add(
+                insertion,
+                Word.WdFieldType.wdFieldMacroButton,
+                "MTPlaceRef  \\* MERGEFORMAT (.)",
+                false);
+            Release(insertion);
+            insertion = null;
+
+            selection = application.Selection;
+            selection.EndKey(Word.WdUnits.wdStory);
+            selection.TypeParagraph();
+            insertion = document.Range(document.Content.End - 1, document.Content.End - 1);
+            insertion.Select();
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: true,
+                    latex: @"a+b",
+                    mathTypeNumberPosition: "right"),
+                FirstNumberedMathMl,
+                emfPath);
+
+            var targets = MathTypeEquationReferences.GetTargets(document);
+            AssertEqual(1, targets.Count,
+                "A malformed nearby MTPlaceRef either hid or duplicated the newly inserted MathType target.");
+            AssertEqual("(1)", targets[0].NumberText.Trim(),
+                "Direct MathType insertion inherited a malformed nearby MTPlaceRef instead of rebuilding the current numbering format.");
+            AssertEqual(2, MathTypeEquationNumbering.CountPlaceRefFields(document),
+                "The malformed-template fixture should retain its damaged source field plus one healthy new MTPlaceRef.");
+        }
+        finally
+        {
+            Release(selection);
+            Release(malformed);
+            Release(insertion);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
         }
     }
 

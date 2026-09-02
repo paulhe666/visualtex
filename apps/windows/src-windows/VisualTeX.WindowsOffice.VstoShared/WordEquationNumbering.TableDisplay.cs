@@ -2082,8 +2082,17 @@ internal static partial class WordEquationNumbering
             }
             finally { Release(numberIdentityRange); }
 
-            var useDirectBookmarkTopology =
-                trustedHealthyDirectTable || bookmarkTopologyProvesDirectNumber;
+            // `trustedHealthyDirectTable` is a batch-level optimization hint, not
+            // per-formula proof that every healthy caption belongs to a native OMML
+            // 1x3 direct-SEQ host. A mixed document can contain a healthy VisualTeX
+            // OLE hidden caption in the same OpenXML inventory. Only the nested
+            // VTEq/VTEqCap/VTEqNum bookmark topology proves that this particular
+            // formula may use the table-specific range rewrite without COM table
+            // discovery. Otherwise return false so the caller uses the ordinary OLE
+            // hidden-caption updater.
+            if (trustedHealthyDirectTable && !bookmarkTopologyProvesDirectNumber)
+                return false;
+            var useDirectBookmarkTopology = bookmarkTopologyProvesDirectNumber;
             if (!useDirectBookmarkTopology)
             {
                 if (!(bool)visibleRange.get_Information(WdInformation.wdWithInTable)

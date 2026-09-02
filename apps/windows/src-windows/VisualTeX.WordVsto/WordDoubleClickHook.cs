@@ -14,18 +14,33 @@ internal sealed class WordDoubleClickHook : IDisposable
     private static readonly object TraceGate = new();
     internal readonly struct NativeOleDecision
     {
-        internal NativeOleDecision(bool nativeOleTarget, bool suppressSecondButtonDown)
+        internal NativeOleDecision(
+            bool nativeOleTarget,
+            bool suppressSecondButtonDown,
+            bool dispatchCallback)
         {
             NativeOleTarget = nativeOleTarget;
             SuppressSecondButtonDown = suppressSecondButtonDown;
+            DispatchCallback = dispatchCallback;
         }
 
         internal bool NativeOleTarget { get; }
         internal bool SuppressSecondButtonDown { get; }
+        internal bool DispatchCallback { get; }
 
-        internal static NativeOleDecision PassThrough => new(false, false);
-        internal static NativeOleDecision ObserveNativeOle => new(true, false);
-        internal static NativeOleDecision InterceptNativeOle => new(true, true);
+        // Unknown/prose clicks still dispatch after Word settles because the same
+        // low-level hook is the fallback detector for native OMML equations.
+        internal static NativeOleDecision PassThrough => new(false, false, true);
+
+        // Native MathType mode cannot rely on Word 2021's own Equation.DSMT4
+        // double-click activation: on some installations Word consumes the gesture
+        // without ever opening MathType or raising WindowBeforeDoubleClick. Own the
+        // second click so Word cannot begin a competing OLE activation, then dispatch
+        // one callback; the add-in defers wdOLEVerbOpen to a later Office UI turn.
+        internal static NativeOleDecision OpenNativeOle => new(true, true, true);
+
+        internal static NativeOleDecision ObserveNativeOle => new(true, false, true);
+        internal static NativeOleDecision InterceptNativeOle => new(true, true, true);
     }
 
     private readonly Func<int, int, NativeOleDecision> _shouldHandle;
@@ -142,32 +157,36 @@ internal sealed class WordDoubleClickHook : IDisposable
         }
         TraceMessage(
             $"double-click elapsedMs={elapsedMilliseconds:0.###} withinX={withinX} withinY={withinY} "
-            + $"nativeOleTarget={decision.NativeOleTarget} suppressSecondDown={decision.SuppressSecondButtonDown}");
+            + $"nativeOleTarget={decision.NativeOleTarget} suppressSecondDown={decision.SuppressSecondButtonDown} "
+            + $"dispatchCallback={decision.DispatchCallback}");
 
-        ThreadPool.QueueUserWorkItem(_ =>
+        if (decision.DispatchCallback)
         {
-            // VisualTeX OLE still needs its second button-down suppressed so Word
-            // cannot invoke the object's default verb. MathType is different: the
-            // hook observes the native OLE and dispatches the same VisualTeX edit
-            // callback, but deliberately lets Word receive the second button-down
-            // so WindowBeforeDoubleClick can synchronously cancel native MathType
-            // activation as a second independent completion route. OMML likewise
-            // keeps Word's native click processing and is identified from the
-            // settled Selection on the Office UI thread.
-            Thread.Sleep(decision.NativeOleTarget ? 40 : 90);
-            try
+            ThreadPool.QueueUserWorkItem(_ =>
             {
-                TraceMessage(
-                    $"callback-begin interceptedNativeOle={decision.NativeOleTarget} "
-                    + $"x={input.Pt.X} y={input.Pt.Y}");
-                _callbackAction(decision.NativeOleTarget, input.Pt.X, input.Pt.Y);
-                TraceMessage("callback-end");
-            }
-            catch (Exception error)
-            {
-                TraceMessage($"callback-error {error.GetType().Name}: {error.Message}");
-            }
-        });
+                // VisualTeX OLE and native-MathType mode suppress the second
+                // button-down so Word cannot invoke an OLE verb concurrently.
+                // MathType-to-VisualTeX mode observes the native OLE and still lets
+                // Word raise WindowBeforeDoubleClick as a synchronous fallback.
+                // OMML keeps Word's native click processing and is identified from
+                // the settled Selection on the Office UI thread. Native MathType's
+                // callback only schedules a later Office UI turn; it never executes
+                // DoVerb while this hook callback is still unwinding.
+                Thread.Sleep(decision.NativeOleTarget ? 40 : 90);
+                try
+                {
+                    TraceMessage(
+                        $"callback-begin interceptedNativeOle={decision.NativeOleTarget} "
+                        + $"x={input.Pt.X} y={input.Pt.Y}");
+                    _callbackAction(decision.NativeOleTarget, input.Pt.X, input.Pt.Y);
+                    TraceMessage("callback-end");
+                }
+                catch (Exception error)
+                {
+                    TraceMessage($"callback-error {error.GetType().Name}: {error.Message}");
+                }
+            });
+        }
 
         if (!decision.SuppressSecondButtonDown)
             return CallNextHookEx(_hook, code, wParam, lParam);

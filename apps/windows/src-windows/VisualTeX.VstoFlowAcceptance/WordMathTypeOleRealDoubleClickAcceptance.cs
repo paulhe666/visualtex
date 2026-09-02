@@ -132,11 +132,32 @@ internal static partial class Program
             {
                 mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
                 mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
-                Thread.Sleep(90);
+                if (click == 0 || !expectNativeMathType)
+                    Thread.Sleep(90);
             }
 
             if (expectNativeMathType)
             {
+                // The low-level hook has synchronously frozen the OLE range before
+                // mouse_event returns from the second button-down. Deliberately move
+                // Word Selection away before the 40ms callback / 300ms native-open
+                // turn. The old implementation rediscovered MathType from Selection
+                // and therefore silently skipped the open in this state; the current
+                // implementation must resolve the original frozen OLE identity.
+                Word.Range? driftRange = null;
+                try
+                {
+                    var driftPosition = Math.Max(
+                        document.Content.Start,
+                        document.Content.End - 1);
+                    if (driftPosition >= range.Start && driftPosition <= range.End)
+                        driftPosition = document.Content.Start;
+                    driftRange = document.Range(driftPosition, driftPosition);
+                    driftRange.Select();
+                }
+                finally { Release(driftRange); }
+                WinForms.Application.DoEvents();
+
                 var deadline = DateTime.UtcNow.AddSeconds(12);
                 while (DateTime.UtcNow < deadline
                     && GetMathTypeTopLevelWindows().Count == 0)
@@ -153,8 +174,85 @@ internal static partial class Program
                     0,
                     sessionsAfterNativeDoubleClick.Except(sessionsBefore).Count(),
                     "Disabling MathType double-click editing still created a VisualTeX edit Session.");
+                var nativeHookTrace = File.ReadAllText(hookTracePath);
+                AssertTrue(
+                    nativeHookTrace.IndexOf(
+                        "nativeOleTarget=True suppressSecondDown=True dispatchCallback=True",
+                        StringComparison.Ordinal) >= 0,
+                    "Native MathType mode did not take exclusive ownership of the second click.");
+                AssertTrue(
+                    nativeHookTrace.IndexOf(
+                        "second-button-down-suppressed",
+                        StringComparison.Ordinal) >= 0,
+                    "Native MathType mode allowed Word to begin a competing OLE activation.");
+                AssertTrue(
+                    nativeHookTrace.IndexOf(
+                        "callback-begin interceptedNativeOle=True",
+                        StringComparison.Ordinal) >= 0,
+                    "Native MathType mode never dispatched its one native-open callback.");
+                AssertTrue(
+                    nativeHookTrace.IndexOf(
+                        "addin-native-mathtype-open-scheduled delayMs=300",
+                        StringComparison.Ordinal) >= 0,
+                    "Native MathType mode did not defer OLE activation until Word's double-click message had unwound.");
+                AssertTrue(
+                    nativeHookTrace.IndexOf(
+                        "addin-native-mathtype-open started=True",
+                        StringComparison.Ordinal) >= 0,
+                    "The delayed native MathType Open verb was not invoked exactly through the intended path.");
+
+                // Close the untouched OLE editor and prove Word accepts COM/input again.
+                // This specifically guards the user-reported state where the MathType
+                // window never appeared and Word remained stuck alternating the busy
+                // cursor indefinitely.
+                foreach (var nativeWindow in GetMathTypeTopLevelWindows())
+                {
+                    SetForegroundWindow(nativeWindow);
+                    Thread.Sleep(120);
+                    WinForms.SendKeys.SendWait("^{F4}");
+                }
+                var nativeCloseDeadline = DateTime.UtcNow.AddSeconds(8);
+                while (DateTime.UtcNow < nativeCloseDeadline
+                    && GetMathTypeTopLevelWindows().Count > 0)
+                {
+                    WinForms.Application.DoEvents();
+                    Thread.Sleep(100);
+                }
+                AssertEqual(0, GetMathTypeTopLevelWindows().Count,
+                    "Native MathType editor did not close after the untouched double-click test.");
+                SetForegroundWindow(wordWindowHandle);
+                Thread.Sleep(300);
+                window.Activate();
+                range.Select();
+                application.ScreenRefresh();
+                WinForms.Application.DoEvents();
+                AssertEqual(1, document.InlineShapes.Count,
+                    "Word was not responsive after closing the native MathType editor.");
+
+                // Guard the user-reported stale-cache state after creating another
+                // formula. The low-level hook object can exist while a particular
+                // double-click was not claimed (for example because its cached
+                // rectangle still belongs to the newly inserted equation). In that
+                // case WordBeforeDoubleClick must be released to native MathType.
+                // The previous implementation cancelled solely because the hook
+                // object existed, creating a black hole with no editor.
+                Thread.Sleep(1100);
+                range.Select();
+                WinForms.Application.DoEvents();
+                var beforeDoubleClickMethod = typeof(VisualTeX.WordVsto.ThisAddIn)
+                    .GetMethod(
+                        "OnWindowBeforeDoubleClick",
+                        System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)
+                    ?? throw new MissingMethodException(
+                        "Could not resolve WordBeforeDoubleClick routing for stale-cache acceptance.");
+                var beforeDoubleClickArgs = new object[] { application.Selection, false };
+                beforeDoubleClickMethod.Invoke(addIn, beforeDoubleClickArgs);
+                AssertEqual(false, (bool)beforeDoubleClickArgs[1],
+                    "An unclaimed MathType double-click was cancelled merely because the low-level hook object existed.");
+
                 Console.WriteLine(
-                    "MathType native-double-click acceptance passed: the VisualTeX hook did not suppress Equation.DSMT4 and native MathType opened instead.");
+                    "MathType native-double-click acceptance passed: VisualTeX suppressed only a hook-claimed competing second click, deferred one native Open verb to a later Office UI turn, released unclaimed Word double-clicks, MathType opened, and Word was responsive after the editor closed.");
                 return;
             }
 

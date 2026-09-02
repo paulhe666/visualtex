@@ -847,8 +847,10 @@ public sealed class WordOmmlTests
         XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         var runs = document.Descendants(math + "r").ToArray();
 
-        static bool IsNormalRun(XElement run, XNamespace math) =>
-            run.Element(math + "rPr")?.Element(math + "nor") is not null;
+        static bool IsPlainUprightMathRun(XElement run, XNamespace math) =>
+            run.Element(math + "rPr")?.Element(math + "sty")
+                ?.Attribute(math + "val")?.Value == "p"
+            && run.Element(math + "rPr")?.Element(math + "nor") is null;
 
         foreach (var token in new[] { "d", "e", "i" })
         {
@@ -856,7 +858,7 @@ public sealed class WordOmmlTests
                 runs,
                 run =>
                     run.Element(math + "t")?.Value == token
-                    && IsNormalRun(run, math)
+                    && IsPlainUprightMathRun(run, math)
                     && run.Element(word + "rPr")?.Element(word + "noProof") is not null);
         }
 
@@ -864,7 +866,7 @@ public sealed class WordOmmlTests
             runs,
             run =>
                 (run.Element(math + "t")?.Value.Contains("df", StringComparison.Ordinal) ?? false)
-                && !IsNormalRun(run, math));
+                && !IsPlainUprightMathRun(run, math));
     }
 
     [Theory]

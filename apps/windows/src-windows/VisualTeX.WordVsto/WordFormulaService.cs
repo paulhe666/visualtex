@@ -954,21 +954,41 @@ internal sealed partial class WordFormulaService
     public bool IsSelectedMathTypeOle() =>
         ReadSelectedOleKind() == SelectedOleKind.MathType;
 
-    public bool OpenSelectedMathTypeNativeEditor()
+    public bool OpenMathTypeNativeEditorAtRange(
+        int targetStart,
+        int targetEnd,
+        int screenX,
+        int screenY)
     {
-        Selection? selection = null;
-        Range? range = null;
+        Document? document = null;
+        Window? window = null;
+        Range? content = null;
+        Range? targetRange = null;
         InlineShapes? shapes = null;
         InlineShape? shape = null;
+        Range? shapeRange = null;
         OLEFormat? format = null;
         try
         {
-            selection = _application.Selection;
-            range = selection.Range;
-            shapes = range.InlineShapes;
+            document = _application.ActiveDocument;
+            if (document is null) return false;
+            content = document.Content;
+            var start = Math.Max(content.Start, Math.Min(targetStart, content.End));
+            var end = Math.Max(start, Math.Min(targetEnd, content.End));
+            if (end <= start) return false;
+
+            targetRange = document.Range(start, end);
+            shapes = targetRange.InlineShapes;
             if (shapes.Count != 1) return false;
             shape = shapes[1];
             if (!MathTypeOleInterop.IsMathTypeOle(shape)) return false;
+            shapeRange = shape.Range;
+            if (shapeRange.End <= start || shapeRange.Start >= end) return false;
+
+            window = _application.ActiveWindow;
+            if (!ScreenPointHitsRange(window, shapeRange, screenX, screenY))
+                return false;
+
             format = shape.OLEFormat;
             object openVerb = (int)WdOLEVerb.wdOLEVerbOpen;
             format.DoVerb(ref openVerb);
@@ -981,10 +1001,13 @@ internal sealed partial class WordFormulaService
         finally
         {
             Release(format);
+            Release(shapeRange);
             Release(shape);
             Release(shapes);
-            Release(range);
-            Release(selection);
+            Release(targetRange);
+            Release(content);
+            Release(window);
+            Release(document);
         }
     }
 
@@ -2367,13 +2390,25 @@ internal sealed partial class WordFormulaService
                         insertion.Start,
                         excludeStart: -1,
                         excludeEnd: -1);
-                    if (sourceNumberTemplateField is not null)
-                        numberTemplate = ReadMathTypePlaceRefTemplate(
+                    if (sourceNumberTemplateField is not null
+                        && TryReadReusableMathTypePlaceRefTemplate(
                             document,
-                            sourceNumberTemplateField);
+                            sourceNumberTemplateField,
+                            out var reusableNumberTemplate))
+                    {
+                        numberTemplate = reusableNumberTemplate;
+                    }
                     else
+                    {
+                        // A malformed legacy/direct-insert MTPlaceRef can retain only
+                        // punctuation such as "(.)" while its nested MTEqn/MTChap
+                        // fields have escaped outside the MACROBUTTON tree. Never
+                        // clone that corruption into every later equation. The
+                        // document-selected VisualTeX format is authoritative when
+                        // no structurally complete native MathType template exists.
                         numberTemplate = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(
                             documentNumberFormat.Id);
+                    }
                 }
 
                 // Number formatting and chapter/section state are two separate
@@ -2384,6 +2419,7 @@ internal sealed partial class WordFormulaService
                 // Always reconcile the native heading state when this MTPlaceRef
                 // actually uses chapter/section sequences.
                 if (documentNumberFormat.UsesHeading
+                    && numberTemplate is not null
                     && MathTypeNumberTemplateUsesHeading(numberTemplate))
                 {
                     var logicalInsertionStart = insertion.Start;
@@ -13592,6 +13628,62 @@ internal sealed partial class WordFormulaService
         finally { Release(sourceCode); }
     }
 
+    private static bool TryReadReusableMathTypePlaceRefTemplate(
+        Document document,
+        Field source,
+        out MathTypeWordOpenXml.NumberTemplate? template)
+    {
+        template = null;
+        Range? visibleNumberRange = null;
+        Range? sourceCode = null;
+        Fields? nestedFields = null;
+        try
+        {
+            if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
+                    document,
+                    source,
+                    out visibleNumberRange)
+                || visibleNumberRange is null)
+                return false;
+            if (string.IsNullOrWhiteSpace(
+                    MathTypeEquationReferences.ReadVisibleNumberText(source)))
+                return false;
+
+            sourceCode = source.Code;
+            nestedFields = sourceCode.Fields;
+            // A native MTPlaceRef always owns at least the hidden MTEqn increment
+            // plus the visible MTEqn current-value field. Heading-aware templates
+            // additionally own MTChap/MTSec fields. A literal-only outer field such
+            // as "(.)" is a detached/corrupt scaffold and is never reusable.
+            if (nestedFields.Count < 2) return false;
+
+            var candidate = ReadMathTypePlaceRefTemplate(document, source);
+            var hasHiddenEquationIncrement = candidate.Segments.Any(segment =>
+                segment.IsField
+                && segment.Value.IndexOf("SEQ MTEqn", StringComparison.OrdinalIgnoreCase) >= 0
+                && segment.Value.IndexOf("\\h", StringComparison.OrdinalIgnoreCase) >= 0);
+            var hasVisibleEquationValue = candidate.Segments.Any(segment =>
+                segment.IsField
+                && segment.Value.IndexOf("SEQ MTEqn", StringComparison.OrdinalIgnoreCase) >= 0
+                && segment.Value.IndexOf("\\c", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (!hasHiddenEquationIncrement || !hasVisibleEquationValue)
+                return false;
+
+            template = candidate;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(nestedFields);
+            Release(sourceCode);
+            Release(visibleNumberRange);
+        }
+    }
+
     private static bool MathTypeNumberTemplateUsesHeading(
         MathTypeWordOpenXml.NumberTemplate template) =>
         template.Segments.Any(segment =>
@@ -16071,7 +16163,8 @@ internal sealed partial class WordFormulaService
             candidate = document.Range(ref candidateStart, ref candidateEnd);
             var text = candidate.Text;
             var removable =
-                string.Equals(text, LegacyInlineMathGuard, StringComparison.Ordinal)
+                string.Equals(text, BulkInlineFormulaPlaceholder, StringComparison.Ordinal)
+                || string.Equals(text, LegacyInlineMathGuard, StringComparison.Ordinal)
                 || string.Equals(text, LegacyInlineBaselineSentinel, StringComparison.Ordinal)
                 || string.Equals(text, InlineMathGuard, StringComparison.Ordinal)
                     && IsHiddenTextRange(candidate);
@@ -16646,6 +16739,10 @@ internal sealed partial class WordFormulaService
             var legacyGuard =
                 string.Equals(text, LegacyInlineMathGuard, StringComparison.Ordinal)
                 || string.Equals(text, LegacyInlineBaselineSentinel, StringComparison.Ordinal);
+            var privateUseFormulaPlaceholder = string.Equals(
+                text,
+                BulkInlineFormulaPlaceholder,
+                StringComparison.Ordinal);
             font = candidate.Font;
             var hiddenAsciiGuard = string.Equals(
                     text,
@@ -16659,7 +16756,11 @@ internal sealed partial class WordFormulaService
             // boundary, not arbitrary user prose.
             var hiddenEmptyGuard = string.IsNullOrEmpty(text)
                 && font.Hidden != 0;
-            if (!legacyGuard && !hiddenAsciiGuard && !hiddenEmptyGuard) return false;
+            if (!legacyGuard
+                && !privateUseFormulaPlaceholder
+                && !hiddenAsciiGuard
+                && !hiddenEmptyGuard)
+                return false;
 
             // Immediately after OMath.BuildUp, Word can report this external guard
             // as math-affiliated even though it is outside OMath.Range. The guard

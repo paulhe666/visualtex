@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using WordRange = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
 
@@ -158,12 +159,12 @@ internal static partial class WordEquationNumbering
             for (var index = 1; index <= bookmarks.Count; index++)
             {
                 Bookmark? bookmark = null;
-                Range? bookmarkRange = null;
+                WordRange? bookmarkRange = null;
                 Tables? tables = null;
                 Table? table = null;
-                Range? tableRange = null;
+                WordRange? tableRange = null;
                 Cell? numberCell = null;
-                Range? numberRange = null;
+                WordRange? numberRange = null;
                 Fields? numberFields = null;
                 try
                 {
@@ -371,7 +372,7 @@ internal static partial class WordEquationNumbering
 
     private static int PerformanceFieldStart(Field field)
     {
-        Range? result = null;
+        WordRange? result = null;
         try
         {
             result = field.Result;
@@ -383,7 +384,7 @@ internal static partial class WordEquationNumbering
 
     private static string PerformanceReadFieldCode(Field field)
     {
-        Range? code = null;
+        WordRange? code = null;
         try
         {
             code = field.Code;

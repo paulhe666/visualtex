@@ -598,6 +598,10 @@ internal static partial class Program
                 shape,
                 expectedNumberPosition: "left",
                 "First left-numbered MathType display create");
+            AssertEqual(
+                "(1.1)",
+                ReadMathTypeVisibleNumberForShape(shape),
+                "First left-numbered MathType display create rendered the wrong visible number.");
             AssertWordMathTypePreviewVisible(
                 shape,
                 "First numbered MathType display create",
@@ -631,6 +635,10 @@ internal static partial class Program
                 shape,
                 expectedNumberPosition: "right",
                 "Second right-numbered MathType display create after a left-numbered row");
+            AssertEqual(
+                "(1.2)",
+                ReadMathTypeVisibleNumberForShape(shape),
+                "Second right-numbered MathType display create rendered the wrong visible number.");
             AssertWordMathTypePreviewVisible(
                 shape,
                 "Second numbered MathType display create",
@@ -1258,6 +1266,48 @@ internal static partial class Program
             Release(tab);
             Release(tabs);
             Release(format);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
+    private static string ReadMathTypeVisibleNumberForShape(Word.InlineShape shape)
+    {
+        Word.Range? shapeRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1) return string.Empty;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            fields = paragraphRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    continue;
+                return MathTypeEquationReferences.ReadVisibleNumberText(field);
+            }
+            return string.Empty;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
             Release(shapeRange);
