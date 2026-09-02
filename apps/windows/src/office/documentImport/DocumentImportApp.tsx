@@ -233,12 +233,17 @@ export function DocumentImportApp() {
     const applyTheme = (value: unknown) => applyDocumentTheme(normalizeSynchronizedTheme(value));
     applyTheme(readSynchronizedTheme());
     const unsubscribe = subscribeSynchronizedTheme(applyTheme);
+    let syncInFlight = false;
     const sync = async () => {
+      if (disposed || syncInFlight) return;
+      syncInFlight = true;
       try {
         const status = await getOfficeTheme();
         if (!disposed) applyTheme(status.theme);
       } catch {
         // Keep the last synchronized theme while the companion restarts.
+      } finally {
+        syncInFlight = false;
       }
     };
     void sync();
@@ -292,7 +297,7 @@ export function DocumentImportApp() {
         status: "cancelled",
         explicitCancel: true,
         error: null,
-      });
+      }).catch(() => undefined);
     };
     window.addEventListener("beforeunload", cancelOnClose);
     return () => window.removeEventListener("beforeunload", cancelOnClose);

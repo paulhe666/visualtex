@@ -632,10 +632,16 @@ export function OcrDialog({
         modelCancelRequestedRef.current = false;
         setModelBusy(false);
       }
-    }).then((dispose) => {
-      if (cancelled) dispose();
-      else unlisten = dispose;
-    });
+    })
+      .then((dispose) => {
+        if (cancelled) dispose();
+        else unlisten = dispose;
+      })
+      .catch((listenerError) => {
+        if (!cancelled) {
+          console.error("VisualTeX OCR model progress listener failed", listenerError);
+        }
+      });
     return () => {
       cancelled = true;
       unlisten?.();
@@ -673,10 +679,16 @@ export function OcrDialog({
         setError("");
         void refreshRuntime(false);
       }
-    }).then((dispose) => {
-      if (cancelled) dispose();
-      else unlisten = dispose;
-    });
+    })
+      .then((dispose) => {
+        if (cancelled) dispose();
+        else unlisten = dispose;
+      })
+      .catch((listenerError) => {
+        if (!cancelled) {
+          console.error("VisualTeX OCR install progress listener failed", listenerError);
+        }
+      });
     return () => {
       cancelled = true;
       unlisten?.();
@@ -1167,9 +1179,13 @@ export function OcrDialog({
   const handleCopy = async () => {
     const value = normalizeResultLatex(latex);
     if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (copyError) {
+      setError(readError(copyError));
+    }
   };
 
   const handleInsert = () => {

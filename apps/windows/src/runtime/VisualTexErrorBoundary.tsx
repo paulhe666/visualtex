@@ -2,6 +2,10 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
+  title?: ReactNode;
+  description?: ReactNode;
+  reloadLabel?: ReactNode;
+  logContext?: string;
 }
 
 interface State {
@@ -16,7 +20,11 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("VisualTeX main window crashed", error, info);
+    console.error(
+      this.props.logContext ?? "VisualTeX main window crashed",
+      error,
+      info,
+    );
   }
 
   render() {
@@ -39,9 +47,12 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}
       >
-        <strong style={{ fontSize: 18 }}>VisualTeX 界面加载失败</strong>
+        <strong style={{ fontSize: 18 }}>
+          {this.props.title ?? "VisualTeX 界面加载失败"}
+        </strong>
         <p style={{ margin: 0, maxWidth: 760, color: "#4b5563" }}>
-          应用已经启动，但当前 WebView 在加载界面时遇到了异常。重新打开后若仍出现此页面，请把下面的错误信息发送给开发者。
+          {this.props.description ??
+            "应用已经启动，但当前 WebView 在加载界面时遇到了异常。重新打开后若仍出现此页面，请把下面的错误信息发送给开发者。"}
         </p>
         <pre
           style={{
@@ -76,7 +87,7 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
             cursor: "pointer",
           }}
         >
-          重新加载
+          {this.props.reloadLabel ?? "重新加载"}
         </button>
       </main>
     );

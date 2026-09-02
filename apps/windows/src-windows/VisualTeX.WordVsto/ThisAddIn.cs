@@ -3463,10 +3463,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
-        _ = dispatcher.InvokeAsync(() =>
+        dispatcher.Post(() =>
         {
             try { application.StatusBar = message; } catch { }
-            return true;
         });
     }
 

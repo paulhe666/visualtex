@@ -7,6 +7,16 @@ internal sealed class OfficeUiDispatcher : IDisposable
     private readonly Control _control;
     private readonly HashSet<System.Windows.Forms.Timer> _delayedTimers = new();
 
+    private static void RunFireAndForgetSafely(Action operation)
+    {
+        try { operation(); }
+        catch (Exception error)
+        {
+            System.Diagnostics.Trace.WriteLine(
+                $"VisualTeX PowerPoint UI callback failed: {error}");
+        }
+    }
+
     public OfficeUiDispatcher()
     {
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
@@ -18,7 +28,11 @@ internal sealed class OfficeUiDispatcher : IDisposable
     public void Post(Action operation)
     {
         if (_control.IsDisposed || _control.Disposing) return;
-        try { _control.BeginInvoke(operation); } catch (InvalidOperationException) { }
+        try
+        {
+            _control.BeginInvoke(new Action(() => RunFireAndForgetSafely(operation)));
+        }
+        catch (InvalidOperationException) { }
     }
 
     public void PostDelayed(Action operation, int delayMilliseconds)
@@ -40,7 +54,7 @@ internal sealed class OfficeUiDispatcher : IDisposable
                 _delayedTimers.Remove(timer);
                 timer.Dispose();
                 if (_control.IsDisposed || _control.Disposing) return;
-                operation();
+                RunFireAndForgetSafely(operation);
             };
             timer.Tick += onTick;
             _delayedTimers.Add(timer);
@@ -63,8 +77,19 @@ internal sealed class OfficeUiDispatcher : IDisposable
             try { completion.TrySetResult(operation()); }
             catch (Exception error) { completion.TrySetException(error); }
         }
-        if (_control.InvokeRequired) _control.BeginInvoke(new Action(Execute));
-        else Execute();
+        try
+        {
+            if (_control.IsDisposed || _control.Disposing)
+                completion.TrySetException(new ObjectDisposedException(nameof(OfficeUiDispatcher)));
+            else if (_control.InvokeRequired)
+                _control.BeginInvoke(new Action(Execute));
+            else
+                Execute();
+        }
+        catch (InvalidOperationException error)
+        {
+            completion.TrySetException(error);
+        }
         return completion.Task;
     }
 

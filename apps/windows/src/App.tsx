@@ -323,11 +323,11 @@ function App() {
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("autosave");
+      void historyManager.createCheckpoint("autosave").catch(() => undefined);
     }, 30_000);
     const handleBeforeUnload = () => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("before-unload");
+      void historyManager.createCheckpoint("before-unload").catch(() => undefined);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
@@ -926,7 +926,7 @@ function App() {
 
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
-    void historyManager.createCheckpoint("save-document");
+    void historyManager.createCheckpoint("save-document").catch(() => undefined);
     const document = toDocument();
     const blob = new Blob([JSON.stringify(document, null, 2)], {
       type: "application/json",
@@ -1096,8 +1096,8 @@ function App() {
       if (requestsUndo || requestsRedo) {
         if (inCodeMirror) return;
         event.preventDefault();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 
@@ -1497,7 +1497,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.undo()}
+              onClick={() => historyManager.requestUndo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canUndo ||
@@ -1511,7 +1511,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.redo()}
+              onClick={() => historyManager.requestRedo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canRedo ||

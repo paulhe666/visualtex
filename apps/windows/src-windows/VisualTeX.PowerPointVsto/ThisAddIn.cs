@@ -361,20 +361,19 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         var dispatcher = _dispatcher;
         var service = _formulaService;
         if (dispatcher is null || service is null) return;
-        _ = dispatcher.InvokeAsync(() =>
+        dispatcher.Post(() =>
         {
             var selected = service.ReadFormulaAtScreenPoint(screenX, screenY);
             if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
-                return false;
+                return;
             _lastFormulaSelection = selected;
             var now = DateTimeOffset.UtcNow;
             if (selected.FormulaId == _lastDoubleClickFormulaId
                 && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
-                return false;
+                return;
             _lastDoubleClickFormulaId = selected.FormulaId!;
             _lastDoubleClickAt = now;
             BeginSession("edit", null, selected);
-            return true;
         });
     }
 
@@ -674,10 +673,9 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
-        _ = dispatcher.InvokeAsync(() =>
+        dispatcher.Post(() =>
         {
             try { ((dynamic)application).StatusBar = message; } catch { }
-            return true;
         });
     }
 

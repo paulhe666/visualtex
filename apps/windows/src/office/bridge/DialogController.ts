@@ -10,6 +10,16 @@ export interface DialogControllerCallbacks {
   onClosed: (errorCode: number) => void | Promise<void>;
 }
 
+function runDialogCallback(label: string, callback: () => void | Promise<void>) {
+  try {
+    void Promise.resolve(callback()).catch((error) => {
+      console.error(`VisualTeX Office dialog ${label} callback failed`, error);
+    });
+  } catch (error) {
+    console.error(`VisualTeX Office dialog ${label} callback failed`, error);
+  }
+}
+
 export class DialogController {
   private dialog: Office.Dialog | null = null;
 
@@ -48,24 +58,40 @@ export class DialogController {
           }
 
           const dialog = result.value;
-          this.dialog = dialog;
-          dialog.addEventHandler(
-            Office.EventType.DialogMessageReceived,
-            (event) => {
-              if (!("message" in event)) return;
-              const parsed = parseDialogMessage(event.message);
-              if (parsed) void callbacks.onMessage(parsed);
-            },
-          );
-          dialog.addEventHandler(
-            Office.EventType.DialogEventReceived,
-            (event) => {
-              if (!("error" in event)) return;
-              this.dialog = null;
-              void callbacks.onClosed(event.error);
-            },
-          );
-          resolve();
+          try {
+            this.dialog = dialog;
+            dialog.addEventHandler(
+              Office.EventType.DialogMessageReceived,
+              (event) => {
+                if (!("message" in event)) return;
+                const parsed = parseDialogMessage(event.message);
+                if (parsed) {
+                  runDialogCallback("message", () => callbacks.onMessage(parsed));
+                }
+              },
+            );
+            dialog.addEventHandler(
+              Office.EventType.DialogEventReceived,
+              (event) => {
+                if (!("error" in event)) return;
+                this.dialog = null;
+                runDialogCallback("closed", () => callbacks.onClosed(event.error));
+              },
+            );
+            resolve();
+          } catch (error) {
+            this.dialog = null;
+            try {
+              dialog?.close();
+            } catch {
+              // The host may already have invalidated a partially-created dialog.
+            }
+            reject(
+              error instanceof Error
+                ? error
+                : new Error("Unable to initialize the VisualTeX editor dialog."),
+            );
+          }
         },
       );
     });
@@ -74,6 +100,14 @@ export class DialogController {
   close() {
     const dialog = this.dialog;
     this.dialog = null;
-    dialog?.close();
+    if (!dialog) return;
+    try {
+      dialog.close();
+    } catch (error) {
+      // Office may invalidate the dialog handle before the companion observes
+      // the final Session state. Closing is cleanup only and must never turn a
+      // successfully committed formula into a failed Session.
+      console.warn("VisualTeX Office dialog was already unavailable while closing", error);
+    }
   }
 }

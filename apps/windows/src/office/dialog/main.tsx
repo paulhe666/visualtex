@@ -22,6 +22,7 @@ import {
   normalizeEditorLayout,
   useEditorStore,
 } from "../../stores/editorStore";
+import { VisualTexErrorBoundary } from "../../runtime/VisualTexErrorBoundary";
 
 configureOcrTransport(officeOcrTransport);
 installFloatingLayerAutoAvoidance();
@@ -47,7 +48,17 @@ function mount() {
   const runtime = new URLSearchParams(window.location.search).get("runtime");
   createRoot(root).render(
     <StrictMode>
-      {runtime === "vsto-bulk-import" ? <DocumentImportApp /> : <OfficeDialogApp />}
+      <VisualTexErrorBoundary
+        title="VisualTeX Office 编辑器加载失败"
+        description="Office 编辑器在加载界面时遇到了异常。重新打开后若仍出现此页面，请把下面的错误信息发送给开发者。"
+        logContext="VisualTeX Office dialog crashed"
+      >
+        {runtime === "vsto-bulk-import" ? (
+          <DocumentImportApp />
+        ) : (
+          <OfficeDialogApp />
+        )}
+      </VisualTexErrorBoundary>
     </StrictMode>,
   );
 }

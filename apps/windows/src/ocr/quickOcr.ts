@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LatexCodeFormat } from "../types/formula";
 import type { OcrModelName } from "./ocrService";
+import {
+  decodeQuickOcrCapture,
+  decodeSilentOcrShortcut,
+} from "./quickOcrPayloadValidation";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "Ctrl+Alt+O";
@@ -46,10 +50,12 @@ async function captureWindowsClipboardImage(captureMode: QuickOcrCaptureMode) {
   if (!hasTauriRuntime()) {
     throw new Error("Windows Quick OCR is available in the desktop app only.");
   }
-  return invoke<QuickOcrCapture | null>("capture_windows_quick_ocr", {
-    captureMode,
-    timeoutMs: 60_000,
-  });
+  return decodeQuickOcrCapture(
+    await invoke<unknown>("capture_windows_quick_ocr", {
+      captureMode,
+      timeoutMs: 60_000,
+    }),
+  );
 }
 
 export async function restoreQuickOcrWindow() {
@@ -90,12 +96,14 @@ export async function configureSilentOcr(
   captureMode: QuickOcrCaptureMode,
 ) {
   if (!hasTauriRuntime()) return enabled ? SILENT_OCR_SHORTCUT : "";
-  return invoke<string>("configure_silent_ocr", {
-    enabled,
-    model,
-    copyFormat,
-    captureMode,
-  });
+  return decodeSilentOcrShortcut(
+    await invoke<unknown>("configure_silent_ocr", {
+      enabled,
+      model,
+      copyFormat,
+      captureMode,
+    }),
+  );
 }
 
 export function quickOcrCaptureToFile(capture: QuickOcrCapture) {

@@ -7,6 +7,7 @@ let currentLineId = crypto.randomUUID();
 let dialogMessageHandler = null;
 let dialogClosedHandler = null;
 let dialogCloseCount = 0;
+let dialogCloseShouldThrow = false;
 let applyCount = 0;
 let nativeCommitCount = 0;
 let nativeConfirmCount = 0;
@@ -74,6 +75,9 @@ const fakeDialog = {
   },
   close() {
     dialogCloseCount += 1;
+    if (dialogCloseShouldThrow) {
+      throw new Error("Office invalidated the dialog handle before close");
+    }
     dialogClosedHandler?.({ error: 12006 });
   },
 };
@@ -233,10 +237,24 @@ const adapter = {
 };
 
 const { OfficeBridge } = await import("../src/office/bridge/OfficeBridge.ts");
+const { DialogController } = await import("../src/office/bridge/DialogController.ts");
 const macBridgePath = new URL("../src/office/macos/MacOfficeBridge.ts", import.meta.url);
 const MacOfficeBridge = existsSync(macBridgePath)
   ? (await import(macBridgePath.href)).MacOfficeBridge
   : null;
+
+// Closing the Office dialog is cleanup only. Office can invalidate the handle
+// before VisualTeX observes the final Session state, and that must not turn a
+// successfully committed formula into a failed Session.
+const closeSafetyProbe = new DialogController();
+await closeSafetyProbe.open("close-safety-probe", {
+  onMessage() {},
+  onClosed() {},
+});
+dialogCloseShouldThrow = true;
+assert.doesNotThrow(() => closeSafetyProbe.close());
+dialogCloseShouldThrow = false;
+dialogCloseCount = 0;
 
 // Scenario 1: PowerPoint loses DialogMessageReceived, but the editor has already
 // persisted status=committing. The bridge watcher must still insert the formula.

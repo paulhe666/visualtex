@@ -231,6 +231,7 @@ const withNativeWindows = {
 const parsed = parseVisualTexConfiguration(JSON.stringify(withNativeWindows));
 assert.deepEqual(parsed.windows, {
   main: { width: 1440, height: 900 },
+  keypad: null,
   officeEditor: { width: 1180, height: 760 },
 });
 
@@ -269,7 +270,11 @@ assert.equal(
   "history-a",
   "configuration import must restore editor history",
 );
-for (const [key, value] of Object.entries(expectedStorage)) {
+const expectedRestoredStorage = {
+  ...expectedStorage,
+  "visualtex.quick-ocr.capture-mode": "clipboard",
+};
+for (const [key, value] of Object.entries(expectedRestoredStorage)) {
   assert.equal(safeStorage.getItem(key), value, `configuration import must restore ${key}`);
 }
 
@@ -306,6 +311,7 @@ assert.deepEqual(sanitized.storage, {
 });
 assert.deepEqual(sanitized.windows, {
   main: null,
+  keypad: null,
   officeEditor: { width: 1200, height: 800 },
 });
 

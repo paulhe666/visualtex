@@ -1152,9 +1152,15 @@ export function publishCustomTheme(state: CustomThemeState) {
   }
   window.dispatchEvent(new CustomEvent(CUSTOM_THEME_CHANGED_EVENT));
   if (typeof BroadcastChannel === "undefined") return;
-  const channel = new BroadcastChannel(CUSTOM_THEME_CHANNEL);
-  channel.postMessage(normalized);
-  channel.close();
+  let channel: BroadcastChannel | null = null;
+  try {
+    channel = new BroadcastChannel(CUSTOM_THEME_CHANNEL);
+    channel.postMessage(normalized);
+  } catch {
+    // The current window has already applied and persisted the custom theme.
+  } finally {
+    channel?.close();
+  }
 }
 
 export function subscribeCustomTheme() {
@@ -1167,10 +1173,14 @@ export function subscribeCustomTheme() {
     if (event.key === CUSTOM_THEME_STORAGE_KEY) applyIfCustom();
   };
   window.addEventListener("storage", handleStorage);
-  const channel =
-    typeof BroadcastChannel === "undefined"
-      ? null
-      : new BroadcastChannel(CUSTOM_THEME_CHANNEL);
+  let channel: BroadcastChannel | null = null;
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      channel = new BroadcastChannel(CUSTOM_THEME_CHANNEL);
+    } catch {
+      channel = null;
+    }
+  }
   if (channel) channel.onmessage = applyIfCustom;
   return () => {
     window.removeEventListener("storage", handleStorage);

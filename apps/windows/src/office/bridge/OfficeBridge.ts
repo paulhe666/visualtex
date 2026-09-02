@@ -165,9 +165,11 @@ export class OfficeBridge {
     this.sessionWatchTimer = window.setInterval(() => {
       if (this.sessionWatchRunning || sessionId !== this.activeSessionId) return;
       this.sessionWatchRunning = true;
-      void this.checkSessionState(sessionId).finally(() => {
-        this.sessionWatchRunning = false;
-      });
+      void this.checkSessionState(sessionId)
+        .catch(() => undefined)
+        .finally(() => {
+          this.sessionWatchRunning = false;
+        });
     }, 150);
   }
 

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { normalizePath, type Plugin } from "vite";
+import { patchVisualTexMathLiveRuntimeSafety } from "./vite.mathliveRuntimeSafety";
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,
@@ -164,7 +165,8 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
         );
       }
 
-      const patched = source
+      const patched = patchVisualTexMathLiveRuntimeSafety(
+        source
         .replace(
           svgBodyAnchor,
           [
@@ -225,7 +227,8 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
         .replace(
           symbolsAnchor,
           [symbolsAnchor, rareIntegralCharacterEntries].join("\n"),
-        );
+        ),
+      );
 
       return { code: patched, map: null };
     },

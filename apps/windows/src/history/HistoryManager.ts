@@ -458,6 +458,18 @@ export class HistoryManager {
     }
   }
 
+  requestUndo() {
+    void this.undo().catch((error) => {
+      console.error("VisualTeX history undo failed", error);
+    });
+  }
+
+  requestRedo() {
+    void this.redo().catch((error) => {
+      console.error("VisualTeX history redo failed", error);
+    });
+  }
+
   clear() {
     this.clearCommitTimer();
     this.undoStack = [];
@@ -508,7 +520,7 @@ export class HistoryManager {
     ) {
       void this.createCheckpoint(
         isLargeOperation ? entry.source : "history-capacity",
-      );
+      ).catch(() => undefined);
     }
 
     if (this.undoStack.length > MAX_HISTORY_ENTRIES) {

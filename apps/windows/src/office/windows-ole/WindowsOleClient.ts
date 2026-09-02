@@ -1,12 +1,15 @@
 import {
   OFFICE_BRIDGE_PROTOCOL_VERSION,
-  type OfficeBridgeEvent,
   type OfficeBridgeMethod,
   type OfficeBridgeRequest,
   type OfficeBridgeResponse,
 } from "../shared/protocol";
 import { createUuid } from "../../runtime/browserCompatibility";
 import { OfficeIntegrationError, withTimeout } from "../shared/errors";
+import {
+  decodeOfficeBridgeEvents,
+  decodeOfficeBridgeResponseEnvelope,
+} from "./windowsOlePayloadValidation";
 
 function installToken() {
   return (
@@ -22,6 +25,7 @@ export async function callWindowsOle<TResult>(
   method: OfficeBridgeMethod,
   params: Record<string, unknown> = {},
   timeoutMs = 15_000,
+  decodeResult?: (value: unknown) => TResult,
 ): Promise<TResult> {
   const request: OfficeBridgeRequest = {
     protocolVersion: OFFICE_BRIDGE_PROTOCOL_VERSION,
@@ -44,17 +48,49 @@ export async function callWindowsOle<TResult>(
     timeoutMs,
     `Windows Office Bridge 请求超时：${method}`,
   );
-  const payload = (await response.json().catch(() => null)) as
-    | OfficeBridgeResponse<TResult>
-    | null;
-  if (!response.ok || !payload?.ok) {
+  let rawPayload: unknown;
+  try {
+    rawPayload = await response.json();
+  } catch {
     throw new OfficeIntegrationError(
-      payload?.error?.message ?? `Windows Office Bridge 调用失败：${method}`,
-      payload?.error?.code ?? "windows_bridge_failed",
-      payload?.error?.retryable ?? false,
+      `Windows Office Bridge 返回了无效 JSON：${method}`,
+      "windows_bridge_invalid_response",
+      false,
     );
   }
-  return payload.result as TResult;
+
+  let payload: OfficeBridgeResponse<TResult>;
+  try {
+    payload = decodeOfficeBridgeResponseEnvelope<TResult>(rawPayload, request.id);
+  } catch (error) {
+    throw new OfficeIntegrationError(
+      error instanceof Error
+        ? error.message
+        : `Windows Office Bridge 返回了无效响应：${method}`,
+      "windows_bridge_invalid_response",
+      false,
+    );
+  }
+  if (!response.ok || !payload.ok) {
+    throw new OfficeIntegrationError(
+      payload.error?.message ?? `Windows Office Bridge 调用失败：${method}`,
+      payload.error?.code ?? "windows_bridge_failed",
+      payload.error?.retryable ?? false,
+    );
+  }
+  try {
+    return decodeResult
+      ? decodeResult(payload.result)
+      : (payload.result as TResult);
+  } catch (error) {
+    throw new OfficeIntegrationError(
+      error instanceof Error
+        ? error.message
+        : `Windows Office Bridge 返回了无效结果：${method}`,
+      "windows_bridge_invalid_result",
+      false,
+    );
+  }
 }
 
 export async function getWindowsOleEvents(cursor: number) {
@@ -70,7 +106,15 @@ export async function getWindowsOleEvents(cursor: number) {
     },
   );
   if (!response.ok) return [];
-  return (await response.json()) as Array<
-    OfficeBridgeEvent & { cursor: number }
-  >;
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return [];
+  }
+  try {
+    return decodeOfficeBridgeEvents(payload);
+  } catch {
+    return [];
+  }
 }

@@ -808,6 +808,14 @@ function notifyLocalChange() {
   }
 }
 
+function publishCustomSymbolRevision(nextRevision: number) {
+  try {
+    broadcastChannel?.postMessage({ revision: nextRevision });
+  } catch {
+    // Local persistence and in-window subscribers still succeed without IPC.
+  }
+}
+
 function customSymbolStorageEventKey(key: string | null) {
   return (
     key === CUSTOM_SYMBOL_STORAGE_KEY ||
@@ -827,12 +835,16 @@ function ensureBrowserEvents() {
     notifyLocalChange();
   });
   if (typeof BroadcastChannel !== "undefined") {
-    broadcastChannel = new BroadcastChannel(broadcastChannelName);
-    broadcastChannel.addEventListener("message", () => {
-      cachedStorageSignature = undefined;
-      cachedUserLibrary = null;
-      notifyLocalChange();
-    });
+    try {
+      broadcastChannel = new BroadcastChannel(broadcastChannelName);
+      broadcastChannel.addEventListener("message", () => {
+        cachedStorageSignature = undefined;
+        cachedUserLibrary = null;
+        notifyLocalChange();
+      });
+    } catch {
+      broadcastChannel = null;
+    }
   }
 }
 
@@ -952,7 +964,7 @@ function persistUserLibrary(library: CustomSymbolLibrary) {
   );
   cachedUserLibrary = normalized;
   notifyLocalChange();
-  broadcastChannel?.postMessage({ revision: index.revision });
+  publishCustomSymbolRevision(index.revision);
   return normalized;
 }
 
@@ -1044,7 +1056,7 @@ export function refreshCustomSymbolLibraryFromStorage() {
   cachedStorageSignature = undefined;
   cachedUserLibrary = null;
   notifyLocalChange();
-  broadcastChannel?.postMessage({ revision: Date.now() });
+  publishCustomSymbolRevision(Date.now());
 }
 
 function formatEm(value: number) {

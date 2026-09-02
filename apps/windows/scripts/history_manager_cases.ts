@@ -623,6 +623,55 @@ async function run() {
     assert.equal(manager.getState().redoStack.length, 1);
   }
 
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "" }]);
+    recordFormula(manager, {
+      before: "",
+      after: "a",
+      beforePosition: 0,
+      afterPosition: 1,
+      timestamp: 0,
+    });
+    manager.commitPendingTransaction();
+    document.lines[0].latex = "a";
+    manager.configure({
+      getDocumentSnapshot: () => cloneDocument(document),
+      applyEntry: async () => {
+        throw new Error("history replay probe failure");
+      },
+    });
+
+    await assert.rejects(
+      () => manager.undo(),
+      /history replay probe failure/,
+      "explicit undo callers must still observe replay failures",
+    );
+    assert.equal(manager.getState().undoStack.length, 1, "failed undo must restore its stack entry");
+    assert.equal(manager.getState().isReplaying, false, "failed undo must leave replay mode");
+
+    let unhandled: unknown = null;
+    let logged = false;
+    const onUnhandled = (reason: unknown) => {
+      unhandled = reason;
+    };
+    const originalConsoleError = console.error;
+    process.once("unhandledRejection", onUnhandled);
+    console.error = (...args: unknown[]) => {
+      if (String(args[0]).includes("VisualTeX history undo failed")) logged = true;
+    };
+    try {
+      manager.requestUndo();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } finally {
+      console.error = originalConsoleError;
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+    assert.equal(unhandled, null, "fire-and-forget undo must consume replay rejection");
+    assert.equal(logged, true, "fire-and-forget undo must retain a diagnostic");
+    assert.equal(manager.getState().undoStack.length, 1, "safe undo must preserve the failed entry");
+    assert.equal(manager.getState().isReplaying, false, "safe undo must leave replay mode");
+  }
+
   console.log("HistoryManager smoke test passed");
 }
 

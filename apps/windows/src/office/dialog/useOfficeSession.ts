@@ -17,7 +17,12 @@ function sessionIdFromLocation() {
   const query = new URLSearchParams(window.location.search).get("sessionId");
   if (query) return query;
   const match = window.location.pathname.match(/\/dialog\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : "";
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
 }
 
 export function useOfficeSession() {
@@ -30,8 +35,12 @@ export function useOfficeSession() {
 
   useEffect(() => {
     const handleSessionChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
-      const next = detail?.sessionId?.trim() ?? "";
+      const detail = (event as CustomEvent<unknown>).detail;
+      const rawSessionId =
+        detail && typeof detail === "object" && "sessionId" in detail
+          ? (detail as { sessionId?: unknown }).sessionId
+          : undefined;
+      const next = typeof rawSessionId === "string" ? rawSessionId.trim() : "";
       (window as OfficeSessionWindow).__VISUALTEX_OFFICE_SESSION_ID__ = next || undefined;
       saveQueueRef.current = Promise.resolve();
       loadRunIdRef.current += 1;

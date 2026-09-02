@@ -1,4 +1,12 @@
 import type { VisualTeXFormulaMetadata } from "../metadata/formulaMetadata";
+import {
+  decodeCachedFormulaMetadata,
+  decodeCompanionHealth,
+  decodeNativePowerPointSelection,
+  decodeNativePowerPointSlideSnapshot,
+  decodeNativeWordInlineBaselineResult,
+  decodePowerPointInteractionEvents,
+} from "./companionPayloadValidation";
 
 export interface CompanionHealth {
   ok: boolean;
@@ -59,7 +67,7 @@ export async function getCompanionHealth(): Promise<CompanionHealth> {
   if (!response.ok) {
     throw new Error(`VisualTeX companion health check failed (${response.status})`);
   }
-  return (await response.json()) as CompanionHealth;
+  return decodeCompanionHealth(await response.json());
 }
 
 function installToken() {
@@ -89,7 +97,7 @@ export async function getCachedFormulaMetadata(formulaId: string) {
   if (!response.ok) {
     throw new Error(`Unable to read VisualTeX formula cache (${response.status})`);
   }
-  return (await response.json()) as VisualTeXFormulaMetadata;
+  return decodeCachedFormulaMetadata(await response.json());
 }
 
 export async function putCachedFormulaMetadata(
@@ -114,12 +122,13 @@ export async function putCachedFormulaMetadata(
       }`,
     );
   }
-  return (await response.json()) as VisualTeXFormulaMetadata;
+  return decodeCachedFormulaMetadata(await response.json());
 }
 
 async function nativeOfficeRequest<T>(
   path: string,
   init: RequestInit = {},
+  decode?: (value: unknown) => T,
 ): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -141,12 +150,20 @@ async function nativeOfficeRequest<T>(
     );
   }
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("VisualTeX native Office integration returned invalid JSON.");
+  }
+  return decode ? decode(payload) : (payload as T);
 }
 
 export function getNativePowerPointSelection() {
   return nativeOfficeRequest<NativePowerPointSelection>(
     "/api/v1/powerpoint/selection",
+    {},
+    decodeNativePowerPointSelection,
   );
 }
 
@@ -157,12 +174,15 @@ export function markNativePowerPointSelection(formulaId: string) {
       method: "POST",
       body: JSON.stringify({ formulaId }),
     },
+    decodeNativePowerPointSelection,
   );
 }
 
 export function getNativePowerPointSlideSnapshot() {
   return nativeOfficeRequest<NativePowerPointSlideSnapshot>(
     "/api/v1/powerpoint/slide/snapshot",
+    {},
+    decodeNativePowerPointSlideSnapshot,
   );
 }
 
@@ -176,6 +196,7 @@ export function markLastNativePowerPointFormula(
       method: "POST",
       body: JSON.stringify({ formulaId, previousShapeNames }),
     },
+    decodeNativePowerPointSelection,
   );
 }
 
@@ -196,6 +217,7 @@ export function replaceLastNativePowerPointFormula(
         ...geometry,
       }),
     },
+    decodeNativePowerPointSelection,
   );
 }
 
@@ -222,6 +244,7 @@ export function applyNativeWordInlineBaseline(
       method: "POST",
       body: JSON.stringify({ position, formulaMarker }),
     },
+    decodeNativeWordInlineBaselineResult,
   );
 }
 
@@ -233,6 +256,8 @@ export function getPowerPointInteractionEvents(
     `/api/v1/powerpoint/events?cursor=${encodeURIComponent(
       String(cursor),
     )}&host=${encodeURIComponent(host)}`,
+    {},
+    decodePowerPointInteractionEvents,
   );
 }
 

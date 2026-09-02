@@ -20,47 +20,16 @@ import {
   X,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import {
+  decodeBooleanStatus,
+  decodeOfficeCompanionStatus,
+  decodeOfficePlatformStatus,
+  type OfficeCompanionStatus,
+  type OfficePlatformStatus,
+  type WindowsOfficeMode,
+} from "./windowsOfficeStatusValidation";
 
-export type WindowsOfficeMode = "auto" | "vsto";
-
-interface OfficePlatformStatus {
-  platform: string;
-  mode: WindowsOfficeMode;
-  activeBackend: string;
-  oleBridgeHealthy: boolean;
-  oleLocalServerHealthy: boolean;
-  staticInstallVerified: boolean;
-  wordFilesPresent: boolean;
-  wordRegistryComplete: boolean;
-  wordLoadEnabled: boolean;
-  powerpointFilesPresent: boolean;
-  powerpointRegistryComplete: boolean;
-  powerpointLoadEnabled: boolean;
-  vstoWordHealthy: boolean;
-  vstoPowerpointHealthy: boolean;
-  wordConnected: boolean;
-  powerpointConnected: boolean;
-  connectionVerificationAttempted: boolean;
-  companionProcessRunning: boolean;
-  companionPortListening: boolean;
-  companionHttpsHealthy: boolean;
-  companionCertificateMatches: boolean;
-  companionProtocolMatches: boolean;
-  officeRuntimeVerified: boolean;
-  currentUserCertificateTrusted: boolean;
-  backgroundStartEnabled: boolean;
-  lastError: string | null;
-}
-
-interface OfficeCompanionStatus {
-  running: boolean;
-  bindAddress: string;
-  port: number;
-  certificatePath: string;
-  officeUiVersion: string;
-  protocolVersion: number;
-  lastError: string | null;
-}
+export type { WindowsOfficeMode } from "./windowsOfficeStatusValidation";
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
@@ -98,13 +67,18 @@ export function WindowsOfficeIntegrationSettings() {
     try {
       const [nextStatus, nextCompanion, nextMathTypeDoubleClickEditEnabled] =
         await Promise.all([
-          invoke<OfficePlatformStatus>("get_office_platform_status"),
-          invoke<OfficeCompanionStatus>("get_office_companion_status"),
-          invoke<boolean>("get_mathtype_double_click_edit_enabled"),
+          invoke<unknown>("get_office_platform_status"),
+          invoke<unknown>("get_office_companion_status"),
+          invoke<unknown>("get_mathtype_double_click_edit_enabled"),
         ]);
-      setStatus(nextStatus);
-      setCompanion(nextCompanion);
-      setMathTypeDoubleClickEditEnabled(nextMathTypeDoubleClickEditEnabled);
+      setStatus(decodeOfficePlatformStatus(nextStatus));
+      setCompanion(decodeOfficeCompanionStatus(nextCompanion));
+      setMathTypeDoubleClickEditEnabled(
+        decodeBooleanStatus(
+          nextMathTypeDoubleClickEditEnabled,
+          "mathTypeDoubleClickEditEnabled",
+        ),
+      );
       setMessage("");
     } catch (error) {
       setMessage(

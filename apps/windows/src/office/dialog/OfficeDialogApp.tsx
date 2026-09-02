@@ -426,7 +426,7 @@ export function OfficeDialogApp() {
   const [toast, setToast] = useState("");
   const [ocrOpen, setOcrOpen] = useState(false);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
-    const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
+    const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
     return OCR_MODELS.some((item) => item.id === stored)
       ? (stored as OcrModelName)
       : DEFAULT_OCR_MODEL;
@@ -517,7 +517,10 @@ export function OfficeDialogApp() {
         setEditorLayout(nextLayout);
       }
     };
+    let syncInFlight = false;
     const syncFromCompanion = async () => {
+      if (disposed || syncInFlight) return;
+      syncInFlight = true;
       try {
         const [status, preferences] = await Promise.all([
           getOfficeTheme(),
@@ -546,6 +549,8 @@ export function OfficeDialogApp() {
         }
       } catch {
         // Keep the last applied appearance while the companion is restarting.
+      } finally {
+        syncInFlight = false;
       }
     };
 
@@ -1676,7 +1681,7 @@ export function OfficeDialogApp() {
     if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
     startupOcrModelRef.current = nextModel;
     setOcrModel(nextModel);
-    window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
+    writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
     void warmupOcrModel(nextModel).catch(() => undefined);
   };
 
@@ -2277,7 +2282,7 @@ export function OfficeDialogApp() {
         data-office-undo-action
         aria-label={isEn ? "Undo" : "撤销"}
         title={isEn ? "Undo" : "撤销"}
-        onClick={() => void historyManager.undo()}
+        onClick={() => historyManager.requestUndo()}
         disabled={historyBusy || !historyState.canUndo || historyState.isReplaying}
       >
         <Undo2 size={16} strokeWidth={2} />
@@ -2288,7 +2293,7 @@ export function OfficeDialogApp() {
         data-office-redo-action
         aria-label={isEn ? "Redo" : "重做"}
         title={isEn ? "Redo" : "重做"}
-        onClick={() => void historyManager.redo()}
+        onClick={() => historyManager.requestRedo()}
         disabled={historyBusy || !historyState.canRedo || historyState.isReplaying}
       >
         <Redo2 size={16} strokeWidth={2} />

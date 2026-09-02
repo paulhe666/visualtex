@@ -65,14 +65,21 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
             var input = Marshal.PtrToStructure<LowLevelMouseInput>(lParam);
             var now = Stopwatch.GetTimestamp();
             var previous = Interlocked.Read(ref _lastClickTimestamp);
-            var elapsedMilliseconds = previous == 0
-                ? double.PositiveInfinity
-                : (now - previous) * 1000d / Stopwatch.Frequency;
-            var withinTime = elapsedMilliseconds <= GetDoubleClickTime();
-            var withinX = Math.Abs(input.Pt.X - _lastClickX)
-                <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
-            var withinY = Math.Abs(input.Pt.Y - _lastClickY)
-                <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
+            var hasPreviousClick = previous != 0;
+            var elapsedMilliseconds = hasPreviousClick
+                ? (now - previous) * 1000d / Stopwatch.Frequency
+                : double.PositiveInfinity;
+            var withinTime = hasPreviousClick
+                && elapsedMilliseconds <= GetDoubleClickTime();
+            // The initial coordinates use int.MinValue sentinels. Never subtract
+            // them in 32-bit arithmetic on the first click: Math.Abs(int.MinValue)
+            // throws OverflowException and can terminate the low-level hook thread.
+            var withinX = hasPreviousClick
+                && Math.Abs((long)input.Pt.X - _lastClickX)
+                    <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
+            var withinY = hasPreviousClick
+                && Math.Abs((long)input.Pt.Y - _lastClickY)
+                    <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
 
             _lastClickX = input.Pt.X;
             _lastClickY = input.Pt.Y;

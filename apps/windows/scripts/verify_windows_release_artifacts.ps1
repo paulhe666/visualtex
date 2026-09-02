@@ -102,8 +102,8 @@ try {
 Assert-ManifestFileRecord $ocrPythonRoot $ocrPythonManifest.wheelhouse.lock "Hash-locked OCR requirements"
 $wheelhouseRoot = Join-Path $ocrPythonRoot "wheelhouse"
 $manifestWheels = @($ocrPythonManifest.wheelhouse.files)
-if ($manifestWheels.Count -ne 68) {
-    throw "The fixed Windows OCR wheelhouse must contain exactly 68 wheels; manifest contains $($manifestWheels.Count)."
+if ($manifestWheels.Count -ne 71) {
+    throw "The fixed Windows OCR wheelhouse must contain exactly 71 wheels; manifest contains $($manifestWheels.Count)."
 }
 $manifestWheelNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($wheel in $manifestWheels) {
@@ -136,7 +136,7 @@ foreach ($requiredLockMarker in @("paddlepaddle==3.3.1", "paddleocr==3.7.0", "to
         throw "OCR requirements lock is missing $requiredLockMarker"
     }
 }
-Write-Host "Private OCR Python 3.12.10 x64 archive, app-local Microsoft OpenMP runtime and exact 68-wheel offline closure verified."
+Write-Host "Private OCR Python 3.12.10 x64 archive, app-local Microsoft OpenMP runtime and exact 71-wheel offline closure verified."
 
 $ocrModelCatalog = Get-Content -LiteralPath $ocrModelCatalogPath -Raw | ConvertFrom-Json
 if ([int]$ocrModelCatalog.schemaVersion -ne 1 -or

@@ -6,6 +6,13 @@ import type {
 } from "../../editor/formulaFontPreferences";
 import type { CustomThemeState } from "../../themeCustomization";
 import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
+import {
+  decodeOfficeBatchConversion,
+  decodeOfficeFormulaSession,
+  decodeOfficePreferences,
+  decodeOfficeThemeStatus,
+  decodePreparedPowerPointCommit,
+} from "./sessionPayloadValidation";
 
 export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
@@ -141,7 +148,11 @@ function installToken() {
   );
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  init: RequestInit = {},
+  decode?: (value: unknown) => T,
+): Promise<T> {
   const token = installToken();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -170,7 +181,13 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
       );
     }
     if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("VisualTeX Office companion returned invalid JSON.");
+    }
+    return decode ? decode(payload) : (payload as T);
   } catch (reason) {
     if (timeoutController.signal.aborted && !init.signal?.aborted) {
       throw new Error(
@@ -184,29 +201,45 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 export function createOfficeSession(input: CreateOfficeSessionInput) {
-  return requestJson<OfficeFormulaSession>("/api/v1/sessions", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return requestJson<OfficeFormulaSession>(
+    "/api/v1/sessions",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    decodeOfficeFormulaSession,
+  );
 }
 
 export function getOfficeSession(sessionId: string) {
   return requestJson<OfficeFormulaSession>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
+    {},
+    decodeOfficeFormulaSession,
   );
 }
 
 export function getOfficeTheme() {
-  return requestJson<OfficeThemeStatus>("/api/v1/theme");
+  return requestJson<OfficeThemeStatus>(
+    "/api/v1/theme",
+    {},
+    decodeOfficeThemeStatus,
+  );
 }
 
 export function getOfficePreferences() {
-  return requestJson<OfficePreferences>("/api/v1/preferences");
+  return requestJson<OfficePreferences>(
+    "/api/v1/preferences",
+    {},
+    decodeOfficePreferences,
+  );
 }
 
 export function takeOfficeConverterBatch() {
   return requestJson<OfficeBatchConversion>(
     "/api/v1/app/converter/next-batch",
+    {},
+    decodeOfficeBatchConversion,
   );
 }
 
@@ -217,6 +250,7 @@ export function updateOfficeSession(
   return requestJson<OfficeFormulaSession>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     { method: "PATCH", body: JSON.stringify(update) },
+    decodeOfficeFormulaSession,
   );
 }
 
@@ -224,6 +258,7 @@ export function commitNativePowerPointSession(sessionId: string) {
   return requestJson<PreparedPowerPointCommit>(
     `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/commit`,
     { method: "POST", body: "{}" },
+    decodePreparedPowerPointCommit,
   );
 }
 
@@ -231,6 +266,7 @@ export function confirmNativePowerPointSession(sessionId: string) {
   return requestJson<OfficeFormulaSession>(
     `/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/confirm`,
     { method: "POST", body: "{}" },
+    decodeOfficeFormulaSession,
   );
 }
 
@@ -238,6 +274,7 @@ export function commitWindowsOfficeSession(sessionId: string) {
   return requestJson<OfficeFormulaSession>(
     `/api/v1/windows/sessions/${encodeURIComponent(sessionId)}/commit`,
     { method: "POST", body: "{}" },
+    decodeOfficeFormulaSession,
   );
 }
 

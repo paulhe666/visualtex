@@ -359,8 +359,8 @@ async function readWindowConfiguration(): Promise<VisualTexConfigurationWindowSt
     };
   }
   try {
-    return await invoke<VisualTexConfigurationWindowState>(
-      "get_app_window_configuration",
+    return normalizeWindowState(
+      await invoke<unknown>("get_app_window_configuration"),
     );
   } catch {
     return undefined;

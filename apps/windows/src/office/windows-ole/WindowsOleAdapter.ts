@@ -13,6 +13,10 @@ import type { OfficeSelectionResult } from "../shared/protocol";
 import type { VisualTeXFormulaMetadata } from "../shared/formulaMetadata";
 import { OfficeIntegrationError } from "../shared/errors";
 import { callWindowsOle } from "./WindowsOleClient";
+import {
+  decodeOfficeSelectionResult,
+  decodeUpdatedEquationNumberResult,
+} from "./windowsOlePayloadValidation";
 
 export interface WindowsOleInteractionTarget {
   host: OfficeHost;
@@ -61,6 +65,8 @@ export class WindowsOleAdapter implements OfficeHostAdapter {
     const selection = await callWindowsOle<OfficeSelectionResult>(
       selectionMethod(this.host),
       { mode },
+      15_000,
+      decodeOfficeSelectionResult,
     );
     if (selection.readOnly) {
       throw new OfficeIntegrationError(
@@ -107,6 +113,8 @@ export class WindowsOleAdapter implements OfficeHostAdapter {
     const result = await callWindowsOle<{ updated: number }>(
       "word.updateEquationNumbers",
       {},
+      15_000,
+      decodeUpdatedEquationNumberResult,
     );
     this.showMessage(`VisualTeX 已更新 ${result.updated} 个公式编号。`);
     return result.updated;
