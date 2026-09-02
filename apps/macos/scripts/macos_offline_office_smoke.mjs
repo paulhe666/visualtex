@@ -142,7 +142,6 @@ for (const callback of [
   "VTWordRibbonConvertNative",
   "VTWordRibbonConvertImage",
   "VTWordRibbonNumbering",
-  "VTWordRibbonCrossReference",
   "VTWordRibbonOpen",
   "VTWordRibbonRestoreSelectionOmmlToLatex",
   "VTWordRibbonRestoreSelectionImageToLatex",
@@ -337,7 +336,14 @@ expectIncludes(wordLatexRedrawRenderer, "String(span.fontSizePt)", "The redraw c
 expectIncludes(rustRuntime, 'action", "latexRedrawPreflight"', "The native bridge must dispatch a non-mutating Word redraw preflight");
 expectIncludes(rustRuntime, "parse_latex_redraw_font_sizes", "The native bridge must validate the complete Word font-size plan");
 expect(!documentImportApp.includes("autoRedrawStartedRef"), "The document importer must not own the automatic Word redraw workflow");
-expectIncludes(wordAdapter, "Public Sub VTWordRibbonCrossReference", "The visible Equation-reference Ribbon button must have a resolvable callback");
+expectIncludes(wordRibbon, '<dynamicMenu id="VisualTeX.Mac.Word.CrossReference"', "The VisualTeX Equation-reference control must expose a Ribbon-native formula list");
+expectIncludes(wordRibbon, 'getContent="VTWordRibbonCrossReferenceMenuContent"', "The Equation-reference menu must load the current document inventory when opened");
+expectIncludes(wordAdapter, "Public Sub VTWordRibbonCrossReferenceMenuContent", "The Equation-reference Ribbon list must have a resolvable content callback");
+expectIncludes(wordAdapter, "Public Sub VTWordRibbonCrossReferenceItem", "Each Equation-reference Ribbon item must have a direct insertion callback");
+expectIncludes(wordAdapter, "VTEquationNumberCrossReferenceItems(ActiveDocument)", "The Ribbon list must reuse the validated VisualTeX Equation inventory");
+expect(!wordScript.includes("OpenEquationCrossReferencePicker"), "The Equation-reference Ribbon list must not re-enter Word through AppleScriptTask");
+expectIncludes(wordAdapter, "Selection.Range.Duplicate", "The Equation-reference picker must freeze the insertion Range before the user chooses a formula");
+expectIncludes(wordAdapter, "Older VisualTeX image formulas used a", "The mixed Equation inventory must retain legacy numbered image formulas alongside OMML formulas");
 expectIncludes(wordAdapter, "nativeEquation", "Word requests must preserve the direct native-equation intent");
 expectIncludes(wordAdapter, "VT_WORD_IMAGE_SCALE_VARIABLE_PREFIX", "Word must persist formula point size and reference image geometry per formula id");
 expectIncludes(wordAdapter, "VTPreferredWordFormulaFontSize(Selection.Range.Duplicate)", "New Word formulas must inherit the current selection point size");

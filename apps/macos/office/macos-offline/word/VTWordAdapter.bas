@@ -109,6 +109,8 @@ Private VT_WORD_NUMBERING_PREFERENCE_CACHE_LOADED As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_AVAILABLE As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_MODE As String
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_SEPARATOR As String
+Private VT_WORD_REFERENCE_MENU_DOCUMENT As Document
+Private VT_WORD_REFERENCE_MENU_INSERTION_RANGE As Range
 Private VT_WORD_NATIVE_ROLLBACK_DOCUMENT As Document
 
 Private Sub VTClosePreparedNativeRollbackDocument()
@@ -10710,10 +10712,32 @@ Private Function VTValidNumberedFormulaIds( _
                                                         formulaRange, _
                                                         visibleNumberField)
                                             Else
-                                                Set numberRange = Nothing
+                                                ' Older VisualTeX image formulas used a
+                                                ' plain parenthesized VT_R_ bookmark next
+                                                ' to the image while keeping the live SEQ
+                                                ' result in VT_N_. They remain safe picker
+                                                ' targets: inserted references point at the
+                                                ' durable VT_N_ field, never at this legacy
+                                                ' visible text.
+                                                Set numberRange = _
+                                                    documentObject.Bookmarks( _
+                                                        numberBookmarkName).Range.Duplicate
+                                                formulaIsLive = _
+                                                    Not numberRange.Information( _
+                                                        wdWithInTable) And _
+                                                    numberRange.Paragraphs(1).Range.Start = _
+                                                        formulaParagraph.Start And _
+                                                    numberRange.Start >= formulaRange.End And _
+                                                    Trim$(numberRange.Text) = _
+                                                        "(" & Trim$( _
+                                                            documentObject.Bookmarks( _
+                                                                sequenceBookmarkName).Range.Text) & _
+                                                        ")"
                                             End If
-                                            formulaIsLive = _
-                                                Not numberRange Is Nothing
+                                            If Not visibleNumberField Is Nothing Then
+                                                formulaIsLive = _
+                                                    Not numberRange Is Nothing
+                                            End If
                                         End If
                                     ElseIf formulaRange.InlineShapes.Count = 0 And _
                                            formulaRange.OMaths.Count = 1 And _
@@ -14550,6 +14574,134 @@ End Sub
 
 Public Sub VTWordRibbonCrossReference(ByVal control As IRibbonControl)
     VisualTeX_OpenEquationCrossReference
+End Sub
+
+Private Function VTWordRibbonXmlAttribute( _
+    ByVal value As String) As String
+
+    value = Replace$(value, "&", "&amp;")
+    value = Replace$(value, """", "&quot;")
+    value = Replace$(value, "<", "&lt;")
+    value = Replace$(value, ">", "&gt;")
+    VTWordRibbonXmlAttribute = value
+End Function
+
+Private Function VTWordRibbonReferenceMenuMessage( _
+    ByVal labelText As String) As String
+
+    VTWordRibbonReferenceMenuMessage = _
+        "<menu xmlns=""" & VTWordRibbonCustomUiNamespace() & """>" & _
+        "<button id=""VisualTeX.Mac.Word.CrossReference.Empty""" & _
+        " label=""" & VTWordRibbonXmlAttribute(labelText) & """" & _
+        " enabled=""false""/>" & _
+        "</menu>"
+End Function
+
+Private Function VTWordRibbonCustomUiNamespace() As String
+    VTWordRibbonCustomUiNamespace = _
+        "http:" & Chr$(47) & Chr$(47) & _
+        "schemas.microsoft.com/office/2009/07/customui"
+End Function
+
+Public Sub VTWordRibbonCrossReferenceMenuContent( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    Dim crossReferenceItems As Variant
+    Dim insertionRange As Range
+    Dim itemIndex As Long
+    Dim itemText As String
+    Dim menuXml As String
+
+    On Error GoTo MenuFailed
+    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
+    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    If Documents.Count = 0 Then
+        returnedValue = VTWordRibbonReferenceMenuMessage( _
+            VTUnicodeText(35831, 20808, 25171, 24320, 19968, 20010, _
+                87, 111, 114, 100, 32, 25991, 26723))
+        Exit Sub
+    End If
+
+    Set insertionRange = VTResolveEquationReferenceInsertionRange( _
+        Selection.Range.Duplicate)
+    If insertionRange Is Nothing Then GoTo MenuFailed
+    crossReferenceItems = _
+        VTEquationNumberCrossReferenceItems(ActiveDocument)
+    If Not IsArray(crossReferenceItems) Then
+        returnedValue = VTWordRibbonReferenceMenuMessage( _
+            VTUnicodeText(24403, 21069, 25991, 26723, 27809, 26377, _
+                21487, 24341, 29992, 30340, 32534, 21495, 20844, 24335))
+        Exit Sub
+    End If
+
+    Set VT_WORD_REFERENCE_MENU_DOCUMENT = ActiveDocument
+    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = insertionRange.Duplicate
+    menuXml = _
+        "<menu xmlns=""" & VTWordRibbonCustomUiNamespace() & """>"
+    For itemIndex = LBound(crossReferenceItems) To _
+                    UBound(crossReferenceItems)
+        itemText = CStr(crossReferenceItems(itemIndex))
+        itemText = Replace$(itemText, vbCr, " ")
+        itemText = Replace$(itemText, vbLf, " ")
+        itemText = Replace$(itemText, vbTab, " ")
+        If Len(itemText) > 180 Then
+            itemText = Left$(itemText, 177) & "..."
+        End If
+        menuXml = menuXml & _
+            "<button id=""VisualTeX.Mac.Word.CrossReference.Item." & _
+            CStr(itemIndex) & """ label=""" & _
+            VTWordRibbonXmlAttribute(itemText) & """ tag=""" & _
+            CStr(itemIndex) & _
+            """ onAction=""VTWordRibbonCrossReferenceItem""/>"
+    Next itemIndex
+    returnedValue = menuXml & "</menu>"
+    Exit Sub
+
+MenuFailed:
+    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
+    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    returnedValue = VTWordRibbonReferenceMenuMessage( _
+        VTUnicodeText(26080, 27861, 35835, 21462, 20844, 24335, 21015, 34920))
+    Err.Clear
+End Sub
+
+Public Sub VTWordRibbonCrossReferenceItem( _
+    ByVal control As IRibbonControl)
+
+    Dim itemIndex As Long
+    Dim insertedRange As Range
+    Dim insertionRange As Range
+    Dim targetDocument As Document
+
+    On Error GoTo InsertFailed
+    If VT_WORD_REFERENCE_MENU_DOCUMENT Is Nothing Or _
+       VT_WORD_REFERENCE_MENU_INSERTION_RANGE Is Nothing Then
+        Err.Raise vbObjectError + 7547, "VisualTeX", _
+            "Open the Equation-reference list again before selecting an item."
+    End If
+    If Not IsNumeric(control.Tag) Then
+        Err.Raise vbObjectError + 7547, "VisualTeX", _
+            "The selected Equation-reference item is invalid."
+    End If
+    itemIndex = CLng(control.Tag)
+    Set targetDocument = VT_WORD_REFERENCE_MENU_DOCUMENT
+    Set insertionRange = _
+        VT_WORD_REFERENCE_MENU_INSERTION_RANGE.Duplicate
+    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
+    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+
+    targetDocument.Activate
+    Set insertedRange = VTInsertEquationNumberReferenceAtRange( _
+        insertionRange, itemIndex, True)
+    insertedRange.Collapse wdCollapseEnd
+    insertedRange.Select
+    Exit Sub
+
+InsertFailed:
+    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
+    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    VTShowError "equation cross-reference", Err.Number, Err.Description
 End Sub
 
 Public Sub VTWordRibbonConvertImage(ByVal control As IRibbonControl)
