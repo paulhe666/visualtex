@@ -37,15 +37,30 @@ internal static partial class Program
             Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", "1");
             Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
 
-            mathTypeBaseline = SnapshotMathTypeProcessIds();
-            if (mathTypeBaseline.Count != 0)
-                throw new InvalidOperationException(
-                    "Installed MathType regression acceptance requires MathType.exe process count to be zero before Word starts.");
-
             var reverseOnly = string.Equals(
                 Environment.GetEnvironmentVariable("VISUALTEX_INSTALLED_MATHTYPE_REVERSE_ONLY"),
                 "1",
                 StringComparison.Ordinal);
+            var firstLeftOnly = string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_INSTALLED_MATHTYPE_FIRST_LEFT_ONLY"),
+                "1",
+                StringComparison.Ordinal);
+
+            mathTypeBaseline = SnapshotMathTypeProcessIds();
+            if (firstLeftOnly)
+            {
+                foreach (var processId in mathTypeBaseline)
+                {
+                    if (!MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess(processId))
+                        throw new InvalidOperationException(
+                            $"Blank-document first-left acceptance found a non-RPC MathType process before Word starts: pid={processId}.");
+                }
+            }
+            else if (mathTypeBaseline.Count != 0)
+            {
+                throw new InvalidOperationException(
+                    "Installed MathType regression acceptance requires MathType.exe process count to be zero before Word starts.");
+            }
             // The reverse-only gate validates the installed VSTO/Word conversion
             // path and does not need screenshot/UI interaction. Keep Word hidden so
             // the low-level double-click hook cannot compete with the COM driver.
@@ -70,6 +85,23 @@ internal static partial class Program
             WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
             WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
                 EquationNumberFormat.Heading1DotId);
+
+            if (firstLeftOnly)
+            {
+                RunInstalledFirstLeftMathTypePath(
+                    client,
+                    application,
+                    callbacks,
+                    artifactRoot,
+                    mathTypeBaseline);
+                AssertNoUnexpectedMathTypeProcessDuringInstalledSession(
+                    mathTypeBaseline,
+                    "installed blank-document first-left MathType acceptance");
+                acceptanceCompleted = true;
+                Console.WriteLine(
+                    "[MATHTYPE INSTALLED FIRST LEFT] Actual installed VisualTeX.WordVsto inserted the first formula in a blank Word document through Ribbon -> Session -> in-process VSTO commit with left numbering.");
+                return;
+            }
 
             if (reverseOnly)
             {
@@ -148,6 +180,86 @@ internal static partial class Program
                 "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
                 previousFormatAcceptance);
             Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", previousAcceptance);
+        }
+    }
+
+    private static void RunInstalledFirstLeftMathTypePath(
+        VisualTeXSessionClient client,
+        Word.Application application,
+        dynamic callbacks,
+        string artifactRoot,
+        IReadOnlyCollection<int> mathTypeBaseline)
+    {
+        Word.Document? document = null;
+        Word.InlineShape? shape = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            WordEquationNumbering.SetEquationNumberFormatPreference(
+                document,
+                EquationNumberFormat.Heading1DotId);
+            WordEquationNumbering.SetDefaultMathTypeNumberPosition("left");
+
+            var export = CreateInstalledMathTypeProductExport(
+                client,
+                @"\frac{a}{b}",
+                FormulaOleContract.MathTypeOleMode);
+            CommitInstalledMathTypeDisplayFromRibbon(
+                client,
+                callbacks,
+                document,
+                @"\frac{a}{b}",
+                export,
+                "left",
+                1,
+                mathTypeBaseline);
+
+            AssertEqual(1, CountMathTypeOleShapes(document),
+                "Blank-document installed first-left insertion did not create exactly one Equation.DSMT4 object.");
+            AssertEqual(1, CountMathTypePlaceRefFields(document),
+                "Blank-document installed first-left insertion did not create exactly one MTPlaceRef field.");
+            AssertMathTypeNumberTexts(document, "(0.1)");
+            shape = document.InlineShapes[1];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "left",
+                "installed blank-document first-left equation");
+            AssertInstalledMathTypeDisplayGeometry(
+                document,
+                shape,
+                "left",
+                "installed blank-document first-left equation");
+
+            var targetPath = Path.Combine(
+                artifactRoot,
+                "Installed-MathType-Blank-First-Left.docx");
+            document.SaveAs2(targetPath, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = application.Documents.Open(targetPath, ReadOnly: false, Visible: false);
+            AssertEqual(1, CountMathTypeOleShapes(document),
+                "Blank-document installed first-left equation did not survive save/reopen.");
+            AssertEqual(1, CountMathTypePlaceRefFields(document),
+                "Blank-document installed first-left MTPlaceRef did not survive save/reopen.");
+            AssertMathTypeNumberTexts(document, "(0.1)");
+            Release(shape);
+            shape = document.InlineShapes[1];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "left",
+                "reopened installed blank-document first-left equation");
+            Console.WriteLine(
+                "[installed first-left] Blank Word document -> Ribbon -> real Session -> installed in-process VSTO commit -> left-numbered Equation.DSMT4 passed and survived save/reopen.");
+        }
+        finally
+        {
+            Release(shape);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
         }
     }
 

@@ -1499,6 +1499,15 @@ internal static class MathTypeEquationReferences
                 hiddenResult = nested.Result;
                 var start = hiddenResult.End;
                 var end = outerCode.End;
+
+                // The visible MathType number ends at its closing punctuation. A
+                // malformed/legacy MTPlaceRef can contain one or more direct spaces
+                // after that punctuation; bookmarking them makes every REF result
+                // visibly render the same unwanted blanks. Trim only trailing
+                // whitespace owned by the outer field code, never number content.
+                var outerText = outerCode.Text ?? string.Empty;
+                var trimmedLength = outerText.TrimEnd().Length;
+                end -= outerText.Length - trimmedLength;
                 if (end <= start) return false;
                 numberRange = document.Range(start, end);
                 return true;

@@ -224,9 +224,9 @@ internal static class MathTypeEquationNumbering
         MathTypeWordOpenXml.NumberTemplate template)
     {
         Range? numberRange = null;
-        Range? insertion = null;
         Range? outerCode = null;
         Range? rebuiltCode = null;
+        Fields? rebuiltNestedFields = null;
         Field? rebuilt = null;
         Field? createdField = null;
         Range? createdCode = null;
@@ -285,43 +285,30 @@ internal static class MathTypeEquationNumbering
             Release(outerCode);
             outerCode = null;
 
-            insertion = document.Range(fieldStart, fieldStart);
-            rebuilt = document.Fields.Add(
-                insertion,
-                WdFieldType.wdFieldMacroButton,
-                "MTPlaceRef",
-                false);
+            // Use the same structurally verified MTPlaceRef constructor as direct
+            // MathType insertion. The old formatter rebuilt nested SEQ fields at
+            // Field.Code.End while the outer field was in result view, which can
+            // detach MTEqn/MTChap into sibling document fields just like the former
+            // left-number insertion bug.
+            rebuilt = WordFormulaService.CreateIndependentMathTypePlaceRef(
+                document,
+                fieldStart,
+                template);
 
-            foreach (var segment in template.Segments)
+            rebuiltCode = rebuilt.Code;
+            rebuiltFont = rebuiltCode.Font;
+            rebuiltFont.Color = codeColor;
+            rebuiltNestedFields = rebuiltCode.Fields;
+            for (var index = 1; index <= rebuiltNestedFields.Count; index++)
             {
-                Release(rebuiltCode);
-                rebuiltCode = rebuilt.Code;
-                Release(insertion);
-                insertion = document.Range(rebuiltCode.End, rebuiltCode.End);
-                if (!segment.IsField)
-                {
-                    if (!string.IsNullOrEmpty(segment.Value))
-                        insertion.InsertAfter(segment.Value);
-                    continue;
-                }
-
                 Release(createdField);
-                createdField = document.Fields.Add(
-                    insertion,
-                    WdFieldType.wdFieldEmpty,
-                    segment.Value.Trim(),
-                    false);
+                createdField = rebuiltNestedFields[index];
                 Release(createdCode);
                 createdCode = createdField.Code;
                 Release(createdFont);
                 createdFont = createdCode.Font;
                 createdFont.Color = codeColor;
             }
-
-            Release(rebuiltCode);
-            rebuiltCode = rebuilt.Code;
-            rebuiltFont = rebuiltCode.Font;
-            rebuiltFont.Color = codeColor;
             try { rebuilt.ShowCodes = false; } catch { }
 
             if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
@@ -355,12 +342,12 @@ internal static class MathTypeEquationNumbering
             Release(createdFont);
             Release(createdCode);
             Release(createdField);
+            Release(rebuiltNestedFields);
             Release(rebuiltFont);
             Release(rebuiltCode);
             Release(rebuilt);
             Release(outerFont);
             Release(outerCode);
-            Release(insertion);
             Release(numberRange);
         }
     }

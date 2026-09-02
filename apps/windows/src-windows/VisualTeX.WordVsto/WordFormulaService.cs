@@ -2466,7 +2466,23 @@ internal sealed partial class WordFormulaService
             }
 
             insertionStart = insertion.Start;
+            var relocateRightNumberToLeftAfterInsert =
+                !inline
+                && numberTemplate is not null
+                && string.Equals(
+                    session.MathTypeNumberPosition,
+                    "left",
+                    StringComparison.OrdinalIgnoreCase);
             stage = "build-flat-opc";
+            // Word reliably preserves MathType's nested MTPlaceRef tree when the
+            // number is imported on the right of the OLE. Importing the exact same
+            // field tree on the left is not reliable in a real interactive Word
+            // process: Word can promote the nested MTEqn/MTChap fields into sibling
+            // document fields. Building those children later with Fields.Add has
+            // the same nondeterministic failure mode. Therefore every left-numbered
+            // direct insert is first materialized as the known-good right-numbered
+            // Flat OPC structure. After Word has committed the complete outer field
+            // atomically, relocate that already-healthy formatted field to the left.
             var wordOpenXml = MathTypeWordOpenXml.CreateWithPlaceableWmf(
                 compoundFile,
                 previewWmf,
@@ -2474,7 +2490,9 @@ internal sealed partial class WordFormulaService
                 heightPt,
                 display: !inline,
                 numberTemplate,
-                session.MathTypeNumberPosition);
+                mathTypeNumberPosition: relocateRightNumberToLeftAfterInsert
+                    ? "right"
+                    : session.MathTypeNumberPosition);
             TraceInsertPerf("build-flat-opc");
 
             // Resolve the inserted OLE from the exact mutation site for every path,
@@ -2600,6 +2618,14 @@ internal sealed partial class WordFormulaService
             }
             else
             {
+                if (relocateRightNumberToLeftAfterInsert)
+                {
+                    stage = "relocate-left-mathtype-field-scaffold";
+                    RelocateCompleteMathTypePlaceRefFromRightToLeft(
+                        document,
+                        shape);
+                    TraceInsertPerf("relocate-left-mathtype-field-scaffold");
+                }
                 stage = "configure-display-numbering";
                 ConfigureNewMathTypeDisplayEquation(
                     document,
@@ -7759,6 +7785,7 @@ internal sealed partial class WordFormulaService
         Field? field = null;
         Range? code = null;
         var placeRefCount = 0;
+        var onlyMathTypeNumberFields = true;
         try
         {
             shapes = paragraphRange.InlineShapes;
@@ -7777,12 +7804,28 @@ internal sealed partial class WordFormulaService
                 Release(field);
                 field = fields[index];
                 code = field.Code;
-                if ((code.Text ?? string.Empty).IndexOf(
+                var fieldCode = (code.Text ?? string.Empty).Trim();
+                if (fieldCode.IndexOf(
                         "MACROBUTTON MTPlaceRef",
                         StringComparison.OrdinalIgnoreCase) >= 0)
+                {
                     placeRefCount++;
+                    continue;
+                }
+                if (fieldCode.StartsWith("SEQ MTEqn ", StringComparison.OrdinalIgnoreCase)
+                    || fieldCode.StartsWith("SEQ MTSec ", StringComparison.OrdinalIgnoreCase)
+                    || fieldCode.StartsWith("SEQ MTChap ", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                onlyMathTypeNumberFields = false;
             }
             if (placeRefCount != 1) return false;
+            // A failed constructor can leave the nested MathType SEQ fields as
+            // document-level siblings. Their numeric results make Paragraph.Text
+            // look non-empty even though the row owns no user content at all. If
+            // every field in an OLE-free row belongs to this native numbering
+            // scaffold, the row is incomplete by construction and can be removed
+            // atomically on rollback/retry.
+            if (onlyMathTypeNumberFields && fields.Count > 0) return true;
 
             var text = paragraphRange.Text ?? string.Empty;
             foreach (var character in text)
@@ -7841,6 +7884,73 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static bool IsRollbackOwnedMathTypeDisplayRow(Range paragraphRange)
+    {
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            shapes = paragraphRange.InlineShapes;
+            if (shapes.Count == 0) return false;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(shape);
+                shape = shapes[index];
+                if (!MathTypeOleInterop.IsMathTypeOle(shape)) return false;
+            }
+
+            fields = paragraphRange.Fields;
+            if (fields.Count == 0) return false;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                var fieldCode = (code.Text ?? string.Empty).Trim();
+                if (fieldCode.IndexOf(
+                        "MACROBUTTON MTPlaceRef",
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                    || fieldCode.StartsWith("SEQ MTEqn ", StringComparison.OrdinalIgnoreCase)
+                    || fieldCode.StartsWith("SEQ MTSec ", StringComparison.OrdinalIgnoreCase)
+                    || fieldCode.StartsWith("SEQ MTChap ", StringComparison.OrdinalIgnoreCase)
+                    || fieldCode.StartsWith("EMBED Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return false;
+            }
+
+            // Detached native SEQ results can expose only digits and the supported
+            // equation-number punctuation outside field control characters. The OLE
+            // itself is U+0001/U+FFFC. Reject any ordinary prose before treating the
+            // row as transaction-owned rollback state.
+            foreach (var character in paragraphRange.Text ?? string.Empty)
+            {
+                if (character == '\r' || character == '\t'
+                    || character == '\u0013' || character == '\u0014' || character == '\u0015'
+                    || character == '\u0001' || character == '\uFFFC'
+                    || char.IsWhiteSpace(character)
+                    || char.IsDigit(character)
+                    || character is '(' or ')' or '.' or '-')
+                    continue;
+                return false;
+            }
+            return true;
+        }
+        catch { return false; }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
     private static void RollbackStandaloneMathTypeDisplayInsertion(
         Document document,
         int insertionStart,
@@ -7865,32 +7975,45 @@ internal sealed partial class WordFormulaService
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
 
-            // A failed standalone MathType insertion owns the whole generated
-            // display row. Delete every MathType OLE in that row first so a
-            // partially completed PasteSpecial cannot survive the rollback.
-            shapes = paragraphRange.InlineShapes;
-            for (var index = shapes.Count; index >= 1; index--)
-            {
-                Release(shape);
-                shape = shapes[index];
-                if (MathTypeOleInterop.IsMathTypeOle(shape))
-                    shape.Delete();
-            }
-            Release(shape);
-            shape = null;
-            Release(shapes);
-            shapes = null;
-
-            // Remove the MTPlaceRef/tabs left by the Flat OPC row.  Only clear a
-            // row that is now structurally empty or a native number-only row;
-            // never delete arbitrary user prose on an exception path.
-            if (IsIncompleteMathTypeNumberRow(paragraphRange)
-                || !ContainsVisibleBodyText(paragraphRange.Text))
+            // A half-relocated left number can temporarily contain two complete
+            // MTPlaceRef trees plus the OLE. A detached-field failure can contain
+            // one outer field plus sibling SEQ fields. If the entire row is proven
+            // to consist only of MathType transaction artifacts, delete its body in
+            // one Word range operation. This is substantially more reliable than
+            // deleting OLE/field COM objects one by one after Word has invalidated
+            // some of their ranges.
+            if (IsRollbackOwnedMathTypeDisplayRow(paragraphRange))
             {
                 var start = paragraphRange.Start;
                 var end = Math.Max(start, paragraphRange.End - 1);
                 body = document.Range(start, end);
                 body.Delete();
+            }
+            else
+            {
+                // Conservative compatibility fallback for failure states that do
+                // not prove full transaction ownership of the row.
+                shapes = paragraphRange.InlineShapes;
+                for (var index = shapes.Count; index >= 1; index--)
+                {
+                    Release(shape);
+                    shape = shapes[index];
+                    if (MathTypeOleInterop.IsMathTypeOle(shape))
+                        shape.Delete();
+                }
+                Release(shape);
+                shape = null;
+                Release(shapes);
+                shapes = null;
+
+                if (IsIncompleteMathTypeNumberRow(paragraphRange)
+                    || !ContainsVisibleBodyText(paragraphRange.Text))
+                {
+                    var start = paragraphRange.Start;
+                    var end = Math.Max(start, paragraphRange.End - 1);
+                    body = document.Range(start, end);
+                    body.Delete();
+                }
             }
 
             // ResolveStandaloneMathTypeDisplayInsertionRange may have created one
@@ -13045,6 +13168,194 @@ internal sealed partial class WordFormulaService
         finally { Release(shapes); }
     }
 
+    private static void RelocateCompleteMathTypePlaceRefFromRightToLeft(
+        Document document,
+        InlineShape shape)
+    {
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Field? sourcePlaceRef = null;
+        Range? sourceCode = null;
+        Range? sourceResult = null;
+        Range? sourceSpan = null;
+        Range? formattedField = null;
+        Range? destination = null;
+        Field? leftPlaceRef = null;
+        Field? rightPlaceRef = null;
+        Range? rightCode = null;
+        Range? rightResult = null;
+        Range? removal = null;
+        Range? separator = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidOperationException(
+                    "The MathType display equation does not occupy one paragraph while relocating its number.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+
+            sourcePlaceRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: false)
+                ?? throw new InvalidOperationException(
+                    "The temporary right-numbered MathType row has no MTPlaceRef field to relocate.");
+            if (!TryReadCompleteMathTypePlaceRefTemplate(
+                    document,
+                    sourcePlaceRef,
+                    out _))
+                throw new InvalidOperationException(
+                    "The temporary right-numbered MathType row has an incomplete MTPlaceRef field tree.");
+
+            sourceCode = sourcePlaceRef.Code;
+            sourceResult = sourcePlaceRef.Result;
+            var bodyEnd = Math.Max(paragraphRange.Start, paragraphRange.End - 1);
+            var sourceStart = Math.Max(paragraphRange.Start, sourceCode.Start - 1);
+            var sourceEnd = Math.Min(bodyEnd, sourceResult.End + 1);
+            if (sourceEnd <= sourceStart)
+                throw new InvalidOperationException(
+                    "Word did not expose a complete MTPlaceRef field span for relocation.");
+
+            // Copy the already-complete outer field as one formatted Word range.
+            // This preserves the nested field delimiters atomically; no SEQ field is
+            // ever created while MTPlaceRef is half-built in the target position.
+            sourceSpan = document.Range(sourceStart, sourceEnd);
+            formattedField = sourceSpan.FormattedText;
+            destination = document.Range(paragraphRange.Start, paragraphRange.Start);
+            destination.FormattedText = formattedField;
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_MATHTYPE_FAIL_STAGE"),
+                    "left-relocate-after-copy",
+                    StringComparison.Ordinal))
+                throw new COMException(
+                    "Injected MathType left-number relocation failure for rollback acceptance.",
+                    unchecked((int)0x800A1710));
+
+            Release(sourceResult);
+            sourceResult = null;
+            Release(sourceCode);
+            sourceCode = null;
+            Release(sourcePlaceRef);
+            sourcePlaceRef = null;
+            Release(shapeRange);
+            shapeRange = shape.Range;
+            Release(paragraphRange);
+            paragraphRange = paragraph.Range;
+
+            leftPlaceRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: true)
+                ?? throw new InvalidOperationException(
+                    "Word did not preserve the relocated MathType number on the left of the OLE.");
+            if (!TryReadCompleteMathTypePlaceRefTemplate(
+                    document,
+                    leftPlaceRef,
+                    out _))
+                throw new InvalidOperationException(
+                    "Word damaged the MTPlaceRef field tree while copying it to the left of the OLE.");
+
+            rightPlaceRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: false)
+                ?? throw new InvalidOperationException(
+                    "Word lost the original temporary right-side MTPlaceRef before relocation completed.");
+            rightCode = rightPlaceRef.Code;
+            rightResult = rightPlaceRef.Result;
+            bodyEnd = Math.Max(paragraphRange.Start, paragraphRange.End - 1);
+            var rightFieldStart = Math.Max(paragraphRange.Start, rightCode.Start - 1);
+            var removalStart = Math.Max(shapeRange.End, rightFieldStart - 1);
+            var removalEnd = Math.Min(bodyEnd, rightResult.End + 1);
+            if (removalEnd <= removalStart)
+                throw new InvalidOperationException(
+                    "Word did not expose the temporary right-side MathType number for removal.");
+            removal = document.Range(removalStart, removalEnd);
+            if ((removal.Text ?? string.Empty).IndexOf('\t') < 0)
+                throw new InvalidOperationException(
+                    "The temporary right-side MathType number is missing its separator tab.");
+            removal.Delete();
+
+            Release(rightResult);
+            rightResult = null;
+            Release(rightCode);
+            rightCode = null;
+            Release(rightPlaceRef);
+            rightPlaceRef = null;
+            Release(leftPlaceRef);
+            leftPlaceRef = null;
+            Release(shapeRange);
+            shapeRange = shape.Range;
+            Release(paragraphRange);
+            paragraphRange = paragraph.Range;
+
+            leftPlaceRef = FindMathTypePlaceRefFieldForShape(
+                    paragraphRange,
+                    shapeRange,
+                    numberOnLeft: true)
+                ?? throw new InvalidOperationException(
+                    "The final left-numbered MathType row has no MTPlaceRef field.");
+            if (!TryReadCompleteMathTypePlaceRefTemplate(
+                    document,
+                    leftPlaceRef,
+                    out _))
+                throw new InvalidOperationException(
+                    "The final left-numbered MathType row has an incomplete MTPlaceRef field tree.");
+            rightPlaceRef = FindMathTypePlaceRefFieldForShape(
+                paragraphRange,
+                shapeRange,
+                numberOnLeft: false);
+            if (rightPlaceRef is not null)
+                throw new InvalidOperationException(
+                    "The temporary right-side MTPlaceRef survived left-number relocation.");
+
+            Range? finalCode = null;
+            try
+            {
+                finalCode = leftPlaceRef.Code;
+                var finalCodeText = finalCode.Text ?? string.Empty;
+                if (finalCodeText.Length == 0
+                    || char.IsWhiteSpace(finalCodeText[finalCodeText.Length - 1]))
+                    throw new InvalidOperationException(
+                        "The relocated MathType equation number contains trailing whitespace.");
+            }
+            finally { Release(finalCode); }
+
+            var separatorStart = Math.Max(paragraphRange.Start, shapeRange.Start - 1);
+            separator = document.Range(separatorStart, shapeRange.Start);
+            if (!string.Equals(separator.Text, "\t", StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "The relocated left MathType number is not separated from its OLE by one tab.");
+        }
+        finally
+        {
+            Release(separator);
+            Release(removal);
+            Release(rightResult);
+            Release(rightCode);
+            Release(rightPlaceRef);
+            Release(leftPlaceRef);
+            Release(destination);
+            Release(formattedField);
+            Release(sourceSpan);
+            Release(sourceResult);
+            Release(sourceCode);
+            Release(sourcePlaceRef);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+        }
+    }
+
     private static void BuildIndependentMathTypeDisplayScaffold(
         Document document,
         InlineShape shape,
@@ -13345,7 +13656,7 @@ internal sealed partial class WordFormulaService
         return true;
     }
 
-    private static Field CreateIndependentMathTypePlaceRef(
+    internal static Field CreateIndependentMathTypePlaceRef(
         Document document,
         int position,
         MathTypeWordOpenXml.NumberTemplate template)
@@ -13355,6 +13666,7 @@ internal sealed partial class WordFormulaService
 
         Range? insertion = null;
         Range? outerCode = null;
+        Fields? outerNestedFields = null;
         Field? outer = null;
         Field? nested = null;
         try
@@ -13365,28 +13677,117 @@ internal sealed partial class WordFormulaService
                 WdFieldType.wdFieldMacroButton,
                 "MTPlaceRef",
                 false);
+            // Word only treats Fields.Add inside another field's Code range as a
+            // genuinely nested field while the outer field is exposing its code.
+            // If MTPlaceRef remains in result view, the exact same numeric Range is
+            // silently promoted to a sibling document field. That is the direct
+            // cause of the left-number '(.)' + escaped SEQ corruption.
+            outer.ShowCodes = true;
 
-            foreach (var segment in template.Segments)
+            // Word itself creates MACROBUTTON MTPlaceRef with one trailing ASCII
+            // space in its native field instruction. Keep that native instruction
+            // untouched. The previous implementation appended a temporary marker
+            // and deleted it after building the nested fields; in the real in-process
+            // VSTO path Word can refuse or silently ignore that final Range.Delete,
+            // leaking the synthetic tail token or throwing 0x800A1710.
+            //
+            // Every supported MathType number template ends with literal closing
+            // punctuation (currently ')'). Materialize that real final literal first
+            // at Code.End. Its original insertion coordinate immediately becomes a
+            // strictly interior point of MTPlaceRef. Build all preceding template
+            // segments in reverse at that fixed point. No synthetic character and no
+            // post-construction deletion are needed, so the visible number naturally
+            // ends at its real closing punctuation with zero trailing whitespace.
+            outerCode = outer.Code;
+            var nativeCodeText = outerCode.Text ?? string.Empty;
+            if (nativeCodeText.Length == 0
+                || !char.IsWhiteSpace(nativeCodeText[nativeCodeText.Length - 1]))
+                throw new InvalidOperationException(
+                    "Word did not create MTPlaceRef with its native instruction separator.");
+
+            var terminalSegmentIndex = template.Segments.Count - 1;
+            var terminalSegment = template.Segments[terminalSegmentIndex];
+            if (terminalSegment.IsField)
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef numbering template must end with literal closing punctuation.");
+            var terminalText = terminalSegment.Value.TrimEnd();
+            if (terminalText.Length == 0)
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef numbering template has no terminal closing punctuation.");
+
+            var insertionPosition = outerCode.End;
+            Release(insertion);
+            insertion = document.Range(insertionPosition, insertionPosition);
+            insertion.InsertAfter(terminalText);
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                    "1",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_MATHTYPE_FAIL_STAGE"),
+                    "left-scaffold-after-marker",
+                    StringComparison.Ordinal))
+                throw new COMException(
+                    "Injected MathType left scaffold Range failure for rollback acceptance.",
+                    unchecked((int)0x800A1710));
+
+            Release(outerCode);
+            outerCode = outer.Code;
+            if (insertionPosition <= outerCode.Start || insertionPosition >= outerCode.End)
+                throw new InvalidOperationException(
+                    "Word did not retain the MathType terminal punctuation inside MTPlaceRef.");
+
+            for (var segmentIndex = terminalSegmentIndex - 1;
+                 segmentIndex >= 0;
+                 segmentIndex--)
             {
-                Release(outerCode);
-                outerCode = outer.Code;
+                var segment = template.Segments[segmentIndex];
                 Release(insertion);
-                insertion = document.Range(outerCode.End, outerCode.End);
+                insertion = document.Range(insertionPosition, insertionPosition);
                 if (!segment.IsField)
                 {
-                    if (!string.IsNullOrEmpty(segment.Value))
-                        insertion.InsertAfter(segment.Value);
+                    var text = segment.Value;
+                    // Word's native MTPlaceRef already supplies the instruction
+                    // separator before the template. Avoid duplicating the leading
+                    // whitespace stored in VisualTeX/MathType templates; trailing
+                    // whitespace remains meaningful only between template tokens.
+                    if (segmentIndex == 0)
+                        text = text.TrimStart();
+                    if (!string.IsNullOrEmpty(text))
+                        insertion.InsertAfter(text);
                     continue;
                 }
 
                 Release(nested);
-                nested = document.Fields.Add(
+                Release(outerNestedFields);
+                Release(outerCode);
+                outerCode = outer.Code;
+                outerNestedFields = outerCode.Fields;
+                nested = outerNestedFields.Add(
                     insertion,
                     WdFieldType.wdFieldEmpty,
                     segment.Value.Trim(),
                     false);
+                // Word automatically leaves a hidden SEQ ... \\h field with its
+                // code displayed. In that state the parent Code.Text substitutes
+                // the (empty) child result and the hidden increment disappears from
+                // the outer instruction stream. MathType's native MTPlaceRef keeps
+                // every child in result view, which also makes the complete outer
+                // code serializable/reusable as one field tree.
+                try { nested.ShowCodes = false; } catch { }
             }
 
+            Release(outerCode);
+            outerCode = outer.Code;
+            var completedCodeText = outerCode.Text ?? string.Empty;
+            if (completedCodeText.Length == 0
+                || char.IsWhiteSpace(completedCodeText[completedCodeText.Length - 1]))
+                throw new InvalidOperationException(
+                    "Word left trailing whitespace after the completed MathType equation number.");
+
+            if (!TryReadCompleteMathTypePlaceRefTemplate(document, outer, out _))
+                throw new InvalidOperationException(
+                    "Word detached one or more nested MathType number fields while constructing MTPlaceRef.");
             try { outer.ShowCodes = false; } catch { }
             var result = outer;
             outer = null;
@@ -13395,6 +13796,7 @@ internal sealed partial class WordFormulaService
         finally
         {
             Release(nested);
+            Release(outerNestedFields);
             Release(outerCode);
             Release(insertion);
             Release(outer);
@@ -13483,6 +13885,12 @@ internal sealed partial class WordFormulaService
                     numberOnLeft)
                 ?? throw new InvalidOperationException(
                     "The numbered MathType display equation has no MTPlaceRef field on the requested side of its OLE object.");
+            if (!TryReadCompleteMathTypePlaceRefTemplate(
+                    document,
+                    placeRef,
+                    out _))
+                throw new InvalidOperationException(
+                    "The numbered MathType display equation has a detached or incomplete MTPlaceRef field tree.");
             Range? placeRefCode = null;
             Range? placeRefResult = null;
             Range? separator = null;
@@ -13618,8 +14026,15 @@ internal sealed partial class WordFormulaService
                 index = end + 1;
             }
             if (literal.Length > 0)
-                template.Segments.Add(
-                    MathTypeWordOpenXml.NumberSegment.Text(literal.ToString()));
+            {
+                // Trailing whitespace is not part of a MathType equation-number
+                // format. Never let it enter a reusable template, otherwise a later
+                // equation/reference can inherit visible blanks after the number.
+                var finalLiteral = literal.ToString().TrimEnd();
+                if (finalLiteral.Length > 0)
+                    template.Segments.Add(
+                        MathTypeWordOpenXml.NumberSegment.Text(finalLiteral));
+            }
             if (template.Segments.Count == 0)
                 throw new InvalidDataException(
                     "MathType MTPlaceRef numbering template has no usable segments.");
@@ -13628,33 +14043,24 @@ internal sealed partial class WordFormulaService
         finally { Release(sourceCode); }
     }
 
-    private static bool TryReadReusableMathTypePlaceRefTemplate(
+    private static bool TryReadCompleteMathTypePlaceRefTemplate(
         Document document,
         Field source,
         out MathTypeWordOpenXml.NumberTemplate? template)
     {
         template = null;
-        Range? visibleNumberRange = null;
         Range? sourceCode = null;
         Fields? nestedFields = null;
         try
         {
-            if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
-                    document,
-                    source,
-                    out visibleNumberRange)
-                || visibleNumberRange is null)
-                return false;
-            if (string.IsNullOrWhiteSpace(
-                    MathTypeEquationReferences.ReadVisibleNumberText(source)))
-                return false;
-
             sourceCode = source.Code;
             nestedFields = sourceCode.Fields;
             // A native MTPlaceRef always owns at least the hidden MTEqn increment
             // plus the visible MTEqn current-value field. Heading-aware templates
             // additionally own MTChap/MTSec fields. A literal-only outer field such
-            // as "(.)" is a detached/corrupt scaffold and is never reusable.
+            // as "(.)" is a detached/corrupt scaffold and must never be accepted as
+            // a valid numbered MathType row, even if it happens to sit on the
+            // requested side of the OLE object.
             if (nestedFields.Count < 2) return false;
 
             var candidate = ReadMathTypePlaceRefTemplate(document, source);
@@ -13680,6 +14086,34 @@ internal sealed partial class WordFormulaService
         {
             Release(nestedFields);
             Release(sourceCode);
+        }
+    }
+
+    private static bool TryReadReusableMathTypePlaceRefTemplate(
+        Document document,
+        Field source,
+        out MathTypeWordOpenXml.NumberTemplate? template)
+    {
+        template = null;
+        Range? visibleNumberRange = null;
+        try
+        {
+            if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
+                    document,
+                    source,
+                    out visibleNumberRange)
+                || visibleNumberRange is null)
+                return false;
+            if (string.IsNullOrWhiteSpace(
+                    MathTypeEquationReferences.ReadVisibleNumberText(source)))
+                return false;
+            return TryReadCompleteMathTypePlaceRefTemplate(
+                document,
+                source,
+                out template);
+        }
+        finally
+        {
             Release(visibleNumberRange);
         }
     }

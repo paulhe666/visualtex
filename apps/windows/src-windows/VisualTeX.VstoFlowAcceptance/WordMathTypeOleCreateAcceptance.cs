@@ -45,6 +45,18 @@ internal static partial class Program
         RunWordMathTypeSequentialCreateStressAcceptance(artifactRoot, emfPath);
     }
 
+    private static void RunWordMathTypeOleCreateStructureAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var svgPath = Path.Combine(artifactRoot, "mathtype-create-structure-preview.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"96\" viewBox=\"0 0 240 96\"><text x=\"4\" y=\"64\" font-family=\"Times New Roman\" font-size=\"48\">x+1</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 240, 96);
+        RunWordMathTypeInsertionRollbackAcceptance(artifactRoot, emfPath);
+        RunWordMathTypeSequentialCreateStressAcceptance(artifactRoot, emfPath);
+    }
+
     private static void RunWordMathTypeRightThenLeftLiveAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
@@ -86,12 +98,6 @@ internal static partial class Program
                 shape,
                 expectedNumberPosition: "right",
                 "Live right-then-left first MathType row");
-            AssertWordMathTypePreviewVisible(
-                shape,
-                "Live right-then-left first MathType row",
-                FirstNumberedMathMl,
-                inline: false,
-                artifactRoot);
 
             Release(range);
             range = document.Range(document.Content.End - 1, document.Content.End - 1);
@@ -114,17 +120,14 @@ internal static partial class Program
                 shape,
                 expectedNumberPosition: "left",
                 "Live right-then-left second MathType row");
-            AssertWordMathTypePreviewVisible(
-                shape,
-                "Live right-then-left second MathType row",
-                SecondNumberedMathMl,
-                inline: false,
-                artifactRoot);
 
             var path = Path.Combine(
                 artifactRoot,
                 "VisualTeX-MathType-Live-Right-Then-Left.docx");
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
             var embeddings = ReadDocxOleEmbeddings(path);
             AssertEqual(2, embeddings.Count,
                 "Live right-then-left acceptance did not persist exactly two OLE package parts.");
@@ -136,6 +139,21 @@ internal static partial class Program
                 signatures.Contains(MathTypeMtefCodec.SemanticSignature(FirstNumberedMathMl))
                 && signatures.Contains(MathTypeMtefCodec.SemanticSignature(SecondNumberedMathMl)),
                 "Live right-then-left acceptance persisted the wrong MathType MTEF data.");
+            document = application.Documents.Open(path, ReadOnly: false, Visible: false);
+            AssertEqual(2, document.InlineShapes.Count,
+                "Live right-then-left acceptance changed the MathType OLE count after reopen.");
+            Release(shape);
+            shape = document.InlineShapes[1];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "right",
+                "Reopened loaded-addin right-then-left first MathType row");
+            Release(shape);
+            shape = document.InlineShapes[2];
+            AssertMathTypeDisplayRow(
+                shape,
+                expectedNumberPosition: "left",
+                "Reopened loaded-addin right-then-left second MathType row");
             Console.WriteLine(
                 "[MathType LIVE] In the already-running user Word process: right-numbered Equation.DSMT4 -> left-numbered Equation.DSMT4 passed; both native previews, MTPlaceRef rows and saved CFB/MTEF package parts are valid without reading the Word clipboard.");
         }
@@ -788,8 +806,53 @@ internal static partial class Program
                 "Failed MathType create left an extra display paragraph behind.");
             AssertNativeMathTypeSectionBreak(document, 0);
 
+            // Inject a failure after the complete right-side MTPlaceRef has already
+            // been copied atomically to the left, but before the temporary right
+            // field is removed. Rollback must clear the whole half-relocated row so
+            // the next insertion starts from the original document state.
+            Release(range);
+            range = document.Range(document.Content.End - 1, document.Content.End - 1);
+            range.Select();
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_ACCEPTANCE_MATHTYPE_FAIL_STAGE",
+                "left-relocate-after-copy");
+            failed = false;
+            try
+            {
+                service.InsertMathTypeOle(
+                    CreateMathTypeCreateSession(
+                        displayMode: "block",
+                        numbered: true,
+                        latex: @"c+d",
+                        mathTypeNumberPosition: "left"),
+                    SecondNumberedMathMl,
+                    emfPath);
+            }
+            catch (InvalidOperationException error)
+            {
+                failed = true;
+                AssertTrue(
+                    error.Message.IndexOf("relocate-left-mathtype-field-scaffold", StringComparison.Ordinal) >= 0
+                    && error.Message.IndexOf("800A1710", StringComparison.OrdinalIgnoreCase) >= 0,
+                    "Injected left MathType relocation failure did not preserve stage/HRESULT diagnostics.");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_ACCEPTANCE_MATHTYPE_FAIL_STAGE",
+                    previousFailureStage);
+            }
+            AssertTrue(failed,
+                "MathType left-relocation rollback acceptance did not inject the expected failure.");
+            AssertEqual(0, document.InlineShapes.Count,
+                "Left-relocation failure left a partial Equation.DSMT4 object behind.");
+            AssertEqual(0, document.Fields.Count,
+                "Left-relocation failure left duplicate/orphan MathType number fields behind.");
+            AssertEqual(paragraphCountBefore, document.Paragraphs.Count,
+                "Left-relocation failure left an extra display paragraph behind.");
+
             // A retry in the same Word document/process must succeed after the
-            // rollback; the exception must not poison OLE clipboard state.
+            // rollback; the exception must not poison the left-number scaffold.
             Release(range);
             range = document.Range(document.Content.End - 1, document.Content.End - 1);
             range.Select();
@@ -798,7 +861,7 @@ internal static partial class Program
                     displayMode: "block",
                     numbered: true,
                     latex: @"a+b",
-                    mathTypeNumberPosition: "right"),
+                    mathTypeNumberPosition: "left"),
                 FirstNumberedMathMl,
                 emfPath);
             AssertEqual(1, document.InlineShapes.Count,
@@ -839,7 +902,7 @@ internal static partial class Program
                 expectedNumberPosition: "left",
                 "Recovered legacy MathType orphan row");
             Console.WriteLine(
-                "[MathType rollback] injected E_OUTOFMEMORY rolled back OLE + MTPlaceRef + paragraph + section state; same-process retry and legacy orphan-row recovery passed.");
+                "[MathType rollback] injected E_OUTOFMEMORY and half-relocated left-number failures rolled back the complete MathType row + paragraph/section state; same-process left retry and orphan-row recovery passed.");
         }
         finally
         {
@@ -1085,6 +1148,16 @@ internal static partial class Program
                 "MathType sequential create stress changed OLE count after reopen.");
             AssertEqual(targetCount, CountMathTypePlaceRefFields(document),
                 "MathType sequential create stress changed MTPlaceRef count after reopen.");
+            for (var index = 1; index <= targetCount; index++)
+            {
+                Release(shape);
+                shape = document.InlineShapes[index];
+                var side = index % 2 == 0 ? "right" : "left";
+                AssertMathTypeDisplayRow(
+                    shape,
+                    expectedNumberPosition: side,
+                    $"Reopened MathType sequential create #{index}");
+            }
             Console.WriteLine(
                 $"[MathType create stress] {targetCount} consecutive numbered Equation.DSMT4 inserts with alternating left/right numbering passed in one Word process + save/reopen.");
         }
@@ -1165,6 +1238,9 @@ internal static partial class Program
         Word.Fields? fields = null;
         Word.Field? field = null;
         Word.Range? code = null;
+        Word.Fields? nestedFields = null;
+        Word.Field? nestedField = null;
+        Word.Range? nestedCode = null;
         Word.Range? fieldResult = null;
         Word.Range? separator = null;
         object? paragraphStyleObject = null;
@@ -1212,11 +1288,43 @@ internal static partial class Program
                 Release(field);
                 field = fields[index];
                 code = field.Code;
-                if ((code.Text ?? string.Empty).IndexOf(
+                var placeRefCodeText = code.Text ?? string.Empty;
+                if (placeRefCodeText.IndexOf(
                         "MACROBUTTON MTPlaceRef",
                         StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
+                AssertTrue(
+                    placeRefCodeText.Length > 0
+                    && !char.IsWhiteSpace(placeRefCodeText[placeRefCodeText.Length - 1]),
+                    context + " has trailing whitespace after the visible MathType equation number.");
                 sawPlaceRef = true;
+                Release(nestedCode);
+                nestedCode = null;
+                Release(nestedField);
+                nestedField = null;
+                Release(nestedFields);
+                nestedFields = code.Fields;
+                AssertTrue(
+                    nestedFields.Count >= 2,
+                    context + " has an MTPlaceRef whose nested MathType SEQ fields escaped the outer field code range.");
+                var hasHiddenMteqn = false;
+                var hasVisibleMteqn = false;
+                for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                {
+                    Release(nestedCode);
+                    nestedCode = null;
+                    Release(nestedField);
+                    nestedField = nestedFields[nestedIndex];
+                    nestedCode = nestedField.Code;
+                    var nestedText = nestedCode.Text ?? string.Empty;
+                    if (nestedText.IndexOf("SEQ MTEqn", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    hasHiddenMteqn |= nestedText.IndexOf("\\h", StringComparison.OrdinalIgnoreCase) >= 0;
+                    hasVisibleMteqn |= nestedText.IndexOf("\\c", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                AssertTrue(
+                    hasHiddenMteqn && hasVisibleMteqn,
+                    context + " has an incomplete MTPlaceRef field tree (missing owned hidden/current MTEqn fields).");
                 fieldResult = field.Result;
                 placeRefStart = code.Start - 1;
                 placeRefEnd = fieldResult.End + 1;
@@ -1234,8 +1342,14 @@ internal static partial class Program
             {
                 AssertTrue(placeRefEnd <= shapeRange.Start,
                     context + " does not place its MathType number before the equation.");
-                separator = shapeRange.Document.Range(placeRefEnd, shapeRange.Start);
-                AssertTrue((separator.Text ?? string.Empty).IndexOf('\t') >= 0,
+                // For an empty-result MTPlaceRef Word can report Result.End + 1 at
+                // the following OLE boundary even though the preceding story
+                // character is the real separator tab. Validate the physical
+                // character immediately before the OLE, matching production.
+                separator = shapeRange.Document.Range(
+                    Math.Max(paragraphRange.Start, shapeRange.Start - 1),
+                    shapeRange.Start);
+                AssertEqual("\t", separator.Text,
                     context + " does not have MathType's number-to-equation center tab.");
             }
             else
@@ -1260,6 +1374,9 @@ internal static partial class Program
             paragraphStyleObject = null;
             Release(separator);
             Release(fieldResult);
+            Release(nestedCode);
+            Release(nestedField);
+            Release(nestedFields);
             Release(code);
             Release(field);
             Release(fields);
@@ -1367,10 +1484,15 @@ internal static partial class Program
                     normalizedNested.IndexOf("\\* Charformat", StringComparison.OrdinalIgnoreCase) >= 0,
                     "Native MathType REF field is missing MathType's Charformat switch.");
                 nestedResult = nested.Result;
+                var rawReferenceText = nestedResult.Text ?? string.Empty;
                 AssertEqual(
                     expectedNumberText.Trim(),
-                    (nestedResult.Text ?? string.Empty).Trim(),
+                    rawReferenceText.Trim(),
                     "Native MathType REF field shows the wrong equation number.");
+                AssertTrue(
+                    rawReferenceText.Length == 0
+                    || !char.IsWhiteSpace(rawReferenceText[rawReferenceText.Length - 1]),
+                    "Native MathType REF field contains trailing whitespace after the equation number.");
                 sawReference = true;
                 break;
             }

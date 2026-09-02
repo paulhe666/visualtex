@@ -452,6 +452,10 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-mathtype-right-left-live",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-installed-format-conversion",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -469,6 +473,10 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-installed-mathtype-native-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-mathtype-left-ui-e2e",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
@@ -802,6 +810,10 @@ internal static partial class Program
             {
                 RunWordMathTypeOleCreateAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-ole-create-structure", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeOleCreateStructureAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-installed-format-conversion", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledFormatConversionAcceptance(artifactRoot);
@@ -861,6 +873,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-installed-mathtype-native-regression", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledMathTypeNativeRegressionAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-mathtype-left-ui-e2e", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledMathTypeLeftUiE2eAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {
