@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { LatexCodeFormat } from "../types/formula";
 import type { OcrModelName } from "./ocrService";
+import { decodeQuickOcrCapture } from "./quickOcrPayloadValidation";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "⌘⇧O";
@@ -18,11 +19,15 @@ export interface QuickOcrCapture {
 }
 
 export async function captureQuickOcrScreenshot() {
-  return invoke<QuickOcrCapture | null>("capture_quick_ocr_screenshot");
+  return decodeQuickOcrCapture(
+    await invoke<unknown>("capture_quick_ocr_screenshot"),
+  );
 }
 
 export async function waitForQuickOcrSystemScreenshot() {
-  return invoke<QuickOcrCapture | null>("wait_for_quick_ocr_system_screenshot");
+  return decodeQuickOcrCapture(
+    await invoke<unknown>("wait_for_quick_ocr_system_screenshot"),
+  );
 }
 
 export async function configureSilentOcr(

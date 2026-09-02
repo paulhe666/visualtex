@@ -522,35 +522,40 @@ fn epoch_ms() -> u64 {
         .unwrap_or_default()
 }
 
-fn performance_logger() -> &'static mpsc::Sender<OfficeEditorPerformanceRecord> {
-    static LOGGER: OnceLock<mpsc::Sender<OfficeEditorPerformanceRecord>> = OnceLock::new();
-    LOGGER.get_or_init(|| {
-        let (sender, receiver) = mpsc::channel::<OfficeEditorPerformanceRecord>();
-        std::thread::Builder::new()
-            .name("visualtex-office-performance".to_string())
-            .spawn(move || {
-                while let Ok(record) = receiver.recv() {
-                    let Ok(directory) = session_directory(record.host, &record.session_id) else {
-                        continue;
-                    };
-                    if fs::create_dir_all(&directory).is_err() {
-                        continue;
-                    }
-                    let path = directory.join(EDITOR_PERFORMANCE_FILE);
-                    let Ok(mut line) = serde_json::to_vec(&record) else {
-                        continue;
-                    };
-                    line.push(b'\n');
-                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-                        if file.write_all(&line).is_ok() {
-                            let _ = set_mode(&path, 0o600);
+fn performance_logger() -> Option<&'static mpsc::Sender<OfficeEditorPerformanceRecord>> {
+    static LOGGER: OnceLock<Option<mpsc::Sender<OfficeEditorPerformanceRecord>>> = OnceLock::new();
+    LOGGER
+        .get_or_init(|| {
+            let (sender, receiver) = mpsc::channel::<OfficeEditorPerformanceRecord>();
+            let spawned = std::thread::Builder::new()
+                .name("visualtex-office-performance".to_string())
+                .spawn(move || {
+                    while let Ok(record) = receiver.recv() {
+                        let Ok(directory) = session_directory(record.host, &record.session_id) else {
+                            continue;
+                        };
+                        if fs::create_dir_all(&directory).is_err() {
+                            continue;
+                        }
+                        let path = directory.join(EDITOR_PERFORMANCE_FILE);
+                        let Ok(mut line) = serde_json::to_vec(&record) else {
+                            continue;
+                        };
+                        line.push(b'\n');
+                        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+                            if file.write_all(&line).is_ok() {
+                                let _ = set_mode(&path, 0o600);
+                            }
                         }
                     }
-                }
-            })
-            .expect("VisualTeX Office performance logger thread must start");
-        sender
-    })
+                });
+            if spawned.is_ok() {
+                Some(sender)
+            } else {
+                None
+            }
+        })
+        .as_ref()
 }
 
 fn queue_editor_performance(
@@ -561,15 +566,19 @@ fn queue_editor_performance(
     generation: Option<u64>,
     details: Value,
 ) {
-    let _ = performance_logger().send(OfficeEditorPerformanceRecord {
-        schema: "visualtex-office-editor-performance-v1",
-        session_id: session_id.to_string(),
-        host,
-        stage: stage.into(),
-        epoch_ms: epoch_ms(),
-        elapsed_ms,
-        generation,
-        details,
+    let _ = performance_logger().and_then(|logger| {
+        logger
+            .send(OfficeEditorPerformanceRecord {
+                schema: "visualtex-office-editor-performance-v1",
+                session_id: session_id.to_string(),
+                host,
+                stage: stage.into(),
+                epoch_ms: epoch_ms(),
+                elapsed_ms,
+                generation,
+                details,
+            })
+            .ok()
     });
 }
 
@@ -580,15 +589,19 @@ fn queue_editor_performance_at_epoch(
     record_epoch_ms: u64,
     details: Value,
 ) {
-    let _ = performance_logger().send(OfficeEditorPerformanceRecord {
-        schema: "visualtex-office-editor-performance-v1",
-        session_id: session_id.to_string(),
-        host,
-        stage: stage.into(),
-        epoch_ms: record_epoch_ms,
-        elapsed_ms: 0.0,
-        generation: None,
-        details,
+    let _ = performance_logger().and_then(|logger| {
+        logger
+            .send(OfficeEditorPerformanceRecord {
+                schema: "visualtex-office-editor-performance-v1",
+                session_id: session_id.to_string(),
+                host,
+                stage: stage.into(),
+                epoch_ms: record_epoch_ms,
+                elapsed_ms: 0.0,
+                generation: None,
+                details,
+            })
+            .ok()
     });
 }
 

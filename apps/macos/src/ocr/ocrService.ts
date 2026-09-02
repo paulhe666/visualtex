@@ -1,3 +1,10 @@
+import {
+  decodeOcrInstallProgress,
+  decodeOcrRecognitionProgress,
+  decodeOcrRecognitionResult,
+  decodeOcrRuntimeStatus,
+} from "./ocrPayloadValidation";
+
 export type UnlistenFn = () => void;
 
 export interface OcrTransportEvent<T> {
@@ -223,19 +230,23 @@ export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("get_ocr_runtime_status", { forceRefresh });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("get_ocr_runtime_status", { forceRefresh }),
+  );
 }
 
 export async function installOcrRuntime(): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("install_ocr_runtime");
+  return decodeOcrRuntimeStatus(await invoke<unknown>("install_ocr_runtime"));
 }
 
 export async function recognizeFormulaImage(
   request: OcrImageRequest,
 ): Promise<OcrRecognitionResult> {
   requireOcrEnvironment();
-  return invoke<OcrRecognitionResult>("recognize_formula_image", { request });
+  return decodeOcrRecognitionResult(
+    await invoke<unknown>("recognize_formula_image", { request }),
+  );
 }
 
 export async function prewarmOcrModel(model: OcrModelName): Promise<void> {
@@ -255,31 +266,33 @@ export async function restartOcrWorker(): Promise<void> {
 
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("reset_ocr_runtime");
+  return decodeOcrRuntimeStatus(await invoke<unknown>("reset_ocr_runtime"));
 }
 
 export async function installOptionalOcrModel(
   packagePath: string,
 ): Promise<OcrRuntimeStatus> {
   requireDesktopOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("install_optional_ocr_model", {
-    packagePath,
-  });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("install_optional_ocr_model", { packagePath }),
+  );
 }
 
 export async function removeOptionalOcrModel(
   model: OcrModelName,
 ): Promise<OcrRuntimeStatus> {
   requireDesktopOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("remove_optional_ocr_model", { model });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("remove_optional_ocr_model", { model }),
+  );
 }
 
 export async function listenOcrRecognitionProgress(
   listener: (progress: OcrRecognitionProgress) => void,
 ): Promise<UnlistenFn> {
   requireOcrEnvironment();
-  return listen<OcrRecognitionProgress>("ocr-recognition-progress", (event) => {
-    listener(event.payload);
+  return listen<unknown>("ocr-recognition-progress", (event) => {
+    listener(decodeOcrRecognitionProgress(event.payload));
   });
 }
 
@@ -287,7 +300,7 @@ export async function listenOcrInstallProgress(
   listener: (progress: OcrInstallProgress) => void,
 ): Promise<UnlistenFn> {
   requireOcrEnvironment();
-  return listen<OcrInstallProgress>("ocr-install-progress", (event) => {
-    listener(event.payload);
+  return listen<unknown>("ocr-install-progress", (event) => {
+    listener(decodeOcrInstallProgress(event.payload));
   });
 }

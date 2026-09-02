@@ -565,12 +565,14 @@ export function OfficeDialogApp() {
     let disposed = false;
     let unsubscribeTauri: (() => void) | undefined;
     if (isMacosOfflineTauriTransport()) {
-      void listen<string>("visualtex-theme-changed", (event) => {
+      void listen<unknown>("visualtex-theme-changed", (event) => {
         applyTheme(event.payload);
-      }).then((unsubscribe) => {
-        if (disposed) unsubscribe();
-        else unsubscribeTauri = unsubscribe;
-      });
+      })
+        .then((unsubscribe) => {
+          if (disposed) unsubscribe();
+          else unsubscribeTauri = unsubscribe;
+        })
+        .catch(() => undefined);
     }
 
     return () => {
@@ -2003,7 +2005,7 @@ export function OfficeDialogApp() {
         data-office-undo-action
         aria-label={isEn ? "Undo" : "撤销"}
         title={isEn ? "Undo" : "撤销"}
-        onClick={() => void historyManager.undo()}
+        onClick={() => historyManager.requestUndo()}
         disabled={historyBusy || !historyState.canUndo || historyState.isReplaying}
       >
         <Undo2 size={16} strokeWidth={2} />
@@ -2014,7 +2016,7 @@ export function OfficeDialogApp() {
         data-office-redo-action
         aria-label={isEn ? "Redo" : "重做"}
         title={isEn ? "Redo" : "重做"}
-        onClick={() => void historyManager.redo()}
+        onClick={() => historyManager.requestRedo()}
         disabled={historyBusy || !historyState.canRedo || historyState.isReplaying}
       >
         <Redo2 size={16} strokeWidth={2} />

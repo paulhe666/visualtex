@@ -46,6 +46,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
+import { writeLocalStorage } from "../runtime/safeStorage";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
@@ -877,7 +878,7 @@ export function FormulaToolbar({
   }, [customTileLibrary]);
 
   useEffect(() => {
-    localStorage.setItem(
+    writeLocalStorage(
       commonToolbarCommandsStorageKey,
       JSON.stringify(commonToolbarCommandIds),
     );

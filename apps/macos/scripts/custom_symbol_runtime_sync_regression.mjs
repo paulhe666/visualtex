@@ -226,21 +226,29 @@ async function main() {
       let calls = 0;
       probe._setOptions = (options) => {
         calls += 1;
-        if (calls === 1) {
-          throw new TypeError("Cannot set properties of undefined (setting 'mode')");
-        }
-        return original(options);
+        throw new TypeError("Cannot set properties of undefined (setting 'mode')");
       };
       compatibility.installMathLiveOptionMutationGuard(probe);
-      probe.smartFence = false;
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const result = { calls, smartFence: probe.smartFence, connected: probe.isConnected };
+      let rejected = false;
+      try {
+        probe.smartFence = false;
+      } catch (error) {
+        rejected = error instanceof TypeError && /setting ['\"]mode['\"]/.test(error.message);
+      }
+      const result = {
+        calls,
+        rejected,
+        smartFence: probe.smartFence,
+        connected: probe.isConnected,
+      };
+      probe._setOptions = original;
       probe.remove();
       return result;
     })()`);
-    assert.ok(optionGuardProbe.calls >= 2, "MathLive option guard must retry a transient missing-mode failure");
-    assert.equal(optionGuardProbe.smartFence, false, "MathLive option retry must apply the requested option");
-    process.stdout.write("[custom-symbol-runtime] transient MathLive option guard verified\n");
+    assert.equal(optionGuardProbe.calls, 1, "MathLive option guard must not retry an uncommitted failure");
+    assert.equal(optionGuardProbe.rejected, true, "MathLive option guard must rethrow an uncommitted missing-mode TypeError");
+    assert.equal(optionGuardProbe.smartFence, true, "an uncommitted option mutation must leave the original option intact");
+    process.stdout.write("[custom-symbol-runtime] strict MathLive option guard verified\n");
 
     await mainClient.send("Target.createTarget", { url: officeUrl });
     let officeTarget;

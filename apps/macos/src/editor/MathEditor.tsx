@@ -8467,8 +8467,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (requestsUndo || requestsRedo) {
         event.preventDefault();
         event.stopPropagation();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 

@@ -621,9 +621,13 @@ export function OcrDialog({
   const handleCopy = async () => {
     const value = normalizeResultLatex(latex);
     if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (copyError) {
+      setError(readError(copyError));
+    }
   };
 
   const handleInsert = () => {

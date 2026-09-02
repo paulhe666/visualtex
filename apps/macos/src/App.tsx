@@ -48,6 +48,7 @@ import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
+import { decodeMacOfflineOfficeStatus } from "./components/macOfficeStatusValidation";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
@@ -129,19 +130,6 @@ interface InlineOcrState {
   message: string;
   seconds: number;
   model: OcrModelName;
-}
-
-interface MacOfficeStartupHostStatus {
-  applicationInstalled: boolean;
-  applicationRunning: boolean;
-  filesPresent: boolean;
-  filesInstalled: boolean;
-}
-
-interface MacOfficeStartupStatus {
-  word: MacOfficeStartupHostStatus;
-  powerpoint: MacOfficeStartupHostStatus;
-  compiledArtifactsAvailable: boolean;
 }
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
@@ -416,9 +404,8 @@ function App() {
     macOfficeInstallStatusCheckedRef.current = true;
     let cancelled = false;
 
-    void invoke<MacOfficeStartupStatus>(
-      "get_macos_offline_office_install_status",
-    )
+    void invoke<unknown>("get_macos_offline_office_install_status")
+      .then(decodeMacOfflineOfficeStatus)
       .then((status) => {
         if (cancelled) return;
         if (!status.compiledArtifactsAvailable) {
@@ -492,11 +479,11 @@ function App() {
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("autosave");
+      void historyManager.createCheckpoint("autosave").catch(() => undefined);
     }, 30_000);
     const handleBeforeUnload = () => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("before-unload");
+      void historyManager.createCheckpoint("before-unload").catch(() => undefined);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
@@ -1006,7 +993,7 @@ function App() {
 
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
-    void historyManager.createCheckpoint("save-document");
+    void historyManager.createCheckpoint("save-document").catch(() => undefined);
     const document = toDocument();
     downloadTextFile(
       JSON.stringify(document, null, 2),
@@ -1195,8 +1182,8 @@ function App() {
       if (requestsUndo || requestsRedo) {
         if (inCodeMirror) return;
         event.preventDefault();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 
@@ -1582,7 +1569,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.undo()}
+              onClick={() => historyManager.requestUndo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canUndo ||
@@ -1596,7 +1583,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.redo()}
+              onClick={() => historyManager.requestRedo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canRedo ||

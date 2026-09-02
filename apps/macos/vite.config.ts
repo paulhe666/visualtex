@@ -9,6 +9,7 @@ import {
   ESINT_INTEGRAL_GLYPHS,
   ESINT_INTEGRAL_GLYPH_UNITS_PER_EM,
 } from "./src/math/esintGlyphs.ts";
+import { patchVisualTexMathLiveRuntimeSafety } from "./vite.mathliveRuntimeSafety";
 
 const host = process.env.TAURI_DEV_HOST;
 const mathLiveBrowserEntry = fileURLToPath(
@@ -114,7 +115,8 @@ function visualTexMathLiveIntegralCompatibility() {
         );
       }
 
-      const patched = source
+      const patched = patchVisualTexMathLiveRuntimeSafety(
+        source
         .replace(
           svgBodyAnchor,
           [
@@ -175,7 +177,8 @@ function visualTexMathLiveIntegralCompatibility() {
         .replace(
           symbolsAnchor,
           [symbolsAnchor, rareIntegralCharacterEntries].join("\n"),
-        );
+        ),
+      );
 
       return { code: patched, map: null };
     },

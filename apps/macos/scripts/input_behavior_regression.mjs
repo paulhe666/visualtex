@@ -10,7 +10,11 @@ const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-input-behavior-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const inputKeySettleMs = 60;
+// CDP key dispatch can complete before MathLive finishes the Space-to-spacing
+// normalization on busy CI/development Macs. Keep the browser harness settle
+// window aligned with Windows; this delay exists only in the regression script
+// and is never shipped in the application.
+const inputKeySettleMs = 180;
 
 async function waitFor(url, timeoutMs = 15000) {
   const started = Date.now();

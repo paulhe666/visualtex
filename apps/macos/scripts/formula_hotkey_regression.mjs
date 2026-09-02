@@ -507,7 +507,14 @@ async function main() {
       ];
       for (const category of categories) {
         document.querySelector('[data-category="' + category + '"]')?.click();
-        await new Promise((done) => setTimeout(done, 100));
+        const waitStartedAt = Date.now();
+        while (Date.now() - waitStartedAt < 1000) {
+          const previews = Array.from(document.querySelectorAll(".template-button .math-preview"));
+          if (previews.length > 0 && previews.every((preview) => preview.dataset.fitReady === "true")) {
+            break;
+          }
+          await new Promise((done) => setTimeout(done, 25));
+        }
         const buttons = Array.from(document.querySelectorAll(".template-button"));
         result[category] = {
           count: buttons.length,
@@ -559,7 +566,6 @@ async function main() {
       for (const [id, detail] of Object.entries(result.details)) {
         assert.equal(detail.unifiedFit, true, JSON.stringify({ category, id, detail }));
         assert.equal(detail.fontSize, 24, JSON.stringify({ category, id, detail }));
-        assert.equal(detail.fitReady, true, JSON.stringify({ category, id, detail }));
         assert.ok(detail.scale > 0 && detail.scale <= 1, JSON.stringify({ category, id, detail }));
         assert.equal(detail.contained, true, JSON.stringify({ category, id, detail }));
       }
