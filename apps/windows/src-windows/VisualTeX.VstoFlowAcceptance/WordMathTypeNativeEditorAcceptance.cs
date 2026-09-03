@@ -74,45 +74,52 @@ internal static partial class Program
                     $"Word-owned MathType editor exposed the wrong source. LaTeX='{sourceLatex}'.");
             }
 
-            Console.WriteLine("[MathType native editor 2/4] Reopening the same OLE, replacing its contents, and saving back into Word...");
-            const string editedLatex = @"\frac{x+1}{y}";
-            var editedMathMl = InvokeWordOwnedMathTypeEditor(
-                application,
-                format,
-                replacementLatex: editedLatex,
-                saveChanges: true);
-            var editorLatex = MathMlToLatexConverter.Convert(editedMathMl).Replace(" ", string.Empty);
-            Console.WriteLine("  editor LaTeX before save=" + editorLatex);
-            AssertTrue(
-                editorLatex.IndexOf(@"\frac{x+1}{y}", StringComparison.Ordinal) >= 0,
-                $"MathType did not contain the requested edit before saving. LaTeX='{editorLatex}'.");
+            if (string.IsNullOrWhiteSpace(nativeCaseFilter))
+            {
+                Console.WriteLine("[MathType native editor 2/4] Reopening the same OLE, replacing its contents, and saving back into Word...");
+                const string editedLatex = @"\frac{x+1}{y}";
+                var editedMathMl = InvokeWordOwnedMathTypeEditor(
+                    application,
+                    format,
+                    replacementLatex: editedLatex,
+                    saveChanges: true);
+                var editorLatex = MathMlToLatexConverter.Convert(editedMathMl).Replace(" ", string.Empty);
+                Console.WriteLine("  editor LaTeX before save=" + editorLatex);
+                AssertTrue(
+                    editorLatex.IndexOf(@"\frac{x+1}{y}", StringComparison.Ordinal) >= 0,
+                    $"MathType did not contain the requested edit before saving. LaTeX='{editorLatex}'.");
 
-            Release(format);
-            format = null;
-            format = shape.OLEFormat;
-            AssertTrue(MathTypeOleInterop.TryResolveCapabilities(format.ProgID, out _),
-                $"Saving through MathType changed the Word OLE class to '{format.ProgID}'.");
+                Release(format);
+                format = null;
+                format = shape.OLEFormat;
+                AssertTrue(MathTypeOleInterop.TryResolveCapabilities(format.ProgID, out _),
+                    $"Saving through MathType changed the Word OLE class to '{format.ProgID}'.");
 
-            Console.WriteLine("[MathType native editor 3/4] Saving and reopening Word, then asking MathType to expose the same object again...");
-            document.Save();
-            document.Close(Word.WdSaveOptions.wdSaveChanges);
-            Release(document);
-            document = application.Documents.Open(sourcePath, ReadOnly: false, Visible: true);
-            document.Activate();
-            Release(shape);
-            shape = document.InlineShapes[1];
-            Release(format);
-            format = shape.OLEFormat;
-            var reopenedMathMl = InvokeWordOwnedMathTypeEditor(
-                application,
-                format,
-                replacementLatex: null,
-                saveChanges: false);
-            var reopenedLatex = MathMlToLatexConverter.Convert(reopenedMathMl).Replace(" ", string.Empty);
-            Console.WriteLine("  reopened LaTeX=" + reopenedLatex);
-            AssertTrue(
-                reopenedLatex.IndexOf(@"\frac{x+1}{y}", StringComparison.Ordinal) >= 0,
-                $"Word save/reopen lost the MathType native-editor update. LaTeX='{reopenedLatex}'.");
+                Console.WriteLine("[MathType native editor 3/4] Saving and reopening Word, then asking MathType to expose the same object again...");
+                document.Save();
+                document.Close(Word.WdSaveOptions.wdSaveChanges);
+                Release(document);
+                document = application.Documents.Open(sourcePath, ReadOnly: false, Visible: true);
+                document.Activate();
+                Release(shape);
+                shape = document.InlineShapes[1];
+                Release(format);
+                format = shape.OLEFormat;
+                var reopenedMathMl = InvokeWordOwnedMathTypeEditor(
+                    application,
+                    format,
+                    replacementLatex: null,
+                    saveChanges: false);
+                var reopenedLatex = MathMlToLatexConverter.Convert(reopenedMathMl).Replace(" ", string.Empty);
+                Console.WriteLine("  reopened LaTeX=" + reopenedLatex);
+                AssertTrue(
+                    reopenedLatex.IndexOf(@"\frac{x+1}{y}", StringComparison.Ordinal) >= 0,
+                    $"Word save/reopen lost the MathType native-editor update. LaTeX='{reopenedLatex}'.");
+            }
+            else
+            {
+                Console.WriteLine("[MathType native editor 2-3/4] Focused native-case run: skipping unrelated generic TeX-clipboard edit/reopen stages.");
+            }
 
             Console.WriteLine("[MathType native editor 4/5] Saving several genuine MathType 7 complex structures, then reading their persisted MTEF directly through VisualTeX...");
             const string symbolMatrixMathMl =
@@ -160,6 +167,56 @@ internal static partial class Program
                 (Name: "max", Latex: @"\max_{x\in A} f(x)"),
                 (Name: "iiint", Latex: @"\iiint_{V} f\,dV"),
                 (Name: "inline-mixed", Latex: @"\frac{a}{b}e^{i\pi}+1=0"),
+                (Name: "symbol-relations", Latex: @"\infty\le\ge\ne\approx\equiv\in\notin\subset\subseteq\supset\supseteq\cup\cap\emptyset"),
+                (Name: "symbol-arrows", Latex: @"\leftarrow\rightarrow\leftrightarrow\Leftarrow\Rightarrow\Leftrightarrow\mapsto"),
+                (Name: "symbol-arrows-basic", Latex: @"\leftarrow\rightarrow\leftrightarrow"),
+                (Name: "symbol-arrows-double", Latex: @"\Leftarrow\Rightarrow\Leftrightarrow"),
+                (Name: "symbol-mapsto", Latex: @"\mapsto"),
+                (Name: "symbol-extra-relations", Latex: @"\parallel\perp\propto\sim\cong"),
+                (Name: "symbol-logic", Latex: @"\neg\land\lor"),
+                (Name: "symbol-binary-extra", Latex: @"\oplus\otimes\circ\bullet\diamond"),
+                (Name: "symbol-order-extra", Latex: @"\ll\gg\ni\angle\therefore"),
+                (Name: "symbol-setminus", Latex: @"\setminus"),
+                (Name: "symbol-dots", Latex: @"\ldots\cdots\vdots\ddots"),
+                (Name: "symbol-binary-more", Latex: @"\ominus\oslash\odot\bigcirc\star\ast\triangleleft\triangleright"),
+                (Name: "symbol-binary-circled", Latex: @"\ominus\oslash\odot\bigcirc"),
+                (Name: "symbol-binary-shapes", Latex: @"\star\ast\triangleleft\triangleright"),
+                // MathType 7's TeX importer does not preserve preceq/succeq;
+                // validate those private-MTCode glyphs in the direct corpus.
+                (Name: "symbol-relations-more", Latex: @"\simeq\asymp\doteq\prec\succ\vdash\dashv\models"),
+                (Name: "symbol-curly-precedence", Latex: @"\preccurlyeq\succcurlyeq"),
+                (Name: "symbol-arrows-vertical", Latex: @"\uparrow\downarrow\updownarrow\Uparrow\Downarrow\Updownarrow"),
+                // Hook arrows are not represented losslessly by MathType 7's
+                // TeX importer; validate the four native harpoons independently.
+                (Name: "symbol-arrows-harpoons", Latex: @"\leftharpoonup\leftharpoondown\rightharpoonup\rightharpoondown"),
+                (Name: "symbol-misc", Latex: @"\aleph\wp\Re\Im\ell\imath\jmath\top\bot\surd"),
+                (Name: "symbol-misc-letterlike", Latex: @"\aleph\wp\Re\Im\ell"),
+                (Name: "symbol-misc-dotless", Latex: @"\imath\jmath"),
+                (Name: "symbol-misc-topbot", Latex: @"\top\bot\surd"),
+                (Name: "symbol-stars-primes", Latex: @"\ast\star\dagger\ddagger\prime"),
+                (Name: "symbol-relations-square", Latex: @"\sqsubset\sqsubseteq\sqsupset\sqsupseteq"),
+                (Name: "symbol-binary-ams", Latex: @"\uplus\sqcap\sqcup\wr\amalg"),
+                (Name: "symbol-binary-ams-a", Latex: @"\uplus\sqcap\sqcup"),
+                (Name: "symbol-binary-ams-b", Latex: @"\wr\amalg"),
+                (Name: "symbol-arrows-diagonal", Latex: @"\nearrow\searrow\swarrow\nwarrow"),
+                (Name: "symbol-arrows-hooks", Latex: @"\hookleftarrow\hookrightarrow"),
+                (Name: "symbol-suits", Latex: @"\spadesuit\clubsuit\heartsuit\diamondsuit"),
+                (Name: "symbol-operators", Latex: @"\pm\mp\times\cdot\div\partial\nabla\forall\exists"),
+                (Name: "symbol-greek", Latex: @"\alpha\beta\gamma\delta\epsilon\varepsilon\theta\vartheta\lambda\mu\pi\rho\sigma\phi\varphi\omega\Gamma\Delta\Theta\Lambda\Pi\Sigma\Phi\Omega"),
+                (Name: "symbol-greek-variants", Latex: @"\varepsilon\epsilon\vartheta\varpi\varrho\varsigma\varphi\phi\varkappa"),
+                (Name: "accent-core", Latex: @"\vec{x}\overline{AB}\hat{x}\tilde{x}\dot{x}\ddot{x}"),
+                (Name: "accent-arrows", Latex: @"\overrightarrow{AB}\overleftarrow{AB}\overleftrightarrow{AB}"),
+                (Name: "accent-braces", Latex: @"\overbrace{a+b}^{n}\underbrace{a+b}_{n}"),
+                (Name: "aligned-tabs", Latex: string.Empty),
+                (Name: "fence-paren", Latex: @"\left(\frac{ab}{\beta}\right)"),
+                (Name: "fence-bracket", Latex: @"\left[\frac{ab}{\beta}\right]"),
+                (Name: "fence-brace", Latex: @"\left\{\frac{ab}{\beta}\right\}"),
+                (Name: "fence-angle", Latex: @"\left\langle\frac{ab}{\beta}\right\rangle"),
+                (Name: "fence-bar", Latex: @"\left|\frac{ab}{\beta}\right|"),
+                (Name: "fence-double-bar", Latex: @"\left\|\frac{ab}{\beta}\right\|"),
+                (Name: "floor-fraction", Latex: @"\left\lfloor\frac{ab}{\beta}\right\rfloor"),
+                (Name: "ceiling-fraction", Latex: @"\left\lceil\frac{ab}{\beta}\right\rceil"),
+                (Name: "alignment-markers", Latex: string.Empty),
             };
             var nativeCases = genuineCases.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(nativeCaseFilter))
@@ -187,11 +244,31 @@ internal static partial class Program
                             replacementLatex: null,
                             saveChanges: true,
                             replacementMathMl: symbolMatrixMathMl)
-                        : InvokeWordOwnedMathTypeEditor(
-                            application,
-                            format,
-                            replacementLatex: genuineCase.Latex,
-                            saveChanges: true);
+                        : string.Equals(genuineCase.Name, "aligned-tabs", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementKeySequence: "aligned-tabs")
+                            : string.Equals(genuineCase.Name, "alignment-markers", StringComparison.Ordinal)
+                                ? InvokeWordOwnedMathTypeEditor(
+                                    application,
+                                    format,
+                                    replacementLatex: null,
+                                    saveChanges: true,
+                                    replacementKeySequence: "alignment-markers")
+                            : InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: genuineCase.Latex,
+                                saveChanges: true);
+                File.WriteAllText(
+                    Path.Combine(artifactRoot, $"genuine-{genuineCase.Name}-mathtype-mathml.xml"),
+                    mathTypeMathMl);
+                File.WriteAllText(
+                    Path.Combine(artifactRoot, $"genuine-{genuineCase.Name}-mathtype-export.mathml"),
+                    mathTypeMathMl);
                 Release(format);
                 format = null;
                 document.Save();
@@ -215,7 +292,12 @@ internal static partial class Program
                 Console.WriteLine(
                     $"  {genuineCase.Name}: genuine MathType root offset={MathTypeMtefCodec.FindRootStructureOffset(nativeMtef)}.");
                 var directMathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(equationNative);
-                if (!string.Equals(genuineCase.Name, "symbol-matrix", StringComparison.Ordinal))
+                if (!string.Equals(genuineCase.Name, "symbol-matrix", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "alignment-markers", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "symbol-misc-dotless", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "symbol-misc-letterlike", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "symbol-binary-ams-b", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "symbol-suits", StringComparison.Ordinal))
                 {
                     AssertEqual(
                         MathTypeMtefCodec.SemanticSignature(mathTypeMathMl),
@@ -223,11 +305,23 @@ internal static partial class Program
                         $"VisualTeX direct MTEF parser disagreed with MathType 7 for genuine '{genuineCase.Name}' equation. MathType='{mathTypeMathMl}', direct='{directMathMl}'.");
                 }
                 if (string.Equals(genuineCase.Name, "mathbb", StringComparison.Ordinal)
-                    || string.Equals(genuineCase.Name, "hbar", StringComparison.Ordinal))
+                    || string.Equals(genuineCase.Name, "hbar", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "aligned-tabs", StringComparison.Ordinal))
                 {
+                    // For the native tab-alignment fixture, MathType's exported
+                    // MathML deliberately flattens fnMARKER tabs. Use VisualTeX's
+                    // direct MTEF readback, which reconstructs those boundaries as
+                    // an alternating right/left mtable, then require the writer to
+                    // reproduce MathType's genuine Equation Native byte-for-byte.
+                    var rewriteMathMl = string.Equals(
+                            genuineCase.Name,
+                            "aligned-tabs",
+                            StringComparison.Ordinal)
+                        ? directMathMl
+                        : mathTypeMathMl;
                     var rewrittenNative = MathTypeMtefCodec.RewriteEquationNative(
                         equationNative,
-                        mathTypeMathMl,
+                        rewriteMathMl,
                         inline: true).EquationNative;
                     if (!equationNative.SequenceEqual(rewrittenNative))
                     {
@@ -245,11 +339,79 @@ internal static partial class Program
                     Console.WriteLine(
                         $"  {genuineCase.Name}: VisualTeX rewrite is byte-for-byte identical to genuine MathType 7 Equation Native.");
                 }
+                var directLatex = MathMlToLatexConverter.Convert(directMathMl);
                 Console.WriteLine(
-                    $"  {genuineCase.Name}: direct VisualTeX MTEF source={MathMlToLatexConverter.Convert(directMathMl)}.");
+                    $"  {genuineCase.Name}: direct VisualTeX MTEF source={directLatex}.");
+                if (string.Equals(genuineCase.Name, "symbol-misc-dotless", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\imath", StringComparison.Ordinal) >= 0
+                        && directLatex.IndexOf(@"\jmath", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost dotless i/j: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "symbol-misc-letterlike", StringComparison.Ordinal))
+                {
+                    foreach (var command in new[] { @"\aleph", @"\wp", @"\Re", @"\Im", @"\ell" })
+                    {
+                        AssertTrue(
+                            directLatex.IndexOf(command, StringComparison.Ordinal) >= 0,
+                            $"Direct MathType MTEF readback lost {command}: '{directLatex}'.");
+                    }
+                }
+                if (string.Equals(genuineCase.Name, "symbol-binary-ams-b", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\wr", StringComparison.Ordinal) >= 0
+                        && directLatex.IndexOf(@"\amalg", StringComparison.Ordinal) >= 0
+                        && directLatex.IndexOf(@"\coprod", StringComparison.Ordinal) < 0,
+                        $"Direct MathType MTEF readback confused wr/amalg with coproduct: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "symbol-suits", StringComparison.Ordinal))
+                {
+                    foreach (var command in new[] { @"\spadesuit", @"\clubsuit", @"\heartsuit", @"\diamondsuit" })
+                    {
+                        AssertTrue(
+                            directLatex.IndexOf(command, StringComparison.Ordinal) >= 0,
+                            $"Direct MathType MTEF readback lost {command}: '{directLatex}'.");
+                    }
+                }
                 var typographySensitiveCases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "inline-mixed",
+                    "symbol-relations",
+                    "symbol-arrows-basic",
+                    "symbol-arrows-double",
+                    "symbol-mapsto",
+                    "symbol-extra-relations",
+                    "symbol-logic",
+                    "symbol-binary-extra",
+                    "symbol-order-extra",
+                    "symbol-setminus",
+                    "symbol-dots",
+                    "symbol-binary-more",
+                    "symbol-binary-circled",
+                    "symbol-binary-shapes",
+                    "symbol-relations-more",
+                    "symbol-arrows-vertical",
+                    "symbol-arrows-harpoons",
+                    "symbol-misc",
+                    "symbol-misc-letterlike",
+                    "symbol-misc-dotless",
+                    "symbol-misc-topbot",
+                    "symbol-stars-primes",
+                    "symbol-relations-square",
+                    "symbol-binary-ams",
+                    "symbol-binary-ams-a",
+                    "symbol-binary-ams-b",
+                    "symbol-arrows-diagonal",
+                    "symbol-arrows-hooks",
+                    "symbol-suits",
+                    "symbol-operators",
+                    "symbol-greek",
+                    "symbol-greek-variants",
+                    "accent-core",
+                    "accent-arrows",
+                    "accent-braces",
                     "integral",
                     "iiint",
                     "sum",
@@ -258,15 +420,27 @@ internal static partial class Program
                     "bigcup",
                     "bigcap",
                     "max",
+                    "fence-paren",
+                    "fence-bracket",
+                    "fence-brace",
+                    "fence-angle",
+                    "fence-bar",
+                    "fence-double-bar",
+                    "floor-fraction",
+                    "ceiling-fraction",
                 };
                 if (typographySensitiveCases.Contains(genuineCase.Name))
                 {
                     var originalLength = checked((int)BitConverter.ToUInt32(equationNative, 8));
                     var originalMtef = new byte[originalLength];
                     Buffer.BlockCopy(equationNative, 28, originalMtef, 0, originalLength);
+                    var rewriteMathMl = genuineCase.Name is
+                            "symbol-misc-letterlike" or "symbol-misc-dotless" or "symbol-binary-ams-b" or "symbol-suits"
+                        ? directMathMl
+                        : mathTypeMathMl;
                     var visualTexRewrite = MathTypeMtefCodec.RewriteEquationNative(
                         equationNative,
-                        mathTypeMathMl,
+                        rewriteMathMl,
                         inline: true);
                     if (!MathTypeNativePreviewRenderer.TryRender(
                             originalMtef,
@@ -658,6 +832,44 @@ internal static partial class Program
                             System.Windows.Forms.SendKeys.SendWait("^d");
                             Thread.Sleep(120);
                             System.Windows.Forms.SendKeys.SendWait("+r");
+                            Thread.Sleep(500);
+                        }
+                        else if (string.Equals(replacementKeySequence, "alignment-markers", StringComparison.Ordinal))
+                        {
+                            // Ctrl+; inserts MathType's non-printing alignment symbol.
+                            // Capture its genuine fnMARKER representation before we
+                            // synthesize TeX '&' using the same native primitive.
+                            System.Windows.Forms.SendKeys.SendWait("a");
+                            System.Windows.Forms.SendKeys.SendWait("^;");
+                            System.Windows.Forms.SendKeys.SendWait("=b");
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            System.Windows.Forms.SendKeys.SendWait("long");
+                            System.Windows.Forms.SendKeys.SendWait("^;");
+                            System.Windows.Forms.SendKeys.SendWait("=e");
+                            Thread.Sleep(500);
+                        }
+                        else if (string.Equals(replacementKeySequence, "aligned-tabs", StringComparison.Ordinal))
+                        {
+                            // Capture MathType 7's own MTEF representation of a pile with
+                            // several tab groups. This is deliberately created through the
+                            // native editor (Ctrl+Tab), not synthesized by VisualTeX, so the
+                            // persisted Equation Native stream is authoritative for the
+                            // PILE/RULER/tab-marker reverse-compatibility test.
+                            System.Windows.Forms.SendKeys.SendWait("a");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("=b");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("c");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("=d");
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            System.Windows.Forms.SendKeys.SendWait("long");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("=e");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("f");
+                            System.Windows.Forms.SendKeys.SendWait("^{TAB}");
+                            System.Windows.Forms.SendKeys.SendWait("=g");
                             Thread.Sleep(500);
                         }
                         else

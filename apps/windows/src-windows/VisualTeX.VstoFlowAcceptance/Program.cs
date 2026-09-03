@@ -810,6 +810,10 @@ internal static partial class Program
             {
                 RunWordMathTypeOleCreateAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-aligned-create", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeAlignedCreateAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-ole-create-structure", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeOleCreateStructureAcceptance(artifactRoot);

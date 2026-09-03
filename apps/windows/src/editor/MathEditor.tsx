@@ -2015,6 +2015,7 @@ function restoreStructuredCompositionPlaceholder(
 
 const visualTexPlaceholderStyleId = "visualtex-structural-placeholder-style";
 const visualTexFormulaFontStyleId = "visualtex-formula-font-style";
+const visualTexAlignmentMarkerStyleId = "visualtex-alignment-marker-style";
 const visualTexFormulaUprightFontProperty =
   "--visualtex-formula-upright-font-family";
 const visualTexFormulaItalicFontProperty =
@@ -6734,6 +6735,17 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const host = field.closest<HTMLElement>(".mathfield-host");
         host?.classList.remove("has-explicit-align-marker");
         field.style.removeProperty("margin-left");
+        const previousMarkerCount = Number.parseInt(
+          field.dataset.visualtexAlignmentMarkerCount ?? "0",
+          10,
+        );
+        if (Number.isFinite(previousMarkerCount)) {
+          for (let markerIndex = 0; markerIndex < previousMarkerCount; markerIndex += 1) {
+            field.style.removeProperty(`--visualtex-align-marker-${markerIndex}-left`);
+            field.style.removeProperty(`--visualtex-align-marker-${markerIndex}-right`);
+          }
+        }
+        delete field.dataset.visualtexAlignmentMarkerCount;
       }
       const hasOcrAlignmentMarkers = linesRef.current.some((line) =>
         hasVisualTexAlignmentMarker(line.latex),
@@ -6744,35 +6756,69 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const field = fieldRefs.current.get(line.id);
         if (!field?.isConnected) return [];
         const host = field.closest<HTMLElement>(".mathfield-host");
-        const marker = field.shadowRoot?.querySelector<HTMLElement>(
-          `.${VISUALTEX_ALIGNMENT_MARKER_CLASS}`,
+        const markers = Array.from(
+          field.shadowRoot?.querySelectorAll<HTMLElement>(
+            `.${VISUALTEX_ALIGNMENT_MARKER_CLASS}`,
+          ) ?? [],
         );
-        if (!host || !marker) return [];
+        if (!host || !markers.length) return [];
         const fieldBounds = field.getBoundingClientRect();
-        const markerBounds = marker.getBoundingClientRect();
-        return [
-          {
-            field,
-            host,
-            anchorOffset: markerBounds.left - fieldBounds.left,
-            leftExtent: markerBounds.left - fieldBounds.left,
-            rightExtent: fieldBounds.right - markerBounds.left,
-          },
-        ];
+        const markerOffsets = markers.map(
+          (marker) => marker.getBoundingClientRect().left - fieldBounds.left,
+        );
+        const segmentWidths = markerOffsets.map((offset, index) =>
+          Math.max(0, offset - (index === 0 ? 0 : markerOffsets[index - 1])),
+        );
+        segmentWidths.push(
+          Math.max(0, fieldBounds.right - fieldBounds.left - markerOffsets.at(-1)!),
+        );
+        return [{ field, host, markers, segmentWidths }];
       });
       if (!marked.length) return;
 
-      const sharedLeftExtent = Math.max(
-        0,
-        ...marked.map((entry) => entry.leftExtent),
+      const maxMarkerCount = Math.max(...marked.map((entry) => entry.markers.length));
+      const columnWidths = Array.from({ length: maxMarkerCount + 1 }, (_, column) =>
+        Math.max(0, ...marked.map((entry) => entry.segmentWidths[column] ?? 0)),
       );
-      const sharedRightExtent = Math.max(
-        0,
-        ...marked.map((entry) => entry.rightExtent),
-      );
-      const alignedWidth = sharedLeftExtent + sharedRightExtent;
+      // TeX align/aligned groups columns in right/left pairs. There is no gap
+      // inside a pair, while consecutive pairs are separated by 2em. A single
+      // marker therefore keeps the exact historical VisualTeX layout; extra
+      // markers add only the inter-pair spacing needed by `&&`, `&&&`, ... .
+      const fontSizePx = Number.parseFloat(getComputedStyle(marked[0].field).fontSize);
+      const pairGap = Number.isFinite(fontSizePx) ? fontSizePx * 2 : 0;
+      const pairGapCount = Math.floor(maxMarkerCount / 2);
+      const alignedWidth =
+        columnWidths.reduce((total, width) => total + width, 0) +
+        pairGap * pairGapCount;
 
       for (const entry of marked) {
+        const shadowRoot = entry.field.shadowRoot;
+        if (shadowRoot) {
+          let alignmentStyle = shadowRoot.getElementById(
+            visualTexAlignmentMarkerStyleId,
+          ) as HTMLStyleElement | null;
+          if (!alignmentStyle) {
+            alignmentStyle = document.createElement("style");
+            alignmentStyle.id = visualTexAlignmentMarkerStyleId;
+            shadowRoot.append(alignmentStyle);
+          }
+          // MathLive may rebuild its rendered atom tree after the math-field is
+          // laid out. Keep compensation in field-owned CSS variables and a
+          // stable shadow-root stylesheet instead of mutating transient marker
+          // nodes directly. Top-level alignment markers are siblings, so the
+          // Selectors-4 `of <selector>` form addresses the Nth marker rather
+          // than the Nth arbitrary MathLive atom.
+          alignmentStyle.textContent = Array.from(
+            { length: maxMarkerCount },
+            (_, markerIndex) => `
+              .${VISUALTEX_ALIGNMENT_MARKER_CLASS}:nth-child(${markerIndex + 1} of .${VISUALTEX_ALIGNMENT_MARKER_CLASS}) {
+                margin-left: var(--visualtex-align-marker-${markerIndex}-left, 0px) !important;
+                margin-right: var(--visualtex-align-marker-${markerIndex}-right, 0px) !important;
+              }
+            `,
+          ).join("\n");
+        }
+
         const hostWidth = entry.host.getBoundingClientRect().width;
         const groupStart =
           formulaAlignment === "left"
@@ -6782,10 +6828,42 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               : Math.max(0, (hostWidth - alignedWidth) / 2);
         const fieldOffset = Math.max(
           0,
-          groupStart + sharedLeftExtent - entry.anchorOffset,
+          groupStart + columnWidths[0] - entry.segmentWidths[0],
         );
         entry.host.classList.add("has-explicit-align-marker");
         entry.field.style.marginLeft = `${fieldOffset}px`;
+
+        entry.field.dataset.visualtexAlignmentMarkerCount = String(entry.markers.length);
+        entry.markers.forEach((_marker, markerIndex) => {
+          let left = 0;
+          let right = 0;
+          // Even markers are the ordinary right/left pair boundary. Odd markers
+          // start the next pair: finish the preceding left column, insert TeX's
+          // 2em pair gap, then right-align the next (even-numbered) column.
+          if (markerIndex % 2 !== 0) {
+            const precedingColumn = markerIndex;
+            const nextColumn = markerIndex + 1;
+            const precedingFill = Math.max(
+              0,
+              columnWidths[precedingColumn] -
+                (entry.segmentWidths[precedingColumn] ?? 0),
+            );
+            const nextFill = Math.max(
+              0,
+              columnWidths[nextColumn] - (entry.segmentWidths[nextColumn] ?? 0),
+            );
+            left = precedingFill + pairGap;
+            right = nextFill;
+          }
+          entry.field.style.setProperty(
+            `--visualtex-align-marker-${markerIndex}-left`,
+            `${left}px`,
+          );
+          entry.field.style.setProperty(
+            `--visualtex-align-marker-${markerIndex}-right`,
+            `${right}px`,
+          );
+        });
       }
     };
 

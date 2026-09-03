@@ -54,6 +54,7 @@ import {
 } from "../../editor/formulaFontPreferences";
 import { readLocalStorage, writeLocalStorage } from "../../runtime/safeStorage";
 import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";
+import { annotateMathTypeAlignmentGeometry } from "../shared/mathTypeAlignmentGeometry";
 import { isIncompleteLatexDraft } from "../../math/latexCompatibility";
 import {
   closeOfficeSessionWindow,
@@ -914,10 +915,14 @@ export function OfficeDialogApp() {
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
     });
+    const rawMathMl = latexToMathMl(sourceLatex, outputDisplayMode);
+    const mathMl = isMathTypeOle
+      ? annotateMathTypeAlignmentGeometry(rawMathMl, svg.svg, svg.width)
+      : rawMathMl;
     return {
       svg: svg.svg,
       svgBase64: svg.base64,
-      mathMl: latexToMathMl(sourceLatex, outputDisplayMode),
+      mathMl,
       width: svg.width,
       height: svg.height,
       baseline: svg.baseline,

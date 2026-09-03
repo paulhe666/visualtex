@@ -20,6 +20,95 @@ public sealed class MathMlToLatexConverterTests
         Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
     }
 
+    [Fact]
+    public void ConvertsMathTypeGreekVariantsAndDotOperatorBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mi>ε</mi><mi>ϵ</mi><mi>ϑ</mi><mi>ϖ</mi><mi>ϱ</mi><mi>ς</mi>"
+            + "<mi>φ</mi><mi>ϕ</mi><mi>ϰ</mi><mo>⋅</mo></math>";
+
+        Assert.Equal(
+            @"\varepsilon \epsilon \vartheta \varpi \varrho \varsigma \varphi \phi \varkappa \cdot",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeAmsBinaryOperatorsBackToLatexCommands()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⊎</mo><mo>⊓</mo><mo>⊔</mo><mo>≀</mo><mo>⨿</mo></math>";
+
+        Assert.Equal(
+            @"\uplus \sqcap \sqcup \wr \amalg",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeAmsSymbolFamiliesBackToLatexCommands()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⋆</mo><mo>⊲</mo><mo>⊳</mo><mo>⊏</mo><mo>⊑</mo><mo>⊐</mo><mo>⊒</mo>"
+            + "<mo>⇐</mo><mo>↗</mo><mo>↘</mo><mo>↙</mo><mo>↖</mo>"
+            + "<mo>♠</mo><mo>♣</mo><mo>♡</mo><mo>♢</mo></math>";
+
+        Assert.Equal(
+            @"\star \triangleleft \triangleright \sqsubset \sqsubseteq \sqsupset \sqsupseteq \Leftarrow \nearrow \searrow \swarrow \nwarrow \spadesuit \clubsuit \heartsuit \diamondsuit",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeLetterlikeCommandsWithoutInventingFraktur()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mi>ℵ</mi><mi>℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi></math>";
+
+        Assert.Equal(
+            @"\aleph \wp \Re \Im \ell",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void DistinguishesPreceqFromCurlyPrecedenceRelations()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⪯</mo><mo>⪰</mo><mo>≼</mo><mo>≽</mo></math>";
+
+        Assert.Equal(
+            @"\preceq \succeq \preccurlyeq \succcurlyeq",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeRelationSpellingsBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>∥</mo><mo>⊥</mo><mo>∝</mo><mo>~</mo><mo>≅</mo></math>";
+
+        Assert.Equal(
+            @"\parallel \perp \propto \sim \cong",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeSpecialOperatorSpellingsBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⊕</mo><mo>⊗</mo><mo>°</mo><mo>•</mo><mo>⋄</mo>"
+            + "<mo>≪</mo><mo>≫</mo><mo>∋</mo><mo>∠</mo><mo>∴</mo><mo>∖</mo>"
+            + "<mo>…</mo><mo>⋯</mo><mo>⋮</mo><mo>⋱</mo></math>";
+
+        Assert.Equal(
+            @"\oplus \otimes \circ \bullet \diamond \ll \gg \ni \angle \therefore \setminus \dots \cdots \vdots \ddots",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Theory]
     [InlineData("lim", @"\lim_{x\to 0}")]
     [InlineData("max", @"\max_{x\in A}")]
@@ -191,6 +280,24 @@ public sealed class MathMlToLatexConverterTests
             + $"<mfenced open=\"{open}\" close=\"{close}\"><mi>x</mi></mfenced></math>";
 
         Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeTabPileTableBackToAligned()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mtable data-mtef-tabs=\"true\" columnalign=\"right left right left\">"
+            + "<mtr><mtd><msub><mi>p</mi><mn>0</mn></msub></mtd>"
+            + "<mtd><mo>=</mo><mi>x</mi></mtd><mtd></mtd><mtd><mtext>Low word</mtext></mtd></mtr>"
+            + "</mtable></math>";
+
+        var latex = MathMlToLatexConverter.Convert(mathMl);
+
+        Assert.StartsWith(@"\begin{aligned}", latex);
+        Assert.EndsWith(@"\end{aligned}", latex);
+        Assert.Equal(3, latex.Count(character => character == '&'));
+        Assert.Contains(@"& & \text{Low word}", latex);
     }
 
     [Fact]

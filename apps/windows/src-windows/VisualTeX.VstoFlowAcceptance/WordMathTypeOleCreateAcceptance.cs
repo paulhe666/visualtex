@@ -57,6 +57,410 @@ internal static partial class Program
         RunWordMathTypeSequentialCreateStressAcceptance(artifactRoot, emfPath);
     }
 
+    private static void RunWordMathTypeAlignedCreateAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var svgPath = Path.Combine(artifactRoot, "mathtype-aligned-create-preview.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"760\" height=\"180\" viewBox=\"0 0 760 180\"><text x=\"4\" y=\"70\" font-family=\"Times New Roman\" font-size=\"34\">VisualTeX aligned MathType acceptance</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 760, 180);
+
+        const string latex =
+            @"\begin{aligned}"
+            + @"\langle p_1,p_0\rangle &\leftarrow \operatorname{umul}(a,b)=ab &&\text{Double word product}\\"
+            + @"p_0 &\leftarrow \operatorname{umullo}(a,b)=(ab)\bmod\beta &&\text{Low word}\\"
+            + @"p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rfloor &&\text{High word.}"
+            + @"\end{aligned}";
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<mtable displaystyle=\"true\" columnalign=\"right left right left\" columnspacing=\"0em 2em 0em\" rowspacing=\"3pt\" data-visualtex-mtef-ruler-stops=\"1191,6881\">"
+            + "<mtr>"
+            + "<mtd><mo fence=\"false\" stretchy=\"false\">&#x27E8;</mo><msub><mi>p</mi><mn>1</mn></msub><mo>,</mo><msub><mi>p</mi><mn>0</mn></msub><mo fence=\"false\" stretchy=\"false\">&#x27E9;</mo></mtd>"
+            + "<mtd><mi></mi><mo stretchy=\"false\">&#x2190;</mo><mi>umul</mi><mo stretchy=\"false\">(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mi>a</mi><mi>b</mi></mtd>"
+            + "<mtd></mtd><mtd><mtext>Double word product</mtext></mtd>"
+            + "</mtr>"
+            + "<mtr>"
+            + "<mtd><msub><mi>p</mi><mn>0</mn></msub></mtd>"
+            + "<mtd><mi></mi><mo stretchy=\"false\">&#x2190;</mo><mi>umullo</mi><mo stretchy=\"false\">(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mo stretchy=\"false\">(</mo><mi>a</mi><mi>b</mi><mo stretchy=\"false\">)</mo><mo lspace=\"thickmathspace\" rspace=\"thickmathspace\">mod</mo><mi>&#x3B2;</mi></mtd>"
+            + "<mtd></mtd><mtd><mtext>Low word</mtext></mtd>"
+            + "</mtr>"
+            + "<mtr>"
+            + "<mtd><msub><mi>p</mi><mn>1</mn></msub></mtd>"
+            + "<mtd><mi></mi><mo stretchy=\"false\">&#x2190;</mo><mi>umulhi</mi><mo stretchy=\"false\">(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mrow data-mjx-texclass=\"INNER\"><mo data-mjx-texclass=\"OPEN\">&#x230A;</mo><mfrac><mrow><mi>a</mi><mi>b</mi></mrow><mi>&#x3B2;</mi></mfrac><mo data-mjx-texclass=\"CLOSE\">&#x230B;</mo></mrow></mtd>"
+            + "<mtd></mtd><mtd><mtext>High word.</mtext></mtd>"
+            + "</mtr>"
+            + "</mtable></math>";
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Range? range = null;
+        Word.InlineShape? shape = null;
+        Word.OLEFormat? format = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            range = document.Range(0, 0);
+            range.Select();
+            var service = new WordFormulaService(application);
+
+            // This is the production path that previously threw
+            // "VisualTeX generated invalid standalone MathType MTEF" before Word
+            // received an OLE object. The exact three-row user fixture exercises
+            // multiple alignment pairs/&&, prose cells, \bmod, function runs and
+            // the floor/fraction structure in one insertion.
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: false,
+                    latex: latex),
+                mathMl,
+                emfPath);
+
+            AssertEqual(1, document.InlineShapes.Count,
+                "Aligned MathType product create did not insert exactly one OLE object.");
+            shape = document.InlineShapes[1];
+            AssertTrue(MathTypeOleInterop.IsMathTypeOle(shape),
+                "Aligned MathType product create did not materialize Equation.DSMT4.");
+
+            var immediateReadback = MathTypeOleStorage.ReadMathMl(shape);
+            AssertEqual(
+                MathTypeMtefCodec.SemanticSignature(mathMl),
+                MathTypeMtefCodec.SemanticSignature(immediateReadback),
+                "Aligned MathType product create changed MTEF semantics before save.");
+            var immediateLatex = MathMlToLatexConverter.Convert(immediateReadback);
+            AssertTrue(
+                immediateLatex.IndexOf(@"\begin{aligned}", StringComparison.Ordinal) >= 0
+                && immediateLatex.Count(character => character == '&') == 9
+                && immediateLatex.IndexOf("umullo", StringComparison.Ordinal) >= 0
+                && immediateLatex.IndexOf("Double word product", StringComparison.Ordinal) >= 0
+                && immediateLatex.IndexOf("Low word", StringComparison.Ordinal) >= 0
+                && immediateLatex.IndexOf("High word.", StringComparison.Ordinal) >= 0,
+                $"Aligned MathType direct MTEF readback lost alignment/text semantics: '{immediateLatex}'.");
+
+            var alignedCompound = MathTypeOleStorage.CaptureCompoundFile(shape);
+            var alignedEquationNative = MathTypeOleStorage.ReadEquationNative(alignedCompound);
+            File.WriteAllBytes(
+                Path.Combine(artifactRoot, "VisualTeX-MathType-Aligned-Multipoint-Equation-Native.bin"),
+                alignedEquationNative);
+            var editStableRewrite = MathTypeMtefCodec.RewriteEquationNative(
+                alignedEquationNative,
+                immediateReadback,
+                inline: false);
+            var editStableReadback = MathTypeMtefCodec.ReadEquationNativeMathMl(
+                editStableRewrite.EquationNative);
+            AssertEqual(
+                MathTypeMtefCodec.SemanticSignature(immediateReadback),
+                MathTypeMtefCodec.SemanticSignature(editStableReadback),
+                "Aligned MathType semantics changed after a VisualTeX read/rewrite cycle.");
+            AssertTrue(
+                editStableReadback.IndexOf(
+                    "data-visualtex-mtef-ruler-stops=\"1191,6881\"",
+                    StringComparison.Ordinal) >= 0,
+                "Aligned MathType read/rewrite cycle lost its native RULER stops.");
+            if (!MathTypeNativePreviewRenderer.TryRender(
+                    editStableRewrite.Mtef,
+                    artifactRoot,
+                    out var editStablePreview))
+                throw new InvalidDataException(
+                    "MathType native renderer was unavailable for aligned edit-stability validation.");
+            using (editStablePreview)
+            {
+                var editStableGeometry = MeasureMathTypeAlignedPreviewGeometry(
+                    File.ReadAllBytes(editStablePreview.WmfPath),
+                    artifactRoot,
+                    "VisualTeX-MathType-Aligned-Multipoint-Rewrite-Preview.png");
+                AssertEqual(3, editStableGeometry.RowCount,
+                    "VisualTeX read/rewrite changed the aligned MathType native row count.");
+                AssertTrue(
+                    editStableGeometry.FirstAnchorSpread <= 2.0
+                    && editStableGeometry.TextAnchorSpread <= 2.0,
+                    $"VisualTeX read/rewrite lost native aligned geometry: first={editStableGeometry.FirstAnchorSpread:0.###}px, text={editStableGeometry.TextAnchorSpread:0.###}px.");
+            }
+            var alignedPreview = ReadInlineShapeEnhancedMetafile(shape);
+            var visualAlignment = MeasureMathTypeAlignedPreviewGeometry(
+                alignedPreview,
+                artifactRoot,
+                "VisualTeX-MathType-Aligned-Multipoint-Preview.png");
+            Console.WriteLine(
+                $"[MathType aligned visual geometry] rows={visualAlignment.RowCount}, "
+                + $"firstAnchor={string.Join("/", visualAlignment.FirstAnchorX)}, "
+                + $"textAnchor={string.Join("/", visualAlignment.TextAnchorX)}, "
+                + $"spreads={visualAlignment.FirstAnchorSpread:0.###}/"
+                + $"{visualAlignment.TextAnchorSpread:0.###}px, "
+                + $"preview={visualAlignment.PngPath}.");
+            AssertEqual(3, visualAlignment.RowCount,
+                "Aligned MathType native preview did not contain exactly three visual equation rows.");
+            AssertTrue(
+                visualAlignment.FirstAnchorSpread <= 2.0,
+                $"Aligned MathType first '&' right-side anchors are not visually aligned; spread={visualAlignment.FirstAnchorSpread:0.###}px.");
+            AssertTrue(
+                visualAlignment.TextAnchorSpread <= 2.0,
+                $"Aligned MathType '&&' prose-column anchors are not visually aligned; spread={visualAlignment.TextAnchorSpread:0.###}px.");
+
+            var path = Path.Combine(artifactRoot, "VisualTeX-MathType-Aligned-Multipoint-Create.docx");
+            document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+
+            var embeddings = ReadDocxOleEmbeddings(path);
+            AssertEqual(1, embeddings.Count,
+                "Aligned MathType product create did not persist exactly one OLE package part.");
+            var persistedReadback = MathTypeOleStorage.ReadMathMl(embeddings[0]);
+            AssertEqual(
+                MathTypeMtefCodec.SemanticSignature(mathMl),
+                MathTypeMtefCodec.SemanticSignature(persistedReadback),
+                "Aligned MathType product create changed MTEF semantics in the saved DOCX package.");
+
+            document = application.Documents.Open(path, ReadOnly: false, Visible: false);
+            AssertEqual(1, document.InlineShapes.Count,
+                "Aligned MathType product create changed the OLE count after save/reopen.");
+            Release(shape);
+            shape = document.InlineShapes[1];
+            AssertTrue(MathTypeOleInterop.IsMathTypeOle(shape),
+                "Reopened aligned MathType product create is no longer Equation.DSMT4.");
+            var reopenedReadback = MathTypeOleStorage.ReadMathMl(shape);
+            AssertEqual(
+                MathTypeMtefCodec.SemanticSignature(mathMl),
+                MathTypeMtefCodec.SemanticSignature(reopenedReadback),
+                "Reopened aligned MathType product create changed MTEF semantics.");
+            var reopenedVisualAlignment = MeasureMathTypeAlignedPreviewGeometry(
+                ReadInlineShapeEnhancedMetafile(shape),
+                artifactRoot,
+                "VisualTeX-MathType-Aligned-Multipoint-Reopened-Preview.png");
+            AssertEqual(3, reopenedVisualAlignment.RowCount,
+                "Reopened aligned MathType native preview did not contain exactly three visual rows.");
+            AssertTrue(
+                reopenedVisualAlignment.FirstAnchorSpread <= 2.0
+                && reopenedVisualAlignment.TextAnchorSpread <= 2.0,
+                $"Reopened aligned MathType visual anchors drifted: first={reopenedVisualAlignment.FirstAnchorSpread:0.###}px, text={reopenedVisualAlignment.TextAnchorSpread:0.###}px.");
+            AssertTrue(
+                Math.Abs(reopenedVisualAlignment.FirstAnchorX[0] - visualAlignment.FirstAnchorX[0]) <= 2
+                && Math.Abs(reopenedVisualAlignment.TextAnchorX[0] - visualAlignment.TextAnchorX[0]) <= 2,
+                "Word save/reopen moved the aligned MathType ruler anchors relative to the original native preview.");
+
+            // Final product-level validation: let the installed MathType 7 OLE
+            // editor itself open the exact object produced by VisualTeX. MathType's
+            // MathML exporter flattens native fnMARKER tabs to U+0009 text nodes;
+            // SemanticSignature reconstructs only that tab-pile form for comparison.
+            application.Visible = true;
+            document.Activate();
+            format = shape.OLEFormat;
+            var mathTypeReadback = InvokeWordOwnedMathTypeEditor(
+                application,
+                format,
+                replacementLatex: null,
+                saveChanges: false);
+            File.WriteAllText(
+                Path.Combine(artifactRoot, "VisualTeX-MathType-Aligned-NativeEditor-Readback.xml"),
+                mathTypeReadback);
+            AssertEqual(
+                MathTypeMtefCodec.SemanticSignature(mathMl),
+                MathTypeMtefCodec.SemanticSignature(mathTypeReadback),
+                "Installed MathType 7 changed the exact aligned product-create semantics.");
+            Release(format);
+            format = null;
+
+            Console.WriteLine(
+                "[MATHTYPE ALIGNED PRODUCT CREATE] Exact three-row multipoint aligned fixture passed WordFormulaService.InsertMathTypeOle, direct Equation.DSMT4 readback, save/package readback, Word reopen and installed MathType 7 native-editor readback with all nine '&' alignment boundaries preserved.");
+        }
+        finally
+        {
+            Release(format);
+            Release(shape);
+            Release(range);
+            if (document is not null)
+            {
+                try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private sealed class MathTypeAlignedPreviewGeometry
+    {
+        internal int RowCount { get; set; }
+        internal int[] FirstAnchorX { get; set; } = Array.Empty<int>();
+        internal int[] TextAnchorX { get; set; } = Array.Empty<int>();
+        internal double FirstAnchorSpread { get; set; }
+        internal double TextAnchorSpread { get; set; }
+        internal string PngPath { get; set; } = string.Empty;
+    }
+
+    private static MathTypeAlignedPreviewGeometry MeasureMathTypeAlignedPreviewGeometry(
+        byte[] preview,
+        string artifactRoot,
+        string pngFileName)
+    {
+        const int renderWidth = 1800;
+        const int renderHeight = 600;
+        using var bitmap = RenderEmf(preview, renderWidth, renderHeight);
+        var pngPath = Path.Combine(artifactRoot, pngFileName);
+        bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+
+        static bool IsInk(System.Drawing.Color pixel) =>
+            pixel.R < 242 || pixel.G < 242 || pixel.B < 242;
+
+        var yInk = new int[bitmap.Height];
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                if (IsInk(bitmap.GetPixel(x, y))) yInk[y]++;
+            }
+        }
+
+        var rawBands = new List<(int Start, int End)>();
+        var bandStart = -1;
+        for (var y = 0; y < yInk.Length; y++)
+        {
+            if (yInk[y] > 0)
+            {
+                if (bandStart < 0) bandStart = y;
+                continue;
+            }
+            if (bandStart < 0) continue;
+            rawBands.Add((bandStart, y - 1));
+            bandStart = -1;
+        }
+        if (bandStart >= 0) rawBands.Add((bandStart, yInk.Length - 1));
+
+        var mergedBands = new List<(int Start, int End)>();
+        foreach (var band in rawBands)
+        {
+            if (mergedBands.Count > 0
+                && band.Start - mergedBands[mergedBands.Count - 1].End <= 10)
+            {
+                var previous = mergedBands[mergedBands.Count - 1];
+                mergedBands[mergedBands.Count - 1] = (previous.Start, band.End);
+            }
+            else
+            {
+                mergedBands.Add(band);
+            }
+        }
+
+        var rowBands = mergedBands
+            .Where(band => band.End - band.Start + 1 >= 4)
+            .Where(band => Enumerable.Range(band.Start, band.End - band.Start + 1)
+                .Sum(y => yInk[y]) >= 40)
+            .ToList();
+
+        var rowSpans = new List<List<(int Start, int End)>>();
+        foreach (var rowBand in rowBands)
+        {
+            var xInk = new bool[bitmap.Width];
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                for (var y = rowBand.Start; y <= rowBand.End; y++)
+                {
+                    if (!IsInk(bitmap.GetPixel(x, y))) continue;
+                    xInk[x] = true;
+                    break;
+                }
+            }
+
+            var rawSpans = new List<(int Start, int End)>();
+            var start = -1;
+            for (var x = 0; x < xInk.Length; x++)
+            {
+                if (xInk[x])
+                {
+                    if (start < 0) start = x;
+                    continue;
+                }
+                if (start < 0) continue;
+                rawSpans.Add((start, x - 1));
+                start = -1;
+            }
+            if (start >= 0) rawSpans.Add((start, xInk.Length - 1));
+
+            var mergedSpans = new List<(int Start, int End)>();
+            foreach (var span in rawSpans)
+            {
+                if (mergedSpans.Count > 0
+                    && span.Start - mergedSpans[mergedSpans.Count - 1].End <= 5)
+                {
+                    var previous = mergedSpans[mergedSpans.Count - 1];
+                    mergedSpans[mergedSpans.Count - 1] = (previous.Start, span.End);
+                }
+                else if (span.End - span.Start + 1 >= 2)
+                {
+                    mergedSpans.Add(span);
+                }
+            }
+            if (mergedSpans.Count == 0)
+                throw new InvalidDataException("Aligned MathType preview row contained no horizontal ink spans.");
+            rowSpans.Add(mergedSpans);
+        }
+
+        if (rowSpans.Count != 3)
+        {
+            return new MathTypeAlignedPreviewGeometry
+            {
+                RowCount = rowSpans.Count,
+                PngPath = pngPath,
+            };
+        }
+
+        var commonStarts = new List<int[]>();
+        foreach (var candidate in rowSpans[0].Select(span => span.Start))
+        {
+            var matched = new[] { candidate, -1, -1 };
+            var valid = true;
+            for (var rowIndex = 1; rowIndex < rowSpans.Count; rowIndex++)
+            {
+                var nearest = rowSpans[rowIndex]
+                    .Select(span => span.Start)
+                    .OrderBy(value => Math.Abs(value - candidate))
+                    .First();
+                if (Math.Abs(nearest - candidate) > 2)
+                {
+                    valid = false;
+                    break;
+                }
+                matched[rowIndex] = nearest;
+            }
+            if (valid) commonStarts.Add(matched);
+        }
+
+        // For this deliberately asymmetric fixture, the only visible component
+        // starts shared by all three rows are the first '&' right-hand glyph
+        // (the identical left arrow) and the '&&' prose-column start. This is a
+        // stronger visual assertion than measuring whitespace: different left
+        // expression widths cannot trick the detector into choosing another tab.
+        var distinctCommon = commonStarts
+            .OrderBy(values => values[0])
+            .GroupBy(values => values[0])
+            .Select(group => group.First())
+            .ToArray();
+        if (distinctCommon.Length != 2)
+            throw new InvalidDataException(
+                "Aligned MathType preview did not expose exactly two cross-row visual alignment anchors: "
+                + string.Join(", ", distinctCommon.Select(values => string.Join("/", values))));
+
+        var firstAnchor = distinctCommon[0];
+        var textAnchor = distinctCommon[1];
+        static double Spread(IReadOnlyList<int> values) => values.Count == 0
+            ? double.PositiveInfinity
+            : values.Max() - values.Min();
+
+        return new MathTypeAlignedPreviewGeometry
+        {
+            RowCount = rowBands.Count,
+            FirstAnchorX = firstAnchor,
+            TextAnchorX = textAnchor,
+            FirstAnchorSpread = Spread(firstAnchor),
+            TextAnchorSpread = Spread(textAnchor),
+            PngPath = pngPath,
+        };
+    }
+
     private static void RunWordMathTypeRightThenLeftLiveAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);

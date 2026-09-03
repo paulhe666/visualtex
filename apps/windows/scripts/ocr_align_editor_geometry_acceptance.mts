@@ -7,7 +7,11 @@ import {
   resolveChromiumExecutable,
 } from "./browser_test_runtime.mjs";
 import { normalizeOcrFormulaText } from "../src/ocr/ocrService.ts";
-import { formatLatexLines } from "../src/clipboard/LatexCopyService.ts";
+import {
+  formatLatexLines,
+  parseLatexSource,
+  parseLatexSourceDraft,
+} from "../src/clipboard/LatexCopyService.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
 
 const portOffset = process.pid % 800;
@@ -17,25 +21,76 @@ const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = createBrowserProfilePath("visualtex-ocr-align-geometry");
 const chromePath = resolveChromiumExecutable();
 
+const exactUserAligned = String.raw`\begin{aligned}
+\langle p_1,p_0\rangle &\leftarrow \operatorname{umul}(a,b)=ab
+&&\text{Double word product}\\
+p_0 &\leftarrow \operatorname{umullo}(a,b)=(ab)\bmod\beta
+&&\text{Low word}\\
+p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rfloor
+&&\text{High word.}
+\end{aligned}`;
+const exactUserRows = parseLatexSource(exactUserAligned, "aligned");
+assert.equal(
+  exactUserRows.length,
+  3,
+  `Exact user aligned source did not parse into three rows: ${JSON.stringify(exactUserRows)}`,
+);
+assert.deepEqual(
+  exactUserRows.map(
+    (row) => row.split(VISUALTEX_ALIGNMENT_MARKER_LATEX).length - 1,
+  ),
+  [3, 3, 3],
+  `Exact user aligned source did not preserve '&' + '&&' as three markers per row: ${JSON.stringify(exactUserRows)}`,
+);
+const exactUserDraft = parseLatexSourceDraft(
+  `\\[\n${exactUserAligned}\n\\]`,
+  "aligned",
+);
+assert.ok(
+  exactUserDraft.valid,
+  `Exact user aligned source failed strict aligned draft parsing: ${JSON.stringify(exactUserDraft)}`,
+);
+assert.deepEqual(
+  exactUserDraft.values,
+  exactUserRows,
+  `Strict aligned source editor parsing differs from direct aligned import: ${JSON.stringify(exactUserDraft.values)}`,
+);
+const exactUserSerialized = formatLatexLines(exactUserRows, "aligned");
+assert.equal(
+  (exactUserSerialized.match(/&/g) ?? []).length,
+  9,
+  `Exact user aligned serialization did not restore all nine ampersands: ${exactUserSerialized}`,
+);
+assert.ok(
+  exactUserSerialized.includes("&&\\text{Low word}"),
+  `Exact user aligned serialization did not preserve the empty && column: ${exactUserSerialized}`,
+);
+
 const rawOcrAlign = String.raw`\begin{align}
-x&=a+b+c\\
-y_{12345}&=\frac{p}{q}\\
-z+q+r&=s
+x&=a+b+c&u&=v\\
+y_{12345}&=\frac{p}{q}&&\text{middle note}\\
+z+q+r&=s&long&=t
 \end{align}`;
 const ocrRows = normalizeOcrFormulaText(rawOcrAlign);
 assert.equal(ocrRows.length, 3, `OCR align did not split into three FormulaLines: ${JSON.stringify(ocrRows)}`);
 assert.ok(
-  ocrRows.every((row) => row.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX)),
-  `OCR align did not encode one top-level alignment marker per row: ${JSON.stringify(ocrRows)}`,
+  ocrRows.every(
+    (row) => row.split(VISUALTEX_ALIGNMENT_MARKER_LATEX).length - 1 === 3,
+  ),
+  `OCR align did not preserve all three top-level alignment markers per row: ${JSON.stringify(ocrRows)}`,
 );
 
 const serializedAligned = formatLatexLines(ocrRows, "aligned");
 assert.ok(serializedAligned.includes("\\begin{aligned}"));
 assert.ok(serializedAligned.includes("\\end{aligned}"));
+assert.ok(
+  serializedAligned.includes("&&\\text{middle note}"),
+  `Aligned copy did not preserve an explicit empty column created by '&&': ${serializedAligned}`,
+);
 assert.equal(
   (serializedAligned.match(/&/g) ?? []).length,
-  3,
-  `Aligned copy did not restore three real '&' tokens: ${serializedAligned}`,
+  9,
+  `Aligned copy did not restore all nine real '&' tokens: ${serializedAligned}`,
 );
 assert.ok(
   !serializedAligned.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX),
@@ -197,32 +252,40 @@ async function main() {
         if (fields.length !== 3) return { ready: false, count: fields.length };
         const entries = fields.map((field) => {
           const host = field.closest('.mathfield-host');
-          const marker = field.shadowRoot?.querySelector('.visualtex-align-marker');
+          const markers = [...(field.shadowRoot?.querySelectorAll('.visualtex-align-marker') ?? [])];
           const fieldBounds = field.getBoundingClientRect();
-          const markerBounds = marker?.getBoundingClientRect();
           return {
             value: field.value,
             fieldLeft: fieldBounds.left,
-            markerLeft: markerBounds?.left ?? null,
+            markerLefts: markers.map((marker) => marker.getBoundingClientRect().left),
+            markerMarginLefts: markers.map(
+              (marker) => Number.parseFloat(getComputedStyle(marker).marginLeft || '0') || 0,
+            ),
+            markerMarginRights: markers.map(
+              (marker) => Number.parseFloat(getComputedStyle(marker).marginRight || '0') || 0,
+            ),
             marginLeft: Number.parseFloat(field.style.marginLeft || '0') || 0,
             hostAligned: host?.classList.contains('has-explicit-align-marker') ?? false,
           };
         });
-        const markerLefts = entries
-          .map((entry) => entry.markerLeft)
-          .filter((value) => Number.isFinite(value));
-        const markerSpread = markerLefts.length
-          ? Math.max(...markerLefts) - Math.min(...markerLefts)
-          : Number.POSITIVE_INFINITY;
+        const markerSpreads = [0, 1, 2].map((markerIndex) => {
+          const positions = entries
+            .map((entry) => entry.markerLefts[markerIndex])
+            .filter((value) => Number.isFinite(value));
+          return positions.length === fields.length
+            ? Math.max(...positions) - Math.min(...positions)
+            : Number.POSITIVE_INFINITY;
+        });
         return {
           ready:
             fields.length === 3 &&
-            markerLefts.length === 3 &&
-            entries.every((entry) => entry.hostAligned) &&
-            markerSpread <= 1,
+            entries.every(
+              (entry) => entry.hostAligned && entry.markerLefts.length === 3,
+            ) &&
+            markerSpreads.every((spread) => spread <= 1),
           count: fields.length,
           entries,
-          markerSpread,
+          markerSpreads,
         };
       })()`);
       if (state?.ready) break;
@@ -230,16 +293,27 @@ async function main() {
     }
 
     assert.ok(state?.ready, `OCR alignment geometry did not converge: ${JSON.stringify(state)}`);
-    assert.ok(state.markerSpread <= 1, `OCR alignment anchors diverged by ${state.markerSpread}px`);
+    assert.ok(
+      state.markerSpreads.every((spread: number) => spread <= 1),
+      `OCR alignment columns diverged: ${state.markerSpreads.join('/')}px`,
+    );
     assert.ok(
       new Set(state.entries.map((entry: any) => Math.round(entry.marginLeft * 1000))).size > 1,
-      `Acceptance did not exercise unequal left extents: ${JSON.stringify(state.entries)}`,
+      `Acceptance did not exercise unequal first-column extents: ${JSON.stringify(state.entries)}`,
+    );
+    assert.ok(
+      state.entries.some(
+        (entry: any) =>
+          (entry.markerMarginLefts[1] ?? 0) > 0 ||
+          (entry.markerMarginRights[1] ?? 0) > 0,
+      ),
+      `Acceptance did not exercise multi-pair marker spacing: ${JSON.stringify(state.entries)}`,
     );
 
     console.log(
-      `OCR align editor geometry acceptance passed: markerSpread=${state.markerSpread}px, ` +
+      `OCR multi-align editor geometry acceptance passed: markerSpreads=${state.markerSpreads.join('/')}px, ` +
         `margins=${state.entries.map((entry: any) => entry.marginLeft).join('/')}, ` +
-        `copy restored 3 '&' tokens in aligned.`,
+        `copy restored 9 '&' tokens including '&&'.`,
     );
   } finally {
     client?.close();

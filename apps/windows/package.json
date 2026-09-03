@@ -24,6 +24,7 @@
     "test:editor:run": "node scripts/editor_regression_smoke.mjs",
     "test:editor": "npm run build && npm run test:editor:run",
     "test:ocr-align-editor": "npm run build:desktop && tsx scripts/ocr_align_editor_geometry_acceptance.mts && tsx scripts/ocr_align_copy_acceptance.mts",
+    "test:mathtype-align-geometry": "tsx scripts/math_type_alignment_geometry_acceptance.mts",
     "test:editor-history:run": "node scripts/editor_history_regression.mjs",
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",

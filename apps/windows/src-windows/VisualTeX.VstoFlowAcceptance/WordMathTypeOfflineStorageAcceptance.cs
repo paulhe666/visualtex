@@ -517,6 +517,75 @@ internal static partial class Program
             },
             new MathTypeOfflineCase
             {
+                Name = "mathtype-special-symbol-mtcode-lossless",
+                MathMl = M(
+                    "<mo>∓</mo><mo>↦</mo><mo>∥</mo><mo>∼</mo>"
+                    + "<mo>⊲</mo><mo>⊳</mo><mo>⊎</mo><mo>⊓</mo><mo>⊔</mo><mo>⋆</mo>"
+                    + "<mo>⇐</mo><mo>⇒</mo><mo>⇔</mo>"
+                    + "<mo>↗</mo><mo>↘</mo><mo>↙</mo><mo>↖</mo>"
+                    + "<mo>↕</mo><mo>⇕</mo><mo>↼</mo><mo>↽</mo><mo>⇀</mo><mo>⇁</mo>"
+                    + "<mo>⊏</mo><mo>⊑</mo><mo>⊐</mo><mo>⊒</mo>"
+                    + "<mo>⊖</mo><mo>⊘</mo><mo>⊙</mo><mo>◯</mo>"
+                    + "<mo>…</mo><mo>⋯</mo><mo>⋮</mo><mo>⋱</mo>"
+                    + "<mo>⊤</mo><mo>⊥</mo><mo>√</mo>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "mathtype-special-relations-mtcode-lossless",
+                MathMl = M(
+                    "<mo>≃</mo><mo>≍</mo><mo>≐</mo><mo>≺</mo><mo>≻</mo><mo>≼</mo><mo>≽</mo>"
+                    + "<mo>⊢</mo><mo>⊣</mo><mo>⊨</mo><mo>∠</mo><mo>∴</mo><mo>∖</mo>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
+                // MathType's own TeX translator maps preceq/succeq to private
+                // MTCode E938/E939 in Euclid Math Two at B0/B1. MathType 7's
+                // MathML2 exporter explicitly reports that PUA range unsupported,
+                // so direct MTEF + native renderer is the lossless authority.
+                Name = "mathtype-preceq-private-mtcode-direct",
+                MathMl = M("<mo>⪯</mo><mo>⪰</mo>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "mathtype-greek-variant-mtcode-lossless",
+                MathMl = M(
+                    "<mi>ε</mi><mi>ϵ</mi><mi>ϑ</mi><mi>ϖ</mi><mi>ϱ</mi>"
+                    + "<mi>ς</mi><mi>φ</mi><mi>ϕ</mi><mi>ϰ</mi>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
+                // MathType's MathML exporter flattens some of these built-in
+                // letterlike glyphs, but direct MTEF retains their identity.
+                Name = "mathtype-letterlike-mtcode-direct",
+                MathMl = M("<mi>ℵ</mi><mi>℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi>"),
+            },
+            new MathTypeOfflineCase
+            {
+                // MathType 7 drops jmath from exported MathML on this machine;
+                // preserve the lossless direct-MTEF representation instead.
+                Name = "mathtype-dotless-mtcode-direct",
+                MathMl = M("<mi>ı</mi><mi>ȷ</mi>"),
+            },
+            new MathTypeOfflineCase
+            {
+                // MathType exports diamondsuit as U+FFFD even though its MTEF
+                // font position is stable. Direct MTEF must preserve all suits.
+                Name = "mathtype-suits-mtcode-direct",
+                MathMl = M("<mo>♠</mo><mo>♣</mo><mo>♡</mo><mo>♢</mo>"),
+            },
+            new MathTypeOfflineCase
+            {
+                // Ordinary amalg is a CHAR at the same internal U+2210 MTCode
+                // used by the coproduct glyph; only the COPRODUCT template means
+                // \\coprod. Direct MTEF normalizes ordinary amalg back to U+2A3F.
+                Name = "mathtype-amalg-mtcode-direct",
+                MathMl = M("<mo>≀</mo><mo>⨿</mo>"),
+            },
+            new MathTypeOfflineCase
+            {
                 Name = "mixed-bigop-sizing",
                 MathMl = M(
                     "<mfrac><mi>a</mi><mi>b</mi></mfrac><mo>+</mo>"
@@ -651,6 +720,45 @@ internal static partial class Program
             },
             new MathTypeOfflineCase
             {
+                Name = "mathjax-text-phrase",
+                MathMl = M("<mtext>Double word product</mtext>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "mathjax-bmod",
+                MathMl = M(
+                    "<mi>a</mi><mo lspace=\"thickmathspace\" rspace=\"thickmathspace\">mod</mo><mi>β</mi>"),
+            },
+            new MathTypeOfflineCase
+            {
+                Name = "mathjax-aligned-explicit-alphabets",
+                MathMl = M(
+                    "<mtable displaystyle=\"true\" columnalign=\"right left\">"
+                    + "<mtr><mtd><mi mathvariant=\"script\">F</mi></mtd>"
+                    + "<mtd><mo>=</mo><mi mathvariant=\"fraktur\">g</mi></mtd></mtr>"
+                    + "</mtable>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
+                // MathJax represents TeX `aligned` with multiple alignment
+                // points as alternating right/left mtable columns. The user's
+                // `& ... && \\text{...}` row therefore contains four cells,
+                // including the intentionally empty cell created by `&&`.
+                Name = "mathjax-aligned-multipair-text-bmod",
+                MathMl = M(
+                    "<mtable displaystyle=\"true\" columnalign=\"right left right left\" columnspacing=\"0em 2em 0em\" rowspacing=\"3pt\">"
+                    + "<mtr>"
+                    + "<mtd><msub><mi>p</mi><mn>0</mn></msub></mtd>"
+                    + "<mtd><mo>←</mo><mi>umullo</mi><mo>(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo>)</mo>"
+                    + "<mo>=</mo><mo>(</mo><mi>a</mi><mi>b</mi><mo>)</mo>"
+                    + "<mo lspace=\"thickmathspace\" rspace=\"thickmathspace\">mod</mo><mi>β</mi></mtd>"
+                    + "<mtd></mtd><mtd><mtext>Low word</mtext></mtd>"
+                    + "</mtr></mtable>"),
+                ValidateWithMathType = true,
+            },
+            new MathTypeOfflineCase
+            {
                 Name = "mathjax-underbrace",
                 MathMl = M("<munder><mrow data-mjx-texclass=\"OP\"><munder><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mo>⏟</mo></munder></mrow><mrow><mi>n</mi></mrow></munder>"),
                 ValidateWithMathType = true,
@@ -750,11 +858,46 @@ internal static partial class Program
                 throw new InvalidDataException(
                     $"Offline rewrite '{testCase.Name}' unexpectedly started MathType process(es): "
                     + string.Join(", ", newProcesses));
-            AssertEqual(217, rewritten.StructureOffset,
-                $"Offline rewrite '{testCase.Name}' did not preserve the source MathType header/preferences prefix.");
+            AssertTrue(
+                rewritten.StructureOffset >= 217,
+                $"Offline rewrite '{testCase.Name}' moved the MathType root before the canonical 217-byte prefix baseline: {rewritten.StructureOffset}.");
+            AssertEqual(
+                rewritten.StructureOffset,
+                MathTypeMtefCodec.FindRootStructureOffset(rewritten.Mtef),
+                $"Offline rewrite '{testCase.Name}' reported a root offset that does not match the rewritten MTEF."
+            );
             AssertTrue(
                 MathTypeOleStorage.LooksLikeMathTypeCompoundFile(rewritten.CompoundFile),
                 $"Offline rewrite '{testCase.Name}' stopped looking like Equation.DSMT4 CFB.");
+            if (string.Equals(
+                    testCase.Name,
+                    "mathtype-preceq-private-mtcode-direct",
+                    StringComparison.Ordinal))
+            {
+                static bool ContainsTriplet(byte[] bytes, byte a, byte b, byte c) =>
+                    Enumerable.Range(0, Math.Max(0, bytes.Length - 2))
+                        .Any(index => bytes[index] == a
+                            && bytes[index + 1] == b
+                            && bytes[index + 2] == c);
+                AssertTrue(
+                    ContainsTriplet(rewritten.Mtef, 0x38, 0xE9, 0xB0)
+                    && ContainsTriplet(rewritten.Mtef, 0x39, 0xE9, 0xB1),
+                    "preceq/succeq were not written with MathType private MTCode E938/E939 at Euclid Math Two B0/B1.");
+                AssertTrue(
+                    MathTypeNativePreviewRenderer.TryRender(
+                        rewritten.Mtef,
+                        artifactRoot,
+                        out var precedencePreview),
+                    "MathType native renderer rejected private-MTCode preceq/succeq MTEF.");
+                using (precedencePreview)
+                {
+                    AssertTrue(
+                        precedencePreview.WidthPt > 0 && precedencePreview.HeightPt > 0,
+                        "MathType native renderer produced an empty preceq/succeq preview.");
+                    Console.WriteLine(
+                        $"  {testCase.Name}: native preview={precedencePreview.WidthPt:0.00}x{precedencePreview.HeightPt:0.00}pt pos={precedencePreview.WordPosition}.");
+                }
+            }
             if (!string.IsNullOrWhiteSpace(offlineCaseFilter)
                 || string.Equals(testCase.Name, "mathjax-bmatrix", StringComparison.Ordinal)
                 || string.Equals(testCase.Name, "mathbb", StringComparison.Ordinal))
