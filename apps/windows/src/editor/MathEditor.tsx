@@ -6962,24 +6962,17 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         entry.field.dataset.visualtexAlignmentMarkerCount = String(entry.markers.length);
         entry.markers.forEach((_marker, markerIndex) => {
           let left = 0;
-          let right = 0;
-          // Even markers are the ordinary right/left pair boundary. Odd markers
-          // start the next pair: finish the preceding left column, insert TeX's
-          // 2em pair gap, then right-align the next (even-numbered) column.
-          if (markerIndex % 2 !== 0) {
-            const precedingColumn = markerIndex;
-            const nextColumn = markerIndex + 1;
-            const precedingFill = Math.max(
+          // Apply each column's compensation immediately before its own marker.
+          // Putting the next-column fill on the preceding marker's right margin
+          // leaves one MathLive marker-atom width behind for consecutive `&&`
+          // markers in WebView2/Chromium, which visibly shifts later anchors.
+          if (markerIndex > 0) {
+            left = Math.max(
               0,
-              columnWidths[precedingColumn] -
-                (entry.segmentWidths[precedingColumn] ?? 0),
+              columnWidths[markerIndex] -
+                (entry.segmentWidths[markerIndex] ?? 0),
             );
-            const nextFill = Math.max(
-              0,
-              columnWidths[nextColumn] - (entry.segmentWidths[nextColumn] ?? 0),
-            );
-            left = precedingFill + pairGap;
-            right = nextFill;
+            if (markerIndex % 2 !== 0) left += pairGap;
           }
           entry.field.style.setProperty(
             `--visualtex-align-marker-${markerIndex}-left`,
@@ -6987,9 +6980,36 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           );
           entry.field.style.setProperty(
             `--visualtex-align-marker-${markerIndex}-right`,
-            `${right}px`,
+            "0px",
           );
         });
+      }
+
+      // MathLive's zero-width class atom can report a different inline box
+      // origin when two markers are consecutive (`&&`). Reconcile the rendered
+      // marker positions from left to right after the analytical column pass;
+      // each non-negative correction also advances every later column.
+      for (let markerIndex = 1; markerIndex < maxMarkerCount; markerIndex += 1) {
+        const positioned = marked.flatMap((entry) => {
+          const marker = entry.markers[markerIndex];
+          return marker
+            ? [{ entry, marker, left: marker.getBoundingClientRect().left }]
+            : [];
+        });
+        if (!positioned.length) continue;
+        const targetLeft = Math.max(...positioned.map((item) => item.left));
+        for (const item of positioned) {
+          const correction = Math.max(0, targetLeft - item.left);
+          if (correction <= 0.01) continue;
+          const property = `--visualtex-align-marker-${markerIndex}-left`;
+          const current = Number.parseFloat(
+            item.entry.field.style.getPropertyValue(property) || "0",
+          );
+          item.entry.field.style.setProperty(
+            property,
+            `${(Number.isFinite(current) ? current : 0) + correction}px`,
+          );
+        }
       }
     };
 

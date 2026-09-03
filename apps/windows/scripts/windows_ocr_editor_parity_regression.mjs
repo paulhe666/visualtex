@@ -73,9 +73,14 @@ assert.ok(silentOcrNative.includes('const SILENT_OCR_HUD_LABEL: &str = "silent-o
 assert.ok(silentOcrNative.includes("识别完成，LaTeX 已复制到剪贴板"));
 assert.ok(silentOcrNative.includes("get_silent_ocr_hud_status"));
 assert.ok(silentOcrNative.includes("HUD_GENERATION"));
+assert.ok(silentOcrNative.includes('"api-submit" => 28'));
+assert.ok(silentOcrNative.includes('"api-queued" => 48'));
+assert.ok(silentOcrNative.includes('"api-inference" => 76'));
+assert.ok(silentOcrNative.includes('"api-result" => 92'));
 assert.ok(silentOcrNative.includes(".shadow(false)"));
 assert.ok(silentOcrNative.includes("set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))"));
 assert.ok(tauriLib.includes("windows_silent_ocr_hotkey::get_silent_ocr_hud_status"));
+assert.ok(tauriLib.includes("windows_silent_ocr_hotkey::handle_ocr_progress"));
 assert.ok(desktopApp.includes('invoke<unknown>("get_silent_ocr_hud_status")'));
 assert.ok(desktopApp.includes("isSilentOcrHudPayload"));
 assert.ok(desktopApp.includes("CheckCircle2"));

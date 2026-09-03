@@ -286,6 +286,34 @@ fn emit_hud(app: &AppHandle, status: &'static str, message: impl Into<String>, p
     let _ = window.show();
 }
 
+fn silent_ocr_progress_percent(stage: &str) -> u8 {
+    match stage {
+        "api-submit" => 28,
+        "api-queued" => 48,
+        "api-inference" => 76,
+        "api-result" => 92,
+        "preprocess" => 38,
+        "model" => 58,
+        "inference" => 76,
+        _ => 48,
+    }
+}
+
+pub(crate) fn handle_ocr_progress(app: &AppHandle, response: &serde_json::Value) {
+    if !SILENT_OCR_BUSY.load(Ordering::SeqCst) {
+        return;
+    }
+    let stage = response
+        .get("stage")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let message = response
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("正在识别公式…");
+    emit_hud(app, "running", message, silent_ocr_progress_percent(stage));
+}
+
 fn hide_hud(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(SILENT_OCR_HUD_LABEL) {
         let _ = window.hide();
@@ -910,5 +938,16 @@ mod tests {
             ),
             "速度$$v=t$$"
         );
+    }
+
+    #[test]
+    fn silent_ocr_hud_maps_local_and_remote_recognition_stages() {
+        assert_eq!(silent_ocr_progress_percent("api-submit"), 28);
+        assert_eq!(silent_ocr_progress_percent("api-queued"), 48);
+        assert_eq!(silent_ocr_progress_percent("api-inference"), 76);
+        assert_eq!(silent_ocr_progress_percent("api-result"), 92);
+        assert_eq!(silent_ocr_progress_percent("preprocess"), 38);
+        assert_eq!(silent_ocr_progress_percent("model"), 58);
+        assert_eq!(silent_ocr_progress_percent("inference"), 76);
     }
 }
