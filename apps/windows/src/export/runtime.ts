@@ -428,6 +428,10 @@ export function latexToSvg(
   const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
   const exPx = fontSizePx * 0.442;
+  const minimumAscentPx = nonNegativeFinite(options.minimumAscentEm ?? 0, 0)
+    * fontSizePx;
+  const minimumDescentPx = nonNegativeFinite(options.minimumDescentEm ?? 0, 0)
+    * fontSizePx;
 
   const container = svgDocument.convert(source, {
     display: options.displayMode,
@@ -445,19 +449,32 @@ export function latexToSvg(
     svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
   }
 
+  const naturalWidth = viewBox.width / rootGeometry.unitsPerPx;
+  const naturalHeight = viewBox.height / rootGeometry.unitsPerPx;
+  const naturalBaseline = rootGeometry.baselinePx === null
+    ? Math.max(0, Math.min(naturalHeight, -viewBox.y / rootGeometry.unitsPerPx))
+    : Math.max(0, Math.min(naturalHeight, rootGeometry.baselinePx));
+  const naturalDescent = Math.max(0, naturalHeight - naturalBaseline);
+  const topPaddingPx = Math.max(
+    paddingYPx,
+    minimumAscentPx - naturalBaseline,
+  );
+  const bottomPaddingPx = Math.max(
+    paddingYPx,
+    minimumDescentPx - naturalDescent,
+  );
   const paddingXUnits = paddingXPx * rootGeometry.unitsPerPx;
-  const paddingYUnits = paddingYPx * rootGeometry.unitsPerPx;
+  const topPaddingUnits = topPaddingPx * rootGeometry.unitsPerPx;
+  const bottomPaddingUnits = bottomPaddingPx * rootGeometry.unitsPerPx;
   const padded = {
     x: viewBox.x - paddingXUnits,
-    y: viewBox.y - paddingYUnits,
+    y: viewBox.y - topPaddingUnits,
     width: viewBox.width + 2 * paddingXUnits,
-    height: viewBox.height + 2 * paddingYUnits,
+    height: viewBox.height + topPaddingUnits + bottomPaddingUnits,
   };
   const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
   const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
-  const baseline = rootGeometry.baselinePx === null
-    ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
-    : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
+  const baseline = Math.max(0, Math.min(height, naturalBaseline + topPaddingPx));
 
   svg = rewriteRootSvgOpening(svg, width, height, padded)
     .replaceAll("currentColor", "#111111");

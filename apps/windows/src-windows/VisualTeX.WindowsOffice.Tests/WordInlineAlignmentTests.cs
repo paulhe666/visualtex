@@ -121,4 +121,47 @@ public sealed class WordInlineAlignmentTests
             (float)exportedHeight,
             baseline is null ? null : (float)baseline.Value));
     }
+
+    [Theory]
+    [InlineData(14.20395d, 18.9386d, 13.1086d, -3)] // \frac{1}{2}
+    [InlineData(10.25595d, 13.6746d, 12.6746d, 0)]  // L^2
+    [InlineData(10.3284d, 13.7712d, 10.562d, -1)]   // L_z
+    [InlineData(11.14005d, 14.8534d, 12.7054d, -1)] // e^(i*pi) + 1 = 0
+    public void AlignsDifferentBoxAspectRatiosByTheirExportedMathBaseline(
+        double actualHeight,
+        double exportedHeight,
+        double exportedBaseline,
+        int expectedPosition)
+    {
+        Assert.Equal(
+            expectedPosition,
+            WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+                (float)actualHeight,
+                (float)exportedHeight,
+                (float)exportedBaseline,
+                existingFontPosition: null,
+                sourceSemanticFontSizePoints: 10.5,
+                targetSemanticFontSizePoints: 10.5));
+    }
+
+    [Theory]
+    [InlineData(10.5d, 14d, 11.284d, -1)]           // L_z
+    [InlineData(10.79295d, 14.3906d, 11.6746d, -1)] // L^2 and L_zL^2
+    [InlineData(10.81605d, 14.4214d, 11.7054d, -1)] // e^(i*pi) + 1 = 0
+    public void AlignsStableInlineFramesAtOneSharedTextBaseline(
+        double actualHeight,
+        double exportedHeight,
+        double exportedBaseline,
+        int expectedPosition)
+    {
+        Assert.Equal(
+            expectedPosition,
+            WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+                (float)actualHeight,
+                (float)exportedHeight,
+                (float)exportedBaseline,
+                existingFontPosition: null,
+                sourceSemanticFontSizePoints: 10.5,
+                targetSemanticFontSizePoints: 10.5));
+    }
 }

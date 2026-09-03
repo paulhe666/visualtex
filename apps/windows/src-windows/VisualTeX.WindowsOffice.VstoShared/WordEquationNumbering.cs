@@ -3807,9 +3807,13 @@ internal static partial class WordEquationNumbering
             }
 
             // Word always recreates the final document paragraph when it is deleted.
-            // Keep that structural terminator, but collapse it to one point so it no
-            // longer appears as a full blank line below the last numbered formula.
-            CompactTrailingTypingParagraph(document, paragraphRange);
+            // Keep that structural terminator as an ordinary typing paragraph. A
+            // former implementation collapsed it to 1 pt; besides exposing a
+            // surprising 1 pt caret to users, Word could retain the source list and
+            // outline state on that paragraph. Heading-aware numbering then mistook
+            // the generated tail for (for example) chapter 10 and rewrote later
+            // equations as 10.0.x.
+            NormalizeTrailingTypingParagraph(document, paragraphRange);
         }
         finally
         {
@@ -3882,6 +3886,7 @@ internal static partial class WordEquationNumbering
         Range? paragraphRange = null;
         Microsoft.Office.Interop.Word.Font? font = null;
         ParagraphFormat? format = null;
+        ListFormat? listFormat = null;
         Microsoft.Office.Interop.Word.Font? selectionFont = null;
         try
         {
@@ -3906,6 +3911,12 @@ internal static partial class WordEquationNumbering
                 paragraphRange.set_Style(ref normalStyle);
             }
             catch { }
+            try
+            {
+                listFormat = paragraphRange.ListFormat;
+                listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
+            }
+            catch { }
             font = paragraphRange.Font;
             font.Reset();
             font.Hidden = 0;
@@ -3916,6 +3927,8 @@ internal static partial class WordEquationNumbering
             format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
+            try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
+            catch { }
 
             selection.SetRange(paragraphRange.Start, paragraphRange.Start);
             selectionFont = selection.Font;
@@ -3931,6 +3944,7 @@ internal static partial class WordEquationNumbering
         finally
         {
             Release(selectionFont);
+            Release(listFormat);
             Release(format);
             Release(font);
             Release(paragraphRange);
@@ -3982,8 +3996,10 @@ internal static partial class WordEquationNumbering
             if (captionMatches.Count == 0) return Array.Empty<string>();
 
             // The final Word paragraph cannot be deleted; probing just the final
-            // numbered formula lets CleanupNumberedDisplayInsertionSpacing compact
-            // that terminator to 1 pt when it directly follows the last caption.
+            // numbered formula lets CleanupNumberedDisplayInsertionSpacing restore
+            // that terminator to a clean, ordinary typing paragraph when it directly
+            // follows the last caption. This also upgrades documents created by the
+            // historical 1 pt-tail implementation.
             if (Guid.TryParseExact(
                     captionMatches[captionMatches.Count - 1].Groups["guid"].Value,
                     "N",
@@ -4108,7 +4124,7 @@ internal static partial class WordEquationNumbering
             && paragraphXml.IndexOf("<m:oMath", StringComparison.OrdinalIgnoreCase) < 0;
     }
 
-    private static void CompactTrailingTypingParagraph(
+    private static void NormalizeTrailingTypingParagraph(
         Document document,
         Range paragraphRange)
     {
@@ -4116,6 +4132,7 @@ internal static partial class WordEquationNumbering
         Bookmark? previousBookmark = null;
         Microsoft.Office.Interop.Word.Font? font = null;
         ParagraphFormat? format = null;
+        ListFormat? listFormat = null;
         try
         {
             try
@@ -4124,18 +4141,24 @@ internal static partial class WordEquationNumbering
                 paragraphRange.set_Style(ref normalStyle);
             }
             catch { }
+            try
+            {
+                listFormat = paragraphRange.ListFormat;
+                listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
+            }
+            catch { }
             font = paragraphRange.Font;
             font.Reset();
-            font.Size = CompactTypingTailFontSizePoints;
             font.Hidden = 0;
             font.Position = 0;
             font.Color = WdColor.wdColorAutomatic;
             format = paragraphRange.ParagraphFormat;
             format.Reset();
-            format.LineSpacingRule = WdLineSpacing.wdLineSpaceExactly;
-            format.LineSpacing = CompactTypingTailLineSpacingPoints;
+            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
+            try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
+            catch { }
 
             bookmarks = document.Bookmarks;
             if (bookmarks.Exists(CompactTypingTailBookmarkName))
@@ -4145,14 +4168,12 @@ internal static partial class WordEquationNumbering
                 Release(previousBookmark);
                 previousBookmark = null;
             }
-            previousBookmark = bookmarks.Add(
-                CompactTypingTailBookmarkName,
-                paragraphRange);
         }
         finally
         {
             Release(previousBookmark);
             Release(bookmarks);
+            Release(listFormat);
             Release(format);
             Release(font);
         }
@@ -10209,6 +10230,8 @@ internal static partial class WordEquationNumbering
                             if (frames.Count > 0) continue;
                         }
                         catch { }
+                        if (IsVisualTeXStructuralHeadingParagraph(range))
+                            continue;
 
                         var listNumber = string.Empty;
                         try
@@ -10311,6 +10334,8 @@ internal static partial class WordEquationNumbering
                         if (frames.Count > 0) continue;
                     }
                     catch { }
+                    if (IsVisualTeXStructuralHeadingParagraph(range))
+                        continue;
 
                     var listNumber = string.Empty;
                     try
@@ -10378,6 +10403,62 @@ internal static partial class WordEquationNumbering
             .Replace("\n", string.Empty)
             .Trim();
         return text.TrimEnd(' ', '.', '-', '–', '—', '、', ')', '）');
+    }
+
+    private static bool IsVisualTeXStructuralHeadingParagraph(Range range)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        ParagraphFormat? format = null;
+        try
+        {
+            // A legacy terminal typing paragraph may still carry Heading/list
+            // properties even though VisualTeX owns it only as document structure.
+            // Never allow that bookmark to become a chapter or section anchor.
+            bookmarks = range.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                var name = bookmark.Name ?? string.Empty;
+                if (string.Equals(
+                        name,
+                        CompactTypingTailBookmarkName,
+                        StringComparison.Ordinal)
+                    || name.StartsWith(
+                        NativeCaptionBookmarkPrefix,
+                        StringComparison.Ordinal)
+                    || name.StartsWith(
+                        NativeDisplayAnchorBookmarkPrefix,
+                        StringComparison.Ordinal))
+                    return true;
+            }
+
+            // Interrupted/legacy cleanup can lose the bookmark while leaving the
+            // unmistakable empty 1 pt structural paragraph behind. Excluding only
+            // that empty exact-height form avoids hiding any real heading text.
+            if (!IsNumberingParagraphAdornment(range.Text)) return false;
+            font = range.Font;
+            format = range.ParagraphFormat;
+            return font.Size > 0f
+                && font.Size <= CompactTypingTailFontSizePoints + 0.25f
+                && format.LineSpacingRule == WdLineSpacing.wdLineSpaceExactly
+                && format.LineSpacing > 0f
+                && format.LineSpacing
+                    <= CompactTypingTailLineSpacingPoints + 0.25f;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(format);
+            Release(font);
+            Release(bookmark);
+            Release(bookmarks);
+        }
     }
 
     private static string ParseHeadingNumberFromText(string? value, int outlineLevel)

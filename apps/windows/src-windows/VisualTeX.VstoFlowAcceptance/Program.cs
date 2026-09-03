@@ -1334,7 +1334,9 @@ internal static partial class Program
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error);
+            Console.Error.WriteLine(
+                $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                + error.Message);
             Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
             return 1;
         }

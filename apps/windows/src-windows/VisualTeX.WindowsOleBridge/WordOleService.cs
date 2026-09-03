@@ -826,20 +826,49 @@ internal sealed class WordOleService : IWordFormulaService
         float exportedHeight,
         float? exportedBaseline)
     {
+        var position = WordInlineAlignment.CalculateFontPosition(
+            actualHeightPoints,
+            exportedHeight,
+            exportedBaseline);
+        SetInlineOleObjectPosition(shape, position);
+    }
+
+    private static void SetInlineOleObjectPosition(object shape, int position)
+    {
         object? range = null;
+        object? document = null;
+        object? character = null;
         object? font = null;
         try
         {
             range = ((dynamic)shape).Range;
+            document = ((dynamic)range).Document;
             font = ((dynamic)range).Font;
-            ((dynamic)font).Position = WordInlineAlignment.CalculateFontPosition(
-                actualHeightPoints,
-                exportedHeight,
-                exportedBaseline);
+            ((dynamic)font).Position = 0;
+            ComRelease.Final(font);
+            font = null;
+
+            var start = Convert.ToInt32(((dynamic)range).Start);
+            var end = Convert.ToInt32(((dynamic)range).End);
+            for (var index = start; index < end; index++)
+            {
+                ComRelease.Final(character);
+                character = ((dynamic)document).Range(index, index + 1);
+                if (!string.Equals(
+                        Convert.ToString(((dynamic)character).Text),
+                        "\u0001",
+                        StringComparison.Ordinal))
+                    continue;
+                font = ((dynamic)character).Font;
+                ((dynamic)font).Position = Math.Max(-256, Math.Min(256, position));
+                return;
+            }
         }
         finally
         {
             ComRelease.Final(font);
+            ComRelease.Final(character);
+            ComRelease.Final(document);
             ComRelease.Final(range);
         }
     }

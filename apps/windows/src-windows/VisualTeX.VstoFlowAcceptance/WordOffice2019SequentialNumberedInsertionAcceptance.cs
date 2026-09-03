@@ -16,6 +16,7 @@ internal static partial class Program
         try
         {
             application = CreateWordApplication(visible: false);
+            RunLegacyCompactTypingTailHeadingIsolationScenario(application);
             RunSequentialNumberedInsertionScenario(
                 application,
                 artifactRoot,
@@ -40,6 +41,121 @@ internal static partial class Program
         {
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunLegacyCompactTypingTailHeadingIsolationScenario(
+        Word.Application application)
+    {
+        Word.Document? document = null;
+        Word.Range? tail = null;
+        Word.Range? following = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? bookmark = null;
+        Word.ListTemplate? listTemplate = null;
+        Word.ListLevel? listLevel = null;
+        Word.ListFormat? listFormat = null;
+        Word.Font? font = null;
+        Word.ParagraphFormat? format = null;
+        var stage = "create-document";
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            stage = "create-two-paragraph-fixture";
+            document.Content.Text = "\r";
+            tail = document.Paragraphs[1].Range.Duplicate;
+            following = document.Paragraphs[2].Range.Duplicate;
+
+            // Reproduce the historical generated tail exactly: a one-point empty
+            // paragraph can retain Heading 1 plus a list value from the insertion
+            // paragraph. Value 10 is the user-reported failure that turned the next
+            // equation number from 0.0.x into 10.0.x.
+            format = tail.ParagraphFormat;
+            format.OutlineLevel = Word.WdOutlineLevel.wdOutlineLevel1;
+            format.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceExactly;
+            format.LineSpacing = 1f;
+            font = tail.Font;
+            font.Size = 1f;
+            stage = "create-list-template";
+            listTemplate = document.ListTemplates.Add(
+                OutlineNumbered: false,
+                Name: "VisualTeXAcceptanceLegacyTail");
+            listLevel = listTemplate.ListLevels[1];
+            listLevel.NumberStyle = Word.WdListNumberStyle.wdListNumberStyleArabic;
+            listLevel.NumberFormat = "%1.";
+            listLevel.StartAt = 10;
+            stage = "apply-list-template";
+            listFormat = tail.ListFormat;
+            listFormat.ApplyListTemplateWithLevel(
+                listTemplate,
+                ContinuePreviousList: false,
+                ApplyTo: Word.WdListApplyTo.wdListApplyToWholeList,
+                DefaultListBehavior: Word.WdDefaultListBehavior.wdWord10ListBehavior,
+                ApplyLevel: 1);
+            stage = "bookmark-legacy-tail";
+            bookmarks = document.Bookmarks;
+            bookmark = bookmarks.Add("VTNumberedTypingTail", tail);
+
+            stage = "resolve-heading-scope";
+            var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(
+                document,
+                following.Start,
+                EquationNumberFormat.Heading2DotId);
+            AssertEqual(
+                "0.0",
+                scope.NumberText,
+                "A VisualTeX-owned 1 pt typing tail was treated as chapter 10.");
+
+            stage = "expand-legacy-tail";
+            application.Selection.SetRange(tail.Start, tail.Start);
+            AssertTrue(
+                WordEquationNumbering.ExpandCompactTrailingTypingParagraph(
+                    application.Selection),
+                "The legacy 1 pt typing tail was not upgraded to an ordinary paragraph.");
+
+            stage = "assert-upgraded-tail";
+            Release(format);
+            format = tail.ParagraphFormat;
+            Release(font);
+            font = tail.Font;
+            Release(listFormat);
+            listFormat = tail.ListFormat;
+            AssertTrue(font.Size > 1.1f,
+                "The upgraded typing tail still exposes a 1 pt caret.");
+            AssertEqual(
+                Word.WdLineSpacing.wdLineSpaceSingle,
+                format.LineSpacingRule,
+                "The upgraded typing tail still uses exact 1 pt line spacing.");
+            AssertEqual(
+                Word.WdOutlineLevel.wdOutlineLevelBodyText,
+                format.OutlineLevel,
+                "The upgraded typing tail still participates in heading numbering.");
+            AssertEqual(
+                Word.WdListType.wdListNoNumbering,
+                listFormat.ListType,
+                "The upgraded typing tail retained the source list number.");
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException(
+                $"Legacy compact typing-tail acceptance failed at {stage}: "
+                + $"{error.GetType().FullName} (0x{error.HResult:X8}) {error.Message}");
+        }
+        finally
+        {
+            Release(format);
+            Release(font);
+            Release(listFormat);
+            Release(listLevel);
+            Release(listTemplate);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(following);
+            Release(tail);
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            Release(document);
             ForceComCleanup();
         }
     }

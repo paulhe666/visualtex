@@ -12955,23 +12955,53 @@ internal sealed partial class WordFormulaService
     private static float? ReadDefinedShapeFontPosition(InlineShape shape)
     {
         Range? range = null;
+        Range? probe = null;
+        Document? document = null;
         Microsoft.Office.Interop.Word.Font? font = null;
         try
         {
             range = shape.Range;
+            document = range.Document;
+
+            // An embedded OLE is an EMBED field, not a single character range.
+            // Current VisualTeX and genuine MathType objects keep the field
+            // instruction on the prose baseline and position only the U+0001
+            // object/result character. Read that character first so resizing a
+            // legacy formula scales its real baseline instead of treating the
+            // mixed field range as wdUndefined.
+            for (var position = range.Start; position < range.End; position++)
+            {
+                Release(font);
+                font = null;
+                Release(probe);
+                probe = document.Range(position, position + 1);
+                if (!string.Equals(probe.Text, "\u0001", StringComparison.Ordinal))
+                    continue;
+                font = probe.Font;
+                var objectPosition = font.Position;
+                if (objectPosition != (int)WdConstants.wdUndefined
+                    && objectPosition >= -256
+                    && objectPosition <= 256)
+                    return objectPosition;
+            }
+
+            Release(font);
+            font = null;
             font = range.Font;
-            var position = font.Position;
-            return position == (int)WdConstants.wdUndefined
-                || position < -256
-                || position > 256
+            var fallbackPosition = font.Position;
+            return fallbackPosition == (int)WdConstants.wdUndefined
+                || fallbackPosition < -256
+                || fallbackPosition > 256
                     ? null
-                    : position;
+                    : fallbackPosition;
         }
         catch { return null; }
         finally
         {
             Release(font);
+            Release(probe);
             Release(range);
+            Release(document);
         }
     }
 
@@ -16909,25 +16939,21 @@ internal sealed partial class WordFormulaService
         double sourceSemanticFontSizePoints,
         double targetSemanticFontSizePoints)
     {
-        Range? range = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
-        try
-        {
-            range = shape.Range;
-            font = range.Font;
-            font.Position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
-                actualHeightPoints,
-                exportedHeight,
-                exportedBaseline,
-                existingFontPosition,
-                sourceSemanticFontSizePoints,
-                targetSemanticFontSizePoints);
-        }
-        finally
-        {
-            Release(font);
-            Release(range);
-        }
+        var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+            actualHeightPoints,
+            exportedHeight,
+            exportedBaseline,
+            existingFontPosition,
+            sourceSemanticFontSizePoints,
+            targetSemanticFontSizePoints);
+
+        // Word stores an InlineShape OLE as an EMBED field whose instruction and
+        // U+0001 object/result character share shape.Range. Applying Position to
+        // the complete field lowers hidden instruction characters as well, which
+        // inflates the line box and can leak the negative position into following
+        // prose. Match Word/MathType behavior: keep the field instruction at the
+        // paragraph baseline and move only the painted object character.
+        SetInlineOleWordPosition(shape, position);
     }
 
     private void RestoreTypingBaselineAfterMathTypeConversion(InlineShape shape)
