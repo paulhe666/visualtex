@@ -58,9 +58,15 @@ export function publishSynchronizedTheme(theme: Theme) {
     // Theme application still succeeds when storage is unavailable.
   }
   if (typeof BroadcastChannel === "undefined") return;
-  const channel = new BroadcastChannel(THEME_CHANNEL_NAME);
-  channel.postMessage(normalized);
-  channel.close();
+  let channel: BroadcastChannel | null = null;
+  try {
+    channel = new BroadcastChannel(THEME_CHANNEL_NAME);
+    channel.postMessage(normalized);
+  } catch {
+    // Theme application and local persistence still succeed without a channel.
+  } finally {
+    channel?.close();
+  }
 }
 
 export function subscribeSynchronizedTheme(
@@ -79,10 +85,14 @@ export function subscribeSynchronizedTheme(
   };
   window.addEventListener("storage", handleStorage);
 
-  const channel =
-    typeof BroadcastChannel === "undefined"
-      ? null
-      : new BroadcastChannel(THEME_CHANNEL_NAME);
+  let channel: BroadcastChannel | null = null;
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      channel = new BroadcastChannel(THEME_CHANNEL_NAME);
+    } catch {
+      channel = null;
+    }
+  }
   if (channel) {
     channel.onmessage = (event) => listener(normalizeSynchronizedTheme(event.data));
   }

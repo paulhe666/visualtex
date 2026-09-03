@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 import { Clock3, Trash2, X } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { useEditorStore } from "../stores/editorStore";
+import type { FormulaHistoryItem } from "../types/formula";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onRestore: (latex: string) => void;
+  onRestore: (item: FormulaHistoryItem) => void;
 }
 
 export function HistoryPanel({ open, onClose, onRestore }: Props) {
@@ -83,13 +84,15 @@ export function HistoryPanel({ open, onClose, onRestore }: Props) {
           </div>
         ) : (
           history.map((item) => {
-            const itemLines = item.latex.split("\n").filter((line) => line.trim());
+            const itemLines = item.lines?.length
+              ? item.lines.map((line) => line.latex).filter((line) => line.trim())
+              : item.latex.split("\n").filter((line) => line.trim());
             return (
               <button
                 type="button"
                 className="history-item"
                 key={item.id}
-                onClick={() => onRestore(item.latex)}
+                onClick={() => onRestore(item)}
               >
                 <span className="history-formula-stack">
                   {itemLines.slice(0, 3).map((line, index) => (

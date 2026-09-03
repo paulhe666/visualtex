@@ -12,29 +12,10 @@ import {
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
-
-interface MacOfflineHostStatus {
-  applicationInstalled: boolean;
-  applicationRunning: boolean;
-  filesPresent: boolean;
-  filesInstalled: boolean;
-  loaded: boolean;
-  pluginVersion: string | null;
-  installPaths: string[];
-  healthPath: string;
-  lastError: string | null;
-}
-
-interface MacOfflineOfficeStatus {
-  word: MacOfflineHostStatus;
-  powerpoint: MacOfflineHostStatus;
-  compiledArtifactsAvailable: boolean;
-  resourceRoot: string;
-  powerpointAddinPath: string;
-  wordScriptPath: string;
-  powerpointScriptPath: string;
-  tutorialPath: string;
-}
+import {
+  decodeMacOfflineOfficeStatus,
+  type MacOfflineOfficeStatus,
+} from "./macOfficeStatusValidation";
 
 interface Props {
   open: boolean;
@@ -68,8 +49,8 @@ export function MacOfficeFirstRunPrompt({
   const isEn = language === "en";
 
   const refresh = async () => {
-    const next = await invoke<MacOfflineOfficeStatus>(
-      "get_macos_offline_office_install_status",
+    const next = decodeMacOfflineOfficeStatus(
+      await invoke<unknown>("get_macos_offline_office_install_status"),
     );
     setStatus(next);
     return next;
@@ -127,8 +108,8 @@ export function MacOfficeFirstRunPrompt({
     setBusy("install");
     setError("");
     try {
-      const next = await invoke<MacOfflineOfficeStatus>(
-        "install_macos_offline_office_addins",
+      const next = decodeMacOfflineOfficeStatus(
+        await invoke<unknown>("install_macos_offline_office_addins"),
       );
       setStatus(next);
       if (
@@ -162,8 +143,8 @@ export function MacOfficeFirstRunPrompt({
         await wait(500);
         const current = await refresh();
         if (!current.word.applicationRunning && !current.powerpoint.applicationRunning) {
-          const next = await invoke<MacOfflineOfficeStatus>(
-            "install_macos_offline_office_addins",
+          const next = decodeMacOfflineOfficeStatus(
+            await invoke<unknown>("install_macos_offline_office_addins"),
           );
           setStatus(next);
           if (
@@ -331,7 +312,18 @@ export function MacOfficeFirstRunPrompt({
                 disabled={busy !== null}
                 onClick={() => {
                   setBusy("refresh");
-                  void refresh().finally(() => setBusy(null));
+                  void refresh()
+                    .catch((reason) => {
+                      setError(
+                        messageFrom(
+                          reason,
+                          isEn
+                            ? "Unable to refresh the native Office add-in status."
+                            : "无法刷新原生 Office 加载项状态。",
+                        ),
+                      );
+                    })
+                    .finally(() => setBusy(null));
                 }}
               >
                 <RefreshCw size={15} className={busy === "refresh" ? "is-spinning" : ""} />

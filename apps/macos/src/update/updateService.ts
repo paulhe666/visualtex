@@ -4,6 +4,8 @@ import { stripPersonalAuthorNames } from "./releaseNotes";
 
 const LATEST_RELEASE_API =
   "https://api.github.com/repos/paulhe666/visualtex/releases/latest";
+const VISUALTEX_GITHUB_HOST = "github.com";
+const VISUALTEX_GITHUB_PATH = "/paulhe666/visualtex";
 
 export const CURRENT_VERSION = packageInfo.version;
 
@@ -18,13 +20,83 @@ export interface UpdateCheckResult {
 }
 
 interface GitHubReleaseResponse {
-  tag_name?: string;
-  html_url?: string;
-  name?: string;
-  body?: string;
-  published_at?: string;
-  draft?: boolean;
-  prerelease?: boolean;
+  tagName: string;
+  htmlUrl: string;
+  name: string;
+  body: string;
+  publishedAt: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: string,
+): string {
+  const value = source[key];
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") {
+    throw new Error(`Invalid GitHub release field: ${key}`);
+  }
+  return value;
+}
+
+export function normalizeVisualTexGitHubUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Invalid VisualTeX GitHub URL");
+  }
+  const path = parsed.pathname.replace(/\/+$/, "").toLowerCase();
+  const allowedPath =
+    path === VISUALTEX_GITHUB_PATH ||
+    path.startsWith(`${VISUALTEX_GITHUB_PATH}/`);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname.toLowerCase() !== VISUALTEX_GITHUB_HOST ||
+    parsed.username ||
+    parsed.password ||
+    !allowedPath
+  ) {
+    throw new Error("Refused an untrusted VisualTeX release URL");
+  }
+  return parsed.toString();
+}
+
+export function parseStableGitHubRelease(
+  value: unknown,
+): GitHubReleaseResponse {
+  if (!isRecord(value)) {
+    throw new Error("Invalid GitHub release response");
+  }
+  if (
+    (value.draft !== undefined && typeof value.draft !== "boolean") ||
+    (value.prerelease !== undefined && typeof value.prerelease !== "boolean")
+  ) {
+    throw new Error("Invalid GitHub release stability fields");
+  }
+  if (value.draft === true || value.prerelease === true) {
+    throw new Error("No stable VisualTeX release was returned");
+  }
+
+  const rawTag = optionalString(value, "tag_name").trim();
+  const tagName = rawTag.replace(/^v/i, "");
+  if (!/^\d+(?:\.\d+)+(?:-[0-9A-Za-z.-]+)?$/.test(tagName)) {
+    throw new Error("Invalid VisualTeX release version");
+  }
+  const rawUrl = optionalString(value, "html_url").trim();
+  if (!rawUrl) throw new Error("VisualTeX release URL is missing");
+
+  return {
+    tagName,
+    htmlUrl: normalizeVisualTexGitHubUrl(rawUrl),
+    name: optionalString(value, "name"),
+    body: optionalString(value, "body"),
+    publishedAt: optionalString(value, "published_at"),
+  };
 }
 
 const versionParts = (version: string) =>
@@ -62,27 +134,17 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
       throw new Error(`GitHub release request failed (${response.status})`);
     }
 
-    const release = (await response.json()) as GitHubReleaseResponse;
-    const latestVersion = release.tag_name?.replace(/^v/i, "");
-    if (
-      !latestVersion ||
-      !release.html_url ||
-      release.draft ||
-      release.prerelease
-    ) {
-      throw new Error("No stable VisualTeX release was returned");
-    }
-
+    const release = parseStableGitHubRelease(await response.json());
     return {
       currentVersion: CURRENT_VERSION,
-      latestVersion,
-      releaseUrl: release.html_url,
+      latestVersion: release.tagName,
+      releaseUrl: release.htmlUrl,
       releaseName: stripPersonalAuthorNames(
-        release.name || `VisualTeX v${latestVersion}`,
+        release.name || `VisualTeX v${release.tagName}`,
       ),
-      releaseNotes: stripPersonalAuthorNames(release.body || ""),
-      publishedAt: release.published_at || "",
-      updateAvailable: isNewerVersion(latestVersion, CURRENT_VERSION),
+      releaseNotes: stripPersonalAuthorNames(release.body),
+      publishedAt: release.publishedAt,
+      updateAvailable: isNewerVersion(release.tagName, CURRENT_VERSION),
     };
   } finally {
     window.clearTimeout(timeout);
@@ -90,9 +152,10 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 }
 
 export async function openReleasePage(url: string): Promise<void> {
+  const trustedUrl = normalizeVisualTexGitHubUrl(url);
   if ("__TAURI_INTERNALS__" in window) {
-    await openUrl(url);
+    await openUrl(trustedUrl);
     return;
   }
-  window.open(url, "_blank", "noopener,noreferrer");
+  window.open(trustedUrl, "_blank", "noopener,noreferrer");
 }

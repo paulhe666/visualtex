@@ -173,6 +173,37 @@ async fn get_ocr_status(
     }
 }
 
+async fn get_ocr_provider_configuration(
+    State(context): State<ServerContext>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context.companion.ocr.provider_configuration(&app) {
+        Ok(configuration) => Json(configuration).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
+async fn put_ocr_provider_configuration(
+    State(context): State<ServerContext>,
+    Json(configuration): Json<crate::ocr_provider::OcrProviderConfigurationUpdate>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    match context
+        .companion
+        .ocr
+        .save_provider_configuration(&app, configuration)
+    {
+        Ok(configuration) => Json(configuration).into_response(),
+        Err(error) => ocr_error_response(error),
+    }
+}
+
 async fn install_ocr(State(context): State<ServerContext>) -> Response {
     let app = match ocr_app(&context) {
         Ok(app) => app,
@@ -967,6 +998,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         )
         .route("/powerpoint/events", get(get_powerpoint_events))
         .route("/ocr/status", get(get_ocr_status))
+        .route(
+            "/ocr/providers",
+            get(get_ocr_provider_configuration).put(put_ocr_provider_configuration),
+        )
         .route("/ocr/install", post(install_ocr))
         .route("/ocr/recognize", post(recognize_ocr))
         .route("/ocr/prewarm", post(prewarm_ocr))
@@ -1557,6 +1592,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let provider_unauthorized = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/v1/ocr/providers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(provider_unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let provider_unavailable = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/v1/ocr/providers")
+                    .header(INSTALL_TOKEN_HEADER, &token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(provider_unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
 
         let events = router
             .clone()

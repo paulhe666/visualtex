@@ -48,6 +48,7 @@ import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
+import { decodeMacOfflineOfficeStatus } from "./components/macOfficeStatusValidation";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
@@ -88,9 +89,11 @@ import {
   OCR_MODELS,
   cancelOcrRecognition,
   fileToOcrRequest,
+  getOcrProviderConfiguration,
   getOcrRuntimeStatus,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
+  normalizeOcrFormulaLines,
   recognizeFormulaImage,
   resolveAvailableOcrModel,
   prewarmOcrModel,
@@ -129,19 +132,6 @@ interface InlineOcrState {
   message: string;
   seconds: number;
   model: OcrModelName;
-}
-
-interface MacOfficeStartupHostStatus {
-  applicationInstalled: boolean;
-  applicationRunning: boolean;
-  filesPresent: boolean;
-  filesInstalled: boolean;
-}
-
-interface MacOfficeStartupStatus {
-  word: MacOfficeStartupHostStatus;
-  powerpoint: MacOfficeStartupHostStatus;
-  compiledArtifactsAvailable: boolean;
 }
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
@@ -416,9 +406,8 @@ function App() {
     macOfficeInstallStatusCheckedRef.current = true;
     let cancelled = false;
 
-    void invoke<MacOfficeStartupStatus>(
-      "get_macos_offline_office_install_status",
-    )
+    void invoke<unknown>("get_macos_offline_office_install_status")
+      .then(decodeMacOfflineOfficeStatus)
       .then((status) => {
         if (cancelled) return;
         if (!status.compiledArtifactsAvailable) {
@@ -492,11 +481,11 @@ function App() {
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("autosave");
+      void historyManager.createCheckpoint("autosave").catch(() => undefined);
     }, 30_000);
     const handleBeforeUnload = () => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("before-unload");
+      void historyManager.createCheckpoint("before-unload").catch(() => undefined);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
@@ -622,9 +611,13 @@ function App() {
     const delay = ocrPrewarmStartedRef.current ? 250 : 1200;
     const timer = window.setTimeout(() => {
       ocrPrewarmStartedRef.current = true;
-      void getOcrRuntimeStatus()
+      void getOcrProviderConfiguration()
+        .then((provider) => {
+          if (cancelled || provider.activeProvider !== "local") return null;
+          return getOcrRuntimeStatus();
+        })
         .then((runtime) => {
-          if (cancelled || !runtime.installed) return;
+          if (cancelled || !runtime?.installed) return;
           const availableModel = resolveAvailableOcrModel(runtime, ocrModel);
           return prewarmOcrModel(availableModel);
         })
@@ -709,35 +702,51 @@ function App() {
     inlineOcrCancelRequestedRef.current = false;
     setInlineOcr({
       status: "running",
-      message: isEn ? "Checking the local OCR runtime…" : "正在检查本地 OCR 环境…",
+      message: isEn ? "Checking the OCR provider…" : "正在检查 OCR 提供器…",
       seconds: 0,
       model: ocrModel,
     });
 
     let unlisten: (() => void) | undefined;
     try {
-      const runtime = await getOcrRuntimeStatus();
+      const providerConfiguration = await getOcrProviderConfiguration();
+      const usingLocalProvider = providerConfiguration.activeProvider === "local";
       if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      if (!runtime.installed) {
-        setOcrOpen(true);
-        throw new Error(
-          isEn
-            ? "Install the OCR runtime before pasting an image"
-            : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
-        );
-      }
+      if (usingLocalProvider) {
+        const runtime = await getOcrRuntimeStatus();
+        if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+        if (!runtime.installed) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? "Install the OCR runtime before pasting an image"
+              : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
+          );
+        }
 
-      if (!runtime.installedModels.includes(ocrModel)) {
-        setOcrOpen(true);
-        throw new Error(
-          isEn
-            ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
-            : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
+        if (!runtime.installedModels.includes(ocrModel)) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
+              : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
+          );
+        }
+      } else {
+        setInlineOcr((current) =>
+          current
+            ? {
+                ...current,
+                message: isEn
+                  ? "Sending the image to the configured OCR API…"
+                  : "正在将图片发送到已配置的 OCR API…",
+              }
+            : current,
         );
       }
       const availableOcrModel = ocrModel;
 
-      unlisten = await listenOcrRecognitionProgress((progress) => {
+      if (usingLocalProvider) unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
           progress.model !== ocrModel
@@ -764,10 +773,7 @@ function App() {
         throw new Error("OCR_CANCELLED");
       }
 
-      const recognizedLatex = result.formulas
-        .map((formula) => formula.latex.trim())
-        .filter(Boolean)
-        .join("\n");
+      const recognizedLatex = normalizeOcrFormulaLines(result.formulas).join("\n");
       if (!recognizedLatex) {
         throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
       }
@@ -1006,7 +1012,7 @@ function App() {
 
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
-    void historyManager.createCheckpoint("save-document");
+    void historyManager.createCheckpoint("save-document").catch(() => undefined);
     const document = toDocument();
     downloadTextFile(
       JSON.stringify(document, null, 2),
@@ -1195,8 +1201,8 @@ function App() {
       if (requestsUndo || requestsRedo) {
         if (inCodeMirror) return;
         event.preventDefault();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 
@@ -1582,7 +1588,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.undo()}
+              onClick={() => historyManager.requestUndo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canUndo ||
@@ -1596,7 +1602,7 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.redo()}
+              onClick={() => historyManager.requestRedo()}
               disabled={
                 editorHistoryBusy ||
                 !historyState.canRedo ||
@@ -1749,12 +1755,21 @@ function App() {
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        onRestore={(value) => {
-          const values = value
-            .replace(/\r\n?/g, "\n")
-            .split("\n")
-            .map(normalizeChineseLatex);
-          const nextLines = reconcileFormulaLines(values, lines);
+        onRestore={(item) => {
+          const restored = item.lines?.length
+            ? item.lines.map((line) => ({
+                latex: normalizeChineseLatex(line.latex),
+                mode: line.mode,
+              }))
+            : item.latex
+                .replace(/\r\n?/g, "\n")
+                .split("\n")
+                .map((latex) => ({ latex: normalizeChineseLatex(latex), mode: undefined }));
+          const nextLines = reconcileFormulaLines(
+            restored.map((line) => line.latex),
+            lines,
+            restored.map((line) => line.mode),
+          );
           const nextActiveLineId = nextLines.some(
             (line) => line.id === activeLineId,
           )

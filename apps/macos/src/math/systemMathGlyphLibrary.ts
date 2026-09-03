@@ -1,5 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
+import {
+  decodeNativeSystemMathFontProbes,
+  decodeNativeSystemMathGlyphOutline,
+} from "./systemMathGlyphPayloadValidation";
 
 export interface NativeSystemMathFontProbe {
   requestedFamily: string;
@@ -45,9 +49,11 @@ export async function probeNativeSystemMathFonts(
   fontFamilies: readonly string[],
 ): Promise<NativeSystemMathFontProbe[] | null> {
   if (!isTauri()) return null;
-  return invoke<NativeSystemMathFontProbe[]>("probe_macos_math_fonts", {
-    fontFamilies: [...fontFamilies],
-  });
+  return decodeNativeSystemMathFontProbes(
+    await invoke<unknown>("probe_macos_math_fonts", {
+      fontFamilies: [...fontFamilies],
+    }),
+  );
 }
 
 export async function compileNativeSystemMathGlyphAsset(
@@ -55,12 +61,11 @@ export async function compileNativeSystemMathGlyphAsset(
   fontFamilies: readonly string[],
 ): Promise<NativeSystemMathGlyphAsset | null> {
   if (!isTauri()) return null;
-  const outline = await invoke<NativeSystemMathGlyphOutline>(
-    "extract_macos_math_glyph",
-    {
+  const outline = decodeNativeSystemMathGlyphOutline(
+    await invoke<unknown>("extract_macos_math_glyph", {
       fontFamilies: [...fontFamilies],
       character,
-    },
+    }),
   );
   return {
     asset: {

@@ -79,6 +79,7 @@ import {
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
 import {
   installCustomSymbolGlobalStyle,
@@ -109,6 +110,7 @@ import {
   type FormulaLetterFont,
 } from "./formulaFontPreferences";
 import {
+  hasVisualTexAlignmentMarker,
   usesExplicitAlignmentPoints,
   VISUALTEX_ALIGNMENT_MARKER_CLASS,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
@@ -307,6 +309,7 @@ interface FormulaFieldProps {
   autoPairDelimiters: boolean;
   inputBehavior: InputBehaviorSettings;
   readOnly: boolean;
+  freshExternalSync: boolean;
   register: (
     lineId: string,
     field: MathfieldElement | null,
@@ -368,12 +371,68 @@ function rawLatexInput(field: MathfieldElement) {
 type MathLiveInternalField = {
   _mathfield?: {
     model?: {
+      root?: unknown;
+      position?: number;
       parentEnvironment?: {
         environmentName?: string;
       } | null;
     };
   };
 };
+
+function resetMathLiveModelRootForExternalSync(field: MathfieldElement) {
+  const targetModel = (field as unknown as MathLiveInternalField)._mathfield?.model;
+  if (!targetModel || typeof document === "undefined" || !document.body) {
+    return false;
+  }
+
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  const stagingHost = document.createElement("div");
+  stagingHost.setAttribute("aria-hidden", "true");
+  stagingHost.style.cssText =
+    "position:fixed;left:-100000px;top:0;width:1px;height:1px;overflow:hidden;visibility:hidden;pointer-events:none";
+  const freshField = new MathfieldElement();
+  freshField.readOnly = true;
+  freshField.tabIndex = -1;
+
+  try {
+    document.body.append(stagingHost);
+    stagingHost.append(freshField);
+    freshField.setValue("", {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceAll",
+      selectionMode: "after",
+      silenceNotifications: true,
+    });
+    const freshModel = (freshField as unknown as MathLiveInternalField)._mathfield
+      ?.model;
+    if (!freshModel || freshModel.root === undefined) return false;
+    targetModel.root = freshModel.root;
+    targetModel.position = 0;
+    return true;
+  } finally {
+    stagingHost.remove();
+    if (
+      previouslyFocused?.isConnected &&
+      document.activeElement !== previouslyFocused
+    ) {
+      previouslyFocused.focus({ preventScroll: true });
+    }
+  }
+}
+
+const structuralExternalSyncPattern = /\\(?:begin\s*\{|left\b|right\b)/;
+
+function needsCleanMathLiveModelForExternalSync(
+  currentLatex: string,
+  nextLatex: string,
+) {
+  return (
+    structuralExternalSyncPattern.test(currentLatex) ||
+    structuralExternalSyncPattern.test(nextLatex)
+  );
+}
 
 function activeMathLiveEnvironmentName(field: MathfieldElement) {
   return (
@@ -6465,13 +6524,29 @@ function FormulaField(props: FormulaFieldProps) {
       };
       if (!zoomChanged && !rowVerticalInsetChanged) return;
     } else {
-      field.setValue(props.latex, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
+      const currentLatex = normalizeChineseLatex(field.value);
+      const applyExternalValue = () =>
+        field.setValue(props.latex, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+      if (
+        props.freshExternalSync &&
+        needsCleanMathLiveModelForExternalSync(currentLatex, props.latex)
+      ) {
+        resetMathLiveModelRootForExternalSync(field);
+      }
+      applyExternalValue();
+      if (
+        props.freshExternalSync &&
+        normalizeChineseLatex(field.value) !== props.latex &&
+        resetMathLiveModelRootForExternalSync(field)
+      ) {
+        applyExternalValue();
+      }
       installCustomSymbolShadowStyle(field);
       field.resetUndo();
     }
@@ -6654,6 +6729,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines.find((line) => line.id === activeLineId)?.id ?? lines[0]?.id ?? null;
     activeLineIdRef.current = resolvedActiveLineId;
 
+    const resolveExplicitAlignmentVisualAnchor = (marker: HTMLElement) => {
+      const markerBounds = marker.getBoundingClientRect();
+      const parent = marker.parentElement;
+      if (!parent) return markerBounds.left;
+
+      for (
+        let sibling = marker.nextElementSibling;
+        sibling;
+        sibling = sibling.nextElementSibling
+      ) {
+        const candidates: Element[] = sibling.hasAttribute("data-atom-id")
+          ? [sibling, ...sibling.querySelectorAll("[data-atom-id]")]
+          : [...sibling.querySelectorAll("[data-atom-id]")];
+        for (const candidate of candidates) {
+          if (!(candidate instanceof HTMLElement)) continue;
+          const bounds = candidate.getBoundingClientRect();
+          if (bounds.width <= 0.01 || bounds.height <= 0.01) continue;
+          return bounds.left;
+        }
+      }
+
+      return markerBounds.left;
+    };
+
     const refreshExplicitAlignmentLayout = () => {
       const registered = Array.from(fieldRefs.current.values());
       for (const field of registered) {
@@ -6672,14 +6771,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         );
         if (!host || !marker) return [];
         const fieldBounds = field.getBoundingClientRect();
-        const markerBounds = marker.getBoundingClientRect();
+        const visualAnchorLeft = resolveExplicitAlignmentVisualAnchor(marker);
         return [
           {
             field,
             host,
-            anchorOffset: markerBounds.left - fieldBounds.left,
-            leftExtent: markerBounds.left - fieldBounds.left,
-            rightExtent: fieldBounds.right - markerBounds.left,
+            anchorOffset: visualAnchorLeft - fieldBounds.left,
+            leftExtent: visualAnchorLeft - fieldBounds.left,
+            rightExtent: fieldBounds.right - visualAnchorLeft,
           },
         ];
       });
@@ -8467,8 +8566,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (requestsUndo || requestsRedo) {
         event.preventDefault();
         event.stopPropagation();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 
@@ -8987,13 +9086,20 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
     };
 
-    const normalizeInsertedLatex = (latex: string) =>
-      latex
-        .replace(/\r\n?/g, "\n")
+    const normalizeInsertedFormulaLines = (latex: string) => {
+      const normalized = latex.replace(/\r\n?/g, "\n");
+      const trimmed = normalized.trim();
+      if (isSingleCompleteLatexEnvironment(trimmed)) {
+        return [normalizeChineseLatex(trimmed)];
+      }
+      return normalized
         .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .join("\\quad ");
+        .map((line) => normalizeChineseLatex(line.trim()))
+        .filter(Boolean);
+    };
+
+    const normalizeInsertedLatex = (latex: string) =>
+      normalizeInsertedFormulaLines(latex).join("\\quad ");
 
     const getSelectionMap = (): Record<string, MathSelectionSnapshot> =>
       Object.fromEntries(
@@ -9277,14 +9383,141 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         attempt();
       });
 
+    const insertMultipleLatexRowsAt = (
+      target: MathEditorInsertionTarget,
+      values: readonly string[],
+      source: FormulaEditSource,
+    ): boolean => {
+      if (values.length < 2) return false;
+      const targetIndex = linesRef.current.findIndex(
+        (line) => line.id === target.lineId,
+      );
+      if (targetIndex < 0) return false;
+      const field = fieldRefs.current.get(target.lineId);
+      if (!field?.isConnected) return false;
+
+      const selection = clampSelection(
+        {
+          ranges: target.ranges.length
+            ? target.ranges
+            : [[field.lastOffset, field.lastOffset]],
+          direction: target.direction,
+        },
+        field.lastOffset,
+      );
+      historyManager.commitPendingTransaction();
+      const before = getEditorDocumentSnapshot(getSelectionMap());
+      setActiveLine(target.lineId);
+      field.focus();
+
+      suppressedHistoryLineIdRef.current = target.lineId;
+      let inserted = false;
+      try {
+        field.selection = selection;
+        inserted = Boolean(
+          field.insert(values[0], {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after",
+            focus: true,
+            scrollIntoView: false,
+          }),
+        );
+        if (!inserted) return false;
+        const normalized = normalizeChineseLatex(field.value);
+        if (normalized !== field.value) {
+          field.setValue(normalized, { silenceNotifications: true });
+        }
+      } finally {
+        suppressedHistoryLineIdRef.current = null;
+      }
+      if (!inserted) return false;
+
+      const firstLatex = normalizeChineseLatex(field.value);
+      const firstSelection = captureSelection(field);
+      const currentLines = useEditorStore.getState().lines;
+      const currentTargetIndex = currentLines.findIndex(
+        (line) => line.id === target.lineId,
+      );
+      if (currentTargetIndex < 0) return false;
+      const additionalLines = values.slice(1).map((value) => createFormulaLine(value));
+      const nextLines = currentLines.map((line) =>
+        line.id === target.lineId ? { ...line, latex: firstLatex } : { ...line },
+      );
+      nextLines.splice(currentTargetIndex + 1, 0, ...additionalLines);
+      const lastLine = additionalLines[additionalLines.length - 1];
+      const lastSelection: MathSelectionSnapshot = {
+        ranges: [[Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]],
+        direction: "none",
+      };
+      const after: ReplaceDocumentEntry["after"] = {
+        title: before.title,
+        lines: nextLines,
+        activeLineId: lastLine.id,
+        formulaAlignment: before.formulaAlignment,
+        selectionByLineId: {
+          ...before.selectionByLineId,
+          [target.lineId]: firstSelection,
+          [lastLine.id]: lastSelection,
+        },
+      };
+
+      flushSync(() => useEditorStore.getState().replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      field.resetUndo();
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: source === "paste" ? "paste-multi-line" : "ocr",
+        timestamp: Date.now(),
+      });
+      setQuery("");
+      selectSuggestionIndex(0);
+      focusLine(lastLine.id, {
+        latex: lastLine.latex,
+        moveToEnd: true,
+      });
+      return true;
+    };
+
+    const prepareOcrAlignmentFormat = (
+      values: readonly string[],
+      source: FormulaEditSource,
+    ) => {
+      if (
+        source === "ocr" &&
+        values.some((value) => hasVisualTexAlignmentMarker(value))
+      ) {
+        useEditorStore.getState().setLatexCodeFormat("aligned");
+      }
+    };
+
     const insertLatex = (
       latex: string,
       source: FormulaEditSource = "ocr",
     ) => {
-      const value = normalizeInsertedLatex(latex);
-      if (!value) return;
+      const values = normalizeInsertedFormulaLines(latex);
+      if (!values.length) return;
+      prepareOcrAlignmentFormat(values, source);
       const target = resolveTargetField();
       if (!target) return;
+      if (values.length > 1) {
+        const selection = captureSelection(target.field);
+        insertMultipleLatexRowsAt(
+          {
+            lineId: target.lineId,
+            ranges: selection.ranges,
+            direction: selection.direction,
+          },
+          values,
+          source,
+        );
+        return;
+      }
+
+      const value = values[0];
       const { lineId, field } = target;
       setActiveLine(lineId);
       field.focus();
@@ -9316,8 +9549,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       latex: string,
       source: FormulaEditSource = "ocr",
     ): boolean => {
-      const value = normalizeInsertedLatex(latex);
-      if (!value) return false;
+      const values = normalizeInsertedFormulaLines(latex);
+      if (!values.length) return false;
+      prepareOcrAlignmentFormat(values, source);
+      if (values.length > 1) {
+        return insertMultipleLatexRowsAt(target, values, source);
+      }
+      const value = values[0];
       if (!linesRef.current.some((line) => line.id === target.lineId)) {
         return false;
       }
@@ -9363,7 +9601,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
     const appendLatex = (
       latex: string,
-      _source: FormulaEditSource = "ocr",
+      source: FormulaEditSource = "ocr",
     ) => {
       const values = latex
         .replace(/\r\n?/g, "\n")
@@ -9371,6 +9609,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         .map((line) => normalizeChineseLatex(line.trim()))
         .filter(Boolean);
       if (!values.length) return;
+      prepareOcrAlignmentFormat(values, source);
 
       historyManager.commitPendingTransaction();
       const before = getEditorDocumentSnapshot(getSelectionMap());
@@ -9518,6 +9757,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (previewOnlyRef.current) {
           event.preventDefault();
           event.stopImmediatePropagation();
+          if (!onPreviewActivate) {
+            document
+              .querySelector<HTMLElement>(".source-panel .cm-content")
+              ?.focus({ preventScroll: true });
+            return;
+          }
           previewOnlyRef.current = false;
           for (const field of fieldRefs.current.values()) {
             if (!field.isConnected) continue;
@@ -9839,6 +10084,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 autoPairDelimiters={autoPairDelimiters}
                 inputBehavior={inputBehavior}
                 readOnly={interactionReadOnly}
+                freshExternalSync={previewOnly}
                 register={registerField}
                 onEdit={handleFieldEdit}
                 onInputActivity={(field) =>

@@ -800,35 +800,48 @@ async fn run_silent_ocr(app: AppHandle) {
             return Ok::<Option<()>, String>(None);
         };
 
-        emit_hud(&app, "running", "正在检查 OCR 环境…", 22);
+        emit_hud(&app, "running", "正在检查 OCR 提供器…", 22);
         let ocr = app
             .try_state::<OcrState>()
             .ok_or_else(|| "OCR runtime is unavailable".to_string())?
             .inner()
             .clone();
-        let runtime = ocr.runtime_status(app.clone(), false).await?;
-        if !runtime.installed {
-            return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
-        }
-
+        let active_provider = ocr.active_provider(&app)?;
         let requested = current_model(&state);
-        let model = if runtime.installed_models.iter().any(|item| item == &requested) {
-            requested
-        } else if runtime
-            .installed_models
-            .iter()
-            .any(|item| item == &runtime.default_model)
-        {
-            runtime.default_model.clone()
-        } else {
-            runtime
+        let model = if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+            let runtime = ocr.runtime_status(app.clone(), false).await?;
+            if !runtime.installed {
+                return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
+            }
+            if runtime.installed_models.iter().any(|item| item == &requested) {
+                requested
+            } else if runtime
                 .installed_models
-                .first()
-                .cloned()
-                .ok_or_else(|| "没有可用的 OCR 模型".to_string())?
+                .iter()
+                .any(|item| item == &runtime.default_model)
+            {
+                runtime.default_model.clone()
+            } else {
+                runtime
+                    .installed_models
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| "没有可用的 OCR 模型".to_string())?
+            }
+        } else {
+            requested
         };
 
-        emit_hud(&app, "running", "正在识别公式…", 32);
+        emit_hud(
+            &app,
+            "running",
+            if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+                "正在使用本地模型识别公式…"
+            } else {
+                "正在通过已配置的 OCR API 识别公式…"
+            },
+            36,
+        );
         let recognition = ocr
             .recognize(
                 app.clone(),

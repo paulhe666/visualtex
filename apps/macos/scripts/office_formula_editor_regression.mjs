@@ -25,6 +25,7 @@ import {
 import {
   clearsOfficeEditorActivation,
   isOfficeEditorActivation,
+  isOfficeEditorClear,
   shouldAcceptOfficeEditorActivation,
 } from "../src/office/dialog/officeEditorActivation.ts";
 
@@ -180,12 +181,18 @@ assert.equal(
   false,
   "a resident Word WebView must ignore PowerPoint activations",
 );
+const matchingClear = {
+  sessionId: warmActivation.sessionId,
+  generation: warmActivation.generation,
+};
+assert.equal(isOfficeEditorClear(matchingClear), true);
+assert.equal(clearsOfficeEditorActivation(warmActivation, matchingClear), true);
+assert.equal(isOfficeEditorClear(null), false);
+assert.equal(isOfficeEditorClear({ ...matchingClear, generation: "7" }), false);
 assert.equal(
-  clearsOfficeEditorActivation(warmActivation, {
-    sessionId: warmActivation.sessionId,
-    generation: warmActivation.generation,
-  }),
-  true,
+  clearsOfficeEditorActivation(warmActivation, null),
+  false,
+  "a malformed native clear event must be ignored instead of crashing the resident editor",
 );
 
 function normalize(source, codeFormat = "raw") {

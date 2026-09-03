@@ -47,12 +47,27 @@ export function shouldAcceptOfficeEditorActivation(
   );
 }
 
+export function isOfficeEditorClear(value: unknown): value is OfficeEditorClear {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<OfficeEditorClear>;
+  return (
+    typeof candidate.sessionId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      candidate.sessionId,
+    ) &&
+    typeof candidate.generation === "number" &&
+    Number.isSafeInteger(candidate.generation) &&
+    candidate.generation > 0
+  );
+}
+
 export function clearsOfficeEditorActivation(
   current: OfficeEditorActivation | null,
-  payload: OfficeEditorClear,
+  payload: unknown,
 ) {
   return Boolean(
     current &&
+      isOfficeEditorClear(payload) &&
       current.sessionId === payload.sessionId &&
       current.generation === payload.generation,
   );

@@ -17,14 +17,18 @@ import {
   OFFICE_EDITOR_CLEAR_EVENT,
   shouldAcceptOfficeEditorActivation,
   type OfficeEditorActivation,
-  type OfficeEditorClear,
 } from "./officeEditorActivation";
 
 function sessionIdFromLocation() {
   const query = new URLSearchParams(window.location.search).get("sessionId");
   if (query) return query;
   const match = window.location.pathname.match(/\/dialog\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : "";
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
 }
 
 function officeHostFromLocation(): OfficeHost | null {
@@ -88,7 +92,7 @@ export function useOfficeSession() {
       setActivation(candidate);
     };
 
-    const clearActivation = (payload: OfficeEditorClear) => {
+    const clearActivation = (payload: unknown) => {
       if (
         disposed ||
         !clearsOfficeEditorActivation(activeActivationRef.current, payload)
@@ -111,7 +115,7 @@ export function useOfficeSession() {
       listen<OfficeEditorActivation>(OFFICE_EDITOR_ACTIVATE_EVENT, (event) => {
         acceptActivation(event.payload);
       }),
-      listen<OfficeEditorClear>(OFFICE_EDITOR_CLEAR_EVENT, (event) => {
+      listen<unknown>(OFFICE_EDITOR_CLEAR_EVENT, (event) => {
         clearActivation(event.payload);
       }),
     ])

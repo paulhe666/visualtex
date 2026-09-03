@@ -14,29 +14,10 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
-
-interface MacOfflineHostStatus {
-  applicationInstalled: boolean;
-  applicationRunning: boolean;
-  filesInstalled: boolean;
-  healthReported: boolean;
-  loaded: boolean;
-  pluginVersion: string | null;
-  installPaths: string[];
-  healthPath: string;
-  lastError: string | null;
-}
-
-interface MacOfflineOfficeStatus {
-  word: MacOfflineHostStatus;
-  powerpoint: MacOfflineHostStatus;
-  compiledArtifactsAvailable: boolean;
-  resourceRoot: string;
-  powerpointAddinPath: string;
-  wordScriptPath: string;
-  powerpointScriptPath: string;
-  tutorialPath: string;
-}
+import {
+  decodeMacOfflineOfficeStatus,
+  type MacOfflineOfficeStatus,
+} from "./macOfficeStatusValidation";
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
@@ -93,8 +74,8 @@ export function MacOfficeIntegrationSettings() {
   const refresh = useCallback(async () => {
     setBusy((value) => value ?? "refresh");
     try {
-      const next = await invoke<MacOfflineOfficeStatus>(
-        "get_macos_offline_office_install_status",
+      const next = decodeMacOfflineOfficeStatus(
+        await invoke<unknown>("get_macos_offline_office_install_status"),
       );
       setStatus(next);
       setMessage("");

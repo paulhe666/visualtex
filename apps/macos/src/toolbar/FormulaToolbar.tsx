@@ -46,6 +46,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
+import { writeLocalStorage } from "../runtime/safeStorage";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
@@ -709,6 +710,7 @@ const calculusPreviewById: Record<string, string> = {
 
 const toolbarPreviewById: Record<string, string> = {
   ...calculusPreviewById,
+  "skewed-fraction": "{}^{a}\\!/\\!{}_{b}",
   cases: "\\begin{cases}a\\\\b\\end{cases}",
   "cases-three": "\\left\\{\\begin{array}{l}a\\\\b\\\\c\\end{array}\\right.",
   overbrace: "\\overbrace{a+b}",
@@ -877,7 +879,7 @@ export function FormulaToolbar({
   }, [customTileLibrary]);
 
   useEffect(() => {
-    localStorage.setItem(
+    writeLocalStorage(
       commonToolbarCommandsStorageKey,
       JSON.stringify(commonToolbarCommandIds),
     );

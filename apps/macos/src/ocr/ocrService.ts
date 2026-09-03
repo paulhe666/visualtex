@@ -1,3 +1,12 @@
+import {
+  decodeOcrInstallProgress,
+  decodeOcrProviderConfiguration,
+  decodeOcrRecognitionProgress,
+  decodeOcrRecognitionResult,
+  decodeOcrRuntimeStatus,
+} from "./ocrPayloadValidation";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
+
 export type UnlistenFn = () => void;
 
 export interface OcrTransportEvent<T> {
@@ -120,7 +129,78 @@ export interface OcrRecognitionProgress {
   model: OcrModelName;
 }
 
+export type OcrProviderId =
+  | "local"
+  | "openai-compatible"
+  | "ollama"
+  | "mathpix"
+  | "paddleocr";
+
+export type OpenAiCompatibleProtocol = "responses" | "chat-completions";
+export type PaddleOcrApiModel =
+  | "PaddleOCR-VL-1.6"
+  | "PP-StructureV3";
+
+export const PADDLE_OCR_API_MODELS: readonly PaddleOcrApiModel[] = [
+  "PaddleOCR-VL-1.6",
+  "PP-StructureV3",
+] as const;
+
+export interface OcrProviderConfiguration {
+  activeProvider: OcrProviderId;
+  openAiCompatible: {
+    protocol: OpenAiCompatibleProtocol;
+    baseUrl: string;
+    model: string;
+    prompt: string;
+    hasApiKey: boolean;
+  };
+  ollama: {
+    baseUrl: string;
+    model: string;
+    prompt: string;
+  };
+  mathpix: {
+    baseUrl: string;
+    appId: string;
+    hasAppKey: boolean;
+  };
+  paddleOcr: {
+    model: PaddleOcrApiModel;
+    hasAccessToken: boolean;
+  };
+}
+
+export interface OcrProviderConfigurationUpdate {
+  activeProvider: OcrProviderId;
+  openAiCompatible: {
+    protocol: OpenAiCompatibleProtocol;
+    baseUrl: string;
+    model: string;
+    prompt: string;
+    apiKey?: string;
+    clearApiKey?: boolean;
+  };
+  ollama: {
+    baseUrl: string;
+    model: string;
+    prompt: string;
+  };
+  mathpix: {
+    baseUrl: string;
+    appId: string;
+    appKey?: string;
+    clearAppKey?: boolean;
+  };
+  paddleOcr: {
+    model: PaddleOcrApiModel;
+    accessToken?: string;
+    clearAccessToken?: boolean;
+  };
+}
+
 export interface OcrRecognitionResult {
+  provider: OcrProviderId | string;
   model: string;
   elapsedMs: number;
   processedWidth: number;
@@ -128,6 +208,228 @@ export interface OcrRecognitionResult {
   backgroundInverted: boolean;
   backgroundLuminance: number;
   formulas: OcrFormulaResult[];
+}
+
+const OCR_MULTILINE_ENVIRONMENTS = new Set([
+  "align",
+  "align*",
+  "aligned",
+  "alignedat",
+  "gather",
+  "gather*",
+  "gathered",
+  "split",
+  "multline",
+  "multline*",
+]);
+
+const OCR_TRANSPARENT_DISPLAY_ENVIRONMENTS = new Set([
+  "equation",
+  "equation*",
+  "displaymath",
+]);
+
+function isEscapedLatexCharacter(value: string, index: number) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function findUnescapedDollar(value: string, startIndex = 0) {
+  for (let index = Math.max(0, startIndex); index < value.length; index += 1) {
+    if (value[index] !== "$" || isEscapedLatexCharacter(value, index)) continue;
+    return index;
+  }
+  return -1;
+}
+
+function stripOcrOuterMathDelimiter(value: string) {
+  const trimmed = value.trim();
+  const pairs = [
+    ["$$", "$$"],
+    ["\\[", "\\]"],
+    ["\\(", "\\)"],
+    ["$", "$"],
+  ] as const;
+  for (const [opening, closing] of pairs) {
+    if (
+      !trimmed.startsWith(opening) ||
+      !trimmed.endsWith(closing) ||
+      trimmed.length <= opening.length + closing.length
+    ) {
+      continue;
+    }
+    const inner = trimmed.slice(opening.length, -closing.length);
+    if (opening.includes("$") && findUnescapedDollar(inner, 0) >= 0) {
+      continue;
+    }
+    return inner.trim();
+  }
+  return trimmed;
+}
+
+function readOcrOuterEnvironment(value: string) {
+  const match = value
+    .trim()
+    .match(/^\\begin\{([^{}]+)\}([\s\S]*)\\end\{\1\}$/);
+  if (!match) return null;
+  return { name: match[1].trim(), body: match[2].trim() };
+}
+
+function encodeTopLevelOcrAlignmentMarkers(value: string) {
+  let result = "";
+  let braceDepth = 0;
+  const environments: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const rest = value.slice(index);
+    const environment = rest.match(/^\\(begin|end)\{([^{}]+)\}/);
+    if (environment) {
+      const token = environment[0];
+      const name = environment[2];
+      result += token;
+      if (environment[1] === "begin") environments.push(name);
+      else {
+        const position = environments.lastIndexOf(name);
+        if (position >= 0) environments.splice(position, 1);
+      }
+      index += token.length - 1;
+      continue;
+    }
+    const character = value[index];
+    if (character === "{" && !isEscapedLatexCharacter(value, index)) braceDepth += 1;
+    else if (character === "}" && !isEscapedLatexCharacter(value, index)) {
+      braceDepth = Math.max(0, braceDepth - 1);
+    }
+    if (
+      character === "&" &&
+      !isEscapedLatexCharacter(value, index) &&
+      braceDepth === 0 &&
+      environments.length === 0
+    ) {
+      result += VISUALTEX_ALIGNMENT_MARKER_LATEX;
+      continue;
+    }
+    result += character;
+  }
+  return result.trim();
+}
+
+function splitTopLevelOcrRows(value: string) {
+  const rows: string[] = [];
+  const environments: string[] = [];
+  let braceDepth = 0;
+  let current = "";
+
+  const flush = () => {
+    const row = encodeTopLevelOcrAlignmentMarkers(current);
+    if (row) rows.push(row);
+    current = "";
+  };
+
+  for (let index = 0; index < value.length; index += 1) {
+    const rest = value.slice(index);
+    const environment = rest.match(/^\\(begin|end)\{([^{}]+)\}/);
+    if (environment) {
+      const token = environment[0];
+      const name = environment[2];
+      current += token;
+      if (environment[1] === "begin") environments.push(name);
+      else {
+        const position = environments.lastIndexOf(name);
+        if (position >= 0) environments.splice(position, 1);
+      }
+      index += token.length - 1;
+      continue;
+    }
+
+    const character = value[index];
+    if (character === "{" && !isEscapedLatexCharacter(value, index)) {
+      braceDepth += 1;
+      current += character;
+      continue;
+    }
+    if (character === "}" && !isEscapedLatexCharacter(value, index)) {
+      braceDepth = Math.max(0, braceDepth - 1);
+      current += character;
+      continue;
+    }
+
+    const atTopLevel = braceDepth === 0 && environments.length === 0;
+    if (
+      atTopLevel &&
+      character === "\\" &&
+      value[index + 1] === "\\" &&
+      !isEscapedLatexCharacter(value, index)
+    ) {
+      flush();
+      index += 1;
+      let cursor = index + 1;
+      while (cursor < value.length && /\s/.test(value[cursor])) cursor += 1;
+      if (value[cursor] === "[") {
+        let depth = 1;
+        cursor += 1;
+        while (cursor < value.length && depth > 0) {
+          if (value[cursor] === "[" && !isEscapedLatexCharacter(value, cursor)) depth += 1;
+          else if (value[cursor] === "]" && !isEscapedLatexCharacter(value, cursor)) depth -= 1;
+          cursor += 1;
+        }
+      }
+      index = cursor - 1;
+      continue;
+    }
+    if (character === "\n" || character === "\r") {
+      if (atTopLevel) flush();
+      else if (current && !/\s$/.test(current)) current += " ";
+      if (character === "\r" && value[index + 1] === "\n") index += 1;
+      continue;
+    }
+    current += character;
+  }
+  flush();
+  return rows;
+}
+
+export function splitOcrLatexIntoFormulaLines(value: string): string[] {
+  let current = String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!current) return [];
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const withoutDelimiter = stripOcrOuterMathDelimiter(current);
+    if (withoutDelimiter !== current) {
+      current = withoutDelimiter;
+      continue;
+    }
+    const environment = readOcrOuterEnvironment(current);
+    if (!environment) break;
+    if (OCR_TRANSPARENT_DISPLAY_ENVIRONMENTS.has(environment.name)) {
+      current = environment.body;
+      continue;
+    }
+    if (OCR_MULTILINE_ENVIRONMENTS.has(environment.name)) {
+      return splitTopLevelOcrRows(environment.body);
+    }
+    break;
+  }
+
+  return splitTopLevelOcrRows(current)
+    .map((row) => stripOcrOuterMathDelimiter(row))
+    .filter(Boolean);
+}
+
+export function normalizeOcrFormulaLines(
+  formulas: readonly (OcrFormulaResult | string)[],
+): string[] {
+  return formulas.flatMap((formula) =>
+    splitOcrLatexIntoFormulaLines(
+      typeof formula === "string" ? formula : formula.latex,
+    ),
+  );
+}
+
+export function normalizeOcrFormulaText(value: string): string[] {
+  return splitOcrLatexIntoFormulaLines(value);
 }
 
 export interface OcrImageRequest {
@@ -219,23 +521,43 @@ function requireDesktopOcrEnvironment() {
   }
 }
 
+export async function getOcrProviderConfiguration(): Promise<OcrProviderConfiguration> {
+  requireOcrEnvironment();
+  return decodeOcrProviderConfiguration(
+    await invoke<unknown>("get_ocr_provider_configuration"),
+  );
+}
+
+export async function saveOcrProviderConfiguration(
+  configuration: OcrProviderConfigurationUpdate,
+): Promise<OcrProviderConfiguration> {
+  requireOcrEnvironment();
+  return decodeOcrProviderConfiguration(
+    await invoke<unknown>("save_ocr_provider_configuration", { configuration }),
+  );
+}
+
 export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("get_ocr_runtime_status", { forceRefresh });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("get_ocr_runtime_status", { forceRefresh }),
+  );
 }
 
 export async function installOcrRuntime(): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("install_ocr_runtime");
+  return decodeOcrRuntimeStatus(await invoke<unknown>("install_ocr_runtime"));
 }
 
 export async function recognizeFormulaImage(
   request: OcrImageRequest,
 ): Promise<OcrRecognitionResult> {
   requireOcrEnvironment();
-  return invoke<OcrRecognitionResult>("recognize_formula_image", { request });
+  return decodeOcrRecognitionResult(
+    await invoke<unknown>("recognize_formula_image", { request }),
+  );
 }
 
 export async function prewarmOcrModel(model: OcrModelName): Promise<void> {
@@ -255,31 +577,33 @@ export async function restartOcrWorker(): Promise<void> {
 
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {
   requireOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("reset_ocr_runtime");
+  return decodeOcrRuntimeStatus(await invoke<unknown>("reset_ocr_runtime"));
 }
 
 export async function installOptionalOcrModel(
   packagePath: string,
 ): Promise<OcrRuntimeStatus> {
   requireDesktopOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("install_optional_ocr_model", {
-    packagePath,
-  });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("install_optional_ocr_model", { packagePath }),
+  );
 }
 
 export async function removeOptionalOcrModel(
   model: OcrModelName,
 ): Promise<OcrRuntimeStatus> {
   requireDesktopOcrEnvironment();
-  return invoke<OcrRuntimeStatus>("remove_optional_ocr_model", { model });
+  return decodeOcrRuntimeStatus(
+    await invoke<unknown>("remove_optional_ocr_model", { model }),
+  );
 }
 
 export async function listenOcrRecognitionProgress(
   listener: (progress: OcrRecognitionProgress) => void,
 ): Promise<UnlistenFn> {
   requireOcrEnvironment();
-  return listen<OcrRecognitionProgress>("ocr-recognition-progress", (event) => {
-    listener(event.payload);
+  return listen<unknown>("ocr-recognition-progress", (event) => {
+    listener(decodeOcrRecognitionProgress(event.payload));
   });
 }
 
@@ -287,7 +611,7 @@ export async function listenOcrInstallProgress(
   listener: (progress: OcrInstallProgress) => void,
 ): Promise<UnlistenFn> {
   requireOcrEnvironment();
-  return listen<OcrInstallProgress>("ocr-install-progress", (event) => {
-    listener(event.payload);
+  return listen<unknown>("ocr-install-progress", (event) => {
+    listener(decodeOcrInstallProgress(event.payload));
   });
 }

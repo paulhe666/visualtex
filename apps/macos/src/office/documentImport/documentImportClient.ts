@@ -1,5 +1,10 @@
 import type { VisualTeXFormulaMetadata } from "../shared/formulaMetadata";
 import { invokeTauri } from "../shared/tauriTransport";
+import {
+  decodeMacosDocumentImportProgress,
+  decodeMacosDocumentImportRequest,
+  decodeMacosLatexRedrawFontSizes,
+} from "./documentImportPayloadValidation";
 import type {
   DocumentFormulaDisplayMode,
   DocumentFormulaOutputKind,
@@ -97,10 +102,11 @@ export interface MacosLatexRedrawFontRangeInput {
   displayMode: DocumentFormulaDisplayMode;
 }
 
-export function getMacosDocumentImportRequest(sessionId: string) {
-  return invokeTauri<MacosDocumentImportRequest>(
-    "get_macos_offline_document_import_request",
-    { sessionId },
+export async function getMacosDocumentImportRequest(sessionId: string) {
+  return decodeMacosDocumentImportRequest(
+    await invokeTauri<unknown>("get_macos_offline_document_import_request", {
+      sessionId,
+    }),
   );
 }
 
@@ -118,13 +124,15 @@ export function reportMacosLatexRedrawStage(
   });
 }
 
-export function resolveMacosLatexRedrawFontSizes(
+export async function resolveMacosLatexRedrawFontSizes(
   sessionId: string,
   ranges: MacosLatexRedrawFontRangeInput[],
 ) {
-  return invokeTauri<number[]>(
-    "resolve_macos_offline_latex_redraw_font_sizes",
-    { sessionId, input: { ranges } },
+  return decodeMacosLatexRedrawFontSizes(
+    await invokeTauri<unknown>("resolve_macos_offline_latex_redraw_font_sizes", {
+      sessionId,
+      input: { ranges },
+    }),
   );
 }
 
@@ -140,10 +148,11 @@ export function restoreMacosDocumentImportWindow() {
   return invokeTauri<void>("restore_macos_offline_document_import_window", {});
 }
 
-export function getMacosDocumentImportProgress(sessionId: string) {
-  return invokeTauri<MacosDocumentImportProgress>(
-    "get_macos_offline_document_import_progress",
-    { sessionId },
+export async function getMacosDocumentImportProgress(sessionId: string) {
+  return decodeMacosDocumentImportProgress(
+    await invokeTauri<unknown>("get_macos_offline_document_import_progress", {
+      sessionId,
+    }),
   );
 }
 
