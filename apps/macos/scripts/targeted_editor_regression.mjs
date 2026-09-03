@@ -3,10 +3,63 @@ import { spawn } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 
+const supportedScenarios = [
+  "wrapper",
+  "wrapper-bm",
+  "wrapper-auto",
+  "wrapper-continuous",
+  "wrapper-prefix",
+  "native-input-popover",
+  "native-structure-audit",
+  "native-structure-input-over",
+  "native-structure-input-under",
+  "native-structure-input-multi",
+  "native-structure-input-core",
+  "native-space-selection",
+  "native-space-ime-replay",
+  "candidate-query-reset",
+  "limit-candidate",
+  "raw-placeholder-visual",
+  "placeholder-selection",
+  "pointer-release-stability",
+  "structural-placeholder",
+  "structured-chinese-ime",
+  "accent-placeholder",
+  "caret-probe",
+  "vertical-structure-probe",
+  "vertical-structure-navigation",
+  "scripts",
+  "upright",
+  "formula-formatting",
+  "font-variant-formatting",
+  "context-style",
+  "suggestions",
+  "navigation",
+  "geometry",
+  "source-layout",
+  "source-editor-ux",
+  "source-preview-only",
+  "source-auto-close-completion",
+  "source-structural-draft",
+  "toolbar-template-completion",
+  "toolbar-compact",
+  "formula-tiles",
+  "cursor-placement",
+  "font-settings",
+  "output-fonts",
+  "configuration",
+  "ocr-model-selection",
+  "ocr-empty-environment",
+  "settings",
+  "layout",
+  "delete",
+  "export",
+  "modulo-aligned",
+];
 const scenario = process.argv[2];
-if (!new Set(["wrapper", "wrapper-bm", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "native-structure-audit", "native-structure-input-over", "native-structure-input-under", "native-structure-input-multi", "native-structure-input-core", "native-space-selection", "native-space-ime-replay", "candidate-query-reset", "limit-candidate", "raw-placeholder-visual", "placeholder-selection", "pointer-release-stability", "structural-placeholder", "structured-chinese-ime", "accent-placeholder", "caret-probe", "vertical-structure-probe", "vertical-structure-navigation", "scripts", "upright", "formula-formatting", "font-variant-formatting", "context-style", "suggestions", "navigation", "geometry", "source-layout", "source-preview-only", "source-auto-close-completion", "source-structural-draft", "toolbar-compact", "formula-tiles", "cursor-placement", "font-settings", "output-fonts", "configuration", "ocr-model-selection", "ocr-empty-environment", "settings", "layout", "delete", "export", "modulo-aligned"]).has(scenario)) {
+if (!supportedScenarios.includes(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-bm|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|native-structure-audit|native-structure-input-over|native-structure-input-under|native-structure-input-multi|native-structure-input-core|native-space-selection|native-space-ime-replay|candidate-query-reset|limit-candidate|raw-placeholder-visual|placeholder-selection|pointer-release-stability|structural-placeholder|structured-chinese-ime|accent-placeholder|caret-probe|vertical-structure-probe|vertical-structure-navigation|scripts|upright|formula-formatting|context-style|suggestions|navigation|geometry|source-layout|source-preview-only|source-auto-close-completion|source-structural-draft|toolbar-compact|formula-tiles|cursor-placement|font-settings|output-fonts|configuration|ocr-model-selection|ocr-empty-environment|settings|layout|delete|export>",
+    `Usage: node scripts/targeted_editor_regression.mjs <${supportedScenarios.join("|")}>`,
   );
 }
 
@@ -475,6 +528,216 @@ async function main() {
 
       console.log(JSON.stringify({ sState, sDialogState, lState }, null, 2));
       console.log("Targeted OCR model selection persistence regression passed");
+      return;
+    }
+
+    if (scenario === "source-editor-ux") {
+      const sourceUxLatex = [
+        String.raw`\begin{align}`,
+        String.raw`\frac{\alpha+1}{\beta}&=\int_0^1 x^2\,\mathrm{d}x \\`,
+        String.raw`\begin{matrix}`,
+        String.raw`a&b \\`,
+        String.raw`c&d`,
+        String.raw`\end{matrix}&\approx\gamma \\`,
+        String.raw`\det A+\left(B\cap C\right)&\to\hbar`,
+        String.raw`\end{align}`,
+      ].join("\n");
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          editorLayout: "classic",
+          sourceOpen: true,
+          latexCodeFormat: "raw",
+          zoom: 0.75,
+          classicDockHeight: 280,
+          lines: [{
+            id: "source-editor-ux-line",
+            latex: ${JSON.stringify(sourceUxLatex)},
+            mode: "display",
+          }],
+          activeLineId: "source-editor-ux-line",
+          checkUpdatesOnStartup: false,
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+        localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+        location.reload();
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready:
+          document.querySelector(".workspace")?.dataset.editorLayout === "classic" &&
+          Boolean(document.querySelector(".classic-source-pane-slot .cm-content")) &&
+          document.querySelectorAll(".classic-source-pane-slot .cm-line").length >= 8,
+      }))()`, "VS Code-like source editor fixture");
+      await sleep(500);
+      await evaluate(`(() => {
+        const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+        if (laterButton instanceof HTMLElement) laterButton.click();
+        const content = document.querySelector(".classic-source-pane-slot .cm-content");
+        content?.focus();
+        return true;
+      })()`);
+      await sleep(120);
+
+      const sourceUxState = await evaluate(`(() => {
+        const pane = document.querySelector(".classic-source-pane-slot");
+        const lines = [...(pane?.querySelectorAll(".cm-line") ?? [])].map((line) => {
+          const text = line.textContent ?? "";
+          return {
+            text,
+            leadingSpaces: text.match(/^ */)?.[0].length ?? 0,
+          };
+        });
+        const semantic = [...(pane?.querySelectorAll('[class*="cm-vt-command-"]') ?? [])]
+          .map((node) => ({
+            text: node.textContent ?? "",
+            classes: [...node.classList].filter((name) => name.startsWith("cm-vt-command-")),
+            color: getComputedStyle(node).color,
+          }));
+        const firstByClass = {};
+        for (const entry of semantic) {
+          for (const className of entry.classes) {
+            firstByClass[className] ??= entry;
+          }
+        }
+        const guides = [...(pane?.querySelectorAll(".cm-vt-indent-guide") ?? [])];
+        const foldGutter = pane?.querySelector(".cm-foldGutter");
+        const foldGlyphs = [...(foldGutter?.querySelectorAll(".cm-gutterElement") ?? [])]
+          .map((node) => node.textContent ?? "")
+          .filter(Boolean);
+        return {
+          lines,
+          firstByClass,
+          semanticColorCount: new Set(semantic.map((entry) => entry.color)).size,
+          semanticCount: semantic.length,
+          guideCount: guides.length,
+          guideBackground: guides[0] ? getComputedStyle(guides[0]).backgroundImage : "none",
+          foldGutterPresent: Boolean(foldGutter),
+          foldGlyphs,
+          lineNumberCount: pane?.querySelectorAll(".cm-lineNumbers .cm-gutterElement").length ?? 0,
+          activeLineCount: pane?.querySelectorAll(".cm-activeLine").length ?? 0,
+          activeGutterCount: pane?.querySelectorAll(".cm-activeLineGutter").length ?? 0,
+          focused: pane?.querySelector(".cm-editor")?.classList.contains("cm-focused") ?? false,
+          sourceText: pane?.querySelector(".cm-content")?.textContent ?? "",
+        };
+      })()`);
+
+      const expectedLeading = [0, 2, 2, 4, 4, 2, 2, 0];
+      assert.deepEqual(
+        sourceUxState.lines.slice(0, 8).map((line) => line.leadingSpaces),
+        expectedLeading,
+        JSON.stringify(sourceUxState.lines),
+      );
+      for (const category of [
+        "structure",
+        "calculus",
+        "matrix",
+        "greek",
+        "relation",
+        "set",
+        "arrow",
+        "physics",
+      ]) {
+        assert.ok(
+          sourceUxState.firstByClass[`cm-vt-command-${category}`],
+          `missing semantic source color for ${category}: ${JSON.stringify(sourceUxState.firstByClass)}`,
+        );
+      }
+      assert.ok(
+        sourceUxState.semanticColorCount >= 7,
+        `source semantic colors are not sufficiently distinct: ${JSON.stringify(sourceUxState.firstByClass)}`,
+      );
+      assert.ok(sourceUxState.semanticCount >= 12, JSON.stringify(sourceUxState));
+      assert.ok(sourceUxState.guideCount >= 5, JSON.stringify(sourceUxState));
+      assert.notEqual(sourceUxState.guideBackground, "none", JSON.stringify(sourceUxState));
+      assert.equal(sourceUxState.foldGutterPresent, true, JSON.stringify(sourceUxState));
+      assert.ok(sourceUxState.foldGlyphs.length >= 2, JSON.stringify(sourceUxState));
+      assert.ok(sourceUxState.lineNumberCount >= 8, JSON.stringify(sourceUxState));
+      assert.equal(sourceUxState.activeLineCount, 1, JSON.stringify(sourceUxState));
+      assert.ok(sourceUxState.activeGutterCount >= 1, JSON.stringify(sourceUxState));
+      assert.equal(sourceUxState.focused, true, JSON.stringify(sourceUxState));
+
+      const clickSourceLine = async (text) => {
+        const point = await evaluate(`(() => {
+          const line = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")]
+            .find((candidate) => (candidate.textContent || "").trim() === ${JSON.stringify(text)});
+          const rect = line?.getBoundingClientRect();
+          return rect ? { x: rect.right - 8, y: rect.top + rect.height / 2 } : null;
+        })()`);
+        assert.ok(point, `source line not found: ${text}`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: point.x,
+          y: point.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: point.x,
+          y: point.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        await sleep(70);
+      };
+
+      const matrixBeginLine = String.raw`\begin{matrix}`;
+      await clickSourceLine(matrixBeginLine);
+      await key("End", "End", 35);
+      await key("Enter", "Enter", 13);
+      await sleep(120);
+      const enterIndentState = await evaluate(`(() => {
+        const lines = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")]
+          .map((line) => line.textContent ?? "");
+        const beginIndex = lines.findIndex((line) => line.trim() === ${JSON.stringify(matrixBeginLine)});
+        const inserted = beginIndex >= 0 ? lines[beginIndex + 1] ?? "" : "";
+        return {
+          lineCount: lines.length,
+          inserted,
+          leadingSpaces: inserted.match(/^ */)?.[0].length ?? 0,
+        };
+      })()`);
+      assert.equal(enterIndentState.leadingSpaces, 4, JSON.stringify(enterIndentState));
+      await key("z", "KeyZ", 90, 4);
+      await sleep(120);
+
+      await clickSourceLine("c&d");
+      await key("Home", "Home", 36);
+      await key("Tab", "Tab", 9);
+      await sleep(90);
+      const tabIndentState = await evaluate(`(() => {
+        const line = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")]
+          .find((candidate) => (candidate.textContent || "").trim() === "c&d");
+        const text = line?.textContent ?? "";
+        return { text, leadingSpaces: text.match(/^ */)?.[0].length ?? 0 };
+      })()`);
+      assert.equal(tabIndentState.leadingSpaces, 6, JSON.stringify(tabIndentState));
+      await key("Tab", "Tab", 9, 8);
+      await sleep(90);
+      const shiftTabIndentState = await evaluate(`(() => {
+        const line = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")]
+          .find((candidate) => (candidate.textContent || "").trim() === "c&d");
+        const text = line?.textContent ?? "";
+        return { text, leadingSpaces: text.match(/^ */)?.[0].length ?? 0 };
+      })()`);
+      assert.equal(shiftTabIndentState.leadingSpaces, 4, JSON.stringify(shiftTabIndentState));
+
+      console.log(
+        "VS Code-like LaTeX source editor browser regression passed",
+        JSON.stringify({
+          leading: sourceUxState.lines.slice(0, 8).map((line) => line.leadingSpaces),
+          colors: Object.fromEntries(
+            Object.entries(sourceUxState.firstByClass).map(([key, value]) => [key, value.color]),
+          ),
+          guideCount: sourceUxState.guideCount,
+          foldGlyphs: sourceUxState.foldGlyphs,
+        }),
+      );
       return;
     }
 
@@ -1740,6 +2003,146 @@ async function main() {
       return;
     }
 
+    if (scenario === "toolbar-template-completion") {
+      await evaluate(`(() => {
+        localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+        localStorage.setItem(
+          "visualtex.onboarding.macos.desktop.v1.2.0.completed",
+          "true",
+        );
+        if (!document.querySelector(".formula-toolbar")) {
+          document.querySelector(".sidebar-toggle")?.click();
+        }
+        return true;
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready:
+          Boolean(document.querySelector(".formula-toolbar")) &&
+          Boolean(document.querySelector(".formula-line math-field")) &&
+          Boolean(document.querySelector('[data-command-id="left-upper-script"]')) &&
+          Boolean(document.querySelector('[data-command-id="int-bare"]')),
+      }))()`, "completed toolbar templates");
+      await sleep(180);
+
+      const structureIds = [
+        "left-upper-script",
+        "upper-script",
+        "left-scripts",
+        "scripts",
+        "left-lower-script",
+        "lower-script",
+        "linear-fraction",
+        "skewed-fraction",
+      ];
+      const calculusIds = [
+        "int-bare",
+        "iint-bare",
+        "iiint-bare",
+        "oint-bare",
+        "oiint-bare",
+        "oiiint-bare",
+        "intplain-no-d",
+        "int-bounds-no-d",
+        "iint-no-d",
+        "iint-bounds-no-d",
+        "iiint-no-d",
+        "iiint-bounds-no-d",
+        "oint-no-d",
+        "oint-bounds-no-d",
+        "oiint-no-d",
+        "oiiint-no-d",
+      ];
+      const toolbarState = await evaluate(`(() => {
+        const inspect = (id) => {
+          const button = document.querySelector('[data-command-id="' + id + '"]');
+          const preview = button?.querySelector('.math-preview');
+          const latex = preview?.querySelector('.ML__latex');
+          const bounds = latex?.getBoundingClientRect();
+          return {
+            id,
+            present: Boolean(button),
+            category: button?.closest('[data-toolbar-category-section]')
+              ?.getAttribute('data-toolbar-category-section') ?? null,
+            previewLatex: button?.getAttribute('data-preview-latex') ?? null,
+            previewVisible: Boolean(
+              bounds && bounds.width > 0 && bounds.height > 0 &&
+              !preview?.querySelector('.ML__error')
+            ),
+          };
+        };
+        return {
+          structure: ${JSON.stringify(structureIds)}.map(inspect),
+          calculus: ${JSON.stringify(calculusIds)}.map(inspect),
+        };
+      })()`);
+      for (const entry of toolbarState.structure) {
+        assert.equal(entry.present, true, JSON.stringify(entry));
+        assert.equal(entry.category, "structure", JSON.stringify(entry));
+        assert.equal(entry.previewVisible, true, JSON.stringify(entry));
+      }
+      for (const entry of toolbarState.calculus) {
+        assert.equal(entry.present, true, JSON.stringify(entry));
+        assert.equal(entry.category, "calculus", JSON.stringify(entry));
+        assert.equal(entry.previewVisible, true, JSON.stringify(entry));
+      }
+
+      const clickAndRead = async (commandId) => {
+        const before = await evaluate(`document.querySelector('.formula-line math-field')?.value ?? ''`);
+        const clicked = await evaluate(`(() => {
+          const field = document.querySelector('.formula-line math-field');
+          const button = document.querySelector('[data-command-id="${commandId}"]');
+          if (!field || !button) return false;
+          field.focus();
+          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+          button.click();
+          return true;
+        })()`);
+        assert.equal(clicked, true, `${commandId}: toolbar button was not clickable`);
+        await sleep(120);
+        const after = await evaluate(`document.querySelector('.formula-line math-field')?.value ?? ''`);
+        assert.notEqual(after, before, `${commandId}: clicking the toolbar did not insert anything`);
+        return { commandId, before, after };
+      };
+
+      const insertionResults = [];
+      for (const id of [
+        "left-upper-script",
+        "left-scripts",
+        "left-lower-script",
+        "linear-fraction",
+        "skewed-fraction",
+        "int-bare",
+        "int-bounds-no-d",
+        "oiint-bare",
+        "oiint-no-d",
+      ]) {
+        insertionResults.push(await clickAndRead(id));
+      }
+      const noDifferentialResult = insertionResults.find(
+        (entry) => entry.commandId === "int-bounds-no-d",
+      );
+      assert.ok(noDifferentialResult, "missing no-differential insertion result");
+      assert.doesNotMatch(
+        noDifferentialResult.after,
+        /\\mathrm\{d\}|\\differentialD/,
+        JSON.stringify(noDifferentialResult),
+      );
+      const skewedFractionResult = insertionResults.find(
+        (entry) => entry.commandId === "skewed-fraction",
+      );
+      assert.match(
+        skewedFractionResult?.after ?? "",
+        /\\nicefrac/,
+        JSON.stringify(skewedFractionResult),
+      );
+
+      console.log(
+        "Toolbar template completion browser regression passed",
+        JSON.stringify({ toolbarState, insertionResults }),
+      );
+      return;
+    }
+
     if (scenario === "toolbar-compact") {
       await evaluate(`(() => {
         if (!document.querySelector(".formula-toolbar")) {
@@ -1952,6 +2355,66 @@ async function main() {
         })()`, `dense seamless toolbar category: ${category}`);
         categoryStates.push(state);
       }
+
+      const completionCommandState = await evaluate(`(() => {
+        const idsFor = (category) => [...(document.querySelector(
+          '[data-toolbar-category-section="' + category + '"]',
+        )?.querySelectorAll(':scope > .template-button') ?? [])]
+          .map((button) => button.dataset.commandId ?? '')
+          .filter(Boolean);
+        const structureIds = idsFor('structure');
+        const calculusIds = idsFor('calculus');
+        const requiredStructureIds = ${JSON.stringify([
+          "left-upper-script",
+          "left-scripts",
+          "left-lower-script",
+          "linear-fraction",
+          "skewed-fraction",
+        ])};
+        const requiredCalculusIds = ${JSON.stringify([
+          "int-bare",
+          "iint-bare",
+          "iiint-bare",
+          "oint-bare",
+          "oiint-bare",
+          "oiiint-bare",
+          "intplain-no-d",
+          "int-bounds-no-d",
+          "iint-no-d",
+          "iint-bounds-no-d",
+          "iiint-no-d",
+          "iiint-bounds-no-d",
+          "oint-no-d",
+          "oint-bounds-no-d",
+          "oiint-no-d",
+          "oiiint-no-d",
+        ])};
+        const missingStructureIds = requiredStructureIds.filter(
+          (id) => !structureIds.includes(id),
+        );
+        const missingCalculusIds = requiredCalculusIds.filter(
+          (id) => !calculusIds.includes(id),
+        );
+        return {
+          ready:
+            missingStructureIds.length === 0 &&
+            missingCalculusIds.length === 0,
+          structureIds,
+          calculusIds,
+          missingStructureIds,
+          missingCalculusIds,
+        };
+      })()`);
+      assert.deepEqual(
+        completionCommandState.missingStructureIds,
+        [],
+        JSON.stringify(completionCommandState),
+      );
+      assert.deepEqual(
+        completionCommandState.missingCalculusIds,
+        [],
+        JSON.stringify(completionCommandState),
+      );
 
       await evaluate(`document.querySelector(
         '.toolbar-tab[data-category="calculus"]',

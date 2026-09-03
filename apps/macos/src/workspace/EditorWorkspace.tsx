@@ -36,6 +36,7 @@ import {
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
+import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import {
   DEFAULT_CLASSIC_DOCK_HEIGHT,
   DEFAULT_CLASSIC_TILE_WIDTH,
@@ -253,7 +254,9 @@ export function EditorWorkspace({
   const isEn = language === "en";
   const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
+  const sourceLatex = formatLatexSourceForEditor(
+    formatFormulaLines(lines, latexCodeFormat),
+  );
 
   const handleSourceFocusChange = (focused: boolean) => {
     sourceFocusedRef.current = focused;

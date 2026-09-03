@@ -710,6 +710,7 @@ const calculusPreviewById: Record<string, string> = {
 
 const toolbarPreviewById: Record<string, string> = {
   ...calculusPreviewById,
+  "skewed-fraction": "{}^{a}\\!/\\!{}_{b}",
   cases: "\\begin{cases}a\\\\b\\end{cases}",
   "cases-three": "\\left\\{\\begin{array}{l}a\\\\b\\\\c\\end{array}\\right.",
   overbrace: "\\overbrace{a+b}",
