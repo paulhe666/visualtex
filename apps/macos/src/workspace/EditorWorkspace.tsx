@@ -156,10 +156,10 @@ export function EditorWorkspace({
   onCopyPng,
   onCopy,
   onReplaceDocument,
-  ocrModel,
-  ocrModels = [],
+  ocrSelection,
+  ocrOptions = [],
   ocrBusy = false,
-  onOcrModelChange,
+  onOcrSelectionChange,
   onQuickOcr,
   quickOcrCaptureMode = "immediate",
   onQuickOcrCaptureModeChange,
@@ -1346,29 +1346,56 @@ export function EditorWorkspace({
                   )}
                 </div>
               )}
-              {!keypadMode && showOcrActions && ocrModels.length > 0 && ocrModel && (
+              {!keypadMode &&
+                showOcrActions &&
+                ocrOptions.length > 0 &&
+                ocrSelection && (
                 <label
                   className="canvas-ocr-model"
                   title={
                     isEn
-                      ? "Model used when an image is pasted into a formula field"
-                      : "在公式输入框中粘贴图片时使用的 OCR 模型"
+                      ? "OCR provider and model used for pasted images and quick OCR"
+                      : "粘贴图片与快捷 OCR 使用的提供器和模型，可在此快速切换"
                   }
                 >
                   <ScanLine size={14} />
                   <select
-                    value={ocrModel}
+                    value={ocrSelection}
                     disabled={ocrBusy}
                     onChange={(event) =>
-                      onOcrModelChange?.(event.target.value)
+                      onOcrSelectionChange?.(event.target.value)
                     }
-                    aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
+                    aria-label={
+                      isEn
+                        ? "OCR provider and recognition model"
+                        : "OCR 提供器与识别模型"
+                    }
                   >
-                    {ocrModels.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {isEn ? item.labelEn : item.labelZh}
-                      </option>
-                    ))}
+                    {(["local", "api"] as const).map((group) => {
+                      const items = ocrOptions.filter(
+                        (item) => item.group === group,
+                      );
+                      return items.length > 0 ? (
+                        <optgroup
+                          key={group}
+                          label={
+                            group === "local"
+                              ? isEn
+                                ? "Local models"
+                                : "本地模型"
+                              : isEn
+                                ? "API providers"
+                                : "API 提供器"
+                          }
+                        >
+                          {items.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {isEn ? item.labelEn : item.labelZh}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null;
+                    })}
                   </select>
                 </label>
               )}

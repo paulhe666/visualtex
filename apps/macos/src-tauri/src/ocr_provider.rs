@@ -848,7 +848,7 @@ fn simpletex_endpoint(model: &str) -> Result<&'static str, String> {
     match normalize_simpletex_model(model)? {
         "standard" => Ok(SIMPLETEX_STANDARD_URL),
         "turbo" => Ok(SIMPLETEX_TURBO_URL),
-        _ => unreachable!("normalize_simpletex_model returns a fixed model"),
+        _ => Err("Unsupported SimpleTex formula model".to_string()),
     }
 }
 

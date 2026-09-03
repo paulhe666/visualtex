@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod ocr_offline;
 mod ocr_provider;
@@ -46,6 +47,41 @@ const MAX_MAIN_WINDOW_WIDTH: f64 = 4000.0;
 const MAX_MAIN_WINDOW_HEIGHT: f64 = 3000.0;
 static MAIN_WINDOW_SIZE_WRITE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_KEYPAD_MODE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn spawn_background_task(
+    name: &'static str,
+    task: impl FnOnce() + Send + 'static,
+) -> bool {
+    match std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            if let Err(payload) =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(task))
+            {
+                eprintln!(
+                    "VisualTeX background task {name} recovered from an internal error: {}",
+                    panic_payload_detail(payload.as_ref())
+                );
+            }
+        })
+    {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("Unable to start VisualTeX background task {name}: {error}");
+            false
+        }
+    }
+}
+
+pub(crate) fn panic_payload_detail(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown Rust panic".to_string()
+    }
+}
 
 fn normalize_app_theme(theme: &str) -> &'static str {
     match theme.trim() {
@@ -232,7 +268,7 @@ fn schedule_persist_main_window_size(app: &AppHandle, physical_width: u32, physi
     }
     let generation = MAIN_WINDOW_SIZE_WRITE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
-    std::thread::spawn(move || {
+    spawn_background_task("visualtex-main-window-size", move || {
         std::thread::sleep(std::time::Duration::from_millis(250));
         if MAIN_WINDOW_SIZE_WRITE_GENERATION.load(Ordering::SeqCst) != generation {
             return;
@@ -1748,7 +1784,9 @@ fn save_ocr_provider_configuration(
     state: State<'_, OcrState>,
     configuration: ocr_provider::OcrProviderConfigurationUpdate,
 ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
-    state.save_provider_configuration(&app, configuration)
+    let saved = state.save_provider_configuration(&app, configuration)?;
+    let _ = app.emit("ocr-provider-configuration-changed", &saved);
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -1872,6 +1910,24 @@ fn claim_production_visualtex_url_handler() -> Result<(), String> {
     Ok(())
 }
 
+fn report_office_open_failure(app: &AppHandle, error: &str) {
+    eprintln!("Unable to open VisualTeX offline Office Session: {error}");
+    let detail = error.chars().take(800).collect::<String>();
+    let message = format!(
+        "VisualTeX could not open this Office formula. The Office document was not modified.\n\nDetails: {detail}"
+    );
+    let shown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        app.dialog()
+            .message(message)
+            .title("VisualTeX Office formula")
+            .kind(MessageDialogKind::Error)
+            .show(|_| {});
+    }));
+    if shown.is_err() {
+        eprintln!("Unable to show the recoverable VisualTeX Office error dialog");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
@@ -1905,8 +1961,8 @@ pub fn run() {
                     .iter()
                     .find(|argument| argument.starts_with("visualtex://office/open?session="))
                 {
-                    if let Err(error) = office::macos_offline::handle_open_url(app, url) {
-                        eprintln!("Unable to open VisualTeX offline Office Session: {error}");
+                    if let Err(error) = office::macos_offline::handle_open_url_safely(app, url) {
+                        report_office_open_failure(app, &error);
                     }
                     return;
                 }
@@ -1927,80 +1983,101 @@ pub fn run() {
         .manage(ocr_state)
         .manage(quick_ocr_state)
         .setup(move |app| {
-            if maintenance_install {
-                match office::macos_offline_installer::install(app.handle()) {
-                    Ok(status) => {
-                        println!(
-                            "{}",
-                            serde_json::to_string(&status)
-                                .unwrap_or_else(|_| "{\"ok\":true}".to_string())
-                        );
-                        std::process::exit(0);
+            let setup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || -> Result<(), Box<dyn std::error::Error>> {
+                    if maintenance_install {
+                        match office::macos_offline_installer::install(app.handle()) {
+                            Ok(status) => {
+                                println!(
+                                    "{}",
+                                    serde_json::to_string(&status)
+                                        .unwrap_or_else(|_| "{\"ok\":true}".to_string())
+                                );
+                                std::process::exit(0);
+                            }
+                            Err(error) => {
+                                eprintln!("VisualTeX native Office installation failed: {error}");
+                                std::process::exit(1);
+                            }
+                        }
                     }
-                    Err(error) => {
-                        eprintln!("VisualTeX native Office installation failed: {error}");
-                        std::process::exit(1);
-                    }
-                }
-            }
 
-            #[cfg(not(debug_assertions))]
-            {
-                #[cfg(target_os = "macos")]
-                std::thread::spawn(|| {
-                    // LaunchServices repair is maintenance. Let a cold Office
-                    // URL hydrate its resident editor before lsregister scans
-                    // the application bundle.
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    if let Err(error) = claim_production_visualtex_url_handler() {
-                        eprintln!("Unable to claim the production visualtex:// handler: {error}");
+                    #[cfg(not(debug_assertions))]
+                    {
+                        #[cfg(target_os = "macos")]
+                        spawn_background_task("visualtex-url-handler-repair", || {
+                            // LaunchServices repair is maintenance. Let a cold Office
+                            // URL hydrate its resident editor before lsregister scans
+                            // the application bundle.
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                            if let Err(error) = claim_production_visualtex_url_handler() {
+                                eprintln!("Unable to claim the production visualtex:// handler: {error}");
+                            }
+                        });
                     }
-                });
-            }
 
-            // Set the application icon while setup is still on AppKit's main
-            // thread. Background-agent launches may stay accessory-only for a
-            // long time, but the first later transition to a regular app must
-            // already have the real VisualTeX Dock icon installed.
-            office::background::install_application_icon(app.handle())
-                .map_err(std::io::Error::other)?;
-            restore_main_window_size(app.handle()).map_err(std::io::Error::other)?;
-            if let Err(error) = quick_ocr::initialize(app.handle()) {
-                eprintln!("VisualTeX quick OCR initialization warning: {error}");
+                    // Set the application icon while setup is still on AppKit's main
+                    // thread. Background-agent launches may stay accessory-only for a
+                    // long time, but the first later transition to a regular app must
+                    // already have the real VisualTeX Dock icon installed.
+                    office::background::install_application_icon(app.handle())
+                        .map_err(std::io::Error::other)?;
+                    restore_main_window_size(app.handle()).map_err(std::io::Error::other)?;
+                    if let Err(error) = quick_ocr::initialize(app.handle()) {
+                        eprintln!("VisualTeX quick OCR initialization warning: {error}");
+                    }
+                    let office_state = office::initialize(app.handle(), office_ocr_state.clone())
+                        .map_err(std::io::Error::other)?;
+                    if let Err(error) = office::powerpoint_native::start_double_click_monitor(
+                        app.handle().clone(),
+                        office_state.powerpoint_interactions.clone(),
+                    ) {
+                        eprintln!("Unable to start PowerPoint double-click monitor: {error}");
+                    }
+                    app.manage(office_state.clone());
+                    if initial_office_url.is_some() || background_mode {
+                        // Hide the desktop shell before WebKit prewarming. Otherwise a
+                        // cold Office URL can flash the main editor while the resident
+                        // formula WebViews initialize.
+                        office::background::hide_main_window(app.handle())
+                            .map_err(std::io::Error::other)?;
+                    }
+                    if let Err(error) =
+                        office::macos_offline::prewarm_office_editor_windows(app.handle())
+                    {
+                        // Prewarming is an optimization. handle_open_url still creates
+                        // the fixed host window lazily if WebKit was unavailable here.
+                        eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
+                    }
+                    #[cfg(target_os = "macos")]
+                    office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
+                    #[cfg(not(target_os = "macos"))]
+                    office::lifecycle::start(office_state);
+                    if let Some(url) = initial_office_url.as_deref() {
+                        if let Err(error) =
+                            office::macos_offline::handle_open_url_safely(app.handle(), url)
+                        {
+                            // A malformed, stale, or otherwise unusable Office Session is
+                            // an interaction failure, not an application startup failure.
+                            // Keep the resident process alive so correcting the document or
+                            // retrying another formula never enters a relaunch crash loop.
+                            report_office_open_failure(app.handle(), &error);
+                        }
+                    } else if !background_mode {
+                        office::background::reveal_main_window(app.handle())
+                            .map_err(std::io::Error::other)?;
+                    }
+                    Ok(())
+                },
+            ));
+            match setup_result {
+                Ok(result) => result,
+                Err(payload) => Err(std::io::Error::other(format!(
+                    "VisualTeX recovered from an internal startup error: {}",
+                    panic_payload_detail(payload.as_ref())
+                ))
+                .into()),
             }
-            let office_state = office::initialize(app.handle(), office_ocr_state.clone())
-                .map_err(std::io::Error::other)?;
-            if let Err(error) = office::powerpoint_native::start_double_click_monitor(
-                app.handle().clone(),
-                office_state.powerpoint_interactions.clone(),
-            ) {
-                eprintln!("Unable to start PowerPoint double-click monitor: {error}");
-            }
-            app.manage(office_state.clone());
-            if initial_office_url.is_some() || background_mode {
-                // Hide the desktop shell before WebKit prewarming. Otherwise a
-                // cold Office URL can flash the main editor while the resident
-                // formula WebViews initialize.
-                office::background::hide_main_window(app.handle())
-                    .map_err(std::io::Error::other)?;
-            }
-            if let Err(error) = office::macos_offline::prewarm_office_editor_windows(app.handle()) {
-                // Prewarming is an optimization. handle_open_url still creates
-                // the fixed host window lazily if WebKit was unavailable here.
-                eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
-            }
-            #[cfg(target_os = "macos")]
-            office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
-            #[cfg(not(target_os = "macos"))]
-            office::lifecycle::start(office_state);
-            if let Some(url) = initial_office_url.as_deref() {
-                office::macos_offline::handle_open_url(app.handle(), url)
-                    .map_err(std::io::Error::other)?;
-            } else if !background_mode {
-                office::background::reveal_main_window(app.handle())
-                    .map_err(std::io::Error::other)?;
-            }
-            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
@@ -2059,8 +2136,16 @@ pub fn run() {
             office::macos_offline_installer::reveal_macos_powerpoint_addin,
             office::macos_offline_installer::open_macos_powerpoint_addin_tutorial
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building VisualTeX");
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(error) => {
+            // A Tauri/AppKit setup failure must not unwind through Objective-C's
+            // didFinishLaunching callback, which macOS reports as SIGABRT.
+            eprintln!("Unable to build VisualTeX: {error}");
+            return;
+        }
+    };
 
     app.run(move |app, event| match event {
         #[cfg(target_os = "macos")]
@@ -2093,8 +2178,10 @@ pub fn run() {
         tauri::RunEvent::Opened { urls } => {
             for url in urls {
                 if url.scheme() == "visualtex" {
-                    if let Err(error) = office::macos_offline::handle_open_url(app, url.as_str()) {
-                        eprintln!("Unable to open VisualTeX offline Office Session: {error}");
+                    if let Err(error) =
+                        office::macos_offline::handle_open_url_safely(app, url.as_str())
+                    {
+                        report_office_open_failure(app, &error);
                     }
                 }
             }
@@ -2110,6 +2197,7 @@ pub fn run() {
                 Ok(false) => {}
                 Err(error) => {
                     eprintln!("Unable to consume VisualTeX Office fast-open request on Reopen: {error}");
+                    report_office_open_failure(app, &error);
                     return;
                 }
             }
@@ -2126,7 +2214,7 @@ pub fn run() {
             // behavior briefly so that launch cannot reveal the desktop main
             // window over a hydrating Office editor.
             let app = app.clone();
-            std::thread::spawn(move || {
+            spawn_background_task("visualtex-office-reopen", move || {
                 std::thread::sleep(std::time::Duration::from_millis(150));
                 if office::macos_offline::focus_open_office_editor(&app) {
                     return;

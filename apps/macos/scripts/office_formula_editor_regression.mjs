@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DOMParser } from "@xmldom/xmldom";
 import {
   normalizeFormulaEditorDocument,
@@ -696,5 +697,25 @@ for (const reason of [
 ]) {
   assert.ok(!errorMessage(reason, "fallback").includes("[object Object]"));
 }
+
+const officeDialogSource = readFileSync(
+  new URL("../src/office/dialog/OfficeDialogApp.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  officeDialogSource,
+  /visualtex\.office\.word\.create\.font-size-pt/,
+  "new Word formulas must have a persistent font-size preference",
+);
+assert.match(
+  officeDialogSource,
+  /session\.host === "word" && session\.mode === "create"\s*\? readOfficeWordCreateFontSizePreference/,
+  "Word create sessions must restore the last explicitly selected size",
+);
+assert.match(
+  officeDialogSource,
+  /if \(session\.host === "word" && session\.mode === "create"\) \{\s*writeOfficeWordCreateFontSizePreference\(nextFontSizePt\)/,
+  "only explicit size changes in Word create mode should update the preference",
+);
 
 console.log("Office formula editor regression passed");

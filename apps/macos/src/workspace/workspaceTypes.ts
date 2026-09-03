@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 import type { QuickOcrCaptureMode } from "../ocr/quickOcr";
+import type { OcrQuickSelectionOption } from "../ocr/ocrQuickSelection";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
@@ -13,12 +14,6 @@ export type WorkspaceMode =
   | "office-edit";
 
 export type WorkspaceExportFormat = "markdown" | "svg" | "png";
-
-export interface WorkspaceOcrModelOption {
-  id: string;
-  labelZh: string;
-  labelEn: string;
-}
 
 export interface EditorWorkspaceProps {
   mode: WorkspaceMode;
@@ -55,10 +50,10 @@ export interface EditorWorkspaceProps {
     source: ReplaceDocumentEntry["source"],
   ) => boolean;
 
-  ocrModel?: string;
-  ocrModels?: readonly WorkspaceOcrModelOption[];
+  ocrSelection?: string;
+  ocrOptions?: readonly OcrQuickSelectionOption[];
   ocrBusy?: boolean;
-  onOcrModelChange?: (model: string) => void;
+  onOcrSelectionChange?: (selection: string) => void;
   onQuickOcr?: () => void;
   quickOcrCaptureMode?: QuickOcrCaptureMode;
   onQuickOcrCaptureModeChange?: (mode: QuickOcrCaptureMode) => void;

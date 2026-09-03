@@ -124,6 +124,7 @@ import {
   waitForQuickOcrSystemScreenshot,
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
+import { useOcrQuickSelection } from "./ocr/useOcrQuickSelection";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -652,11 +653,22 @@ function App() {
     };
   }, [silentOcrEnabled, ocrModel, latexCodeFormat, isEn]);
 
-  const handleOcrModelChange = (nextModel: OcrModelName) => {
-    if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
-    setOcrModel(nextModel);
-    writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
-  };
+  const handleOcrModelChange = useCallback(
+    (nextModel: OcrModelName) => {
+      if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+      setOcrModel(nextModel);
+      writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
+    },
+    [ocrModel],
+  );
+
+  const ocrQuickSelection = useOcrQuickSelection({
+    model: ocrModel,
+    busy: inlineOcrIsBusy || quickOcrCaptureBusy,
+    isEn,
+    onModelChange: handleOcrModelChange,
+    onError: setToast,
+  });
 
   const cancelInlineOcr = async () => {
     if (!inlineOcrBusyRef.current) return;
@@ -1659,11 +1671,11 @@ function App() {
           await handleCopy();
         }}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrModel={ocrModel}
-        ocrModels={OCR_MODELS}
-        ocrBusy={inlineOcrIsBusy || quickOcrCaptureBusy}
-        onOcrModelChange={(model) =>
-          handleOcrModelChange(model as OcrModelName)
+        ocrSelection={ocrQuickSelection.selection}
+        ocrOptions={ocrQuickSelection.options}
+        ocrBusy={ocrQuickSelection.busy}
+        onOcrSelectionChange={(selection) =>
+          void ocrQuickSelection.handleSelectionChange(selection)
         }
         onQuickOcr={() => void handleQuickOcr()}
         quickOcrCaptureMode={quickOcrCaptureMode}
@@ -1692,7 +1704,13 @@ function App() {
               <div>
                 <strong>{inlineOcr.message}</strong>
                 <span>
-                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {ocrQuickSelection.activeOption
+                    ? isEn
+                      ? ocrQuickSelection.activeOption.labelEn
+                      : ocrQuickSelection.activeOption.labelZh
+                    : isEn
+                      ? inlineOcrModel.labelEn
+                      : inlineOcrModel.labelZh}
                   {" · "}
                   {inlineOcr.seconds}
                   {isEn ? "s" : " 秒"}

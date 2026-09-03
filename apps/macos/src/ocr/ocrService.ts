@@ -551,6 +551,15 @@ export async function saveOcrProviderConfiguration(
   );
 }
 
+export async function listenOcrProviderConfigurationChanged(
+  listener: (configuration: OcrProviderConfiguration) => void,
+): Promise<UnlistenFn> {
+  requireOcrEnvironment();
+  return listen<unknown>("ocr-provider-configuration-changed", (event) => {
+    listener(decodeOcrProviderConfiguration(event.payload));
+  });
+}
+
 export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {

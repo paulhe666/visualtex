@@ -278,6 +278,36 @@ async function main() {
               callbacks.delete(id);
             },
             async invoke(command, args) {
+              if (command === "get_ocr_provider_configuration") {
+                return {
+                  activeProvider: "local",
+                  openAiCompatible: {
+                    protocol: "responses",
+                    baseUrl: "https://api.openai.com/v1",
+                    model: "",
+                    prompt: "",
+                    hasApiKey: false,
+                  },
+                  ollama: {
+                    baseUrl: "http://127.0.0.1:11434",
+                    model: "",
+                    prompt: "",
+                  },
+                  mathpix: {
+                    baseUrl: "https://api.mathpix.com",
+                    appId: "",
+                    hasAppKey: false,
+                  },
+                  paddleOcr: {
+                    model: "PaddleOCR-VL-1.6",
+                    hasAccessToken: false,
+                  },
+                  simpleTex: {
+                    model: "standard",
+                    hasAccessToken: false,
+                  },
+                };
+              }
               if (command === "get_ocr_runtime_status") {
                 return {
                   installed: true,
@@ -476,8 +506,8 @@ async function main() {
         })()`);
       };
 
-      const sState = await selectModel("PP-FormulaNet_plus-S");
-      assert.equal(sState.selected, "PP-FormulaNet_plus-S", JSON.stringify(sState));
+      const sState = await selectModel("local:PP-FormulaNet_plus-S");
+      assert.equal(sState.selected, "local:PP-FormulaNet_plus-S", JSON.stringify(sState));
       assert.equal(sState.stored, "PP-FormulaNet_plus-S", JSON.stringify(sState));
       assert.ok(
         sState.prewarmed.includes("PP-FormulaNet_plus-M"),
@@ -522,7 +552,7 @@ async function main() {
         prewarmed: window.__visualtexOcrModelSelectionProbe?.prewarmed ?? [],
       }))()`);
       assert.equal(lState.selected, "PP-FormulaNet_plus-L", JSON.stringify(lState));
-      assert.equal(lState.toolbarSelected, "PP-FormulaNet_plus-L", JSON.stringify(lState));
+      assert.equal(lState.toolbarSelected, "local:PP-FormulaNet_plus-L", JSON.stringify(lState));
       assert.equal(lState.stored, "PP-FormulaNet_plus-L", JSON.stringify(lState));
       assert.match(lState.warning, /尚未安装/);
 

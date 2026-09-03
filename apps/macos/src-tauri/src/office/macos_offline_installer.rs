@@ -222,7 +222,7 @@ fn request_office_application_quit(process_name: &str, bundle_identifier: &str) 
         .args(["-e", &script])
         .spawn()
         .map_err(|error| format!("Unable to request {process_name} to quit: {error}"))?;
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-quit-wait", move || {
         let _ = child.wait();
     });
     Ok(())
