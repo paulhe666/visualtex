@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
+import { PADDLE_OCR_API_MODELS } from "../src/ocr/ocrService.ts";
 import {
   decodeOcrInstallProgress,
+  decodeOcrProviderConfiguration,
   decodeOcrRecognitionProgress,
   decodeOcrRecognitionResult,
   decodeOcrRuntimeStatus,
 } from "../src/ocr/ocrPayloadValidation.ts";
+
+assert.deepEqual(
+  PADDLE_OCR_API_MODELS,
+  ["PaddleOCR-VL-1.6", "PP-StructureV3"],
+  "Paddle API UI must expose only formula/layout-capable models",
+);
 
 const runtime = {
   installed: true,
@@ -25,6 +33,7 @@ assert.throws(
 );
 
 const recognition = {
+  provider: "local",
   model: "PP-FormulaNet_plus-M",
   elapsedMs: 123,
   processedWidth: 640,
@@ -37,6 +46,48 @@ assert.equal(decodeOcrRecognitionResult(recognition), recognition);
 assert.throws(
   () => decodeOcrRecognitionResult({ ...recognition, formulas: [{ latex: 1 }] }),
   /formulas\[0\]\.latex/,
+);
+assert.throws(
+  () => decodeOcrRecognitionResult({ ...recognition, provider: "" }),
+  /\.provider/,
+);
+
+const providers = {
+  activeProvider: "openai-compatible",
+  openAiCompatible: {
+    protocol: "responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "vision-model",
+    prompt: "Return formula JSON",
+    hasApiKey: true,
+  },
+  ollama: {
+    baseUrl: "http://127.0.0.1:11434",
+    model: "vision-model",
+    prompt: "Return formula JSON",
+  },
+  mathpix: {
+    baseUrl: "https://api.mathpix.com",
+    appId: "app-id",
+    hasAppKey: false,
+  },
+  paddleOcr: {
+    model: "PaddleOCR-VL-1.6",
+    hasAccessToken: true,
+  }
+};
+assert.equal(decodeOcrProviderConfiguration(providers), providers);
+assert.throws(
+  () => decodeOcrProviderConfiguration({ ...providers, activeProvider: "unknown" }),
+  /activeProvider/,
+);
+assert.throws(
+  () =>
+    decodeOcrProviderConfiguration({
+      ...providers,
+      paddleOcr: { ...providers.paddleOcr, model: "PP-OCRv5" },
+    }),
+  /paddleOcr\.model/,
 );
 
 const progress = {

@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod ocr_offline;
+mod ocr_provider;
 mod office;
 mod quick_ocr;
 mod system_math_glyphs;
@@ -423,6 +424,7 @@ pub(crate) struct OcrState {
     cancel_generation: Arc<AtomicU64>,
     runtime_status: Arc<Mutex<Option<OcrRuntimeStatus>>>,
     events: OcrEventBus,
+    providers: ocr_provider::OcrProviderState,
 }
 
 impl Default for OcrState {
@@ -433,12 +435,22 @@ impl Default for OcrState {
             cancel_generation: Arc::new(AtomicU64::new(0)),
             runtime_status: Arc::new(Mutex::new(None)),
             events: OcrEventBus::default(),
+            providers: ocr_provider::OcrProviderState::default(),
         }
     }
 }
 
 fn is_final_ocr_state_owner(worker: &Arc<Mutex<Option<OcrWorker>>>) -> bool {
     Arc::strong_count(worker) == 1
+}
+
+async fn wait_for_ocr_cancellation(generation: Arc<AtomicU64>, expected: u64) {
+    loop {
+        if generation.load(Ordering::SeqCst) != expected {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
 }
 
 impl Drop for OcrState {
@@ -454,6 +466,25 @@ impl Drop for OcrState {
 }
 
 impl OcrState {
+    pub(crate) fn provider_configuration(
+        &self,
+        app: &AppHandle,
+    ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+        self.providers.configuration(app)
+    }
+
+    pub(crate) fn save_provider_configuration(
+        &self,
+        app: &AppHandle,
+        configuration: ocr_provider::OcrProviderConfigurationUpdate,
+    ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+        self.providers.save_configuration(app, configuration)
+    }
+
+    pub(crate) fn active_provider(&self, app: &AppHandle) -> Result<String, String> {
+        self.providers.active_provider(app)
+    }
+
     pub(crate) async fn runtime_status(
         &self,
         app: AppHandle,
@@ -493,6 +524,26 @@ impl OcrState {
         app: AppHandle,
         request: OcrImageRequest,
     ) -> Result<OcrRecognitionResult, String> {
+        let provider = self.providers.active_provider(&app)?;
+        if provider == ocr_provider::LOCAL_PROVIDER {
+            return self.recognize_local(app, request).await;
+        }
+
+        let expected_generation = self.cancel_generation.load(Ordering::SeqCst);
+        let cancellation_generation = self.cancel_generation.clone();
+        tokio::select! {
+            result = self.providers.recognize_remote(&app, &request) => result,
+            _ = wait_for_ocr_cancellation(cancellation_generation, expected_generation) => {
+                Err(OCR_CANCELLED.to_string())
+            }
+        }
+    }
+
+    async fn recognize_local(
+        &self,
+        app: AppHandle,
+        request: OcrImageRequest,
+    ) -> Result<OcrRecognitionResult, String> {
         let worker = self.worker.clone();
         let worker_pid = self.worker_pid.clone();
         let cancel_generation = self.cancel_generation.clone();
@@ -512,6 +563,9 @@ impl OcrState {
     }
 
     pub(crate) async fn prewarm_model(&self, app: AppHandle, model: String) -> Result<(), String> {
+        if self.active_provider(&app)? != ocr_provider::LOCAL_PROVIDER {
+            return Ok(());
+        }
         let worker = self.worker.clone();
         let worker_pid = self.worker_pid.clone();
         let runtime_status = self.runtime_status.clone();
@@ -524,6 +578,14 @@ impl OcrState {
 
     pub(crate) fn cancel(&self, app: &AppHandle) -> Result<(), String> {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
+        if self
+            .providers
+            .active_provider(app)
+            .unwrap_or_else(|_| ocr_provider::LOCAL_PROVIDER.to_string())
+            != ocr_provider::LOCAL_PROVIDER
+        {
+            return Ok(());
+        }
         terminate_worker_process(&self.worker_pid)?;
         cleanup_worker_temp(&runtime_paths(app)?)
     }
@@ -769,6 +831,7 @@ struct OcrFormulaResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrRecognitionResult {
+    provider: String,
     model: String,
     elapsed_ms: u64,
     processed_width: u32,
@@ -1532,6 +1595,7 @@ fn run_recognition(
     }
 
     Ok(OcrRecognitionResult {
+        provider: "local".to_string(),
         model: response.model.unwrap_or_else(|| request.model.clone()),
         elapsed_ms: response.elapsed_ms.unwrap_or_default(),
         processed_width: response.processed_width.unwrap_or_default(),
@@ -1647,6 +1711,23 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
         let _ = fs::remove_file(&temporary);
     }
     write_result
+}
+
+#[tauri::command]
+fn get_ocr_provider_configuration(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+    state.provider_configuration(&app)
+}
+
+#[tauri::command]
+fn save_ocr_provider_configuration(
+    app: AppHandle,
+    state: State<'_, OcrState>,
+    configuration: ocr_provider::OcrProviderConfigurationUpdate,
+) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
+    state.save_provider_configuration(&app, configuration)
 }
 
 #[tauri::command]
@@ -1912,6 +1993,8 @@ pub fn run() {
             switch_main_window_mode,
             system_math_glyphs::probe_macos_math_fonts,
             system_math_glyphs::extract_macos_math_glyph,
+            get_ocr_provider_configuration,
+            save_ocr_provider_configuration,
             get_ocr_runtime_status,
             install_ocr_runtime,
             recognize_formula_image,

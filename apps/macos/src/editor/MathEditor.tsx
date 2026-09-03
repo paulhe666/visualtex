@@ -109,6 +109,7 @@ import {
   type FormulaLetterFont,
 } from "./formulaFontPreferences";
 import {
+  hasVisualTexAlignmentMarker,
   usesExplicitAlignmentPoints,
   VISUALTEX_ALIGNMENT_MARKER_CLASS,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
@@ -8987,13 +8988,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
     };
 
-    const normalizeInsertedLatex = (latex: string) =>
+    const normalizeInsertedFormulaLines = (latex: string) =>
       latex
         .replace(/\r\n?/g, "\n")
         .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .join("\\quad ");
+        .map((line) => normalizeChineseLatex(line.trim()))
+        .filter(Boolean);
+
+    const normalizeInsertedLatex = (latex: string) =>
+      normalizeInsertedFormulaLines(latex).join("\\quad ");
 
     const getSelectionMap = (): Record<string, MathSelectionSnapshot> =>
       Object.fromEntries(
@@ -9277,14 +9280,141 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         attempt();
       });
 
+    const insertMultipleLatexRowsAt = (
+      target: MathEditorInsertionTarget,
+      values: readonly string[],
+      source: FormulaEditSource,
+    ): boolean => {
+      if (values.length < 2) return false;
+      const targetIndex = linesRef.current.findIndex(
+        (line) => line.id === target.lineId,
+      );
+      if (targetIndex < 0) return false;
+      const field = fieldRefs.current.get(target.lineId);
+      if (!field?.isConnected) return false;
+
+      const selection = clampSelection(
+        {
+          ranges: target.ranges.length
+            ? target.ranges
+            : [[field.lastOffset, field.lastOffset]],
+          direction: target.direction,
+        },
+        field.lastOffset,
+      );
+      historyManager.commitPendingTransaction();
+      const before = getEditorDocumentSnapshot(getSelectionMap());
+      setActiveLine(target.lineId);
+      field.focus();
+
+      suppressedHistoryLineIdRef.current = target.lineId;
+      let inserted = false;
+      try {
+        field.selection = selection;
+        inserted = Boolean(
+          field.insert(values[0], {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after",
+            focus: true,
+            scrollIntoView: false,
+          }),
+        );
+        if (!inserted) return false;
+        const normalized = normalizeChineseLatex(field.value);
+        if (normalized !== field.value) {
+          field.setValue(normalized, { silenceNotifications: true });
+        }
+      } finally {
+        suppressedHistoryLineIdRef.current = null;
+      }
+      if (!inserted) return false;
+
+      const firstLatex = normalizeChineseLatex(field.value);
+      const firstSelection = captureSelection(field);
+      const currentLines = useEditorStore.getState().lines;
+      const currentTargetIndex = currentLines.findIndex(
+        (line) => line.id === target.lineId,
+      );
+      if (currentTargetIndex < 0) return false;
+      const additionalLines = values.slice(1).map((value) => createFormulaLine(value));
+      const nextLines = currentLines.map((line) =>
+        line.id === target.lineId ? { ...line, latex: firstLatex } : { ...line },
+      );
+      nextLines.splice(currentTargetIndex + 1, 0, ...additionalLines);
+      const lastLine = additionalLines[additionalLines.length - 1];
+      const lastSelection: MathSelectionSnapshot = {
+        ranges: [[Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]],
+        direction: "none",
+      };
+      const after: ReplaceDocumentEntry["after"] = {
+        title: before.title,
+        lines: nextLines,
+        activeLineId: lastLine.id,
+        formulaAlignment: before.formulaAlignment,
+        selectionByLineId: {
+          ...before.selectionByLineId,
+          [target.lineId]: firstSelection,
+          [lastLine.id]: lastSelection,
+        },
+      };
+
+      flushSync(() => useEditorStore.getState().replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      field.resetUndo();
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: source === "paste" ? "paste-multi-line" : "ocr",
+        timestamp: Date.now(),
+      });
+      setQuery("");
+      selectSuggestionIndex(0);
+      focusLine(lastLine.id, {
+        latex: lastLine.latex,
+        moveToEnd: true,
+      });
+      return true;
+    };
+
+    const prepareOcrAlignmentFormat = (
+      values: readonly string[],
+      source: FormulaEditSource,
+    ) => {
+      if (
+        source === "ocr" &&
+        values.some((value) => hasVisualTexAlignmentMarker(value))
+      ) {
+        useEditorStore.getState().setLatexCodeFormat("aligned");
+      }
+    };
+
     const insertLatex = (
       latex: string,
       source: FormulaEditSource = "ocr",
     ) => {
-      const value = normalizeInsertedLatex(latex);
-      if (!value) return;
+      const values = normalizeInsertedFormulaLines(latex);
+      if (!values.length) return;
+      prepareOcrAlignmentFormat(values, source);
       const target = resolveTargetField();
       if (!target) return;
+      if (values.length > 1) {
+        const selection = captureSelection(target.field);
+        insertMultipleLatexRowsAt(
+          {
+            lineId: target.lineId,
+            ranges: selection.ranges,
+            direction: selection.direction,
+          },
+          values,
+          source,
+        );
+        return;
+      }
+
+      const value = values[0];
       const { lineId, field } = target;
       setActiveLine(lineId);
       field.focus();
@@ -9316,8 +9446,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       latex: string,
       source: FormulaEditSource = "ocr",
     ): boolean => {
-      const value = normalizeInsertedLatex(latex);
-      if (!value) return false;
+      const values = normalizeInsertedFormulaLines(latex);
+      if (!values.length) return false;
+      prepareOcrAlignmentFormat(values, source);
+      if (values.length > 1) {
+        return insertMultipleLatexRowsAt(target, values, source);
+      }
+      const value = values[0];
       if (!linesRef.current.some((line) => line.id === target.lineId)) {
         return false;
       }
@@ -9363,7 +9498,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
     const appendLatex = (
       latex: string,
-      _source: FormulaEditSource = "ocr",
+      source: FormulaEditSource = "ocr",
     ) => {
       const values = latex
         .replace(/\r\n?/g, "\n")
@@ -9371,6 +9506,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         .map((line) => normalizeChineseLatex(line.trim()))
         .filter(Boolean);
       if (!values.length) return;
+      prepareOcrAlignmentFormat(values, source);
 
       historyManager.commitPendingTransaction();
       const before = getEditorDocumentSnapshot(getSelectionMap());

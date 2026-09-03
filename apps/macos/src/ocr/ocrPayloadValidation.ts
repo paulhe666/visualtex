@@ -1,5 +1,6 @@
 import type {
   OcrInstallProgress,
+  OcrProviderConfiguration,
   OcrRecognitionProgress,
   OcrRecognitionResult,
   OcrRuntimeStatus,
@@ -11,6 +12,17 @@ const OCR_MODEL_NAMES = new Set([
   "PP-FormulaNet_plus-S",
   "PP-FormulaNet_plus-M",
   "PP-FormulaNet_plus-L",
+]);
+const OCR_PROVIDER_IDS = new Set([
+  "local",
+  "openai-compatible",
+  "ollama",
+  "mathpix",
+  "paddleocr",
+]);
+const PADDLE_OCR_API_MODELS = new Set([
+  "PaddleOCR-VL-1.6",
+  "PP-StructureV3",
 ]);
 
 function invalid(path: string, expectation: string): never {
@@ -66,6 +78,58 @@ function stringArray(value: unknown, path: string) {
   return value as string[];
 }
 
+export function decodeOcrProviderConfiguration(
+  value: unknown,
+): OcrProviderConfiguration {
+  const config = record(value, "ocrProviderConfiguration");
+  if (
+    typeof config.activeProvider !== "string" ||
+    !OCR_PROVIDER_IDS.has(config.activeProvider)
+  ) {
+    invalid("ocrProviderConfiguration.activeProvider", "a supported OCR provider id");
+  }
+  const openAi = record(
+    config.openAiCompatible,
+    "ocrProviderConfiguration.openAiCompatible",
+  );
+  if (openAi.protocol !== "responses" && openAi.protocol !== "chat-completions") {
+    invalid(
+      "ocrProviderConfiguration.openAiCompatible.protocol",
+      '"responses" or "chat-completions"',
+    );
+  }
+  stringValue(openAi.baseUrl, "ocrProviderConfiguration.openAiCompatible.baseUrl");
+  stringValue(openAi.model, "ocrProviderConfiguration.openAiCompatible.model");
+  stringValue(openAi.prompt, "ocrProviderConfiguration.openAiCompatible.prompt");
+  booleanValue(openAi.hasApiKey, "ocrProviderConfiguration.openAiCompatible.hasApiKey");
+
+  const ollama = record(config.ollama, "ocrProviderConfiguration.ollama");
+  stringValue(ollama.baseUrl, "ocrProviderConfiguration.ollama.baseUrl");
+  stringValue(ollama.model, "ocrProviderConfiguration.ollama.model");
+  stringValue(ollama.prompt, "ocrProviderConfiguration.ollama.prompt");
+
+  const mathpix = record(config.mathpix, "ocrProviderConfiguration.mathpix");
+  stringValue(mathpix.baseUrl, "ocrProviderConfiguration.mathpix.baseUrl");
+  stringValue(mathpix.appId, "ocrProviderConfiguration.mathpix.appId");
+  booleanValue(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
+
+  const paddleOcr = record(config.paddleOcr, "ocrProviderConfiguration.paddleOcr");
+  if (
+    typeof paddleOcr.model !== "string" ||
+    !PADDLE_OCR_API_MODELS.has(paddleOcr.model)
+  ) {
+    invalid(
+      "ocrProviderConfiguration.paddleOcr.model",
+      "a supported PaddleOCR AI Studio model",
+    );
+  }
+  booleanValue(
+    paddleOcr.hasAccessToken,
+    "ocrProviderConfiguration.paddleOcr.hasAccessToken",
+  );
+  return config as unknown as OcrProviderConfiguration;
+}
+
 export function decodeOcrRuntimeStatus(value: unknown): OcrRuntimeStatus {
   const status = record(value, "ocrRuntimeStatus");
   booleanValue(status.installed, "ocrRuntimeStatus.installed");
@@ -86,6 +150,7 @@ export function decodeOcrRuntimeStatus(value: unknown): OcrRuntimeStatus {
 
 export function decodeOcrRecognitionResult(value: unknown): OcrRecognitionResult {
   const result = record(value, "ocrRecognitionResult");
+  nonEmptyString(result.provider, "ocrRecognitionResult.provider");
   stringValue(result.model, "ocrRecognitionResult.model");
   nonNegativeNumber(result.elapsedMs, "ocrRecognitionResult.elapsedMs");
   nonNegativeNumber(result.processedWidth, "ocrRecognitionResult.processedWidth");

@@ -62,11 +62,11 @@ export const latexCodeFormats: readonly LatexCodeFormatDefinition[] = [
     group: "single",
     titleZh: "行内公式 · 文字在公式外",
     titleEn: "Inline formula · text outside math",
-    hint: "文字$$x^2$$文字",
+    hint: "文字$x^2$文字",
     descriptionZh:
-      "顶层文字直接放在公式环境外，公式片段使用 $$...$$；公式结构内的中文仍保留 \\text{}",
+      "顶层文字直接放在公式环境外，公式片段使用 $...$；上下标等公式结构中的中文仍保留 \\text{}",
     descriptionEn:
-      "Keep top-level text outside math and wrap formula fragments with $$...$$",
+      "Keep top-level text outside math and wrap formula fragments with $...$; Chinese inside scripts and other math structures remains in \\text{}",
   },
   {
     id: "inline-paren",
@@ -424,22 +424,16 @@ function splitTopLevelTextSegments(latex: string): InlineTextSegment[] {
   return segments;
 }
 
-function formatInlineTextWithDelimiter(latex: string, delimiter: "$" | "$$"): string {
-  return splitTopLevelTextSegments(latex)
+function formatInlineTextDollar(latex: string): string {
+  const segments = splitTopLevelTextSegments(latex);
+  if (!segments.length) return "";
+  return segments
     .map((segment) => {
       if (segment.kind === "text") return segment.value;
       const math = segment.value.trim();
-      return math ? `${delimiter}${math}${delimiter}` : "";
+      return math ? `$${math}$` : "";
     })
     .join("");
-}
-
-function formatInlineTextDoubleDollar(latex: string): string {
-  return formatInlineTextWithDelimiter(latex, "$$");
-}
-
-function formatInlineTextDollar(latex: string): string {
-  return formatInlineTextWithDelimiter(latex, "$");
 }
 
 export function formatFormulaLines(
@@ -483,7 +477,7 @@ export function formatLatexLines(
     case "inline-dollar":
       return plainLines.map((line) => `$${line}$`).join("\n");
     case "inline-text-double-dollar":
-      return plainLines.map(formatInlineTextDoubleDollar).join("\n");
+      return plainLines.map(formatInlineTextDollar).join("\n");
     case "inline-paren":
       return plainLines.map((line) => `\\(${line}\\)`).join("\n");
     case "display-dollar":
@@ -624,7 +618,38 @@ function escapeOutsideTextForMath(value: string): string {
   return value.replace(/(?<!\\)([{}])/g, "\\$1");
 }
 
-function parseInlineTextDoubleDollarLine(line: string): string | null {
+function findUnescapedDollar(value: string, from: number): number {
+  for (let index = Math.max(0, from); index < value.length; index += 1) {
+    if (value[index] !== "$" || isEscaped(value, index)) continue;
+    return index;
+  }
+  return -1;
+}
+
+function parseInlineTextSingleDollarLine(line: string): string | null {
+  let result = "";
+  let cursor = 0;
+  while (cursor < line.length) {
+    const opening = findUnescapedDollar(line, cursor);
+    if (opening < 0) {
+      const text = line.slice(cursor);
+      if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
+      break;
+    }
+    if (line[opening + 1] === "$" && !isEscaped(line, opening + 1)) return null;
+    const text = line.slice(cursor, opening);
+    if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
+    const closing = findUnescapedDollar(line, opening + 1);
+    if (closing < 0) return null;
+    const math = line.slice(opening + 1, closing).trim();
+    if (!math) return null;
+    result += math;
+    cursor = closing + 1;
+  }
+  return result || "";
+}
+
+function parseInlineTextLegacyDoubleDollarLine(line: string): string | null {
   let result = "";
   let cursor = 0;
   while (cursor < line.length) {
@@ -646,51 +671,21 @@ function parseInlineTextDoubleDollarLine(line: string): string | null {
   return result || "";
 }
 
-function parseInlineTextDoubleDollarLines(source: string): string[] {
+function parseInlineTextDollarLine(line: string): string | null {
+  const single = parseInlineTextSingleDollarLine(line);
+  if (single !== null) return single;
+  return parseInlineTextLegacyDoubleDollarLine(line);
+}
+
+function parseInlineTextDollarLines(source: string): string[] {
   const values: string[] = [];
   for (const line of source.split("\n")) {
     if (!line.trim()) continue;
-    const value = parseInlineTextDoubleDollarLine(line);
+    const value = parseInlineTextDollarLine(line);
     if (value === null) return [];
     values.push(value);
   }
   return values;
-}
-
-function findSingleDollar(source: string, start: number): number {
-  for (let index = start; index < source.length; index += 1) {
-    if (
-      source[index] === "$" &&
-      !isEscaped(source, index) &&
-      source[index - 1] !== "$" &&
-      source[index + 1] !== "$"
-    ) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function parseInlineTextDollarLine(line: string): string | null {
-  let result = "";
-  let cursor = 0;
-  while (cursor < line.length) {
-    const opening = findSingleDollar(line, cursor);
-    if (opening < 0) {
-      const text = line.slice(cursor);
-      if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
-      break;
-    }
-    const text = line.slice(cursor, opening);
-    if (text) result += `\\text{${escapeOutsideTextForMath(text)}}`;
-    const closing = findSingleDollar(line, opening + 1);
-    if (closing < 0) return null;
-    const math = line.slice(opening + 1, closing).trim();
-    if (!math) return null;
-    result += math;
-    cursor = closing + 1;
-  }
-  return result;
 }
 
 interface MixedLatexRow {
@@ -739,7 +734,7 @@ function parseByFormat(source: string, format: LatexCodeFormat): string[] {
     case "inline-dollar":
       return parseInlineDollarLines(source);
     case "inline-text-double-dollar":
-      return parseInlineTextDoubleDollarLines(source);
+      return parseInlineTextDollarLines(source);
     case "inline-paren":
       return parseWrappedBlocks(source, /\\\(([\s\S]*?)\\\)/g);
     case "display-dollar":
@@ -821,7 +816,7 @@ function parseByFormatStrict(
       return source
         .split("\n")
         .filter((line) => line.trim())
-        .every((line) => parseInlineTextDoubleDollarLine(line) !== null)
+        .every((line) => parseInlineTextDollarLine(line) !== null)
         ? values
         : null;
     case "inline-paren":
