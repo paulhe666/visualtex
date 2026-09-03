@@ -6729,6 +6729,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines.find((line) => line.id === activeLineId)?.id ?? lines[0]?.id ?? null;
     activeLineIdRef.current = resolvedActiveLineId;
 
+    const resolveExplicitAlignmentVisualAnchor = (marker: HTMLElement) => {
+      const markerBounds = marker.getBoundingClientRect();
+      const parent = marker.parentElement;
+      if (!parent) return markerBounds.left;
+
+      for (
+        let sibling = marker.nextElementSibling;
+        sibling;
+        sibling = sibling.nextElementSibling
+      ) {
+        const candidates: Element[] = sibling.hasAttribute("data-atom-id")
+          ? [sibling, ...sibling.querySelectorAll("[data-atom-id]")]
+          : [...sibling.querySelectorAll("[data-atom-id]")];
+        for (const candidate of candidates) {
+          if (!(candidate instanceof HTMLElement)) continue;
+          const bounds = candidate.getBoundingClientRect();
+          if (bounds.width <= 0.01 || bounds.height <= 0.01) continue;
+          return bounds.left;
+        }
+      }
+
+      return markerBounds.left;
+    };
+
     const refreshExplicitAlignmentLayout = () => {
       const registered = Array.from(fieldRefs.current.values());
       for (const field of registered) {
@@ -6747,14 +6771,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         );
         if (!host || !marker) return [];
         const fieldBounds = field.getBoundingClientRect();
-        const markerBounds = marker.getBoundingClientRect();
+        const visualAnchorLeft = resolveExplicitAlignmentVisualAnchor(marker);
         return [
           {
             field,
             host,
-            anchorOffset: markerBounds.left - fieldBounds.left,
-            leftExtent: markerBounds.left - fieldBounds.left,
-            rightExtent: fieldBounds.right - markerBounds.left,
+            anchorOffset: visualAnchorLeft - fieldBounds.left,
+            leftExtent: visualAnchorLeft - fieldBounds.left,
+            rightExtent: fieldBounds.right - visualAnchorLeft,
           },
         ];
       });

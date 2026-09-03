@@ -342,25 +342,34 @@ async function main() {
     })()`);
     for (const character of "a") await typeKey(character, "KeyA");
     await typeKey("&", "Digit7", "&", 8);
-    await typeKey("=", "Equal", "=");
+    await client.send("Input.insertText", { text: "=" });
+    await sleep(40);
     await typeKey("b", "KeyB");
     await typeKey("Enter", "Enter", "\r");
     for (const character of "longvariable") {
       await typeKey(character, `Key${character.toUpperCase()}`);
     }
     await typeKey("&", "Digit7", "&", 8);
-    await typeKey("=", "Equal", "=");
+    await client.send("Input.insertText", { text: "=" });
+    await sleep(40);
     await typeKey("d", "KeyD");
     await sleep(160);
 
     const alignProbe = await evaluate(`(() => {
       const fields = Array.from(document.querySelectorAll(".formula-line math-field"))
         .filter((field) => field.shadowRoot?.querySelector('.visualtex-align-marker'));
+      const visualAnchor = (field) => {
+        for (let position = 0; position <= field.lastOffset; position += 1) {
+          const info = field.getElementInfo(position);
+          if (info?.latex?.trim() === "=" && info.bounds && info.depth === 0) {
+            return info.bounds.left;
+          }
+        }
+        return null;
+      };
       return {
         values: fields.map((field) => field.value),
-        anchors: fields.map((field) =>
-          field.shadowRoot?.querySelector('.visualtex-align-marker')?.getBoundingClientRect().left ?? null
-        ),
+        anchors: fields.map(visualAnchor),
       };
     })()`);
     assert.equal(alignProbe.values.length, 2, "align probe did not create two marked formula rows");
@@ -373,14 +382,266 @@ async function main() {
     }
     assert.ok(
       alignProbe.anchors.every((value) => typeof value === "number"),
-      `visual alignment marker was missing: ${JSON.stringify(alignProbe)}`,
+      `visible alignment atom was missing: ${JSON.stringify(alignProbe)}`,
     );
     assert.ok(
       Math.abs(alignProbe.anchors[0] - alignProbe.anchors[1]) <= 1.5,
       `explicit align anchors were not visually aligned: ${JSON.stringify(alignProbe.anchors)}`,
     );
 
-    console.log("Align/cases browser regression passed");
+    const currentAlignmentLines = [
+      String.raw`\begin{matrix}\end{matrix}a\class{visualtex-align-marker}{\kern0pt}=b`,
+      String.raw`\class{visualtex-align-marker}{\kern0pt}=wer`,
+    ];
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        editorLayout: "classic",
+        sourceOpen: true,
+        latexCodeFormat: "align",
+        formulaAlignment: "left",
+        zoom: 0.45,
+        lines: [
+          { id: "align-current-1", latex: ${JSON.stringify(currentAlignmentLines[0])}, mode: "display" },
+          { id: "align-current-2", latex: ${JSON.stringify(currentAlignmentLines[1])}, mode: "display" },
+        ],
+        activeLineId: "align-current-2",
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+      localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+      location.reload();
+    })()`);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelectorAll(".formula-line math-field").length === 2
+        ? resolve(true)
+        : setTimeout(done, 30);
+      done();
+    })`);
+    await sleep(320);
+
+    const currentAlignProbe = await evaluate(`(() => {
+      const fields = [...document.querySelectorAll(".formula-line math-field")];
+      const entries = fields.map((field) => {
+        const marker = field.shadowRoot?.querySelector(".visualtex-align-marker");
+        const markerRect = marker?.getBoundingClientRect() ?? null;
+        const leafEquals = [...(field.shadowRoot?.querySelectorAll("*") ?? [])]
+          .filter((node) => node.children.length === 0 && node.textContent?.trim() === "=")
+          .map((node) => {
+            const rect = node.getBoundingClientRect();
+            return {
+              className: node.className,
+              left: rect.left,
+              right: rect.right,
+              center: (rect.left + rect.right) / 2,
+              width: rect.width,
+            };
+          })
+          .filter((entry) => entry.width > 0);
+        const equalInfos = [];
+        for (let position = 0; position <= field.lastOffset; position += 1) {
+          const info = field.getElementInfo(position);
+          if (info?.latex?.trim() !== "=" || !info.bounds) continue;
+          equalInfos.push({
+            position,
+            latex: info.latex,
+            left: info.bounds.left,
+            right: info.bounds.right,
+            center: (info.bounds.left + info.bounds.right) / 2,
+            width: info.bounds.width,
+            depth: info.depth,
+          });
+        }
+        const fieldRect = field.getBoundingClientRect();
+        return {
+          value: field.value,
+          fieldLeft: fieldRect.left,
+          fieldWidth: fieldRect.width,
+          marginLeft: getComputedStyle(field).marginLeft,
+          markerLeft: markerRect?.left ?? null,
+          markerWidth: markerRect?.width ?? null,
+          leafEquals,
+          equalInfos,
+        };
+      });
+      const finite = (values) => values.filter(Number.isFinite);
+      const spread = (values) => {
+        const filtered = finite(values);
+        return filtered.length ? Math.max(...filtered) - Math.min(...filtered) : null;
+      };
+      return {
+        entries,
+        markerSpread: spread(entries.map((entry) => entry.markerLeft)),
+        equalLeafLeftSpread: spread(entries.map((entry) => entry.leafEquals[0]?.left)),
+        equalLeafCenterSpread: spread(entries.map((entry) => entry.leafEquals[0]?.center)),
+        equalInfoLeftSpread: spread(entries.map((entry) => entry.equalInfos[0]?.left)),
+        equalInfoCenterSpread: spread(entries.map((entry) => entry.equalInfos[0]?.center)),
+      };
+    })()`);
+    assert.equal(currentAlignProbe.entries.length, 2, JSON.stringify(currentAlignProbe));
+    assert.ok(
+      typeof currentAlignProbe.equalLeafLeftSpread === "number" &&
+        currentAlignProbe.equalLeafLeftSpread <= 0.75,
+      `visible equal glyphs were not aligned: ${JSON.stringify(currentAlignProbe)}`,
+    );
+    assert.ok(
+      typeof currentAlignProbe.equalInfoLeftSpread === "number" &&
+        currentAlignProbe.equalInfoLeftSpread <= 0.75,
+      `MathLive equal atom bounds were not aligned: ${JSON.stringify(currentAlignProbe)}`,
+    );
+
+    const markerLatex = String.raw`\class{visualtex-align-marker}{\kern0pt}`;
+    const relationCases = [
+      { name: "equals", token: "=", glyph: "=" },
+      { name: "less-equal", token: String.raw`\le`, glyph: "≤" },
+      { name: "approx", token: String.raw`\approx`, glyph: "≈" },
+      { name: "arrow", token: String.raw`\to`, glyph: "→" },
+      { name: "plus", token: "+", glyph: "+" },
+    ];
+    const relationLines = relationCases.flatMap((entry, index) => [
+      {
+        id: `align-relation-${index}-left`,
+        latex: `a${markerLatex}${entry.token}b`,
+        mode: "display",
+      },
+      {
+        id: `align-relation-${index}-start`,
+        latex: `${markerLatex}${entry.token}c`,
+        mode: "display",
+      },
+    ]);
+    await evaluate(`(() => {
+      const storageKey = "visualtex-editor";
+      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      persisted.state = {
+        ...(persisted.state || {}),
+        editorLayout: "classic",
+        sourceOpen: true,
+        latexCodeFormat: "align",
+        formulaAlignment: "left",
+        zoom: 0.45,
+        lines: ${JSON.stringify(relationLines)},
+        activeLineId: ${JSON.stringify(relationLines.at(-1)?.id)},
+      };
+      localStorage.setItem(storageKey, JSON.stringify(persisted));
+      localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+      location.reload();
+    })()`);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelectorAll(".formula-line math-field").length === ${relationLines.length}
+        ? resolve(true)
+        : setTimeout(done, 30);
+      done();
+    })`);
+    await sleep(320);
+
+    const relationProbe = await evaluate(`(() => {
+      const relationCases = ${JSON.stringify(relationCases)};
+      const fields = [...document.querySelectorAll(".formula-line math-field")];
+      return relationCases.map((entry, index) => {
+        const pair = fields.slice(index * 2, index * 2 + 2);
+        const atomLefts = pair.map((field) => {
+          const candidates = [];
+          for (let position = 0; position <= field.lastOffset; position += 1) {
+            const info = field.getElementInfo(position);
+            if (!info?.bounds || info.depth !== 0 || info.bounds.width <= 0) continue;
+            candidates.push({
+              position,
+              latex: info.latex?.trim() ?? "",
+              left: info.bounds.left,
+              width: info.bounds.width,
+            });
+          }
+          const exact = candidates.find((candidate) => candidate.latex === entry.token);
+          if (exact) return exact.left;
+          const markerIndex = field.value.indexOf("visualtex-align-marker");
+          if (markerIndex < 0) return null;
+          const relationCandidate = candidates.find((candidate) =>
+            candidate.latex === "=" ||
+            candidate.latex === "+" ||
+            candidate.latex.includes(entry.token.replace(/^\\\\/, ""))
+          );
+          return relationCandidate?.left ?? null;
+        });
+        const finite = atomLefts.filter(Number.isFinite);
+        return {
+          name: entry.name,
+          token: entry.token,
+          atomLefts,
+          spread: finite.length === 2 ? Math.abs(finite[0] - finite[1]) : null,
+        };
+      });
+    })()`);
+    for (const probe of relationProbe) {
+      assert.ok(
+        typeof probe.spread === "number" && probe.spread <= 0.75,
+        `visible alignment token was not aligned: ${JSON.stringify(probe)}`,
+      );
+    }
+
+    const alignmentModeResults = [];
+    for (const alignment of ["center", "right"]) {
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          editorLayout: "classic",
+          sourceOpen: true,
+          latexCodeFormat: "align",
+          formulaAlignment: ${JSON.stringify(alignment)},
+          zoom: 0.45,
+          lines: [
+            { id: "align-mode-1", latex: ${JSON.stringify(currentAlignmentLines[0])}, mode: "display" },
+            { id: "align-mode-2", latex: ${JSON.stringify(currentAlignmentLines[1])}, mode: "display" },
+          ],
+          activeLineId: "align-mode-2",
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+        localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+        location.reload();
+      })()`);
+      await evaluate(`new Promise((resolve) => {
+        const done = () => document.querySelectorAll(".formula-line math-field").length === 2
+          ? resolve(true)
+          : setTimeout(done, 30);
+        done();
+      })`);
+      await sleep(260);
+      const modeProbe = await evaluate(`(() => {
+        const fields = [...document.querySelectorAll(".formula-line math-field")];
+        const lefts = fields.map((field) => {
+          for (let position = 0; position <= field.lastOffset; position += 1) {
+            const info = field.getElementInfo(position);
+            if (info?.latex?.trim() === "=" && info.bounds && info.depth === 0) {
+              return info.bounds.left;
+            }
+          }
+          return null;
+        });
+        const finite = lefts.filter(Number.isFinite);
+        return {
+          alignment: ${JSON.stringify(alignment)},
+          lefts,
+          spread: finite.length === 2 ? Math.abs(finite[0] - finite[1]) : null,
+        };
+      })()`);
+      assert.ok(
+        typeof modeProbe.spread === "number" && modeProbe.spread <= 0.75,
+        `visible equal glyphs were not aligned in ${alignment} mode: ${JSON.stringify(modeProbe)}`,
+      );
+      alignmentModeResults.push(modeProbe);
+    }
+
+    console.log(
+      "Align/cases browser regression passed",
+      JSON.stringify({
+        currentEqualSpread: currentAlignProbe.equalLeafLeftSpread,
+        relationProbe,
+        alignmentModeResults,
+      }),
+    );
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");

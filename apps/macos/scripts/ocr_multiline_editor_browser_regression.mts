@@ -222,17 +222,33 @@ async function main() {
         const fields = [...document.querySelectorAll('.formula-line math-field')];
         const entries = fields.map((field) => {
           const marker = field.shadowRoot?.querySelector('.visualtex-align-marker');
+          const markerLeft = marker?.getBoundingClientRect().left ?? null;
+          const equalCandidates = [];
+          for (let position = 0; position <= field.lastOffset; position += 1) {
+            const info = field.getElementInfo(position);
+            if (info?.latex?.trim() === '=' && info.bounds && info.depth === 0) {
+              equalCandidates.push(info.bounds.left);
+            }
+          }
+          const equalLeft = typeof markerLeft === 'number'
+            ? equalCandidates
+                .filter((left) => left >= markerLeft - 0.1)
+                .sort((a, b) => a - b)[0] ?? null
+            : null;
           return {
             value: field.value,
-            markerLeft: marker?.getBoundingClientRect().left ?? null,
+            markerLeft,
+            equalLeft,
           };
         });
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         const markerLefts = entries.map((entry) => entry.markerLeft).filter(Number.isFinite);
+        const equalLefts = entries.map((entry) => entry.equalLeft).filter(Number.isFinite);
         return {
           count: fields.length,
           entries,
           markerSpread: markerLefts.length ? Math.max(...markerLefts) - Math.min(...markerLefts) : null,
+          visualAnchorSpread: equalLefts.length ? Math.max(...equalLefts) - Math.min(...equalLefts) : null,
           latexCodeFormat: persisted?.state?.latexCodeFormat ?? null,
           calls: window.__visualtexOcrMockCalls || [],
         };
@@ -254,8 +270,8 @@ async function main() {
     );
     assert.equal(state.latexCodeFormat, "aligned", "OCR align did not switch the editor copy format to aligned");
     assert.ok(
-      typeof state.markerSpread === "number" && state.markerSpread <= 1.5,
-      `OCR-derived alignment anchors were not visually aligned: ${JSON.stringify(state)}`,
+      typeof state.visualAnchorSpread === "number" && state.visualAnchorSpread <= 0.75,
+      `OCR-derived visible alignment atoms were not aligned: ${JSON.stringify(state)}`,
     );
     assert.ok(
       state.calls.some((call: any) => call.command === "get_ocr_provider_configuration"),
@@ -271,7 +287,7 @@ async function main() {
     );
 
     console.log(
-      `macOS OCR multiline editor browser regression passed: rows=${state.count}, markerSpread=${state.markerSpread}px, provider=remote.`,
+      `macOS OCR multiline editor browser regression passed: rows=${state.count}, visualAnchorSpread=${state.visualAnchorSpread}px, provider=remote.`,
     );
   } finally {
     client?.close();
