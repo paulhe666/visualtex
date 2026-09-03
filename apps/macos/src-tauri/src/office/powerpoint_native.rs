@@ -1078,7 +1078,7 @@ pub fn start_double_click_monitor(
         let app = app.clone();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
-            std::thread::spawn(move || {
+            crate::spawn_background_task("visualtex-powerpoint-double-click", move || {
                 if crate::office::macos_offline::focus_open_office_editor(&app) {
                     return;
                 }
@@ -1107,7 +1107,7 @@ pub fn start_double_click_monitor(
                 bus.push_powerpoint_edit_selected(selection, formula_id);
             });
         } else if frontmost.as_deref() == Some(WORD_BUNDLE_ID) {
-            std::thread::spawn(move || {
+            crate::spawn_background_task("visualtex-word-double-click", move || {
                 // Word may execute its default picture action even when the
                 // wdFieldMacroButton or WindowBeforeDoubleClick route also opens
                 // VisualTeX. Resolve the selected image first and apply task-pane
@@ -1124,6 +1124,9 @@ pub fn start_double_click_monitor(
                     // Route that settled selection through the same strict VBA
                     // target resolver used by WindowBeforeDoubleClick. The VBA
                     // handler remains a no-op for ordinary Word content.
+                    if crate::office::macos_offline::focus_open_office_editor(&app) {
+                        return;
+                    }
                     if let Err(error) =
                         crate::office::macos_offline::run_double_click_edit_macro(
                             crate::office::sessions::OfficeHost::Word,
@@ -1138,11 +1141,18 @@ pub fn start_double_click_monitor(
                     return;
                 }
 
-                let pane_cleanup = std::thread::spawn(|| {
-                    close_word_picture_format_task_pane_with_retries();
-                });
+                let mut pane_cleanup = std::thread::Builder::new()
+                    .name("visualtex-word-pane-cleanup".to_string())
+                    .spawn(close_word_picture_format_task_pane_with_retries)
+                    .map_err(|error| {
+                        eprintln!("Unable to start Word picture-pane cleanup: {error}");
+                        error
+                    })
+                    .ok();
                 if crate::office::macos_offline::focus_open_office_editor(&app) {
-                    let _ = pane_cleanup.join();
+                    if let Some(handle) = pane_cleanup.take() {
+                        let _ = handle.join();
+                    }
                     return;
                 }
 
@@ -1155,7 +1165,9 @@ pub fn start_double_click_monitor(
                     for delay_ms in [35_u64, 55, 85] {
                         std::thread::sleep(Duration::from_millis(delay_ms));
                         if crate::office::macos_offline::focus_open_office_editor(&app) {
-                            let _ = pane_cleanup.join();
+                            if let Some(handle) = pane_cleanup.take() {
+                                let _ = handle.join();
+                            }
                             return;
                         }
                     }
@@ -1165,7 +1177,9 @@ pub fn start_double_click_monitor(
                 {
                     eprintln!("Unable to route the Word formula image double-click: {error}");
                 }
-                let _ = pane_cleanup.join();
+                if let Some(handle) = pane_cleanup.take() {
+                    let _ = handle.join();
+                }
                 let _ = crate::office::macos_offline::focus_open_office_editor(&app);
             });
         }

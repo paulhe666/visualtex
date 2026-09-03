@@ -1311,7 +1311,7 @@ expectIncludes(
 expectIncludes(rustRuntime, '("fontSizePt", format!', "PowerPoint dispatches must carry the resolved point size back to VBA");
 expectIncludes(rustRuntime, "metadata.font_size_pt = Some(geometry.font_size_pt)", "PowerPoint metadata must retain the resolved SVG point size");
 expectIncludes(wordAdapter, 'VTApplicationSupportRoot() & "/NativeDocuments/" & formulaId & ".docx"', "Word image-to-OMML conversion must resolve the same durable formula-scoped staging path");
-const handleOpenUrlStart = rustRuntime.indexOf("pub(crate) fn handle_open_url");
+const handleOpenUrlStart = rustRuntime.indexOf("fn handle_open_url(app");
 const handleOpenUrlEnd = rustRuntime.indexOf("fn decode_png", handleOpenUrlStart);
 const handleOpenUrlSource = rustRuntime.slice(handleOpenUrlStart, handleOpenUrlEnd);
 const documentImportWindowStart = rustRuntime.indexOf("fn open_document_import_window");
@@ -1324,6 +1324,45 @@ const documentImportWindowSource = rustRuntime.slice(
   documentImportWindowEnd,
 );
 expect(handleOpenUrlStart >= 0 && handleOpenUrlEnd > handleOpenUrlStart, "The native Office URL handler source must be discoverable");
+expectIncludes(
+  rustRuntime,
+  "pub(crate) fn handle_open_url_safely",
+  "Every native Office URL must cross the recoverable panic boundary",
+);
+expectIncludes(
+  rustRuntime,
+  "protect_office_open(|| handle_open_url(app, value))",
+  "A malformed Office formula must not unwind through an AppKit callback",
+);
+expectIncludes(
+  rustRuntime,
+  "EDITOR_OPEN_ERROR_FILE",
+  "A failed Office formula open must leave a bounded per-Session diagnostic",
+);
+expectIncludes(
+  appRuntime,
+  "handle_open_url_safely(app.handle(), url)",
+  "Cold Office formula failures must be isolated from Tauri setup",
+);
+expect(
+  !appRuntime.includes('.expect("error while building VisualTeX")'),
+  "Tauri setup errors must not become SIGABRT panics during didFinishLaunching",
+);
+expectIncludes(
+  appRuntime,
+  'spawn_background_task("visualtex-office-reopen"',
+  "A Reopen helper thread allocation failure must not abort the app",
+);
+expectIncludes(
+  nativeInteraction,
+  'spawn_background_task("visualtex-word-double-click"',
+  "The global Word double-click callback must not panic if a worker thread cannot start",
+);
+expectIncludes(
+  nativeInteraction,
+  'spawn_background_task("visualtex-powerpoint-double-click"',
+  "The global PowerPoint double-click callback must not panic if a worker thread cannot start",
+);
 expect(
   documentImportWindowStart >= 0 && documentImportWindowEnd > documentImportWindowStart,
   "The Word batch-import window source must be discoverable",
@@ -1498,7 +1537,8 @@ expectIncludes(nativeInteraction, "NSEvent::mouseLocation()", "The Word compatib
 expectIncludes(nativeInteraction, "selection.screen_bounds.contains(click_x, click_y)", "The Word compatibility branch must reject Ribbon or paragraph double-clicks outside the formula's real screen rectangle");
 expectIncludes(nativeInteraction, "VisualTeX_WriteSelectedDoubleClickScreenBounds", "The Word compatibility branch must obtain formula bounds through Word's GetPoint-backed VBA probe");
 expectIncludes(nativeInteraction, "run_word_image_double_click_edit_macro", "The Word compatibility branch must invoke the strict image-only VBA entry when an older bare InlineShape is double-clicked");
-expect(!nativeInteraction.includes("crate::office::sessions::OfficeHost::Word"), "The Tauri global monitor must never invoke the generic Word double-click macro and duplicate native OMML editing");
+expectIncludes(nativeInteraction, "crate::office::sessions::OfficeHost::Word", "The native monitor must retain the strict VBA fallback for a native Word OMath when WindowBeforeDoubleClick is unavailable");
+expectIncludes(wordAdapter, "VTNativeEditDispatchDebounced(formulaId)", "The VBA fallback and WindowBeforeDoubleClick must debounce duplicate native Word edit dispatches");
 expectIncludes(nativeInteraction, "run_double_click_edit_macro", "The native monitor must invoke the PPAM edit macro directly instead of depending on an Office.js poller");
 expectIncludes(nativeInteraction, "[25_u64, 35, 60, 100]", "PowerPoint double-click selection retries must stay within the reviewed 220 ms host-settling budget");
 expectIncludes(nativeInteraction, "[35_u64, 55, 85]", "Word's compatibility fallback must stay within the reviewed 175 ms wait budget");
@@ -1652,7 +1692,7 @@ expectIncludes(dialogApp, 'editorInstanceKey="resident-office-editor"', "Word an
 expect(!dialogApp.includes("editorInstanceKey={session.id}"), "A new Office Session must not destroy and remount the resident MathLive editor");
 expectIncludes(dialogApp, "const contentReadyDeadlineMs = origin + 5_000", "Cold MathLive mounting must use a bounded readiness deadline instead of a fixed frame count");
 expect(!dialogApp.includes("!contentMounted && frame < 12"), "The ready probe must not permanently stop after twelve animation frames");
-expectIncludes(dialogApp, "commitMacosOfflineOfficeSession(session.id, update)", "Native Apply must combine its final Session patch and Office commit into one Tauri round trip");
+expectIncludes(dialogApp, 'const update = await buildCurrentSessionUpdate("committing");\n        await commitMacosOfflineOfficeSession(', "Native Apply must combine its final Session patch and Office commit into one Tauri round trip");
 expectIncludes(dialogApp, "completeExportInFlightRef", "Apply must reuse an in-flight PNG export instead of starting duplicate rasterization");
 expectIncludes(dialogApp, "getCompleteExportResult(currentFingerprint, exportResult)", "Autosave must reuse the SVG export when producing its PNG compatibility result");
 expectIncludes(dialogApp, "await getCompleteExportResult(currentFingerprint)", "Apply must reuse the exact cached export for the current formula fingerprint");

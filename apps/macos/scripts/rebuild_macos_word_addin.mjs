@@ -1216,7 +1216,7 @@ function verifyBuiltVba(path) {
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
     "word-office-performance-20260801-r87",
-    "1.2.5",
+    "1.2.6",
   ];
   for (const value of required) {
     const utf8 = Buffer.from(value, "utf8");

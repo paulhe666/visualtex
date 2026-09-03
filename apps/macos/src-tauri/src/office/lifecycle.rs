@@ -54,7 +54,7 @@ pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState
     let install_token = ensure_companion_runtime(&paths)?;
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     let maintenance_store = session_store.clone();
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-session-cleanup", move || {
         // Give an initial URL activation priority over maintenance I/O. The
         // SessionStore lock would otherwise let a large expiry scan delay the
         // first formula import even though the scan itself was moved off setup.

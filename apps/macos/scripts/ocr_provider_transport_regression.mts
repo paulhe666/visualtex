@@ -3,19 +3,27 @@ import { readFileSync } from "node:fs";
 import {
   configureOcrTransport,
   getOcrProviderConfiguration,
+  listenOcrProviderConfigurationChanged,
   listenOcrRecognitionProgress,
   recognizeFormulaImage,
   saveOcrProviderConfiguration,
   type OcrProviderConfigurationUpdate,
   type OcrTransport,
 } from "../src/ocr/ocrService.ts";
+import {
+  activeOcrQuickSelectionId,
+  buildOcrQuickSelectionOptions,
+  createOcrProviderQuickUpdate,
+  parseOcrQuickSelection,
+  providerOcrSelectionId,
+} from "../src/ocr/ocrQuickSelection.ts";
 
 const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
-let progressHandler: ((event: {
+const eventHandlers = new Map<string, (event: {
   event: string;
   id: number;
   payload: unknown;
-}) => void) | undefined;
+}) => void>();
 const providerView = {
   activeProvider: "openai-compatible" as const,
   openAiCompatible: {
@@ -65,9 +73,9 @@ const transport: OcrTransport = {
     }
     throw new Error(`Unexpected command: ${command}`);
   },
-  async listen(_eventName, handler) {
-    progressHandler = handler;
-    return () => undefined;
+  async listen(eventName, handler) {
+    eventHandlers.set(eventName, handler);
+    return () => eventHandlers.delete(eventName);
   },
 };
 
@@ -123,12 +131,52 @@ assert.deepEqual(calls[2].args, {
   },
 });
 
+let synchronizedProvider = "";
+await listenOcrProviderConfigurationChanged((configuration) => {
+  synchronizedProvider = configuration.activeProvider;
+});
+eventHandlers.get("ocr-provider-configuration-changed")?.({
+  event: "ocr-provider-configuration-changed",
+  id: 2,
+  payload: { ...providerView, activeProvider: "paddleocr" },
+});
+assert.equal(synchronizedProvider, "paddleocr");
+
+const quickOptions = buildOcrQuickSelectionOptions(providerView);
+assert.equal(
+  activeOcrQuickSelectionId(providerView, "PP-FormulaNet_plus-M"),
+  providerOcrSelectionId("openai-compatible"),
+);
+assert.ok(
+  quickOptions.some(
+    (option) =>
+      option.id === providerOcrSelectionId("paddleocr") &&
+      option.labelZh.includes("PaddleOCR"),
+  ),
+);
+assert.deepEqual(parseOcrQuickSelection("provider:simpletex:turbo"), {
+  kind: "provider",
+  provider: "simpletex",
+  simpleTexModel: "turbo",
+});
+const quickUpdate = createOcrProviderQuickUpdate(
+  providerView,
+  parseOcrQuickSelection("provider:simpletex:turbo") as Extract<
+    NonNullable<ReturnType<typeof parseOcrQuickSelection>>,
+    { kind: "provider" }
+  >,
+);
+assert.equal(quickUpdate.activeProvider, "simpletex");
+assert.equal(quickUpdate.simpleTex.model, "turbo");
+assert.equal(quickUpdate.openAiCompatible.model, "vision-model");
+assert.ok(!("apiKey" in quickUpdate.openAiCompatible));
+
 const receivedStages: string[] = [];
 await listenOcrRecognitionProgress((progress) => {
   receivedStages.push(progress.stage);
 });
 for (const stage of ["api-submit", "api-queued", "api-inference", "api-result"]) {
-  progressHandler?.({
+  eventHandlers.get("ocr-recognition-progress")?.({
     event: "ocr-recognition-progress",
     id: 1,
     payload: {

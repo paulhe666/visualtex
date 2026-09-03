@@ -58,6 +58,7 @@ const WORD_PERFORMANCE_TRACE_SENTINEL: &str = "word-performance-trace.enabled";
 const MAX_LATEX_REDRAW_SOURCE_BYTES: u64 = 5 * 1024 * 1024;
 const EDITOR_READY_FILE: &str = "editor-ready.json";
 const EDITOR_PERFORMANCE_FILE: &str = "editor-performance.jsonl";
+const EDITOR_OPEN_ERROR_FILE: &str = "editor-open-error.txt";
 const OFFICE_EDITOR_ACTIVATE_EVENT: &str = "visualtex-office-editor-activate";
 const OFFICE_EDITOR_CLEAR_EVENT: &str = "visualtex-office-editor-clear";
 const OFFICE_EDITOR_WINDOW_SIZE_FILE: &str = "editor-window-size.json";
@@ -817,7 +818,7 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         let _ = fs::remove_file(&claim_path);
         persist_result?;
         let url = format!("visualtex://office/open?session={session_id}");
-        handle_open_url(app, &url)?;
+        handle_open_url_safely(app, &url)?;
         return Ok(true);
     }
     Ok(false)
@@ -842,7 +843,7 @@ pub(crate) fn start_fast_open_inbox_watcher(app: AppHandle) {
     if FAST_OPEN_WATCHER_STARTED.set(()).is_err() {
         return;
     }
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-fast-open", move || {
         let mut last_heartbeat = Instant::now()
             .checked_sub(FAST_OPEN_READY_HEARTBEAT_INTERVAL)
             .unwrap_or_else(Instant::now);
@@ -976,7 +977,10 @@ fn png_ink_center_y_ratio_from_bytes(bytes: &[u8]) -> Result<f64, String> {
     let mut interlace = 0u8;
     let mut compressed = Vec::new();
     while offset + 12 <= bytes.len() {
-        let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let length_bytes: [u8; 4] = bytes[offset..offset + 4]
+            .try_into()
+            .map_err(|_| "Cached formula PNG has a truncated chunk length".to_string())?;
+        let length = u32::from_be_bytes(length_bytes) as usize;
         let chunk_start = offset + 8;
         let chunk_end = chunk_start
             .checked_add(length)
@@ -993,8 +997,14 @@ fn png_ink_center_y_ratio_from_bytes(bytes: &[u8]) -> Result<f64, String> {
                 if length != 13 {
                     return Err("Cached formula PNG has an invalid IHDR".to_string());
                 }
-                width = u32::from_be_bytes(bytes[chunk_start..chunk_start + 4].try_into().unwrap()) as usize;
-                height = u32::from_be_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into().unwrap()) as usize;
+                let width_bytes: [u8; 4] = bytes[chunk_start..chunk_start + 4]
+                    .try_into()
+                    .map_err(|_| "Cached formula PNG has a truncated width".to_string())?;
+                let height_bytes: [u8; 4] = bytes[chunk_start + 4..chunk_start + 8]
+                    .try_into()
+                    .map_err(|_| "Cached formula PNG has a truncated height".to_string())?;
+                width = u32::from_be_bytes(width_bytes) as usize;
+                height = u32::from_be_bytes(height_bytes) as usize;
                 bit_depth = bytes[chunk_start + 8];
                 color_type = bytes[chunk_start + 9];
                 if bytes[chunk_start + 10] != 0 || bytes[chunk_start + 11] != 0 {
@@ -1130,6 +1140,7 @@ fn cleanup_session_files_at(
         FORMULA_RESTORE_SOURCE_FILE,
         LATEX_REDRAW_PREFLIGHT_MANIFEST_FILE,
         LATEX_REDRAW_FONT_SIZES_FILE,
+        EDITOR_OPEN_ERROR_FILE,
         "formula.docx",
     ] {
         let path = directory.join(name);
@@ -1461,7 +1472,7 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
                 }
             }
         }
-        _ => unreachable!(),
+        _ => return Err("Offline Office request host is inconsistent".to_string()),
     }
     Ok(())
 }
@@ -1704,7 +1715,9 @@ fn has_top_level_alignment_marker(source: &str) -> bool {
             index = end;
             continue;
         }
-        let character = source[index..].chars().next().expect("valid UTF-8");
+        let Some(character) = source[index..].chars().next() else {
+            break;
+        };
         if character == '{' && !latex_character_is_escaped(source, index) {
             brace_depth += 1;
         } else if character == '}' && !latex_character_is_escaped(source, index) {
@@ -1760,7 +1773,7 @@ fn top_level_relation_index(source: &str) -> Option<usize> {
             index = end;
             continue;
         }
-        let character = source[index..].chars().next().expect("valid UTF-8");
+        let character = source[index..].chars().next()?;
         if character == '{' && !latex_character_is_escaped(source, index) {
             brace_depth += 1;
             index += 1;
@@ -2015,12 +2028,12 @@ fn import_request(
     let host = match request.host.as_str() {
         "word" => OfficeHost::Word,
         "powerpoint" => OfficeHost::Powerpoint,
-        _ => unreachable!(),
+        _ => return Err("Offline Office request host is invalid".to_string()),
     };
     let mode = match request.mode.as_str() {
         "create" => OfficeSessionMode::Create,
         "edit" => OfficeSessionMode::Edit,
-        _ => unreachable!(),
+        _ => return Err("Offline Office request mode is invalid".to_string()),
     };
     let lines = original_metadata
         .as_ref()
@@ -2421,7 +2434,7 @@ pub(crate) fn schedule_persist_office_editor_window_size(
     };
     let generation = OFFICE_EDITOR_SIZE_WRITE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-window-size", move || {
         std::thread::sleep(Duration::from_millis(250));
         if OFFICE_EDITOR_SIZE_WRITE_GENERATION.load(Ordering::SeqCst) != generation {
             return;
@@ -3083,7 +3096,7 @@ pub fn report_macos_offline_office_editor_ready(
         window_can_become_key: focus.window_can_become_key,
         window_is_main: focus.window_is_main,
     };
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-editor-ready", move || {
         let Ok(path) = session_directory(host, &input.session_id)
             .map(|directory| directory.join(EDITOR_READY_FILE))
         else {
@@ -3274,7 +3287,7 @@ pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
     false
 }
 
-pub(crate) fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String> {
+fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String> {
     let received_at = Instant::now();
     let received_epoch_ms = epoch_ms();
     let session_id = parse_office_url(value)?;
@@ -3360,6 +3373,62 @@ pub(crate) fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String
         received_at,
         silent,
     )
+}
+
+fn protect_office_open<T>(
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation)) {
+        Ok(result) => result,
+        Err(payload) => Err(format!(
+            "The VisualTeX Office editor recovered from an internal error: {}",
+            crate::panic_payload_detail(payload.as_ref())
+        )),
+    }
+}
+
+fn record_office_open_failure(value: &str, error: &str) {
+    let Ok(session_id) = parse_office_url(value) else {
+        return;
+    };
+    let detail = error
+        .chars()
+        .take(4_096)
+        .map(|character| {
+            if matches!(character, '\r' | '\n' | '\0') {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let record = format!(
+        "visualtex-office-open-error-v1\nepochMs={}\nsessionId={session_id}\nerror={detail}\n",
+        epoch_ms()
+    );
+    for host in [OfficeHost::Word, OfficeHost::Powerpoint] {
+        let Ok(directory) = session_directory(host, &session_id) else {
+            continue;
+        };
+        if !directory.is_dir() || !directory.join(REQUEST_FILE).is_file() {
+            continue;
+        }
+        if let Err(write_error) = atomic_write_runtime(
+            &directory.join(EDITOR_OPEN_ERROR_FILE),
+            record.as_bytes(),
+            0o600,
+        ) {
+            eprintln!("Unable to record the recoverable Office open error: {write_error}");
+        }
+    }
+}
+
+pub(crate) fn handle_open_url_safely(app: &AppHandle, value: &str) -> Result<(), String> {
+    let result = protect_office_open(|| handle_open_url(app, value));
+    if let Err(error) = &result {
+        record_office_open_failure(value, error);
+    }
+    result
 }
 
 fn decode_png(value: &str) -> Result<Vec<u8>, String> {
@@ -5785,22 +5854,25 @@ fn commit_document_import_blocking(
                     URL_SAFE_NO_PAD.encode(text.as_bytes()),
                 ));
                 if is_formula_restore {
+                    let (Some(source_start), Some(source_end), Some(source_text)) =
+                        (*source_start, *source_end, source_text.as_deref())
+                    else {
+                        return Err(
+                            "Formula restore text is missing validated source coordinates"
+                                .to_string(),
+                        );
+                    };
                     entries.push((
                         format!("{prefix}sourceStart"),
-                        source_start.expect("validated restore sourceStart").to_string(),
+                        source_start.to_string(),
                     ));
                     entries.push((
                         format!("{prefix}sourceEnd"),
-                        source_end.expect("validated restore sourceEnd").to_string(),
+                        source_end.to_string(),
                     ));
                     entries.push((
                         format!("{prefix}sourceTextBase64"),
-                        URL_SAFE_NO_PAD.encode(
-                            source_text
-                                .as_deref()
-                                .expect("validated restore sourceText")
-                                .as_bytes(),
-                        ),
+                        URL_SAFE_NO_PAD.encode(source_text.as_bytes()),
                     ));
                 }
                 append_document_paragraph_entries(&mut entries, &prefix, paragraph.as_ref());
@@ -6090,24 +6162,25 @@ fn commit_document_import_blocking(
                     ));
                 }
                 if is_range_replace {
+                    let (Some(source_start), Some(source_end), Some(source_text)) =
+                        (*source_start, *source_end, source_text.as_deref())
+                    else {
+                        return Err(
+                            "Word replacement formula is missing validated source coordinates"
+                                .to_string(),
+                        );
+                    };
                     entries.push((
                         format!("{prefix}sourceStart"),
-                        source_start
-                            .expect("validated redraw sourceStart")
-                            .to_string(),
+                        source_start.to_string(),
                     ));
                     entries.push((
                         format!("{prefix}sourceEnd"),
-                        source_end.expect("validated redraw sourceEnd").to_string(),
+                        source_end.to_string(),
                     ));
                     entries.push((
                         format!("{prefix}sourceTextBase64"),
-                        URL_SAFE_NO_PAD.encode(
-                            source_text
-                                .as_deref()
-                                .expect("validated redraw sourceText")
-                                .as_bytes(),
-                        ),
+                        URL_SAFE_NO_PAD.encode(source_text.as_bytes()),
                     ));
                 }
                 append_document_paragraph_entries(&mut entries, &prefix, paragraph.as_ref());
@@ -6363,7 +6436,7 @@ fn commit_session_blocking(
     let maintenance_session_id = session_id.clone();
     let maintenance_host = session.host;
     let formula_id = session.formula_id.clone();
-    std::thread::spawn(move || {
+    crate::spawn_background_task("visualtex-office-apply-maintenance", move || {
         if let Err(error) = maintenance_state.formula_cache.put(&formula_id, metadata) {
             eprintln!("Unable to refresh the VisualTeX formula cache after Apply: {error}");
         }
@@ -6741,6 +6814,39 @@ pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn office_open_boundary_preserves_success_and_recoverable_errors() {
+        assert_eq!(protect_office_open(|| Ok::<_, String>(42)), Ok(42));
+        assert_eq!(
+            protect_office_open(|| Err::<(), _>("invalid Session".to_string())),
+            Err("invalid Session".to_string())
+        );
+    }
+
+    #[test]
+    fn office_open_boundary_converts_panics_to_recoverable_errors() {
+        let result: Result<(), String> =
+            protect_office_open(|| panic!("malformed formula fixture"));
+        let error = result.expect_err("the Office open panic must be contained");
+        assert!(error.contains("recovered from an internal error"));
+        assert!(error.contains("malformed formula fixture"));
+    }
+
+    #[test]
+    fn malformed_cached_png_metadata_returns_an_error_instead_of_panicking() {
+        let mut truncated = b"\x89PNG\r\n\x1a\n".to_vec();
+        truncated.extend_from_slice(&13_u32.to_be_bytes());
+        truncated.extend_from_slice(b"IHDR");
+        truncated.extend_from_slice(&[0_u8; 4]);
+        assert!(png_ink_center_y_ratio_from_bytes(&truncated).is_err());
+
+        let mut overflowing = b"\x89PNG\r\n\x1a\n".to_vec();
+        overflowing.extend_from_slice(&u32::MAX.to_be_bytes());
+        overflowing.extend_from_slice(b"IDAT");
+        overflowing.extend_from_slice(&[0_u8; 4]);
+        assert!(png_ink_center_y_ratio_from_bytes(&overflowing).is_err());
+    }
 
     #[test]
     fn strips_only_visualtex_numbered_equation_array_wrapper() {
@@ -7576,8 +7682,8 @@ mod tests {
             reference_height_pt: None,
             reference_baseline_pt: None,
             image_ink_center_y_ratio: None,
-            created_with_version: "1.2.5".to_string(),
-            updated_with_version: "1.2.5".to_string(),
+            created_with_version: "1.2.6".to_string(),
+            updated_with_version: "1.2.6".to_string(),
             created_at: "unix-ms:1".to_string(),
             updated_at: "unix-ms:1".to_string(),
         }

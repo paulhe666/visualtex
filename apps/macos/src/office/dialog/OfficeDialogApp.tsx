@@ -88,6 +88,7 @@ import {
   prewarmOcrModel,
   type OcrModelName,
 } from "../../ocr/ocrService";
+import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
 
 type InlineOcrStatus =
   | "running"
@@ -108,6 +109,8 @@ const EDITOR_PERSISTENCE_STORAGE_KEY = "visualtex-editor";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY =
   "visualtex.office.word.create.numbered";
+const OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY =
+  "visualtex.office.word.create.font-size-pt";
 const USE_NATIVE_POWERPOINT_COMMIT =
   document
     .querySelector<HTMLMetaElement>(
@@ -230,6 +233,23 @@ function normalizeOfficeFontSizePt(value: unknown, fallback: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   const resolved = Number.isFinite(numeric) ? numeric : fallback;
   return Math.round(Math.min(200, Math.max(5, resolved)) * 2) / 2;
+}
+
+function readOfficeWordCreateFontSizePreference(fallback: number) {
+  const stored = readLocalStorage(OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY);
+  if (stored === null) return normalizeOfficeFontSizePt(fallback, fallback);
+  const numeric = Number(stored);
+  if (!Number.isFinite(numeric) || numeric < 5 || numeric > 200) {
+    return normalizeOfficeFontSizePt(fallback, fallback);
+  }
+  return normalizeOfficeFontSizePt(numeric, fallback);
+}
+
+function writeOfficeWordCreateFontSizePreference(fontSizePt: number) {
+  writeLocalStorage(
+    OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY,
+    String(normalizeOfficeFontSizePt(fontSizePt, fontSizePt)),
+  );
 }
 
 const OFFICE_CHINESE_FONT_SIZE_OPTIONS = [
@@ -744,16 +764,19 @@ export function OfficeDialogApp() {
     ) {
       writeOfficeWordCreateNumberedPreference(loadedNumbered);
     }
+    const requestedFontSizePt = normalizeOfficeFontSizePt(
+      session.fontSizePt ?? session.originalMetadata?.fontSizePt,
+      session.host === "word" ? 11 : 18,
+    );
     const loadedFontSizePt =
       session.host === "powerpoint" &&
       session.mode === "create" &&
       session.status === "created" &&
       !session.dirty
         ? powerPointDefaultFontSizePt
-        : normalizeOfficeFontSizePt(
-            session.fontSizePt ?? session.originalMetadata?.fontSizePt,
-            session.host === "word" ? 11 : 18,
-          );
+        : session.host === "word" && session.mode === "create"
+          ? readOfficeWordCreateFontSizePreference(requestedFontSizePt)
+          : requestedFontSizePt;
     setOfficeFontSizePt(loadedFontSizePt);
     const loadedFingerprint = documentFingerprint(
       session.title,
@@ -1405,11 +1428,22 @@ export function OfficeDialogApp() {
     };
   }, [ocrModel, sessionHydrated]);
 
-  const handleOcrModelChange = (nextModel: OcrModelName) => {
-    if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
-    setOcrModel(nextModel);
-    writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
-  };
+  const handleOcrModelChange = useCallback(
+    (nextModel: OcrModelName) => {
+      if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+      setOcrModel(nextModel);
+      writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
+    },
+    [ocrModel],
+  );
+
+  const ocrQuickSelection = useOcrQuickSelection({
+    model: ocrModel,
+    busy: inlineOcrIsBusy,
+    isEn,
+    onModelChange: handleOcrModelChange,
+    onError: setToast,
+  });
 
   const cancelInlineOcr = async () => {
     if (!inlineOcrBusyRef.current) return;
@@ -1959,8 +1993,8 @@ export function OfficeDialogApp() {
         title={
           session.host === "word" && session.mode === "create"
             ? isEn
-              ? "Starts from the current Word paragraph font size"
-              : "默认读取当前 Word 段落正文的字号"
+              ? "New Word formulas reuse the last size you selected; the current paragraph size is used before your first choice"
+              : "新建 Word 公式会沿用上次手动选择的字号；首次选择前使用当前段落字号"
             : isEn
               ? "Formula font size"
               : "公式字号"
@@ -1971,11 +2005,16 @@ export function OfficeDialogApp() {
           value={officeFontSizePt}
           data-office-font-size
           aria-label={isEn ? "Formula font size" : "公式字号"}
-          onChange={(event) =>
-            setOfficeFontSizePt(
-              normalizeOfficeFontSizePt(event.target.value, officeFontSizePt),
-            )
-          }
+          onChange={(event) => {
+            const nextFontSizePt = normalizeOfficeFontSizePt(
+              event.target.value,
+              officeFontSizePt,
+            );
+            setOfficeFontSizePt(nextFontSizePt);
+            if (session.host === "word" && session.mode === "create") {
+              writeOfficeWordCreateFontSizePreference(nextFontSizePt);
+            }
+          }}
         >
           <optgroup label={isEn ? "Chinese sizes" : "中文字号"}>
             {OFFICE_CHINESE_FONT_SIZE_OPTIONS.map((option) => (
@@ -2113,11 +2152,11 @@ export function OfficeDialogApp() {
         onPasteImage={editorAvailable ? handleEditorImagePaste : undefined}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrModel={ocrModel}
-        ocrModels={OCR_MODELS}
-        ocrBusy={inlineOcrIsBusy}
-        onOcrModelChange={(model) =>
-          handleOcrModelChange(model as OcrModelName)
+        ocrSelection={ocrQuickSelection.selection}
+        ocrOptions={ocrQuickSelection.options}
+        ocrBusy={ocrQuickSelection.busy}
+        onOcrSelectionChange={(selection) =>
+          void ocrQuickSelection.handleSelectionChange(selection)
         }
         ocrOverlay={
           editorAvailable && inlineOcr ? (
@@ -2141,7 +2180,13 @@ export function OfficeDialogApp() {
               <div>
                 <strong>{inlineOcr.message}</strong>
                 <span>
-                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {ocrQuickSelection.activeOption
+                    ? isEn
+                      ? ocrQuickSelection.activeOption.labelEn
+                      : ocrQuickSelection.activeOption.labelZh
+                    : isEn
+                      ? inlineOcrModel.labelEn
+                      : inlineOcrModel.labelZh}
                   {" · "}
                   {inlineOcr.seconds}
                   {isEn ? "s" : " 秒"}

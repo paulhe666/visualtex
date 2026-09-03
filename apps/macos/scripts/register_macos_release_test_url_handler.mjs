@@ -78,7 +78,7 @@ function registerHandler() {
     ["CFBundleIdentifier", "-string", handlerBundleId],
     ["CFBundleDisplayName", "-string", "VisualTeX Performance URL Handler"],
     ["CFBundleName", "-string", "VisualTeX Performance URL Handler"],
-    ["CFBundleShortVersionString", "-string", "1.2.5-test"],
+    ["CFBundleShortVersionString", "-string", "1.2.6-test"],
     ["CFBundleVersion", "-string", "1"],
     ["LSUIElement", "-bool", "YES"],
   ]) {
