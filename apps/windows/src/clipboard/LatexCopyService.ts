@@ -1,6 +1,7 @@
 import { validateLatex } from "mathlive/ssr";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry.ts";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment.ts";
 import {
   compatibilityCommandNames,
   compatibilityRequiredArgumentCounts,
@@ -727,11 +728,14 @@ function parseMultilineEnvironment(source: string, name: string): string[] {
 
 function parseByFormat(source: string, format: LatexCodeFormat): string[] {
   switch (format) {
-    case "raw":
-      return source
+    case "raw": {
+      const normalized = source.trim();
+      if (isSingleCompleteLatexEnvironment(normalized)) return [normalized];
+      return normalized
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
+    }
     case "mixed-inline-display":
       return parseMixedLatexRows(source)?.map((row) => row.value) ?? [];
     case "inline-dollar":
@@ -863,7 +867,9 @@ function parseByFormatStrict(
 ): string[] | null {
   switch (format) {
     case "raw": {
-      const values = source
+      const normalized = source.trim();
+      if (isSingleCompleteLatexEnvironment(normalized)) return [normalized];
+      const values = normalized
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);

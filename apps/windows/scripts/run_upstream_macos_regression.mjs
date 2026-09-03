@@ -365,6 +365,61 @@ if (
         "        await sleep(420);",
       ].join("\n"),
     );
+
+    const existingCloseMarker =
+      "        assert.equal(afterClick.store, expected, JSON.stringify(afterClick));";
+    if (!source.includes(existingCloseMarker)) {
+      throw new Error("The existing environment-close assertion was not found");
+    }
+    const adjacentAlign = "\\begin{align}\n\\end{align}";
+    const reopenedAlign = "\\begin{align}\n  \n\\end{align}";
+    const alignClose = "\\end{align}";
+    source = source.replace(
+      existingCloseMarker,
+      [
+        existingCloseMarker,
+        "",
+        '          if (environment === "align") {',
+        `            const windowsExistingCloseSource = ${JSON.stringify(adjacentAlign)};`,
+        `            const windowsExistingCloseExpected = ${JSON.stringify(reopenedAlign)};`,
+        `            const windowsAlignCloseToken = ${JSON.stringify(alignClose)};`,
+        "            const windowsSourcePoint = await evaluate(`(() => {",
+        '              const rect = document.querySelector(".source-pane-slot .cm-content")?.getBoundingClientRect();',
+        "              return rect ? { x: rect.left + 12, y: rect.top + Math.min(14, rect.height / 2) } : null;",
+        "            })()`);",
+        '            assert.ok(windowsSourcePoint, "align: source editor missing for existing-close regression");',
+        '            await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsSourcePoint, button: "left", buttons: 1, clickCount: 1 });',
+        '            await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsSourcePoint, button: "left", buttons: 0, clickCount: 1 });',
+        '            await key("a", "KeyA", 65, 2);',
+        '            await client.send("Input.insertText", { text: windowsExistingCloseSource });',
+        "            await waitForEvaluation(`(() => {",
+        '              const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");',
+        '              const source = (document.querySelector(".source-pane-slot .cm-content")?.innerText ?? "").replace(/\\u200b/g, "").replace(/\\\\n+$/g, "");',
+        "              const store = persisted.state?.lines?.[0]?.latex ?? null;",
+        "              return { ready: source === ${JSON.stringify(windowsExistingCloseSource)}, source, store };",
+        "            })()`, `align: adjacent existing close fixture`);",
+        "            const windowsAlignBeginPoint = await evaluate(`(() => {",
+        '              const line = [...document.querySelectorAll(".source-pane-slot .cm-line")].find((candidate) => (candidate.textContent || "").trim().endsWith("begin{align}"));',
+        "              const rect = line?.getBoundingClientRect();",
+        "              return rect ? { x: rect.right - 5, y: rect.top + rect.height / 2 } : null;",
+        "            })()`);",
+        '            assert.ok(windowsAlignBeginPoint, "align: begin line missing for existing-close regression");',
+        '            await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsAlignBeginPoint, button: "left", buttons: 1, clickCount: 1 });',
+        '            await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsAlignBeginPoint, button: "left", buttons: 0, clickCount: 1 });',
+        '            await key("End", "End", 35);',
+        '            await key("Enter", "Enter", 13);',
+        "            const windowsExistingCloseState = await waitForEvaluation(`(() => {",
+        '              const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");',
+        '              const source = (document.querySelector(".source-pane-slot .cm-content")?.innerText ?? "").replace(/\\u200b/g, "").replace(/\\\\n+$/g, "");',
+        "              const store = persisted.state?.lines?.[0]?.latex ?? null;",
+        "              const closeCount = source.split(${JSON.stringify(windowsAlignCloseToken)}).length - 1;",
+        "              return { ready: source === ${JSON.stringify(windowsExistingCloseExpected)} && store === ${JSON.stringify(windowsExistingCloseExpected)} && closeCount === 1, source, store, closeCount };",
+        "            })()`, `align: Enter before an existing close must not duplicate it`);",
+        "            assert.equal(windowsExistingCloseState.closeCount, 1, JSON.stringify(windowsExistingCloseState));",
+        "            assert.equal(windowsExistingCloseState.store, windowsExistingCloseExpected, JSON.stringify(windowsExistingCloseState));",
+        "          }",
+      ].join("\n"),
+    );
   }
   if (forwardedArguments.includes("source-editor-ux")) {
     const scenarioMarker = '    if (scenario === "source-editor-ux") {';
