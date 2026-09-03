@@ -1,6 +1,6 @@
 # VisualTeX 帮助手册
 
-**适用版本：macOS 1.2.5**
+**适用版本：macOS 1.2.6**
 
 VisualTeX 用于可视化编辑 LaTeX 公式，并与 Word、PowerPoint 联动。
 

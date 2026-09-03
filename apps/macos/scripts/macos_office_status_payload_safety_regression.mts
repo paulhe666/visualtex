@@ -8,7 +8,7 @@ const host = {
   filesInstalled: true,
   healthReported: true,
   loaded: true,
-  pluginVersion: "1.2.5",
+  pluginVersion: "1.2.6",
   installPaths: ["/Users/test/Library/Group Containers/UBF8T346G9.Office/User Content/Startup/Word/VisualTeX.dotm"],
   healthPath: "/Users/test/Library/Application Support/VisualTeX/health.json",
   lastError: null,

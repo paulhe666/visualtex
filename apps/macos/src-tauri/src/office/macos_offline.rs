@@ -7682,8 +7682,8 @@ mod tests {
             reference_height_pt: None,
             reference_baseline_pt: None,
             image_ink_center_y_ratio: None,
-            created_with_version: "1.2.5".to_string(),
-            updated_with_version: "1.2.5".to_string(),
+            created_with_version: "1.2.6".to_string(),
+            updated_with_version: "1.2.6".to_string(),
             created_at: "unix-ms:1".to_string(),
             updated_at: "unix-ms:1".to_string(),
         }
