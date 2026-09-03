@@ -2075,6 +2075,41 @@ kbd {
   background: color-mix(in srgb, var(--accent-soft) 25%, transparent);
 }
 
+.workspace.is-source-editor-focused .formula-line,
+.workspace.is-source-editor-focused .formula-line:hover,
+.workspace.is-source-editor-focused .formula-line.is-active,
+.workspace.is-source-editor-focused .formula-line.is-multi-line-selected,
+.workspace.is-source-editor-focused
+  .formula-line.is-multi-line-selected.is-active {
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.workspace.is-source-editor-focused .editor-surface:focus-within {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.workspace.is-source-editor-focused
+  .mathfield-host.has-pending-wrapper-placeholder::after {
+  display: none !important;
+}
+
+.multi-line-editor.is-source-preview-only {
+  cursor: default;
+}
+
+:root.visualtex-source-editor-focused .suggestion-popup,
+:root.visualtex-source-editor-focused #mathlive-suggestion-popover,
+:root.visualtex-source-editor-focused
+  #visualtex-native-input-suggestion-popover {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .formula-line-number {
   width: 25px;
   height: 19px;

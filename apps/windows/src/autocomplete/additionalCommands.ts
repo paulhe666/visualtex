@@ -27,11 +27,16 @@ const makeCommand = (
 
 const complexCommands: LatexCommand[] = [
   // 对现有选区添加上标、下标或上下限
-  makeCommand("scripts", "_{}^{}", "\\placeholder{}_{\\placeholder{}}^{\\placeholder{}}", "X_{a}^{b}", "添加上下标", "Add upper/lower limits", "structure", 96, ["limits", "scripts"], ["上下限", "上下标"]),
-  makeCommand("lower-script", "_{}", "\\placeholder{}_{\\placeholder{}}", "X_{a}", "添加下标", "Add lower limit", "structure", 92, ["lower limit", "subscript"], ["下限", "下标"]),
+  makeCommand("left-upper-script", "{}^{}", "{}^{\\placeholder{}}\\placeholder{}", "{}^{a}X", "前置上标", "Left superscript", "structure", 92, ["left superscript", "prescript"], ["前置上标", "左上标"]),
   makeCommand("upper-script", "^{}", "\\placeholder{}^{\\placeholder{}}", "X^{b}", "添加上标", "Add upper limit", "structure", 92, ["upper limit", "superscript"], ["上限", "上标"]),
+  makeCommand("left-scripts", "{}_{}^{}", "{}_{\\placeholder{}}^{\\placeholder{}}\\placeholder{}", "{}_{a}^{b}X", "前置上下标", "Left upper/lower scripts", "structure", 93, ["left scripts", "prescript"], ["前置上下标", "左上下标"]),
+  makeCommand("scripts", "_{}^{}", "\\placeholder{}_{\\placeholder{}}^{\\placeholder{}}", "X_{a}^{b}", "添加上下标", "Add upper/lower limits", "structure", 96, ["limits", "scripts"], ["上下限", "上下标"]),
+  makeCommand("left-lower-script", "{}_{}", "{}_{\\placeholder{}}\\placeholder{}", "{}_{a}X", "前置下标", "Left subscript", "structure", 92, ["left subscript", "prescript"], ["前置下标", "左下标"]),
+  makeCommand("lower-script", "_{}", "\\placeholder{}_{\\placeholder{}}", "X_{a}", "添加下标", "Add lower limit", "structure", 92, ["lower limit", "subscript"], ["下限", "下标"]),
 
   // 基础结构
+  makeCommand("linear-fraction", "/", "\\placeholder{}/\\placeholder{}", "a/b", "线性分式", "Linear fraction", "structure", 82, ["slash fraction", "linear fraction"], ["斜线分式", "线性分数"]),
+  makeCommand("skewed-fraction", "\\nicefrac", "\\nicefrac{\\placeholder{}}{\\placeholder{}}", "\\nicefrac{a}{b}", "斜式分式", "Skewed fraction", "structure", 81, ["nicefrac", "skewed fraction"], ["斜式分数", "斜线分式"]),
   makeCommand("smallfrac", "\\tfrac", "\\tfrac{\\placeholder{}}{\\placeholder{}}", "\\tfrac{a}{b}", "行内分式", "Text fraction", "structure", 79, ["tfrac"], ["小分式"]),
   makeCommand("displayfrac", "\\dfrac", "\\dfrac{\\placeholder{}}{\\placeholder{}}", "\\dfrac{a}{b}", "大型分式", "Display fraction", "structure", 78, ["dfrac"], ["大分式"]),
   makeCommand("brackets", "\\left[", "\\left[\\placeholder{}\\right]", "\\left[x\\right]", "方括号", "Brackets", "structure", 81, ["square brackets"], ["方括号"]),
@@ -60,6 +65,22 @@ const complexCommands: LatexCommand[] = [
   makeCommand("boxed", "\\boxed", "\\boxed{\\placeholder{}}", "\\boxed{x}", "方框公式", "Boxed", "structure", 70, ["boxed", "box"], ["方框"]),
 
   // 微积分与常用函数
+  makeCommand("int-bare", "\\int", "\\int", "\\int", "裸积分符号", "Bare integral", "calculus", 100, ["bare integral", "integral symbol"], ["裸积分", "积分符号"]),
+  makeCommand("iint-bare", "\\iint", "\\iint", "\\iint", "裸二重积分符号", "Bare double integral", "calculus", 96, ["bare double integral"], ["裸二重积分", "积分符号"]),
+  makeCommand("iiint-bare", "\\iiint", "\\iiint", "\\iiint", "裸三重积分符号", "Bare triple integral", "calculus", 95, ["bare triple integral"], ["裸三重积分", "积分符号"]),
+  makeCommand("oint-bare", "\\oint", "\\oint", "\\oint", "裸环路积分符号", "Bare contour integral", "calculus", 94, ["bare contour integral"], ["裸环路积分", "积分符号"]),
+  makeCommand("oiint-bare", "\\oiint", "\\oiint", "\\oiint", "裸闭合二重积分", "Bare closed double integral", "calculus", 93, ["bare closed surface integral", "oiint"], ["裸闭合曲面积分", "积分符号"]),
+  makeCommand("oiiint-bare", "\\oiiint", "\\oiiint", "\\oiiint", "裸闭合三重积分", "Bare closed triple integral", "calculus", 92, ["bare closed volume integral", "oiiint"], ["裸闭合体积分", "积分符号"]),
+  makeCommand("intplain-no-d", "\\int", "\\int \\placeholder{}", "\\int f(x)", "不定积分（无微分元）", "Indefinite integral without differential", "calculus", 99, ["integral no differential"], ["积分", "无微分元"]),
+  makeCommand("int-bounds-no-d", "\\int", "\\int_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", "\\int_a^b f(x)", "定积分（无微分元）", "Bounded integral without differential", "calculus", 98, ["bounded integral no differential"], ["定积分", "无微分元"]),
+  makeCommand("iint-no-d", "\\iint", "\\iint_{\\placeholder{}} \\placeholder{}", "\\iint_D f", "二重积分（无微分元）", "Double integral without differential", "calculus", 95, ["double integral no differential"], ["二重积分", "无微分元"]),
+  makeCommand("iint-bounds-no-d", "\\iint", "\\iint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", "\\iint_D^S f", "带上下限二重积分（无微分元）", "Bounded double integral without differential", "calculus", 94, ["bounded double integral no differential"], ["二重积分", "上下限", "无微分元"]),
+  makeCommand("iiint-no-d", "\\iiint", "\\iiint_{\\placeholder{}} \\placeholder{}", "\\iiint_V f", "三重积分（无微分元）", "Triple integral without differential", "calculus", 93, ["triple integral no differential"], ["三重积分", "无微分元"]),
+  makeCommand("iiint-bounds-no-d", "\\iiint", "\\iiint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", "\\iiint_V^W f", "带上下限三重积分（无微分元）", "Bounded triple integral without differential", "calculus", 92, ["bounded triple integral no differential"], ["三重积分", "上下限", "无微分元"]),
+  makeCommand("oint-no-d", "\\oint", "\\oint_{\\placeholder{}} \\placeholder{}", "\\oint_C f", "环路积分（无微分元）", "Contour integral without differential", "calculus", 91, ["contour integral no differential"], ["环路积分", "无微分元"]),
+  makeCommand("oint-bounds-no-d", "\\oint", "\\oint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", "\\oint_C^D f", "带上下限环路积分（无微分元）", "Bounded contour integral without differential", "calculus", 90, ["bounded contour integral no differential"], ["环路积分", "上下限", "无微分元"]),
+  makeCommand("oiint-no-d", "\\oiint", "\\oiint_{\\placeholder{}} \\placeholder{}", "\\oiint_S f", "闭合曲面积分（无微分元）", "Closed surface integral without differential", "calculus", 89, ["closed surface integral no differential"], ["闭合曲面积分", "无微分元"]),
+  makeCommand("oiiint-no-d", "\\oiiint", "\\oiiint_{\\placeholder{}} \\placeholder{}", "\\oiiint_V f", "闭合体积分（无微分元）", "Closed volume integral without differential", "calculus", 88, ["closed volume integral no differential"], ["闭合体积分", "无微分元"]),
   makeCommand("intplain", "\\int", "\\int \\placeholder{}\\,\\mathrm{d}\\placeholder{}", "\\int f(x)\\,\\mathrm{d}x", "不定积分", "Indefinite integral", "calculus", 99, ["indefinite integral", "integral"], ["不定积分", "积分"]),
   makeCommand("iint-bounds", "\\iint", "\\iint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}\\,\\mathrm{d}A", "\\iint_D^S f\\,\\mathrm{d}A", "带上下限二重积分", "Bounded double integral", "calculus", 91, ["bounded double integral"], ["二重积分", "上下限"]),
   makeCommand("iiint-bounds", "\\iiint", "\\iiint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}\\,\\mathrm{d}V", "\\iiint_V^W f\\,\\mathrm{d}V", "带上下限三重积分", "Bounded triple integral", "calculus", 90, ["bounded triple integral"], ["三重积分", "上下限"]),

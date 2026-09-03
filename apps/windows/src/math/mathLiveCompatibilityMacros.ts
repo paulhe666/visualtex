@@ -23,6 +23,16 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
 export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
   ...VISUALTEX_MATHLIVE_PACKAGE_MACROS,
 
+  // MathLive accepts \nicefrac as source but does not expose its two
+  // arguments as stable editable atoms in every Windows runtime. Define the
+  // visual expansion explicitly while preserving the canonical source token.
+  nicefrac: {
+    def: "{}^{#1}\\!/\\!{}_{#2}",
+    args: 2,
+    expand: false,
+    captureSelection: false,
+  },
+
   // The default MathLive bold wrapper is upright. Force mathematical bold
   // aliases through mathbfit so Latin variables retain their italic shape.
   boldsymbol: macro("\\mathbfit{#1}"),

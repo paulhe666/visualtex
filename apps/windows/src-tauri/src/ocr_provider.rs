@@ -14,6 +14,7 @@ pub(crate) const OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible";
 pub(crate) const OLLAMA_PROVIDER: &str = "ollama";
 pub(crate) const MATHPIX_PROVIDER: &str = "mathpix";
 pub(crate) const PADDLEOCR_PROVIDER: &str = "paddleocr";
+pub(crate) const SIMPLETEX_PROVIDER: &str = "simpletex";
 
 const CONFIGURATION_SCHEMA_VERSION: u32 = 2;
 const CONFIGURATION_FILE: &str = "providers.json";
@@ -28,6 +29,9 @@ const PADDLEOCR_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
 const PADDLEOCR_STATUS_TIMEOUT: Duration = Duration::from_secs(8);
 const PADDLEOCR_RESULT_TIMEOUT: Duration = Duration::from_secs(20);
 const PADDLEOCR_TOTAL_TIMEOUT: Duration = Duration::from_secs(120);
+const SIMPLETEX_STANDARD_URL: &str = "https://server.simpletex.cn/api/latex_ocr";
+const SIMPLETEX_TURBO_URL: &str = "https://server.simpletex.cn/api/latex_ocr_turbo";
+const SIMPLETEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_FORMULAS: usize = 64;
 const MAX_FORMULA_CHARS: usize = 200_000;
 const DEFAULT_PROMPT: &str = "Read every mathematical formula in this image in visual order. Return JSON only in the exact form {\"formulas\":[{\"latex\":\"...\"}]}. Return each independent visual formula row as a separate formulas-array item, while keeping a matrix or cases construction as one item. Use valid LaTeX without markdown fences or surrounding dollar delimiters. Preserve symbols, superscripts, subscripts, matrices, cases, alignment, and line structure. Do not explain the result.";
@@ -88,6 +92,7 @@ pub(crate) struct OcrProviderConfigurationView {
     ollama: OllamaConfigurationView,
     mathpix: MathpixConfigurationView,
     paddle_ocr: PaddleOcrConfigurationView,
+    simple_tex: SimpleTexConfigurationView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,6 +128,13 @@ struct PaddleOcrConfigurationView {
     has_access_token: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimpleTexConfigurationView {
+    model: String,
+    has_access_token: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrProviderConfigurationUpdate {
@@ -132,6 +144,8 @@ pub(crate) struct OcrProviderConfigurationUpdate {
     mathpix: MathpixConfigurationUpdate,
     #[serde(default)]
     paddle_ocr: PaddleOcrConfigurationUpdate,
+    #[serde(default)]
+    simple_tex: SimpleTexConfigurationUpdate,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,6 +200,26 @@ impl Default for PaddleOcrConfigurationUpdate {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SimpleTexConfigurationUpdate {
+    model: String,
+    #[serde(default)]
+    access_token: Option<String>,
+    #[serde(default)]
+    clear_access_token: bool,
+}
+
+impl Default for SimpleTexConfigurationUpdate {
+    fn default() -> Self {
+        Self {
+            model: "standard".to_string(),
+            access_token: None,
+            clear_access_token: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredOcrProviderConfiguration {
@@ -196,6 +230,8 @@ struct StoredOcrProviderConfiguration {
     mathpix: StoredMathpixConfiguration,
     #[serde(default)]
     paddle_ocr: StoredPaddleOcrConfiguration,
+    #[serde(default)]
+    simple_tex: StoredSimpleTexConfiguration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,7 +271,24 @@ struct StoredPaddleOcrConfiguration {
 impl Default for StoredPaddleOcrConfiguration {
     fn default() -> Self {
         Self {
-            model: "PP-StructureV3".to_string(),
+            model: "PaddleOCR-VL-1.6".to_string(),
+            encrypted_access_token: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredSimpleTexConfiguration {
+    model: String,
+    #[serde(default)]
+    encrypted_access_token: Option<String>,
+}
+
+impl Default for StoredSimpleTexConfiguration {
+    fn default() -> Self {
+        Self {
+            model: "standard".to_string(),
             encrypted_access_token: None,
         }
     }
@@ -264,6 +317,7 @@ impl Default for StoredOcrProviderConfiguration {
                 encrypted_app_key: None,
             },
             paddle_ocr: StoredPaddleOcrConfiguration::default(),
+            simple_tex: StoredSimpleTexConfiguration::default(),
         }
     }
 }
@@ -292,6 +346,10 @@ impl StoredOcrProviderConfiguration {
             paddle_ocr: PaddleOcrConfigurationView {
                 model: self.paddle_ocr.model.clone(),
                 has_access_token: self.paddle_ocr.encrypted_access_token.is_some(),
+            },
+            simple_tex: SimpleTexConfigurationView {
+                model: self.simple_tex.model.clone(),
+                has_access_token: self.simple_tex.encrypted_access_token.is_some(),
             },
         }
     }
@@ -337,6 +395,7 @@ impl OcrProviderState {
         let mathpix_app_id =
             normalize_short_text(&update.mathpix.app_id, "Mathpix app_id", 240, false)?;
         let paddle_ocr_model = normalize_paddleocr_model(&update.paddle_ocr.model)?.to_string();
+        let simpletex_model = normalize_simpletex_model(&update.simple_tex.model)?.to_string();
 
         let encrypted_api_key = update_secret(
             previous.open_ai_compatible.encrypted_api_key,
@@ -352,6 +411,11 @@ impl OcrProviderState {
             previous.paddle_ocr.encrypted_access_token,
             update.paddle_ocr.access_token,
             update.paddle_ocr.clear_access_token,
+        )?;
+        let encrypted_simpletex_access_token = update_secret(
+            previous.simple_tex.encrypted_access_token,
+            update.simple_tex.access_token,
+            update.simple_tex.clear_access_token,
         )?;
 
         validate_secret_transport(&openai_base_url, encrypted_api_key.is_some(), "API key")?;
@@ -380,6 +444,10 @@ impl OcrProviderState {
             paddle_ocr: StoredPaddleOcrConfiguration {
                 model: paddle_ocr_model,
                 encrypted_access_token,
+            },
+            simple_tex: StoredSimpleTexConfiguration {
+                model: simpletex_model,
+                encrypted_access_token: encrypted_simpletex_access_token,
             },
         };
         validate_active_provider_configuration(&next)?;
@@ -418,6 +486,8 @@ impl OcrProviderState {
                 "api-submit",
                 if configuration.active_provider == PADDLEOCR_PROVIDER {
                     "正在提交图片到 PaddleOCR…"
+                } else if configuration.active_provider == SIMPLETEX_PROVIDER {
+                    "正在提交图片到 SimpleTex…"
                 } else {
                     "正在将图片发送到已配置的 OCR API…"
                 },
@@ -560,6 +630,7 @@ fn normalize_provider(value: &str) -> Result<&'static str, String> {
         OLLAMA_PROVIDER => Ok(OLLAMA_PROVIDER),
         MATHPIX_PROVIDER => Ok(MATHPIX_PROVIDER),
         PADDLEOCR_PROVIDER | "paddle" | "paddle-ocr" => Ok(PADDLEOCR_PROVIDER),
+        SIMPLETEX_PROVIDER | "simple-tex" => Ok(SIMPLETEX_PROVIDER),
         _ => Err("Unsupported OCR provider".to_string()),
     }
 }
@@ -618,17 +689,34 @@ fn normalize_paddleocr_model(value: &str) -> Result<&'static str, String> {
     }
 }
 
+fn normalize_simpletex_model(value: &str) -> Result<&'static str, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "standard" | "latex_ocr" => Ok("standard"),
+        "turbo" | "latex_ocr_turbo" => Ok("turbo"),
+        _ => Err("Unsupported SimpleTex formula model".to_string()),
+    }
+}
+
+fn simpletex_endpoint(model: &str) -> Result<&'static str, String> {
+    match normalize_simpletex_model(model)? {
+        "standard" => Ok(SIMPLETEX_STANDARD_URL),
+        "turbo" => Ok(SIMPLETEX_TURBO_URL),
+        _ => unreachable!("normalize_simpletex_model returns a fixed model"),
+    }
+}
+
 fn migrate_legacy_paddleocr_configuration(
     mut configuration: StoredOcrProviderConfiguration,
 ) -> StoredOcrProviderConfiguration {
     if configuration.schema_version == 1 {
         configuration.paddle_ocr.model = match configuration.paddle_ocr.model.as_str() {
-            // Preserve the explicit legacy-model migration contract. Once saved
-            // under schema 2, a user can still deliberately select VL-1.6.
-            "PaddleOCR-VL-1.5" | "PaddleOCR-VL" | "PP-StructureV3" => "PaddleOCR-VL-1.6".to_string(),
-            // Schema 1 shipped during the experimental Paddle integration with
-            // VL-1.6 as the default. Move that one-time default to the measured
-            // low-latency path so existing test installs receive the fix too.
+            // Every experimental Paddle model now converges on the validated
+            // VL-1.6 path. PP-StructureV3 remains disabled until it reliably
+            // returns usable formulas for real VisualTeX samples.
+            "PaddleOCR-VL-1.5" | "PaddleOCR-VL" | "PP-StructureV3" => {
+                "PaddleOCR-VL-1.6".to_string()
+            }
+            // Preserve the reliable VL-1.6 default for existing installations.
             "PaddleOCR-VL-1.6" => "PaddleOCR-VL-1.6".to_string(),
             other => other.to_string(),
         };
@@ -652,6 +740,7 @@ fn validate_stored_configuration(
     validate_url(&configuration.ollama.base_url)?;
     validate_url(&configuration.mathpix.base_url)?;
     normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
+    normalize_simpletex_model(&configuration.simple_tex.model)?;
     validate_secret_transport(
         &configuration.open_ai_compatible.base_url,
         configuration.open_ai_compatible.encrypted_api_key.is_some(),
@@ -698,6 +787,13 @@ fn validate_active_provider_configuration(
             normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
             if configuration.paddle_ocr.encrypted_access_token.is_none() {
                 return Err("PaddleOCR AI Studio access token is required".to_string());
+            }
+            Ok(())
+        }
+        SIMPLETEX_PROVIDER => {
+            normalize_simpletex_model(&configuration.simple_tex.model)?;
+            if configuration.simple_tex.encrypted_access_token.is_none() {
+                return Err("SimpleTex user access token is required".to_string());
             }
             Ok(())
         }
@@ -1068,6 +1164,30 @@ async fn recognize_remote_inner(
             .await?;
             (PADDLEOCR_PROVIDER, paddle_model.to_string(), formulas)
         }
+        SIMPLETEX_PROVIDER => {
+            let access_token = unprotect_secret(
+                configuration
+                    .simple_tex
+                    .encrypted_access_token
+                    .as_deref()
+                    .ok_or_else(|| "SimpleTex user access token is required".to_string())?,
+            )?;
+            let simpletex_model = normalize_simpletex_model(&configuration.simple_tex.model)?;
+            let formulas = recognize_simpletex(
+                &client,
+                &configuration.simple_tex,
+                access_token.as_str(),
+                &request.bytes,
+                mime,
+                &request.extension,
+            )
+            .await?;
+            (
+                SIMPLETEX_PROVIDER,
+                format!("SimpleTex V2.5 ({simpletex_model})"),
+                formulas,
+            )
+        }
         _ => return Err("The active OCR provider is local, not remote".to_string()),
     };
     if formulas.is_empty() {
@@ -1220,6 +1340,97 @@ async fn recognize_ollama(
         .or_else(|| value.get("response").and_then(Value::as_str))
         .ok_or_else(|| "Ollama response contains no message content".to_string())?;
     parse_formula_output(content)
+}
+
+#[cfg(windows)]
+async fn recognize_simpletex(
+    client: &reqwest::Client,
+    configuration: &StoredSimpleTexConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+) -> Result<Vec<String>, String> {
+    recognize_simpletex_at(
+        client,
+        configuration,
+        access_token,
+        image_bytes,
+        mime,
+        extension,
+        simpletex_endpoint(&configuration.model)?,
+        SIMPLETEX_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+async fn recognize_simpletex_at(
+    client: &reqwest::Client,
+    configuration: &StoredSimpleTexConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    endpoint: &str,
+    timeout: Duration,
+) -> Result<Vec<String>, String> {
+    normalize_simpletex_model(&configuration.model)?;
+    let file_extension = extension.trim().trim_start_matches('.');
+    let file_name = if file_extension.is_empty() {
+        "visualtex-formula.png".to_string()
+    } else {
+        format!("visualtex-formula.{file_extension}")
+    };
+    let part = reqwest::multipart::Part::bytes(image_bytes.to_vec())
+        .file_name(file_name)
+        .mime_str(mime)
+        .map_err(|error| format!("Unable to prepare the SimpleTex image upload: {error}"))?;
+    let response = client
+        .post(endpoint)
+        .header("token", access_token)
+        .multipart(reqwest::multipart::Form::new().part("file", part))
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                format!(
+                    "SimpleTex formula recognition timed out after {} seconds",
+                    timeout.as_secs_f64()
+                )
+            } else {
+                format!("SimpleTex formula recognition request failed: {error}")
+            }
+        })?;
+    let response = read_http_response(
+        response,
+        MAX_RESPONSE_BYTES,
+        "SimpleTex formula recognition",
+    )
+    .await?;
+    ensure_success(&response, "SimpleTex formula recognition")?;
+    let value = response
+        .json
+        .as_ref()
+        .ok_or_else(|| "SimpleTex returned non-JSON output".to_string())?;
+    parse_simpletex_formula_output(value)
+}
+
+fn parse_simpletex_formula_output(value: &Value) -> Result<Vec<String>, String> {
+    if value.get("status").and_then(Value::as_bool) != Some(true) {
+        return Err(format!(
+            "SimpleTex formula recognition failed: {}",
+            extract_api_error(value).unwrap_or_else(|| "unknown API error".to_string())
+        ));
+    }
+    let latex = value
+        .pointer("/res/latex")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && text.trim() != "[EMPTY]")
+        .ok_or_else(|| "SimpleTex returned no usable formula".to_string())?;
+    normalize_formula_candidates(vec![latex.to_string()])
 }
 
 #[cfg(windows)]
@@ -2090,7 +2301,7 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         }
     }))
     .map_err(|error| format!("Legacy OCR provider configuration did not deserialize: {error}"))?;
-    if legacy.paddle_ocr.model != "PP-StructureV3"
+    if legacy.paddle_ocr.model != "PaddleOCR-VL-1.6"
         || legacy.paddle_ocr.encrypted_access_token.is_some()
     {
         return Err("Legacy OCR provider configuration did not receive safe Paddle defaults".to_string());
@@ -2159,9 +2370,9 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         .map_err(|error| format!("Previous Paddle default did not deserialize: {error}"))?,
     );
     if previous_default.schema_version != CONFIGURATION_SCHEMA_VERSION
-        || previous_default.paddle_ocr.model != "PP-StructureV3"
+        || previous_default.paddle_ocr.model != "PaddleOCR-VL-1.6"
     {
-        return Err("Previous Paddle VL default was not migrated to the low-latency path".to_string());
+        return Err("Previous Paddle VL default was not preserved".to_string());
     }
 
     let protected_token = protect_secret("paddle-token")?;
@@ -2189,6 +2400,25 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         Json(json!({
             "message": {"content": "{\"formulas\":[{\"latex\":\"a=b\"}]}"}
         }))
+    }
+
+    async fn simpletex(headers: HeaderMap, body: Bytes) -> Json<Value> {
+        assert_eq!(
+            headers.get("token").and_then(|value| value.to_str().ok()),
+            Some("simpletex-token")
+        );
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains("visualtex-formula.png"));
+        Json(json!({
+            "status": true,
+            "res": {"latex": "\\sqrt{x^2+y^2}", "conf": 0.99},
+            "request_id": "tr_visualtex_mock"
+        }))
+    }
+
+    async fn simpletex_slow() -> Json<Value> {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Json(json!({"status": true, "res": {"latex": "x"}}))
     }
 
     fn require_paddle_bearer(headers: &HeaderMap) {
@@ -2286,6 +2516,8 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
     let router = Router::new()
         .route("/responses", post(openai))
         .route("/api/chat", post(ollama))
+        .route("/simpletex", post(simpletex))
+        .route("/simpletex-slow", post(simpletex_slow))
         .route("/jobs-vl", post(paddle_vl_submit))
         .route("/jobs-vl/{job_id}", get(paddle_status))
         .route("/jobs-structure", post(paddle_structure_submit))
@@ -2340,6 +2572,40 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         return Err(format!("Ollama mock result mismatch: {ollama:?}"));
     }
 
+    let simpletex_configuration = StoredSimpleTexConfiguration {
+        model: "standard".to_string(),
+        encrypted_access_token: None,
+    };
+    let simpletex = recognize_simpletex_at(
+        &direct_client,
+        &simpletex_configuration,
+        "simpletex-token",
+        b"fake-png",
+        "image/png",
+        "png",
+        &format!("{base_url}/simpletex"),
+        Duration::from_secs(2),
+    )
+    .await?;
+    if simpletex != ["\\sqrt{x^2+y^2}"] {
+        return Err(format!("SimpleTex mock result mismatch: {simpletex:?}"));
+    }
+    let timeout_error = recognize_simpletex_at(
+        &direct_client,
+        &simpletex_configuration,
+        "simpletex-token",
+        b"fake-png",
+        "image/png",
+        "png",
+        &format!("{base_url}/simpletex-slow"),
+        Duration::from_millis(25),
+    )
+    .await
+    .expect_err("SimpleTex timeout mock must fail");
+    if !timeout_error.to_ascii_lowercase().contains("timed out") {
+        return Err(format!("Unexpected SimpleTex timeout error: {timeout_error}"));
+    }
+
     let paddle_vl = StoredPaddleOcrConfiguration {
         model: "PaddleOCR-VL-1.6".to_string(),
         encrypted_access_token: None,
@@ -2358,22 +2624,8 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         return Err(format!("PaddleOCR-VL mock result mismatch: {vl_result:?}"));
     }
 
-    let paddle_structure = StoredPaddleOcrConfiguration {
-        model: "PP-StructureV3".to_string(),
-        encrypted_access_token: None,
-    };
-    let structure_result = recognize_paddleocr_aistudio_at(
-        &direct_client,
-        &paddle_structure,
-        "paddle-token",
-        b"fake-png",
-        "image/png",
-        "png",
-        &format!("{base_url}/jobs-structure"),
-    )
-    .await?;
-    if structure_result != ["E=mc^2"] {
-        return Err(format!("PP-StructureV3 mock result mismatch: {structure_result:?}"));
+    if normalize_paddleocr_model("PP-StructureV3").is_ok() {
+        return Err("PP-StructureV3 must remain disabled".to_string());
     }
 
     let quota_error = recognize_paddleocr_aistudio_at(
@@ -2407,7 +2659,9 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
         return Err(format!("Mathpix mock result mismatch: {mathpix:?}"));
     }
 
-    println!("OCR provider mock protocols passed: OpenAI-compatible, Ollama, Mathpix, PaddleOCR-VL-1.6, PP-StructureV3.");
+    println!(
+        "OCR provider mock protocols passed: OpenAI-compatible, Ollama, Mathpix, PaddleOCR-VL-1.6, SimpleTex standard."
+    );
 
     if public_probe {
         let client = build_ocr_http_client(
@@ -2419,13 +2673,18 @@ pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> 
             ("OpenAI", "https://api.openai.com/v1/models"),
             ("Mathpix", "https://api.mathpix.com/v3/text"),
             ("PaddleOCR", PADDLEOCR_JOBS_URL),
+            ("SimpleTex standard", SIMPLETEX_STANDARD_URL),
+            ("SimpleTex turbo", SIMPLETEX_TURBO_URL),
         ] {
-            let response = client
-                .get(url)
-                .send()
-                .await
-                .map_err(|error| format!("{name} endpoint was not reachable through the VisualTeX OCR client: {error}"))?;
-            println!("{name} public endpoint reachable: HTTP {}", response.status().as_u16());
+            let response = client.get(url).send().await.map_err(|error| {
+                format!(
+                    "{name} endpoint was not reachable through the VisualTeX OCR client: {error}"
+                )
+            })?;
+            println!(
+                "{name} public endpoint reachable: HTTP {}",
+                response.status().as_u16()
+            );
         }
         match client.get("http://127.0.0.1:11434/api/tags").send().await {
             Ok(response) => println!("Ollama local endpoint reachable: HTTP {}", response.status().as_u16()),
@@ -2861,8 +3120,10 @@ mod tests {
             }
         }))
         .unwrap();
-        assert_eq!(stored.paddle_ocr.model, "PP-StructureV3");
+        assert_eq!(stored.paddle_ocr.model, "PaddleOCR-VL-1.6");
         assert!(stored.paddle_ocr.encrypted_access_token.is_none());
+        assert_eq!(stored.simple_tex.model, "standard");
+        assert!(stored.simple_tex.encrypted_access_token.is_none());
 
         let migrated = migrate_legacy_paddleocr_configuration(
             serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
@@ -2924,7 +3185,7 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(previous_default.schema_version, CONFIGURATION_SCHEMA_VERSION);
-        assert_eq!(previous_default.paddle_ocr.model, "PP-StructureV3");
+        assert_eq!(previous_default.paddle_ocr.model, "PaddleOCR-VL-1.6");
 
         let update = serde_json::from_value::<OcrProviderConfigurationUpdate>(json!({
             "activeProvider": "local",
@@ -2945,7 +3206,8 @@ mod tests {
             }
         }))
         .unwrap();
-        assert_eq!(update.paddle_ocr.model, "PP-StructureV3");
+        assert_eq!(update.paddle_ocr.model, "PaddleOCR-VL-1.6");
+        assert_eq!(update.simple_tex.model, "standard");
     }
 
     #[test]
@@ -2981,6 +3243,36 @@ mod tests {
             parse_paddleocr_formula_output(&markdown_only).unwrap(),
             vec!["a=1", "b=2"]
         );
+    }
+
+    #[test]
+    fn simpletex_formula_parser_validates_status_and_empty_results() {
+        assert_eq!(
+            simpletex_endpoint("standard").unwrap(),
+            SIMPLETEX_STANDARD_URL
+        );
+        assert_eq!(simpletex_endpoint("turbo").unwrap(), SIMPLETEX_TURBO_URL);
+        assert_eq!(
+            parse_simpletex_formula_output(&json!({
+                "status": true,
+                "res": {"latex": "$$\\frac{1}{2}$$", "conf": 0.98},
+                "request_id": "tr_test"
+            }))
+            .unwrap(),
+            vec!["\\frac{1}{2}"]
+        );
+        assert!(parse_simpletex_formula_output(&json!({
+            "status": true,
+            "res": {"latex": "[EMPTY]"}
+        }))
+        .unwrap_err()
+        .contains("no usable formula"));
+        assert!(parse_simpletex_formula_output(&json!({
+            "status": false,
+            "errInfo": {"msg": "invalid token"}
+        }))
+        .unwrap_err()
+        .contains("failed"));
     }
 
     #[tokio::test]
@@ -3038,24 +3330,7 @@ mod tests {
             vec!["x&=1\\\\y&=2", "\\frac{a}{b}"]
         );
 
-        let structure_configuration = StoredPaddleOcrConfiguration {
-            model: "PP-StructureV3".to_string(),
-            encrypted_access_token: None,
-        };
-        assert_eq!(
-            recognize_paddleocr_aistudio_at(
-                &client,
-                &structure_configuration,
-                "paddle-token",
-                b"fake-png",
-                "image/png",
-                "png",
-                &format!("{base_url}/jobs-structure"),
-            )
-            .await
-            .unwrap(),
-            vec!["E=mc^2"]
-        );
+        assert!(normalize_paddleocr_model("PP-StructureV3").is_err());
 
         let quota_error = recognize_paddleocr_aistudio_at(
             &client,

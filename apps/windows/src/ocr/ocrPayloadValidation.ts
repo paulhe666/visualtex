@@ -43,11 +43,12 @@ const OCR_PROVIDER_IDS = new Set([
   "ollama",
   "mathpix",
   "paddleocr",
+  "simpletex",
 ]);
 const PADDLE_OCR_API_MODELS = new Set([
   "PaddleOCR-VL-1.6",
-  "PP-StructureV3",
 ]);
+const SIMPLETEX_API_MODELS = new Set(["standard", "turbo"]);
 
 function invalid(path: string, expectation: string): never {
   throw new Error(
@@ -174,6 +175,23 @@ export function decodeOcrProviderConfiguration(
   booleanValue(
     paddleOcr.hasAccessToken,
     "ocrProviderConfiguration.paddleOcr.hasAccessToken",
+  );
+  const simpleTex = record(
+    config.simpleTex,
+    "ocrProviderConfiguration.simpleTex",
+  );
+  if (
+    typeof simpleTex.model !== "string" ||
+    !SIMPLETEX_API_MODELS.has(simpleTex.model)
+  ) {
+    invalid(
+      "ocrProviderConfiguration.simpleTex.model",
+      "a supported SimpleTex formula model",
+    );
+  }
+  booleanValue(
+    simpleTex.hasAccessToken,
+    "ocrProviderConfiguration.simpleTex.hasAccessToken",
   );
   return config as unknown as OcrProviderConfiguration;
 }

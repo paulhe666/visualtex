@@ -78,6 +78,7 @@ import {
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import {
   installCustomSymbolGlobalStyle,
   installCustomSymbolShadowStyle,
@@ -202,6 +203,7 @@ interface FormulaFieldProps {
   autoPairDelimiters: boolean;
   inputBehavior: InputBehaviorSettings;
   readOnly: boolean;
+  freshExternalSync: boolean;
   register: (
     lineId: string,
     field: MathfieldElement | null,
@@ -264,12 +266,68 @@ function rawLatexInput(field: MathfieldElement) {
 type MathLiveInternalField = {
   _mathfield?: {
     model?: {
+      root?: unknown;
+      position?: number;
       parentEnvironment?: {
         environmentName?: string;
       } | null;
     };
   };
 };
+
+function resetMathLiveModelRootForExternalSync(field: MathfieldElement) {
+  const targetModel = (field as unknown as MathLiveInternalField)._mathfield?.model;
+  if (!targetModel || typeof document === "undefined" || !document.body) {
+    return false;
+  }
+
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  const stagingHost = document.createElement("div");
+  stagingHost.setAttribute("aria-hidden", "true");
+  stagingHost.style.cssText =
+    "position:fixed;left:-100000px;top:0;width:1px;height:1px;overflow:hidden;visibility:hidden;pointer-events:none";
+  const freshField = new MathfieldElement();
+  freshField.readOnly = true;
+  freshField.tabIndex = -1;
+
+  try {
+    document.body.append(stagingHost);
+    stagingHost.append(freshField);
+    freshField.setValue("", {
+      mode: "math",
+      format: "latex",
+      insertionMode: "replaceAll",
+      selectionMode: "after",
+      silenceNotifications: true,
+    });
+    const freshModel = (freshField as unknown as MathLiveInternalField)._mathfield
+      ?.model;
+    if (!freshModel || freshModel.root === undefined) return false;
+    targetModel.root = freshModel.root;
+    targetModel.position = 0;
+    return true;
+  } finally {
+    stagingHost.remove();
+    if (
+      previouslyFocused?.isConnected &&
+      document.activeElement !== previouslyFocused
+    ) {
+      previouslyFocused.focus({ preventScroll: true });
+    }
+  }
+}
+
+const structuralExternalSyncPattern = /\\(?:begin\s*\{|left\b|right\b)/;
+
+function needsCleanMathLiveModelForExternalSync(
+  currentLatex: string,
+  nextLatex: string,
+) {
+  return (
+    structuralExternalSyncPattern.test(currentLatex) ||
+    structuralExternalSyncPattern.test(nextLatex)
+  );
+}
 
 function activeMathLiveEnvironmentName(field: MathfieldElement) {
   return (
@@ -3205,6 +3263,34 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
         .ML__container .ML__selection {
         display: block !important;
         background: var(--_selection-background-color) !important;
+      }
+
+      :host(.${visualTexSourcePreviewClass}) .ML__selection {
+        display: none !important;
+      }
+
+      :host(.${visualTexSourcePreviewClass}) .ML__selected,
+      :host(.${visualTexSourcePreviewClass}) .ML__contains-highlight,
+      :host(.${visualTexSourcePreviewClass}) .ML__highlight,
+      :host(.${visualTexSourcePreviewClass}) .ML__placeholder-selected,
+      :host(.${visualTexSourcePreviewClass}) .ML__selected .ML__placeholder,
+      :host(.${visualTexSourcePreviewClass})
+        .ML__selected .${visualTexPlaceholderClass} {
+        border-color: transparent !important;
+        outline: 0 !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      :host(.${visualTexSourcePreviewClass}) .ML__caret,
+      :host(.${visualTexSourcePreviewClass}) .ML__text-caret,
+      :host(.${visualTexSourcePreviewClass}) .ML__latex-caret,
+      :host(.${visualTexSourcePreviewClass})
+        .${visualTexPlaceholderCaretClass} {
+        display: none !important;
+        opacity: 0 !important;
+        animation: none !important;
       }
     `;
     shadowRoot.append(style);
@@ -6543,13 +6629,29 @@ function FormulaField(props: FormulaFieldProps) {
       };
       if (!zoomChanged && !rowVerticalInsetChanged) return;
     } else {
-      field.setValue(props.latex, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
+      const currentLatex = normalizeChineseLatex(field.value);
+      const applyExternalValue = () =>
+        field.setValue(props.latex, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+      if (
+        props.freshExternalSync &&
+        needsCleanMathLiveModelForExternalSync(currentLatex, props.latex)
+      ) {
+        resetMathLiveModelRootForExternalSync(field);
+      }
+      applyExternalValue();
+      if (
+        props.freshExternalSync &&
+        normalizeChineseLatex(field.value) !== props.latex &&
+        resetMathLiveModelRootForExternalSync(field)
+      ) {
+        applyExternalValue();
+      }
       installCustomSymbolShadowStyle(field);
       field.resetUndo();
     }
@@ -6729,6 +6831,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines.find((line) => line.id === activeLineId)?.id ?? lines[0]?.id ?? null;
     activeLineIdRef.current = resolvedActiveLineId;
 
+    const resolveExplicitAlignmentVisualAnchor = (marker: HTMLElement) => {
+      const markerBounds = marker.getBoundingClientRect();
+      const parent = marker.parentElement;
+      if (!parent) return markerBounds.left;
+
+      for (
+        let sibling = marker.nextElementSibling;
+        sibling;
+        sibling = sibling.nextElementSibling
+      ) {
+        const candidates: Element[] = sibling.hasAttribute("data-atom-id")
+          ? [sibling, ...sibling.querySelectorAll("[data-atom-id]")]
+          : [...sibling.querySelectorAll("[data-atom-id]")];
+        for (const candidate of candidates) {
+          if (!(candidate instanceof HTMLElement)) continue;
+          const bounds = candidate.getBoundingClientRect();
+          if (bounds.width <= 0.01 || bounds.height <= 0.01) continue;
+          return bounds.left;
+        }
+      }
+
+      return markerBounds.left;
+    };
+
     const refreshExplicitAlignmentLayout = () => {
       const registered = Array.from(fieldRefs.current.values());
       for (const field of registered) {
@@ -6764,7 +6890,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (!host || !markers.length) return [];
         const fieldBounds = field.getBoundingClientRect();
         const markerOffsets = markers.map(
-          (marker) => marker.getBoundingClientRect().left - fieldBounds.left,
+          (marker) => resolveExplicitAlignmentVisualAnchor(marker) - fieldBounds.left,
         );
         const segmentWidths = markerOffsets.map((offset, index) =>
           Math.max(0, offset - (index === 0 ? 0 : markerOffsets[index - 1])),
@@ -7725,6 +7851,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           field,
           historySource,
           () => {
+            const isBareOperator = command.id.endsWith("-bare");
             const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
             if (queryRange) {
               field.selection = {
@@ -7732,24 +7859,66 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 direction: "forward",
               };
             }
-            const inserted = field.insert(insertionTemplate, {
-              mode: "math",
-              format: "latex",
-              insertionMode: "replaceSelection",
-              selectionMode: hasPlaceholder ? "placeholder" : "after",
-              style: {
-                variant: "normal",
-                variantStyle: undefined,
-              },
-              focus: true,
-              scrollIntoView: false,
-            });
-            if (inserted && hasPlaceholder) {
-              selectFirstLatexPlaceholder(
-                field,
-                command.command,
-                insertionTemplate,
-              );
+            const insertCurrentTemplate = () =>
+              field.insert(insertionTemplate, {
+                mode: "math",
+                format: "latex",
+                insertionMode: "replaceSelection",
+                selectionMode: hasPlaceholder ? "placeholder" : "after",
+                style: {
+                  variant: "normal",
+                  variantStyle: undefined,
+                },
+                focus: true,
+                scrollIntoView: false,
+              });
+            const valueBeforeInsertion = normalizeChineseLatex(field.value);
+            const bareOperatorCountBefore = isBareOperator
+              ? valueBeforeInsertion.split(insertionTemplate).length - 1
+              : 0;
+            const insertedBareOperator = () =>
+              normalizeChineseLatex(field.value).split(insertionTemplate).length - 1 >
+              bareOperatorCountBefore;
+            let inserted = insertCurrentTemplate();
+            if (isBareOperator && !insertedBareOperator()) {
+              const retryValue = field.value;
+              const retrySelection = captureSelection(field);
+              field.executeCommand("deleteBackward");
+              inserted = insertCurrentTemplate();
+              if (!insertedBareOperator()) {
+                field.position = field.lastOffset;
+                field.selection = {
+                  ranges: [[field.lastOffset, field.lastOffset]],
+                  direction: "none",
+                };
+                inserted = insertCurrentTemplate();
+              }
+              if (!insertedBareOperator()) {
+                field.setValue(retryValue, {
+                  mode: "math",
+                  format: "latex",
+                  insertionMode: "replaceAll",
+                  selectionMode: "after",
+                  silenceNotifications: true,
+                });
+                field.selection = retrySelection;
+              }
+            }
+            const insertionChangedValue =
+              normalizeChineseLatex(field.value) !== valueBeforeInsertion &&
+              (!isBareOperator || insertedBareOperator());
+            if (inserted && insertionChangedValue && hasPlaceholder) {
+              // MathLive already selects the first editable argument for
+              // \nicefrac. Reconstructing that selection from exported
+              // offsets can point at its compatibility wrapper instead and
+              // make the next toolbar insertion a no-op.
+              if (command.id !== "skewed-fraction" && !isBareOperator) {
+                selectFirstLatexPlaceholder(
+                  field,
+                  command.command,
+                  insertionTemplate,
+                );
+              }
               markVisualTexStructuralPlaceholders(field);
               window.requestAnimationFrame(() => {
                 if (field.isConnected) {
@@ -7759,6 +7928,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             }
             if (
               inserted &&
+              insertionChangedValue &&
               !hasPlaceholder &&
               autoExitSetting &&
               inputBehavior[autoExitSetting]
@@ -7770,7 +7940,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 autoExitScriptKey,
               );
             }
-            return inserted;
+            return inserted && insertionChangedValue;
           },
         );
         if (inserted) rawCommandAnchors.delete(field);
@@ -9138,12 +9308,17 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
     };
 
-    const normalizeInsertedFormulaLines = (latex: string) =>
-      latex
-        .replace(/\r\n?/g, "\n")
+    const normalizeInsertedFormulaLines = (latex: string) => {
+      const normalized = latex.replace(/\r\n?/g, "\n");
+      const trimmed = normalized.trim();
+      if (isSingleCompleteLatexEnvironment(trimmed)) {
+        return [normalizeChineseLatex(trimmed)];
+      }
+      return normalized
         .split("\n")
         .map((line) => normalizeChineseLatex(line.trim()))
         .filter(Boolean);
+    };
 
     const normalizeInsertedLatex = (latex: string) =>
       normalizeInsertedFormulaLines(latex).join("\\quad ");
@@ -9797,6 +9972,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (previewOnlyRef.current) {
           event.preventDefault();
           event.stopImmediatePropagation();
+          if (!onPreviewActivate) {
+            document
+              .querySelector<HTMLElement>(".source-panel .cm-content")
+              ?.focus({ preventScroll: true });
+            return;
+          }
           previewOnlyRef.current = false;
           for (const field of fieldRefs.current.values()) {
             if (!field.isConnected) continue;
@@ -10143,6 +10324,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   autoPairDelimiters={autoPairDelimiters}
                   inputBehavior={inputBehavior}
                   readOnly={interactionReadOnly}
+                  freshExternalSync={previewOnly}
                   register={registerField}
                   onEdit={handleFieldEdit}
                   onInputActivity={(field) =>

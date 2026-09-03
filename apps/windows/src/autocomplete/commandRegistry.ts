@@ -189,6 +189,22 @@ export const commonCommandIds = [
 ];
 
 export const calculusCommandIds = [
+  "int-bare",
+  "iint-bare",
+  "iiint-bare",
+  "oint-bare",
+  "oiint-bare",
+  "oiiint-bare",
+  "intplain-no-d",
+  "int-bounds-no-d",
+  "iint-no-d",
+  "iint-bounds-no-d",
+  "iiint-no-d",
+  "iiint-bounds-no-d",
+  "oint-no-d",
+  "oint-bounds-no-d",
+  "oiint-no-d",
+  "oiiint-no-d",
   "intplain",
   "int",
   "iint-bounds",

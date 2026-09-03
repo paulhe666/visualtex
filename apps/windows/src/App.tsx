@@ -613,6 +613,8 @@ function App() {
         const remoteSourceLabel =
           providerConfiguration.activeProvider === "paddleocr"
             ? `PaddleOCR · ${providerConfiguration.paddleOcr.model}`
+            : providerConfiguration.activeProvider === "simpletex"
+              ? `SimpleTex · ${providerConfiguration.simpleTex.model}`
             : providerConfiguration.activeProvider === "mathpix"
               ? "Mathpix"
               : providerConfiguration.activeProvider === "ollama"
@@ -1769,12 +1771,21 @@ function App() {
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        onRestore={(value) => {
-          const values = value
-            .replace(/\r\n?/g, "\n")
-            .split("\n")
-            .map(normalizeChineseLatex);
-          const nextLines = reconcileFormulaLines(values, lines);
+        onRestore={(item) => {
+          const restored = item.lines?.length
+            ? item.lines.map((line) => ({
+                latex: normalizeChineseLatex(line.latex),
+                mode: line.mode,
+              }))
+            : item.latex
+                .replace(/\r\n?/g, "\n")
+                .split("\n")
+                .map((latex) => ({ latex: normalizeChineseLatex(latex), mode: undefined }));
+          const nextLines = reconcileFormulaLines(
+            restored.map((line) => line.latex),
+            lines,
+            restored.map((line) => line.mode),
+          );
           const nextActiveLineId = nextLines.some(
             (line) => line.id === activeLineId,
           )

@@ -226,6 +226,187 @@ if (basename(sourcePath) === "targeted_editor_regression.mjs" && forwardedArgume
     `          customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),\n          sourceExists: Boolean(source),\n          sourceClass: source?.className ?? "",\n          sourceItems: source?.querySelectorAll("li[data-command]").length ?? 0,\n          rawLatex: document.querySelector("math-field")?.shadowRoot?.querySelector(".ML__raw-latex")?.textContent ?? "",\n          fieldValue: document.querySelector("math-field")?.value ?? "",\n          fieldMode: document.querySelector("math-field")?.mode ?? "",\n          popoverPolicy: document.querySelector("math-field")?.popoverPolicy ?? "",`,
   );
 }
+if (basename(sourcePath) === "targeted_editor_regression.mjs" && forwardedArguments.includes("toolbar-template-completion")) {
+  source = source.replace(
+    'assert.notEqual(after, before, `${commandId}: clicking the toolbar did not insert anything`);',
+    'assert.notEqual(after, before, `${commandId}: clicking the toolbar did not insert anything: ${JSON.stringify({ before, after })}`);',
+  );
+}
+if (
+  basename(sourcePath) === "targeted_editor_regression.mjs" &&
+  forwardedArguments.includes("source-preview-only")
+) {
+  const scenarioMarker = '    if (scenario === "source-preview-only") {';
+  const scenarioIndex = source.indexOf(scenarioMarker);
+  const fixtureIndex = source.indexOf(
+    '      await evaluate(`(() => {',
+    scenarioIndex,
+  );
+  if (scenarioIndex < 0 || fixtureIndex < 0) {
+    throw new Error("The source-preview-only fixture was not found");
+  }
+  const fixtureSetup = [
+    '      const windowsSourcePreviewFixtureScript = await client.send("Page.addScriptToEvaluateOnNewDocument", {',
+    "        source: `(() => {",
+    '          const storageKey = "visualtex-editor";',
+    '          const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");',
+    "          persisted.state = {",
+    "            ...(persisted.state || {}),",
+    '            editorLayout: "standard",',
+    "            sourceOpen: false,",
+    "            inputBehavior: {",
+    "              ...(persisted.state?.inputBehavior || {}),",
+    "              showOtherCommandSuggestions: true,",
+    "            },",
+    "          };",
+    "          localStorage.setItem(storageKey, JSON.stringify(persisted));",
+    "        })();`,",
+    "      });",
+    "",
+  ].join("\n");
+  source =
+    source.slice(0, fixtureIndex) +
+    fixtureSetup +
+    source.slice(fixtureIndex);
+  source = source.replace(
+    '      }))()`, "standard editor with collapsed source");',
+    '      }))()`, "standard editor with collapsed source");\n      await client.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: windowsSourcePreviewFixtureScript.identifier });',
+  );
+}
+if (
+  basename(sourcePath) === "targeted_editor_regression.mjs" &&
+  forwardedArguments.some((argument) =>
+    ["source-auto-close-completion", "source-editor-ux"].includes(argument),
+  )
+) {
+  // These macOS scenarios pin the classic dock, whose open/closed state is
+  // independently managed by the Windows shell. Exercise the same shared
+  // CodeMirror editor in the standard source pane instead.
+  source = source.replaceAll('editorLayout: "classic"', 'editorLayout: "standard"');
+  source = source.replaceAll(
+    'dataset.editorLayout === "classic"',
+    'dataset.editorLayout === "standard"',
+  );
+  source = source.replaceAll(".classic-source-pane-slot", ".source-pane-slot");
+  source = source.replaceAll(
+    'Boolean(document.querySelector(".source-pane-slot .cm-content"))',
+    'Boolean(document.querySelector(".source-pane-slot .cm-content") || (document.querySelector(".source-toggle")?.click(), null))',
+  );
+  if (forwardedArguments.includes("source-auto-close-completion")) {
+    source = source.replace(
+      '      const loadCompletionFixture = async (environment) => {\n        await evaluate(`(() => {',
+      [
+        "      const loadCompletionFixture = async (environment) => {",
+        '        const windowsFixtureScript = await client.send("Page.addScriptToEvaluateOnNewDocument", {',
+        "          source: `(() => {",
+        '            const storageKey = "visualtex-editor";',
+        '            const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");',
+        "            persisted.state = {",
+        "              ...(persisted.state || {}),",
+        '              editorLayout: "standard",',
+        "              sourceOpen: false,",
+        '              latexCodeFormat: "raw",',
+        "              zoom: 0.45,",
+        '              lines: [{ id: "source-autoclose-${environment}", latex: "", mode: "display" }],',
+        '              activeLineId: "source-autoclose-${environment}",',
+        "              checkUpdatesOnStartup: false,",
+        "            };",
+        "            localStorage.setItem(storageKey, JSON.stringify(persisted));",
+        '            localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");',
+        "          })();`,",
+        "        });",
+        "        await evaluate(`(() => {",
+      ].join("\n"),
+    );
+    source = source.replaceAll(
+      'Boolean(document.querySelector(".source-pane-slot .cm-content") || (document.querySelector(".source-toggle")?.click(), null))',
+      'Boolean(document.querySelector(".source-toggle") || document.querySelector(".source-pane-slot .cm-content"))',
+    );
+    source = source.replace(
+      "        await sleep(420);",
+      [
+        '        await client.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: windowsFixtureScript.identifier });',
+        "        const windowsSourceTogglePoint = await evaluate(`(() => {",
+        '          const rect = document.querySelector(".source-toggle")?.getBoundingClientRect();',
+        "          return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;",
+        "        })()`);",
+        "        if (windowsSourceTogglePoint) {",
+        '          await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsSourceTogglePoint, button: "left", buttons: 1, clickCount: 1 });',
+        '          await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsSourceTogglePoint, button: "left", buttons: 0, clickCount: 1 });',
+        "        }",
+        '        await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector(".source-pane-slot .cm-content")) }))()`, `${environment}: Windows source editor opened`);',
+        "        const windowsFormatPoint = await evaluate(`(() => {",
+        '          const rect = document.querySelector(".code-format-primary")?.getBoundingClientRect();',
+        "          return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;",
+        "        })()`);",
+        '        assert.ok(windowsFormatPoint, `${environment}: Windows format control missing`);',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsFormatPoint, button: "left", buttons: 1, clickCount: 1 });',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsFormatPoint, button: "left", buttons: 0, clickCount: 1 });',
+        '        const windowsRawFormatPoint = await waitForEvaluation(`(() => { const rect = document.querySelector(\'[data-format="raw"]\')?.getBoundingClientRect(); return { ready: Boolean(rect), x: rect?.left ?? 0, y: rect?.top ?? 0, width: rect?.width ?? 0, height: rect?.height ?? 0 }; })()`, `${environment}: Windows raw format option`);',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: windowsRawFormatPoint.x + windowsRawFormatPoint.width / 2, y: windowsRawFormatPoint.y + windowsRawFormatPoint.height / 2, button: "left", buttons: 1, clickCount: 1 });',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: windowsRawFormatPoint.x + windowsRawFormatPoint.width / 2, y: windowsRawFormatPoint.y + windowsRawFormatPoint.height / 2, button: "left", buttons: 0, clickCount: 1 });',
+        '        await waitForEvaluation(`(() => { const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}"); return { ready: persisted.state?.latexCodeFormat === "raw" }; })()`, `${environment}: Windows raw format selected`);',
+        "        const windowsSourceResetPoint = await evaluate(`(() => {",
+        '          const rect = document.querySelector(".source-pane-slot .cm-content")?.getBoundingClientRect();',
+        "          return rect ? { x: rect.left + 12, y: rect.top + Math.min(14, rect.height / 2) } : null;",
+        "        })()`);",
+        '        assert.ok(windowsSourceResetPoint, `${environment}: Windows source reset target missing`);',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsSourceResetPoint, button: "left", buttons: 1, clickCount: 1 });',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsSourceResetPoint, button: "left", buttons: 0, clickCount: 1 });',
+        '        await key("a", "KeyA", 65, 2);',
+        '        await key("Backspace", "Backspace", 8);',
+        '        await waitForEvaluation(`(() => { const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}"); const source = document.querySelector(".source-pane-slot .cm-content")?.textContent ?? ""; return { ready: persisted.state?.lines?.[0]?.latex === "" && source === "" }; })()`, `${environment}: Windows source reset committed`);',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", ...windowsFormatPoint, button: "left", buttons: 1, clickCount: 1 });',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...windowsFormatPoint, button: "left", buttons: 0, clickCount: 1 });',
+        '        const windowsDisplayFormatPoint = await waitForEvaluation(`(() => { const rect = document.querySelector(\'[data-format="display-dollar"]\')?.getBoundingClientRect(); return { ready: Boolean(rect), x: rect?.left ?? 0, y: rect?.top ?? 0, width: rect?.width ?? 0, height: rect?.height ?? 0 }; })()`, `${environment}: Windows display format option`);',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: windowsDisplayFormatPoint.x + windowsDisplayFormatPoint.width / 2, y: windowsDisplayFormatPoint.y + windowsDisplayFormatPoint.height / 2, button: "left", buttons: 1, clickCount: 1 });',
+        '        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: windowsDisplayFormatPoint.x + windowsDisplayFormatPoint.width / 2, y: windowsDisplayFormatPoint.y + windowsDisplayFormatPoint.height / 2, button: "left", buttons: 0, clickCount: 1 });',
+        '        await waitForEvaluation(`(() => { const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}"); const source = document.querySelector(".source-pane-slot .cm-content")?.innerText ?? ""; return { ready: persisted.state?.latexCodeFormat === "display-dollar" && source.includes("$$") }; })()`, `${environment}: Windows display format restored`);',
+        "        await sleep(420);",
+      ].join("\n"),
+    );
+  }
+  if (forwardedArguments.includes("source-editor-ux")) {
+    const scenarioMarker = '    if (scenario === "source-editor-ux") {';
+    const scenarioIndex = source.indexOf(scenarioMarker);
+    const fixtureIndex = source.indexOf(
+      '      await evaluate(`(() => {',
+      scenarioIndex,
+    );
+    if (scenarioIndex < 0 || fixtureIndex < 0) {
+      throw new Error("The source-editor-ux fixture was not found");
+    }
+    const fixtureSetup = [
+      '      const windowsSourceUxFixtureScript = await client.send("Page.addScriptToEvaluateOnNewDocument", {',
+      "        source: `(() => {",
+      '          const storageKey = "visualtex-editor";',
+      '          const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");',
+      "          persisted.state = {",
+      "            ...(persisted.state || {}),",
+      '            editorLayout: "standard",',
+      "            sourceOpen: true,",
+      '            latexCodeFormat: "raw",',
+      "            zoom: 0.75,",
+      '            lines: [{ id: "source-editor-ux-line", latex: ${JSON.stringify(sourceUxLatex)}, mode: "display" }],',
+      '            activeLineId: "source-editor-ux-line",',
+      "            checkUpdatesOnStartup: false,",
+      "          };",
+      "          localStorage.setItem(storageKey, JSON.stringify(persisted));",
+      '          localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");',
+      "        })();`,",
+      "      });",
+      "",
+    ].join("\n");
+    source =
+      source.slice(0, fixtureIndex) +
+      fixtureSetup +
+      source.slice(fixtureIndex);
+    source = source.replace(
+      "      await sleep(500);",
+      '      await client.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: windowsSourceUxFixtureScript.identifier });\n      await sleep(500);',
+    );
+  }
+}
 if (basename(sourcePath) === "office_unified_toolbar_regression.mjs") {
   // Run the actual Windows Office production bundle. The strict CSP on
   // office-dialog.html intentionally rejects Vite dev's React-refresh inline

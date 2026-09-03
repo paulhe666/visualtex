@@ -35,6 +35,10 @@ const provider = {
     model: "PaddleOCR-VL-1.6",
     hasAccessToken: true,
   },
+  simpleTex: {
+    model: "standard",
+    hasAccessToken: true,
+  },
 };
 assert.equal(decodeOcrProviderConfiguration(provider), provider);
 assert.throws(
@@ -47,6 +51,13 @@ assert.throws(
     paddleOcr: { ...provider.paddleOcr, model: "PP-OCRv5" },
   }),
   /paddleOcr\.model/,
+);
+assert.throws(
+  () => decodeOcrProviderConfiguration({
+    ...provider,
+    simpleTex: { ...provider.simpleTex, model: "invalid" },
+  }),
+  /simpleTex\.model/,
 );
 
 const runtime = {

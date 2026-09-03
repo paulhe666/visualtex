@@ -254,10 +254,27 @@ async function main() {
           const host = field.closest('.mathfield-host');
           const markers = [...(field.shadowRoot?.querySelectorAll('.visualtex-align-marker') ?? [])];
           const fieldBounds = field.getBoundingClientRect();
+          const visualAnchorLeft = (marker) => {
+            for (
+              let sibling = marker.nextElementSibling;
+              sibling;
+              sibling = sibling.nextElementSibling
+            ) {
+              const candidates = sibling.hasAttribute('data-atom-id')
+                ? [sibling, ...sibling.querySelectorAll('[data-atom-id]')]
+                : [...sibling.querySelectorAll('[data-atom-id]')];
+              for (const candidate of candidates) {
+                const bounds = candidate.getBoundingClientRect();
+                if (bounds.width > 0.01 && bounds.height > 0.01) return bounds.left;
+              }
+            }
+            return marker.getBoundingClientRect().left;
+          };
           return {
             value: field.value,
             fieldLeft: fieldBounds.left,
             markerLefts: markers.map((marker) => marker.getBoundingClientRect().left),
+            visualAnchorLefts: markers.map(visualAnchorLeft),
             markerMarginLefts: markers.map(
               (marker) => Number.parseFloat(getComputedStyle(marker).marginLeft || '0') || 0,
             ),
@@ -268,9 +285,13 @@ async function main() {
             hostAligned: host?.classList.contains('has-explicit-align-marker') ?? false,
           };
         });
-        const markerSpreads = [0, 1, 2].map((markerIndex) => {
+        // TeX align columns are right/left pairs. Even-numbered markers are
+        // the visible relation anchors; odd-numbered markers only separate
+        // one pair from the next and may intentionally precede an empty cell.
+        const visibleAlignmentMarkerIndices = [0, 2];
+        const visualAnchorSpreads = visibleAlignmentMarkerIndices.map((markerIndex) => {
           const positions = entries
-            .map((entry) => entry.markerLefts[markerIndex])
+            .map((entry) => entry.visualAnchorLefts[markerIndex])
             .filter((value) => Number.isFinite(value));
           return positions.length === fields.length
             ? Math.max(...positions) - Math.min(...positions)
@@ -282,10 +303,10 @@ async function main() {
             entries.every(
               (entry) => entry.hostAligned && entry.markerLefts.length === 3,
             ) &&
-            markerSpreads.every((spread) => spread <= 1),
+            visualAnchorSpreads.every((spread) => spread <= 1),
           count: fields.length,
           entries,
-          markerSpreads,
+          visualAnchorSpreads,
         };
       })()`);
       if (state?.ready) break;
@@ -294,8 +315,8 @@ async function main() {
 
     assert.ok(state?.ready, `OCR alignment geometry did not converge: ${JSON.stringify(state)}`);
     assert.ok(
-      state.markerSpreads.every((spread: number) => spread <= 1),
-      `OCR alignment columns diverged: ${state.markerSpreads.join('/')}px`,
+      state.visualAnchorSpreads.every((spread: number) => spread <= 1),
+      `OCR visible alignment columns diverged: ${state.visualAnchorSpreads.join('/')}px`,
     );
     assert.ok(
       new Set(state.entries.map((entry: any) => Math.round(entry.marginLeft * 1000))).size > 1,
@@ -311,7 +332,7 @@ async function main() {
     );
 
     console.log(
-      `OCR multi-align editor geometry acceptance passed: markerSpreads=${state.markerSpreads.join('/')}px, ` +
+      `OCR multi-align editor geometry acceptance passed: visualAnchorSpreads=${state.visualAnchorSpreads.join('/')}px, ` +
         `margins=${state.entries.map((entry: any) => entry.marginLeft).join('/')}, ` +
         `copy restored 9 '&' tokens including '&&'.`,
     );

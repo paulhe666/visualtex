@@ -44,6 +44,7 @@ import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
   PADDLE_OCR_API_MODELS,
+  SIMPLETEX_API_MODELS,
   cancelOcrInstall,
   cancelOcrModelDownload,
   cancelOcrRecognition,
@@ -63,6 +64,7 @@ import {
   type OcrProviderConfiguration,
   type OcrProviderId,
   type PaddleOcrApiModel,
+  type SimpleTexApiModel,
   type OcrRecognitionProgress,
   type OcrRecognitionResult,
   type OcrRuntimeStatus,
@@ -150,6 +152,10 @@ const FALLBACK_OCR_PROVIDER_CONFIGURATION: OcrProviderConfiguration = {
     model: "PaddleOCR-VL-1.6",
     hasAccessToken: false,
   },
+  simpleTex: {
+    model: "standard",
+    hasAccessToken: false,
+  },
 };
 
 function isOcrModelPackagePath(path: string) {
@@ -189,6 +195,8 @@ function providerLabel(provider: OcrProviderId, isEn: boolean) {
       return "Mathpix";
     case "paddleocr":
       return isEn ? "PaddleOCR AI Studio" : "PaddleOCR 星河 API";
+    case "simpletex":
+      return "SimpleTex";
     default:
       return isEn ? "Local PP-FormulaNet" : "本地 PP-FormulaNet";
   }
@@ -237,6 +245,8 @@ export function OcrDialog({
   const [clearMathpixAppKey, setClearMathpixAppKey] = useState(false);
   const [paddleOcrAccessToken, setPaddleOcrAccessToken] = useState("");
   const [clearPaddleOcrAccessToken, setClearPaddleOcrAccessToken] = useState(false);
+  const [simpleTexAccessToken, setSimpleTexAccessToken] = useState("");
+  const [clearSimpleTexAccessToken, setClearSimpleTexAccessToken] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<OcrModelCatalog | null>(null);
   const [modelDownload, setModelDownload] = useState<OcrModelDownloadSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
@@ -385,6 +395,8 @@ export function OcrDialog({
       setClearMathpixAppKey(false);
       setPaddleOcrAccessToken("");
       setClearPaddleOcrAccessToken(false);
+      setSimpleTexAccessToken("");
+      setClearSimpleTexAccessToken(false);
       setProviderDirty(false);
     } catch (providerError) {
       // Keep a complete editable fallback visible so a damaged native provider
@@ -397,6 +409,8 @@ export function OcrDialog({
       setClearMathpixAppKey(false);
       setPaddleOcrAccessToken("");
       setClearPaddleOcrAccessToken(false);
+      setSimpleTexAccessToken("");
+      setClearSimpleTexAccessToken(false);
       setProviderDirty(true);
       setError(readError(providerError));
     } finally {
@@ -443,6 +457,11 @@ export function OcrDialog({
           accessToken: paddleOcrAccessToken || undefined,
           clearAccessToken: clearPaddleOcrAccessToken,
         },
+        simpleTex: {
+          model: providerConfiguration.simpleTex.model,
+          accessToken: simpleTexAccessToken || undefined,
+          clearAccessToken: clearSimpleTexAccessToken,
+        },
       });
       setProviderConfiguration(saved);
       setOpenAiApiKey("");
@@ -451,6 +470,8 @@ export function OcrDialog({
       setClearMathpixAppKey(false);
       setPaddleOcrAccessToken("");
       setClearPaddleOcrAccessToken(false);
+      setSimpleTexAccessToken("");
+      setClearSimpleTexAccessToken(false);
       setProviderDirty(false);
       onNotify(
         isEn
@@ -466,12 +487,14 @@ export function OcrDialog({
     clearMathpixAppKey,
     clearOpenAiApiKey,
     clearPaddleOcrAccessToken,
+    clearSimpleTexAccessToken,
     isEn,
     mathpixAppKey,
     onNotify,
     openAiApiKey,
     paddleOcrAccessToken,
     providerConfiguration,
+    simpleTexAccessToken,
   ]);
 
   const refreshModelCatalog = useCallback(async () => {
@@ -1403,6 +1426,7 @@ export function OcrDialog({
                   <option value="ollama">Ollama</option>
                   <option value="mathpix">Mathpix</option>
                   <option value="paddleocr">{isEn ? "PaddleOCR AI Studio" : "PaddleOCR 星河 API"}</option>
+                  <option value="simpletex">SimpleTex</option>
                 </select>
               </label>
 
@@ -1736,8 +1760,91 @@ export function OcrDialog({
                   )}
                   <small className="ocr-provider-protocol-note">
                     {isEn
-                      ? "Only the AI Studio Access Token is required. PP-StructureV3 is the recommended low-latency path and keeps formula recognition enabled while unnecessary page modules are disabled. PaddleOCR-VL-1.6 remains available for difficult complex layouts, but its shared VLM service can spend much longer queued or running. VisualTeX stops waiting if a Paddle job remains pending for more than 5 seconds."
-                      : "只需要 AI Studio 的 Access Token。推荐使用 PP-StructureV3 低延迟路径：保留公式识别，同时关闭不需要的页面模块。PaddleOCR-VL-1.6 仍可用于困难的复杂版面，但共享 VLM 服务的排队或推理耗时可能明显更长。Paddle 任务如果持续 pending 超过 5 秒，VisualTeX 会停止继续等待。"}
+                      ? "Uses PaddleOCR-VL-1.6 for reliable formula recognition. VisualTeX allows the normal asynchronous queue to finish, with 20-second submission, 8-second status, 20-second result-download, and 120-second total timeouts."
+                      : "使用 PaddleOCR-VL-1.6，以公式识别可靠性为优先。VisualTeX 会正常等待异步任务：提交 20 秒、状态请求 8 秒、结果下载 20 秒、总任务 120 秒超时。"}
+                  </small>
+                </div>
+              )}
+
+              {activeProvider === "simpletex" && (
+                <div className="ocr-provider-fields">
+                  <label className="ocr-provider-field">
+                    <span>{isEn ? "Formula model" : "公式模型"}</span>
+                    <select
+                      value={providerConfiguration.simpleTex.model}
+                      disabled={recognizing || savingProvider}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          simpleTex: {
+                            ...current.simpleTex,
+                            model: event.target.value as SimpleTexApiModel,
+                          },
+                        }))
+                      }
+                    >
+                      {SIMPLETEX_API_MODELS.map((candidate) => (
+                        <option key={candidate} value={candidate}>
+                          {candidate === "standard"
+                            ? isEn
+                              ? "Standard · best accuracy"
+                              : "标准模型 · 识别优先"
+                            : isEn
+                              ? "Turbo · lower latency"
+                              : "轻量模型 · 速度优先"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ocr-provider-field is-wide">
+                    <span>
+                      {isEn ? "User access token (UAT)" : "用户授权令牌（UAT）"}
+                      {providerConfiguration.simpleTex.hasAccessToken && !clearSimpleTexAccessToken
+                        ? isEn
+                          ? " · saved"
+                          : " · 已保存"
+                        : ""}
+                    </span>
+                    <input
+                      type="password"
+                      value={simpleTexAccessToken}
+                      disabled={recognizing || savingProvider || clearSimpleTexAccessToken}
+                      autoComplete="new-password"
+                      placeholder={
+                        providerConfiguration.simpleTex.hasAccessToken
+                          ? isEn
+                            ? "Leave blank to keep the saved token"
+                            : "留空将继续使用已保存令牌"
+                          : "SimpleTex UAT"
+                      }
+                      onChange={(event) => {
+                        setSimpleTexAccessToken(event.target.value);
+                        setProviderDirty(true);
+                      }}
+                    />
+                  </label>
+                  {providerConfiguration.simpleTex.hasAccessToken && (
+                    <label className="ocr-provider-clear-secret">
+                      <input
+                        type="checkbox"
+                        checked={clearSimpleTexAccessToken}
+                        disabled={recognizing || savingProvider}
+                        onChange={(event) => {
+                          setClearSimpleTexAccessToken(event.target.checked);
+                          setProviderDirty(true);
+                        }}
+                      />
+                      <span>
+                        {isEn
+                          ? "Remove the saved SimpleTex token"
+                          : "删除已保存的 SimpleTex 令牌"}
+                      </span>
+                    </label>
+                  )}
+                  <small className="ocr-provider-protocol-note">
+                    {isEn
+                      ? "Uploads one image with multipart/form-data to SimpleTex V2.5 and reads res.latex. The standard model prioritizes accuracy; Turbo prioritizes latency. Requests time out after 45 seconds."
+                      : "以 multipart/form-data 向 SimpleTex V2.5 上传单张图片并读取 res.latex。标准模型优先识别效果，轻量模型优先速度；单次请求 45 秒超时。"}
                   </small>
                 </div>
               )}
@@ -2275,6 +2382,25 @@ export function OcrDialog({
                       <span>{providerConfiguration.paddleOcr.model}</span>
                       <span>{isEn ? "Asynchronous job API" : "异步任务 API"}</span>
                       <code>paddleocr.aistudio-app.com/api/v2/ocr/jobs</code>
+                    </>
+                  )}
+                  {activeProvider === "simpletex" && (
+                    <>
+                      <span>
+                        {providerConfiguration.simpleTex.model === "standard"
+                          ? isEn
+                            ? "Standard formula model"
+                            : "标准公式模型"
+                          : isEn
+                            ? "Turbo formula model"
+                            : "轻量公式模型"}
+                      </span>
+                      <span>SimpleTex V2.5</span>
+                      <code>
+                        {providerConfiguration.simpleTex.model === "standard"
+                          ? "server.simpletex.cn/api/latex_ocr"
+                          : "server.simpletex.cn/api/latex_ocr_turbo"}
+                      </code>
                     </>
                   )}
                 </div>

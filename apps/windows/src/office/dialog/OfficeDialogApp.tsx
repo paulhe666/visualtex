@@ -1767,6 +1767,8 @@ export function OfficeDialogApp() {
         const remoteSourceLabel =
           providerConfiguration.activeProvider === "paddleocr"
             ? `PaddleOCR · ${providerConfiguration.paddleOcr.model}`
+            : providerConfiguration.activeProvider === "simpletex"
+              ? `SimpleTex · ${providerConfiguration.simpleTex.model}`
             : providerConfiguration.activeProvider === "mathpix"
               ? "Mathpix"
               : providerConfiguration.activeProvider === "ollama"

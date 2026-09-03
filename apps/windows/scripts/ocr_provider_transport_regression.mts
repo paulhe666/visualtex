@@ -32,6 +32,10 @@ const providerView = {
     model: "PaddleOCR-VL-1.6" as const,
     hasAccessToken: true,
   },
+  simpleTex: {
+    model: "standard" as const,
+    hasAccessToken: true,
+  },
 };
 
 const transport: OcrTransport = {
@@ -84,6 +88,10 @@ const update: OcrProviderConfigurationUpdate = {
   paddleOcr: {
     model: "PaddleOCR-VL-1.6",
     accessToken: "paddle-secret",
+  },
+  simpleTex: {
+    model: "standard",
+    accessToken: "simpletex-secret",
   },
 };
 assert.deepEqual(await saveOcrProviderConfiguration(update), providerView);
