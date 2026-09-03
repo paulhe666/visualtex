@@ -41,10 +41,6 @@ import type {
   InputBehaviorSettingKey,
   LatexCodeFormat,
 } from "../../types/formula";
-import {
-  WORD_OMML_INLINE_MINIMUM_ASCENT_EM,
-  WORD_OMML_INLINE_MINIMUM_DESCENT_EM,
-} from "../../export/wordOmmlInlineFrame";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
@@ -888,7 +884,6 @@ export function OfficeDialogApp() {
     sourceFormulaLetterFont: FormulaLetterFont = formulaLetterFont,
     sourceFormulaChineseFont: FormulaChineseFont = formulaChineseFont,
     sourceObjectMode: OfficeObjectMode = objectMode,
-    sourceHost: OfficeHost = session?.host ?? "word",
   ): OfficeExportResult | null => {
     if (!sourceLatex.trim()) return null;
     // A MathType OLE's Word preview represents MathType, not VisualTeX's editor
@@ -911,26 +906,16 @@ export function OfficeDialogApp() {
     const outputFontSizePt = isMathTypeOle ? 12 : sourceFontSizePt;
     const outputDisplayMode = isMathTypeOle || sourceDisplayMode === "block";
     const mathTypeVerticalPaddingPx = outputFontSizePt * 0.5;
-    const useWordInlineOmmlFrame =
-      sourceHost === "word" &&
-      sourceObjectMode === "nativeOle" &&
-      sourceDisplayMode === "inline";
     const svg = latexToSvg(sourceLatex, {
       displayMode: outputDisplayMode,
       fontSizePt: outputFontSizePt,
       paddingPx: isMathTypeOle ? 0 : sourceDisplayMode === "inline" ? 1 : 10,
       paddingXPx: isMathTypeOle ? 0 : undefined,
-      paddingYPx: isMathTypeOle
-        ? mathTypeVerticalPaddingPx
-        : useWordInlineOmmlFrame
-          ? 0
-          : undefined,
-      minimumAscentEm: useWordInlineOmmlFrame
-        ? WORD_OMML_INLINE_MINIMUM_ASCENT_EM
-        : undefined,
-      minimumDescentEm: useWordInlineOmmlFrame
-        ? WORD_OMML_INLINE_MINIMUM_DESCENT_EM
-        : undefined,
+      // Keep the normal one-pixel inline safety margin on every side. It is part
+      // of the rendered presentation geometry used by Word's baseline placement;
+      // removing only the vertical margin both reintroduces edge clipping and
+      // moves common subscript formulas one whole Word Position quantum upward.
+      paddingYPx: isMathTypeOle ? mathTypeVerticalPaddingPx : undefined,
       background: "transparent",
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
@@ -956,7 +941,6 @@ export function OfficeDialogApp() {
     formulaLetterFont,
     formulaChineseFont,
     objectMode,
-    session?.host,
   ]);
 
   const rasterizeSvgExportResult = useCallback(async (
@@ -1059,7 +1043,6 @@ export function OfficeDialogApp() {
       sourceFormulaLetterFont,
       sourceFormulaChineseFont,
       sourceSession.objectMode,
-      sourceSession.host,
     );
     if (!base?.mathMl) {
       throw new Error("Unable to generate MathML for Office conversion.");

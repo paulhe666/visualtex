@@ -1,112 +1,48 @@
 import assert from "node:assert/strict";
 import { latexToSvg } from "../src/export/latexToSvg.ts";
 import {
-  WORD_OMML_INLINE_MINIMUM_ASCENT_EM,
-  WORD_OMML_INLINE_MINIMUM_DESCENT_EM,
-} from "../src/export/wordOmmlInlineFrame.ts";
-import {
   calculateInlineFormulaPosition,
   calculateInlineSessionPosition,
 } from "../src/office/adapters/WordAdapter.ts";
 
-// These expressions are coverage representatives only. The production path
-// receives no formula name/type and applies the same metric calculation to all
-// input. Keep this list structurally varied to guard that invariant.
+// Coverage representatives only. Production alignment receives rendered
+// geometry, never a formula string or structure category.
 const formulas = [
   String.raw`x`,
   String.raw`L`,
-  String.raw`x_i`,
-  String.raw`x^i`,
-  String.raw`x_i^j`,
-  String.raw`a=\frac{dv}{dt}`,
+  String.raw`L_z`,
+  String.raw`L^2`,
+  String.raw`L_z^2`,
+  String.raw`L_zL^2`,
+  String.raw`\frac{1}{2}`,
   String.raw`\cfrac{1}{1+\cfrac{1}{x}}`,
-  String.raw`x^2+y^2`,
-  String.raw`\alpha+\beta=\gamma`,
-  String.raw`\frac{x+1}{y-1}`,
-  String.raw`\sqrt{x^2+y^2}`,
+  String.raw`\sqrt{x}`,
   String.raw`\sqrt[3]{\frac{x+1}{y-1}}`,
+  String.raw`\int_a^b c\,\mathrm{d}e`,
   String.raw`\sum_{n=1}^{\infty}\frac{1}{n^2}`,
-  String.raw`\int_0^1 x^2\,\mathrm{d}x`,
   String.raw`\left(\begin{matrix}a&b\\c&d\end{matrix}\right)`,
   String.raw`\begin{cases}x^2,&x\ge 0\\-x,&x<0\end{cases}`,
   String.raw`\overbrace{a+b+\cdots+z}^{26\text{ terms}}`,
-  String.raw`A_{i_1i_2\cdots i_n}=B^{j_1j_2\cdots j_m}`,
+  String.raw`\underbrace{x_1+\cdots+x_n}_{n\text{ terms}}`,
+  String.raw`\hat{x}+\vec{y}+\overline{AB}`,
+  String.raw`\text{速度 }v=\frac{\mathrm{d}x}{\mathrm{d}t}`,
 ];
-
 const fontSizesPt = [8, 10.5, 12, 14, 18, 24, 42, 72];
-
-function wordOmmlInlineFrame(fontSizePt) {
-  return {
-    displayMode: false,
-    fontSizePt,
-    paddingPx: 1,
-    paddingYPx: 0,
-    minimumAscentEm: WORD_OMML_INLINE_MINIMUM_ASCENT_EM,
-    minimumDescentEm: WORD_OMML_INLINE_MINIMUM_DESCENT_EM,
-    background: "transparent",
-  };
-}
-
-const lSubscript = latexToSvg(String.raw`L_z`, wordOmmlInlineFrame(10.5));
-const lSuperscript = latexToSvg(String.raw`L^2`, wordOmmlInlineFrame(10.5));
-const lBothScripts = latexToSvg(String.raw`L_zL^2`, wordOmmlInlineFrame(10.5));
-for (const [label, exported] of [
-  ["L_z", lSubscript],
-  ["L^2", lSuperscript],
-  ["L_zL^2", lBothScripts],
-]) {
-  const ascentEm = exported.baseline / (10.5 * 96 / 72);
-  const descentEm = (exported.height - exported.baseline) / (10.5 * 96 / 72);
-  assert.ok(
-    ascentEm >= WORD_OMML_INLINE_MINIMUM_ASCENT_EM - 1e-6,
-    `${label}: Word inline OLE ascent ${ascentEm}em is below the OMML frame`,
-  );
-  assert.ok(
-    descentEm >= WORD_OMML_INLINE_MINIMUM_DESCENT_EM - 1e-6,
-    `${label}: Word inline OLE descent ${descentEm}em is below the OMML frame`,
-  );
-}
-assert.ok(
-  Math.abs(lSubscript.height - lSuperscript.height) < 0.5,
-  "Simple subscript and superscript formulas must share the OMML-like inline frame",
-);
-assert.ok(
-  Math.abs(lBothScripts.height - lSuperscript.height) < 0.5,
-  "Combining ordinary scripts must not create a content-dependent tall OLE box",
-);
 
 const results = [];
 for (const fontSizePt of fontSizesPt) {
   for (const latex of formulas) {
-    const tight = latexToSvg(latex, {
+    const exported = latexToSvg(latex, {
       displayMode: false,
       fontSizePt,
-      paddingPx: 0,
+      paddingPx: 1,
       background: "transparent",
     });
-    const exported = latexToSvg(latex, wordOmmlInlineFrame(fontSizePt));
-    const emPx = fontSizePt * 96 / 72;
-    const tightDescent = tight.height - tight.baseline;
-    const expectedAscent = Math.max(
-      tight.baseline,
-      WORD_OMML_INLINE_MINIMUM_ASCENT_EM * emPx,
-    );
-    const expectedDescent = Math.max(
-      tightDescent,
-      WORD_OMML_INLINE_MINIMUM_DESCENT_EM * emPx,
-    );
-
+    assert.ok(exported.width > 0 && Number.isFinite(exported.width));
+    assert.ok(exported.height > 0 && Number.isFinite(exported.height));
     assert.ok(
-      Math.abs(exported.baseline - expectedAscent) <= 1e-6,
-      `${latex} @ ${fontSizePt}pt: ascent was not derived from formula geometry`,
-    );
-    assert.ok(
-      Math.abs((exported.height - exported.baseline) - expectedDescent) <= 1e-6,
-      `${latex} @ ${fontSizePt}pt: descent was not derived from formula geometry`,
-    );
-    assert.ok(
-      Math.abs(exported.width - (tight.width + 2)) <= 1e-6,
-      `${latex} @ ${fontSizePt}pt: vertical framing changed formula width`,
+      exported.baseline >= 0 && exported.baseline < exported.height,
+      `${latex} @ ${fontSizePt}pt has an invalid mathematical baseline`,
     );
 
     const naturalWidthPt = exported.width * 0.75;
@@ -120,6 +56,14 @@ for (const fontSizePt of fontSizesPt) {
       exported.height,
       exported.baseline,
     );
+    const expectedMagnitude = Math.floor(descentPt + 0.0101);
+    const expectedPosition = expectedMagnitude === 0 ? 0 : -expectedMagnitude;
+    assert.equal(
+      position,
+      expectedPosition,
+      `${latex} @ ${fontSizePt}pt did not apply the complete whole-point part of its rendered descent`,
+    );
+
     const sessionPosition = calculateInlineSessionPosition({
       exportWidth: exported.width,
       exportHeight: exported.height,
@@ -131,20 +75,22 @@ for (const fontSizePt of fontSizesPt) {
         baseline: exported.baseline,
       },
     });
-
     assert.equal(
       sessionPosition,
       position,
-      `${latex}: session and picture offsets differ`,
+      `${latex} @ ${fontSizePt}pt: session and picture offsets differ`,
     );
     assert.ok(position <= 0, `${latex}: Word baseline must never be raised`);
-    // Word's native Font.Position is integer-valued. VisualTeX intentionally
-    // leaves the OLE glyph baseline one point above the raw geometric result so
-    // it optically matches native OMML on the same Word text line.
-    const residualPt = -position - descentPt;
+
+    // Word's safe object-model setter stores this placement in whole points.
+    // Visual parity tests show that lowering by the complete integer portion is
+    // substantially closer to OMML than rounding or fixed optical lifts. The
+    // remaining error is therefore the sub-point descent intentionally left above
+    // the text baseline, except for the 0.01 pt near-integer float snap.
+    const baselineErrorPt = -position - descentPt;
     assert.ok(
-      Math.abs(residualPt + 1) <= 0.500_001,
-      `${latex}: optical baseline residual ${residualPt.toFixed(4)}pt is outside tolerance`,
+      baselineErrorPt >= -1.000_001 && baselineErrorPt <= 0.010_201,
+      `${latex} @ ${fontSizePt}pt: baseline remainder ${baselineErrorPt.toFixed(4)}pt is outside the whole-point floor contract`,
     );
 
     results.push({
@@ -153,13 +99,20 @@ for (const fontSizePt of fontSizesPt) {
       heightPt: Number(actualHeightPt.toFixed(3)),
       descentPt: Number(descentPt.toFixed(3)),
       positionPt: position,
-      residualPt: Number(residualPt.toFixed(3)),
+      baselineErrorPt: Number(baselineErrorPt.toFixed(3)),
     });
   }
 }
 
+const plainX = results.filter((row) => row.latex === "x");
+assert.ok(
+  plainX.some((row) => row.positionPt < 0),
+  "Small ordinary symbols must not all collapse to Position=0 when their rendered descent rounds to one point",
+);
+
 console.table(results.filter((row) => row.fontSizePt === 10.5));
 console.log(
-  `Word baseline regression passed for ${formulas.length} formula structures `
-  + `at ${fontSizesPt.length} font sizes (${results.length} metric combinations).`,
+  `Word baseline metric regression passed for ${results.length} combinations. `
+  + "This verifies rendered geometry and whole-point floor quantisation only; "
+  + "OMML visual parity is verified separately in real Word.",
 );

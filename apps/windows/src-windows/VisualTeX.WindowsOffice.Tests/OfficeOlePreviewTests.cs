@@ -123,6 +123,91 @@ public sealed class OfficeOlePreviewTests
             $"The right tall-matrix bracket is structurally broken: {rightCoveredRows}/187 covered rows. {OfficeOlePreview.LastRecordingDiagnostics}");
     }
 
+    [Fact]
+    public void InkSafePreviewExpandsFinalSystemFontOutlinesWithoutClipping()
+    {
+        using var temp = new TemporaryDirectory();
+        var svgPath = Path.Combine(temp.Path, "tight-system-font.svg");
+        var browserPngPath = Path.Combine(temp.Path, "browser-preview.png");
+        File.WriteAllBytes(browserPngPath, new byte[] { 1, 2, 3 });
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -200 1000 300\" color=\"#111111\">"
+            + "<text x=\"0\" y=\"0\" font-size=\"1000px\" font-family=\"Times New Roman\" fill=\"currentColor\">Lz</text>"
+            + "</svg>",
+            new UTF8Encoding(false));
+
+        var preview = OfficeOlePreview.CreateInkSafePreviewFromSvg(
+            svgPath,
+            widthPixels: 100,
+            heightPixels: 30,
+            baselinePixels: 20,
+            fallbackPngPath: browserPngPath,
+            safetyPaddingPixels: 1);
+
+        Assert.NotEqual(browserPngPath, preview.PngPath);
+        Assert.True(
+            preview.HeightPixels > 30,
+            $"Final Times New Roman outlines did not expand the tight SVG frame: {preview.HeightPixels:0.###}px.");
+        Assert.InRange(preview.BaselinePixels, 0.001f, preview.HeightPixels - 0.001f);
+        OfficeOlePreview.ValidateVectorEmf(preview.EmfPath);
+
+        using (var png = new Bitmap(preview.PngPath))
+        {
+            var ink = FindVisibleBounds(png);
+            Assert.False(ink.IsEmpty);
+            Assert.True(
+                ink.Left > 0 && ink.Top > 0 && ink.Right < png.Width && ink.Bottom < png.Height,
+                $"Ink-safe PNG still touches its clip edge: ink={ink}, bitmap={png.Width}x{png.Height}.");
+        }
+
+        using var metafile = new Metafile(preview.EmfPath);
+        var emfWidth = Math.Max(1, (int)Math.Ceiling(preview.WidthPixels));
+        var emfHeight = Math.Max(1, (int)Math.Ceiling(preview.HeightPixels));
+        using var bitmap = new Bitmap(emfWidth, emfHeight, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            graphics.DrawImage(metafile, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+        }
+        var emfInk = FindDarkBounds(bitmap);
+        Assert.False(emfInk.IsEmpty);
+        Assert.True(
+            emfInk.Left > 0
+            && emfInk.Top > 0
+            && emfInk.Right < bitmap.Width
+            && emfInk.Bottom < bitmap.Height,
+            $"Ink-safe vector EMF still touches its clip edge: ink={emfInk}, bitmap={bitmap.Width}x{bitmap.Height}. "
+            + OfficeOlePreview.LastRecordingDiagnostics);
+    }
+
+    [Fact]
+    public void PathOnlyPreviewReusesTheAlreadyGeneratedPng()
+    {
+        using var temp = new TemporaryDirectory();
+        var svgPath = Path.Combine(temp.Path, "path-only.svg");
+        var pngPath = Path.Combine(temp.Path, "existing.png");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 50\"><path d=\"M10 10H90V40H10Z\"/></svg>",
+            new UTF8Encoding(false));
+        File.WriteAllBytes(pngPath, new byte[] { 1, 2, 3 });
+
+        var preview = OfficeOlePreview.CreateInkSafePreviewFromSvg(
+            svgPath,
+            widthPixels: 100,
+            heightPixels: 50,
+            baselinePixels: 35,
+            fallbackPngPath: pngPath);
+
+        Assert.Equal(pngPath, preview.PngPath);
+        Assert.Equal(100, preview.WidthPixels);
+        Assert.Equal(50, preview.HeightPixels);
+        Assert.Equal(35, preview.BaselinePixels);
+        Assert.Single(Directory.GetFiles(temp.Path, "*.png"));
+        OfficeOlePreview.ValidateVectorEmf(preview.EmfPath);
+    }
+
     [Theory]
     [InlineData("<image href=\"data:image/png;base64,AA==\" width=\"1\" height=\"1\" />")]
     [InlineData("<foreignObject width=\"10\" height=\"10\"></foreignObject>")]
@@ -164,6 +249,26 @@ public sealed class OfficeOlePreviewTests
             if (pixel.R + pixel.G + pixel.B < 660) return true;
         }
         return false;
+    }
+
+    private static Rectangle FindVisibleBounds(Bitmap bitmap)
+    {
+        var left = bitmap.Width;
+        var top = bitmap.Height;
+        var right = -1;
+        var bottom = -1;
+        for (var y = 0; y < bitmap.Height; y++)
+        for (var x = 0; x < bitmap.Width; x++)
+        {
+            if (bitmap.GetPixel(x, y).A <= 8) continue;
+            left = Math.Min(left, x);
+            top = Math.Min(top, y);
+            right = Math.Max(right, x);
+            bottom = Math.Max(bottom, y);
+        }
+        return right < left || bottom < top
+            ? Rectangle.Empty
+            : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
     }
 
     private static Rectangle FindDarkBounds(Bitmap bitmap)
