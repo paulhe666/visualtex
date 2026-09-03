@@ -134,16 +134,21 @@ export type OcrProviderId =
   | "openai-compatible"
   | "ollama"
   | "mathpix"
-  | "paddleocr";
+  | "paddleocr"
+  | "simpletex";
 
 export type OpenAiCompatibleProtocol = "responses" | "chat-completions";
-export type PaddleOcrApiModel =
-  | "PaddleOCR-VL-1.6"
-  | "PP-StructureV3";
+export type PaddleOcrApiModel = "PaddleOCR-VL-1.6";
 
 export const PADDLE_OCR_API_MODELS: readonly PaddleOcrApiModel[] = [
   "PaddleOCR-VL-1.6",
-  "PP-StructureV3",
+] as const;
+
+export type SimpleTexApiModel = "standard" | "turbo";
+
+export const SIMPLETEX_API_MODELS: readonly SimpleTexApiModel[] = [
+  "standard",
+  "turbo",
 ] as const;
 
 export interface OcrProviderConfiguration {
@@ -167,6 +172,10 @@ export interface OcrProviderConfiguration {
   };
   paddleOcr: {
     model: PaddleOcrApiModel;
+    hasAccessToken: boolean;
+  };
+  simpleTex: {
+    model: SimpleTexApiModel;
     hasAccessToken: boolean;
   };
 }
@@ -194,6 +203,11 @@ export interface OcrProviderConfigurationUpdate {
   };
   paddleOcr: {
     model: PaddleOcrApiModel;
+    accessToken?: string;
+    clearAccessToken?: boolean;
+  };
+  simpleTex: {
+    model: SimpleTexApiModel;
     accessToken?: string;
     clearAccessToken?: boolean;
   };

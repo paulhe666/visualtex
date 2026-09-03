@@ -82,6 +82,12 @@ const structuralDrafts = [
 
 for (const environment of latexCompletions.environments) {
   const source = `\\begin{${environment}}\n  \n\\end{${environment}}`;
+  const parsed = parseLatexSourceDraft(source, "raw");
+  assert.deepEqual(
+    parsed.values,
+    [source],
+    `raw source parsing split auto-closed ${environment} at physical newlines`,
+  );
   const created = createFormulaLine(source, `auto-close-${environment}`);
   assert.equal(
     created.latex,
@@ -94,6 +100,16 @@ for (const environment of latexCompletions.environments) {
     normalized[0]?.latex,
     source,
     `normalizeFormulaLines truncated auto-closed ${environment} environment`,
+  );
+}
+
+for (const environment of ["matrix", "align"]) {
+  const source = `\\begin{${environment}}\n  \n\\end{${environment}}`;
+  const parsed = parseLatexSourceDraft(source, "raw");
+  assert.equal(
+    parsed.valid,
+    true,
+    `empty ${environment} environment must remain a valid live source draft`,
   );
 }
 

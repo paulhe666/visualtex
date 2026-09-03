@@ -943,6 +943,27 @@ fn emit_progress(
     }
 }
 
+fn emit_recognition_progress(
+    app: &AppHandle,
+    request_id: &str,
+    stage: &str,
+    message: impl Into<String>,
+    model: &str,
+) {
+    let progress = json!({
+        "event": "progress",
+        "id": request_id,
+        "stage": stage,
+        "message": message.into(),
+        "model": model,
+    });
+    let _ = app.emit("ocr-recognition-progress", &progress);
+    quick_ocr::handle_ocr_progress(app, &progress);
+    if let Some(state) = app.try_state::<OcrState>() {
+        state.events.publish("ocr-recognition-progress", &progress);
+    }
+}
+
 fn tail_text(value: &str, max_chars: usize) -> String {
     let total = value.chars().count();
     if total <= max_chars {

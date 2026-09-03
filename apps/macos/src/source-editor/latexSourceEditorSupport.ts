@@ -1,4 +1,5 @@
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { insertNewlineAndIndent } from "@codemirror/commands";
 import {
   indentOnInput,
   indentService,
@@ -8,6 +9,7 @@ import {
 import {
   Decoration,
   EditorView,
+  keymap,
   ViewPlugin,
   type DecorationSet,
 } from "@codemirror/view";
@@ -231,6 +233,58 @@ const sourceDecorations = ViewPlugin.fromClass(
   },
 );
 
+function hasMatchingEnvironmentEndAfter(
+  source: string,
+  from: number,
+  environmentName: string,
+) {
+  const trailing = source.slice(from);
+  const tokenPattern = /\\(begin|end)\{([^{}\r\n]+)\}/g;
+  let depth = 1;
+
+  for (const match of trailing.matchAll(tokenPattern)) {
+    const index = match.index ?? 0;
+    if (isEscaped(trailing, index)) continue;
+    const lineStart = trailing.lastIndexOf("\n", index - 1) + 1;
+    const beforeToken = trailing.slice(lineStart, index);
+    if (sourceBeforeComment(beforeToken).length !== beforeToken.length) continue;
+    if (match[2].trim() !== environmentName) continue;
+
+    depth += match[1] === "begin" ? 1 : -1;
+    if (depth === 0) return true;
+  }
+
+  return false;
+}
+
+function insertNewlineWithoutDuplicateEnvironmentEnd(view: EditorView) {
+  const selection = view.state.selection.main;
+  if (!selection.empty) return false;
+
+  const line = view.state.doc.lineAt(selection.head);
+  const prefix = line.text.slice(0, selection.head - line.from);
+  const suffix = line.text.slice(selection.head - line.from);
+  if (suffix.trim()) return false;
+
+  const begin = prefix.match(/\\begin\{([^{}\r\n]+)\}[ \t]*$/);
+  if (!begin) return false;
+  const environmentName = begin[1].trim();
+  if (!environmentName) return false;
+
+  const source = view.state.doc.toString();
+  if (!hasMatchingEnvironmentEndAfter(source, selection.head, environmentName)) {
+    return false;
+  }
+
+  return insertNewlineAndIndent(view);
+}
+
+const duplicateEnvironmentEndGuard = Prec.highest(
+  keymap.of([
+    { key: "Enter", run: insertNewlineWithoutDuplicateEnvironmentEnd },
+  ]),
+);
+
 export const visualTeXLatexEditingExtensions: Extension = [
   EditorState.tabSize.of(2),
   indentUnit.of(LATEX_SOURCE_INDENT),
@@ -241,5 +295,6 @@ export const visualTeXLatexEditingExtensions: Extension = [
     indentOnInput: /^\s*(?:\\end\{[^}]*\}|\\\]|\$\$|\})/,
   }),
   indentOnInput(),
+  duplicateEnvironmentEndGuard,
   sourceDecorations,
 ];

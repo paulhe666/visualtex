@@ -229,7 +229,7 @@ export function LatexSourceEditor({
         highlightActiveLine(),
         highlightSpecialChars(),
         history(),
-        latexLanguageSupport({ enableLinting: false, enableTooltips: false, autoCloseTags: false }),
+        latexLanguageSupport({ enableLinting: false, enableTooltips: false, autoCloseTags: true }),
         visualTeXLatexEditingExtensions,
         syntaxHighlighting(visualTeXLatexHighlightStyle),
         keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),

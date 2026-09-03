@@ -10,8 +10,8 @@ import {
 
 assert.deepEqual(
   PADDLE_OCR_API_MODELS,
-  ["PaddleOCR-VL-1.6", "PP-StructureV3"],
-  "Paddle API UI must expose only formula/layout-capable models",
+  ["PaddleOCR-VL-1.6"],
+  "Paddle API UI must expose only the validated formula model",
 );
 
 const runtime = {
@@ -74,7 +74,11 @@ const providers = {
   paddleOcr: {
     model: "PaddleOCR-VL-1.6",
     hasAccessToken: true,
-  }
+  },
+  simpleTex: {
+    model: "standard",
+    hasAccessToken: true,
+  },
 };
 assert.equal(decodeOcrProviderConfiguration(providers), providers);
 assert.throws(
@@ -88,6 +92,14 @@ assert.throws(
       paddleOcr: { ...providers.paddleOcr, model: "PP-OCRv5" },
     }),
   /paddleOcr\.model/,
+);
+assert.throws(
+  () =>
+    decodeOcrProviderConfiguration({
+      ...providers,
+      simpleTex: { ...providers.simpleTex, model: "invalid" },
+    }),
+  /simpleTex\.model/,
 );
 
 const progress = {

@@ -157,7 +157,7 @@ async function main() {
 
     const dispatch = await evaluate(`(() => {
       const provider = {
-        activeProvider: 'openai-compatible',
+        activeProvider: 'paddleocr',
         openAiCompatible: {
           protocol: 'responses',
           baseUrl: 'https://api.example.test/v1',
@@ -177,26 +177,88 @@ async function main() {
         },
         paddleOcr: {
           model: 'PaddleOCR-VL-1.6',
+          hasAccessToken: true,
+        },
+        simpleTex: {
+          model: 'standard',
           hasAccessToken: false,
         }
       };
       const calls = [];
+      const callbacks = new Map();
+      const listeners = new Map();
+      let callbackId = 1;
       window.__visualtexOcrMockCalls = calls;
+      window.__visualtexOcrProgressMessages = [];
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener(event, eventId) {
+          const eventListeners = listeners.get(event) || [];
+          listeners.set(event, eventListeners.filter((id) => id !== eventId));
+          callbacks.delete(eventId);
+        },
+      };
       window.__TAURI_INTERNALS__ = {
         ...(window.__TAURI_INTERNALS__ || {}),
+        transformCallback(callback, once = false) {
+          const id = callbackId++;
+          callbacks.set(id, { callback, once });
+          return id;
+        },
+        unregisterCallback(id) {
+          callbacks.delete(id);
+        },
         invoke: async (command, args) => {
           calls.push({ command, args });
           if (command === 'get_ocr_provider_configuration') return provider;
+          if (command === 'plugin:event|listen') {
+            const eventListeners = listeners.get(args.event) || [];
+            eventListeners.push(args.handler);
+            listeners.set(args.event, eventListeners);
+            return args.handler;
+          }
+          if (command === 'plugin:event|unlisten') {
+            const eventListeners = listeners.get(args.event) || [];
+            listeners.set(
+              args.event,
+              eventListeners.filter((id) => id !== args.eventId),
+            );
+            return null;
+          }
           if (command === 'recognize_formula_image') {
+            const emitProgress = async (stage, message) => {
+              for (const id of listeners.get('ocr-recognition-progress') || []) {
+                const entry = callbacks.get(id);
+                entry?.callback({
+                  event: 'ocr-recognition-progress',
+                  id: 1,
+                  payload: {
+                    event: 'progress',
+                    id: 'remote-browser-test',
+                    stage,
+                    message,
+                    model: 'PP-FormulaNet_plus-M',
+                  },
+                });
+                if (entry?.once) callbacks.delete(id);
+              }
+              await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+              window.__visualtexOcrProgressMessages.push(
+                document.querySelector('.inline-ocr-progress strong')?.textContent || '',
+              );
+            };
+            await emitProgress('api-submit', '正在提交图片到 PaddleOCR…');
+            await emitProgress('api-queued', 'PaddleOCR 任务正在排队…');
+            await emitProgress('api-inference', 'PaddleOCR 正在识别公式…');
+            await emitProgress('api-result', 'PaddleOCR 识别完成，正在读取结果…');
             return {
-              provider: 'openai-compatible',
-              model: 'vision-model',
+              provider: 'paddleocr',
+              model: 'PaddleOCR-VL-1.6',
               elapsedMs: 19,
               processedWidth: 600,
               processedHeight: 220,
               backgroundInverted: false,
               backgroundLuminance: 0,
-              formulas: [{ latex: '\\\\begin{align}x&=1\\\\\\\\longvariable&=2\\\\\\\\z&=3\\\\end{align}' }],
+              formulas: [{ latex: '\\\\begin{align}x&=1&u&=v\\\\\\\\longvariable&=2&&\\\\text{note}\\\\\\\\z&=3&long&=t\\\\end{align}' }],
             };
           }
           throw new Error('Unexpected OCR mock command: ' + command);
@@ -221,41 +283,44 @@ async function main() {
       state = await evaluate(`(() => {
         const fields = [...document.querySelectorAll('.formula-line math-field')];
         const entries = fields.map((field) => {
-          const marker = field.shadowRoot?.querySelector('.visualtex-align-marker');
-          const markerLeft = marker?.getBoundingClientRect().left ?? null;
-          const equalCandidates = [];
-          for (let position = 0; position <= field.lastOffset; position += 1) {
-            const info = field.getElementInfo(position);
-            if (info?.latex?.trim() === '=' && info.bounds && info.depth === 0) {
-              equalCandidates.push(info.bounds.left);
-            }
-          }
-          const equalLeft = typeof markerLeft === 'number'
-            ? equalCandidates
-                .filter((left) => left >= markerLeft - 0.1)
-                .sort((a, b) => a - b)[0] ?? null
-            : null;
+          const markers = [...(field.shadowRoot?.querySelectorAll('.visualtex-align-marker') ?? [])];
           return {
             value: field.value,
-            markerLeft,
-            equalLeft,
+            markerLefts: markers.map((marker) => marker.getBoundingClientRect().left),
+            markerMarginLefts: markers.map(
+              (marker) => Number.parseFloat(getComputedStyle(marker).marginLeft || '0') || 0,
+            ),
+            markerMarginRights: markers.map(
+              (marker) => Number.parseFloat(getComputedStyle(marker).marginRight || '0') || 0,
+            ),
           };
         });
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
-        const markerLefts = entries.map((entry) => entry.markerLeft).filter(Number.isFinite);
-        const equalLefts = entries.map((entry) => entry.equalLeft).filter(Number.isFinite);
+        const markerSpreads = [0, 1, 2].map((markerIndex) => {
+          const positions = entries
+            .map((entry) => entry.markerLefts[markerIndex])
+            .filter(Number.isFinite);
+          return positions.length === fields.length
+            ? Math.max(...positions) - Math.min(...positions)
+            : Number.POSITIVE_INFINITY;
+        });
         return {
           count: fields.length,
           entries,
-          markerSpread: markerLefts.length ? Math.max(...markerLefts) - Math.min(...markerLefts) : null,
-          visualAnchorSpread: equalLefts.length ? Math.max(...equalLefts) - Math.min(...equalLefts) : null,
+          markerSpreads,
           latexCodeFormat: persisted?.state?.latexCodeFormat ?? null,
           calls: window.__visualtexOcrMockCalls || [],
+          progressMessages: window.__visualtexOcrProgressMessages || [],
         };
       })()`);
       if (
         state.count === 3 &&
-        state.entries.every((entry: any) => entry.value.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX)) &&
+        state.entries.every(
+          (entry: any) =>
+            entry.value.split(VISUALTEX_ALIGNMENT_MARKER_LATEX).length - 1 === 3 &&
+            entry.markerLefts.length === 3,
+        ) &&
+        state.markerSpreads.every((spread: number) => spread <= 1) &&
         state.latexCodeFormat === 'aligned'
       ) {
         break;
@@ -265,13 +330,23 @@ async function main() {
 
     assert.equal(state.count, 3, `OCR result was not expanded to three FormulaLines: ${JSON.stringify(state)}`);
     assert.ok(
-      state.entries.every((entry: any) => entry.value.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX)),
-      `OCR align markers were not preserved in every line: ${JSON.stringify(state.entries)}`,
+      state.entries.every(
+        (entry: any) => entry.value.split(VISUALTEX_ALIGNMENT_MARKER_LATEX).length - 1 === 3,
+      ),
+      `OCR multi-align markers were not preserved in every line: ${JSON.stringify(state.entries)}`,
     );
     assert.equal(state.latexCodeFormat, "aligned", "OCR align did not switch the editor copy format to aligned");
     assert.ok(
-      typeof state.visualAnchorSpread === "number" && state.visualAnchorSpread <= 0.75,
-      `OCR-derived visible alignment atoms were not aligned: ${JSON.stringify(state)}`,
+      state.markerSpreads.every((spread: number) => spread <= 1),
+      `OCR-derived multi-column anchors were not aligned: ${JSON.stringify(state)}`,
+    );
+    assert.ok(
+      state.entries.some(
+        (entry: any) =>
+          (entry.markerMarginLefts[1] ?? 0) > 0 ||
+          (entry.markerMarginRights[1] ?? 0) > 0,
+      ),
+      `OCR multi-pair spacing was not applied: ${JSON.stringify(state.entries)}`,
     );
     assert.ok(
       state.calls.some((call: any) => call.command === "get_ocr_provider_configuration"),
@@ -285,9 +360,15 @@ async function main() {
       !state.calls.some((call: any) => call.command === "get_ocr_runtime_status"),
       `remote OCR incorrectly required the local runtime: ${JSON.stringify(state.calls)}`,
     );
+    assert.deepEqual(state.progressMessages, [
+      "正在提交图片到 PaddleOCR…",
+      "PaddleOCR 任务正在排队…",
+      "PaddleOCR 正在识别公式…",
+      "PaddleOCR 识别完成，正在读取结果…",
+    ]);
 
     console.log(
-      `macOS OCR multiline editor browser regression passed: rows=${state.count}, visualAnchorSpread=${state.visualAnchorSpread}px, provider=remote.`,
+      `macOS OCR multi-align editor browser regression passed: rows=${state.count}, markerSpreads=${state.markerSpreads.join("/")}px, Paddle progress=${state.progressMessages.length} stages.`,
     );
   } finally {
     client?.close();

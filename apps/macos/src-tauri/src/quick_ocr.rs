@@ -459,6 +459,10 @@ pub(crate) fn handle_ocr_progress(app: &AppHandle, response: &Value) {
         .and_then(Value::as_str)
         .unwrap_or("正在识别公式…");
     let progress = match stage {
+        "api-submit" => 28,
+        "api-queued" => 48,
+        "api-inference" => 76,
+        "api-result" => 92,
         "preprocess" => 38,
         "model" => 58,
         "inference" => 76,

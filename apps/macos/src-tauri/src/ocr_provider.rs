@@ -16,17 +16,26 @@ pub(crate) const OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible";
 pub(crate) const OLLAMA_PROVIDER: &str = "ollama";
 pub(crate) const MATHPIX_PROVIDER: &str = "mathpix";
 pub(crate) const PADDLEOCR_PROVIDER: &str = "paddleocr";
+pub(crate) const SIMPLETEX_PROVIDER: &str = "simpletex";
 
-const CONFIGURATION_SCHEMA_VERSION: u32 = 1;
+const CONFIGURATION_SCHEMA_VERSION: u32 = 2;
 const CONFIGURATION_FILE: &str = "providers.json";
 const KEYCHAIN_SERVICE: &str = "com.visualtex.studio.ocr-providers";
 const OPENAI_API_KEY_ACCOUNT: &str = "openai-compatible-api-key";
 const MATHPIX_APP_KEY_ACCOUNT: &str = "mathpix-app-key";
 const PADDLEOCR_ACCESS_TOKEN_ACCOUNT: &str = "paddleocr-aistudio-access-token";
+const SIMPLETEX_ACCESS_TOKEN_ACCOUNT: &str = "simpletex-user-access-token";
 const PADDLEOCR_JOBS_URL: &str = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs";
 const PADDLEOCR_RESULT_MAX_BYTES: usize = 16 * 1024 * 1024;
 const PADDLEOCR_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const PADDLEOCR_MAX_POLL_ATTEMPTS: usize = 120;
+const PADDLEOCR_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
+const PADDLEOCR_STATUS_TIMEOUT: Duration = Duration::from_secs(8);
+const PADDLEOCR_RESULT_TIMEOUT: Duration = Duration::from_secs(20);
+const PADDLEOCR_TOTAL_TIMEOUT: Duration = Duration::from_secs(120);
+const SIMPLETEX_STANDARD_URL: &str = "https://server.simpletex.cn/api/latex_ocr";
+const SIMPLETEX_TURBO_URL: &str = "https://server.simpletex.cn/api/latex_ocr_turbo";
+const SIMPLETEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MATHPIX_MAX_BASE64_IMAGE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_FORMULAS: usize = 64;
@@ -44,6 +53,78 @@ struct RemoteRecognitionLease {
     running: Arc<AtomicBool>,
 }
 
+struct RemoteRecognitionProgress {
+    app: AppHandle,
+    request_id: String,
+    ui_model: String,
+}
+
+impl RemoteRecognitionProgress {
+    fn new(app: &AppHandle, ui_model: &str) -> Self {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
+        Self {
+            app: app.clone(),
+            request_id: format!("remote-{}-{nonce}", std::process::id()),
+            ui_model: ui_model.to_string(),
+        }
+    }
+
+    fn emit(&self, stage: &str, message: impl Into<String>) {
+        super::emit_recognition_progress(
+            &self.app,
+            &self.request_id,
+            stage,
+            message,
+            &self.ui_model,
+        );
+    }
+}
+
+fn remote_provider_progress_message(provider: &str, stage: &str) -> Option<&'static str> {
+    match (provider, stage) {
+        (OPENAI_COMPATIBLE_PROVIDER, "api-submit") => {
+            Some("正在准备向 OpenAI 兼容 API 提交图片…")
+        }
+        (OPENAI_COMPATIBLE_PROVIDER, "api-inference") => {
+            Some("OpenAI 兼容 API 正在上传图片并识别公式…")
+        }
+        (OPENAI_COMPATIBLE_PROVIDER, "api-result") => {
+            Some("OpenAI 兼容 API 已返回结果，正在写入编辑器…")
+        }
+        (OLLAMA_PROVIDER, "api-submit") => Some("正在准备向 Ollama 提交图片…"),
+        (OLLAMA_PROVIDER, "api-inference") => Some("Ollama 正在上传图片并识别公式…"),
+        (OLLAMA_PROVIDER, "api-result") => Some("Ollama 已返回结果，正在写入编辑器…"),
+        (MATHPIX_PROVIDER, "api-submit") => Some("正在准备向 Mathpix 提交图片…"),
+        (MATHPIX_PROVIDER, "api-inference") => Some("Mathpix 正在上传图片并识别公式…"),
+        (MATHPIX_PROVIDER, "api-result") => Some("Mathpix 已返回结果，正在写入编辑器…"),
+        (PADDLEOCR_PROVIDER, "api-submit") => Some("正在提交图片到 PaddleOCR…"),
+        (SIMPLETEX_PROVIDER, "api-submit") => Some("正在准备向 SimpleTex 提交图片…"),
+        (SIMPLETEX_PROVIDER, "api-inference") => {
+            Some("SimpleTex 正在上传图片并识别公式…")
+        }
+        (SIMPLETEX_PROVIDER, "api-result") => {
+            Some("SimpleTex 已返回结果，正在写入编辑器…")
+        }
+        _ => None,
+    }
+}
+
+fn emit_remote_provider_progress(
+    progress: Option<&RemoteRecognitionProgress>,
+    provider: &str,
+    stage: &str,
+) {
+    if let (Some(progress), Some(message)) = (
+        progress,
+        remote_provider_progress_message(provider, stage),
+    ) {
+        progress.emit(stage, message);
+    }
+}
+
 impl Drop for RemoteRecognitionLease {
     fn drop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
@@ -58,6 +139,7 @@ pub(crate) struct OcrProviderConfigurationView {
     ollama: OllamaConfigurationView,
     mathpix: MathpixConfigurationView,
     paddle_ocr: PaddleOcrConfigurationView,
+    simple_tex: SimpleTexConfigurationView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +175,13 @@ struct PaddleOcrConfigurationView {
     has_access_token: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimpleTexConfigurationView {
+    model: String,
+    has_access_token: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrProviderConfigurationUpdate {
@@ -102,6 +191,8 @@ pub(crate) struct OcrProviderConfigurationUpdate {
     mathpix: MathpixConfigurationUpdate,
     #[serde(default)]
     paddle_ocr: PaddleOcrConfigurationUpdate,
+    #[serde(default)]
+    simple_tex: SimpleTexConfigurationUpdate,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,6 +247,26 @@ impl Default for PaddleOcrConfigurationUpdate {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SimpleTexConfigurationUpdate {
+    model: String,
+    #[serde(default)]
+    access_token: Option<String>,
+    #[serde(default)]
+    clear_access_token: bool,
+}
+
+impl Default for SimpleTexConfigurationUpdate {
+    fn default() -> Self {
+        Self {
+            model: "standard".to_string(),
+            access_token: None,
+            clear_access_token: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredOcrProviderConfiguration {
@@ -166,6 +277,8 @@ struct StoredOcrProviderConfiguration {
     mathpix: StoredMathpixConfiguration,
     #[serde(default)]
     paddle_ocr: StoredPaddleOcrConfiguration,
+    #[serde(default)]
+    simple_tex: StoredSimpleTexConfiguration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,6 +319,20 @@ impl Default for StoredPaddleOcrConfiguration {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredSimpleTexConfiguration {
+    model: String,
+}
+
+impl Default for StoredSimpleTexConfiguration {
+    fn default() -> Self {
+        Self {
+            model: "standard".to_string(),
+        }
+    }
+}
+
 impl Default for StoredOcrProviderConfiguration {
     fn default() -> Self {
         Self {
@@ -227,6 +354,7 @@ impl Default for StoredOcrProviderConfiguration {
                 app_id: String::new(),
             },
             paddle_ocr: StoredPaddleOcrConfiguration::default(),
+            simple_tex: StoredSimpleTexConfiguration::default(),
         }
     }
 }
@@ -267,13 +395,16 @@ impl OcrProviderState {
         let mathpix_app_id =
             normalize_short_text(&update.mathpix.app_id, "Mathpix app_id", 240, false)?;
         let paddle_ocr_model = normalize_paddleocr_model(&update.paddle_ocr.model)?.to_string();
+        let simpletex_model = normalize_simpletex_model(&update.simple_tex.model)?.to_string();
 
         let current_openai_secret = secret_exists(OPENAI_API_KEY_ACCOUNT)?;
         let current_mathpix_secret = secret_exists(MATHPIX_APP_KEY_ACCOUNT)?;
         let current_paddle_ocr_secret = secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?;
+        let current_simpletex_secret = secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?;
         let openai_replacement = normalize_secret_update(update.open_ai_compatible.api_key)?;
         let mathpix_replacement = normalize_secret_update(update.mathpix.app_key)?;
         let paddle_ocr_replacement = normalize_secret_update(update.paddle_ocr.access_token)?;
+        let simpletex_replacement = normalize_secret_update(update.simple_tex.access_token)?;
         let has_openai_secret = if update.open_ai_compatible.clear_api_key {
             false
         } else {
@@ -288,6 +419,11 @@ impl OcrProviderState {
             false
         } else {
             paddle_ocr_replacement.is_some() || current_paddle_ocr_secret
+        };
+        let has_simpletex_secret = if update.simple_tex.clear_access_token {
+            false
+        } else {
+            simpletex_replacement.is_some() || current_simpletex_secret
         };
 
         validate_secret_transport(&openai_base_url, has_openai_secret, "API key")?;
@@ -314,11 +450,15 @@ impl OcrProviderState {
             paddle_ocr: StoredPaddleOcrConfiguration {
                 model: paddle_ocr_model,
             },
+            simple_tex: StoredSimpleTexConfiguration {
+                model: simpletex_model,
+            },
         };
         validate_active_provider_configuration(
             &next,
             has_mathpix_secret,
             has_paddle_ocr_secret,
+            has_simpletex_secret,
         )?;
 
         apply_secret_update(
@@ -335,6 +475,11 @@ impl OcrProviderState {
             PADDLEOCR_ACCESS_TOKEN_ACCOUNT,
             paddle_ocr_replacement.as_deref(),
             update.paddle_ocr.clear_access_token,
+        )?;
+        apply_secret_update(
+            SIMPLETEX_ACCESS_TOKEN_ACCOUNT,
+            simpletex_replacement.as_deref(),
+            update.simple_tex.clear_access_token,
         )?;
         persist_configuration(app, &next)?;
         let mut cache = self
@@ -365,12 +510,20 @@ impl OcrProviderState {
         let configuration = self.load(app)?;
         let has_mathpix_secret = secret_exists(MATHPIX_APP_KEY_ACCOUNT)?;
         let has_paddle_ocr_secret = secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?;
+        let has_simpletex_secret = secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?;
         validate_active_provider_configuration(
             &configuration,
             has_mathpix_secret,
             has_paddle_ocr_secret,
+            has_simpletex_secret,
         )?;
-        recognize_remote_inner(&configuration, request).await
+        let progress = RemoteRecognitionProgress::new(app, &request.model);
+        emit_remote_provider_progress(
+            Some(&progress),
+            &configuration.active_provider,
+            "api-submit",
+        );
+        recognize_remote_inner(&configuration, request, Some(&progress)).await
     }
 
     fn load(&self, app: &AppHandle) -> Result<StoredOcrProviderConfiguration, String> {
@@ -388,7 +541,9 @@ impl OcrProviderState {
         }
         match read_configuration_file(app) {
             Ok(configuration) => Ok(configuration),
-            Err(ConfigurationReadError::Invalid(_)) => Ok(StoredOcrProviderConfiguration::default()),
+            Err(ConfigurationReadError::Invalid(_)) => {
+                Ok(StoredOcrProviderConfiguration::default())
+            }
             Err(ConfigurationReadError::Io(error)) => Err(error),
         }
     }
@@ -439,6 +594,10 @@ fn configuration_view(
             model: normalize_paddleocr_model(&configuration.paddle_ocr.model)?.to_string(),
             has_access_token: secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?,
         },
+        simple_tex: SimpleTexConfigurationView {
+            model: normalize_simpletex_model(&configuration.simple_tex.model)?.to_string(),
+            has_access_token: secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?,
+        },
     })
 }
 
@@ -451,7 +610,9 @@ enum ConfigurationReadError {
 impl From<ConfigurationReadError> for String {
     fn from(error: ConfigurationReadError) -> Self {
         match error {
-            ConfigurationReadError::Invalid(message) | ConfigurationReadError::Io(message) => message,
+            ConfigurationReadError::Invalid(message) | ConfigurationReadError::Io(message) => {
+                message
+            }
         }
     }
 }
@@ -461,12 +622,14 @@ fn read_configuration_file(
 ) -> Result<StoredOcrProviderConfiguration, ConfigurationReadError> {
     let path = configuration_path(app).map_err(ConfigurationReadError::Io)?;
     let configuration = migrate_legacy_paddleocr_configuration(match fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice::<StoredOcrProviderConfiguration>(&bytes).map_err(|error| {
-            ConfigurationReadError::Invalid(format!(
-                "The OCR provider configuration is damaged ({}): {error}",
-                path.display()
-            ))
-        })?,
+        Ok(bytes) => {
+            serde_json::from_slice::<StoredOcrProviderConfiguration>(&bytes).map_err(|error| {
+                ConfigurationReadError::Invalid(format!(
+                    "The OCR provider configuration is damaged ({}): {error}",
+                    path.display()
+                ))
+            })?
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             StoredOcrProviderConfiguration::default()
         }
@@ -539,7 +702,9 @@ fn secret_exists(account: &str) -> Result<bool, String> {
             Ok(exists)
         }
         Err(keyring::Error::NoEntry) => Ok(false),
-        Err(error) => Err(format!("Unable to read the OCR secret from macOS Keychain: {error}")),
+        Err(error) => Err(format!(
+            "Unable to read the OCR secret from macOS Keychain: {error}"
+        )),
     }
 }
 
@@ -548,7 +713,9 @@ fn read_secret(account: &str) -> Result<Option<SensitiveString>, String> {
         Ok(secret) if secret.is_empty() => Ok(None),
         Ok(secret) => Ok(Some(SensitiveString(secret))),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(format!("Unable to read the OCR secret from macOS Keychain: {error}")),
+        Err(error) => Err(format!(
+            "Unable to read the OCR secret from macOS Keychain: {error}"
+        )),
     }
 }
 
@@ -564,13 +731,19 @@ fn normalize_secret_update(value: Option<String>) -> Result<Option<String>, Stri
     Ok(Some(normalized.to_string()))
 }
 
-fn apply_secret_update(account: &str, replacement: Option<&str>, clear: bool) -> Result<(), String> {
+fn apply_secret_update(
+    account: &str,
+    replacement: Option<&str>,
+    clear: bool,
+) -> Result<(), String> {
     let entry = keychain_entry(account)?;
     if clear {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
             Err(error) => {
-                return Err(format!("Unable to remove the OCR secret from macOS Keychain: {error}"))
+                return Err(format!(
+                    "Unable to remove the OCR secret from macOS Keychain: {error}"
+                ))
             }
         }
         return Ok(());
@@ -604,6 +777,7 @@ fn normalize_provider(value: &str) -> Result<&'static str, String> {
         OLLAMA_PROVIDER => Ok(OLLAMA_PROVIDER),
         MATHPIX_PROVIDER => Ok(MATHPIX_PROVIDER),
         PADDLEOCR_PROVIDER | "paddle" | "paddle-ocr" => Ok(PADDLEOCR_PROVIDER),
+        SIMPLETEX_PROVIDER | "simple-tex" => Ok(SIMPLETEX_PROVIDER),
         _ => Err("Unsupported OCR provider".to_string()),
     }
 }
@@ -658,24 +832,45 @@ fn normalize_base_url(value: &str) -> Result<String, String> {
 fn normalize_paddleocr_model(value: &str) -> Result<&'static str, String> {
     match value.trim() {
         "PaddleOCR-VL-1.6" => Ok("PaddleOCR-VL-1.6"),
-        "PP-StructureV3" => Ok("PP-StructureV3"),
         _ => Err("Unsupported PaddleOCR AI Studio model".to_string()),
+    }
+}
+
+fn normalize_simpletex_model(value: &str) -> Result<&'static str, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "standard" | "latex_ocr" => Ok("standard"),
+        "turbo" | "latex_ocr_turbo" => Ok("turbo"),
+        _ => Err("Unsupported SimpleTex formula model".to_string()),
+    }
+}
+
+fn simpletex_endpoint(model: &str) -> Result<&'static str, String> {
+    match normalize_simpletex_model(model)? {
+        "standard" => Ok(SIMPLETEX_STANDARD_URL),
+        "turbo" => Ok(SIMPLETEX_TURBO_URL),
+        _ => unreachable!("normalize_simpletex_model returns a fixed model"),
     }
 }
 
 fn migrate_legacy_paddleocr_configuration(
     mut configuration: StoredOcrProviderConfiguration,
 ) -> StoredOcrProviderConfiguration {
-    if matches!(
-        configuration.paddle_ocr.model.as_str(),
-        "PaddleOCR-VL-1.5" | "PaddleOCR-VL"
-    ) {
-        configuration.paddle_ocr.model = "PaddleOCR-VL-1.6".to_string();
+    if configuration.schema_version == 1 {
+        configuration.paddle_ocr.model = match configuration.paddle_ocr.model.as_str() {
+            "PaddleOCR-VL-1.5" | "PaddleOCR-VL" | "PP-StructureV3" => {
+                "PaddleOCR-VL-1.6".to_string()
+            }
+            "PaddleOCR-VL-1.6" => "PaddleOCR-VL-1.6".to_string(),
+            other => other.to_string(),
+        };
+        configuration.schema_version = CONFIGURATION_SCHEMA_VERSION;
     }
     configuration
 }
 
-fn validate_stored_configuration(configuration: &StoredOcrProviderConfiguration) -> Result<(), String> {
+fn validate_stored_configuration(
+    configuration: &StoredOcrProviderConfiguration,
+) -> Result<(), String> {
     if configuration.schema_version != CONFIGURATION_SCHEMA_VERSION {
         return Err(format!(
             "Unsupported OCR provider configuration schema: {}",
@@ -688,6 +883,7 @@ fn validate_stored_configuration(configuration: &StoredOcrProviderConfiguration)
     validate_url(&configuration.ollama.base_url)?;
     validate_url(&configuration.mathpix.base_url)?;
     normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
+    normalize_simpletex_model(&configuration.simple_tex.model)?;
     Ok(())
 }
 
@@ -695,6 +891,7 @@ fn validate_active_provider_configuration(
     configuration: &StoredOcrProviderConfiguration,
     has_mathpix_secret: bool,
     has_paddle_ocr_secret: bool,
+    has_simpletex_secret: bool,
 ) -> Result<(), String> {
     validate_stored_configuration(configuration)?;
     match configuration.active_provider.as_str() {
@@ -726,13 +923,20 @@ fn validate_active_provider_configuration(
             }
             Ok(())
         }
+        SIMPLETEX_PROVIDER => {
+            normalize_simpletex_model(&configuration.simple_tex.model)?;
+            if !has_simpletex_secret {
+                return Err("SimpleTex user access token is required".to_string());
+            }
+            Ok(())
+        }
         _ => Err("Unsupported OCR provider".to_string()),
     }
 }
 
 fn validate_url(value: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(value)
-        .map_err(|error| format!("Invalid OCR provider URL: {error}"))?;
+    let url =
+        reqwest::Url::parse(value).map_err(|error| format!("Invalid OCR provider URL: {error}"))?;
     if url.scheme() != "http" && url.scheme() != "https" {
         return Err("OCR provider URL must use http or https".to_string());
     }
@@ -749,8 +953,8 @@ fn validate_url(value: &str) -> Result<(), String> {
 }
 
 fn is_loopback_url(value: &str) -> Result<bool, String> {
-    let url = reqwest::Url::parse(value)
-        .map_err(|error| format!("Invalid OCR provider URL: {error}"))?;
+    let url =
+        reqwest::Url::parse(value).map_err(|error| format!("Invalid OCR provider URL: {error}"))?;
     let Some(host) = url.host_str() else {
         return Ok(false);
     };
@@ -784,7 +988,13 @@ fn parse_scutil_proxy_value(output: &str, key: &str) -> Option<String> {
 fn format_proxy_url(host: &str, port: &str) -> Option<String> {
     let host = host.trim();
     let port = port.trim();
-    if host.is_empty() || port.parse::<u16>().ok().filter(|value| *value > 0).is_none() {
+    if host.is_empty()
+        || port
+            .parse::<u16>()
+            .ok()
+            .filter(|value| *value > 0)
+            .is_none()
+    {
         return None;
     }
     let host = if host.contains(':') && !host.starts_with('[') {
@@ -796,8 +1006,8 @@ fn format_proxy_url(host: &str, port: &str) -> Option<String> {
 }
 
 fn parse_macos_system_proxy_settings(output: &str) -> MacosSystemProxySettings {
-    let https_enabled = parse_scutil_proxy_value(output, "HTTPSEnable")
-        .is_some_and(|value| value == "1");
+    let https_enabled =
+        parse_scutil_proxy_value(output, "HTTPSEnable").is_some_and(|value| value == "1");
     let https_proxy = https_enabled
         .then(|| {
             let host = parse_scutil_proxy_value(output, "HTTPSProxy")?;
@@ -854,6 +1064,7 @@ fn build_ocr_http_client(
 async fn recognize_remote_inner(
     configuration: &StoredOcrProviderConfiguration,
     request: &OcrImageRequest,
+    progress: Option<&RemoteRecognitionProgress>,
 ) -> Result<OcrRecognitionResult, String> {
     let started = Instant::now();
     let mime = mime_for_extension(&request.extension)?;
@@ -874,6 +1085,11 @@ async fn recognize_remote_inner(
                 api_key.is_some(),
                 "API key",
             )?;
+            emit_remote_provider_progress(
+                progress,
+                OPENAI_COMPATIBLE_PROVIDER,
+                "api-inference",
+            );
             let formulas = recognize_openai_compatible(
                 &client,
                 &configuration.open_ai_compatible,
@@ -888,6 +1104,7 @@ async fn recognize_remote_inner(
             )
         }
         OLLAMA_PROVIDER => {
+            emit_remote_provider_progress(progress, OLLAMA_PROVIDER, "api-inference");
             let formulas = recognize_ollama(&client, &configuration.ollama, &data_base64).await?;
             (
                 OLLAMA_PROVIDER,
@@ -902,13 +1119,10 @@ async fn recognize_remote_inner(
             let app_key = read_secret(MATHPIX_APP_KEY_ACCOUNT)?
                 .ok_or_else(|| "Mathpix app_key is required".to_string())?;
             validate_secret_transport(&configuration.mathpix.base_url, true, "app_key")?;
-            let formulas = recognize_mathpix(
-                &client,
-                &configuration.mathpix,
-                app_key.as_str(),
-                &data_url,
-            )
-            .await?;
+            emit_remote_provider_progress(progress, MATHPIX_PROVIDER, "api-inference");
+            let formulas =
+                recognize_mathpix(&client, &configuration.mathpix, app_key.as_str(), &data_url)
+                    .await?;
             (MATHPIX_PROVIDER, "Mathpix Text API".to_string(), formulas)
         }
         PADDLEOCR_PROVIDER => {
@@ -922,14 +1136,38 @@ async fn recognize_remote_inner(
                 &request.bytes,
                 mime,
                 &request.extension,
+                progress,
             )
             .await?;
             (PADDLEOCR_PROVIDER, paddle_model.to_string(), formulas)
+        }
+        SIMPLETEX_PROVIDER => {
+            let access_token = read_secret(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?
+                .ok_or_else(|| "SimpleTex user access token is required".to_string())?;
+            let simpletex_model = normalize_simpletex_model(&configuration.simple_tex.model)?;
+            emit_remote_provider_progress(progress, SIMPLETEX_PROVIDER, "api-inference");
+            let formulas = recognize_simpletex(
+                &client,
+                &configuration.simple_tex,
+                access_token.as_str(),
+                &request.bytes,
+                mime,
+                &request.extension,
+            )
+            .await?;
+            (
+                SIMPLETEX_PROVIDER,
+                format!("SimpleTex V2.5 ({simpletex_model})"),
+                formulas,
+            )
         }
         _ => return Err("The active OCR provider is local, not remote".to_string()),
     };
     if formulas.is_empty() {
         return Err("OCR API returned no usable formula".to_string());
+    }
+    if provider != PADDLEOCR_PROVIDER {
+        emit_remote_provider_progress(progress, provider, "api-result");
     }
     Ok(OcrRecognitionResult {
         provider: provider.to_string(),
@@ -1069,6 +1307,104 @@ async fn recognize_ollama(
     parse_formula_output(content)
 }
 
+async fn recognize_simpletex(
+    client: &reqwest::Client,
+    configuration: &StoredSimpleTexConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+) -> Result<Vec<String>, String> {
+    recognize_simpletex_at(
+        client,
+        configuration,
+        access_token,
+        image_bytes,
+        mime,
+        extension,
+        simpletex_endpoint(&configuration.model)?,
+        SIMPLETEX_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn recognize_simpletex_at(
+    client: &reqwest::Client,
+    configuration: &StoredSimpleTexConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    endpoint: &str,
+    timeout: Duration,
+) -> Result<Vec<String>, String> {
+    normalize_simpletex_model(&configuration.model)?;
+    let file_extension = extension.trim().trim_start_matches('.');
+    let file_name = if file_extension.is_empty() {
+        "visualtex-formula.png".to_string()
+    } else {
+        format!("visualtex-formula.{file_extension}")
+    };
+    let part = reqwest::multipart::Part::bytes(image_bytes.to_vec())
+        .file_name(file_name)
+        .mime_str(mime)
+        .map_err(|error| format!("Unable to prepare the SimpleTex image upload: {error}"))?;
+    let response = client
+        .post(endpoint)
+        .header("token", access_token)
+        .multipart(reqwest::multipart::Form::new().part("file", part))
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                format!(
+                    "SimpleTex formula recognition timed out after {} seconds",
+                    timeout.as_secs_f64()
+                )
+            } else {
+                format!("SimpleTex formula recognition request failed: {error}")
+            }
+        })?;
+    let response = read_http_response(
+        response,
+        MAX_RESPONSE_BYTES,
+        "SimpleTex formula recognition",
+    )
+    .await?;
+    ensure_success(&response, "SimpleTex formula recognition")?;
+    let value = response
+        .json
+        .as_ref()
+        .ok_or_else(|| "SimpleTex returned non-JSON output".to_string())?;
+    parse_simpletex_formula_output(value)
+}
+
+fn parse_simpletex_formula_output(value: &Value) -> Result<Vec<String>, String> {
+    if value.get("status").and_then(Value::as_bool) != Some(true) {
+        return Err(format!(
+            "SimpleTex formula recognition failed: {}",
+            extract_api_error(value).unwrap_or_else(|| "unknown API error".to_string())
+        ));
+    }
+    let latex = value
+        .pointer("/res/latex")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && text.trim() != "[EMPTY]")
+        .ok_or_else(|| "SimpleTex returned no usable formula".to_string())?;
+    normalize_formula_candidates(vec![latex.to_string()])
+}
+
+fn paddleocr_progress_for_state(state: &str) -> Option<(&'static str, &'static str)> {
+    match state {
+        "pending" => Some(("api-queued", "PaddleOCR 任务正在排队…")),
+        "running" => Some(("api-inference", "PaddleOCR 正在识别公式…")),
+        "done" => Some(("api-result", "PaddleOCR 识别完成，正在读取结果…")),
+        _ => None,
+    }
+}
+
 async fn recognize_paddleocr_aistudio(
     client: &reqwest::Client,
     configuration: &StoredPaddleOcrConfiguration,
@@ -1076,8 +1412,9 @@ async fn recognize_paddleocr_aistudio(
     image_bytes: &[u8],
     mime: &str,
     extension: &str,
+    progress: Option<&RemoteRecognitionProgress>,
 ) -> Result<Vec<String>, String> {
-    recognize_paddleocr_aistudio_at(
+    recognize_paddleocr_aistudio_at_with_progress(
         client,
         configuration,
         access_token,
@@ -1085,10 +1422,12 @@ async fn recognize_paddleocr_aistudio(
         mime,
         extension,
         PADDLEOCR_JOBS_URL,
+        progress,
     )
     .await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 async fn recognize_paddleocr_aistudio_at(
     client: &reqwest::Client,
     configuration: &StoredPaddleOcrConfiguration,
@@ -1098,32 +1437,39 @@ async fn recognize_paddleocr_aistudio_at(
     extension: &str,
     jobs_url: &str,
 ) -> Result<Vec<String>, String> {
+    recognize_paddleocr_aistudio_at_with_progress(
+        client,
+        configuration,
+        access_token,
+        image_bytes,
+        mime,
+        extension,
+        jobs_url,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn recognize_paddleocr_aistudio_at_with_progress(
+    client: &reqwest::Client,
+    configuration: &StoredPaddleOcrConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    jobs_url: &str,
+    progress: Option<&RemoteRecognitionProgress>,
+) -> Result<Vec<String>, String> {
     let model = normalize_paddleocr_model(&configuration.model)?;
-    let api_model = if model == "PaddleOCR-VL-1.6" {
-        "PaddleOCR-VL"
-    } else {
-        model
-    };
-    let optional_payload = if model == "PP-StructureV3" {
-        json!({
-            "useDocOrientationClassify": false,
-            "useDocUnwarping": false,
-            "useTextlineOrientation": false,
-            "useChartRecognition": false,
-            "useFormulaRecognition": true,
-            "useTableRecognition": false,
-            "useSealRecognition": false
-        })
-    } else {
-        json!({
-            "useDocOrientationClassify": false,
-            "useDocUnwarping": false,
-            "useLayoutDetection": true,
-            "useChartRecognition": false,
-            "showFormulaNumber": false,
-            "prettifyMarkdown": false
-        })
-    };
+    let optional_payload = json!({
+        "useDocOrientationClassify": false,
+        "useDocUnwarping": false,
+        "useLayoutDetection": true,
+        "useChartRecognition": false,
+        "showFormulaNumber": false,
+        "prettifyMarkdown": false
+    });
     let options = serde_json::to_string(&optional_payload)
         .map_err(|error| format!("Unable to encode PaddleOCR options: {error}"))?;
     let file_extension = extension.trim().trim_start_matches('.');
@@ -1137,19 +1483,21 @@ async fn recognize_paddleocr_aistudio_at(
         .mime_str(mime)
         .map_err(|error| format!("Unable to prepare the PaddleOCR image upload: {error}"))?;
     let form = reqwest::multipart::Form::new()
-        .text("model", api_model.to_string())
+        .text("model", model.to_string())
         .text("optionalPayload", options)
         .part("file", part);
+    let request_started = Instant::now();
     let submit = client
         .post(jobs_url)
         .bearer_auth(access_token)
         .multipart(form)
+        .timeout(PADDLEOCR_SUBMIT_TIMEOUT)
         .send()
         .await
         .map_err(|error| format!("PaddleOCR job submission failed: {error}"))?;
     let submit = read_http_response(submit, MAX_RESPONSE_BYTES, "PaddleOCR job submission").await?;
     if submit.status == 429 {
-        return Err("PaddleOCR AI Studio daily quota has been exhausted. The official quota is currently 3000 pages per user per model per day; try again after the quota resets or select the other PaddleOCR document-parsing model.".to_string());
+        return Err("PaddleOCR AI Studio daily quota has been exhausted. The official quota is currently 3000 pages per user per model per day; try again after the quota resets or select another OCR provider.".to_string());
     }
     ensure_success(&submit, "PaddleOCR AI Studio")?;
     let submit_json = submit
@@ -1163,11 +1511,19 @@ async fn recognize_paddleocr_aistudio_at(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "PaddleOCR job submission returned no jobId".to_string())?;
     let status_url = format!("{}/{job_id}", jobs_url.trim_end_matches('/'));
+    if let Some(progress) = progress {
+        progress.emit("api-queued", "图片已提交，正在等待 PaddleOCR 处理…");
+    }
+    let mut last_reported_state = String::new();
 
     for _ in 0..PADDLEOCR_MAX_POLL_ATTEMPTS {
+        if request_started.elapsed() >= PADDLEOCR_TOTAL_TIMEOUT {
+            return Err("PaddleOCR AI Studio did not finish within 120 seconds".to_string());
+        }
         let status = client
             .get(&status_url)
             .bearer_auth(access_token)
+            .timeout(PADDLEOCR_STATUS_TIMEOUT)
             .send()
             .await
             .map_err(|error| format!("PaddleOCR job status request failed: {error}"))?;
@@ -1181,16 +1537,28 @@ async fn recognize_paddleocr_aistudio_at(
             .as_ref()
             .ok_or_else(|| "PaddleOCR job status returned non-JSON output".to_string())?;
         ensure_paddleocr_api_code(status_json, "PaddleOCR job status")?;
-        match status_json.pointer("/data/state").and_then(Value::as_str) {
-            Some("done") => {
+        let state = status_json
+            .pointer("/data/state")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "PaddleOCR job status contains no state".to_string())?;
+        if state != last_reported_state {
+            if let Some(progress) = progress {
+                if let Some((stage, message)) = paddleocr_progress_for_state(state) {
+                    progress.emit(stage, message);
+                }
+            }
+            last_reported_state = state.to_string();
+        }
+        match state {
+            "done" => {
                 let result_url = status_json
                     .pointer("/data/resultUrl/jsonUrl")
                     .and_then(Value::as_str)
                     .filter(|value| !value.trim().is_empty())
                     .ok_or_else(|| "PaddleOCR completed without a JSON result URL".to_string())?;
-                return download_and_parse_paddleocr_result(result_url).await;
+                return download_and_parse_paddleocr_result_with_client(client, result_url).await;
             }
-            Some("failed") => {
+            "failed" => {
                 let reason = status_json
                     .pointer("/data/errorMsg")
                     .and_then(Value::as_str)
@@ -1198,13 +1566,14 @@ async fn recognize_paddleocr_aistudio_at(
                     .unwrap_or("unknown remote processing error");
                 return Err(format!("PaddleOCR AI Studio job failed: {reason}"));
             }
-            Some("pending") | Some("running") => {
+            "pending" | "running" => {
                 tokio::time::sleep(PADDLEOCR_POLL_INTERVAL).await;
             }
-            Some(other) => {
-                return Err(format!("PaddleOCR AI Studio returned an unknown job state: {other}"));
+            other => {
+                return Err(format!(
+                    "PaddleOCR AI Studio returned an unknown job state: {other}"
+                ));
             }
-            None => return Err("PaddleOCR job status contains no state".to_string()),
         }
     }
     Err("PaddleOCR AI Studio did not finish within 120 seconds".to_string())
@@ -1220,19 +1589,19 @@ fn ensure_paddleocr_api_code(value: &Value, operation: &str) -> Result<(), Strin
     ))
 }
 
-async fn download_and_parse_paddleocr_result(result_url: &str) -> Result<Vec<String>, String> {
+async fn download_and_parse_paddleocr_result_with_client(
+    client: &reqwest::Client,
+    result_url: &str,
+) -> Result<Vec<String>, String> {
     validate_paddleocr_result_url(result_url)?;
-    let client = build_ocr_http_client(
-        Duration::from_secs(60),
-        reqwest::redirect::Policy::limited(5),
-        format!("VisualTeX/{} PaddleOCR", env!("CARGO_PKG_VERSION")),
-    )?;
     let response = client
         .get(result_url)
+        .timeout(PADDLEOCR_RESULT_TIMEOUT)
         .send()
         .await
         .map_err(|error| format!("Unable to download the PaddleOCR result: {error}"))?;
-    let response = read_http_response(response, PADDLEOCR_RESULT_MAX_BYTES, "PaddleOCR result").await?;
+    let response =
+        read_http_response(response, PADDLEOCR_RESULT_MAX_BYTES, "PaddleOCR result").await?;
     ensure_success(&response, "PaddleOCR result download")?;
     parse_paddleocr_result_text(&response.text)
 }
@@ -1315,7 +1684,9 @@ fn parse_paddleocr_formula_output(value: &Value) -> Result<Vec<String>, String> 
     let pages = value
         .pointer("/result/layoutParsingResults")
         .and_then(Value::as_array)
-        .ok_or_else(|| "PaddleOCR AI Studio response contains no layoutParsingResults".to_string())?;
+        .ok_or_else(|| {
+            "PaddleOCR AI Studio response contains no layoutParsingResults".to_string()
+        })?;
 
     let mut candidates = Vec::new();
     for page in pages {
@@ -1466,12 +1837,8 @@ async fn read_http_response(
     {
         return Err(format!("{label} is larger than the allowed response limit"));
     }
-    let mut bytes = Vec::with_capacity(
-        response
-            .content_length()
-            .unwrap_or(0)
-            .min(max_bytes as u64) as usize,
-    );
+    let mut bytes =
+        Vec::with_capacity(response.content_length().unwrap_or(0).min(max_bytes as u64) as usize);
     while let Some(chunk) = response
         .chunk()
         .await
@@ -1849,7 +2216,10 @@ mod tests {
 
     async fn spawn_mock_api() -> String {
         async fn openai(Json(body): Json<Value>) -> Json<Value> {
-            assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+            assert_eq!(
+                body.get("model").and_then(Value::as_str),
+                Some("vision-model")
+            );
             assert!(body
                 .pointer("/input/0/content/1/image_url")
                 .and_then(Value::as_str)
@@ -1860,7 +2230,10 @@ mod tests {
         }
 
         async fn ollama(Json(body): Json<Value>) -> Json<Value> {
-            assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+            assert_eq!(
+                body.get("model").and_then(Value::as_str),
+                Some("vision-model")
+            );
             assert_eq!(body.get("stream").and_then(Value::as_bool), Some(false));
             assert!(body
                 .pointer("/messages/0/images/0")
@@ -1885,8 +2258,7 @@ mod tests {
         async fn paddle_vl_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
             assert_paddle_bearer(&headers);
             let body = String::from_utf8_lossy(&body);
-            assert!(body.contains("PaddleOCR-VL"));
-            assert!(!body.contains("PaddleOCR-VL-1.6"));
+            assert!(body.contains("PaddleOCR-VL-1.6"));
             assert!(body.contains("optionalPayload"));
             assert!(body.contains("showFormulaNumber"));
             assert!(body.contains("prettifyMarkdown"));
@@ -1894,21 +2266,26 @@ mod tests {
             Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "vl-job"}}))
         }
 
-        async fn paddle_structure_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
-            assert_paddle_bearer(&headers);
+        async fn simpletex(headers: HeaderMap, body: Bytes) -> Json<Value> {
+            assert_eq!(
+                headers.get("token").and_then(|value| value.to_str().ok()),
+                Some("simpletex-token")
+            );
             let body = String::from_utf8_lossy(&body);
-            assert!(body.contains("PP-StructureV3"));
-            assert!(body.contains("useFormulaRecognition"));
-            assert!(body.contains("useTableRecognition"));
-            assert!(body.contains("useSealRecognition"));
             assert!(body.contains("visualtex-formula.png"));
-            Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "structure-job"}}))
+            Json(json!({
+                "status": true,
+                "res": {"latex": "\\sqrt{x^2+y^2}", "conf": 0.99},
+                "request_id": "tr_visualtex_mock"
+            }))
         }
 
-        async fn paddle_status(
-            Path(job_id): Path<String>,
-            headers: HeaderMap,
-        ) -> Json<Value> {
+        async fn simpletex_slow() -> Json<Value> {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            Json(json!({"status": true, "res": {"latex": "x"}}))
+        }
+
+        async fn paddle_status(Path(job_id): Path<String>, headers: HeaderMap) -> Json<Value> {
             assert_paddle_bearer(&headers);
             let host = headers
                 .get("host")
@@ -1928,35 +2305,21 @@ mod tests {
             }))
         }
 
-        async fn paddle_result(Path(job_id): Path<String>) -> String {
-            let result = if job_id == "structure-job" {
-                json!({
-                    "result": {
-                        "layoutParsingResults": [{
-                            "prunedResult": {
-                                "parsing_res_list": [
-                                    {"block_label": "formula", "block_content": "$$E=mc^2$$"}
-                                ]
-                            }
-                        }]
-                    }
-                })
-            } else {
-                json!({
-                    "result": {
-                        "layoutParsingResults": [{
-                            "prunedResult": {
-                                "parsing_res_list": [
-                                    {"block_label": "text", "block_content": "ignored"},
-                                    {"block_label": "formula", "block_content": "$$x&=1\\\\y&=2$$"},
-                                    {"block_label": "equation", "block_content": "\\frac{a}{b}"}
-                                ]
-                            },
-                            "markdown": {"text": "ignored markdown", "images": {}}
-                        }]
-                    }
-                })
-            };
+        async fn paddle_result(Path(_job_id): Path<String>) -> String {
+            let result = json!({
+                "result": {
+                    "layoutParsingResults": [{
+                        "prunedResult": {
+                            "parsing_res_list": [
+                                {"block_label": "text", "block_content": "ignored"},
+                                {"block_label": "formula", "block_content": "$$x&=1\\\\y&=2$$"},
+                                {"block_label": "equation", "block_content": "\\frac{a}{b}"}
+                            ]
+                        },
+                        "markdown": {"text": "ignored markdown", "images": {}}
+                    }]
+                }
+            });
             format!("{}\n", serde_json::to_string(&result).unwrap())
         }
 
@@ -1968,8 +2331,14 @@ mod tests {
         }
 
         async fn mathpix(headers: HeaderMap, Json(body): Json<Value>) -> Json<Value> {
-            assert_eq!(headers.get("app_id").and_then(|value| value.to_str().ok()), Some("app-id"));
-            assert_eq!(headers.get("app_key").and_then(|value| value.to_str().ok()), Some("app-key"));
+            assert_eq!(
+                headers.get("app_id").and_then(|value| value.to_str().ok()),
+                Some("app-id")
+            );
+            assert_eq!(
+                headers.get("app_key").and_then(|value| value.to_str().ok()),
+                Some("app-key")
+            );
             assert!(body
                 .get("src")
                 .and_then(Value::as_str)
@@ -1980,10 +2349,10 @@ mod tests {
         let router = Router::new()
             .route("/responses", post(openai))
             .route("/api/chat", post(ollama))
+            .route("/simpletex", post(simpletex))
+            .route("/simpletex-slow", post(simpletex_slow))
             .route("/jobs-vl", post(paddle_vl_submit))
             .route("/jobs-vl/{job_id}", get(paddle_status))
-            .route("/jobs-structure", post(paddle_structure_submit))
-            .route("/jobs-structure/{job_id}", get(paddle_status))
             .route("/paddle-result/{job_id}", get(paddle_result))
             .route("/quota", post(paddle_quota))
             .route("/v3/text", post(mathpix));
@@ -2026,6 +2395,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(stored.paddle_ocr.model, "PaddleOCR-VL-1.6");
+        assert_eq!(stored.simple_tex.model, "standard");
 
         let migrated = migrate_legacy_paddleocr_configuration(
             serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
@@ -2075,6 +2445,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(update.paddle_ocr.model, "PaddleOCR-VL-1.6");
+        assert_eq!(update.simple_tex.model, "standard");
     }
 
     #[test]
@@ -2154,6 +2525,76 @@ mod tests {
     }
 
     #[test]
+    fn simpletex_formula_parser_validates_status_and_empty_results() {
+        assert_eq!(
+            simpletex_endpoint("standard").unwrap(),
+            SIMPLETEX_STANDARD_URL
+        );
+        assert_eq!(simpletex_endpoint("turbo").unwrap(), SIMPLETEX_TURBO_URL);
+        assert_eq!(
+            parse_simpletex_formula_output(&json!({
+                "status": true,
+                "res": {"latex": "$$\\frac{1}{2}$$", "conf": 0.98}
+            }))
+            .unwrap(),
+            vec!["\\frac{1}{2}"]
+        );
+        assert!(parse_simpletex_formula_output(&json!({
+            "status": true,
+            "res": {"latex": "[EMPTY]"}
+        }))
+        .unwrap_err()
+        .contains("no usable formula"));
+        assert!(parse_simpletex_formula_output(&json!({
+            "status": false,
+            "errInfo": {"msg": "invalid token"}
+        }))
+        .unwrap_err()
+        .contains("failed"));
+    }
+
+    #[test]
+    fn paddleocr_remote_states_map_to_visible_progress_stages() {
+        assert_eq!(
+            paddleocr_progress_for_state("pending"),
+            Some(("api-queued", "PaddleOCR 任务正在排队…"))
+        );
+        assert_eq!(
+            paddleocr_progress_for_state("running"),
+            Some(("api-inference", "PaddleOCR 正在识别公式…"))
+        );
+        assert_eq!(
+            paddleocr_progress_for_state("done"),
+            Some(("api-result", "PaddleOCR 识别完成，正在读取结果…"))
+        );
+        assert_eq!(paddleocr_progress_for_state("failed"), None);
+    }
+
+    #[test]
+    fn every_remote_api_has_visible_progress_messages() {
+        for provider in [
+            OPENAI_COMPATIBLE_PROVIDER,
+            OLLAMA_PROVIDER,
+            MATHPIX_PROVIDER,
+            SIMPLETEX_PROVIDER,
+        ] {
+            for stage in ["api-submit", "api-inference", "api-result"] {
+                assert!(
+                    remote_provider_progress_message(provider, stage).is_some(),
+                    "missing {stage} progress for {provider}"
+                );
+            }
+        }
+        assert!(
+            remote_provider_progress_message(PADDLEOCR_PROVIDER, "api-submit").is_some()
+        );
+        assert_eq!(
+            remote_provider_progress_message(LOCAL_PROVIDER, "api-submit"),
+            None
+        );
+    }
+
+    #[test]
     fn macos_system_https_proxy_is_parsed_from_scutil_output() {
         let settings = parse_macos_system_proxy_settings(
             r#"<dictionary> {
@@ -2166,10 +2607,15 @@ mod tests {
   SOCKSEnable : 1
 }"#,
         );
-        assert_eq!(settings.https_proxy.as_deref(), Some("http://127.0.0.1:7890"));
         assert_eq!(
-            parse_macos_system_proxy_settings("HTTPSEnable : 0\nHTTPSPort : 7890\nHTTPSProxy : 127.0.0.1")
-                .https_proxy,
+            settings.https_proxy.as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert_eq!(
+            parse_macos_system_proxy_settings(
+                "HTTPSEnable : 0\nHTTPSPort : 7890\nHTTPSProxy : 127.0.0.1"
+            )
+            .https_proxy,
             None
         );
     }
@@ -2201,14 +2647,9 @@ mod tests {
             prompt: "Return formula JSON".to_string(),
         };
         assert_eq!(
-            recognize_openai_compatible(
-                &client,
-                &openai_configuration,
-                None,
-                data_url,
-            )
-            .await
-            .unwrap(),
+            recognize_openai_compatible(&client, &openai_configuration, None, data_url,)
+                .await
+                .unwrap(),
             vec!["x^2+y^2", "z=3"]
         );
 
@@ -2223,6 +2664,38 @@ mod tests {
                 .unwrap(),
             vec!["a=b"]
         );
+
+        let simpletex_configuration = StoredSimpleTexConfiguration {
+            model: "standard".to_string(),
+        };
+        assert_eq!(
+            recognize_simpletex_at(
+                &client,
+                &simpletex_configuration,
+                "simpletex-token",
+                b"fake-png",
+                "image/png",
+                "png",
+                &format!("{base_url}/simpletex"),
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+            vec!["\\sqrt{x^2+y^2}"]
+        );
+        let timeout_error = recognize_simpletex_at(
+            &client,
+            &simpletex_configuration,
+            "simpletex-token",
+            b"fake-png",
+            "image/png",
+            "png",
+            &format!("{base_url}/simpletex-slow"),
+            Duration::from_millis(25),
+        )
+        .await
+        .expect_err("SimpleTex timeout mock must fail");
+        assert!(timeout_error.to_ascii_lowercase().contains("timed out"));
 
         let paddle_configuration = StoredPaddleOcrConfiguration {
             model: "PaddleOCR-VL-1.6".to_string(),
@@ -2242,23 +2715,7 @@ mod tests {
             vec!["x&=1\\\\y&=2", "\\frac{a}{b}"]
         );
 
-        let structure_configuration = StoredPaddleOcrConfiguration {
-            model: "PP-StructureV3".to_string(),
-        };
-        assert_eq!(
-            recognize_paddleocr_aistudio_at(
-                &client,
-                &structure_configuration,
-                "paddle-token",
-                b"fake-png",
-                "image/png",
-                "png",
-                &format!("{base_url}/jobs-structure"),
-            )
-            .await
-            .unwrap(),
-            vec!["E=mc^2"]
-        );
+        assert!(normalize_paddleocr_model("PP-StructureV3").is_err());
 
         let quota_configuration = StoredPaddleOcrConfiguration {
             model: "PaddleOCR-VL-1.6".to_string(),
@@ -2281,14 +2738,9 @@ mod tests {
             app_id: "app-id".to_string(),
         };
         assert_eq!(
-            recognize_mathpix(
-                &client,
-                &mathpix_configuration,
-                "app-key",
-                data_url,
-            )
-            .await
-            .unwrap(),
+            recognize_mathpix(&client, &mathpix_configuration, "app-key", data_url,)
+                .await
+                .unwrap(),
             vec!["\\frac{1}{2}"]
         );
     }

@@ -1497,7 +1497,7 @@ export function OfficeDialogApp() {
       }
       const availableOcrModel = ocrModel;
 
-      if (usingLocalProvider) unlisten = await listenOcrRecognitionProgress((progress) => {
+      unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
           progress.model !== ocrModel
