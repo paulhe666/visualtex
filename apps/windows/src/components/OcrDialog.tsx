@@ -43,6 +43,7 @@ import {
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
+  PADDLE_OCR_API_MODELS,
   cancelOcrInstall,
   cancelOcrModelDownload,
   cancelOcrRecognition,
@@ -61,6 +62,7 @@ import {
   type OcrModelName,
   type OcrProviderConfiguration,
   type OcrProviderId,
+  type PaddleOcrApiModel,
   type OcrRecognitionProgress,
   type OcrRecognitionResult,
   type OcrRuntimeStatus,
@@ -144,6 +146,10 @@ const FALLBACK_OCR_PROVIDER_CONFIGURATION: OcrProviderConfiguration = {
     appId: "",
     hasAppKey: false,
   },
+  paddleOcr: {
+    model: "PaddleOCR-VL-1.6",
+    hasAccessToken: false,
+  },
 };
 
 function isOcrModelPackagePath(path: string) {
@@ -181,6 +187,8 @@ function providerLabel(provider: OcrProviderId, isEn: boolean) {
       return "Ollama";
     case "mathpix":
       return "Mathpix";
+    case "paddleocr":
+      return isEn ? "PaddleOCR AI Studio" : "PaddleOCR 星河 API";
     default:
       return isEn ? "Local PP-FormulaNet" : "本地 PP-FormulaNet";
   }
@@ -227,6 +235,8 @@ export function OcrDialog({
   const [clearOpenAiApiKey, setClearOpenAiApiKey] = useState(false);
   const [mathpixAppKey, setMathpixAppKey] = useState("");
   const [clearMathpixAppKey, setClearMathpixAppKey] = useState(false);
+  const [paddleOcrAccessToken, setPaddleOcrAccessToken] = useState("");
+  const [clearPaddleOcrAccessToken, setClearPaddleOcrAccessToken] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<OcrModelCatalog | null>(null);
   const [modelDownload, setModelDownload] = useState<OcrModelDownloadSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
@@ -373,6 +383,8 @@ export function OcrDialog({
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
       setClearMathpixAppKey(false);
+      setPaddleOcrAccessToken("");
+      setClearPaddleOcrAccessToken(false);
       setProviderDirty(false);
     } catch (providerError) {
       // Keep a complete editable fallback visible so a damaged native provider
@@ -383,6 +395,8 @@ export function OcrDialog({
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
       setClearMathpixAppKey(false);
+      setPaddleOcrAccessToken("");
+      setClearPaddleOcrAccessToken(false);
       setProviderDirty(true);
       setError(readError(providerError));
     } finally {
@@ -424,12 +438,19 @@ export function OcrDialog({
           appKey: mathpixAppKey || undefined,
           clearAppKey: clearMathpixAppKey,
         },
+        paddleOcr: {
+          model: providerConfiguration.paddleOcr.model,
+          accessToken: paddleOcrAccessToken || undefined,
+          clearAccessToken: clearPaddleOcrAccessToken,
+        },
       });
       setProviderConfiguration(saved);
       setOpenAiApiKey("");
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
       setClearMathpixAppKey(false);
+      setPaddleOcrAccessToken("");
+      setClearPaddleOcrAccessToken(false);
       setProviderDirty(false);
       onNotify(
         isEn
@@ -444,10 +465,12 @@ export function OcrDialog({
   }, [
     clearMathpixAppKey,
     clearOpenAiApiKey,
+    clearPaddleOcrAccessToken,
     isEn,
     mathpixAppKey,
     onNotify,
     openAiApiKey,
+    paddleOcrAccessToken,
     providerConfiguration,
   ]);
 
@@ -1085,11 +1108,9 @@ export function OcrDialog({
 
     let unlisten: (() => void) | undefined;
     try {
-      if (usingLocalProvider) {
-        unlisten = await listenOcrRecognitionProgress((progress) => {
-          if (progress.model === model) setRecognitionProgress(progress);
-        });
-      }
+      unlisten = await listenOcrRecognitionProgress((progress) => {
+        if (progress.model === model) setRecognitionProgress(progress);
+      });
       const request = await fileToOcrRequest(file, model);
       const nextResult = await recognizeFormulaImage(request);
       setResult(nextResult);
@@ -1381,6 +1402,7 @@ export function OcrDialog({
                   <option value="openai-compatible">{isEn ? "OpenAI-compatible API" : "OpenAI 兼容 API"}</option>
                   <option value="ollama">Ollama</option>
                   <option value="mathpix">Mathpix</option>
+                  <option value="paddleocr">{isEn ? "PaddleOCR AI Studio" : "PaddleOCR 星河 API"}</option>
                 </select>
               </label>
 
@@ -1639,6 +1661,83 @@ export function OcrDialog({
                     {isEn
                       ? "Uses POST /v3/text with a base64 data URL, reads latex_styled first and then text, disables improve_mathpix, and enforces Mathpix's 2 MB base64-image limit before sending."
                       : "使用 POST /v3/text 和 base64 data URL，优先读取 latex_styled，缺失时读取 text；默认关闭 improve_mathpix，并在发送前执行 Mathpix 的 2 MB base64 图片限制。"}
+                  </small>
+                </div>
+              )}
+
+              {activeProvider === "paddleocr" && (
+                <div className="ocr-provider-fields">
+                  <label className="ocr-provider-field">
+                    <span>{isEn ? "PaddleOCR model" : "PaddleOCR 模型"}</span>
+                    <select
+                      value={providerConfiguration.paddleOcr.model}
+                      disabled={recognizing || savingProvider}
+                      onChange={(event) =>
+                        updateProviderConfiguration((current) => ({
+                          ...current,
+                          paddleOcr: {
+                            ...current.paddleOcr,
+                            model: event.target.value as PaddleOcrApiModel,
+                          },
+                        }))
+                      }
+                    >
+                      {PADDLE_OCR_API_MODELS.map((candidate) => (
+                        <option key={candidate} value={candidate}>
+                          {isEn
+                            ? "PaddleOCR-VL-1.6 · Formula recognition"
+                            : "PaddleOCR-VL-1.6 · 公式识别"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ocr-provider-field is-wide">
+                    <span>
+                      {isEn ? "Access token" : "访问令牌"}
+                      {providerConfiguration.paddleOcr.hasAccessToken && !clearPaddleOcrAccessToken
+                        ? isEn
+                          ? " · saved"
+                          : " · 已保存"
+                        : ""}
+                    </span>
+                    <input
+                      type="password"
+                      value={paddleOcrAccessToken}
+                      disabled={recognizing || savingProvider || clearPaddleOcrAccessToken}
+                      autoComplete="new-password"
+                      placeholder={
+                        providerConfiguration.paddleOcr.hasAccessToken
+                          ? isEn
+                            ? "Leave blank to keep the saved token"
+                            : "留空将继续使用已保存令牌"
+                          : isEn
+                            ? "AI Studio Access Token"
+                            : "AI Studio Access Token"
+                      }
+                      onChange={(event) => {
+                        setPaddleOcrAccessToken(event.target.value);
+                        setProviderDirty(true);
+                      }}
+                    />
+                  </label>
+                  {providerConfiguration.paddleOcr.hasAccessToken && (
+                    <label className="ocr-provider-clear-secret">
+                      <input
+                        type="checkbox"
+                        checked={clearPaddleOcrAccessToken}
+                        disabled={recognizing || savingProvider}
+                        onChange={(event) => {
+                          setClearPaddleOcrAccessToken(event.target.checked);
+                          setProviderDirty(true);
+                        }}
+                      />
+                      <span>{isEn ? "Remove the saved access token" : "删除已保存的访问令牌"}</span>
+                    </label>
+                  )}
+                  <small className="ocr-provider-protocol-note">
+                    {isEn
+                      ? "Only the AI Studio Access Token is required. PP-StructureV3 is the recommended low-latency path and keeps formula recognition enabled while unnecessary page modules are disabled. PaddleOCR-VL-1.6 remains available for difficult complex layouts, but its shared VLM service can spend much longer queued or running. VisualTeX stops waiting if a Paddle job remains pending for more than 5 seconds."
+                      : "只需要 AI Studio 的 Access Token。推荐使用 PP-StructureV3 低延迟路径：保留公式识别，同时关闭不需要的页面模块。PaddleOCR-VL-1.6 仍可用于困难的复杂版面，但共享 VLM 服务的排队或推理耗时可能明显更长。Paddle 任务如果持续 pending 超过 5 秒，VisualTeX 会停止继续等待。"}
                   </small>
                 </div>
               )}
@@ -2169,6 +2268,13 @@ export function OcrDialog({
                       <span>POST /v3/text</span>
                       <span>{providerConfiguration.mathpix.appId || "app_id"}</span>
                       <code>{providerConfiguration.mathpix.baseUrl}</code>
+                    </>
+                  )}
+                  {activeProvider === "paddleocr" && (
+                    <>
+                      <span>{providerConfiguration.paddleOcr.model}</span>
+                      <span>{isEn ? "Asynchronous job API" : "异步任务 API"}</span>
+                      <code>paddleocr.aistudio-app.com/api/v2/ocr/jobs</code>
                     </>
                   )}
                 </div>

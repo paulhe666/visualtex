@@ -58,6 +58,10 @@ globalThis.fetch = async (input, init = {}) => {
           appId: "",
           hasAppKey: false,
         },
+        paddleOcr: {
+          model: "PP-StructureV3",
+          hasAccessToken: false,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -75,6 +79,10 @@ globalThis.fetch = async (input, init = {}) => {
         mathpix: {
           ...configuration.mathpix,
           hasAppKey: Boolean(configuration.mathpix.appKey),
+        },
+        paddleOcr: {
+          ...configuration.paddleOcr,
+          hasAccessToken: Boolean(configuration.paddleOcr?.accessToken),
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -155,6 +163,8 @@ assert.equal(
 const providerConfiguration = await invoke("get_ocr_provider_configuration");
 assert.equal(providerConfiguration.activeProvider, "local");
 assert.equal(providerConfiguration.openAiCompatible.hasApiKey, false);
+assert.equal(providerConfiguration.paddleOcr.model, "PP-StructureV3");
+assert.equal(providerConfiguration.paddleOcr.hasAccessToken, false);
 const savedProviderConfiguration = await invoke("save_ocr_provider_configuration", {
   configuration: {
     ...providerConfiguration,

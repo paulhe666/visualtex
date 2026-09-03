@@ -31,11 +31,22 @@ const provider = {
     appId: "",
     hasAppKey: false,
   },
+  paddleOcr: {
+    model: "PaddleOCR-VL-1.6",
+    hasAccessToken: true,
+  },
 };
 assert.equal(decodeOcrProviderConfiguration(provider), provider);
 assert.throws(
   () => decodeOcrProviderConfiguration({ ...provider, activeProvider: "bad" }),
   /activeProvider/,
+);
+assert.throws(
+  () => decodeOcrProviderConfiguration({
+    ...provider,
+    paddleOcr: { ...provider.paddleOcr, model: "PP-OCRv5" },
+  }),
+  /paddleOcr\.model/,
 );
 
 const runtime = {

@@ -42,6 +42,11 @@ const OCR_PROVIDER_IDS = new Set([
   "openai-compatible",
   "ollama",
   "mathpix",
+  "paddleocr",
+]);
+const PADDLE_OCR_API_MODELS = new Set([
+  "PaddleOCR-VL-1.6",
+  "PP-StructureV3",
 ]);
 
 function invalid(path: string, expectation: string): never {
@@ -155,6 +160,21 @@ export function decodeOcrProviderConfiguration(
   stringValue(mathpix.baseUrl, "ocrProviderConfiguration.mathpix.baseUrl");
   stringValue(mathpix.appId, "ocrProviderConfiguration.mathpix.appId");
   booleanValue(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
+
+  const paddleOcr = record(config.paddleOcr, "ocrProviderConfiguration.paddleOcr");
+  if (
+    typeof paddleOcr.model !== "string" ||
+    !PADDLE_OCR_API_MODELS.has(paddleOcr.model)
+  ) {
+    invalid(
+      "ocrProviderConfiguration.paddleOcr.model",
+      "a supported PaddleOCR AI Studio model",
+    );
+  }
+  booleanValue(
+    paddleOcr.hasAccessToken,
+    "ocrProviderConfiguration.paddleOcr.hasAccessToken",
+  );
   return config as unknown as OcrProviderConfiguration;
 }
 

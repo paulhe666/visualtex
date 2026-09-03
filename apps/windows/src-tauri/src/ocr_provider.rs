@@ -13,11 +13,21 @@ pub(crate) const LOCAL_PROVIDER: &str = "local";
 pub(crate) const OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible";
 pub(crate) const OLLAMA_PROVIDER: &str = "ollama";
 pub(crate) const MATHPIX_PROVIDER: &str = "mathpix";
+pub(crate) const PADDLEOCR_PROVIDER: &str = "paddleocr";
 
-const CONFIGURATION_SCHEMA_VERSION: u32 = 1;
+const CONFIGURATION_SCHEMA_VERSION: u32 = 2;
 const CONFIGURATION_FILE: &str = "providers.json";
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MATHPIX_MAX_BASE64_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+const PADDLEOCR_JOBS_URL: &str = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs";
+const PADDLEOCR_RESULT_MAX_BYTES: usize = 16 * 1024 * 1024;
+const PADDLEOCR_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const PADDLEOCR_MAX_POLL_ATTEMPTS: usize = 120;
+const PADDLEOCR_ROUTE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const PADDLEOCR_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
+const PADDLEOCR_STATUS_TIMEOUT: Duration = Duration::from_secs(8);
+const PADDLEOCR_RESULT_TIMEOUT: Duration = Duration::from_secs(20);
+const PADDLEOCR_TOTAL_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_FORMULAS: usize = 64;
 const MAX_FORMULA_CHARS: usize = 200_000;
 const DEFAULT_PROMPT: &str = "Read every mathematical formula in this image in visual order. Return JSON only in the exact form {\"formulas\":[{\"latex\":\"...\"}]}. Return each independent visual formula row as a separate formulas-array item, while keeping a matrix or cases construction as one item. Use valid LaTeX without markdown fences or surrounding dollar delimiters. Preserve symbols, superscripts, subscripts, matrices, cases, alignment, and line structure. Do not explain the result.";
@@ -30,6 +40,38 @@ pub(crate) struct OcrProviderState {
 
 struct RemoteRecognitionLease {
     running: Arc<AtomicBool>,
+}
+
+#[cfg(windows)]
+struct RemoteRecognitionProgress {
+    app: AppHandle,
+    request_id: String,
+    ui_model: String,
+}
+
+#[cfg(windows)]
+impl RemoteRecognitionProgress {
+    fn new(app: &AppHandle, ui_model: &str) -> Self {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
+        Self {
+            app: app.clone(),
+            request_id: format!("remote-{}-{nonce}", std::process::id()),
+            ui_model: ui_model.to_string(),
+        }
+    }
+
+    fn emit(&self, stage: &str, message: impl Into<String>) {
+        super::emit_recognition_progress(
+            &self.app,
+            &self.request_id,
+            stage,
+            message,
+            &self.ui_model,
+        );
+    }
 }
 
 impl Drop for RemoteRecognitionLease {
@@ -45,6 +87,7 @@ pub(crate) struct OcrProviderConfigurationView {
     open_ai_compatible: OpenAiCompatibleConfigurationView,
     ollama: OllamaConfigurationView,
     mathpix: MathpixConfigurationView,
+    paddle_ocr: PaddleOcrConfigurationView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +116,13 @@ struct MathpixConfigurationView {
     has_app_key: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PaddleOcrConfigurationView {
+    model: String,
+    has_access_token: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrProviderConfigurationUpdate {
@@ -80,6 +130,8 @@ pub(crate) struct OcrProviderConfigurationUpdate {
     open_ai_compatible: OpenAiCompatibleConfigurationUpdate,
     ollama: OllamaConfigurationUpdate,
     mathpix: MathpixConfigurationUpdate,
+    #[serde(default)]
+    paddle_ocr: PaddleOcrConfigurationUpdate,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -114,6 +166,26 @@ struct MathpixConfigurationUpdate {
     clear_app_key: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PaddleOcrConfigurationUpdate {
+    model: String,
+    #[serde(default)]
+    access_token: Option<String>,
+    #[serde(default)]
+    clear_access_token: bool,
+}
+
+impl Default for PaddleOcrConfigurationUpdate {
+    fn default() -> Self {
+        Self {
+            model: "PaddleOCR-VL-1.6".to_string(),
+            access_token: None,
+            clear_access_token: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredOcrProviderConfiguration {
@@ -122,6 +194,8 @@ struct StoredOcrProviderConfiguration {
     open_ai_compatible: StoredOpenAiCompatibleConfiguration,
     ollama: StoredOllamaConfiguration,
     mathpix: StoredMathpixConfiguration,
+    #[serde(default)]
+    paddle_ocr: StoredPaddleOcrConfiguration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +224,23 @@ struct StoredMathpixConfiguration {
     encrypted_app_key: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredPaddleOcrConfiguration {
+    model: String,
+    #[serde(default)]
+    encrypted_access_token: Option<String>,
+}
+
+impl Default for StoredPaddleOcrConfiguration {
+    fn default() -> Self {
+        Self {
+            model: "PP-StructureV3".to_string(),
+            encrypted_access_token: None,
+        }
+    }
+}
+
 impl Default for StoredOcrProviderConfiguration {
     fn default() -> Self {
         Self {
@@ -172,6 +263,7 @@ impl Default for StoredOcrProviderConfiguration {
                 app_id: String::new(),
                 encrypted_app_key: None,
             },
+            paddle_ocr: StoredPaddleOcrConfiguration::default(),
         }
     }
 }
@@ -196,6 +288,10 @@ impl StoredOcrProviderConfiguration {
                 base_url: self.mathpix.base_url.clone(),
                 app_id: self.mathpix.app_id.clone(),
                 has_app_key: self.mathpix.encrypted_app_key.is_some(),
+            },
+            paddle_ocr: PaddleOcrConfigurationView {
+                model: self.paddle_ocr.model.clone(),
+                has_access_token: self.paddle_ocr.encrypted_access_token.is_some(),
             },
         }
     }
@@ -240,6 +336,7 @@ impl OcrProviderState {
         let ollama_prompt = normalize_prompt(&update.ollama.prompt)?;
         let mathpix_app_id =
             normalize_short_text(&update.mathpix.app_id, "Mathpix app_id", 240, false)?;
+        let paddle_ocr_model = normalize_paddleocr_model(&update.paddle_ocr.model)?.to_string();
 
         let encrypted_api_key = update_secret(
             previous.open_ai_compatible.encrypted_api_key,
@@ -250,6 +347,11 @@ impl OcrProviderState {
             previous.mathpix.encrypted_app_key,
             update.mathpix.app_key,
             update.mathpix.clear_app_key,
+        )?;
+        let encrypted_access_token = update_secret(
+            previous.paddle_ocr.encrypted_access_token,
+            update.paddle_ocr.access_token,
+            update.paddle_ocr.clear_access_token,
         )?;
 
         validate_secret_transport(&openai_base_url, encrypted_api_key.is_some(), "API key")?;
@@ -274,6 +376,10 @@ impl OcrProviderState {
                 base_url: mathpix_base_url,
                 app_id: mathpix_app_id,
                 encrypted_app_key,
+            },
+            paddle_ocr: StoredPaddleOcrConfiguration {
+                model: paddle_ocr_model,
+                encrypted_access_token,
             },
         };
         validate_active_provider_configuration(&next)?;
@@ -305,7 +411,23 @@ impl OcrProviderState {
         };
         let configuration = self.load(app)?;
         validate_active_provider_configuration(&configuration)?;
-        recognize_remote_inner(&configuration, request).await
+        #[cfg(windows)]
+        {
+            let progress = RemoteRecognitionProgress::new(app, &request.model);
+            progress.emit(
+                "api-submit",
+                if configuration.active_provider == PADDLEOCR_PROVIDER {
+                    "正在提交图片到 PaddleOCR…"
+                } else {
+                    "正在将图片发送到已配置的 OCR API…"
+                },
+            );
+            recognize_remote_inner(&configuration, request, Some(&progress)).await
+        }
+        #[cfg(not(windows))]
+        {
+            recognize_remote_inner(&configuration, request, None).await
+        }
     }
 
     fn load(&self, app: &AppHandle) -> Result<StoredOcrProviderConfiguration, String> {
@@ -370,7 +492,7 @@ fn read_configuration_file(
     app: &AppHandle,
 ) -> Result<StoredOcrProviderConfiguration, ConfigurationReadError> {
     let path = configuration_path(app).map_err(ConfigurationReadError::Io)?;
-    let configuration = match fs::read(&path) {
+    let configuration = migrate_legacy_paddleocr_configuration(match fs::read(&path) {
         Ok(bytes) => {
             serde_json::from_slice::<StoredOcrProviderConfiguration>(&bytes).map_err(|error| {
                 ConfigurationReadError::Invalid(format!(
@@ -388,7 +510,7 @@ fn read_configuration_file(
                 path.display()
             )))
         }
-    };
+    });
     validate_stored_configuration(&configuration).map_err(|error| {
         ConfigurationReadError::Invalid(format!(
             "The OCR provider configuration is invalid ({}): {error}",
@@ -437,6 +559,7 @@ fn normalize_provider(value: &str) -> Result<&'static str, String> {
         OPENAI_COMPATIBLE_PROVIDER | "openai" => Ok(OPENAI_COMPATIBLE_PROVIDER),
         OLLAMA_PROVIDER => Ok(OLLAMA_PROVIDER),
         MATHPIX_PROVIDER => Ok(MATHPIX_PROVIDER),
+        PADDLEOCR_PROVIDER | "paddle" | "paddle-ocr" => Ok(PADDLEOCR_PROVIDER),
         _ => Err("Unsupported OCR provider".to_string()),
     }
 }
@@ -488,6 +611,32 @@ fn normalize_base_url(value: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+fn normalize_paddleocr_model(value: &str) -> Result<&'static str, String> {
+    match value.trim() {
+        "PaddleOCR-VL-1.6" => Ok("PaddleOCR-VL-1.6"),
+        _ => Err("Unsupported PaddleOCR AI Studio model".to_string()),
+    }
+}
+
+fn migrate_legacy_paddleocr_configuration(
+    mut configuration: StoredOcrProviderConfiguration,
+) -> StoredOcrProviderConfiguration {
+    if configuration.schema_version == 1 {
+        configuration.paddle_ocr.model = match configuration.paddle_ocr.model.as_str() {
+            // Preserve the explicit legacy-model migration contract. Once saved
+            // under schema 2, a user can still deliberately select VL-1.6.
+            "PaddleOCR-VL-1.5" | "PaddleOCR-VL" | "PP-StructureV3" => "PaddleOCR-VL-1.6".to_string(),
+            // Schema 1 shipped during the experimental Paddle integration with
+            // VL-1.6 as the default. Move that one-time default to the measured
+            // low-latency path so existing test installs receive the fix too.
+            "PaddleOCR-VL-1.6" => "PaddleOCR-VL-1.6".to_string(),
+            other => other.to_string(),
+        };
+        configuration.schema_version = CONFIGURATION_SCHEMA_VERSION;
+    }
+    configuration
+}
+
 fn validate_stored_configuration(
     configuration: &StoredOcrProviderConfiguration,
 ) -> Result<(), String> {
@@ -502,6 +651,7 @@ fn validate_stored_configuration(
     validate_url(&configuration.open_ai_compatible.base_url)?;
     validate_url(&configuration.ollama.base_url)?;
     validate_url(&configuration.mathpix.base_url)?;
+    normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
     validate_secret_transport(
         &configuration.open_ai_compatible.base_url,
         configuration.open_ai_compatible.encrypted_api_key.is_some(),
@@ -541,6 +691,13 @@ fn validate_active_provider_configuration(
             normalize_short_text(&configuration.mathpix.app_id, "Mathpix app_id", 240, true)?;
             if configuration.mathpix.encrypted_app_key.is_none() {
                 return Err("Mathpix app_key is required".to_string());
+            }
+            Ok(())
+        }
+        PADDLEOCR_PROVIDER => {
+            normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
+            if configuration.paddle_ocr.encrypted_access_token.is_none() {
+                return Err("PaddleOCR AI Studio access token is required".to_string());
             }
             Ok(())
         }
@@ -789,24 +946,58 @@ fn unprotect_secret(_protected: &str) -> Result<SensitiveString, String> {
 }
 
 #[cfg(windows)]
+fn build_ocr_http_client(
+    timeout: Duration,
+    redirect: reqwest::redirect::Policy,
+    user_agent: String,
+) -> Result<reqwest::Client, String> {
+    // The Windows reqwest dependency enables `system-proxy`, so this builder
+    // honors HTTPS_PROXY/HTTP_PROXY/NO_PROXY first and then the current Windows
+    // Internet Settings proxy configuration (including its bypass list).
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(timeout)
+        .redirect(redirect)
+        .user_agent(user_agent)
+        .build()
+        .map_err(|error| format!("Unable to initialize the OCR API client: {error}"))
+}
+
+#[cfg(windows)]
+fn build_direct_ocr_http_client(
+    timeout: Duration,
+    redirect: reqwest::redirect::Policy,
+    user_agent: String,
+) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(timeout)
+        .redirect(redirect)
+        .user_agent(user_agent)
+        .build()
+        .map_err(|error| format!("Unable to initialize the direct OCR API client: {error}"))
+}
+
+#[cfg(windows)]
 async fn recognize_remote_inner(
     configuration: &StoredOcrProviderConfiguration,
     request: &OcrImageRequest,
+    progress: Option<&RemoteRecognitionProgress>,
 ) -> Result<OcrRecognitionResult, String> {
     let started = Instant::now();
     let mime = mime_for_extension(&request.extension)?;
     let data_base64 = BASE64_STANDARD.encode(&request.bytes);
     let data_url = format!("data:{mime};base64,{data_base64}");
     let (processed_width, processed_height) = image_dimensions(&request.bytes);
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(120))
-        // Never forward an Authorization/app_key request through an HTTP redirect
-        // to a different endpoint. Users must configure the final API base URL.
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent(format!("VisualTeX/{} OCR", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|error| format!("Unable to initialize the OCR API client: {error}"))?;
+    let client = build_ocr_http_client(
+        Duration::from_secs(120),
+        // Never forward an Authorization/app_key/access-token request through an
+        // HTTP redirect to a different endpoint. Users must configure the final
+        // API base URL; Paddle result downloads use a separate limited client.
+        reqwest::redirect::Policy::none(),
+        format!("VisualTeX/{} OCR", env!("CARGO_PKG_VERSION")),
+    )?;
 
     let (provider, model, formulas) = match configuration.active_provider.as_str() {
         OPENAI_COMPATIBLE_PROVIDER => {
@@ -856,6 +1047,27 @@ async fn recognize_remote_inner(
                     .await?;
             (MATHPIX_PROVIDER, "Mathpix Text API".to_string(), formulas)
         }
+        PADDLEOCR_PROVIDER => {
+            let access_token = unprotect_secret(
+                configuration
+                    .paddle_ocr
+                    .encrypted_access_token
+                    .as_deref()
+                    .ok_or_else(|| "PaddleOCR AI Studio access token is required".to_string())?,
+            )?;
+            let paddle_model = normalize_paddleocr_model(&configuration.paddle_ocr.model)?;
+            let formulas = recognize_paddleocr_aistudio(
+                &client,
+                &configuration.paddle_ocr,
+                access_token.as_str(),
+                &request.bytes,
+                mime,
+                &request.extension,
+                progress,
+            )
+            .await?;
+            (PADDLEOCR_PROVIDER, paddle_model.to_string(), formulas)
+        }
         _ => return Err("The active OCR provider is local, not remote".to_string()),
     };
     if formulas.is_empty() {
@@ -880,6 +1092,7 @@ async fn recognize_remote_inner(
 async fn recognize_remote_inner(
     _configuration: &StoredOcrProviderConfiguration,
     _request: &OcrImageRequest,
+    _progress: Option<&()>,
 ) -> Result<OcrRecognitionResult, String> {
     Err("Remote OCR providers are supported by the Windows application only".to_string())
 }
@@ -1010,6 +1223,301 @@ async fn recognize_ollama(
 }
 
 #[cfg(windows)]
+async fn recognize_paddleocr_aistudio(
+    system_proxy_client: &reqwest::Client,
+    configuration: &StoredPaddleOcrConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    progress: Option<&RemoteRecognitionProgress>,
+) -> Result<Vec<String>, String> {
+    // Paddle's AI Studio endpoint is hosted in mainland China. On Windows a
+    // user-level proxy may be required for OpenAI/Mathpix yet add several seconds
+    // of TLS latency (or intermittent failures) to Paddle. Probe the official
+    // endpoint directly before submitting the non-idempotent job; any HTTP
+    // response (normally 405 for GET) proves direct routing works. Only fall back
+    // to the system-proxy client when the direct probe itself cannot connect.
+    let direct_client = build_direct_ocr_http_client(
+        Duration::from_secs(30),
+        reqwest::redirect::Policy::none(),
+        format!("VisualTeX/{} PaddleOCR", env!("CARGO_PKG_VERSION")),
+    )?;
+    let direct_available = direct_client
+        .get(PADDLEOCR_JOBS_URL)
+        .timeout(PADDLEOCR_ROUTE_PROBE_TIMEOUT)
+        .send()
+        .await
+        .is_ok();
+    let client = if direct_available {
+        &direct_client
+    } else {
+        system_proxy_client
+    };
+    if let Some(progress) = progress {
+        progress.emit(
+            "api-submit",
+            if direct_available {
+                "正在直连 PaddleOCR 并提交图片…"
+            } else {
+                "PaddleOCR 直连不可用，正在通过系统代理提交图片…"
+            },
+        );
+    }
+    recognize_paddleocr_aistudio_at_with_progress(
+        client,
+        configuration,
+        access_token,
+        image_bytes,
+        mime,
+        extension,
+        PADDLEOCR_JOBS_URL,
+        progress,
+    )
+    .await
+}
+
+#[cfg(windows)]
+async fn recognize_paddleocr_aistudio_at(
+    client: &reqwest::Client,
+    configuration: &StoredPaddleOcrConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    jobs_url: &str,
+) -> Result<Vec<String>, String> {
+    recognize_paddleocr_aistudio_at_with_progress(
+        client,
+        configuration,
+        access_token,
+        image_bytes,
+        mime,
+        extension,
+        jobs_url,
+        None,
+    )
+    .await
+}
+
+#[cfg(windows)]
+async fn recognize_paddleocr_aistudio_at_with_progress(
+    client: &reqwest::Client,
+    configuration: &StoredPaddleOcrConfiguration,
+    access_token: &str,
+    image_bytes: &[u8],
+    mime: &str,
+    extension: &str,
+    jobs_url: &str,
+    progress: Option<&RemoteRecognitionProgress>,
+) -> Result<Vec<String>, String> {
+    let model = normalize_paddleocr_model(&configuration.model)?;
+    let api_model = model;
+    let optional_payload = if model == "PP-StructureV3" {
+        json!({
+            "useDocOrientationClassify": false,
+            "useDocUnwarping": false,
+            "useTextlineOrientation": false,
+            "useChartRecognition": false,
+            "useFormulaRecognition": true,
+            "useTableRecognition": false,
+            "useSealRecognition": false
+        })
+    } else {
+        json!({
+            "useDocOrientationClassify": false,
+            "useDocUnwarping": false,
+            "useLayoutDetection": true,
+            "useChartRecognition": false,
+            "showFormulaNumber": false,
+            "prettifyMarkdown": false
+        })
+    };
+    let options = serde_json::to_string(&optional_payload)
+        .map_err(|error| format!("Unable to encode PaddleOCR options: {error}"))?;
+    let file_extension = extension.trim().trim_start_matches('.');
+    let file_name = if file_extension.is_empty() {
+        "visualtex-formula.png".to_string()
+    } else {
+        format!("visualtex-formula.{file_extension}")
+    };
+    let part = reqwest::multipart::Part::bytes(image_bytes.to_vec())
+        .file_name(file_name)
+        .mime_str(mime)
+        .map_err(|error| format!("Unable to prepare the PaddleOCR image upload: {error}"))?;
+    let form = reqwest::multipart::Form::new()
+        .text("model", api_model.to_string())
+        .text("optionalPayload", options)
+        .part("file", part);
+    let request_started = Instant::now();
+    let submit = client
+        .post(jobs_url)
+        .bearer_auth(access_token)
+        .multipart(form)
+        .timeout(PADDLEOCR_SUBMIT_TIMEOUT)
+        .send()
+        .await
+        .map_err(|error| format!("PaddleOCR job submission failed: {error}"))?;
+    let submit = read_http_response(submit, MAX_RESPONSE_BYTES, "PaddleOCR job submission").await?;
+    if submit.status == 429 {
+        return Err("PaddleOCR AI Studio daily quota has been exhausted. The official quota is currently 3000 pages per user per model per day; try again after the quota resets or select the other PaddleOCR document-parsing model.".to_string());
+    }
+    ensure_success(&submit, "PaddleOCR AI Studio")?;
+    let submit_json = submit
+        .json
+        .as_ref()
+        .ok_or_else(|| "PaddleOCR job submission returned non-JSON output".to_string())?;
+    ensure_paddleocr_api_code(submit_json, "PaddleOCR job submission")?;
+    let job_id = submit_json
+        .pointer("/data/jobId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "PaddleOCR job submission returned no jobId".to_string())?;
+    let status_url = format!("{}/{job_id}", jobs_url.trim_end_matches('/'));
+    if let Some(progress) = progress {
+        progress.emit("api-queued", "图片已提交，正在等待 PaddleOCR 处理…");
+    }
+    let mut last_reported_state = String::new();
+
+    for _ in 0..PADDLEOCR_MAX_POLL_ATTEMPTS {
+        if request_started.elapsed() >= PADDLEOCR_TOTAL_TIMEOUT {
+            return Err("PaddleOCR AI Studio did not finish within 120 seconds".to_string());
+        }
+        let status = client
+            .get(&status_url)
+            .bearer_auth(access_token)
+            .timeout(PADDLEOCR_STATUS_TIMEOUT)
+            .send()
+            .await
+            .map_err(|error| format!("PaddleOCR job status request failed: {error}"))?;
+        let status = read_http_response(status, MAX_RESPONSE_BYTES, "PaddleOCR job status").await?;
+        if status.status == 429 {
+            return Err("PaddleOCR AI Studio request quota has been exhausted. Try again after the quota resets.".to_string());
+        }
+        ensure_success(&status, "PaddleOCR AI Studio")?;
+        let status_json = status
+            .json
+            .as_ref()
+            .ok_or_else(|| "PaddleOCR job status returned non-JSON output".to_string())?;
+        ensure_paddleocr_api_code(status_json, "PaddleOCR job status")?;
+        let state = status_json
+            .pointer("/data/state")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "PaddleOCR job status contains no state".to_string())?;
+        if state != last_reported_state {
+            if let Some(progress) = progress {
+                match state {
+                    "pending" => progress.emit("api-queued", "PaddleOCR 任务正在排队…"),
+                    "running" => progress.emit("api-inference", "PaddleOCR 正在识别公式…"),
+                    "done" => progress.emit("api-result", "PaddleOCR 识别完成，正在读取结果…"),
+                    _ => {}
+                }
+            }
+            last_reported_state = state.to_string();
+        }
+        match state {
+            "done" => {
+                let result_url = status_json
+                    .pointer("/data/resultUrl/jsonUrl")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| "PaddleOCR completed without a JSON result URL".to_string())?;
+                return download_and_parse_paddleocr_result_with_client(client, result_url).await;
+            }
+            "failed" => {
+                let reason = status_json
+                    .pointer("/data/errorMsg")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or("unknown remote processing error");
+                return Err(format!("PaddleOCR AI Studio job failed: {reason}"));
+            }
+            "pending" | "running" => {
+                tokio::time::sleep(PADDLEOCR_POLL_INTERVAL).await;
+            }
+            other => {
+                return Err(format!("PaddleOCR AI Studio returned an unknown job state: {other}"));
+            }
+        }
+    }
+    Err("PaddleOCR AI Studio did not finish within 120 seconds".to_string())
+}
+
+fn ensure_paddleocr_api_code(value: &Value, operation: &str) -> Result<(), String> {
+    if value.get("code").and_then(Value::as_i64).unwrap_or(0) == 0 {
+        return Ok(());
+    }
+    Err(format!(
+        "{operation} failed: {}",
+        extract_api_error(value).unwrap_or_else(|| "unknown API error".to_string())
+    ))
+}
+
+#[cfg(windows)]
+async fn download_and_parse_paddleocr_result_with_client(
+    client: &reqwest::Client,
+    result_url: &str,
+) -> Result<Vec<String>, String> {
+    validate_paddleocr_result_url(result_url)?;
+    let response = client
+        .get(result_url)
+        .timeout(PADDLEOCR_RESULT_TIMEOUT)
+        .send()
+        .await
+        .map_err(|error| format!("Unable to download the PaddleOCR result: {error}"))?;
+    let response = read_http_response(response, PADDLEOCR_RESULT_MAX_BYTES, "PaddleOCR result").await?;
+    ensure_success(&response, "PaddleOCR result download")?;
+    parse_paddleocr_result_text(&response.text)
+}
+
+#[cfg(windows)]
+async fn download_and_parse_paddleocr_result(result_url: &str) -> Result<Vec<String>, String> {
+    let client = build_ocr_http_client(
+        PADDLEOCR_RESULT_TIMEOUT,
+        reqwest::redirect::Policy::limited(5),
+        format!("VisualTeX/{} PaddleOCR", env!("CARGO_PKG_VERSION")),
+    )?;
+    download_and_parse_paddleocr_result_with_client(&client, result_url).await
+}
+
+#[cfg(windows)]
+fn validate_paddleocr_result_url(value: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(value)
+        .map_err(|error| format!("Invalid PaddleOCR result URL: {error}"))?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("PaddleOCR result URL must not contain embedded credentials".to_string());
+    }
+    if url.scheme() == "https" {
+        return Ok(());
+    }
+    #[cfg(any(test, feature = "ocr-provider-connectivity-acceptance"))]
+    if url.scheme() == "http" && is_loopback_url(value)? {
+        return Ok(());
+    }
+    Err("PaddleOCR result URL must use HTTPS".to_string())
+}
+
+fn parse_paddleocr_result_text(text: &str) -> Result<Vec<String>, String> {
+    if let Ok(value) = serde_json::from_str::<Value>(text.trim()) {
+        if let Ok(formulas) = parse_paddleocr_formula_output(&value) {
+            return Ok(formulas);
+        }
+    }
+    let mut formulas = Vec::new();
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if let Ok(page_formulas) = parse_paddleocr_formula_output(&value) {
+            for formula in page_formulas {
+                push_unique_formula_candidate(&mut formulas, formula);
+            }
+        }
+    }
+    normalize_formula_candidates(formulas)
+}
+
+#[cfg(windows)]
 async fn recognize_mathpix(
     client: &reqwest::Client,
     configuration: &StoredMathpixConfiguration,
@@ -1048,6 +1556,130 @@ async fn recognize_mathpix(
     parse_formula_output(content)
 }
 
+fn parse_paddleocr_formula_output(value: &Value) -> Result<Vec<String>, String> {
+    let pages = value
+        .pointer("/result/layoutParsingResults")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "PaddleOCR AI Studio response contains no layoutParsingResults".to_string())?;
+
+    let mut candidates = Vec::new();
+    for page in pages {
+        if let Some(pruned) = page.get("prunedResult") {
+            collect_paddleocr_structured_formulas(pruned, &mut candidates);
+        }
+    }
+    if candidates.is_empty() {
+        for page in pages {
+            if let Some(markdown) = page.pointer("/markdown/text").and_then(Value::as_str) {
+                for formula in extract_markdown_math(markdown) {
+                    push_unique_formula_candidate(&mut candidates, formula);
+                }
+            }
+        }
+    }
+    normalize_formula_candidates(candidates)
+}
+
+fn extract_markdown_math(markdown: &str) -> Vec<String> {
+    let mut formulas = Vec::new();
+    let mut cursor = 0usize;
+    while cursor < markdown.len() {
+        let rest = &markdown[cursor..];
+        let (opening, closing) = if rest.starts_with("$$") {
+            ("$$", "$$")
+        } else if rest.starts_with("\\[") {
+            ("\\[", "\\]")
+        } else if rest.starts_with("\\(") {
+            ("\\(", "\\)")
+        } else {
+            cursor += rest.chars().next().map(char::len_utf8).unwrap_or(1);
+            continue;
+        };
+        let content_start = cursor + opening.len();
+        let Some(relative_end) = markdown[content_start..].find(closing) else {
+            cursor = content_start;
+            continue;
+        };
+        let content_end = content_start + relative_end;
+        push_unique_formula_candidate(
+            &mut formulas,
+            markdown[content_start..content_end].to_string(),
+        );
+        cursor = content_end + closing.len();
+    }
+
+    if formulas.is_empty() {
+        let mut cursor = 0usize;
+        while let Some(opening_offset) = markdown[cursor..].find('$') {
+            let opening = cursor + opening_offset;
+            if markdown[opening..].starts_with("$$") {
+                cursor = opening + 2;
+                continue;
+            }
+            let content_start = opening + 1;
+            let Some(closing_offset) = markdown[content_start..].find('$') else {
+                break;
+            };
+            let closing = content_start + closing_offset;
+            if closing > content_start {
+                push_unique_formula_candidate(
+                    &mut formulas,
+                    markdown[content_start..closing].to_string(),
+                );
+            }
+            cursor = closing + 1;
+        }
+    }
+    formulas
+}
+
+fn collect_paddleocr_structured_formulas(value: &Value, output: &mut Vec<String>) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_paddleocr_structured_formulas(item, output);
+            }
+        }
+        Value::Object(object) => {
+            let label = object
+                .get("block_label")
+                .or_else(|| object.get("blockLabel"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if label.contains("formula") || label.contains("equation") {
+                if let Some(content) = object
+                    .get("block_content")
+                    .or_else(|| object.get("blockContent"))
+                    .and_then(Value::as_str)
+                {
+                    push_unique_formula_candidate(output, content.to_string());
+                    return;
+                }
+            }
+            if let Some(formula) = object
+                .get("rec_formula")
+                .or_else(|| object.get("recFormula"))
+                .and_then(Value::as_str)
+            {
+                push_unique_formula_candidate(output, formula.to_string());
+            }
+            for child in object.values() {
+                collect_paddleocr_structured_formulas(child, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_unique_formula_candidate(output: &mut Vec<String>, candidate: String) {
+    let normalized = candidate.trim();
+    if normalized.is_empty() || output.iter().any(|item| item.trim() == normalized) {
+        return;
+    }
+    output.push(normalized.to_string());
+}
+
 fn append_endpoint(base_url: &str, route: &str) -> String {
     let base = base_url.trim_end_matches('/');
     let normalized_route = route.trim_start_matches('/');
@@ -1066,6 +1698,40 @@ struct HttpJsonResponse {
     status: u16,
     text: String,
     json: Option<Value>,
+}
+
+#[cfg(windows)]
+async fn read_http_response(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    label: &str,
+) -> Result<HttpJsonResponse, String> {
+    let status = response.status().as_u16();
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(format!("{label} is larger than the allowed response limit"));
+    }
+    let mut bytes = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or(0)
+            .min(max_bytes as u64) as usize,
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("Unable to read {label}: {error}"))?
+    {
+        if bytes.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(format!("{label} is larger than the allowed response limit"));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&bytes).trim().to_string();
+    let json = serde_json::from_slice::<Value>(&bytes).ok();
+    Ok(HttpJsonResponse { status, text, json })
 }
 
 #[cfg(windows)]
@@ -1088,36 +1754,11 @@ async fn post_json(
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|error| format!("OCR API request failed: {error}"))?;
-    let status = response.status().as_u16();
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-    {
-        return Err("OCR API response is larger than the 4 MB limit".to_string());
-    }
-    let mut bytes = Vec::with_capacity(
-        response
-            .content_length()
-            .unwrap_or(0)
-            .min(MAX_RESPONSE_BYTES as u64) as usize,
-    );
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| format!("Unable to read OCR API response: {error}"))?
-    {
-        if bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err("OCR API response is larger than the 4 MB limit".to_string());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let text = String::from_utf8_lossy(&bytes).trim().to_string();
-    let json = serde_json::from_slice::<Value>(&bytes).ok();
-    Ok(HttpJsonResponse { status, text, json })
+    read_http_response(response, MAX_RESPONSE_BYTES, "OCR API response").await
 }
 
 #[cfg(windows)]
@@ -1416,9 +2057,777 @@ fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
+#[cfg(all(windows, feature = "ocr-provider-connectivity-acceptance"))]
+pub(crate) async fn run_provider_connectivity_acceptance(public_probe: bool) -> Result<(), String> {
+    use axum::{
+        body::Bytes,
+        extract::{Json, Path},
+        http::{HeaderMap, StatusCode},
+        routing::{get, post},
+        Router,
+    };
+    use tokio::net::TcpListener;
+
+    let legacy = serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+        "schemaVersion": 1,
+        "activeProvider": "local",
+        "openAiCompatible": {
+            "protocol": "responses",
+            "baseUrl": "https://api.openai.com/v1",
+            "model": "",
+            "prompt": "prompt",
+            "encryptedApiKey": null
+        },
+        "ollama": {
+            "baseUrl": "http://127.0.0.1:11434",
+            "model": "",
+            "prompt": "prompt"
+        },
+        "mathpix": {
+            "baseUrl": "https://api.mathpix.com",
+            "appId": "",
+            "encryptedAppKey": null
+        }
+    }))
+    .map_err(|error| format!("Legacy OCR provider configuration did not deserialize: {error}"))?;
+    if legacy.paddle_ocr.model != "PP-StructureV3"
+        || legacy.paddle_ocr.encrypted_access_token.is_some()
+    {
+        return Err("Legacy OCR provider configuration did not receive safe Paddle defaults".to_string());
+    }
+
+    let migrated = migrate_legacy_paddleocr_configuration(
+        serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+            "schemaVersion": 1,
+            "activeProvider": "paddleocr",
+            "openAiCompatible": {
+                "protocol": "responses",
+                "baseUrl": "https://api.openai.com/v1",
+                "model": "",
+                "prompt": "prompt",
+                "encryptedApiKey": null
+            },
+            "ollama": {
+                "baseUrl": "http://127.0.0.1:11434",
+                "model": "",
+                "prompt": "prompt"
+            },
+            "mathpix": {
+                "baseUrl": "https://api.mathpix.com",
+                "appId": "",
+                "encryptedAppKey": null
+            },
+            "paddleOcr": {
+                "model": "PaddleOCR-VL-1.5",
+                "encryptedAccessToken": null
+            }
+        }))
+        .map_err(|error| format!("Legacy PaddleOCR configuration did not deserialize: {error}"))?,
+    );
+    if migrated.schema_version != CONFIGURATION_SCHEMA_VERSION
+        || migrated.paddle_ocr.model != "PaddleOCR-VL-1.6"
+    {
+        return Err("Legacy PaddleOCR-VL model/schema migration failed".to_string());
+    }
+
+    let previous_default = migrate_legacy_paddleocr_configuration(
+        serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+            "schemaVersion": 1,
+            "activeProvider": "paddleocr",
+            "openAiCompatible": {
+                "protocol": "responses",
+                "baseUrl": "https://api.openai.com/v1",
+                "model": "",
+                "prompt": "prompt",
+                "encryptedApiKey": null
+            },
+            "ollama": {
+                "baseUrl": "http://127.0.0.1:11434",
+                "model": "",
+                "prompt": "prompt"
+            },
+            "mathpix": {
+                "baseUrl": "https://api.mathpix.com",
+                "appId": "",
+                "encryptedAppKey": null
+            },
+            "paddleOcr": {
+                "model": "PaddleOCR-VL-1.6",
+                "encryptedAccessToken": null
+            }
+        }))
+        .map_err(|error| format!("Previous Paddle default did not deserialize: {error}"))?,
+    );
+    if previous_default.schema_version != CONFIGURATION_SCHEMA_VERSION
+        || previous_default.paddle_ocr.model != "PP-StructureV3"
+    {
+        return Err("Previous Paddle VL default was not migrated to the low-latency path".to_string());
+    }
+
+    let protected_token = protect_secret("paddle-token")?;
+    if protected_token.contains("paddle-token") {
+        return Err("Windows DPAPI unexpectedly retained the Paddle token as plaintext".to_string());
+    }
+    let unprotected_token = unprotect_secret(&protected_token)?;
+    if unprotected_token.as_str() != "paddle-token" {
+        return Err("Windows DPAPI Paddle token round-trip changed the secret".to_string());
+    }
+    let mut paddle_active = StoredOcrProviderConfiguration::default();
+    paddle_active.active_provider = PADDLEOCR_PROVIDER.to_string();
+    paddle_active.paddle_ocr.encrypted_access_token = Some(protected_token);
+    validate_active_provider_configuration(&paddle_active)?;
+
+    async fn openai(Json(body): Json<Value>) -> Json<Value> {
+        assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+        Json(json!({
+            "output_text": "{\"formulas\":[{\"latex\":\"x^2+y^2\"},{\"latex\":\"z=3\"}]}"
+        }))
+    }
+
+    async fn ollama(Json(body): Json<Value>) -> Json<Value> {
+        assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+        Json(json!({
+            "message": {"content": "{\"formulas\":[{\"latex\":\"a=b\"}]}"}
+        }))
+    }
+
+    fn require_paddle_bearer(headers: &HeaderMap) {
+        assert_eq!(
+            headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer paddle-token")
+        );
+    }
+
+    async fn paddle_vl_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
+        require_paddle_bearer(&headers);
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains("PaddleOCR-VL-1.6"));
+        assert!(body.contains("showFormulaNumber"));
+        assert!(body.contains("prettifyMarkdown"));
+        Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "vl-job"}}))
+    }
+
+    async fn paddle_structure_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
+        require_paddle_bearer(&headers);
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains("PP-StructureV3"));
+        assert!(body.contains("useFormulaRecognition"));
+        assert!(body.contains("useTableRecognition"));
+        Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "structure-job"}}))
+    }
+
+    async fn paddle_status(Path(job_id): Path<String>, headers: HeaderMap) -> Json<Value> {
+        require_paddle_bearer(&headers);
+        let host = headers
+            .get("host")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        Json(json!({
+            "code": 0,
+            "msg": "Success",
+            "data": {
+                "jobId": job_id,
+                "state": "done",
+                "resultUrl": {"jsonUrl": format!("http://{host}/paddle-result/{job_id}")}
+            }
+        }))
+    }
+
+    async fn paddle_pending_status(Path(job_id): Path<String>, headers: HeaderMap) -> Json<Value> {
+        require_paddle_bearer(&headers);
+        Json(json!({
+            "code": 0,
+            "msg": "Success",
+            "data": {
+                "jobId": job_id,
+                "state": "pending"
+            }
+        }))
+    }
+
+    async fn paddle_result(Path(job_id): Path<String>) -> String {
+        let value = if job_id == "structure-job" {
+            json!({
+                "result": {"layoutParsingResults": [{
+                    "prunedResult": {"parsing_res_list": [
+                        {"block_label": "formula", "block_content": "$$E=mc^2$$"}
+                    ]}
+                }]}
+            })
+        } else {
+            json!({
+                "result": {"layoutParsingResults": [{
+                    "prunedResult": {"parsing_res_list": [
+                        {"block_label": "formula", "block_content": "$$x&=1\\\\y&=2$$"},
+                        {"block_label": "equation", "block_content": "\\frac{a}{b}"}
+                    ]}
+                }]}
+            })
+        };
+        format!("{}\n", serde_json::to_string(&value).unwrap())
+    }
+
+    async fn paddle_quota() -> (StatusCode, Json<Value>) {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"code": 429, "msg": "quota exceeded"})),
+        )
+    }
+
+    async fn mathpix(headers: HeaderMap, Json(body): Json<Value>) -> Json<Value> {
+        assert_eq!(headers.get("app_id").and_then(|value| value.to_str().ok()), Some("app-id"));
+        assert_eq!(headers.get("app_key").and_then(|value| value.to_str().ok()), Some("app-key"));
+        assert!(body.get("src").and_then(Value::as_str).is_some());
+        Json(json!({"latex_styled": "\\frac{1}{2}"}))
+    }
+
+    let router = Router::new()
+        .route("/responses", post(openai))
+        .route("/api/chat", post(ollama))
+        .route("/jobs-vl", post(paddle_vl_submit))
+        .route("/jobs-vl/{job_id}", get(paddle_status))
+        .route("/jobs-structure", post(paddle_structure_submit))
+        .route("/jobs-structure/{job_id}", get(paddle_status))
+        .route("/jobs-pending", post(paddle_structure_submit))
+        .route("/jobs-pending/{job_id}", get(paddle_pending_status))
+        .route("/paddle-result/{job_id}", get(paddle_result))
+        .route("/quota", post(paddle_quota))
+        .route("/v3/text", post(mathpix));
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| format!("Unable to start OCR mock API: {error}"))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| format!("Unable to inspect OCR mock API address: {error}"))?;
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let base_url = format!("http://{address}");
+    let direct_client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("Unable to initialize direct OCR mock client: {error}"))?;
+    let data_url = "data:image/png;base64,iVBORw0KGgo=";
+
+    let openai_configuration = StoredOpenAiCompatibleConfiguration {
+        protocol: "responses".to_string(),
+        base_url: base_url.clone(),
+        model: "vision-model".to_string(),
+        prompt: "Return formula JSON".to_string(),
+        encrypted_api_key: None,
+    };
+    let openai = recognize_openai_compatible(
+        &direct_client,
+        &openai_configuration,
+        None,
+        data_url,
+    )
+    .await?;
+    if openai != ["x^2+y^2", "z=3"] {
+        return Err(format!("OpenAI-compatible mock result mismatch: {openai:?}"));
+    }
+
+    let ollama_configuration = StoredOllamaConfiguration {
+        base_url: base_url.clone(),
+        model: "vision-model".to_string(),
+        prompt: "Return formula JSON".to_string(),
+    };
+    let ollama = recognize_ollama(&direct_client, &ollama_configuration, "iVBORw0KGgo=").await?;
+    if ollama != ["a=b"] {
+        return Err(format!("Ollama mock result mismatch: {ollama:?}"));
+    }
+
+    let paddle_vl = StoredPaddleOcrConfiguration {
+        model: "PaddleOCR-VL-1.6".to_string(),
+        encrypted_access_token: None,
+    };
+    let vl_result = recognize_paddleocr_aistudio_at(
+        &direct_client,
+        &paddle_vl,
+        "paddle-token",
+        b"fake-png",
+        "image/png",
+        "png",
+        &format!("{base_url}/jobs-vl"),
+    )
+    .await?;
+    if vl_result != ["x&=1\\\\y&=2", "\\frac{a}{b}"] {
+        return Err(format!("PaddleOCR-VL mock result mismatch: {vl_result:?}"));
+    }
+
+    let paddle_structure = StoredPaddleOcrConfiguration {
+        model: "PP-StructureV3".to_string(),
+        encrypted_access_token: None,
+    };
+    let structure_result = recognize_paddleocr_aistudio_at(
+        &direct_client,
+        &paddle_structure,
+        "paddle-token",
+        b"fake-png",
+        "image/png",
+        "png",
+        &format!("{base_url}/jobs-structure"),
+    )
+    .await?;
+    if structure_result != ["E=mc^2"] {
+        return Err(format!("PP-StructureV3 mock result mismatch: {structure_result:?}"));
+    }
+
+    let quota_error = recognize_paddleocr_aistudio_at(
+        &direct_client,
+        &paddle_vl,
+        "paddle-token",
+        b"fake-png",
+        "image/png",
+        "png",
+        &format!("{base_url}/quota"),
+    )
+    .await
+    .expect_err("Paddle quota mock must fail");
+    if !quota_error.to_ascii_lowercase().contains("quota") {
+        return Err(format!("Unexpected Paddle quota error: {quota_error}"));
+    }
+
+    let mathpix_configuration = StoredMathpixConfiguration {
+        base_url: base_url,
+        app_id: "app-id".to_string(),
+        encrypted_app_key: None,
+    };
+    let mathpix = recognize_mathpix(
+        &direct_client,
+        &mathpix_configuration,
+        "app-key",
+        data_url,
+    )
+    .await?;
+    if mathpix != ["\\frac{1}{2}"] {
+        return Err(format!("Mathpix mock result mismatch: {mathpix:?}"));
+    }
+
+    println!("OCR provider mock protocols passed: OpenAI-compatible, Ollama, Mathpix, PaddleOCR-VL-1.6, PP-StructureV3.");
+
+    if public_probe {
+        let client = build_ocr_http_client(
+            Duration::from_secs(20),
+            reqwest::redirect::Policy::none(),
+            format!("VisualTeX/{} OCR-connectivity", env!("CARGO_PKG_VERSION")),
+        )?;
+        for (name, url) in [
+            ("OpenAI", "https://api.openai.com/v1/models"),
+            ("Mathpix", "https://api.mathpix.com/v3/text"),
+            ("PaddleOCR", PADDLEOCR_JOBS_URL),
+        ] {
+            let response = client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| format!("{name} endpoint was not reachable through the VisualTeX OCR client: {error}"))?;
+            println!("{name} public endpoint reachable: HTTP {}", response.status().as_u16());
+        }
+        match client.get("http://127.0.0.1:11434/api/tags").send().await {
+            Ok(response) => println!("Ollama local endpoint reachable: HTTP {}", response.status().as_u16()),
+            Err(error) => println!("Ollama local endpoint not running/reachable on 127.0.0.1:11434: {error}"),
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(all(windows, feature = "ocr-provider-connectivity-acceptance"))]
+pub(crate) async fn run_saved_paddle_latency_diagnostic(
+    image_path: &std::path::Path,
+    repeats: usize,
+    model_override: Option<&str>,
+) -> Result<(), String> {
+    let app_data = std::env::var_os("APPDATA")
+        .ok_or_else(|| "APPDATA is unavailable for the saved Paddle diagnostic".to_string())?;
+    let configuration_path = PathBuf::from(app_data)
+        .join("com.visualtex.studio")
+        .join("ocr")
+        .join(CONFIGURATION_FILE);
+    let configuration = migrate_legacy_paddleocr_configuration(
+        serde_json::from_slice::<StoredOcrProviderConfiguration>(
+            &fs::read(&configuration_path).map_err(|error| {
+                format!(
+                    "Unable to read saved OCR provider configuration ({}): {error}",
+                    configuration_path.display()
+                )
+            })?,
+        )
+        .map_err(|error| format!("Unable to parse saved OCR provider configuration: {error}"))?,
+    );
+    if configuration.active_provider != PADDLEOCR_PROVIDER {
+        return Err(format!(
+            "Saved OCR provider is {}, not PaddleOCR",
+            configuration.active_provider
+        ));
+    }
+    let token = unprotect_secret(
+        configuration
+            .paddle_ocr
+            .encrypted_access_token
+            .as_deref()
+            .ok_or_else(|| "Saved PaddleOCR access token is missing".to_string())?,
+    )?;
+    let image_bytes = fs::read(image_path)
+        .map_err(|error| format!("Unable to read diagnostic image ({}): {error}", image_path.display()))?;
+    let extension = image_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
+    let mime = mime_for_extension(extension)?;
+    let model = match model_override.map(str::trim).filter(|value| !value.is_empty()) {
+        Some("PaddleOCR-VL-1.6") => "PaddleOCR-VL-1.6",
+        Some("PaddleOCR-VL-1.5") => "PaddleOCR-VL-1.5",
+        Some("PaddleOCR-VL") => "PaddleOCR-VL",
+        Some("PP-StructureV3") => "PP-StructureV3",
+        Some(other) => {
+            return Err(format!(
+                "Unsupported Paddle diagnostic model override: {other}"
+            ))
+        }
+        None => normalize_paddleocr_model(&configuration.paddle_ocr.model)?,
+    };
+    let api_model = model;
+
+    let diagnostic_direct = std::env::var("VISUALTEX_PADDLE_DIAGNOSTIC_DIRECT")
+        .ok()
+        .is_some_and(|value| value == "1");
+    println!(
+        "Saved Paddle diagnostic: model={model}, bytes={}, repeats={}, route={}",
+        image_bytes.len(),
+        repeats.max(1),
+        if diagnostic_direct { "direct" } else { "system-proxy" }
+    );
+    for run in 1..=repeats.max(1) {
+        let total_started = Instant::now();
+        let client = if diagnostic_direct {
+            reqwest::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(120))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent(format!(
+                    "VisualTeX/{} Paddle-latency-diagnostic",
+                    env!("CARGO_PKG_VERSION")
+                ))
+                .build()
+                .map_err(|error| format!("Unable to initialize direct Paddle diagnostic client: {error}"))?
+        } else {
+            build_ocr_http_client(
+                Duration::from_secs(120),
+                reqwest::redirect::Policy::none(),
+                format!("VisualTeX/{} Paddle-latency-diagnostic", env!("CARGO_PKG_VERSION")),
+            )?
+        };
+        let optional_payload = if model == "PP-StructureV3" {
+            json!({
+                "useDocOrientationClassify": false,
+                "useDocUnwarping": false,
+                "useTextlineOrientation": false,
+                "useChartRecognition": false,
+                "useFormulaRecognition": true,
+                "useTableRecognition": false,
+                "useSealRecognition": false
+            })
+        } else {
+            json!({
+                "useDocOrientationClassify": false,
+                "useDocUnwarping": false,
+                "useLayoutDetection": true,
+                "useChartRecognition": false,
+                "showFormulaNumber": false,
+                "prettifyMarkdown": false
+            })
+        };
+        let options = serde_json::to_string(&optional_payload)
+            .map_err(|error| format!("Unable to encode Paddle diagnostic options: {error}"))?;
+        let part = reqwest::multipart::Part::bytes(image_bytes.clone())
+            .file_name(format!("visualtex-formula.{extension}"))
+            .mime_str(mime)
+            .map_err(|error| format!("Unable to prepare Paddle diagnostic image: {error}"))?;
+        let form = reqwest::multipart::Form::new()
+            .text("model", api_model.to_string())
+            .text("optionalPayload", options)
+            .part("file", part);
+
+        let submit_started = Instant::now();
+        let submit_response = client
+            .post(PADDLEOCR_JOBS_URL)
+            .bearer_auth(token.as_str())
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|error| format!("Paddle diagnostic submit failed: {error}"))?;
+        let submit_network_ms = submit_started.elapsed().as_millis();
+        let submit = read_http_response(
+            submit_response,
+            MAX_RESPONSE_BYTES,
+            "Paddle diagnostic submission",
+        )
+        .await?;
+        ensure_success(&submit, "PaddleOCR AI Studio")?;
+        let submit_json = submit
+            .json
+            .as_ref()
+            .ok_or_else(|| "Paddle diagnostic submit returned non-JSON output".to_string())?;
+        ensure_paddleocr_api_code(submit_json, "Paddle diagnostic submission")?;
+        let job_id = submit_json
+            .pointer("/data/jobId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Paddle diagnostic submission returned no jobId".to_string())?;
+        println!("run {run}: submit={submit_network_ms}ms");
+
+        let status_url = format!("{}/{job_id}", PADDLEOCR_JOBS_URL.trim_end_matches('/'));
+        let mut poll_index = 0usize;
+        let mut first_running_ms: Option<u128> = None;
+        let result_url = loop {
+            poll_index += 1;
+            let poll_started = Instant::now();
+            let response = client
+                .get(&status_url)
+                .bearer_auth(token.as_str())
+                .send()
+                .await
+                .map_err(|error| format!("Paddle diagnostic poll #{poll_index} failed: {error}"))?;
+            let status = read_http_response(
+                response,
+                MAX_RESPONSE_BYTES,
+                "Paddle diagnostic status",
+            )
+            .await?;
+            ensure_success(&status, "PaddleOCR AI Studio")?;
+            let value = status
+                .json
+                .as_ref()
+                .ok_or_else(|| "Paddle diagnostic status returned non-JSON output".to_string())?;
+            ensure_paddleocr_api_code(value, "Paddle diagnostic status")?;
+            let state = value
+                .pointer("/data/state")
+                .and_then(Value::as_str)
+                .unwrap_or("missing");
+            println!(
+                "run {run}: poll#{poll_index} state={state} request={}ms total={}ms",
+                poll_started.elapsed().as_millis(),
+                total_started.elapsed().as_millis()
+            );
+            if state == "running" && first_running_ms.is_none() {
+                first_running_ms = Some(total_started.elapsed().as_millis());
+            }
+            match state {
+                "done" => {
+                    let done_ms = total_started.elapsed().as_millis();
+                    println!(
+                        "run {run}: queue={}ms inference={}ms",
+                        first_running_ms.unwrap_or(done_ms),
+                        first_running_ms
+                            .map(|running_ms| done_ms.saturating_sub(running_ms))
+                            .unwrap_or(0)
+                    );
+                    break value
+                        .pointer("/data/resultUrl/jsonUrl")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                        .ok_or_else(|| "Paddle diagnostic completed without result URL".to_string())?
+                        .to_string();
+                }
+                "failed" => {
+                    return Err(format!(
+                        "Paddle diagnostic remote job failed: {}",
+                        value
+                            .pointer("/data/errorMsg")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown error")
+                    ));
+                }
+                "pending" | "running" => tokio::time::sleep(PADDLEOCR_POLL_INTERVAL).await,
+                other => return Err(format!("Paddle diagnostic unknown job state: {other}")),
+            }
+        };
+
+        let download_started = Instant::now();
+        let formulas = if diagnostic_direct {
+            validate_paddleocr_result_url(&result_url)?;
+            let response = client
+                .get(&result_url)
+                .send()
+                .await
+                .map_err(|error| format!("Direct Paddle diagnostic result download failed: {error}"))?;
+            let response = read_http_response(
+                response,
+                PADDLEOCR_RESULT_MAX_BYTES,
+                "Direct Paddle diagnostic result",
+            )
+            .await?;
+            ensure_success(&response, "PaddleOCR result download")?;
+            match parse_paddleocr_result_text(&response.text) {
+                Ok(formulas) => formulas,
+                Err(error) => {
+                    println!("run {run}: result parse warning: {error}");
+                    Vec::new()
+                }
+            }
+        } else {
+            download_and_parse_paddleocr_result(&result_url).await?
+        };
+        println!(
+            "run {run}: result-download+parse={}ms total={}ms formulas={}",
+            download_started.elapsed().as_millis(),
+            total_started.elapsed().as_millis(),
+            formulas.len()
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Bytes,
+        extract::{Json, Path},
+        http::{HeaderMap, StatusCode},
+        routing::{get, post},
+        Router,
+    };
+    use tokio::net::TcpListener;
+
+    async fn spawn_mock_api() -> String {
+        async fn openai(Json(body): Json<Value>) -> Json<Value> {
+            assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+            assert!(body
+                .pointer("/input/0/content/1/image_url")
+                .and_then(Value::as_str)
+                .is_some_and(|url| url.starts_with("data:image/png;base64,")));
+            Json(json!({
+                "output_text": "{\"formulas\":[{\"latex\":\"x^2+y^2\"},{\"latex\":\"z=3\"}]}"
+            }))
+        }
+
+        async fn ollama(Json(body): Json<Value>) -> Json<Value> {
+            assert_eq!(body.get("model").and_then(Value::as_str), Some("vision-model"));
+            assert_eq!(body.get("stream").and_then(Value::as_bool), Some(false));
+            assert!(body
+                .pointer("/messages/0/images/0")
+                .and_then(Value::as_str)
+                .is_some_and(|image| !image.is_empty()));
+            Json(json!({
+                "message": {"content": "{\"formulas\":[{\"latex\":\"a=b\"}]}"}
+            }))
+        }
+
+        fn assert_paddle_bearer(headers: &HeaderMap) {
+            assert_eq!(
+                headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok()),
+                Some("Bearer paddle-token")
+            );
+        }
+
+        async fn paddle_vl_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
+            assert_paddle_bearer(&headers);
+            let body = String::from_utf8_lossy(&body);
+            assert!(body.contains("PaddleOCR-VL-1.6"));
+            assert!(body.contains("optionalPayload"));
+            assert!(body.contains("showFormulaNumber"));
+            assert!(body.contains("prettifyMarkdown"));
+            assert!(body.contains("visualtex-formula.png"));
+            Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "vl-job"}}))
+        }
+
+        async fn paddle_structure_submit(headers: HeaderMap, body: Bytes) -> Json<Value> {
+            assert_paddle_bearer(&headers);
+            let body = String::from_utf8_lossy(&body);
+            assert!(body.contains("PP-StructureV3"));
+            assert!(body.contains("useFormulaRecognition"));
+            assert!(body.contains("useTableRecognition"));
+            assert!(body.contains("useSealRecognition"));
+            assert!(body.contains("visualtex-formula.png"));
+            Json(json!({"code": 0, "msg": "Success", "data": {"jobId": "structure-job"}}))
+        }
+
+        async fn paddle_status(
+            Path(job_id): Path<String>,
+            headers: HeaderMap,
+        ) -> Json<Value> {
+            assert_paddle_bearer(&headers);
+            let host = headers
+                .get("host")
+                .and_then(|value| value.to_str().ok())
+                .unwrap();
+            Json(json!({
+                "code": 0,
+                "msg": "Success",
+                "data": {
+                    "jobId": job_id,
+                    "state": "done",
+                    "resultUrl": {"jsonUrl": format!("http://{host}/paddle-result/{job_id}")}
+                }
+            }))
+        }
+
+        async fn paddle_result(Path(job_id): Path<String>) -> String {
+            let result = if job_id == "structure-job" {
+                json!({
+                    "result": {"layoutParsingResults": [{
+                        "prunedResult": {"parsing_res_list": [
+                            {"block_label": "formula", "block_content": "$$E=mc^2$$"}
+                        ]}
+                    }]}
+                })
+            } else {
+                json!({
+                    "result": {"layoutParsingResults": [{
+                        "prunedResult": {"parsing_res_list": [
+                            {"block_label": "text", "block_content": "ignored"},
+                            {"block_label": "formula", "block_content": "$$x&=1\\\\y&=2$$"},
+                            {"block_label": "equation", "block_content": "\\frac{a}{b}"}
+                        ]},
+                        "markdown": {"text": "ignored markdown", "images": {}}
+                    }]}
+                })
+            };
+            format!("{}\n", serde_json::to_string(&result).unwrap())
+        }
+
+        async fn paddle_quota() -> (StatusCode, Json<Value>) {
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({"code": 429, "msg": "quota exceeded"})),
+            )
+        }
+
+        async fn mathpix(headers: HeaderMap, Json(body): Json<Value>) -> Json<Value> {
+            assert_eq!(headers.get("app_id").and_then(|value| value.to_str().ok()), Some("app-id"));
+            assert_eq!(headers.get("app_key").and_then(|value| value.to_str().ok()), Some("app-key"));
+            assert!(body
+                .get("src")
+                .and_then(Value::as_str)
+                .is_some_and(|src| src.starts_with("data:image/png;base64,")));
+            Json(json!({"latex_styled": "\\frac{1}{2}"}))
+        }
+
+        let router = Router::new()
+            .route("/responses", post(openai))
+            .route("/api/chat", post(ollama))
+            .route("/jobs-vl", post(paddle_vl_submit))
+            .route("/jobs-vl/{job_id}", get(paddle_status))
+            .route("/jobs-structure", post(paddle_structure_submit))
+            .route("/jobs-structure/{job_id}", get(paddle_status))
+            .route("/paddle-result/{job_id}", get(paddle_result))
+            .route("/quota", post(paddle_quota))
+            .route("/v3/text", post(mathpix));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        format!("http://{address}")
+    }
 
     #[test]
     fn default_configuration_keeps_local_ocr_active() {
@@ -1426,6 +2835,280 @@ mod tests {
         assert_eq!(configuration.active_provider, LOCAL_PROVIDER);
         assert_eq!(configuration.open_ai_compatible.protocol, "responses");
         assert!(!configuration.open_ai_compatible.prompt.is_empty());
+    }
+
+    #[test]
+    fn legacy_provider_configuration_deserializes_without_paddle_fields() {
+        let stored = serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+            "schemaVersion": 1,
+            "activeProvider": "local",
+            "openAiCompatible": {
+                "protocol": "responses",
+                "baseUrl": "https://api.openai.com/v1",
+                "model": "",
+                "prompt": "prompt",
+                "encryptedApiKey": null
+            },
+            "ollama": {
+                "baseUrl": "http://127.0.0.1:11434",
+                "model": "",
+                "prompt": "prompt"
+            },
+            "mathpix": {
+                "baseUrl": "https://api.mathpix.com",
+                "appId": "",
+                "encryptedAppKey": null
+            }
+        }))
+        .unwrap();
+        assert_eq!(stored.paddle_ocr.model, "PP-StructureV3");
+        assert!(stored.paddle_ocr.encrypted_access_token.is_none());
+
+        let migrated = migrate_legacy_paddleocr_configuration(
+            serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+                "schemaVersion": 1,
+                "activeProvider": "paddleocr",
+                "openAiCompatible": {
+                    "protocol": "responses",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "",
+                    "prompt": "prompt",
+                    "encryptedApiKey": null
+                },
+                "ollama": {
+                    "baseUrl": "http://127.0.0.1:11434",
+                    "model": "",
+                    "prompt": "prompt"
+                },
+                "mathpix": {
+                    "baseUrl": "https://api.mathpix.com",
+                    "appId": "",
+                    "encryptedAppKey": null
+                },
+                "paddleOcr": {
+                    "model": "PaddleOCR-VL-1.5",
+                    "encryptedAccessToken": null
+                }
+            }))
+            .unwrap(),
+        );
+        assert_eq!(migrated.schema_version, CONFIGURATION_SCHEMA_VERSION);
+        assert_eq!(migrated.paddle_ocr.model, "PaddleOCR-VL-1.6");
+
+        let previous_default = migrate_legacy_paddleocr_configuration(
+            serde_json::from_value::<StoredOcrProviderConfiguration>(json!({
+                "schemaVersion": 1,
+                "activeProvider": "paddleocr",
+                "openAiCompatible": {
+                    "protocol": "responses",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "",
+                    "prompt": "prompt",
+                    "encryptedApiKey": null
+                },
+                "ollama": {
+                    "baseUrl": "http://127.0.0.1:11434",
+                    "model": "",
+                    "prompt": "prompt"
+                },
+                "mathpix": {
+                    "baseUrl": "https://api.mathpix.com",
+                    "appId": "",
+                    "encryptedAppKey": null
+                },
+                "paddleOcr": {
+                    "model": "PaddleOCR-VL-1.6",
+                    "encryptedAccessToken": null
+                }
+            }))
+            .unwrap(),
+        );
+        assert_eq!(previous_default.schema_version, CONFIGURATION_SCHEMA_VERSION);
+        assert_eq!(previous_default.paddle_ocr.model, "PP-StructureV3");
+
+        let update = serde_json::from_value::<OcrProviderConfigurationUpdate>(json!({
+            "activeProvider": "local",
+            "openAiCompatible": {
+                "protocol": "responses",
+                "baseUrl": "https://api.openai.com/v1",
+                "model": "",
+                "prompt": "prompt"
+            },
+            "ollama": {
+                "baseUrl": "http://127.0.0.1:11434",
+                "model": "",
+                "prompt": "prompt"
+            },
+            "mathpix": {
+                "baseUrl": "https://api.mathpix.com",
+                "appId": ""
+            }
+        }))
+        .unwrap();
+        assert_eq!(update.paddle_ocr.model, "PP-StructureV3");
+    }
+
+    #[test]
+    fn paddleocr_formula_parser_prefers_structured_blocks_and_falls_back_to_markdown() {
+        let structured = json!({
+            "result": {
+                "layoutParsingResults": [{
+                    "prunedResult": {
+                        "parsing_res_list": [
+                            {"block_label": "text", "block_content": "ignore me"},
+                            {"block_label": "formula", "block_content": "$$x+y$$"},
+                            {"rec_formula": "\\frac{1}{2}"}
+                        ]
+                    },
+                    "markdown": {"text": "text $$z=3$$"}
+                }]
+            }
+        });
+        assert_eq!(
+            parse_paddleocr_formula_output(&structured).unwrap(),
+            vec!["x+y", "\\frac{1}{2}"]
+        );
+
+        let markdown_only = json!({
+            "result": {
+                "layoutParsingResults": [{
+                    "prunedResult": {"parsing_res_list": [{"block_label": "text", "block_content": "plain"}]},
+                    "markdown": {"text": "before $$a=1$$ and \\[b=2\\] after"}
+                }]
+            }
+        });
+        assert_eq!(
+            parse_paddleocr_formula_output(&markdown_only).unwrap(),
+            vec!["a=1", "b=2"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_provider_http_protocols_include_paddle_models() {
+        let base_url = spawn_mock_api().await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let data_url = "data:image/png;base64,iVBORw0KGgo=";
+
+        let openai_configuration = StoredOpenAiCompatibleConfiguration {
+            protocol: "responses".to_string(),
+            base_url: base_url.clone(),
+            model: "vision-model".to_string(),
+            prompt: "Return formula JSON".to_string(),
+            encrypted_api_key: None,
+        };
+        assert_eq!(
+            recognize_openai_compatible(&client, &openai_configuration, None, data_url)
+                .await
+                .unwrap(),
+            vec!["x^2+y^2", "z=3"]
+        );
+
+        let ollama_configuration = StoredOllamaConfiguration {
+            base_url: base_url.clone(),
+            model: "vision-model".to_string(),
+            prompt: "Return formula JSON".to_string(),
+        };
+        assert_eq!(
+            recognize_ollama(&client, &ollama_configuration, "iVBORw0KGgo=")
+                .await
+                .unwrap(),
+            vec!["a=b"]
+        );
+
+        let paddle_configuration = StoredPaddleOcrConfiguration {
+            model: "PaddleOCR-VL-1.6".to_string(),
+            encrypted_access_token: None,
+        };
+        assert_eq!(
+            recognize_paddleocr_aistudio_at(
+                &client,
+                &paddle_configuration,
+                "paddle-token",
+                b"fake-png",
+                "image/png",
+                "png",
+                &format!("{base_url}/jobs-vl"),
+            )
+            .await
+            .unwrap(),
+            vec!["x&=1\\\\y&=2", "\\frac{a}{b}"]
+        );
+
+        let structure_configuration = StoredPaddleOcrConfiguration {
+            model: "PP-StructureV3".to_string(),
+            encrypted_access_token: None,
+        };
+        assert_eq!(
+            recognize_paddleocr_aistudio_at(
+                &client,
+                &structure_configuration,
+                "paddle-token",
+                b"fake-png",
+                "image/png",
+                "png",
+                &format!("{base_url}/jobs-structure"),
+            )
+            .await
+            .unwrap(),
+            vec!["E=mc^2"]
+        );
+
+        let quota_error = recognize_paddleocr_aistudio_at(
+            &client,
+            &paddle_configuration,
+            "paddle-token",
+            b"fake-png",
+            "image/png",
+            "png",
+            &format!("{base_url}/quota"),
+        )
+        .await
+        .unwrap_err();
+        assert!(quota_error.to_ascii_lowercase().contains("quota"));
+
+        let mathpix_configuration = StoredMathpixConfiguration {
+            base_url: base_url,
+            app_id: "app-id".to_string(),
+            encrypted_app_key: None,
+        };
+        assert_eq!(
+            recognize_mathpix(&client, &mathpix_configuration, "app-key", data_url)
+                .await
+                .unwrap(),
+            vec!["\\frac{1}{2}"]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "manual public OCR API connectivity probe"]
+    async fn public_ocr_api_endpoints_are_reachable_with_app_proxy_client() {
+        let client = build_ocr_http_client(
+            Duration::from_secs(20),
+            reqwest::redirect::Policy::none(),
+            format!("VisualTeX/{} OCR-connectivity", env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap();
+        for (name, url) in [
+            ("OpenAI", "https://api.openai.com/v1/models"),
+            ("Mathpix", "https://api.mathpix.com/v3/text"),
+            ("PaddleOCR", PADDLEOCR_JOBS_URL),
+        ] {
+            let response = client
+                .get(url)
+                .send()
+                .await
+                .unwrap_or_else(|error| panic!("{name} endpoint was not reachable through the VisualTeX OCR client: {error}"));
+            println!("{name} connectivity status={}", response.status().as_u16());
+        }
+
+        match client.get("http://127.0.0.1:11434/api/tags").send().await {
+            Ok(response) => println!("Ollama local connectivity status={}", response.status().as_u16()),
+            Err(error) => println!("Ollama local service is not running/reachable: {error}"),
+        }
     }
 
     #[test]

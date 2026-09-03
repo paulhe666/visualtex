@@ -207,9 +207,16 @@ export type OcrProviderId =
   | "local"
   | "openai-compatible"
   | "ollama"
-  | "mathpix";
+  | "mathpix"
+  | "paddleocr";
 
 export type OpenAiCompatibleProtocol = "responses" | "chat-completions";
+export type PaddleOcrApiModel =
+  | "PaddleOCR-VL-1.6";
+
+export const PADDLE_OCR_API_MODELS: readonly PaddleOcrApiModel[] = [
+  "PaddleOCR-VL-1.6",
+] as const;
 
 export interface OcrProviderConfiguration {
   activeProvider: OcrProviderId;
@@ -229,6 +236,10 @@ export interface OcrProviderConfiguration {
     baseUrl: string;
     appId: string;
     hasAppKey: boolean;
+  };
+  paddleOcr: {
+    model: PaddleOcrApiModel;
+    hasAccessToken: boolean;
   };
 }
 
@@ -252,6 +263,11 @@ export interface OcrProviderConfigurationUpdate {
     appId: string;
     appKey?: string;
     clearAppKey?: boolean;
+  };
+  paddleOcr: {
+    model: PaddleOcrApiModel;
+    accessToken?: string;
+    clearAccessToken?: boolean;
   };
 }
 

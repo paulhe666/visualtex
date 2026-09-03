@@ -124,6 +124,7 @@ interface InlineOcrState {
   message: string;
   seconds: number;
   model: OcrModelName;
+  sourceLabel?: string;
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
@@ -609,10 +610,19 @@ function App() {
           );
         }
       } else {
+        const remoteSourceLabel =
+          providerConfiguration.activeProvider === "paddleocr"
+            ? `PaddleOCR · ${providerConfiguration.paddleOcr.model}`
+            : providerConfiguration.activeProvider === "mathpix"
+              ? "Mathpix"
+              : providerConfiguration.activeProvider === "ollama"
+                ? `Ollama · ${providerConfiguration.ollama.model || "API"}`
+                : `OpenAI API · ${providerConfiguration.openAiCompatible.model || "API"}`;
         setInlineOcr((current) =>
           current
             ? {
                 ...current,
+                sourceLabel: remoteSourceLabel,
                 message: isEn
                   ? "Sending the image to the configured OCR API…"
                   : "正在将图片发送到已配置的 OCR API…",
@@ -622,7 +632,7 @@ function App() {
       }
       const availableOcrModel = ocrModel;
 
-      if (usingLocalProvider) unlisten = await listenOcrRecognitionProgress((progress) => {
+      unlisten = await listenOcrRecognitionProgress((progress) => {
         if (
           inlineOcrRunIdRef.current !== runId ||
           progress.model !== ocrModel
@@ -675,6 +685,7 @@ function App() {
             : "识别完成，已插入原光标位置",
         seconds: current?.seconds ?? 0,
         model: ocrModel,
+        sourceLabel: current?.sourceLabel,
       }));
       setToast(
         source === "quick"
@@ -697,6 +708,7 @@ function App() {
           message: isEn ? "OCR cancelled" : "OCR 已取消",
           seconds: current?.seconds ?? 0,
           model: ocrModel,
+          sourceLabel: current?.sourceLabel,
         }));
         scheduleInlineOcrClear(1200);
       } else {
@@ -707,6 +719,7 @@ function App() {
           message,
           seconds: current?.seconds ?? 0,
           model: ocrModel,
+          sourceLabel: current?.sourceLabel,
         }));
         setToast(message);
         scheduleInlineOcrClear(4500);
@@ -1692,7 +1705,8 @@ function App() {
               <div>
                 <strong>{inlineOcr.message}</strong>
                 <span>
-                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
+                  {inlineOcr.sourceLabel ??
+                    (isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh)}
                   {" · "}
                   {inlineOcr.seconds}
                   {isEn ? "s" : " 秒"}

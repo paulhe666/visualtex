@@ -12,6 +12,7 @@ ocr-install-acceptance = []
 ocr-python-bundle-acceptance = []
 ocr-model-acceptance = []
 ocr-storage-acceptance = []
+ocr-provider-connectivity-acceptance = []
 
 [[bin]]
 name = "ocr_install_acceptance"
@@ -32,6 +33,11 @@ required-features = ["ocr-model-acceptance"]
 name = "ocr_storage_acceptance"
 path = "src/bin/ocr_storage_acceptance.rs"
 required-features = ["ocr-storage-acceptance"]
+
+[[bin]]
+name = "ocr_provider_connectivity_acceptance"
+path = "src/bin/ocr_provider_connectivity_acceptance.rs"
+required-features = ["ocr-provider-connectivity-acceptance"]
 
 [lib]
 name = "visualtex_lib"
@@ -66,7 +72,7 @@ tauri-plugin-single-instance = "2.4.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "multipart", "system-proxy"] }
 ttf-parser = "0.25"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]

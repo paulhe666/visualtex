@@ -84,13 +84,17 @@ assert.ok(latestStyles.includes(".silent-ocr-hud-page"));
 assert.ok(latestStyles.includes("visualtex-silent-ocr-spin"));
 
 // Every OCR entry point shares one native provider router. Local PP-FormulaNet
-// remains the default, while OpenAI-compatible, Ollama and Mathpix requests are
-// normalized to the existing formulas[].latex result. Secrets stay in the
-// native backend and are protected with Windows DPAPI before persistence.
+// remains the default, while OpenAI-compatible, Ollama, Mathpix and PaddleOCR
+// requests are normalized to the existing formulas[].latex result. Secrets stay
+// in the native backend and are protected with Windows DPAPI before persistence.
 assert.ok(ocrProviderNative.includes('pub(crate) const LOCAL_PROVIDER: &str = "local"'));
 assert.ok(ocrProviderNative.includes('OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible"'));
 assert.ok(ocrProviderNative.includes('OLLAMA_PROVIDER: &str = "ollama"'));
 assert.ok(ocrProviderNative.includes('MATHPIX_PROVIDER: &str = "mathpix"'));
+assert.ok(ocrProviderNative.includes('PADDLEOCR_PROVIDER: &str = "paddleocr"'));
+assert.ok(ocrProviderNative.includes("PADDLEOCR_JOBS_URL"));
+assert.ok(ocrProviderNative.includes("recognize_paddleocr_aistudio"));
+assert.ok(ocrProviderNative.includes("build_ocr_http_client"));
 assert.ok(ocrProviderNative.includes("CryptProtectData"));
 assert.ok(ocrProviderNative.includes("CryptUnprotectData"));
 assert.ok(ocrProviderNative.includes("Refusing to send"));
@@ -111,6 +115,9 @@ assert.ok(officeDialog.includes("providerConfiguration.activeProvider === \"loca
 assert.ok(ocrDialog.includes('value="openai-compatible"'));
 assert.ok(ocrDialog.includes('value="ollama"'));
 assert.ok(ocrDialog.includes('value="mathpix"'));
+assert.ok(ocrDialog.includes('value="paddleocr"'));
+assert.ok(ocrDialog.includes("PADDLE_OCR_API_MODELS"));
+assert.ok(ocrDialog.includes("paddleocr.aistudio-app.com/api/v2/ocr/jobs"));
 assert.ok(ocrDialog.includes("Save provider"));
 
 // Office controls are a dedicated row above the complete editor/tile area.

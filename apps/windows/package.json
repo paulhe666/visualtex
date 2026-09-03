@@ -53,6 +53,7 @@
     "test:silent-ocr-hud-safety": "tsx scripts/silent_ocr_hud_payload_safety_regression.mts",
     "test:windows-office-status-safety": "tsx scripts/windows_office_status_payload_safety_regression.mts",
     "test:ocr-payload-safety": "tsx scripts/ocr_payload_safety_regression.mts",
+    "test:ocr-provider-transport": "tsx scripts/ocr_provider_transport_regression.mts",
     "test:native-ui-payload-safety": "tsx scripts/native_ui_payload_safety_regression.mts",
     "test:powerpoint-double-click-safety": "tsx scripts/powerpoint_double_click_hook_safety_regression.mts",
     "test:application-data": "tsx scripts/application_data_regression.mts",
