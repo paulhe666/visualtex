@@ -29,6 +29,7 @@
     "test:keypad-mode": "npm run build:desktop && node scripts/keypad_mode_regression.mjs",
     "test:history": "node scripts/history_manager_smoke.mjs",
     "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
+    "test:source-structural": "npm run build:desktop && tsx scripts/source_structural_draft_regression.mts && node scripts/targeted_editor_regression.mjs source-auto-close-completion && node scripts/targeted_editor_regression.mjs source-preview-only",
     "test:inline-text-latex-format": "tsx scripts/inline_text_latex_format_regression.mts",
     "test:markdown-export": "node --experimental-strip-types scripts/markdown_export_smoke.mjs",
     "test:document-import": "npm run build:desktop && npm run test:document-import:parser && node scripts/document_import_word_layout_smoke.mjs && npm run test:document-import:browser",

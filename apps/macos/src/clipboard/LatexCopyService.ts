@@ -917,7 +917,7 @@ function readLatexArgumentEnd(source: string, start: number): number | null {
 }
 
 function hasBalancedLatexGroups(source: string) {
-  const stack: string[] = [];
+  let braceDepth = 0;
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     if (character === "%" && !isEscaped(source, index)) {
@@ -927,13 +927,13 @@ function hasBalancedLatexGroups(source: string) {
       continue;
     }
     if (isEscaped(source, index)) continue;
-    if (character === "{" || character === "[") stack.push(character);
-    else if (character === "}" || character === "]") {
-      const expected = character === "}" ? "{" : "[";
-      if (stack.pop() !== expected) return false;
+    if (character === "{") braceDepth += 1;
+    else if (character === "}") {
+      if (braceDepth === 0) return false;
+      braceDepth -= 1;
     }
   }
-  return stack.length === 0;
+  return braceDepth === 0;
 }
 
 function hasCompleteRequiredCommandArguments(source: string) {
@@ -971,6 +971,14 @@ function hasCompleteRequiredCommandArguments(source: string) {
 
 function validateFormulaDraft(latex: string): string | null {
   if (!latex.trim()) return "empty-formula";
+  const trimmed = latex.trimEnd();
+  if (
+    (trimmed.endsWith("\\") && !isEscaped(trimmed, trimmed.length - 1)) ||
+    /\\begin\s*$/.test(trimmed) ||
+    /\\begin\s*\{\s*\}\s*$/.test(trimmed)
+  ) {
+    return "incomplete-environment-command";
+  }
   if (!hasBalancedLatexGroups(latex)) return "unbalanced-group";
   if (/(^|[^\\])[_^]\s*$/.test(latex)) return "incomplete-script";
   if (!hasCompleteRequiredCommandArguments(latex)) {
@@ -990,9 +998,224 @@ function validateFormulaDraft(latex: string): string | null {
   return errors.length ? errors[0]?.code ?? "invalid-latex" : null;
 }
 
+interface DraftPreviewEnvironment {
+  name: string;
+  end: number;
+}
+
+function completeArrayEnvironmentArgumentsForPreview(source: string) {
+  const beginToken = "\\begin{array}";
+  let preview = source;
+  let cursor = 0;
+
+  while (cursor < preview.length) {
+    const beginIndex = preview.indexOf(beginToken, cursor);
+    if (beginIndex < 0) break;
+    const tokenEnd = beginIndex + beginToken.length;
+    const argumentStart = skipLatexWhitespace(preview, tokenEnd);
+    if (preview[argumentStart] !== "{") {
+      preview =
+        preview.slice(0, tokenEnd) +
+        "{c}" +
+        preview.slice(tokenEnd);
+      cursor = tokenEnd + 3;
+      continue;
+    }
+
+    const argumentEnd = readBalancedGroupEnd(preview, argumentStart);
+    if (argumentEnd !== null) {
+      cursor = argumentEnd;
+      continue;
+    }
+
+    const partial = preview.slice(argumentStart + 1);
+    const safePrefix = partial.match(/^[lcr]+/)?.[0] ?? "c";
+    const partialEnd = argumentStart + 1 + (partial.match(/^[lcr]+/)?.[0].length ?? 0);
+    preview =
+      preview.slice(0, argumentStart) +
+      `{${safePrefix}}` +
+      preview.slice(partialEnd);
+    cursor = argumentStart + safePrefix.length + 2;
+  }
+
+  return preview.replace(
+    /(\\begin\{array\}\s*\{[^{}]*\})(\s*)(\\end\{array\})/g,
+    "$1$2\\placeholder{}$3",
+  );
+}
+
+function completeUnclosedCurlyGroupsForPreview(source: string) {
+  const stack: Array<{ hasContent: boolean }> = [];
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "%" && !isEscaped(source, index)) {
+      const lineEnd = source.indexOf("\n", index);
+      if (lineEnd < 0) break;
+      index = lineEnd;
+      continue;
+    }
+    if (isEscaped(source, index)) continue;
+    if (character === "{") {
+      if (stack.length) stack[stack.length - 1].hasContent = true;
+      stack.push({ hasContent: false });
+      continue;
+    }
+    if (character === "}") {
+      if (!stack.length) return source;
+      stack.pop();
+      continue;
+    }
+    if (stack.length && !/\s/.test(character)) {
+      stack[stack.length - 1].hasContent = true;
+    }
+  }
+  if (!stack.length) return source;
+
+  let suffix = "";
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    if (!stack[index].hasContent) suffix += "\\placeholder{}";
+    suffix += "}";
+  }
+  return source + suffix;
+}
+
+function completeRequiredCommandArgumentsForPreview(source: string) {
+  let preview = source;
+  for (let index = 0; index < preview.length; index += 1) {
+    if (preview[index] === "%" && !isEscaped(preview, index)) {
+      const lineEnd = preview.indexOf("\n", index);
+      if (lineEnd < 0) break;
+      index = lineEnd;
+      continue;
+    }
+    if (preview[index] !== "\\" || isEscaped(preview, index)) continue;
+    const commandEnd = readLatexCommandEnd(preview, index);
+    const command = preview.slice(index + 1, commandEnd);
+    const requiredArguments = requiredCommandArgumentCount.get(command);
+    if (!requiredArguments) {
+      index = commandEnd - 1;
+      continue;
+    }
+
+    let cursor = skipLatexWhitespace(preview, commandEnd);
+    if (preview[cursor] === "*") cursor = skipLatexWhitespace(preview, cursor + 1);
+    if (command === "sqrt" && preview[cursor] === "[") {
+      const optionalEnd = readBalancedGroupEnd(preview, cursor, "[", "]");
+      if (optionalEnd === null) {
+        preview += "]";
+        cursor = preview.length;
+      } else {
+        cursor = optionalEnd;
+      }
+    }
+
+    for (let argument = 0; argument < requiredArguments; argument += 1) {
+      const argumentEnd = readLatexArgumentEnd(preview, cursor);
+      if (argumentEnd !== null) {
+        cursor = argumentEnd;
+        continue;
+      }
+      const insertionPoint = skipLatexWhitespace(preview, cursor);
+      const missing = requiredArguments - argument;
+      const placeholders = "{\\placeholder{}}".repeat(missing);
+      preview =
+        preview.slice(0, insertionPoint) +
+        placeholders +
+        preview.slice(insertionPoint);
+      cursor = insertionPoint + placeholders.length;
+      break;
+    }
+    index = commandEnd - 1;
+  }
+  return preview;
+}
+
+function completeTrailingScriptForPreview(source: string) {
+  const match = source.match(/(^|[^\\])([_^])\s*$/);
+  if (!match || match.index === undefined) return source;
+  const scriptIndex = match.index + match[1].length;
+  return (
+    source.slice(0, scriptIndex + 1) +
+    "{\\placeholder{}}" +
+    source.slice(scriptIndex + 1)
+  );
+}
+
+function completeLeftRightPairsForPreview(source: string) {
+  let preview = source;
+  if (/\\(?:left|right)\s*$/.test(preview)) preview += ".";
+
+  let unmatchedLeft = 0;
+  const pattern = /\\(left|right)\b/g;
+  for (let match = pattern.exec(preview); match; match = pattern.exec(preview)) {
+    if (isEscaped(preview, match.index)) continue;
+    if (match[1] === "left") unmatchedLeft += 1;
+    else if (unmatchedLeft > 0) unmatchedLeft -= 1;
+  }
+  if (unmatchedLeft > 0) preview += "\\right.".repeat(unmatchedLeft);
+  return preview;
+}
+
+function collectUnclosedEnvironmentsForPreview(source: string) {
+  const stack: DraftPreviewEnvironment[] = [];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "%" && !isEscaped(source, index)) {
+      const lineEnd = source.indexOf("\n", index);
+      if (lineEnd < 0) break;
+      index = lineEnd;
+      continue;
+    }
+    const token = readEnvironmentToken(source, index);
+    if (!token) continue;
+    if (token.kind === "begin") {
+      stack.push({ name: token.name, end: token.end });
+    } else if (stack.at(-1)?.name === token.name) {
+      stack.pop();
+    } else {
+      return [];
+    }
+    index = token.end - 1;
+  }
+  return stack;
+}
+
+function completeUnclosedEnvironmentsForPreview(source: string) {
+  const stack = collectUnclosedEnvironmentsForPreview(source);
+  if (!stack.length) return source;
+  let preview = source + "\\placeholder{}";
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    preview += `\\end{${stack[index].name}}`;
+  }
+  return preview;
+}
+
+function buildFormulaDraftPreview(latex: string): string | null {
+  let preview = completeArrayEnvironmentArgumentsForPreview(latex);
+  preview = completeUnclosedCurlyGroupsForPreview(preview);
+  preview = completeRequiredCommandArgumentsForPreview(preview);
+  preview = completeTrailingScriptForPreview(preview);
+  preview = completeLeftRightPairsForPreview(preview);
+  preview = completeUnclosedEnvironmentsForPreview(preview);
+  return validateFormulaDraft(preview) === null ? preview : null;
+}
+
+function buildFallbackDraftPreviewValues(source: string): string[] | undefined {
+  const rawValues = parseByFormat(source, "raw");
+  if (!rawValues.length) return undefined;
+  const candidates = rawValues.map((value) =>
+    validateFormulaDraft(value) === null
+      ? value
+      : buildFormulaDraftPreview(value),
+  );
+  return candidates.every((value): value is string => value !== null)
+    ? candidates
+    : undefined;
+}
+
 export interface LatexSourceDraftResult {
   valid: boolean;
   values: string[];
+  previewValues?: string[];
   modes?: FormulaLineMode[];
   error?: string;
 }
@@ -1010,12 +1233,30 @@ export function parseLatexSourceDraft(
   const values = mixedRows?.map((row) => row.value) ??
     parseByFormatStrict(normalized.trim(), format);
   if (!values?.length) {
-    return { valid: false, values: [], error: "incomplete-format-wrapper" };
+    return {
+      valid: false,
+      values: [],
+      previewValues: buildFallbackDraftPreviewValues(normalized.trim()),
+      error: "incomplete-format-wrapper",
+    };
   }
   const modes = mixedRows?.map((row) => row.mode);
+  let firstError: string | null = null;
   for (const value of values) {
-    const error = validateFormulaDraft(value);
-    if (error) return { valid: false, values, modes, error };
+    firstError ??= validateFormulaDraft(value);
+  }
+  if (firstError) {
+    const previewCandidates = values.map((value) =>
+      validateFormulaDraft(value) === null
+        ? value
+        : buildFormulaDraftPreview(value),
+    );
+    const previewValues = previewCandidates.every(
+      (value): value is string => value !== null,
+    )
+      ? previewCandidates
+      : undefined;
+    return { valid: false, values, previewValues, modes, error: firstError };
   }
   return { valid: true, values, modes };
 }

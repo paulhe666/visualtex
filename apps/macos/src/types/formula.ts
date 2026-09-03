@@ -100,6 +100,7 @@ export interface FormulaHistoryItem {
   id: string;
   latex: string;
   createdAt: number;
+  lines?: FormulaLine[];
 }
 
 export interface InputBehaviorSettings {

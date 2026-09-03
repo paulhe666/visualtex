@@ -147,8 +147,7 @@ export function LatexSourceEditor({
                 if (!view || view.hasFocus) return;
                 sourceFocusedRef.current = false;
                 onFocusChangeRef.current?.(false);
-                if (!hasLivePreviewRef.current) return;
-                updateSyncError(null);
+                if (syncErrorRef.current || !hasLivePreviewRef.current) return;
                 updateDirty(false);
                 const canonical = latestLatexRef.current;
                 const current = view.state.doc.toString();
@@ -175,7 +174,10 @@ export function LatexSourceEditor({
             draftRef.current,
             formatRef.current,
           );
-          const acceptedLivePreview = result.valid || result.values.length > 0;
+          const acceptedLivePreview =
+            result.valid ||
+            result.values.length > 0 ||
+            Boolean(result.previewValues?.length);
           hasLivePreviewRef.current = acceptedLivePreview;
           setHasLivePreview(acceptedLivePreview);
           updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
@@ -265,7 +267,10 @@ export function LatexSourceEditor({
     view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     draftRef.current = value;
     const result = onLiveChangeRef.current(value, formatRef.current);
-    const acceptedLivePreview = result.valid || result.values.length > 0;
+    const acceptedLivePreview =
+      result.valid ||
+      result.values.length > 0 ||
+      Boolean(result.previewValues?.length);
     hasLivePreviewRef.current = acceptedLivePreview;
     setHasLivePreview(acceptedLivePreview);
     updateSyncError(result.valid ? null : result.error ?? "invalid-latex");

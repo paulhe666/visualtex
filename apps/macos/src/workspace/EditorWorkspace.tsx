@@ -230,7 +230,6 @@ export function EditorWorkspace({
     error: string;
     previewLines: FormulaLine[] | null;
   } | null>(null);
-  const sourceDraftFallbackRef = useRef(sourceDraftFallback);
   const [sourceFocused, setSourceFocused] = useState(false);
   const sourceFocusedRef = useRef(false);
   const title = useEditorStore((state) => state.title);
@@ -256,29 +255,6 @@ export function EditorWorkspace({
   const latex = joinFormulaLines(lines);
   const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
 
-  const acceptSourcePreview = () => {
-    const previewLines = sourceDraftFallbackRef.current?.previewLines;
-    if (!previewLines?.length) return;
-
-    sourceDraftFallbackRef.current = null;
-    setSourceDraftFallback(null);
-    const nextActiveLineId = previewLines.some(
-      (line) => line.id === activeLineId,
-    )
-      ? activeLineId
-      : previewLines[0]?.id ?? null;
-    onReplaceDocument(
-      {
-        title,
-        lines: previewLines,
-        activeLineId: nextActiveLineId,
-        formulaAlignment,
-        selectionByLineId: {},
-      },
-      "source-apply",
-    );
-  };
-
   const handleSourceFocusChange = (focused: boolean) => {
     sourceFocusedRef.current = focused;
     document.documentElement.classList.toggle(
@@ -286,7 +262,6 @@ export function EditorWorkspace({
       focused,
     );
     setSourceFocused(focused);
-    if (!focused) acceptSourcePreview();
   };
 
   useEffect(() => {
@@ -310,14 +285,10 @@ export function EditorWorkspace({
   }, [persistedClassicDockHeight]);
 
   useEffect(() => {
-    if (!sourceOpen) {
-      sourceDraftFallbackRef.current = null;
-      setSourceDraftFallback(null);
-    }
+    if (!sourceOpen) setSourceDraftFallback(null);
   }, [sourceOpen]);
 
   useEffect(() => {
-    sourceDraftFallbackRef.current = null;
     setSourceDraftFallback(null);
   }, [latexCodeFormat]);
 
@@ -711,7 +682,9 @@ export function EditorWorkspace({
   const applySource = (source: string, sourceFormat: typeof latexCodeFormat) => {
     const parsed = parseLatexSourceDraft(source, sourceFormat);
     if (!parsed.valid) {
-      const previewValues = parsed.values.map(normalizeChineseLatex);
+      const previewValues = (parsed.previewValues ?? parsed.values).map(
+        normalizeChineseLatex,
+      );
       const fallback = {
         source,
         error: parsed.error ?? "invalid-latex",
@@ -719,12 +692,10 @@ export function EditorWorkspace({
           ? reconcileFormulaLines(previewValues, lines, parsed.modes)
           : null,
       };
-      sourceDraftFallbackRef.current = fallback;
       setSourceDraftFallback(fallback);
       return parsed;
     }
 
-    sourceDraftFallbackRef.current = null;
     setSourceDraftFallback(null);
     const values = parsed.values.map(normalizeChineseLatex);
     const nextLines = reconcileFormulaLines(values, lines, parsed.modes);
@@ -816,8 +787,10 @@ export function EditorWorkspace({
         latexCodeFormat={latexCodeFormat}
         zoom={zoom}
         readOnly={false}
-        previewOnly={sourceFocused}
-        onPreviewActivate={() => handleSourceFocusChange(false)}
+        previewOnly={sourceFocused || Boolean(sourceDraftFallback)}
+        onPreviewActivate={
+          sourceDraftFallback ? undefined : () => handleSourceFocusChange(false)
+        }
         draftError={sourceDraftFallback?.error}
         onPasteImage={
           previewLines ? undefined : showOcrActions ? onPasteImage : undefined

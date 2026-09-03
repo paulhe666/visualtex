@@ -320,7 +320,7 @@ export function createFormulaLine(
 ): FormulaLine {
   return {
     id,
-    latex: normalizeChineseLatex(latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? ""),
+    latex: normalizeMultilineLatex(latex.replace(/\r\n?/g, "\n")),
     mode: mode === "inline" ? "inline" : "display",
   };
 }
@@ -349,9 +349,9 @@ export function normalizeFormulaLines(
         const candidate = item as Partial<FormulaLine>;
         return {
           id: uniqueLineId(candidate.id, usedIds),
-          latex: normalizeChineseLatex(
+          latex: normalizeMultilineLatex(
             typeof candidate.latex === "string"
-              ? candidate.latex.replace(/\r\n?/g, "\n").split("\n")[0] ?? ""
+              ? candidate.latex.replace(/\r\n?/g, "\n")
               : "",
           ),
           mode: candidate.mode === "inline" ? "inline" : "display",
@@ -692,6 +692,7 @@ export const useEditorStore = create<EditorState>()(
             id: createUuid(),
             latex,
             createdAt: Date.now(),
+            lines: cloneFormulaLines(state.lines),
           };
           return { history: [next, ...state.history].slice(0, 30) };
         }),

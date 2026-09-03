@@ -4,9 +4,9 @@ import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 const scenario = process.argv[2];
-if (!new Set(["wrapper", "wrapper-bm", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "native-structure-audit", "native-structure-input-over", "native-structure-input-under", "native-structure-input-multi", "native-structure-input-core", "native-space-selection", "native-space-ime-replay", "candidate-query-reset", "limit-candidate", "raw-placeholder-visual", "placeholder-selection", "pointer-release-stability", "structural-placeholder", "structured-chinese-ime", "accent-placeholder", "caret-probe", "vertical-structure-probe", "vertical-structure-navigation", "scripts", "upright", "formula-formatting", "font-variant-formatting", "context-style", "suggestions", "navigation", "geometry", "source-layout", "source-preview-only", "toolbar-compact", "formula-tiles", "cursor-placement", "font-settings", "output-fonts", "configuration", "ocr-model-selection", "ocr-empty-environment", "settings", "layout", "delete", "export", "modulo-aligned"]).has(scenario)) {
+if (!new Set(["wrapper", "wrapper-bm", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "native-structure-audit", "native-structure-input-over", "native-structure-input-under", "native-structure-input-multi", "native-structure-input-core", "native-space-selection", "native-space-ime-replay", "candidate-query-reset", "limit-candidate", "raw-placeholder-visual", "placeholder-selection", "pointer-release-stability", "structural-placeholder", "structured-chinese-ime", "accent-placeholder", "caret-probe", "vertical-structure-probe", "vertical-structure-navigation", "scripts", "upright", "formula-formatting", "font-variant-formatting", "context-style", "suggestions", "navigation", "geometry", "source-layout", "source-preview-only", "source-auto-close-completion", "source-structural-draft", "toolbar-compact", "formula-tiles", "cursor-placement", "font-settings", "output-fonts", "configuration", "ocr-model-selection", "ocr-empty-environment", "settings", "layout", "delete", "export", "modulo-aligned"]).has(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-bm|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|native-structure-audit|native-structure-input-over|native-structure-input-under|native-structure-input-multi|native-structure-input-core|native-space-selection|native-space-ime-replay|candidate-query-reset|limit-candidate|raw-placeholder-visual|placeholder-selection|pointer-release-stability|structural-placeholder|structured-chinese-ime|accent-placeholder|caret-probe|vertical-structure-probe|vertical-structure-navigation|scripts|upright|formula-formatting|context-style|suggestions|navigation|geometry|source-layout|source-preview-only|toolbar-compact|formula-tiles|cursor-placement|font-settings|output-fonts|configuration|ocr-model-selection|ocr-empty-environment|settings|layout|delete|export>",
+    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-bm|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|native-structure-audit|native-structure-input-over|native-structure-input-under|native-structure-input-multi|native-structure-input-core|native-space-selection|native-space-ime-replay|candidate-query-reset|limit-candidate|raw-placeholder-visual|placeholder-selection|pointer-release-stability|structural-placeholder|structured-chinese-ime|accent-placeholder|caret-probe|vertical-structure-probe|vertical-structure-navigation|scripts|upright|formula-formatting|context-style|suggestions|navigation|geometry|source-layout|source-preview-only|source-auto-close-completion|source-structural-draft|toolbar-compact|formula-tiles|cursor-placement|font-settings|output-fonts|configuration|ocr-model-selection|ocr-empty-environment|settings|layout|delete|export>",
   );
 }
 
@@ -283,6 +283,13 @@ async function main() {
       `(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`,
       "formula field",
     );
+    await evaluate(`(() => {
+      const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+        .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+      if (laterButton instanceof HTMLElement) laterButton.click();
+      return true;
+    })()`);
+    await sleep(80);
 
     const focusField = async () => {
       await waitForEvaluation(`(() => {
@@ -500,6 +507,14 @@ async function main() {
       await waitForEvaluation(`(() => ({
         ready: Boolean(document.querySelector(".source-panel .cm-content")),
       }))()`, "source editor is visible");
+      await sleep(450);
+      await evaluate(`(() => {
+        const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+        if (laterButton instanceof HTMLElement) laterButton.click();
+        return true;
+      })()`);
+      await sleep(80);
 
       const sourceFocusPoint = await evaluate(`(() => {
         const lines = [...document.querySelectorAll(".source-panel .cm-line")];
@@ -718,6 +733,1010 @@ async function main() {
         restoredCandidateState,
       }, null, 2));
       console.log("Targeted source-only live preview regression passed");
+      return;
+    }
+
+    if (scenario === "source-auto-close-completion") {
+      const completionCases = [
+        ["matrix", String.raw`\begin{matr`],
+        ["pmatrix", String.raw`\begin{pmatri`],
+        ["bmatrix", String.raw`\begin{bmatri`],
+        ["Bmatrix", String.raw`\begin{Bmatri`],
+        ["vmatrix", String.raw`\begin{vmatri`],
+        ["Vmatrix", String.raw`\begin{Vmatri`],
+        ["smallmatrix", String.raw`\begin{smallmatri`],
+        ["cases", String.raw`\begin{case`],
+        ["split", String.raw`\begin{spli`],
+        ["align", String.raw`\begin{alig`],
+        ["gather", String.raw`\begin{gathe`],
+        ["multline", String.raw`\begin{multlin`],
+        ["equation", String.raw`\begin{equatio`],
+      ];
+
+      const loadCompletionFixture = async (environment) => {
+        await evaluate(`(() => {
+          const storageKey = "visualtex-editor";
+          const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+          persisted.state = {
+            ...(persisted.state || {}),
+            editorLayout: "classic",
+            sourceOpen: true,
+            latexCodeFormat: "display-dollar",
+            zoom: 0.45,
+            lines: [{ id: "source-autoclose-${environment}", latex: "", mode: "display" }],
+            activeLineId: "source-autoclose-${environment}",
+            checkUpdatesOnStartup: false,
+          };
+          localStorage.setItem(storageKey, JSON.stringify(persisted));
+          localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+          location.reload();
+        })()`);
+        await waitForEvaluation(`(() => ({
+          ready:
+            document.querySelector(".workspace")?.dataset.editorLayout === "classic" &&
+            Boolean(document.querySelector(".classic-source-pane-slot .cm-content")) &&
+            Boolean(document.querySelector("math-field")),
+        }))()`, `classic source completion fixture ${environment}`);
+        await sleep(420);
+        await evaluate(`(() => {
+          const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+            .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+          if (laterButton instanceof HTMLElement) laterButton.click();
+          return true;
+        })()`);
+        await sleep(80);
+      };
+
+      const runCompletionCase = async (environment, prefix) => {
+        await loadCompletionFixture(environment);
+        const sourceClick = await evaluate(`(() => {
+          const lines = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")];
+          const target = lines[1] ?? lines[0];
+          const rect = target?.getBoundingClientRect();
+          return rect ? { x: rect.left + 10, y: rect.top + Math.max(7, rect.height / 2) } : null;
+        })()`);
+        assert.ok(sourceClick, `${environment}: source inner line missing`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        await waitForEvaluation(`(() => ({
+          ready:
+            document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+        }))()`, `${environment}: source focus`);
+
+        for (const character of prefix) {
+          await client.send("Input.insertText", { text: character });
+          await sleep(32);
+        }
+        const candidate = await waitForEvaluation(`(() => {
+          const list = document.querySelector(".cm-tooltip-autocomplete");
+          const selected = list?.querySelector('[aria-selected="true"]');
+          const selectedText = selected?.textContent?.trim() ?? "";
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          return {
+            ready: Boolean(list) && selectedText.includes(${JSON.stringify("__ENVIRONMENT__")}),
+            selectedText,
+            listText: list?.textContent ?? "",
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+          };
+        })()`.replace("__ENVIRONMENT__", environment), `${environment}: completion candidate`);
+        assert.equal(
+          candidate.store,
+          "",
+          `${environment}: incomplete \\begin prefix must not be committed before completion: ${JSON.stringify(candidate)}`,
+        );
+
+        await sleep(120);
+        await key("Enter", "Enter", 13);
+        const expected = `\\begin{${environment}}\n  \n\\end{${environment}}`;
+        const committed = await waitForEvaluation(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          const source = (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, "");
+          const store = persisted.state?.lines?.[0]?.latex ?? null;
+          return {
+            ready:
+              source.includes(${JSON.stringify(`\\begin{${environment}}`)}) &&
+              source.includes(${JSON.stringify(`\\end{${environment}}`)}) &&
+              store === ${JSON.stringify(expected)},
+            source,
+            store,
+            sourceErrorVisible: Boolean(document.querySelector(".source-error-chip")),
+          };
+        })()`, `${environment}: full auto-closed environment committed`);
+        assert.equal(committed.store, expected, JSON.stringify(committed));
+        assert.equal(committed.sourceErrorVisible, false, JSON.stringify(committed));
+
+        const visualClick = await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const rect = field?.getBoundingClientRect();
+          return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+        })()`);
+        assert.ok(visualClick, `${environment}: visual field missing after completion`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: visualClick.x,
+          y: visualClick.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: visualClick.x,
+          y: visualClick.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        await sleep(180);
+        const afterClick = await evaluate(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          return {
+            source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+              .replace(/\\u200b/g, "")
+              .replace(/\\n+$/g, ""),
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+          };
+        })()`);
+        assert.match(afterClick.source, new RegExp(`\\\\end\\{${environment.replace("*", "\\*")}\\}`), JSON.stringify(afterClick));
+        assert.equal(afterClick.store, expected, JSON.stringify(afterClick));
+
+        await client.send("Page.reload", { ignoreCache: true });
+        const afterReload = await waitForEvaluation(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          const source = (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, "");
+          const store = persisted.state?.lines?.[0]?.latex ?? null;
+          const fieldValue = document.querySelector("math-field")?.value ?? "";
+          return {
+            ready:
+              store === ${JSON.stringify(expected)} &&
+              source.includes(${JSON.stringify(`\\end{${environment}}`)}) &&
+              fieldValue.includes(${JSON.stringify(`\\end{${environment}}`)}),
+            source,
+            store,
+            fieldValue,
+          };
+        })()`, `${environment}: reload persistence`);
+        assert.match(afterReload.source, new RegExp(`\\\\end\\{${environment.replace("*", "\\*")}\\}`), JSON.stringify(afterReload));
+        assert.equal(afterReload.store, expected, JSON.stringify(afterReload));
+        assert.match(afterReload.fieldValue, new RegExp(`\\\\end\\{${environment.replace("*", "\\*")}\\}`), JSON.stringify(afterReload));
+        return { environment, candidate: candidate.selectedText, store: committed.store };
+      };
+
+      const runEnterAutoCloseCase = async (environment) => {
+        await loadCompletionFixture(environment);
+        const sourceClick = await evaluate(`(() => {
+          const lines = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")];
+          const target = lines[1] ?? lines[0];
+          const rect = target?.getBoundingClientRect();
+          return rect ? { x: rect.left + 10, y: rect.top + Math.max(7, rect.height / 2) } : null;
+        })()`);
+        assert.ok(sourceClick, `${environment}: source inner line missing`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        await waitForEvaluation(`(() => ({
+          ready:
+            document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+        }))()`, `${environment}: source focus`);
+        await client.send("Input.insertText", {
+          text: `\\begin{${environment}}`,
+        });
+        await sleep(120);
+        const beforeEnter = await evaluate(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          return {
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+            source: document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "",
+          };
+        })()`);
+        assert.equal(beforeEnter.store, "", JSON.stringify(beforeEnter));
+        await key("Enter", "Enter", 13);
+        const expected = `\\begin{${environment}}\n  \n\\end{${environment}}`;
+        const committed = await waitForEvaluation(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          const source = document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "";
+          const store = persisted.state?.lines?.[0]?.latex ?? null;
+          return {
+            ready:
+              source.includes(${JSON.stringify(`\\end{${environment}}`)}) &&
+              store === ${JSON.stringify(expected)},
+            source,
+            store,
+          };
+        })()`, `${environment}: Enter auto-close persistence`);
+        assert.equal(committed.store, expected, JSON.stringify(committed));
+        return { environment, store: committed.store };
+      };
+
+      const runInvalidCompletionCase = async (environment, prefix) => {
+        await loadCompletionFixture(environment);
+        const sourceClick = await evaluate(`(() => {
+          const lines = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")];
+          const target = lines[1] ?? lines[0];
+          const rect = target?.getBoundingClientRect();
+          return rect ? { x: rect.left + 10, y: rect.top + Math.max(7, rect.height / 2) } : null;
+        })()`);
+        assert.ok(sourceClick, `${environment}: source inner line missing`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: sourceClick.x,
+          y: sourceClick.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        for (const character of prefix) {
+          await client.send("Input.insertText", { text: character });
+          await sleep(32);
+        }
+        await waitForEvaluation(`(() => {
+          const selected = document.querySelector('.cm-tooltip-autocomplete [aria-selected="true"]');
+          return {
+            ready: (selected?.textContent?.trim() ?? "").includes(${JSON.stringify(environment)}),
+          };
+        })()`, `${environment}: invalid completion candidate`);
+        await sleep(120);
+        await key("Enter", "Enter", 13);
+        const beforeClick = await waitForEvaluation(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          const source = document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "";
+          return {
+            ready:
+              source.includes(${JSON.stringify(`\\begin{${environment}}`)}) &&
+              source.includes(${JSON.stringify(`\\end{${environment}}`)}) &&
+              Boolean(document.querySelector(".source-error-chip")),
+            source,
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+            sourceFocused:
+              document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+          };
+        })()`, `${environment}: invalid auto-close draft retained`);
+        assert.equal(beforeClick.store, "", JSON.stringify(beforeClick));
+        const fieldClick = await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const rect = field?.getBoundingClientRect();
+          return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+        })()`);
+        assert.ok(fieldClick, `${environment}: preview field missing`);
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: fieldClick.x,
+          y: fieldClick.y,
+          button: "left",
+          buttons: 1,
+          clickCount: 1,
+        });
+        await client.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: fieldClick.x,
+          y: fieldClick.y,
+          button: "left",
+          buttons: 0,
+          clickCount: 1,
+        });
+        await sleep(160);
+        const afterClick = await evaluate(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          return {
+            source: document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "",
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+            sourceFocused:
+              document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+          };
+        })()`);
+        assert.match(afterClick.source, new RegExp(`\\\\end\\{${environment}\\}`), JSON.stringify(afterClick));
+        assert.equal(afterClick.store, "", JSON.stringify(afterClick));
+        assert.equal(afterClick.sourceFocused, true, JSON.stringify(afterClick));
+        return { environment, source: beforeClick.source };
+      };
+
+      const results = [];
+      for (const [environment, prefix] of completionCases) {
+        results.push(await runCompletionCase(environment, prefix));
+      }
+      const starResults = [];
+      for (const environment of ["align*", "gather*", "multline*", "equation*"]) {
+        starResults.push(await runEnterAutoCloseCase(environment));
+      }
+      const invalidResults = [
+        await runInvalidCompletionCase("array", String.raw`\begin{arra`),
+      ];
+      console.log(JSON.stringify({ results, starResults, invalidResults }, null, 2));
+      console.log("Targeted CodeMirror auto-close completion persistence regression passed");
+      return;
+    }
+
+    if (scenario === "source-structural-draft") {
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          editorLayout: "standard",
+          sourceOpen: true,
+          latexCodeFormat: "raw",
+          lines: [{ id: "source-structural-seed", latex: "x" }],
+          activeLineId: "source-structural-seed",
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+        location.reload();
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready:
+          Boolean(document.querySelector("math-field")) &&
+          Boolean(document.querySelector(".source-panel .cm-content")),
+      }))()`, "raw source editor");
+
+      const replaceSource = async (source) => {
+        await waitForEvaluation(`(() => {
+          const content = document.querySelector(".source-panel .cm-content");
+          content?.focus();
+          return {
+            ready:
+              Boolean(content) &&
+              document.querySelector(".source-panel .cm-editor")?.classList.contains("cm-focused"),
+          };
+        })()`, "focused source editor");
+        await key("a", "KeyA", 65, 4);
+        await client.send("Input.insertText", { text: source });
+        await sleep(180);
+      };
+
+      const blurSource = async () => {
+        await evaluate(`(() => {
+          document.body.tabIndex = -1;
+          document.body.focus();
+          return document.activeElement === document.body;
+        })()`);
+        await sleep(180);
+      };
+
+      const readSourceState = async () => evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const source = (document.querySelector(".source-panel .cm-content")?.innerText ?? "")
+          .replace(/\\u200b/g, "")
+          .replace(/\\n+$/g, "");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const fieldRect = field?.getBoundingClientRect();
+        const tableRect = field?.shadowRoot?.querySelector(".ML__mtable")?.getBoundingClientRect();
+        const visualRects = [...(field?.shadowRoot?.querySelectorAll(
+          "[data-atom-id], .ML__vlist, .ML__mtable, .ML__mfrac, .ML__sqrt, .ML__op-group",
+        ) ?? [])]
+          .map((node) => node.getBoundingClientRect())
+          .filter((rect) => rect.height > 0 && rect.width >= 0);
+        const visualTop = visualRects.length
+          ? Math.min(...visualRects.map((rect) => rect.top))
+          : null;
+        const visualBottom = visualRects.length
+          ? Math.max(...visualRects.map((rect) => rect.bottom))
+          : null;
+        return {
+          source,
+          fieldValue: field?.value ?? "",
+          storeLatex: persisted.state?.lines?.[0]?.latex ?? null,
+          sourceErrorVisible: Boolean(document.querySelector(".source-error-chip")),
+          fieldReadOnly: field?.readOnly ?? false,
+          fieldHeight: fieldRect?.height ?? 0,
+          tableHeight: tableRect?.height ?? 0,
+          tableClippedTop: Boolean(fieldRect && tableRect && tableRect.top < fieldRect.top - 1),
+          tableClippedBottom: Boolean(fieldRect && tableRect && tableRect.bottom > fieldRect.bottom + 1),
+          visualHeight:
+            visualTop !== null && visualBottom !== null ? visualBottom - visualTop : 0,
+          visualClippedTop: Boolean(fieldRect && visualTop !== null && visualTop < fieldRect.top - 1),
+          visualClippedBottom: Boolean(fieldRect && visualBottom !== null && visualBottom > fieldRect.bottom + 1),
+        };
+      })()`);
+
+      const typeSourceCharactersRaw = async (source) => {
+        await waitForEvaluation(`(() => {
+          const content = document.querySelector(".source-panel .cm-content");
+          content?.focus();
+          return {
+            ready:
+              Boolean(content) &&
+              document.querySelector(".source-panel .cm-editor")?.classList.contains("cm-focused"),
+          };
+        })()`, "focused raw source editor for character typing");
+        await key("a", "KeyA", 65, 4);
+        for (const character of source) {
+          await client.send("Input.insertText", { text: character });
+          await sleep(18);
+        }
+        await sleep(180);
+      };
+
+      const emptyMatrix = String.raw`\begin{matrix} \end{matrix}`;
+      await typeSourceCharactersRaw(emptyMatrix);
+      const emptyMatrixBeforeClick = await readSourceState();
+      const emptyMatrixClickPoint = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const rect = field?.getBoundingClientRect();
+        return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+      })()`);
+      assert.ok(emptyMatrixClickPoint, "empty matrix preview has a click target");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: emptyMatrixClickPoint.x,
+        y: emptyMatrixClickPoint.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: emptyMatrixClickPoint.x,
+        y: emptyMatrixClickPoint.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(220);
+      const emptyMatrixAfterClick = await readSourceState();
+      console.log("[empty-matrix-click]", JSON.stringify({ emptyMatrixBeforeClick, emptyMatrixAfterClick }));
+      assert.equal(emptyMatrixBeforeClick.source, emptyMatrix, JSON.stringify(emptyMatrixBeforeClick));
+      assert.equal(emptyMatrixAfterClick.source, emptyMatrix, JSON.stringify(emptyMatrixAfterClick));
+      assert.equal(emptyMatrixAfterClick.storeLatex, emptyMatrix, JSON.stringify(emptyMatrixAfterClick));
+      await replaceSource("x");
+      await sleep(100);
+
+      const partialMatrix = String.raw`\begin{matrix}`;
+      await replaceSource(partialMatrix);
+      const matrixLive = await readSourceState();
+      assert.equal(matrixLive.source, partialMatrix, JSON.stringify(matrixLive));
+      assert.equal(matrixLive.storeLatex, "x", JSON.stringify(matrixLive));
+      assert.equal(matrixLive.sourceErrorVisible, true, JSON.stringify(matrixLive));
+      assert.equal(matrixLive.fieldReadOnly, true, JSON.stringify(matrixLive));
+      assert.match(matrixLive.fieldValue, /\\begin\{matrix\}/, JSON.stringify(matrixLive));
+      assert.match(matrixLive.fieldValue, /\\end\{matrix\}/, JSON.stringify(matrixLive));
+      assert.match(matrixLive.fieldValue, /\\placeholder/, JSON.stringify(matrixLive));
+
+      await blurSource();
+      const matrixBlurred = await readSourceState();
+      assert.equal(matrixBlurred.source, partialMatrix, JSON.stringify(matrixBlurred));
+      assert.equal(matrixBlurred.storeLatex, "x", JSON.stringify(matrixBlurred));
+      assert.equal(matrixBlurred.sourceErrorVisible, true, JSON.stringify(matrixBlurred));
+      assert.equal(matrixBlurred.fieldReadOnly, true, JSON.stringify(matrixBlurred));
+
+      const completeMatrix = String.raw`\begin{matrix}a&b\\c&d\\e&f\end{matrix}`;
+      await replaceSource(completeMatrix);
+      const matrixCompleteLive = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          ready:
+            persisted.state?.lines?.[0]?.latex === ${JSON.stringify(completeMatrix)} &&
+            !document.querySelector(".source-error-chip") &&
+            Boolean(field?.value.includes("\\\\begin{matrix}")),
+          storeLatex: persisted.state?.lines?.[0]?.latex ?? null,
+          fieldValue: field?.value ?? "",
+        };
+      })()`, "complete matrix source commit");
+      await blurSource();
+      const matrixCompleteBlurred = await readSourceState();
+      assert.equal(matrixCompleteLive.storeLatex, completeMatrix, JSON.stringify(matrixCompleteLive));
+      assert.equal(matrixCompleteBlurred.source, completeMatrix, JSON.stringify(matrixCompleteBlurred));
+      assert.equal(matrixCompleteBlurred.storeLatex, completeMatrix, JSON.stringify(matrixCompleteBlurred));
+      assert.equal(matrixCompleteBlurred.sourceErrorVisible, false, JSON.stringify(matrixCompleteBlurred));
+      assert.equal(matrixCompleteBlurred.fieldReadOnly, false, JSON.stringify(matrixCompleteBlurred));
+      assert.ok(matrixCompleteBlurred.tableHeight > 0, JSON.stringify(matrixCompleteBlurred));
+      assert.equal(matrixCompleteBlurred.tableClippedTop, false, JSON.stringify(matrixCompleteBlurred));
+      assert.equal(matrixCompleteBlurred.tableClippedBottom, false, JSON.stringify(matrixCompleteBlurred));
+
+      const partialLeft = String.raw`\left(`;
+      await replaceSource(partialLeft);
+      const leftLive = await readSourceState();
+      assert.equal(leftLive.source, partialLeft, JSON.stringify(leftLive));
+      assert.equal(leftLive.storeLatex, completeMatrix, JSON.stringify(leftLive));
+      assert.match(leftLive.fieldValue, /\\right/, JSON.stringify(leftLive));
+      await blurSource();
+      const leftBlurred = await readSourceState();
+      assert.equal(leftBlurred.source, partialLeft, JSON.stringify(leftBlurred));
+      assert.equal(leftBlurred.storeLatex, completeMatrix, JSON.stringify(leftBlurred));
+
+      const partialFraction = String.raw`\frac`;
+      await replaceSource(partialFraction);
+      const fractionLive = await readSourceState();
+      assert.equal(fractionLive.source, partialFraction, JSON.stringify(fractionLive));
+      assert.equal(fractionLive.storeLatex, completeMatrix, JSON.stringify(fractionLive));
+      assert.match(fractionLive.fieldValue, /\\frac/, JSON.stringify(fractionLive));
+      assert.match(fractionLive.fieldValue, /\\placeholder/, JSON.stringify(fractionLive));
+      await blurSource();
+      const fractionBlurred = await readSourceState();
+      assert.equal(fractionBlurred.source, partialFraction, JSON.stringify(fractionBlurred));
+      assert.equal(fractionBlurred.storeLatex, completeMatrix, JSON.stringify(fractionBlurred));
+
+      const interval = String.raw`[0,1)`;
+      await replaceSource(interval);
+      const intervalLive = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          ready:
+            persisted.state?.lines?.[0]?.latex === ${JSON.stringify(interval)} &&
+            !document.querySelector(".source-error-chip"),
+          storeLatex: persisted.state?.lines?.[0]?.latex ?? null,
+        };
+      })()`, "ordinary square-bracket source");
+      await blurSource();
+      const intervalBlurred = await readSourceState();
+      assert.equal(intervalLive.storeLatex, interval, JSON.stringify(intervalLive));
+      assert.equal(intervalBlurred.source, interval, JSON.stringify(intervalBlurred));
+      assert.equal(intervalBlurred.storeLatex, interval, JSON.stringify(intervalBlurred));
+      assert.equal(intervalBlurred.sourceErrorVisible, false, JSON.stringify(intervalBlurred));
+
+      const completeAlign = completeMatrix.replaceAll("matrix", "align");
+      await replaceSource(completeAlign);
+      const alignCompleteLive = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          ready:
+            persisted.state?.lines?.[0]?.latex === ${JSON.stringify(completeAlign)} &&
+            !document.querySelector(".source-error-chip"),
+          storeLatex: persisted.state?.lines?.[0]?.latex ?? null,
+        };
+      })()`, "complete align source commit");
+      await blurSource();
+      const alignCompleteBlurred = await readSourceState();
+      assert.equal(alignCompleteLive.storeLatex, completeAlign, JSON.stringify(alignCompleteLive));
+      assert.equal(alignCompleteBlurred.source, completeAlign, JSON.stringify(alignCompleteBlurred));
+      assert.equal(alignCompleteBlurred.storeLatex, completeAlign, JSON.stringify(alignCompleteBlurred));
+      assert.equal(alignCompleteBlurred.sourceErrorVisible, false, JSON.stringify(alignCompleteBlurred));
+      assert.ok(alignCompleteBlurred.fieldHeight > 60, JSON.stringify(alignCompleteBlurred));
+      assert.equal(alignCompleteBlurred.visualClippedTop, false, JSON.stringify(alignCompleteBlurred));
+      assert.equal(alignCompleteBlurred.visualClippedBottom, false, JSON.stringify(alignCompleteBlurred));
+
+      const partialAlign = completeAlign.slice(0, completeAlign.indexOf("}") + 1);
+      await replaceSource(partialAlign);
+      const alignDraftLive = await readSourceState();
+      assert.equal(alignDraftLive.source, partialAlign, JSON.stringify(alignDraftLive));
+      assert.equal(alignDraftLive.storeLatex, completeAlign, JSON.stringify(alignDraftLive));
+      const alignEndToken = partialAlign.replace("begin", "end");
+      assert.ok(alignDraftLive.fieldValue.includes(partialAlign), JSON.stringify(alignDraftLive));
+      assert.ok(alignDraftLive.fieldValue.includes(alignEndToken), JSON.stringify(alignDraftLive));
+      assert.ok(alignDraftLive.fieldValue.includes("placeholder"), JSON.stringify(alignDraftLive));
+      await replaceSource(partialFraction);
+      const rootTransitionFraction = await readSourceState();
+      assert.equal(rootTransitionFraction.source, partialFraction, JSON.stringify(rootTransitionFraction));
+      assert.equal(rootTransitionFraction.storeLatex, completeAlign, JSON.stringify(rootTransitionFraction));
+      assert.ok(rootTransitionFraction.fieldValue.startsWith(partialFraction), JSON.stringify(rootTransitionFraction));
+      assert.equal(rootTransitionFraction.fieldValue.includes("align"), false, JSON.stringify(rootTransitionFraction));
+      await blurSource();
+      const rootTransitionFractionBlurred = await readSourceState();
+      assert.equal(rootTransitionFractionBlurred.source, partialFraction, JSON.stringify(rootTransitionFractionBlurred));
+      assert.equal(rootTransitionFractionBlurred.storeLatex, completeAlign, JSON.stringify(rootTransitionFractionBlurred));
+
+      const unknownCommand = String.fromCharCode(92) + "definitelyunknown";
+      await replaceSource(unknownCommand);
+      const unknownCommandLive = await readSourceState();
+      assert.equal(unknownCommandLive.source, unknownCommand, JSON.stringify(unknownCommandLive));
+      assert.equal(unknownCommandLive.storeLatex, completeAlign, JSON.stringify(unknownCommandLive));
+      assert.equal(unknownCommandLive.sourceErrorVisible, true, JSON.stringify(unknownCommandLive));
+      await blurSource();
+      const unknownCommandBlurred = await readSourceState();
+      assert.equal(unknownCommandBlurred.source, unknownCommand, JSON.stringify(unknownCommandBlurred));
+      assert.equal(unknownCommandBlurred.storeLatex, completeAlign, JSON.stringify(unknownCommandBlurred));
+      assert.equal(unknownCommandBlurred.sourceErrorVisible, true, JSON.stringify(unknownCommandBlurred));
+
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          editorLayout: "standard",
+          sourceOpen: true,
+          latexCodeFormat: "display-dollar",
+          lines: [{ id: "source-default-format-seed", latex: "y" }],
+          activeLineId: "source-default-format-seed",
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+        location.reload();
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready:
+          Boolean(document.querySelector("math-field")) &&
+          Boolean(document.querySelector(".source-panel .cm-content")),
+      }))()`, "default display-dollar source editor");
+      await sleep(450);
+      await evaluate(`(() => {
+        const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+        if (laterButton instanceof HTMLElement) laterButton.click();
+        return true;
+      })()`);
+      await sleep(80);
+
+      const typeSourceCharacters = async (source) => {
+        await waitForEvaluation(`(() => {
+          const content = document.querySelector(".source-panel .cm-content");
+          content?.focus();
+          return {
+            ready:
+              Boolean(content) &&
+              document.querySelector(".source-panel .cm-editor")?.classList.contains("cm-focused"),
+          };
+        })()`, "focused source editor for character typing");
+        await key("a", "KeyA", 65, 4);
+        for (const character of source) {
+          await client.send("Input.insertText", { text: character });
+          await sleep(18);
+        }
+        await sleep(180);
+      };
+
+      const defaultEmptyMatrix = String.raw`\begin{matrix} \end{matrix}`;
+      await typeSourceCharacters(defaultEmptyMatrix);
+      const defaultEmptyMatrixBeforeClick = await readSourceState();
+      const defaultEmptyClickPoint = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const rect = field?.getBoundingClientRect();
+        return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+      })()`);
+      assert.ok(defaultEmptyClickPoint, "default-format empty matrix preview has a click target");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: defaultEmptyClickPoint.x,
+        y: defaultEmptyClickPoint.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: defaultEmptyClickPoint.x,
+        y: defaultEmptyClickPoint.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(250);
+      const defaultEmptyMatrixAfterClick = await readSourceState();
+      const defaultEmptyMatrixFocusState = await evaluate(`(() => ({
+        cmFocused:
+          document.querySelector(".source-panel .cm-editor")?.classList.contains("cm-focused") ?? false,
+        rootFocused:
+          document.documentElement.classList.contains("visualtex-source-editor-focused"),
+      }))()`);
+      assert.equal(defaultEmptyMatrixBeforeClick.source, defaultEmptyMatrix, JSON.stringify(defaultEmptyMatrixBeforeClick));
+      assert.equal(defaultEmptyMatrixAfterClick.source, defaultEmptyMatrix, JSON.stringify(defaultEmptyMatrixAfterClick));
+      assert.equal(defaultEmptyMatrixAfterClick.storeLatex, "y", JSON.stringify(defaultEmptyMatrixAfterClick));
+      assert.equal(defaultEmptyMatrixAfterClick.sourceErrorVisible, true, JSON.stringify(defaultEmptyMatrixAfterClick));
+      assert.equal(defaultEmptyMatrixAfterClick.fieldReadOnly, true, JSON.stringify(defaultEmptyMatrixAfterClick));
+      assert.equal(defaultEmptyMatrixFocusState.cmFocused, true, JSON.stringify(defaultEmptyMatrixFocusState));
+      assert.equal(defaultEmptyMatrixFocusState.rootFocused, true, JSON.stringify(defaultEmptyMatrixFocusState));
+
+      await replaceSource(partialMatrix);
+      const defaultFormatMatrixLive = await readSourceState();
+      assert.equal(defaultFormatMatrixLive.source, partialMatrix, JSON.stringify(defaultFormatMatrixLive));
+      assert.equal(defaultFormatMatrixLive.storeLatex, "y", JSON.stringify(defaultFormatMatrixLive));
+      assert.equal(defaultFormatMatrixLive.sourceErrorVisible, true, JSON.stringify(defaultFormatMatrixLive));
+      assert.match(defaultFormatMatrixLive.fieldValue, /\\begin\{matrix\}/, JSON.stringify(defaultFormatMatrixLive));
+      assert.match(defaultFormatMatrixLive.fieldValue, /\\end\{matrix\}/, JSON.stringify(defaultFormatMatrixLive));
+      await blurSource();
+      const defaultFormatMatrixBlurred = await readSourceState();
+      assert.equal(defaultFormatMatrixBlurred.source, partialMatrix, JSON.stringify(defaultFormatMatrixBlurred));
+      assert.equal(defaultFormatMatrixBlurred.storeLatex, "y", JSON.stringify(defaultFormatMatrixBlurred));
+
+      const wrappedMatrix = `$$\n${completeMatrix}\n$$`;
+      await replaceSource(wrappedMatrix);
+      const defaultFormatComplete = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          ready:
+            persisted.state?.lines?.[0]?.latex === ${JSON.stringify(completeMatrix)} &&
+            !document.querySelector(".source-error-chip"),
+          storeLatex: persisted.state?.lines?.[0]?.latex ?? null,
+          source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+        };
+      })()`, "completed display-dollar matrix commit");
+      assert.equal(defaultFormatComplete.storeLatex, completeMatrix, JSON.stringify(defaultFormatComplete));
+
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          editorLayout: "classic",
+          sourceOpen: true,
+          latexCodeFormat: "display-dollar",
+          zoom: 0.45,
+          lines: [{ id: "source-classic-live-repro", latex: "", mode: "display" }],
+          activeLineId: "source-classic-live-repro",
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+        localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+        location.reload();
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready:
+          document.querySelector(".workspace")?.dataset.editorLayout === "classic" &&
+          Boolean(document.querySelector(".classic-source-pane-slot .cm-content")) &&
+          Boolean(document.querySelector("math-field")),
+      }))()`, "classic source editor exact live repro");
+      await sleep(500);
+      await evaluate(`(() => {
+        const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+        if (laterButton instanceof HTMLElement) laterButton.click();
+        return true;
+      })()`);
+      await sleep(80);
+
+      const completionSourceClick = await evaluate(`(() => {
+        const lines = [...document.querySelectorAll(".classic-source-pane-slot .cm-line")];
+        const target = lines[1] ?? lines[0];
+        const rect = target?.getBoundingClientRect();
+        return rect ? { x: rect.left + 10, y: rect.top + Math.max(7, rect.height / 2) } : null;
+      })()`);
+      assert.ok(completionSourceClick, "classic display-dollar source has an inner line");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: completionSourceClick.x,
+        y: completionSourceClick.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: completionSourceClick.x,
+        y: completionSourceClick.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await waitForEvaluation(`(() => ({
+        ready:
+          document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+      }))()`, "classic completion source focus");
+      for (const character of String.raw`\begin{matr`) {
+        await client.send("Input.insertText", { text: character });
+        await sleep(35);
+      }
+      const completionCandidate = await waitForEvaluation(`(() => {
+        const list = document.querySelector(".cm-tooltip-autocomplete");
+        const selected = list?.querySelector('[aria-selected="true"]');
+        const selectedText = selected?.textContent?.trim() ?? "";
+        return {
+          ready: Boolean(list) && selectedText.includes("matrix"),
+          selectedText,
+          listText: list?.textContent ?? "",
+          source: document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "",
+        };
+      })()`, "matrix CodeMirror completion candidate");
+      await sleep(120);
+      await key("Enter", "Enter", 13);
+      const completedEnvironment = String.raw`\begin{matrix}` + "\n  \n" + String.raw`\end{matrix}`;
+      const completionCommitted = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const source = (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+          .replace(/\\u200b/g, "")
+          .replace(/\\n+$/g, "");
+        const store = persisted.state?.lines?.[0]?.latex ?? null;
+        return {
+          ready:
+            source.includes("\\\\begin{matrix}") &&
+            source.includes("\\\\end{matrix}") &&
+            store?.includes("\\\\begin{matrix}") &&
+            store?.includes("\\\\end{matrix}") &&
+            store?.includes("\\n"),
+          source,
+          store,
+          sourceErrorVisible: Boolean(document.querySelector(".source-error-chip")),
+        };
+      })()`, "auto-closed matrix is committed without truncation");
+      assert.equal(completionCommitted.store, completedEnvironment, JSON.stringify(completionCommitted));
+      assert.equal(completionCommitted.sourceErrorVisible, false, JSON.stringify(completionCommitted));
+
+      const completionVisualClick = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const rect = field?.getBoundingClientRect();
+        return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+      })()`);
+      assert.ok(completionVisualClick, "completed matrix has a visual click target");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: completionVisualClick.x,
+        y: completionVisualClick.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: completionVisualClick.x,
+        y: completionVisualClick.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(220);
+      const completionAfterVisualClick = await evaluate(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, ""),
+          store: persisted.state?.lines?.[0]?.latex ?? null,
+        };
+      })()`);
+      assert.match(completionAfterVisualClick.source, /\\\\end\{matrix\}/, JSON.stringify(completionAfterVisualClick));
+      assert.equal(completionAfterVisualClick.store, completedEnvironment, JSON.stringify(completionAfterVisualClick));
+
+      await client.send("Page.reload", { ignoreCache: true });
+      await waitForEvaluation(`(() => ({
+        ready:
+          Boolean(document.querySelector("math-field")) &&
+          Boolean(document.querySelector(".classic-source-pane-slot .cm-content")),
+      }))()`, "reloaded auto-closed matrix");
+      const completionAfterReload = await evaluate(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, ""),
+          store: persisted.state?.lines?.[0]?.latex ?? null,
+          fieldValue: document.querySelector("math-field")?.value ?? "",
+        };
+      })()`);
+      assert.match(completionAfterReload.source, /\\\\end\{matrix\}/, JSON.stringify(completionAfterReload));
+      assert.equal(completionAfterReload.store, completedEnvironment, JSON.stringify(completionAfterReload));
+      assert.match(completionAfterReload.fieldValue, /\\\\end\{matrix\}/, JSON.stringify(completionAfterReload));
+      console.log("Targeted CodeMirror auto-close completion persistence regression passed", JSON.stringify({ completionCandidate, completionCommitted }));
+      return;
+
+      const exactClassicSource = String.raw`\begin{matrix} \end{matrix}`;
+      const classicSourceClick = await evaluate(`(() => {
+        const line = document.querySelector(".classic-source-pane-slot .cm-line") ??
+          document.querySelector(".classic-source-pane-slot .cm-content");
+        const rect = line?.getBoundingClientRect();
+        return rect ? { x: rect.left + 12, y: rect.top + Math.max(8, rect.height / 2) } : null;
+      })()`);
+      assert.ok(classicSourceClick, "classic source editor has a click point");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: classicSourceClick.x,
+        y: classicSourceClick.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: classicSourceClick.x,
+        y: classicSourceClick.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await waitForEvaluation(`(() => ({
+        ready:
+          document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+        activeTag: document.activeElement?.tagName ?? "",
+        activeClass: document.activeElement?.className ?? "",
+      }))()`, "classic source mouse focus");
+      await key("a", "KeyA", 65, 4);
+      const classicTypingTrace = [];
+      for (const character of exactClassicSource) {
+        await client.send("Input.insertText", { text: character });
+        await sleep(24);
+        const snapshot = await evaluate(`(() => {
+          const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+          return {
+            source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+              .replace(/\\u200b/g, "")
+              .replace(/\\n+$/g, ""),
+            store: persisted.state?.lines?.[0]?.latex ?? null,
+            error: Boolean(document.querySelector(".source-error-chip")),
+            sourceFocused: document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+          };
+        })()`);
+        classicTypingTrace.push({ character, ...snapshot });
+      }
+      await sleep(180);
+      const classicBeforeClick = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, ""),
+          store: persisted.state?.lines?.[0]?.latex ?? null,
+          fieldValue: field?.value ?? "",
+          fieldReadOnly: field?.readOnly ?? null,
+          error: Boolean(document.querySelector(".source-error-chip")),
+          sourceFocused: document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+        };
+      })()`);
+      const classicVisualDom = await evaluate(`(() => ({
+        mathFieldCount: document.querySelectorAll("math-field").length,
+        fallback: Boolean(document.querySelector(".source-draft-fallback")),
+        fallbackText: document.querySelector(".source-draft-fallback-code")?.textContent ?? "",
+        visualHtml: document.querySelector(".editor-pane-scroll")?.innerHTML.slice(0, 1200) ?? "",
+      }))()`);
+      console.log("[classic-before-click]", JSON.stringify({ classicTypingTrace, classicBeforeClick, classicVisualDom }, null, 2));
+      const classicVisualClick = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const fallback = document.querySelector(".source-draft-fallback");
+        const target = field ?? fallback ?? document.querySelector(".editor-surface");
+        const rect = target?.getBoundingClientRect();
+        return rect ? { x: rect.left + Math.max(8, rect.width * 0.5), y: rect.top + rect.height / 2 } : null;
+      })()`);
+      assert.ok(classicVisualClick, "classic visual surface has click point");
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: classicVisualClick.x,
+        y: classicVisualClick.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: classicVisualClick.x,
+        y: classicVisualClick.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(300);
+      const classicAfterClick = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          source: (document.querySelector(".classic-source-pane-slot .cm-content")?.innerText ?? "")
+            .replace(/\\u200b/g, "")
+            .replace(/\\n+$/g, ""),
+          store: persisted.state?.lines?.[0]?.latex ?? null,
+          fieldValue: field?.value ?? "",
+          fieldReadOnly: field?.readOnly ?? null,
+          error: Boolean(document.querySelector(".source-error-chip")),
+          sourceFocused: document.querySelector(".classic-source-pane-slot .cm-editor")?.classList.contains("cm-focused") ?? false,
+        };
+      })()`);
+      console.log("[classic-exact-live-repro]", JSON.stringify({ classicTypingTrace, classicBeforeClick, classicAfterClick }, null, 2));
+      assert.equal(classicBeforeClick.source, exactClassicSource, JSON.stringify(classicBeforeClick));
+      assert.equal(classicAfterClick.source, exactClassicSource, JSON.stringify(classicAfterClick));
+      assert.equal(classicAfterClick.store, exactClassicSource, JSON.stringify(classicAfterClick));
+
+      console.log("Targeted source structural draft regression passed");
       return;
     }
 
