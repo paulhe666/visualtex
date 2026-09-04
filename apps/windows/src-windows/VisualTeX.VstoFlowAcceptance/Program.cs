@@ -480,6 +480,10 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-installed-inline-ole-ribbon-reedit",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-installed-mathtype-reedit-regression",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -881,6 +885,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-installed-mathtype-left-ui-e2e", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledMathTypeLeftUiE2eAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-inline-ole-ribbon-reedit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledInlineOleRibbonReeditAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {

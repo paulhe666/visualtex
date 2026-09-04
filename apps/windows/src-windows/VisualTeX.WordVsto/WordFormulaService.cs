@@ -9925,7 +9925,18 @@ internal sealed partial class WordFormulaService
             if (oldShape is not null)
             {
                 insertion = oldRange.Duplicate;
-                insertion.Collapse(WdCollapseDirection.wdCollapseStart);
+                // A real Ribbon edit leaves the source OLE selected while the
+                // external editor owns the foreground window. In that state Word
+                // can accept AddOLEObject at Selection.Start but later treat the
+                // original InlineShape.Delete as a successful no-op, leaving the
+                // edited object immediately followed by the stale source object.
+                // Stage inline replacements after the source instead. Deleting the
+                // source then shifts the replacement back to the exact original
+                // position, keeps rollback possible until initialization succeeds,
+                // and never overlaps the live selected OLE range.
+                insertion.Collapse(session.DisplayMode == "inline"
+                    ? WdCollapseDirection.wdCollapseEnd
+                    : WdCollapseDirection.wdCollapseStart);
             }
             else
             {
