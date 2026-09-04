@@ -4,6 +4,7 @@
   <p><strong>面向科研写作的可视化公式编辑器</strong></p>
   <p>可视化输入 · LaTeX 源码编辑 · 原生 MathType 公式 · Word / PowerPoint 插件 · 公式 OCR</p>
   <p>
+    <a href="#中文">中文</a> · <a href="#english">English</a> ·
     <a href="https://visualtex.pauljianliao.com/">官方网站</a> ·
     <a href="https://github.com/paulhe666/visualtex/releases">下载安装</a> ·
     <a href="apps/macos/docs/help/VisualTeX_帮助手册.md">帮助手册</a>
@@ -23,6 +24,8 @@
 </div>
 
 ---
+
+# 中文
 
 VisualTeX 是一款面向 macOS 和 Windows 的公式编辑器，适合写论文、整理报告和制作课件。你可以直接在可视化编辑区输入公式，也可以随时切到 LaTeX 源码里细调；写好的公式能直接插入 Word 或 PowerPoint，之后仍可继续编辑、转换、编号和引用。
 
@@ -76,7 +79,7 @@ Windows 版不仅能读取已有的 MathType 公式，还能把 VisualTeX 中写
 - 保留 `MTDisplayEquation`、`MTPlaceRef`、`MTEqn`、`MTChap`、`MTSec`、`ZEqnNum` 等原生编号与引用结构；
 - 同时更新文档中的 VisualTeX 编号、MathType 编号及相关引用。
 
-需要调用 MathType 原生编辑或渲染能力时，电脑上仍需正确安装 MathType。macOS 版目前以图片公式和 Word OMML 为主，MathType 原生 OLE 转换主要由 Windows 版提供。
+VisualTeX 自己就能生成、插入、渲染和编辑原生 MathType OLE，没有安装 MathType 也能使用这些功能。只有需要打开 MathType 自带的编辑界面时，才需要另外安装 MathType。macOS 版目前以图片公式和 Word OMML 为主，MathType 原生 OLE 功能主要由 Windows 版提供。
 
 ## Word 插件
 
@@ -156,7 +159,7 @@ macOS 和 Windows 拥有各自独立的源码、依赖、Office 插件和构建�
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS 帮助手册](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-macOS 版本要求 macOS 11 或更高版本。Office 功能需要本机安装 Microsoft Word 或 PowerPoint；Windows 的 MathType 原生功能还需要相应的 MathType 安装环境。
+macOS 版本要求 macOS 11 或更高版本。Office 功能需要本机安装 Microsoft Word 或 PowerPoint。Windows 版无需安装 MathType 即可生成、插入、渲染和编辑原生 MathType OLE；只有使用 MathType 自带编辑器时才需要安装 MathType。
 
 ## 开发
 
@@ -188,14 +191,175 @@ npm run check
 
 VisualTeX 使用 [MIT License](LICENSE)。
 
-## 支持 VisualTeX
+---
+
+# English
+
+VisualTeX is a formula editor for macOS and Windows, built for papers, reports, and presentations. You can write visually, fine-tune the LaTeX source at any time, and insert the result directly into Word or PowerPoint. Formulas remain editable and can be converted, numbered, and referenced later.
+
+## Formula editing
+
+VisualTeX is designed for continuous keyboard input. Common structures are available from the toolbar, command suggestions, and customizable shortcuts.
+
+- Fractions, roots, scripts, integrals, sums, limits, accents, delimiters, Greek letters, sets, relations, arrows, and common physics symbols.
+- Multiline formulas and matrices with custom dimensions.
+- Explicit `&` alignment points in `align` and `aligned`, plus dedicated editing behavior for `cases`.
+- Per-line inline or display mode, with `$...$` for mixed text and mathematics.
+- Formula-aware Enter, Tab, structure exit, selection wrapping, and command completion.
+- Direct formatting for bold, math italic, and upright text.
+- Custom formula shortcuts, quick Greek-letter input, favorite tools, and custom formula tiles.
+- Separate window sizes for the standard and compact keypad layouts.
+- Undo, redo, and history entries that preserve content, active line, cursor, and selection state.
+
+## LaTeX source editor
+
+The visual editor and LaTeX source stay in sync in both directions. The CodeMirror-based source editor includes:
+
+- LaTeX syntax highlighting with distinct colors for different command groups;
+- line numbers, active-line highlighting, bracket matching, and code folding;
+- environment-aware indentation, indentation guides, automatic indentation, and Tab / Shift+Tab;
+- multiline environments including `equation`, `align`, `aligned`, `gather`, `multline`, `split`, and matrices;
+- copy formats for plain LaTeX, `$...$`, `\\(...\\)`, and `\\[...\\]`.
+
+TeX Live is not required for everyday copying and export.
+
+## Native MathType support on Windows
+
+VisualTeX for Windows can create native MathType formulas, not just read or convert existing ones. A formula written in VisualTeX can be inserted directly into Word as a real `Equation.DSMT4` MathType OLE object. Inline formulas, unnumbered display formulas, and display formulas with native MathType numbers on either side are supported. The inserted object remains editable in both MathType and VisualTeX; it is neither a screenshot nor a VisualTeX-only substitute.
+
+The Windows add-in can also:
+
+- open and edit an existing MathType formula in VisualTeX;
+- convert between VisualTeX OLE and MathType OLE;
+- convert between Word OMML and MathType OLE;
+- redraw LaTeX as VisualTeX OLE, Word OMML, or MathType;
+- restore VisualTeX, OMML, and MathType formulas to LaTeX;
+- process the current selection or the entire document;
+- preserve native MathType left/right numbering and reference structures, including `MTDisplayEquation`, `MTPlaceRef`, `MTEqn`, `MTChap`, `MTSec`, and `ZEqnNum`;
+- update VisualTeX and MathType equation numbers and their references together.
+
+VisualTeX can create, insert, render, and edit native MathType OLE formulas without a MathType installation. MathType is only required when you want to open its own native editor. Native MathType OLE support is currently a Windows feature; macOS mainly uses picture formulas and Word OMML.
+
+## Word add-in
+
+The VisualTeX toolbar appears directly in Word after the add-in is installed. Insertion, editing, conversion, numbering, and document-wide operations can all be started without manually copying formulas between applications.
+
+- Insert inline or display formulas.
+- On macOS, insert picture formulas or native Word OMML.
+- On Windows, insert VisualTeX OLE, Word OMML, or native MathType OLE directly.
+- Edit the selected formula from the toolbar or reopen it by double-clicking.
+- Convert between picture formulas, OMML, VisualTeX OLE, and MathType where the platform supports it.
+- Restore LaTeX, font size, display mode, and formula metadata when reopening an existing formula.
+
+### Equation numbers and references
+
+The Word add-in supports continuous, chapter-based, and section-based numbering, with dots or hyphens as separators. Numbered formulas can be inserted in the middle of a document, and references follow number updates. The update command can also repair numbering structures left by older document versions.
+
+### Import and batch redraw
+
+- Import LaTeX or Markdown while keeping ordinary text as native Word paragraphs.
+- Create a separate editable object for every inline and display formula.
+- Scan the current selection or full document for `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
+- Redraw formulas in place as VisualTeX objects or Word OMML, with MathType also available on Windows.
+- Match inline formulas to the surrounding text size and display formulas to nearby paragraphs where possible.
+- Use preflight checks, caching, and safe fallback during batch operations so a failed conversion does not leave a partial formula behind.
+
+## PowerPoint add-in
+
+VisualTeX uses a native PPAM add-in on macOS and a native VSTO add-in on Windows. Both versions can create formulas, edit or replace the current formula, delete formulas, and open VisualTeX from PowerPoint.
+
+Windows uses real VisualTeX OLE objects and supports conversion between picture, OLE, and OMML formats. macOS uses local vector and picture formulas that remain easy to resize and revise in a presentation.
+
+## Formula OCR
+
+Images can be sent to OCR from a file, drag and drop, the clipboard, or a selected screen region. Recognized LaTeX returns directly to the current editing position, and multiline results can be edited as multiline formulas.
+
+### Local recognition
+
+Local OCR uses PaddleOCR PP-FormulaNet and does not send images to a third-party service.
+
+- plus-S favors speed and a smaller model;
+- plus-M balances Chinese text, complex formulas, and speed, and is the recommended default;
+- plus-L favors accuracy for more difficult formula images.
+
+The full OCR window is useful for checking the result, Quick OCR shortens the screenshot-to-editor workflow, and Silent OCR places recognized LaTeX on the clipboard in the background.
+
+### Online and self-hosted services
+
+VisualTeX can also connect to OpenAI-compatible APIs, Ollama, Mathpix, PaddleOCR-VL 1.6, and SimpleTex. Images are sent to an online endpoint only when you choose one of these services. API URLs, models, and keys are managed locally.
+
+## Export and customization
+
+- Copy LaTeX or PNG.
+- Export Markdown, SVG, and PNG.
+- Use a transparent or custom PNG background.
+- Remember export folders and commonly used output settings.
+- Switch between Chinese and English, choose from built-in themes, or customize the full color scheme.
+- Preserve formula size, toolbar size, panel state, and editing layout across restarts.
+- Back up and migrate settings.
+- Build custom vector symbols, register LaTeX commands, and reuse them in editing, completion, SVG, PNG, and Office picture formulas.
+
+## Platform overview
+
+| | macOS | Windows |
+|---|---|---|
+| Desktop app | React, TypeScript, Tauri | React, TypeScript, Tauri |
+| Word add-in | DOTM, VBA, AppleScriptTask, local session | VSTO Ribbon, Office events, COM |
+| PowerPoint add-in | PPAM, local session | VSTO Ribbon, OLE |
+| Main formula formats | Picture formulas, Word OMML | VisualTeX OLE, Word OMML, picture formulas, MathType OLE |
+| MathType | Coexists with existing documents | Native OLE insertion, editing, conversion, numbering, and references |
+| Add-in maintenance | In-app install, update, and repair for DOTM / PPAM | Installer-deployed native components matched to Office bitness |
+
+The macOS and Windows implementations have separate source trees, dependencies, Office add-ins, and build pipelines. Shared formula metadata helps preserve LaTeX, formula IDs, and display mode when documents move between platforms.
+
+## Download
+
+- [VisualTeX website](https://visualtex.pauljianliao.com/)
+- [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
+- [macOS user guide](apps/macos/docs/help/VisualTeX_帮助手册.md)
+
+The macOS version requires macOS 11 or later. Office features require Microsoft Word or PowerPoint. On Windows, VisualTeX can create, insert, render, and edit native MathType OLE formulas without MathType installed; a MathType installation is only needed for its own editor.
+
+## Development
+
+The two platform implementations are kept separate:
+
+```text
+visualtex/
+├── apps/
+│   ├── macos/       # macOS app, Tauri, DOTM/PPAM, OCR, and tests
+│   └── windows/     # Windows app, Tauri, VSTO/OLE, OCR, and tests
+├── docs/            # Architecture documents and README images
+├── tools/           # Repository structure checks
+└── README.md
+```
+
+Common commands:
+
+```bash
+npm run bootstrap
+npm run build:macos
+npm run build:windows
+npm run test:repository
+npm run check
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the repository architecture. Platform-specific build and test instructions are available in [apps/macos/README.md](apps/macos/README.md) and [apps/windows/README.md](apps/windows/README.md).
+
+## License
+
+VisualTeX is released under the [MIT License](LICENSE).
+
+## 支持 VisualTeX / Support VisualTeX
 
 如果 VisualTeX 对你的论文、报告或课件排版有所帮助，欢迎支持项目继续开发。使用问题、功能建议和 Office 插件相关交流可加入 QQ 群：`1045801770`。
 
+If VisualTeX helps with your papers, reports, or presentations, you can support its continued development. For questions, feature suggestions, and Office add-in discussion, join the QQ group: `1045801770`.
+
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/images/wechat-pay.jpg" height="320" alt="微信收款" /></td>
-    <td align="center"><img src="docs/images/alipay.jpg" height="320" alt="支付宝收款" /></td>
-    <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ 交流群" /></td>
+    <td align="center"><img src="docs/images/wechat-pay.jpg" height="320" alt="微信收款 / WeChat Pay" /></td>
+    <td align="center"><img src="docs/images/alipay.jpg" height="320" alt="支付宝收款 / Alipay" /></td>
+    <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ group" /></td>
   </tr>
 </table>
