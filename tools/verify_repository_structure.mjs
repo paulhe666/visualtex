@@ -32,10 +32,10 @@ for (const path of [
   "apps/windows/office/windows/ole/manifests/visualtex-powerpoint.template.xml",
   "README.md",
   "docs/ARCHITECTURE.md",
-  "docs/images/visualtex-light-mode.png",
-  "docs/images/visualtex-dark-mode.png",
-  "docs/images/visualtex-macos-word-ribbon.png",
-  "docs/images/visualtex-windows-word-ribbon.png",
+  "docs/images/application.png",
+  "docs/images/wechat-pay.jpg",
+  "docs/images/alipay.jpg",
+  "docs/images/qq-group.png",
 ]) {
   requirePath(path);
 }
