@@ -49,6 +49,7 @@ internal sealed class WordLatexRedrawPlan
     internal int ScopeStart { get; set; }
     internal int ScopeEnd { get; set; }
     internal string SourceText { get; set; } = string.Empty;
+    internal bool NumberDisplayFormulas { get; set; }
     internal List<WordLatexRedrawTarget> Targets { get; set; } = new();
 }
 

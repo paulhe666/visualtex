@@ -57,6 +57,7 @@ internal sealed class WordBulkImportDocument
 {
     internal WordBulkSourceFormat SourceFormat { get; set; }
     internal WordBulkFormulaObjectMode FormulaObjectMode { get; set; }
+    internal bool NumberDisplayFormulas { get; set; }
     internal List<WordBulkBlock> Blocks { get; set; } = new();
     internal List<string> Warnings { get; set; } = new();
     internal int FormulaCount => Blocks.Sum(block => block.Runs.Count(run => run.IsFormula));

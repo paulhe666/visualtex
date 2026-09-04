@@ -9,6 +9,7 @@ internal sealed class BulkImportDialog : Form
 {
     private readonly ComboBox _sourceFormat = new();
     private readonly ComboBox _objectMode = new();
+    private readonly CheckBox _numberDisplayFormulas = new();
     private readonly TextBox _source = new();
     private readonly Label _summary = new();
     private readonly TextBox _warnings = new();
@@ -102,6 +103,15 @@ internal sealed class BulkImportDialog : Form
         });
         _objectMode.SelectedIndex = 0;
         options.Controls.Add(_objectMode);
+        _numberDisplayFormulas.AutoSize = true;
+        _numberDisplayFormulas.Text = "所有行间公式添加编号";
+        _numberDisplayFormulas.Margin = new Padding(18, 5, 0, 0);
+        _numberDisplayFormulas.CheckedChanged += (_, _) =>
+        {
+            if (_parsed is not null)
+                _parsed.NumberDisplayFormulas = _numberDisplayFormulas.Checked;
+        };
+        options.Controls.Add(_numberDisplayFormulas);
         var open = new Button
         {
             AutoSize = true,
@@ -229,6 +239,12 @@ internal sealed class BulkImportDialog : Form
         };
     }
 
+    internal bool NumberDisplayFormulas
+    {
+        get => _numberDisplayFormulas.Checked;
+        set => _numberDisplayFormulas.Checked = value;
+    }
+
     private bool ParseAndPreview(bool showError)
     {
         try
@@ -237,6 +253,7 @@ internal sealed class BulkImportDialog : Form
                 _source.Text,
                 SelectedSourceFormat,
                 SelectedObjectMode);
+            _parsed.NumberDisplayFormulas = NumberDisplayFormulas;
             _summary.Text =
                 $"识别为 {_parsed.SourceFormat}；共 {_parsed.Blocks.Count} 个块，" +
                 $"{_parsed.TextCharacterCount} 个文字字符，" +

@@ -4366,6 +4366,18 @@ internal sealed partial class WordFormulaService
                 throw new InvalidOperationException(
                     "渲染期间 Word 内容发生了变化。为避免替换错误位置，本次重绘已停止，请重新选择后再试。");
 
+            foreach (var target in plan.Targets)
+            {
+                if (!prepared.TryGetValue(target.Id, out var preparedFormula))
+                    continue;
+                preparedFormula.Session.Numbered =
+                    plan.NumberDisplayFormulas
+                    && string.Equals(
+                        target.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal);
+            }
+
             selection = _application.Selection;
             viewState = CaptureViewState();
             // Resolve and validate every Word Range before changing the document.
@@ -4432,6 +4444,16 @@ internal sealed partial class WordFormulaService
                     insertedFormulaIds.Add(resolved.Formula.Session.FormulaId);
                 }
                 finally { Release(preservedDisplayParagraphRange); }
+            }
+
+            if (plan.NumberDisplayFormulas
+                && plan.Targets.Any(target => string.Equals(
+                    target.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal)))
+            {
+                WordEquationNumbering.UpdateEquationNumbers(document);
+                MathTypeEquationNumbering.UpdateEquationNumbers(document);
             }
 
             return new WordLatexRedrawResult
@@ -6278,6 +6300,15 @@ internal sealed partial class WordFormulaService
                 selection.Text = string.Empty;
             selection.Collapse(WdCollapseDirection.wdCollapseEnd);
             insertionStart = selection.Start;
+            foreach (var preparedFormula in prepared.Values)
+            {
+                preparedFormula.Session.Numbered =
+                    source.NumberDisplayFormulas
+                    && string.Equals(
+                        preparedFormula.Run.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal);
+            }
             var nativeOmmlBulk = prepared.Count > 0
                 && prepared.Values.All(item => string.Equals(
                     item.Session.ObjectMode,
@@ -6473,6 +6504,12 @@ internal sealed partial class WordFormulaService
                         StringComparison.Ordinal))
                     Console.WriteLine(
                         $"    [perf] BulkOmml.SaveNewBatch: {metadataStopwatch.ElapsedMilliseconds}ms formulas={deferredOmmlMetadata.Count}");
+            }
+
+            if (source.NumberDisplayFormulas && source.DisplayFormulaCount > 0)
+            {
+                WordEquationNumbering.UpdateEquationNumbers(document);
+                MathTypeEquationNumbering.UpdateEquationNumbers(document);
             }
 
             return new WordBulkInsertResult
@@ -7253,7 +7290,7 @@ internal sealed partial class WordFormulaService
     {
         var session = prepared.Session;
         session.DisplayMode = display ? "block" : "inline";
-        session.Numbered = false;
+        session.Numbered = display && session.Numbered;
         var metadata = session.ToMetadata();
         metadata.Validate();
         var nativeOmml = string.Equals(

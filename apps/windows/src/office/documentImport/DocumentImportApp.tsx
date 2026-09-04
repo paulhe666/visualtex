@@ -222,6 +222,7 @@ export function DocumentImportApp() {
   const [source, setSource] = useState("");
   const [format, setFormat] = useState<DocumentSourceFormat>("auto");
   const [objectMode, setObjectMode] = useState<DocumentObjectMode>("wordOmml");
+  const [numberDisplayFormulas, setNumberDisplayFormulas] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [fileBusy, setFileBusy] = useState(false);
@@ -270,6 +271,7 @@ export function DocumentImportApp() {
               ? "mathTypeOle"
               : "wordOmml",
         );
+        setNumberDisplayFormulas(Boolean(next.numbered));
         setLoading(false);
       })
       .catch((error) => {
@@ -333,7 +335,7 @@ export function DocumentImportApp() {
         codeFormat: "visualtex-document-json",
         objectMode,
         displayMode: "block",
-        numbered: false,
+        numbered: numberDisplayFormulas,
         dirty: true,
         status: "committing",
         explicitCancel: false,
@@ -411,6 +413,18 @@ export function DocumentImportApp() {
               <option value="nativeOle">VisualTeX OLE</option>
               <option value="mathTypeOle">MathType OLE</option>
             </select>
+          </label>
+          <label
+            className="doc-import-numbering-option"
+            title="勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。"
+          >
+            <input
+              type="checkbox"
+              checked={numberDisplayFormulas}
+              onChange={(event) => setNumberDisplayFormulas(event.target.checked)}
+              disabled={busy}
+            />
+            <span>所有行间公式添加编号</span>
           </label>
           <button
             className="doc-import-secondary doc-import-file-button"

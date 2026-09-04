@@ -2138,31 +2138,58 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     StringComparison.Ordinal)
                     ? "MathType"
                     : "Word OMML";
-            if (wholeDocument
-                && !string.Equals(
-                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-                    "1",
-                    StringComparison.Ordinal))
+            var displayFormulaCount = plan.Targets.Count(target => string.Equals(
+                target.DisplayMode,
+                "block",
+                StringComparison.Ordinal));
+            var acceptanceMode = string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                "1",
+                StringComparison.Ordinal);
+            var numberDisplayFormulas = acceptanceMode
+                && IsEnabledEnvironmentOption(
+                    "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
+            if (!acceptanceMode)
             {
-                var confirmed = await dispatcher.InvokeAsync(() =>
-                    System.Windows.Forms.MessageBox.Show(
-                        $"将在整个文档中原位重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}。\r\n\r\n"
-                        + "该操作会保留正文并删除公式两侧的 LaTeX 定界符，可通过一次 Ctrl+Z 整体撤销。是否继续？",
-                        "VisualTeX LaTeX 重绘",
-                        System.Windows.Forms.MessageBoxButtons.YesNo,
-                        System.Windows.Forms.MessageBoxIcon.Question,
-                        System.Windows.Forms.MessageBoxDefaultButton.Button2)
-                    == System.Windows.Forms.DialogResult.Yes).ConfigureAwait(false);
-                if (!confirmed)
+                var options = await dispatcher.InvokeAsync(() =>
                 {
-                    SetStatus("已取消全文 LaTeX 重绘，Word 文档未修改。");
+                    using var dialog = new LatexRedrawDialog(
+                        wholeDocument,
+                        plan.Targets.Count,
+                        displayFormulaCount,
+                        modeLabel,
+                        service.GetEquationNumberFormatDisplayName());
+                    var accepted = dialog.ShowDialog()
+                        == System.Windows.Forms.DialogResult.OK;
+                    return (
+                        Accepted: accepted,
+                        NumberDisplayFormulas: accepted
+                            && dialog.NumberDisplayFormulas);
+                }).ConfigureAwait(false);
+                if (!options.Accepted)
+                {
+                    SetStatus(
+                        wholeDocument
+                            ? "已取消全文 LaTeX 重绘，Word 文档未修改。"
+                            : "已取消所选 LaTeX 重绘，Word 文档未修改。");
                     return;
                 }
+                numberDisplayFormulas = options.NumberDisplayFormulas;
             }
+            plan.NumberDisplayFormulas = numberDisplayFormulas;
+            var mathTypeNumberPosition = string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                ? await dispatcher.InvokeAsync(
+                        service.GetMathTypeNumberPositionPreference)
+                    .ConfigureAwait(false)
+                : "right";
 
             WriteRedrawAcceptanceLog(
                 $"redraw-start scope={(wholeDocument ? "document" : "selection")} "
-                + $"mode={objectMode} formulas={plan.Targets.Count}");
+                + $"mode={objectMode} formulas={plan.Targets.Count} "
+                + $"numberDisplayFormulas={plan.NumberDisplayFormulas}");
             SetStatus($"正在准备重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}…");
             await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
             await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
@@ -2320,7 +2347,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     run,
                     plan.DocumentId,
                     target.FontSizePt,
-                    objectMode);
+                    objectMode,
+                    mathTypeNumberPosition);
                 prepared.Add(target.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -2622,6 +2650,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 WordBulkFormulaObjectMode.MathType => FormulaOleContract.MathTypeOleMode,
                 _ => FormulaOleContract.WordOmmlMode,
             };
+            var mathTypeNumberPosition = string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                ? await dispatcher.InvokeAsync(
+                        service.GetMathTypeNumberPositionPreference)
+                    .ConfigureAwait(false)
+                : "right";
             var pendingKeys = new HashSet<string>(StringComparer.Ordinal);
             var formulaKeys = new Dictionary<string, string>(StringComparer.Ordinal);
             var pendingTemplates = new List<(
@@ -2751,7 +2787,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     run,
                     sourceDocumentId,
                     fontSizePt,
-                    objectMode);
+                    objectMode,
+                    mathTypeNumberPosition);
                 var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
                     ? preview
                     : null;
@@ -2955,12 +2992,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     StringComparison.OrdinalIgnoreCase)
                     ? WordBulkFormulaObjectMode.MathType
                     : WordBulkFormulaObjectMode.Omml;
-            return (
-                WordBulkImportParser.Parse(
-                    acceptanceSource,
-                    acceptanceFormat,
-                    acceptanceObjectMode),
-                null);
+            var acceptanceDocument = WordBulkImportParser.Parse(
+                acceptanceSource,
+                acceptanceFormat,
+                acceptanceObjectMode);
+            acceptanceDocument.NumberDisplayFormulas = IsEnabledEnvironmentOption(
+                "VISUALTEX_VSTO_BULK_NUMBER_DISPLAY_FORMULAS");
+            return (acceptanceDocument, null);
         }
 
         await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
@@ -3021,24 +3059,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 StringComparison.Ordinal)
                 ? WordBulkFormulaObjectMode.MathType
                 : WordBulkFormulaObjectMode.Omml;
+        WordBulkImportDocument parsedDocument;
         if (string.Equals(
                 session.CodeFormat,
                 "visualtex-document-json",
                 StringComparison.OrdinalIgnoreCase))
         {
-            return (
-                WordBulkImportParser.ParseSerialized(source, objectMode),
-                session.Id);
+            parsedDocument = WordBulkImportParser.ParseSerialized(source, objectMode);
         }
-        var format = session.CodeFormat.Trim().ToLowerInvariant() switch
+        else
         {
-            "markdown-document" => WordBulkSourceFormat.Markdown,
-            "latex-document" => WordBulkSourceFormat.Latex,
-            _ => WordBulkSourceFormat.Auto,
-        };
-        return (
-            WordBulkImportParser.Parse(source, format, objectMode),
-            session.Id);
+            var format = session.CodeFormat.Trim().ToLowerInvariant() switch
+            {
+                "markdown-document" => WordBulkSourceFormat.Markdown,
+                "latex-document" => WordBulkSourceFormat.Latex,
+                _ => WordBulkSourceFormat.Auto,
+            };
+            parsedDocument = WordBulkImportParser.Parse(source, format, objectMode);
+        }
+        parsedDocument.NumberDisplayFormulas = session.Numbered;
+        return (parsedDocument, session.Id);
     }
 
     private static async Task<OfficeSessionDocument> CreateBulkFormulaConversionSessionAsync(
@@ -3211,7 +3251,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         WordBulkRun run,
         string? sourceDocumentId,
         double fontSizePt,
-        string objectMode)
+        string objectMode,
+        string mathTypeNumberPosition = "right")
     {
         var formulaId = Guid.NewGuid().ToString("D");
         var line = new FormulaLine
@@ -3232,6 +3273,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             DisplayMode = run.DisplayMode,
             ObjectMode = objectMode,
             Numbered = false,
+            MathTypeNumberPosition = string.Equals(
+                mathTypeNumberPosition,
+                "left",
+                StringComparison.OrdinalIgnoreCase)
+                    ? "left"
+                    : "right",
             FontSizePt = fontSizePt,
             Status = "committing",
             Dirty = true,
@@ -3242,6 +3289,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 fontSizePt),
             ExportResult = template.ExportResult,
         };
+    }
+
+    private static bool IsEnabledEnvironmentOption(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name)?.Trim();
+        return string.Equals(value, "1", StringComparison.Ordinal)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void WriteRedrawAcceptanceLog(string message)

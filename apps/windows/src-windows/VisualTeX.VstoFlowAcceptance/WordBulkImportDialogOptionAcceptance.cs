@@ -21,6 +21,7 @@ internal static partial class Program
     private static void AssertBulkImportMathTypeDialogSubmission()
     {
         using var dialog = BulkImportMathTypeOption.CreateDialog();
+        dialog.NumberDisplayFormulas = true;
         var selectors = DescendantControls(dialog)
             .OfType<ComboBox>()
             .Where(combo => combo.Items.Cast<object>().Any(item =>
@@ -47,6 +48,23 @@ internal static partial class Program
                 dialog,
                 () => FormulaOleContract.WordOmmlMode),
             "Bulk import MathType selection did not resolve to the native MathType OLE object mode.");
+        AssertTrue(
+            dialog.ParsedDocument.NumberDisplayFormulas,
+            "Bulk import did not preserve the global display-formula numbering option through submission.");
+
+        using var redrawDialog = new LatexRedrawDialog(
+            wholeDocument: false,
+            formulaCount: 3,
+            displayFormulaCount: 2,
+            objectModeLabel: "MathType",
+            equationNumberFormatDisplayName: "按章编号（1.1）");
+        var redrawNumberingOption = DescendantControls(redrawDialog)
+            .OfType<CheckBox>()
+            .Single();
+        redrawNumberingOption.Checked = true;
+        AssertTrue(
+            redrawDialog.NumberDisplayFormulas,
+            "LaTeX redraw did not expose a selectable global display-formula numbering option.");
     }
 
     private static void AssertBulkImportMixedSingleDollarSubmission()

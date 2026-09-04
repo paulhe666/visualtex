@@ -131,6 +131,25 @@
   font-weight: 600;
 }
 
+.doc-import-options .doc-import-numbering-option {
+  padding: 0 11px;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.doc-import-numbering-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.doc-import-numbering-option input:disabled {
+  cursor: default;
+}
+
 .doc-import-secondary,
 .doc-import-primary {
   display: inline-flex;
