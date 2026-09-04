@@ -106,6 +106,9 @@ import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
   formulaChineseFontFamily,
   formulaLetterFontFamilies,
+  markVisualTexFormulaFontGlyphs,
+  VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS,
+  VISUALTEX_FORMULA_LETTER_GLYPH_CLASS,
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "./formulaFontPreferences";
@@ -2100,9 +2103,6 @@ const visualTexFormulaItalicFontProperty =
   "--visualtex-formula-italic-font-family";
 const visualTexFormulaChineseFontProperty =
   "--visualtex-formula-chinese-font-family";
-const visualTexChineseGlyphClass = "visualtex-chinese-glyph";
-const visualTexChineseGlyphPattern =
-  /^[\p{Script=Han}，。；：！？、（）【】《》“”‘’]+$/u;
 const visualTexPlaceholderClass = "visualtex-structural-placeholder";
 const visualTexAccentPlaceholderClass =
   "visualtex-accent-structural-placeholder";
@@ -2881,20 +2881,10 @@ function markVisualTexStructuralPlaceholders(field: MathfieldElement) {
   );
 }
 
-function markVisualTexChineseGlyphs(field: MathfieldElement) {
+function markVisualTexFormulaGlyphs(field: MathfieldElement) {
   const shadowRoot = field.shadowRoot;
   if (!shadowRoot) return;
-  shadowRoot
-    .querySelectorAll<HTMLElement>(
-      ".ML__cmr, .ML__mathbf, .ML__mathit, .ML__mathbfit, .ML__text",
-    )
-    .forEach((node) => {
-      const text = (node.textContent ?? "").trim();
-      node.classList.toggle(
-        visualTexChineseGlyphClass,
-        Boolean(text) && visualTexChineseGlyphPattern.test(text),
-      );
-    });
+  markVisualTexFormulaFontGlyphs(shadowRoot);
 }
 
 function installVisualTexFormulaFontStyle(field: MathfieldElement) {
@@ -2905,43 +2895,42 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
   const style = document.createElement("style");
   style.id = visualTexFormulaFontStyleId;
   style.textContent = `
-    .ML__cmr:not(.ML__it) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__it) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
     }
 
-    .ML__cmr:not(.ML__bold):not(.ML__it) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__bold):not(.ML__it) {
       font-weight: 400 !important;
     }
 
-    .ML__cmr.ML__bold:not(.ML__it),
-    .ML__mathbf:not(.lcGreek) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__bold:not(.ML__it),
+    .ML__mathbf.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.lcGreek) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
       font-weight: 700 !important;
     }
 
-    .ML__cmr.ML__it,
-    .ML__mathit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__it,
+    .ML__mathit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
       font-style: italic !important;
     }
 
-    .ML__cmr.ML__it:not(.ML__bold),
-    .ML__mathit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__it:not(.ML__bold),
+    .ML__mathit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-weight: 400 !important;
     }
 
-    .ML__cmr.ML__bold.ML__it,
-    .lcGreek.ML__mathbf,
-    .ML__mathbfit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__bold.ML__it,
+    .lcGreek.ML__mathbf.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS},
+    .ML__mathbfit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
       font-style: italic !important;
       font-weight: 700 !important;
     }
 
-    .ML__text,
-    .${visualTexChineseGlyphClass} {
+    .${VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaChineseFontProperty}, var(--_text-font-family)) !important;
     }
   `;
@@ -2954,7 +2943,7 @@ function applyVisualTexFormulaFonts(
   chineseFont: FormulaChineseFont,
 ) {
   installVisualTexFormulaFontStyle(field);
-  markVisualTexChineseGlyphs(field);
+  markVisualTexFormulaGlyphs(field);
   const letterFamilies = formulaLetterFontFamilies(letterFont);
   field.style.setProperty(
     visualTexFormulaUprightFontProperty,
@@ -6387,7 +6376,7 @@ function FormulaField(props: FormulaFieldProps) {
         observeVisualTexActiveAccentPlaceholder(field);
         scheduleDeletedVisualTexPlaceholderRestore(field);
         markVisualTexStructuralPlaceholders(field);
-        markVisualTexChineseGlyphs(field);
+        markVisualTexFormulaGlyphs(field);
         syncPostOperatorCaretSpacing(field);
         syncFrameSize();
         schedulePointerPlaceholderSnapshotStyle();

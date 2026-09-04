@@ -2755,18 +2755,19 @@ kbd {
   font-size: 19px;
 }
 
-.formula-font-live-preview .ML__cmr,
-.formula-font-live-preview .ML__mathbf {
+.formula-font-live-preview .ML__cmr.visualtex-formula-letter-glyph:not(.ML__it),
+.formula-font-live-preview .ML__mathbf.visualtex-formula-letter-glyph:not(.lcGreek) {
   font-family: var(--visualtex-formula-upright-font-family, KaTeX_Main, serif) !important;
 }
 
-.formula-font-live-preview .ML__mathit,
-.formula-font-live-preview .lcGreek.ML__mathbf,
-.formula-font-live-preview .ML__mathbfit {
+.formula-font-live-preview .ML__cmr.visualtex-formula-letter-glyph.ML__it,
+.formula-font-live-preview .ML__mathit.visualtex-formula-letter-glyph,
+.formula-font-live-preview .lcGreek.ML__mathbf.visualtex-formula-letter-glyph,
+.formula-font-live-preview .ML__mathbfit.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-italic-font-family, KaTeX_Math, KaTeX_Main, serif) !important;
 }
 
-.formula-font-live-preview .ML__text {
+.formula-font-live-preview .visualtex-chinese-glyph {
   font-family: var(--visualtex-formula-chinese-font-family, sans-serif) !important;
 }
 
@@ -8183,7 +8184,15 @@ html body #mathlive-suggestion-popover .ML__popover__latex {
 }
 
 html body #mathlive-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  align-self: center;
+  margin-left: auto;
   color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
   opacity: 1 !important;
 }
 
@@ -8326,7 +8335,15 @@ html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-pr
 }
 
 html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  align-self: center;
+  margin-left: auto;
   color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
   opacity: 1;
 }
 

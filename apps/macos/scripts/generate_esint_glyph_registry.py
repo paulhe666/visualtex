@@ -186,8 +186,13 @@ class Outline:
     def close(self) -> None:
         self.include(self.x, self.y)
         self.include(self.start_x, self.start_y)
-        self.x = self.start_x
-        self.y = self.start_y
+        # Type 1 CharString closepath differs from PostScript/SVG closepath:
+        # it closes the current subpath without moving the CharString current
+        # point. A following relative moveto is therefore measured from the
+        # point that was current before closepath, not from the subpath start.
+        # Keep the parser current point unchanged and emit an SVG Z only for
+        # geometry; subsequent Type 1 relative moves are converted to absolute
+        # SVG M coordinates by move_to().
         self.commands.append("Z")
 
     def payload(self, italic_correction: float) -> dict[str, object]:

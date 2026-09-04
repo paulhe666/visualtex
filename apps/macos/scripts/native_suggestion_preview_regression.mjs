@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 
 const fullAudit = process.argv.includes("--audit");
+const sqIntegralAudit = process.argv.includes("--sq-integrals");
 const offset = process.pid % 1000;
 const previewPort = 18400 + offset;
 const debugPort = 23400 + offset;
@@ -321,6 +322,15 @@ async function main() {
             const preview = item?.querySelector(".ML__popover__command");
             const rendered = preview?.querySelector(".ML__latex") ?? preview;
             const bounds = rendered?.getBoundingClientRect();
+            const operator = rendered?.querySelector(".ML__op-symbol");
+            const svg = operator?.querySelector("svg");
+            const path = svg?.querySelector("path");
+            const operatorBounds = operator?.getBoundingClientRect();
+            const svgBounds = svg?.getBoundingClientRect();
+            const itemBounds = item?.getBoundingClientRect();
+            const keybinding = item?.querySelector(".ML__popover__keybinding");
+            const keybindingBounds = keybinding?.getBoundingClientRect();
+            const keybindingStyle = keybinding ? getComputedStyle(keybinding) : null;
             return {
               command: item?.dataset.command ?? "",
               previewLatex: preview?.dataset.visualtexPreview ?? "",
@@ -330,13 +340,28 @@ async function main() {
               height: bounds?.height ?? 0,
               error: Boolean(rendered?.querySelector(".ML__error")),
               linkCount: rendered?.querySelectorAll("a[href]").length ?? 0,
+              keybindingText: item?.querySelector(".ML__popover__keybinding")?.textContent?.trim() ?? "",
+              keybindingHtml: keybinding?.innerHTML ?? "",
+              keybindingWidth: keybindingBounds?.width ?? 0,
+              keybindingHeight: keybindingBounds?.height ?? 0,
+              keybindingWhiteSpace: keybindingStyle?.whiteSpace ?? "",
+              keybindingFlexBasis: keybindingStyle?.flexBasis ?? "",
+              itemHeight: itemBounds?.height ?? 0,
+              operatorClass: operator?.className ?? "",
+              operatorWidth: operatorBounds?.width ?? 0,
+              operatorHeight: operatorBounds?.height ?? 0,
+              svgCount: operator?.querySelectorAll("svg").length ?? 0,
+              svgWidth: svgBounds?.width ?? 0,
+              svgHeight: svgBounds?.height ?? 0,
+              svgViewBox: svg?.getAttribute("viewBox") ?? "",
+              pathFillRule: path ? getComputedStyle(path).fillRule : "",
             };
           });
         })()`)
       );
     };
 
-    const cases = [
+    const allCases = [
       {
         query: "\\b",
         expected: {
@@ -374,7 +399,16 @@ async function main() {
           "\\small": "state",
           "\\smash": "arguments",
           "\\space": "spacing",
-          "\\strut": "state",
+        },
+      },
+      {
+        query: "\\sq",
+        expected: {
+          "\\sqiint": "operator",
+          "\\sqrt": "arguments",
+          "\\sqcap": "native",
+          "\\sqcup": "native",
+          "\\sqint": "operator",
         },
       },
       {
@@ -399,6 +433,9 @@ async function main() {
         },
       },
     ];
+    const cases = sqIntegralAudit
+      ? allCases.filter((testCase) => testCase.query === "\\sq")
+      : allCases;
 
     const results = {};
     for (const testCase of cases) {
@@ -420,6 +457,23 @@ async function main() {
           entry.text.length > 0 || entry.width > 3,
           `${entry.command} preview has no visible content`,
         );
+        if (entry.command === "\\sqint" || entry.command === "\\sqiint") {
+          assert.match(
+            entry.operatorClass,
+            /\bML__small-op\b/,
+            `${entry.command} completion uses text-style integral geometry`,
+          );
+          assert.doesNotMatch(
+            entry.operatorClass,
+            /\bML__large-op\b/,
+            `${entry.command} completion must not use display-style integral geometry`,
+          );
+          assert.equal(entry.svgCount, 1, `${entry.command} completion vector glyph`);
+          assert.ok(
+            entry.operatorHeight > 20 && entry.operatorHeight < 45,
+            `${entry.command} completion height stays within the candidate row scale`,
+          );
+        }
         if (entry.kind === "native") {
           assert.equal(
             entry.previewLatex,
@@ -433,6 +487,38 @@ async function main() {
             `${entry.command} preview was not decorated`,
           );
         }
+      }
+      if (testCase.query === "\\sq") {
+        const sqint = entries.find((entry) => entry.command === "\\sqint");
+        const sqiint = entries.find((entry) => entry.command === "\\sqiint");
+        const sqrt = entries.find((entry) => entry.command === "\\sqrt");
+        for (const entry of [sqint, sqiint]) {
+          assert.ok(entry, "square-integral candidate exists");
+          assert.match(
+            entry.operatorClass,
+            /\bvisualtex-integral-svg\b/,
+            `${entry.command} candidate uses the corrected SVG integral glyph`,
+          );
+          assert.equal(entry.svgCount, 1, `${entry.command} candidate SVG count`);
+          assert.ok(entry.svgWidth > 4, `${entry.command} candidate SVG width`);
+          assert.ok(entry.svgHeight > 10, `${entry.command} candidate SVG height`);
+          assert.match(
+            entry.svgViewBox,
+            /^0 -?[\d.]+ [\d.]+ [\d.]+$/,
+            `${entry.command} candidate SVG viewBox`,
+          );
+        }
+        assert.ok(
+          sqiint.operatorWidth > sqint.operatorWidth,
+          "sqiint preview remains wider than sqint after contour repair",
+        );
+        assert.ok(sqrt, "sqrt candidate exists");
+        assert.equal(sqrt.keybindingText, "⌥ V⌃ 2", "sqrt shortcut text");
+        assert.equal(sqrt.keybindingWhiteSpace, "nowrap", "sqrt shortcut does not wrap inside a key chord");
+        assert.equal(sqrt.keybindingFlexBasis, "46px", "sqrt shortcut column keeps reserved width");
+        assert.ok(sqrt.keybindingWidth >= 45, "sqrt shortcut column is not squeezed");
+        assert.ok(sqrt.keybindingHeight <= 30, "sqrt shortcuts stay within two compact lines");
+        assert.equal(sqrt.itemHeight, 48, "sqrt candidate row keeps the standard height");
       }
     }
 
@@ -535,6 +621,9 @@ async function main() {
               const command = item.dataset.command ?? "";
               const preview = item.querySelector(".ML__popover__command");
               const rendered = preview?.querySelector(".ML__latex") ?? preview;
+              const keybinding = item.querySelector(".ML__popover__keybinding");
+              const keybindingBounds = keybinding?.getBoundingClientRect();
+              const keybindingStyle = keybinding ? getComputedStyle(keybinding) : null;
               return {
                 command,
                 kind: preview?.dataset.visualtexPreviewKind ?? "native",
@@ -545,6 +634,10 @@ async function main() {
                   preview.dataset.visualtexPreviewCommand !== command
                 ),
                 linkCount: rendered?.querySelectorAll("a[href]").length ?? 0,
+                keybindingText: keybinding?.textContent?.trim() ?? "",
+                keybindingWidth: keybindingBounds?.width ?? 0,
+                keybindingWhiteSpace: keybindingStyle?.whiteSpace ?? "",
+                keybindingFlexBasis: keybindingStyle?.flexBasis ?? "",
               };
             });
         })()`);
@@ -556,6 +649,13 @@ async function main() {
       const errors = allEntries.filter((entry) => entry.error);
       const cacheMismatch = allEntries.filter((entry) => entry.cacheMismatch);
       const links = allEntries.filter((entry) => entry.linkCount > 0);
+      const brokenKeybindings = allEntries.filter(
+        (entry) =>
+          entry.keybindingText &&
+          (entry.keybindingWhiteSpace !== "nowrap" ||
+            entry.keybindingFlexBasis !== "46px" ||
+            entry.keybindingWidth < 45),
+      );
       assert.deepEqual(blank, [], "full native preview audit blank commands");
       assert.deepEqual(errors, [], "full native preview audit parse errors");
       assert.deepEqual(
@@ -564,6 +664,11 @@ async function main() {
         "full native preview audit stale command cache",
       );
       assert.deepEqual(links, [], "full native preview audit links");
+      assert.deepEqual(
+        brokenKeybindings,
+        [],
+        "full native preview audit wrapped or squeezed keybindings",
+      );
       const categories = Object.fromEntries(
         [...new Set(allEntries.map((entry) => entry.kind))]
           .sort()
@@ -579,6 +684,8 @@ async function main() {
         errorCount: errors.length,
         cacheMismatchCount: cacheMismatch.length,
         linkCount: links.length,
+        keybindingCount: allEntries.filter((entry) => entry.keybindingText).length,
+        brokenKeybindingCount: brokenKeybindings.length,
       };
       console.log(JSON.stringify(results, null, 2));
     }

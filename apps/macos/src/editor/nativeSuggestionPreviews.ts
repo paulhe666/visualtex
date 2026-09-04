@@ -1,4 +1,5 @@
 import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
+import { EXTENDED_INTEGRAL_COMMANDS } from "../math/extendedIntegralCompatibility";
 
 export type NativeSuggestionPreviewKind =
   | "arguments"
@@ -6,6 +7,7 @@ export type NativeSuggestionPreviewKind =
   | "state"
   | "alias"
   | "spacing"
+  | "operator"
   | "fallback";
 
 export interface NativeSuggestionPreview {
@@ -211,6 +213,18 @@ for (const command of compatibilityCommands) {
   previewRegistry.set(command.command, {
     latex: command.previewLatex,
     kind: "arguments",
+  });
+}
+
+// MathLive's native completion popover renders extensible operators in display
+// style. For VisualTeX's custom esint/STIX integral SVGs that makes the glyphs
+// roughly 2-3x taller than neighboring candidates. Keep the actual editor
+// semantics untouched and render completion previews in text style; esint
+// outline correctness is handled separately by the generated glyph registry.
+for (const command of EXTENDED_INTEGRAL_COMMANDS) {
+  previewRegistry.set(`\\${command}`, {
+    latex: `{\\textstyle \\${command}}`,
+    kind: "operator",
   });
 }
 
