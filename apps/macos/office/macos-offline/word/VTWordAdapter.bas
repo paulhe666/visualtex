@@ -11176,9 +11176,6 @@ Private Sub VTDeleteEquationNumberScaffold( _
         End If
     End If
 
-    VTReplaceDeletedEquationBodyReferences _
-        documentObject, sequenceBookmarkName
-
     If paragraphNumber And Not numberRange Is Nothing Then
         Set paragraphScaffold = numberRange.Duplicate
         If paragraphScaffold.Start > 0 Then
@@ -11207,6 +11204,12 @@ Private Sub VTDeleteEquationNumberScaffold( _
         End If
     End If
     If deleteTable And Not layoutTable Is Nothing Then layoutTable.Delete
+
+    ' Remove the formula's own visible number before repairing any remaining
+    ' body REF fields. Otherwise the number REF is mistaken for a cross-reference
+    ' and restored LaTeX can be followed by a "(deleted equation)" marker.
+    VTReplaceDeletedEquationBodyReferences _
+        documentObject, sequenceBookmarkName
 
     VTDeleteWordLatexPayload documentObject, formulaId
     VTDeleteWordOmmlPayload documentObject, formulaId
