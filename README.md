@@ -35,6 +35,18 @@ VisualTeX 是适用于 macOS 和 Windows 的桌面公式编辑器，提供可视
   <img src="docs/images/application.png" width="92%" alt="VisualTeX 应用界面" />
 </div>
 
+## 支持 VisualTeX 
+
+VisualTeX 的持续开发由用户支持。使用问题、功能建议和 Office 加载项相关交流可加入 QQ 群：`1045801770`。
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/images/wechat-pay.jpg" height="320" alt="微信收款 / WeChat Pay" /></td>
+    <td align="center"><img src="docs/images/alipay.jpg" height="320" alt="支付宝收款 / Alipay" /></td>
+    <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ group" /></td>
+  </tr>
+</table>
+
 ## 公式编辑器
 
 可视化编辑区与 LaTeX 源码区实时同步。两种编辑方式可在同一份公式内容上切换。
@@ -377,16 +389,4 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the repository architecture
 
 VisualTeX is distributed under the [MIT License](LICENSE).
 
-## 支持 VisualTeX / Support VisualTeX
 
-VisualTeX 的持续开发由用户支持。使用问题、功能建议和 Office 加载项相关交流可加入 QQ 群：`1045801770`。
-
-User support contributes to the continued development of VisualTeX. The QQ group `1045801770` is available for usage questions, feature requests, and Office add-in discussions.
-
-<table align="center">
-  <tr>
-    <td align="center"><img src="docs/images/wechat-pay.jpg" height="320" alt="微信收款 / WeChat Pay" /></td>
-    <td align="center"><img src="docs/images/alipay.jpg" height="320" alt="支付宝收款 / Alipay" /></td>
-    <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ group" /></td>
-  </tr>
-</table>
