@@ -30,7 +30,13 @@ const certificateSource = await readFile("scripts/ensure_windows_office_certific
 assert(updateDialogSource.includes("update-community-card"));
 assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
 assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_NUMBER"));
-assert(stylesSource.includes(".update-community-qr img"));
+assert(updateDialogSource.includes("docs/images/wechat-pay.jpg"));
+assert(updateDialogSource.includes("docs/images/alipay.jpg"));
+assert(updateDialogSource.includes("自愿打赏通道"));
+assert(updateDialogSource.includes("是否打赏完全不影响 VisualTeX 的任何功能和正常使用"));
+assert(updateDialogSource.includes('className="update-community-qr-row"'));
+assert(stylesSource.includes(".update-community-qr-row img"));
+assert(stylesSource.includes("grid-template-columns: repeat(3, minmax(0, 1fr))"));
 assert(!appSource.includes('from "./components/OnboardingTour"'));
 assert(!appSource.includes("<OnboardingTour"));
 assert(!appSource.includes("新手教程"));

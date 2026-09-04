@@ -1541,25 +1541,54 @@ internal static partial class WordEquationNumbering
                         tableXml,
                         @"<w:tr(?:\s|>)",
                         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    var tableCellCount = Regex.Matches(
+                        tableXml,
+                        @"<w:tc(?:\s|>)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+                    if (rowCount < 1 || tableCellCount != rowCount * 3)
+                        return Fail(
+                            $"direct-table-dimensions formulaId={formulaId} rows={rowCount} cells={tableCellCount}");
+
+                    // Consecutive numbered OMML formulas share one managed N x 3
+                    // table. Validate the row that owns this formula's visible
+                    // bookmark, rather than applying the retired 1 x 3 assumption
+                    // to the entire table.
+                    var rowStart = LastElementStart("w:tr", visibleStart.Index);
+                    var precedingRowEnd = xml.LastIndexOf(
+                        "</w:tr>",
+                        visibleStart.Index,
+                        StringComparison.OrdinalIgnoreCase);
+                    var rowEnd = xml.IndexOf(
+                        "</w:tr>",
+                        visibleStart.Index,
+                        StringComparison.OrdinalIgnoreCase);
+                    if (rowStart < tableStart
+                        || rowStart <= precedingRowEnd
+                        || rowEnd <= visibleStart.Index
+                        || rowEnd >= tableEnd)
+                        return Fail(
+                            $"direct-table-row-owner-missing formulaId={formulaId}");
+                    rowEnd += "</w:tr>".Length;
+                    var rowXml = xml.Substring(rowStart, rowEnd - rowStart);
                     var cellStarts = Regex.Matches(
-                            tableXml,
+                            rowXml,
                             @"<w:tc(?:\s|>)",
                             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
                         .Cast<Match>()
                         .ToArray();
-                    if (rowCount != 1 || cellStarts.Length != 3)
+                    if (cellStarts.Length != 3)
                         return Fail(
-                            $"direct-table-dimensions formulaId={formulaId} rows={rowCount} cells={cellStarts.Length}");
+                            $"direct-table-row-dimensions formulaId={formulaId} cells={cellStarts.Length}");
                     string ReadCellXml(int cellIndex)
                     {
                         var cellStart = cellStarts[cellIndex].Index;
-                        var cellEnd = tableXml.IndexOf(
+                        var cellEnd = rowXml.IndexOf(
                             "</w:tc>",
                             cellStart,
                             StringComparison.OrdinalIgnoreCase);
                         return cellEnd <= cellStart
                             ? string.Empty
-                            : tableXml.Substring(
+                            : rowXml.Substring(
                                 cellStart,
                                 cellEnd + "</w:tc>".Length - cellStart);
                     }
@@ -1589,18 +1618,16 @@ internal static partial class WordEquationNumbering
                             $"direct-table-center-invalid formulaId={formulaId} math={centerMathCount} display={centerDisplayCount} fields={centerFieldCount}");
                     var formulaBookmarkName =
                         WordOmmlFormulaStore.BookmarkName(formulaId);
-                    // VTEqNum_<FormulaId> in cell (1,3) is the durable physical
-                    // owner of current numbered OMML: it resolves this exact 1x3
-                    // table, whose center cell has already been proven to contain
-                    // exactly one Display OMath. Word can normalize the zero-length
-                    // VTOMML_* convenience anchor from the start of cell (1,2)'s
-                    // paragraph to the row boundary immediately before that cell,
-                    // especially after MathType→OMML batch conversion. Accept that
-                    // serialization only when the anchor remains uniquely inside
-                    // this same table; do not make an unstable collapsed bookmark
-                    // carry the formula's primary identity.
+                    // VTEqNum_<FormulaId> in this row's cell (3) is the durable
+                    // physical owner of current numbered OMML. Word can normalize
+                    // the zero-length VTOMML_* convenience anchor from the start of
+                    // this row's center paragraph to the row boundary immediately
+                    // before that cell, especially after MathType→OMML batch
+                    // conversion. Accept that serialization only when the anchor
+                    // remains uniquely inside this same row; do not make an unstable
+                    // collapsed bookmark carry the formula's primary identity.
                     var formulaBookmarkMatches = Regex.Matches(
-                        tableXml,
+                        rowXml,
                         $@"<w:bookmarkStart\b(?=[^>]*\bw:name=""{Regex.Escape(formulaBookmarkName)}"")[^>]*/?>",
                         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
                     if (formulaBookmarkMatches.Count != 1)
@@ -4320,6 +4347,21 @@ internal static partial class WordEquationNumbering
                         refreshed++;
                     continue;
                 }
+
+                // Bulk OMML insertion may persist adjacent numbered formulas as one
+                // managed N x 3 table. Refresh the exact owning row in place. Do not
+                // enter the legacy rebuild path, which first deletes this row's SEQ
+                // aliases and historically left one random row empty after reopen.
+                if (IsHealthyNativeOmmlDirectTableHost(
+                        document,
+                        formulaRange,
+                        formulaId,
+                        updateField: true))
+                {
+                    refreshed++;
+                    continue;
+                }
+
                 ConfigureNumberedDisplayFormula(
                     document,
                     formulaRange,
@@ -5170,6 +5212,67 @@ internal static partial class WordEquationNumbering
                 && formulaRange.Tables[1].Columns.Count >= 3;
         }
         catch { return false; }
+    }
+
+    internal static bool TryGetManagedNumberTableRowIndex(
+        Table table,
+        Range ownedRange,
+        int expectedColumnIndex,
+        out int rowIndex)
+    {
+        rowIndex = 0;
+        Cells? cells = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Range? tableRange = null;
+        Tables? cellTables = null;
+        Table? cellTable = null;
+        Range? cellTableRange = null;
+        try
+        {
+            if (table is null
+                || ownedRange is null
+                || table.Columns.Count != 3
+                || table.Rows.Count < 1
+                || !(bool)ownedRange.get_Information(WdInformation.wdWithInTable))
+                return false;
+
+            cells = ownedRange.Cells;
+            if (cells.Count != 1) return false;
+            cell = cells[1];
+            if (cell.ColumnIndex != expectedColumnIndex
+                || cell.RowIndex < 1
+                || cell.RowIndex > table.Rows.Count)
+                return false;
+
+            cellRange = cell.Range;
+            cellTables = cellRange.Tables;
+            if (cellTables.Count != 1) return false;
+            cellTable = cellTables[1];
+            tableRange = table.Range;
+            cellTableRange = cellTable.Range;
+            if (tableRange.Start != cellTableRange.Start
+                || tableRange.End != cellTableRange.End)
+                return false;
+
+            rowIndex = cell.RowIndex;
+            return true;
+        }
+        catch
+        {
+            rowIndex = 0;
+            return false;
+        }
+        finally
+        {
+            Release(cellTableRange);
+            Release(cellTable);
+            Release(cellTables);
+            Release(tableRange);
+            Release(cellRange);
+            Release(cell);
+            Release(cells);
+        }
     }
 
     private static Range? TryConvertStandardNumberedOmmlTableToStandaloneDisplayParagraph(

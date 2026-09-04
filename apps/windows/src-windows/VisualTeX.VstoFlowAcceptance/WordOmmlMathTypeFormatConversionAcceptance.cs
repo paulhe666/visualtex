@@ -2534,7 +2534,7 @@ internal static partial class Program
                 application,
                 document,
                 emfPath);
-            AssertMathTypeToOmmlPartialBatchFinalization(
+            AssertMathTypeToOmmlAtomicBatchRollback(
                 application,
                 document,
                 emfPath,
@@ -2829,7 +2829,7 @@ internal static partial class Program
         }
     }
 
-    private static void AssertMathTypeToOmmlPartialBatchFinalization(
+    private static void AssertMathTypeToOmmlAtomicBatchRollback(
         Word.Application application,
         Word.Document returnDocument,
         string emfPath,
@@ -2847,14 +2847,72 @@ internal static partial class Program
         var previousFailure = Environment.GetEnvironmentVariable(
             "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
         Word.Document? probe = null;
-        Word.Bookmark? convertedBookmark = null;
-        Word.Range? convertedRange = null;
         try
         {
             probe = application.Documents.Add();
             probe.Content.Text =
                 "partial-before\r\rpartial-between-one-two\r\rpartial-between-two-three\r\rpartial-after\r";
             var service = new WordFormulaService(application);
+
+            string ReadDocumentText(Word.Document document)
+            {
+                Word.Range? content = null;
+                try
+                {
+                    content = document.Content;
+                    return content.Text ?? string.Empty;
+                }
+                finally { Release(content); }
+            }
+
+            string[] ReadParagraphStyleNames(Word.Document document)
+            {
+                var names = new List<string>();
+                for (var index = 1; index <= document.Paragraphs.Count; index++)
+                {
+                    Word.Paragraph? paragraph = null;
+                    Word.Range? range = null;
+                    Word.Style? style = null;
+                    try
+                    {
+                        paragraph = document.Paragraphs[index];
+                        range = paragraph.Range;
+                        style = range.get_Style() as Word.Style;
+                        names.Add(style?.NameLocal ?? string.Empty);
+                    }
+                    finally
+                    {
+                        Release(style);
+                        Release(range);
+                        Release(paragraph);
+                    }
+                }
+                return names.ToArray();
+            }
+
+            string[] ReadBookmarkNames(Word.Document document)
+            {
+                Word.Bookmarks? bookmarks = null;
+                var names = new List<string>();
+                try
+                {
+                    bookmarks = document.Bookmarks;
+                    for (var index = 1; index <= bookmarks.Count; index++)
+                    {
+                        Word.Bookmark? bookmark = null;
+                        try
+                        {
+                            bookmark = bookmarks[index];
+                            names.Add(bookmark.Name);
+                        }
+                        finally { Release(bookmark); }
+                    }
+                }
+                finally { Release(bookmarks); }
+                return names
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
 
             void InsertAtBlankParagraph(
                 int paragraphIndex,
@@ -2903,6 +2961,21 @@ internal static partial class Program
             AssertTrue(ordered[0].Numbered,
                 "Partial MathType→OMML setup did not preserve the first source as numbered display MathType.");
             var prepared = PrepareOmmlMathTypeTargets(plan, emfPath);
+            var sourceSignatures = ordered
+                .Select(target => MathTypeMtefCodec.SemanticSignature(
+                    target.SourceMathMl
+                    ?? throw new InvalidDataException(
+                        "A MathType source lost its MathML before atomic rollback acceptance.")))
+                .OrderBy(signature => signature, StringComparer.Ordinal)
+                .ToArray();
+            var documentTextBefore = ReadDocumentText(probe);
+            var paragraphStylesBefore = ReadParagraphStyleNames(probe);
+            var bookmarkNamesBefore = ReadBookmarkNames(probe);
+            var paragraphCountBefore = probe.Paragraphs.Count;
+            var tableCountBefore = probe.Tables.Count;
+            var fieldCountBefore = probe.Fields.Count;
+            var storedOmmlIdsBefore =
+                WordOmmlFormulaStore.StoredFormulaIds(probe).ToArray();
 
             Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", "1");
             Environment.SetEnvironmentVariable(
@@ -2910,87 +2983,109 @@ internal static partial class Program
                 ordered[1].SourceFormulaId);
             var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
 
-            AssertEqual(1, result.FormulaCount,
-                "Partial MathType→OMML conversion did not retain exactly the first committed target. Failures: "
+            AssertEqual(0, result.FormulaCount,
+                "Atomic MathType→OMML rollback reported a committed target. Failures: "
                 + string.Join(" | ", result.Failures));
-            AssertEqual(1, result.FailedFormulaCount,
-                "Partial MathType→OMML conversion should report only the injected second-item failure. Failures: "
+            AssertEqual(3, result.FailedFormulaCount,
+                "Atomic MathType→OMML rollback did not report the complete three-item batch as unconverted. Failures: "
                 + string.Join(" | ", result.Failures));
-            AssertEqual(2, CountMathTypeOleShapes(probe),
-                "Partial MathType→OMML conversion did not preserve the failed and unprocessed MathType sources.");
-            AssertEqual(1, probe.OMaths.Count,
-                "Partial MathType→OMML conversion did not retain exactly one committed OMath.");
+            AssertEqual(3, CountMathTypeOleShapes(probe),
+                "Atomic MathType→OMML rollback did not restore all three MathType sources.");
+            AssertEqual(0, probe.OMaths.Count,
+                "Atomic MathType→OMML rollback left a partially committed OMath.");
             var failureText = string.Join(" | ", result.Failures);
             AssertTrue(
                 failureText.IndexOf(
                     "Injected format-conversion failure after deleting the source host.",
                     StringComparison.OrdinalIgnoreCase) >= 0,
-                "Partial MathType→OMML conversion lost the primary injected failure: " + failureText);
+                "Atomic MathType→OMML rollback lost the primary injected failure: " + failureText);
+            AssertTrue(
+                failureText.IndexOf(
+                    "restored atomically",
+                    StringComparison.OrdinalIgnoreCase) >= 0,
+                "Atomic MathType→OMML rollback did not report whole-batch restoration: "
+                + failureText);
             AssertTrue(
                 failureText.IndexOf("bookmark drifted", StringComparison.OrdinalIgnoreCase) < 0
                 && failureText.IndexOf("could not be recovered uniquely", StringComparison.OrdinalIgnoreCase) < 0,
-                "Partial MathType→OMML finalization replaced the primary failure with a stale OMML identity error: "
+                "Atomic MathType→OMML rollback replaced the primary failure with a stale OMML identity error: "
                 + failureText);
 
-            var firstConvertedFormulaId = prepared[ordered[0].Id].Session.FormulaId;
-            var convertedMetadata = WordOmmlFormulaStore.TryRead(
-                    probe,
-                    firstConvertedFormulaId)
-                ?? throw new InvalidDataException(
-                    "Partial MathType→OMML conversion lost the committed target metadata.");
-            convertedBookmark = WordOmmlFormulaStore.FindByFormulaId(
-                    probe,
-                    firstConvertedFormulaId)
-                ?? throw new InvalidDataException(
-                    "Partial MathType→OMML conversion lost the committed VTOMML bookmark.");
-            convertedRange = WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(
-                probe,
-                firstConvertedFormulaId,
-                convertedMetadata);
-            AssertTrue(
-                WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
-                    probe,
-                    convertedRange,
-                    firstConvertedFormulaId),
-                "The successfully committed numbered target in a partial batch was not finalized as the required 1x3 direct-SEQ host.");
-            var liveFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
-                convertedRange.WordOpenXML);
-            AssertEqual(
-                liveFingerprint,
-                convertedMetadata.NativeOmmlFingerprint ?? string.Empty,
-                "The successfully committed OMML target retained a provisional/stale fingerprint after a later item failed.");
+            foreach (var target in ordered)
+            {
+                var targetFormulaId = prepared[target.Id].Session.FormulaId;
+                AssertTrue(
+                    WordOmmlFormulaStore.TryRead(probe, targetFormulaId) is null,
+                    $"Atomic rollback left OMML metadata for {targetFormulaId}.");
+                Word.Bookmark? unexpectedBookmark = null;
+                try
+                {
+                    unexpectedBookmark =
+                        WordOmmlFormulaStore.FindByFormulaId(
+                            probe,
+                            targetFormulaId);
+                    AssertTrue(
+                        unexpectedBookmark is null,
+                        $"Atomic rollback left VTOMML identity for {targetFormulaId}.");
+                }
+                finally { Release(unexpectedBookmark); }
+            }
 
             var remainingPlan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
                 FormulaOleContract.MathTypeOleMode,
                 FormulaOleContract.WordOmmlMode);
-            AssertEqual(2, remainingPlan.Targets.Count,
-                "Partial MathType→OMML conversion did not leave exactly the failed and unprocessed MathType sources.");
+            AssertEqual(3, remainingPlan.Targets.Count,
+                "Atomic MathType→OMML rollback did not leave all three MathType sources.");
             var remainingSignatures = remainingPlan.Targets
                 .Select(target => MathTypeMtefCodec.SemanticSignature(
                     target.SourceMathMl
-                    ?? throw new InvalidDataException("A remaining MathType source lost its MathML.")))
-                .OrderBy(signature => signature, StringComparer.Ordinal)
-                .ToArray();
-            var expectedRemainingSignatures = new[]
-                {
-                    MathTypeMtefCodec.SemanticSignature(secondMathMl),
-                    MathTypeMtefCodec.SemanticSignature(thirdMathMl),
-                }
+                    ?? throw new InvalidDataException(
+                        "A restored MathType source lost its MathML.")))
                 .OrderBy(signature => signature, StringComparer.Ordinal)
                 .ToArray();
             AssertEqual(
-                string.Join("\n", expectedRemainingSignatures),
+                string.Join("\n", sourceSignatures),
                 string.Join("\n", remainingSignatures),
-                "Partial MathType→OMML rollback changed the failed or unprocessed MathType source semantics.");
+                "Atomic MathType→OMML rollback changed source formula semantics.");
+
+            AssertEqual(documentTextBefore, ReadDocumentText(probe),
+                "Atomic MathType→OMML rollback changed document text.");
+            AssertEqual(paragraphCountBefore, probe.Paragraphs.Count,
+                "Atomic MathType→OMML rollback changed paragraph count.");
+            AssertEqual(tableCountBefore, probe.Tables.Count,
+                "Atomic MathType→OMML rollback changed table count.");
+            AssertEqual(fieldCountBefore, probe.Fields.Count,
+                "Atomic MathType→OMML rollback changed equation-number fields.");
+            AssertEqual(
+                string.Join("\n", paragraphStylesBefore),
+                string.Join("\n", ReadParagraphStyleNames(probe)),
+                "Atomic MathType→OMML rollback changed paragraph styles.");
+            AssertEqual(
+                string.Join("\n", bookmarkNamesBefore),
+                string.Join("\n", ReadBookmarkNames(probe)),
+                "Atomic MathType→OMML rollback changed source bookmarks.");
+            AssertEqual(
+                string.Join(
+                    "\n",
+                    storedOmmlIdsBefore.OrderBy(
+                        id => id,
+                        StringComparer.OrdinalIgnoreCase)),
+                string.Join(
+                    "\n",
+                    WordOmmlFormulaStore.StoredFormulaIds(probe)
+                        .OrderBy(
+                            id => id,
+                            StringComparer.OrdinalIgnoreCase)),
+                "Atomic MathType→OMML rollback changed OMML CustomXML metadata inventory.");
 
             var outputPath = Path.Combine(
                 artifactRoot,
-                "MathType-To-OMML-Partial-Batch-Finalization.docx");
+                "MathType-To-OMML-Atomic-Batch-Rollback.docx");
             probe.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine(
-                "[PARTIAL MT→OMML] First numbered target finalized as 1x3 direct-SEQ with a live fingerprint; "
-                + "the injected second target rolled back, the third remained untouched, and the primary failure was preserved.");
+                "[ATOMIC MT→OMML ROLLBACK] Injected second-target failure restored all three MathType sources, "
+                + "document text, styles, fields, bookmarks and OMML metadata inventory exactly.");
         }
         finally
         {
@@ -3000,8 +3095,6 @@ internal static partial class Program
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
                 previousFailure);
-            Release(convertedRange);
-            Release(convertedBookmark);
             if (probe is not null)
             {
                 try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }

@@ -1532,35 +1532,190 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static int MergeAdjacentManagedNativeOmmlNumberTableRows(
+        Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (formulaIds is null) throw new ArgumentNullException(nameof(formulaIds));
+
+        var orderedIds = formulaIds
+            .Where(formulaId => !string.IsNullOrWhiteSpace(formulaId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var mergedBoundaries = 0;
+        for (var index = 1; index < orderedIds.Length; index++)
+        {
+            Table? previousTable = null;
+            Table? nextTable = null;
+            Range? previousTableRange = null;
+            Range? nextTableRange = null;
+            Range? separator = null;
+            Tables? separatorTables = null;
+            InlineShapes? separatorShapes = null;
+            OMaths? separatorMaths = null;
+            Fields? separatorFields = null;
+            Bookmarks? separatorBookmarks = null;
+            Frames? separatorFrames = null;
+            Paragraphs? separatorParagraphs = null;
+            Table? mergedPreviousTable = null;
+            Table? mergedNextTable = null;
+            Range? mergedPreviousRange = null;
+            Range? mergedNextRange = null;
+            try
+            {
+                previousTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index - 1]);
+                nextTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index]);
+                if (previousTable is null || nextTable is null)
+                    throw new InvalidOperationException(
+                        "A numbered OMML table disappeared before row grouping.");
+
+                previousTableRange = previousTable.Range;
+                nextTableRange = nextTable.Range;
+                if (previousTableRange.Start == nextTableRange.Start
+                    && previousTableRange.End == nextTableRange.End)
+                    continue;
+                if (previousTableRange.End > nextTableRange.Start)
+                    throw new InvalidOperationException(
+                        "Adjacent numbered OMML table ranges overlap before grouping.");
+                if (!IsManagedNativeOmmlDirectTable(previousTable)
+                    || !IsManagedNativeOmmlDirectTable(nextTable))
+                    throw new InvalidOperationException(
+                        "VisualTeX refused to group an unverified numbered OMML table.");
+
+                separator = document.Range(
+                    previousTableRange.End,
+                    nextTableRange.Start);
+                separatorTables = separator.Tables;
+                separatorShapes = separator.InlineShapes;
+                separatorMaths = separator.OMaths;
+                separatorFields = separator.Fields;
+                separatorBookmarks = separator.Bookmarks;
+                separatorFrames = separator.Frames;
+                separatorParagraphs = separator.Paragraphs;
+                if (separatorParagraphs.Count == 0
+                    || !ContainsOnlyStructuralWordText(separator.Text))
+                    continue;
+                if (separatorTables.Count != 0
+                    || separatorShapes.Count != 0
+                    || separatorMaths.Count != 0
+                    || separatorFields.Count != 0
+                    || separatorBookmarks.Count != 0
+                    || separatorFrames.Count != 0)
+                    throw new InvalidOperationException(
+                        "VisualTeX refused to remove a non-empty boundary between numbered OMML tables.");
+
+                var expectedRows =
+                    previousTable.Rows.Count + nextTable.Rows.Count;
+                separator.Delete();
+
+                mergedPreviousTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index - 1]);
+                mergedNextTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index]);
+                if (mergedPreviousTable is null || mergedNextTable is null)
+                    throw new InvalidOperationException(
+                        "A numbered OMML identity disappeared while grouping table rows.");
+                mergedPreviousRange = mergedPreviousTable.Range;
+                mergedNextRange = mergedNextTable.Range;
+                if (mergedPreviousRange.Start != mergedNextRange.Start
+                    || mergedPreviousRange.End != mergedNextRange.End
+                    || mergedPreviousTable.Columns.Count != 3
+                    || mergedPreviousTable.Rows.Count != expectedRows
+                    || !IsManagedNativeOmmlDirectTable(mergedPreviousTable))
+                    throw new InvalidOperationException(
+                        "Word did not merge adjacent numbered OMML tables into one healthy row group.");
+                mergedBoundaries++;
+            }
+            finally
+            {
+                Release(mergedNextRange);
+                Release(mergedPreviousRange);
+                Release(mergedNextTable);
+                Release(mergedPreviousTable);
+                Release(separatorParagraphs);
+                Release(separatorFrames);
+                Release(separatorBookmarks);
+                Release(separatorFields);
+                Release(separatorMaths);
+                Release(separatorShapes);
+                Release(separatorTables);
+                Release(separator);
+                Release(nextTableRange);
+                Release(previousTableRange);
+                Release(nextTable);
+                Release(previousTable);
+            }
+        }
+        return mergedBoundaries;
+    }
+
     private static bool IsManagedNativeOmmlDirectTable(Table table)
     {
+        Cell? leftCell = null;
         Cell? centerCell = null;
         Cell? numberCell = null;
+        Range? leftRange = null;
         Range? centerRange = null;
         Range? numberRange = null;
+        Fields? centerFields = null;
         OMaths? centerMaths = null;
         OMath? centerMath = null;
+        OMaths? numberMaths = null;
         Fields? numberFields = null;
         Field? numberField = null;
         Range? numberCode = null;
         try
         {
-            if (table.Rows.Count != 1 || table.Columns.Count != 3) return false;
-            centerCell = table.Cell(1, 2);
-            numberCell = table.Cell(1, 3);
-            centerRange = centerCell.Range;
-            numberRange = numberCell.Range;
-            centerMaths = centerRange.OMaths;
-            if (centerMaths.Count != 1 || centerRange.Fields.Count != 0)
-                return false;
-            centerMath = centerMaths[1];
-            if (centerMath.Type != WdOMathType.wdOMathDisplay) return false;
-            if (numberRange.OMaths.Count != 0) return false;
-            numberFields = numberRange.Fields;
-            if (numberFields.Count != 1) return false;
-            numberField = numberFields[1];
-            numberCode = numberField.Code;
-            return IsVisualTeXSequenceFieldCode(numberCode.Text);
+            if (table.Rows.Count < 1 || table.Columns.Count != 3) return false;
+            var rowCount = table.Rows.Count;
+            for (var rowIndex = 1; rowIndex <= rowCount; rowIndex++)
+            {
+                Release(numberCode); numberCode = null;
+                Release(numberField); numberField = null;
+                Release(numberFields); numberFields = null;
+                Release(numberMaths); numberMaths = null;
+                Release(centerMath); centerMath = null;
+                Release(centerMaths); centerMaths = null;
+                Release(centerFields); centerFields = null;
+                Release(numberRange); numberRange = null;
+                Release(centerRange); centerRange = null;
+                Release(leftRange); leftRange = null;
+                Release(numberCell); numberCell = null;
+                Release(centerCell); centerCell = null;
+                Release(leftCell); leftCell = null;
+
+                leftCell = table.Cell(rowIndex, 1);
+                centerCell = table.Cell(rowIndex, 2);
+                numberCell = table.Cell(rowIndex, 3);
+                leftRange = leftCell.Range;
+                centerRange = centerCell.Range;
+                numberRange = numberCell.Range;
+                if (!ContainsOnlyStructuralWordText(leftRange.Text))
+                    return false;
+                centerMaths = centerRange.OMaths;
+                centerFields = centerRange.Fields;
+                if (centerMaths.Count != 1 || centerFields.Count != 0)
+                    return false;
+                centerMath = centerMaths[1];
+                if (centerMath.Type != WdOMathType.wdOMathDisplay)
+                    return false;
+                numberMaths = numberRange.OMaths;
+                if (numberMaths.Count != 0) return false;
+                numberFields = numberRange.Fields;
+                if (numberFields.Count != 1) return false;
+                numberField = numberFields[1];
+                numberCode = numberField.Code;
+                if (!IsVisualTeXSequenceFieldCode(numberCode.Text))
+                    return false;
+            }
+            return true;
         }
         catch
         {
@@ -1571,12 +1726,16 @@ internal static partial class WordEquationNumbering
             Release(numberCode);
             Release(numberField);
             Release(numberFields);
+            Release(numberMaths);
             Release(centerMath);
             Release(centerMaths);
+            Release(centerFields);
             Release(numberRange);
             Release(centerRange);
+            Release(leftRange);
             Release(numberCell);
             Release(centerCell);
+            Release(leftCell);
         }
     }
 
@@ -1716,7 +1875,8 @@ internal static partial class WordEquationNumbering
 
     private static void ApplyNativeOmmlTableMinimumDisplayHeight(
         Rows rows,
-        float? minimumDisplayHeightPoints)
+        float? minimumDisplayHeightPoints,
+        int? targetRowIndex = null)
     {
         if (!minimumDisplayHeightPoints.HasValue
             || float.IsNaN(minimumDisplayHeightPoints.Value)
@@ -1726,8 +1886,9 @@ internal static partial class WordEquationNumbering
         Row? row = null;
         try
         {
-            if (rows.Count != 1) return;
-            row = rows[1];
+            var rowIndex = targetRowIndex ?? (rows.Count == 1 ? 1 : 0);
+            if (rowIndex < 1 || rowIndex > rows.Count) return;
+            row = rows[rowIndex];
             row.HeightRule = WdRowHeightRule.wdRowHeightAtLeast;
             row.Height = Math.Max(
                 1f,
@@ -1793,14 +1954,21 @@ internal static partial class WordEquationNumbering
             try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch { }
             try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch { }
             try { rows.AllowBreakAcrossPages = 0; } catch { }
-            ApplyNativeOmmlTableMinimumDisplayHeight(
-                rows,
-                minimumDisplayHeightPoints);
 
             columns = table.Columns;
-            if (columns.Count != 3 || rows.Count != 1)
+            if (columns.Count != 3
+                || rows.Count < 1
+                || !TryGetManagedNumberTableRowIndex(
+                    table,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
                 throw new InvalidOperationException(
-                    "The native OMML number host is no longer exactly 1x3.");
+                    "The native OMML number host no longer owns one row in a 3-column managed table.");
+            ApplyNativeOmmlTableMinimumDisplayHeight(
+                rows,
+                minimumDisplayHeightPoints,
+                rowIndex);
             leftColumn = columns[1];
             centerColumn = columns[2];
             rightColumn = columns[3];
@@ -1808,9 +1976,9 @@ internal static partial class WordEquationNumbering
             centerColumn.SetWidth(centerWidth, WdRulerStyle.wdAdjustNone);
             rightColumn.SetWidth(sideWidth, WdRulerStyle.wdAdjustNone);
 
-            leftCell = table.Cell(1, 1);
-            centerCell = table.Cell(1, 2);
-            rightCell = table.Cell(1, 3);
+            leftCell = table.Cell(rowIndex, 1);
+            centerCell = table.Cell(rowIndex, 2);
+            rightCell = table.Cell(rowIndex, 3);
             leftCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
             centerCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
             rightCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
@@ -2292,19 +2460,22 @@ internal static partial class WordEquationNumbering
                 return false;
             }
 
-            // A same-numbering content edit mutates only cell (1,2). The direct
-            // VTEq_ lookup already resolved the owning table through the right-cell
-            // visible-number bookmark, so re-walking VTEq_/VTEqCap_/VTEqNum_, the
-            // SEQ field and right-cell text is redundant and costs ~150-200ms in a
-            // 100-OMML document. Prove exactly the part we are about to replace:
-            // genuine 1x3 topology, one field-free Display OMath, and no prefix or
-            // suffix content between that OMath and the center cell markers.
+            // A same-numbering content edit mutates only the managed row that
+            // owns formulaRange. Bulk OMML insertion may compact adjacent numbered
+            // equations into one N x 3 table, so validate that exact row rather than
+            // rejecting healthy sibling equations.
             rows = knownTable.Rows;
             columns = knownTable.Columns;
-            if (rows.Count != 1 || columns.Count != 3)
+            if (rows.Count < 1 || columns.Count != 3)
                 return Fail($"shape={rows.Count}x{columns.Count}");
+            if (!TryGetManagedNumberTableRowIndex(
+                    knownTable,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
+                return Fail("formula-row-not-resolved");
 
-            centerCell = knownTable.Cell(1, 2);
+            centerCell = knownTable.Cell(rowIndex, 2);
             centerRange = centerCell.Range;
             // Word exposes the textual cell terminator as "\r\a", but those two
             // control glyphs occupy one story position. A formula that exactly
@@ -2380,9 +2551,15 @@ internal static partial class WordEquationNumbering
             tables = formulaRange.Tables;
             if (tables.Count != 1) return false;
             table = tables[1];
-            if (table.Rows.Count != 1 || table.Columns.Count != 3) return false;
-            centerCell = table.Cell(1, 2);
-            numberCell = table.Cell(1, 3);
+            if (table.Rows.Count < 1 || table.Columns.Count != 3) return false;
+            if (!TryGetManagedNumberTableRowIndex(
+                    table,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
+                return false;
+            centerCell = table.Cell(rowIndex, 2);
+            numberCell = table.Cell(rowIndex, 3);
             centerRange = centerCell.Range;
             numberRange = numberCell.Range;
             centerMaths = centerRange.OMaths;

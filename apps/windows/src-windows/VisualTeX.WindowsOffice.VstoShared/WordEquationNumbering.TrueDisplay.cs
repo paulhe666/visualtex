@@ -3441,6 +3441,16 @@ internal static partial class WordEquationNumbering
         }
         try
         {
+            // The current native numbered host is either one managed row in a
+            // compact N x 3 table or the older table-free true-display scaffold.
+            // Recognize the direct table first so document-open migration does not
+            // rebuild an already healthy grouped batch.
+            if (HasReusableNumberedNativeOmmlDirectTableHost(
+                    document,
+                    formulaRange,
+                    formulaId))
+                return true;
+
             if (!IsPureTrueDisplayFormulaParagraph(formulaRange))
                 return Fail("formula-not-pure-display");
 

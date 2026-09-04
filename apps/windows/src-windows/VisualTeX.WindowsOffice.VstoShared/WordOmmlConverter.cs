@@ -372,6 +372,9 @@ internal static class WordOmmlConverter
             Range? formattedSource = null;
             Range? target = null;
             OMath? insertedMath = null;
+            Bookmarks? targetBookmarks = null;
+            Bookmark? copiedBatchBookmark = null;
+            Range? copiedBatchBookmarkRange = null;
             Range? result = null;
             try
             {
@@ -401,6 +404,25 @@ internal static class WordOmmlConverter
                 if (insertedMath.Type != targetType)
                     insertedMath.Type = targetType;
                 result = insertedMath.Range.Duplicate;
+
+                // FormattedText copies the hidden source bookmark together with
+                // the OMath. That bookmark is only a transport locator and must
+                // never become document identity; managed targets receive their
+                // durable VTOMML_* anchor later. Delete the copied locator only
+                // after proving it stayed inside this exact insertion.
+                targetBookmarks = targetDocument.Bookmarks;
+                if (targetBookmarks.Exists(entry.BookmarkName))
+                {
+                    copiedBatchBookmark = targetBookmarks[entry.BookmarkName];
+                    copiedBatchBookmarkRange =
+                        copiedBatchBookmark.Range.Duplicate;
+                    if (copiedBatchBookmarkRange.Start < insertionStart
+                        || copiedBatchBookmarkRange.End > target.End)
+                        throw new InvalidOperationException(
+                            $"The copied OMML transport bookmark {entry.BookmarkName} escaped its insertion range.");
+                    copiedBatchBookmark.Delete();
+                }
+
                 sourceFingerprint = entry.SourceFingerprint;
                 var returned = result;
                 result = null;
@@ -409,6 +431,9 @@ internal static class WordOmmlConverter
             finally
             {
                 Release(result);
+                Release(copiedBatchBookmarkRange);
+                Release(copiedBatchBookmark);
+                Release(targetBookmarks);
                 Release(insertedMath);
                 Release(target);
                 Release(formattedSource);
@@ -1675,6 +1700,8 @@ internal static class WordOmmlConverter
         // Collect only source nodes that carry mathematical, not prose, semantics
         // and normalize those target runs back to plain/upright Office Math.
         var uprightTokens = new HashSet<string>(StringComparer.Ordinal);
+        var conditionallyUprightSingleTokens =
+            new HashSet<string>(StringComparer.Ordinal);
         var uprightWords = new HashSet<string>(StringComparer.Ordinal);
         foreach (var element in mathMlDocument.Descendants())
         {
@@ -1708,11 +1735,24 @@ internal static class WordOmmlConverter
                 continue;
 
             var canonical = CanonicalToken(text);
-            if (canonical.Length > 0) uprightTokens.Add(canonical);
+            if (canonical.Length == 1)
+                conditionallyUprightSingleTokens.Add(canonical);
+            else if (canonical.Length > 1)
+                uprightTokens.Add(canonical);
             foreach (Match match in Regex.Matches(text, @"\p{L}+"))
-                uprightWords.Add(match.Value);
+            {
+                // A single upright source letter is not a document-wide style
+                // declaration. OMML reverse conversion can represent "sin" as
+                // three normal mi tokens; adding "n" here used to upright every
+                // later variable n in the same formula. Multi-letter names remain
+                // safe for the coalesced-run matcher below.
+                if (match.Value.Length > 1)
+                    uprightWords.Add(match.Value);
+            }
         }
-        if (uprightTokens.Count == 0) return omml;
+        if (uprightTokens.Count == 0
+            && conditionallyUprightSingleTokens.Count == 0)
+            return omml;
 
         var ommlDocument = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
         XNamespace math = MathNamespace;
@@ -1748,11 +1788,29 @@ internal static class WordOmmlConverter
                 wordProperties.Add(new XElement(word + "noProof"));
         }
 
+        bool HasExistingUprightMathStyle(XElement run)
+        {
+            var properties = run.Element(math + "rPr");
+            if (properties is null) return false;
+            if (properties.Element(math + "nor") is not null) return true;
+            return string.Equals(
+                properties.Element(math + "sty")?.Attribute(math + "val")?.Value,
+                "p",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
         foreach (var run in ommlDocument.Descendants(math + "r").ToList())
         {
             var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
             if (string.IsNullOrEmpty(text)) continue;
-            if (uprightTokens.Contains(CanonicalToken(text)))
+            var canonicalRunText = CanonicalToken(text);
+            var isConditionallyUprightRun =
+                canonicalRunText.Length > 0
+                && HasExistingUprightMathStyle(run)
+                && canonicalRunText.All(character =>
+                    conditionallyUprightSingleTokens.Contains(character.ToString()));
+            if (uprightTokens.Contains(canonicalRunText)
+                || isConditionallyUprightRun)
             {
                 MakeMathUpright(run);
                 continue;
@@ -2273,23 +2331,98 @@ internal static class WordOmmlConverter
             // is carried by a limit structure. Apply that structure to inline
             // formulas too; later normalization hides the synthetic empty
             // limit, while only display equations receive m:grow=1.
-            var argument = op.ElementsAfterSelf().FirstOrDefault();
+            var hasArgument = op.ElementsAfterSelf().Any();
             var syntheticLimit = new XElement(
                 mathMlNamespace + "msub",
                 new XElement(op),
                 new XElement(mathMlNamespace + "mrow"));
             op.ReplaceWith(syntheticLimit);
-            if (argument is null)
+            if (!hasArgument)
             {
                 syntheticLimit.AddAfterSelf(
                     new XElement(
                         mathMlNamespace + "mrow",
                         new XElement(mathMlNamespace + "mspace", new XAttribute("width", "0em"))));
             }
-            else if (argument.Name != mathMlNamespace + "mrow"
-                     && argument.Name != mathMlNamespace + "mstyle")
+        }
+
+        bool IsNaryLimit(XElement element)
+        {
+            if (!limitNames.Contains(element.Name)) return false;
+            var op = element.Elements().FirstOrDefault();
+            return op?.Name == mathMlNamespace + "mo"
+                && !string.IsNullOrEmpty(op.Value)
+                && op.Value.All(character => NaryCharacters.IndexOf(character) >= 0);
+        }
+
+        // Presentation MathML expresses consecutive operators as a flat sequence:
+        // sum_n sum_m <body>. Office's stylesheet consumes only the immediately
+        // following mrow as an n-ary operand. Wrapping just the second sum therefore
+        // creates an inner m:nary with an empty <m:e/> and leaves <body> outside it.
+        // Fold every consecutive n-ary chain from right to left so the innermost
+        // operator owns the real body and each outer operator owns that complete
+        // nested expression.
+        foreach (var parent in document
+                     .Descendants()
+                     .Where(element => element.Elements().Any())
+                     .ToList())
+        {
+            var children = parent.Elements().ToArray();
+            var chains = new List<(int Start, int End, XElement? Operand)>();
+            for (var start = 0; start < children.Length; start++)
             {
-                argument.ReplaceWith(new XElement(mathMlNamespace + "mrow", argument));
+                if (!IsNaryLimit(children[start])) continue;
+                var end = start;
+                while (end + 1 < children.Length
+                       && IsNaryLimit(children[end + 1]))
+                    end++;
+                if (end > start)
+                {
+                    chains.Add((
+                        start,
+                        end,
+                        end + 1 < children.Length ? children[end + 1] : null));
+                }
+                start = end;
+            }
+
+            foreach (var chain in chains.OrderByDescending(item => item.Start))
+            {
+                XElement operand;
+                if (chain.Operand is null)
+                {
+                    operand = new XElement(
+                        mathMlNamespace + "mrow",
+                        new XElement(
+                            mathMlNamespace + "mspace",
+                            new XAttribute("width", "0em")));
+                    children[chain.End].AddAfterSelf(operand);
+                }
+                else if (chain.Operand.Name == mathMlNamespace + "mrow"
+                         || chain.Operand.Name == mathMlNamespace + "mstyle")
+                {
+                    operand = chain.Operand;
+                }
+                else
+                {
+                    operand = new XElement(mathMlNamespace + "mrow");
+                    chain.Operand.ReplaceWith(operand);
+                    operand.Add(chain.Operand);
+                }
+
+                for (var index = chain.End; index > chain.Start; index--)
+                {
+                    var inner = children[index];
+                    var outer = children[index - 1];
+                    inner.Remove();
+                    operand.Remove();
+                    var nestedOperand = new XElement(
+                        mathMlNamespace + "mrow",
+                        inner,
+                        operand);
+                    outer.AddAfterSelf(nestedOperand);
+                    operand = nestedOperand;
+                }
             }
         }
 
@@ -2822,6 +2955,7 @@ internal static class WordOmmlConverter
         var canonicalRoot = CanonicalizeMathMlElement(root);
         RestoreMergedNumericPunctuationTokens(canonicalRoot);
         RestoreMathSymbolTextTokens(canonicalRoot);
+        RestoreWordCanonicalAsteriskOperators(canonicalRoot);
         RestoreOmmlNoBarFractionSemantics(omml, canonicalRoot);
         RestoreOmmlAccentSemantics(omml, canonicalRoot);
         RestoreOmmlLimitBaseSemantics(omml, canonicalRoot);
@@ -2939,6 +3073,31 @@ internal static class WordOmmlConverter
             var value = text.Value;
             if (string.IsNullOrEmpty(value) || !ContainsOnlyMathSymbols(value)) continue;
             text.Name = mathMl + "mo";
+        }
+    }
+
+    private static void RestoreWordCanonicalAsteriskOperators(
+        XElement mathMlRoot)
+    {
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        foreach (var token in mathMlRoot
+                     .DescendantsAndSelf()
+                     .Where(element =>
+                         element.Name == mathMl + "mi"
+                         || element.Name == mathMl + "mo")
+                     .Where(element =>
+                         !element.HasElements
+                         && string.Equals(element.Value, "*", StringComparison.Ordinal))
+                     .ToList())
+        {
+            // Word canonicalizes U+2217 ASTERISK OPERATOR to ASCII '*' when a
+            // professional equation is materialized. Its reverse stylesheet then
+            // misclassifies the punctuation character as <mi>, losing both the
+            // operator token type and the original \ast semantics. In mathematical
+            // token positions, canonicalize that Word spelling back to the Unicode
+            // operator. Deliberate text-mode '*' remains mtext and is untouched.
+            token.Name = mathMl + "mo";
+            token.Value = "∗";
         }
     }
 

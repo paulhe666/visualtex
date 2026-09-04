@@ -6572,6 +6572,30 @@ internal sealed partial class WordFormulaService
             {
                 WordEquationNumbering.UpdateEquationNumbers(document);
                 MathTypeEquationNumbering.UpdateEquationNumbers(document);
+
+                var numberedOmmlFormulaIds = deferredOmmlMetadata
+                    .Where(metadata =>
+                        metadata.Numbered
+                        && string.Equals(
+                            metadata.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal))
+                    .Select(metadata => metadata.FormulaId)
+                    .ToArray();
+                if (numberedOmmlFormulaIds.Length > 1)
+                {
+                    var mergedBoundaries =
+                        WordEquationNumbering.MergeAdjacentManagedNativeOmmlNumberTableRows(
+                            document,
+                            numberedOmmlFormulaIds);
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable(
+                                "VISUALTEX_VSTO_ACCEPTANCE"),
+                            "1",
+                            StringComparison.Ordinal))
+                        Console.WriteLine(
+                            $"    [perf] BulkOmml.MergeNumberRows: boundaries={mergedBoundaries}; formulas={numberedOmmlFormulaIds.Length}");
+                }
             }
 
             return new WordBulkInsertResult
@@ -7388,6 +7412,20 @@ internal sealed partial class WordFormulaService
                     isolatedNativePreviewHeightPt: nativePreview?.HeightPt ?? 0,
                     isolatedNativePreviewWordPosition: nativePreview?.WordPosition ?? 0,
                     isolatedNativePreviewAttempted: prepared.MathTypeNativePreviewAttempted);
+                if (bulkImport && display && session.Numbered)
+                {
+                    // Numbered MathType creation intentionally leaves Word's live
+                    // Selection on the Equation.DSMT4 object so an ordinary single
+                    // insertion can stay selected for immediate editing.  Bulk
+                    // import must never carry that non-collapsed selection into the
+                    // next document block: typing prose would replace the selected
+                    // OLE while leaving MTPlaceRef/SEQ fields behind, producing a
+                    // number-only equation row.  Advance by the complete paragraph
+                    // boundary so this is correct for both left and right numbers.
+                    MoveSelectionAfterBulkNumberedMathTypeDisplayFormula(
+                        document,
+                        selection);
+                }
                 if (display
                     && preserveExistingDisplayParagraphBoundary
                     && preservedDisplayParagraphRange is not null)
@@ -7645,6 +7683,94 @@ internal sealed partial class WordFormulaService
             Release(bookmark);
             Release(equationRange);
             Release(insertion);
+        }
+    }
+
+    private static void MoveSelectionAfterBulkNumberedMathTypeDisplayFormula(
+        Document document,
+        Selection selection)
+    {
+        Range? selectedRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? nextProbe = null;
+        Paragraphs? nextParagraphs = null;
+        Paragraph? nextParagraph = null;
+        Range? nextRange = null;
+        InlineShapes? nextShapes = null;
+        Fields? nextFields = null;
+        OMaths? nextMaths = null;
+        Tables? nextTables = null;
+        try
+        {
+            selectedRange = selection.Range.Duplicate;
+            paragraphs = selectedRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException(
+                    "Word 未能定位批量导入的编号 MathType 公式段落。");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+
+            // InsertMathTypeOle can leave an already-created empty paragraph after
+            // the display row on some Word builds. Reuse that paragraph instead of
+            // creating a second blank. If the following paragraph owns any text or
+            // generated/user object, create one clean paragraph immediately before
+            // the current row mark so later bulk content cannot overwrite it.
+            if (paragraphRange.End < document.Content.End)
+            {
+                nextProbe = document.Range(
+                    paragraphRange.End,
+                    Math.Min(document.Content.End, paragraphRange.End + 1));
+                nextParagraphs = nextProbe.Paragraphs;
+                if (nextParagraphs.Count == 1)
+                {
+                    nextParagraph = nextParagraphs[1];
+                    nextRange = nextParagraph.Range.Duplicate;
+                    nextShapes = nextRange.InlineShapes;
+                    nextFields = nextRange.Fields;
+                    nextMaths = nextRange.OMaths;
+                    nextTables = nextRange.Tables;
+                    if (!ContainsVisibleBodyText(nextRange.Text)
+                        && nextShapes.Count == 0
+                        && nextFields.Count == 0
+                        && nextMaths.Count == 0
+                        && nextTables.Count == 0)
+                    {
+                        selection.SetRange(nextRange.Start, nextRange.Start);
+                        ResetSelectionTransientFormatting(selection);
+                        return;
+                    }
+                }
+            }
+
+            var splitPosition = Math.Max(
+                paragraphRange.Start,
+                paragraphRange.End - 1);
+            selection.SetRange(splitPosition, splitPosition);
+            selection.TypeParagraph();
+            selection.ParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+            selection.ParagraphFormat.LeftIndent = 0;
+            selection.ParagraphFormat.FirstLineIndent = 0;
+            object normal = WdBuiltinStyle.wdStyleNormal;
+            try { selection.Range.set_Style(ref normal); } catch { }
+            try { selection.Range.ListFormat.RemoveNumbers(); } catch { }
+            ResetSelectionTransientFormatting(selection);
+        }
+        finally
+        {
+            Release(nextTables);
+            Release(nextMaths);
+            Release(nextFields);
+            Release(nextShapes);
+            Release(nextRange);
+            Release(nextParagraph);
+            Release(nextParagraphs);
+            Release(nextProbe);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(selectedRange);
         }
     }
 

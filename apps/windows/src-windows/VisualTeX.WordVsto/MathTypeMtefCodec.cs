@@ -1277,15 +1277,33 @@ internal static class MathTypeMtefCodec
         return expanded;
     }
 
+    internal static string PrepareMathMlForMathTypeInterop(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl))
+            throw new InvalidDataException("MathType conversion requires MathML.");
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var math = document.Root?.DescendantsAndSelf()
+            .FirstOrDefault(element => element.Name.LocalName == "math")
+            ?? throw new InvalidDataException("MathML has no <math> root.");
+        return PrepareMathForMathType(math)
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static XElement PrepareMathForMathType(XElement math)
+    {
+        var preparedMath = new XElement(math);
+        MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
+        NormalizeMathJaxFenceRows(preparedMath);
+        return preparedMath;
+    }
+
     private static byte[] BuildRootStructure(
         XElement math,
         byte[] sourceMtef,
         out byte[] prefixDefinitions)
     {
         prefixDefinitions = Array.Empty<byte>();
-        var preparedMath = new XElement(math);
-        MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
-        NormalizeMathJaxFenceRows(preparedMath);
+        var preparedMath = PrepareMathForMathType(math);
         var topLevelElements = SignificantChildren(preparedMath)
             .OfType<XElement>()
             .Where(element => element.Name.LocalName is not ("annotation" or "annotation-xml"))
@@ -1794,6 +1812,7 @@ internal static class MathTypeMtefCodec
         var scriptChildren = script.Elements().ToArray();
         if (scriptChildren.Length < 2) return false;
         if (!TryGetMathJaxFenceToken(scriptChildren[0], "CLOSE", out var close)) return false;
+        if (!AreMatchingFences(open, close)) return false;
 
         var inner = string.Concat(elements
             .Skip(1)
@@ -1823,6 +1842,7 @@ internal static class MathTypeMtefCodec
         if (elements.Length < 3) return false;
         if (!TryGetMathJaxFenceToken(elements[0], "OPEN", out open)) return false;
         if (!TryGetMathJaxFenceToken(elements[elements.Length - 1], "CLOSE", out close)) return false;
+        if (!AreMatchingFences(open, close)) return false;
         children = elements.Skip(1).Take(elements.Length - 2).ToArray();
         return children.Length > 0;
     }
@@ -1848,9 +1868,19 @@ internal static class MathTypeMtefCodec
         var tokenClass = ((string?)token.Attribute("data-mjx-texclass") ?? string.Empty).Trim();
         var markerMatches = string.Equals(candidateClass, expectedClass, StringComparison.OrdinalIgnoreCase)
             || string.Equals(tokenClass, expectedClass, StringComparison.OrdinalIgnoreCase);
-        if (!markerMatches) return false;
-        fence = token.Value.Trim();
-        return true;
+        fence = NormalizeFence(token.Value.Trim());
+        if (markerMatches) return true;
+
+        // Word's OMML->MathML transform emits structurally complete delimiter
+        // rows without MathJax's data-mjx-texclass markers. MathType 7 otherwise
+        // imports only the first opening delimiter into a big-operator main slot
+        // and leaves the remaining operand as root siblings. Accept an unmarked
+        // token only when its glyph unambiguously matches the requested side;
+        // the caller also verifies that the two delimiters form a valid pair.
+        return string.Equals(expectedClass, "OPEN", StringComparison.OrdinalIgnoreCase)
+            ? fence is "(" or "[" or "{" or "⟨" or "⌈" or "⌊" or "|" or "‖"
+            : string.Equals(expectedClass, "CLOSE", StringComparison.OrdinalIgnoreCase)
+                && fence is ")" or "]" or "}" or "⟩" or "⌉" or "⌋" or "|" or "‖";
     }
 
     private static void EmitExplicitFontDefinitions(

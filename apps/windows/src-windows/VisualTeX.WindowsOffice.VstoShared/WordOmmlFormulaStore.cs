@@ -829,9 +829,15 @@ internal static class WordOmmlFormulaStore
                         equationTable = equationTables[1];
                         equationRows = equationTable.Rows;
                         equationColumns = equationTable.Columns;
-                        if (equationRows.Count == 1 && equationColumns.Count == 3)
+                        if (equationRows.Count >= 1
+                            && equationColumns.Count == 3
+                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                equationTable,
+                                equationRange,
+                                expectedColumnIndex: 2,
+                                out var equationRowIndex))
                         {
-                            centerCell = equationTable.Cell(1, 2);
+                            centerCell = equationTable.Cell(equationRowIndex, 2);
                             centerCellRange = centerCell.Range;
                             if (equationRange.Start >= centerCellRange.Start
                                 && equationRange.End <= centerCellRange.End)
@@ -973,9 +979,20 @@ internal static class WordOmmlFormulaStore
                         equationTable = equationTables[1];
                         numberTable = numberTables[1];
                         if (equationTable.Columns.Count == 3
-                            && equationTable.Rows.Count == 1
+                            && equationTable.Rows.Count >= 1
                             && numberTable.Columns.Count == 3
-                            && numberTable.Rows.Count == 1)
+                            && numberTable.Rows.Count >= 1
+                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                equationTable,
+                                equationRange,
+                                expectedColumnIndex: 2,
+                                out var equationRowIndex)
+                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                numberTable,
+                                numberRange,
+                                expectedColumnIndex: 3,
+                                out var numberRowIndex)
+                            && equationRowIndex == numberRowIndex)
                         {
                             equationTableRange = equationTable.Range;
                             numberTableRange = numberTable.Range;
@@ -1377,9 +1394,15 @@ internal static class WordOmmlFormulaStore
                     if (numberTables.Count > 0)
                     {
                         numberTable = numberTables[1];
-                        if (numberTable.Rows.Count == 1 && numberTable.Columns.Count == 3)
+                        if (numberTable.Rows.Count >= 1
+                            && numberTable.Columns.Count == 3
+                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                numberTable,
+                                numberRange,
+                                expectedColumnIndex: 3,
+                                out var numberRowIndex))
                         {
-                            formulaCell = numberTable.Cell(1, 2);
+                            formulaCell = numberTable.Cell(numberRowIndex, 2);
                             formulaCellRange = formulaCell.Range;
                             tableMaths = formulaCellRange.OMaths;
                             if (tableMaths.Count == 1)
@@ -1981,6 +2004,12 @@ internal static class WordOmmlFormulaStore
             Release(selected);
             Release(parts);
         }
+    }
+
+    internal static void InvalidateDocumentCache(Document document)
+    {
+        if (document is null) return;
+        MetadataCaches.Remove(document);
     }
 
     private static void ForgetPart(Document document, string formulaId)

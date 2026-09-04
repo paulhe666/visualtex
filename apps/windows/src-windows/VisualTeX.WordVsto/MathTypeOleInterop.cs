@@ -1425,7 +1425,8 @@ internal static class MathTypeOleInterop
         // same semantic equation rather than failing solely because one version
         // omitted a SET advertisement.
         var failures = new List<string>();
-        var asciiMathMl = ToAsciiMathMlPayload(mathMl);
+        var preparedMathMl = MathTypeMtefCodec.PrepareMathMlForMathTypeInterop(mathMl);
+        var asciiMathMl = ToAsciiMathMlPayload(preparedMathMl);
         foreach (var name in MathMlFormats)
         {
             var id = RegisterClipboardFormat(name);
@@ -1440,7 +1441,7 @@ internal static class MathTypeOleInterop
                 failures.Add($"{name}=0x{error.HResult:X8}");
         }
 
-        var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+        var latex = MathMlToLatexConverter.Convert(preparedMathMl).Trim();
         if (!string.IsNullOrWhiteSpace(latex))
         {
             var texId = RegisterClipboardFormat("TeX Input Language");
