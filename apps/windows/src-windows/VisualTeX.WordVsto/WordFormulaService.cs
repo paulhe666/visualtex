@@ -1725,6 +1725,15 @@ internal sealed partial class WordFormulaService
             EnsureWritable(document);
             EnsureEquationFieldResultsVisible(document);
 
+            // Reject malformed MathType-native numbering before the VisualTeX
+            // format variable or any VisualTeX numbering field is changed. The
+            // actual rewrite repeats this validation immediately before writing,
+            // so a mixed document cannot be left half-converted when an orphaned
+            // MTPlaceRef is present.
+            MathTypeEquationNumbering.ValidateEquationNumberFormat(
+                document,
+                formatId);
+
             // Rebuilding a native #(SEQ) OMath for a heading-format change can
             // move Word.Selection into the last replacement range. Preserve the
             // user's logical caret/selection with a temporary Word bookmark so

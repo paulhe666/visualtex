@@ -914,6 +914,10 @@ internal static partial class Program
             {
                 RunWordMathTypeNumberFormatAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-native-format-parity", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeNativeFormatParityAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "win32-thread-execution-probe", StringComparison.OrdinalIgnoreCase))
             {
                 RunWin32ThreadExecutionProbe();
