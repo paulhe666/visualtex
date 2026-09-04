@@ -68,11 +68,20 @@ assert.equal(
 );
 
 const updateDialogSource = await readFile("src/components/UpdateDialog.tsx", "utf8");
+const updateDialogStyles = await readFile("src/styles.css", "utf8");
 const qqGroupCard = await readFile("public/qq-group-card.svg", "utf8");
 assert(updateDialogSource.includes('const QQ_GROUP_NUMBER = "1045801770"'));
 assert(updateDialogSource.includes('const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg"'));
+assert(updateDialogSource.includes("docs/images/wechat-pay.jpg"));
+assert(updateDialogSource.includes("docs/images/alipay.jpg"));
 assert(updateDialogSource.includes('className="update-community-card"'));
-assert(updateDialogSource.includes("加入 VisualTeX QQ 交流群"));
+assert(updateDialogSource.includes('className="update-community-qr-row"'));
+assert(updateDialogSource.includes("支持与交流"));
+assert(updateDialogSource.includes("微信"));
+assert(updateDialogSource.includes("支付宝"));
+assert(updateDialogSource.includes("QQ群"));
+assert(updateDialogStyles.includes(".update-community-qr-row"));
+assert(updateDialogStyles.includes("grid-template-columns: repeat(3, minmax(0, 1fr))"));
 assert(!updateDialogSource.includes(privateChineseName));
 assert(
   !updateDialogSource

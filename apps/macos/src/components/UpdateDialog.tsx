@@ -16,6 +16,14 @@ import type { UpdateCheckResult } from "../update/updateService";
 
 const QQ_GROUP_NUMBER = "1045801770";
 const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg";
+const WECHAT_PAY_IMAGE_URL = new URL(
+  "../../../../docs/images/wechat-pay.jpg",
+  import.meta.url,
+).href;
+const ALIPAY_IMAGE_URL = new URL(
+  "../../../../docs/images/alipay.jpg",
+  import.meta.url,
+).href;
 
 interface Props {
   open: boolean;
@@ -251,27 +259,50 @@ export function UpdateDialog({
 
                   <section
                     className="update-community-card"
-                    aria-label="VisualTeX QQ 交流群"
+                    aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
                   >
                     <div className="update-community-copy">
                       <span className="update-community-icon" aria-hidden="true">
                         <UsersRound size={18} />
                       </span>
                       <div>
-                        <strong>加入 VisualTeX QQ 交流群</strong>
+                        <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
                         <p>
-                          对 VisualTeX 的使用、开发或改进感兴趣，欢迎扫码或搜索群号加入交流。
+                          {isEn
+                            ? "WeChat Pay, Alipay, and the VisualTeX QQ community."
+                            : "微信、支付宝支持与 VisualTeX QQ 交流群。"}
                         </p>
                         <span className="update-community-number">
-                          QQ群号：<b>{QQ_GROUP_NUMBER}</b>
+                          {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
                         </span>
                       </div>
                     </div>
-                    <img
-                      src={QQ_GROUP_IMAGE_URL}
-                      alt={`VisualTeX QQ 群 ${QQ_GROUP_NUMBER} 二维码`}
-                      loading="lazy"
-                    />
+                    <div className="update-community-qr-row">
+                      <figure>
+                        <img
+                          src={WECHAT_PAY_IMAGE_URL}
+                          alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
+                          loading="lazy"
+                        />
+                        <figcaption>{isEn ? "WeChat" : "微信"}</figcaption>
+                      </figure>
+                      <figure>
+                        <img
+                          src={ALIPAY_IMAGE_URL}
+                          alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
+                          loading="lazy"
+                        />
+                        <figcaption>{isEn ? "Alipay" : "支付宝"}</figcaption>
+                      </figure>
+                      <figure>
+                        <img
+                          src={QQ_GROUP_IMAGE_URL}
+                          alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${QQ_GROUP_NUMBER} QR code`}
+                          loading="lazy"
+                        />
+                        <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
+                      </figure>
+                    </div>
                   </section>
                 </>
               ) : (
