@@ -46,6 +46,7 @@ VisualTeX 的持续开发由用户支持。使用问题、功能建议和 Office
     <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ group" /></td>
   </tr>
 </table>
+
 ## 公式编辑器
 
 可视化编辑区与 LaTeX 源码区实时同步。两种编辑方式可在同一份公式内容上切换。
