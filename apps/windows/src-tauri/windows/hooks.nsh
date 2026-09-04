@@ -2,7 +2,7 @@
 ; The production path installs the per-user Ribbon COM add-ins and ATL OLE
 ; LocalServer. Legacy Office.js Trusted Catalog resources are not installed.
 
-!define VISUALTEX_INSTALLER_VERSION "1.2.5"
+!define VISUALTEX_INSTALLER_VERSION "1.2.6"
 
 Var VisualTeXOfficeChoice
 Var VisualTeXOfficeOnlyRadio

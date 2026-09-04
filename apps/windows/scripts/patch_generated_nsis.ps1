@@ -2,7 +2,7 @@
 param(
     [string]$InstallerNsi,
     [string]$OutputInstaller,
-    [string]$AppVersion = "1.2.5"
+    [string]$AppVersion = "1.2.6"
 )
 
 $ErrorActionPreference = "Stop"
@@ -95,7 +95,7 @@ $newSameVersionLeave = ConvertTo-Lf @'
     ; Tauri's in-place same-version path can leave the previous EXE/resources
     ; untouched while still running post-install hooks from the stale install.
     ; Force a real uninstall so the File commands below install this package's
-    ; exact payload rather than silently reusing the old 1.2.5 files.
+    ; exact payload rather than silently reusing the old 1.2.6 files.
     Goto reinst_uninstall
 '@
 if (-not $source.Contains($oldSameVersionLeave)) {

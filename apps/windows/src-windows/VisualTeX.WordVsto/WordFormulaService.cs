@@ -1458,7 +1458,7 @@ internal sealed partial class WordFormulaService
                     ?? throw new InvalidOperationException("The selected Word OMML formula no longer exists.");
                 equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
                 metadata.FontSizePt = target;
-                metadata.UpdatedWithVersion = "1.2.5";
+                metadata.UpdatedWithVersion = "1.2.6";
                 metadata.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
                 RemoveInlineBaselineSentinel(document, metadata.FormulaId);
                 // A numbered block OMML is genuine Word display math. Its separate

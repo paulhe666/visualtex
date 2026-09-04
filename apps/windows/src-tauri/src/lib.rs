@@ -1776,7 +1776,7 @@ fn validate_formula_dependency_files(site_packages: &Path) -> Result<(), String>
     let tokenizers = required_dependency_version(site_packages, "tokenizers", "tokenizers")?;
     if cfg!(windows) && tokenizers != "0.19.1" {
         return Err(format!(
-            "OCR dependency tokenizers has version {tokenizers}; VisualTeX 1.2.5 requires the precompiled Windows wheel tokenizers 0.19.1."
+            "OCR dependency tokenizers has version {tokenizers}; VisualTeX 1.2.6 requires the precompiled Windows wheel tokenizers 0.19.1."
         ));
     }
     required_dependency_version(site_packages, "imagesize", "imagesize")?;

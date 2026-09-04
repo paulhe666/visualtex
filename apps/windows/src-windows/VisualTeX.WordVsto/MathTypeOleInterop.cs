@@ -440,8 +440,8 @@ internal static class MathTypeOleInterop
             Numbered = numbered,
             FontSizePt = fontSizePt,
             RenderFontSizePt = fontSizePt,
-            CreatedWithVersion = "1.2.5",
-            UpdatedWithVersion = "1.2.5",
+            CreatedWithVersion = "1.2.6",
+            UpdatedWithVersion = "1.2.6",
             CreatedAt = now,
             UpdatedAt = now,
         };
