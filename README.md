@@ -2,11 +2,23 @@
   <img src="apps/macos/src-tauri/app-icon.svg" width="160" alt="VisualTeX" />
   <h1>VisualTeX</h1>
   <p><strong>面向科研写作的可视化公式编辑器</strong></p>
-  <p>可视化输入 · LaTeX 源码编辑 · MathType 兼容 · Word / PowerPoint 插件 · 公式 OCR</p>
+  <p>可视化输入 · LaTeX 源码编辑 · 原生 MathType 公式 · Word / PowerPoint 插件 · 公式 OCR</p>
   <p>
     <a href="https://visualtex.pauljianliao.com/">官方网站</a> ·
     <a href="https://github.com/paulhe666/visualtex/releases">下载安装</a> ·
     <a href="apps/macos/docs/help/VisualTeX_帮助手册.md">帮助手册</a>
+  </p>
+  <p>
+    <a href="https://github.com/paulhe666/visualtex/stargazers"><img src="https://img.shields.io/github/stars/paulhe666/visualtex?style=for-the-badge&logo=github&label=STARS" alt="GitHub Stars" /></a>
+    <a href="https://github.com/paulhe666/visualtex/releases/latest"><img src="https://img.shields.io/github/v/release/paulhe666/visualtex?style=for-the-badge&logo=github&label=RELEASE" alt="Latest Release" /></a>
+    <a href="https://github.com/paulhe666/visualtex/releases"><img src="https://img.shields.io/github/downloads/paulhe666/visualtex/total?style=for-the-badge&logo=github&label=DOWNLOADS" alt="Total Downloads" /></a>
+    <a href="https://visualtex.pauljianliao.com/"><img src="https://img.shields.io/badge/WEBSITE-visualtex.pauljianliao.com-0A84FF?style=for-the-badge&logo=googlechrome&logoColor=white" alt="VisualTeX Website" /></a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/WORD-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="Word" />
+    <img src="https://img.shields.io/badge/POWERPOINT-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="PowerPoint" />
+    <img src="https://img.shields.io/badge/LaTeX-INPUT-0099E5?style=for-the-badge&labelColor=555555" alt="LaTeX" />
+    <img src="https://img.shields.io/badge/LICENSE-MIT-55B800?style=for-the-badge&labelColor=555555" alt="MIT License" />
   </p>
 </div>
 
@@ -48,10 +60,12 @@ VisualTeX 是一款面向 macOS 和 Windows 的公式编辑器，适合写论文
 
 ## MathType 兼容（Windows）
 
-Windows 版可以直接处理 Word 中的 MathType 7 原生 OLE 公式，不会把它们简单转成截图。VisualTeX 会读取 MathType 公式内容，并尽量保留原来的行内/行间状态、字号、位置、编号和引用。
+Windows 版不仅能读取已有的 MathType 公式，还能把 VisualTeX 中写好的公式直接插入为真正的 MathType OLE 对象。插入时可以选择行内或行间，也可以为行间公式添加 MathType 原生左编号或右编号。生成的对象使用 `Equation.DSMT4`，放进 Word 后仍能继续用 MathType 或 VisualTeX 编辑，不是截图，也不是只能由 VisualTeX 识别的替代格式。
 
 目前支持：
 
+- 在 VisualTeX 中新建公式，直接插入为原生 MathType OLE；
+- 直接插入行内公式、无编号行间公式，以及带 MathType 原生左编号或右编号的行间公式；
 - 使用 VisualTeX 打开并修改所选 MathType 公式；
 - VisualTeX OLE 与 MathType OLE 双向转换；
 - Word OMML 与 MathType OLE 双向转换；
@@ -70,7 +84,7 @@ Windows 版可以直接处理 Word 中的 MathType 7 原生 OLE 公式，不会�
 
 - 插入行内或行间公式。
 - macOS 可以插入图片公式或 Word 原生 OMML。
-- Windows 可以插入 VisualTeX OLE 或 Word OMML，也可以处理 MathType OLE。
+- Windows 可以直接插入 VisualTeX OLE、Word OMML 或原生 MathType OLE。
 - 支持通过工具栏编辑所选公式，也支持双击重新打开编辑器。
 - 不同平台支持的格式略有区别，图片公式、OMML、VisualTeX OLE 和 MathType 之间可以按需转换。
 - 编辑已有公式时会恢复 LaTeX、字号、显示方式和公式元数据。
@@ -178,10 +192,10 @@ VisualTeX 使用 [MIT License](LICENSE)。
 
 如果 VisualTeX 对你的论文、报告或课件排版有所帮助，欢迎支持项目继续开发。使用问题、功能建议和 Office 插件相关交流可加入 QQ 群：`1045801770`。
 
-<p align="center">
-  <img src="docs/images/wechat-pay.jpg" height="360" alt="微信收款" />
-  &nbsp;
-  <img src="docs/images/alipay.jpg" height="360" alt="支付宝收款" />
-  &nbsp;
-  <img src="docs/images/qq-group.png" height="360" alt="VisualTeX QQ 交流群" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/images/wechat-pay.jpg" height="320" alt="微信收款" /></td>
+    <td align="center"><img src="docs/images/alipay.jpg" height="320" alt="支付宝收款" /></td>
+    <td align="center"><img src="docs/images/qq-group.png" height="320" alt="VisualTeX QQ 交流群" /></td>
+  </tr>
+</table>
