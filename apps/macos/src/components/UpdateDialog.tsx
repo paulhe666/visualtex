@@ -269,8 +269,8 @@ export function UpdateDialog({
                         <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
                         <p>
                           {isEn
-                            ? "WeChat Pay, Alipay, and the VisualTeX QQ community."
-                            : "微信、支付宝支持与 VisualTeX QQ 交流群。"}
+                            ? "WeChat Pay and Alipay are optional tip channels. Tipping is entirely voluntary and never affects access to any VisualTeX feature. The QQ code is for community discussion."
+                            : "微信和支付宝为自愿打赏通道，是否打赏完全不影响 VisualTeX 的任何功能和正常使用；QQ群二维码用于交流讨论。"}
                         </p>
                         <span className="update-community-number">
                           {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
@@ -284,7 +284,7 @@ export function UpdateDialog({
                           alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
                           loading="lazy"
                         />
-                        <figcaption>{isEn ? "WeChat" : "微信"}</figcaption>
+                        <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
                       </figure>
                       <figure>
                         <img
@@ -292,7 +292,7 @@ export function UpdateDialog({
                           alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
                           loading="lazy"
                         />
-                        <figcaption>{isEn ? "Alipay" : "支付宝"}</figcaption>
+                        <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
                       </figure>
                       <figure>
                         <img
