@@ -12732,10 +12732,38 @@ body[data-workspace-resize="dock"] * {
   padding: 0 28px 0 9px;
   border: 0;
   border-radius: 6px;
-  background: var(--surface-secondary);
+  background: var(--surface-secondary, var(--bg-elevated));
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
+}
+
+.doc-import-options .doc-import-global-number-toggle {
+  gap: 8px;
+  padding: 0 10px;
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 38%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 8%, var(--surface-primary, var(--surface)));
+  color: var(--text-primary, var(--text));
+  cursor: pointer;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.doc-import-global-number-toggle:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 62%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 15%, var(--surface-primary, var(--surface)));
+}
+
+.doc-import-global-number-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-primary, var(--accent));
+}
+
+.doc-import-options .doc-import-global-number-toggle:has(input:disabled) {
+  cursor: default;
+  opacity: 0.58;
 }
 
 .doc-import-secondary,
@@ -12762,16 +12790,26 @@ body[data-workspace-resize="dock"] * {
 }
 
 .doc-import-primary {
-  border-color: color-mix(in srgb, var(--accent-primary) 82%, var(--border-strong));
-  background: var(--accent-primary);
+  min-width: 132px;
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 82%, var(--border-strong));
+  background: var(--accent-primary, var(--accent));
   color: var(--primary-foreground);
   font-weight: 750;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--text-primary, var(--text)) 24%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary-foreground) 14%, transparent);
 }
 
 .doc-import-primary:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent-hover) 82%, var(--border-strong));
   background: var(--accent-hover);
+}
+
+.doc-import-primary:focus-visible,
+.doc-import-secondary:focus-visible,
+.doc-import-global-number-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .doc-import-secondary:disabled {
@@ -12784,9 +12822,9 @@ body[data-workspace-resize="dock"] * {
 
 .doc-import-primary:disabled {
   cursor: default;
-  border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-default));
-  background: color-mix(in srgb, var(--accent-primary) 22%, var(--surface-secondary));
-  color: color-mix(in srgb, var(--text-primary) 68%, var(--surface-secondary));
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 28%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 22%, var(--surface-secondary, var(--bg-elevated)));
+  color: color-mix(in srgb, var(--text-primary, var(--text)) 68%, var(--surface-secondary, var(--bg-elevated)));
   box-shadow: none;
   opacity: 1;
 }
