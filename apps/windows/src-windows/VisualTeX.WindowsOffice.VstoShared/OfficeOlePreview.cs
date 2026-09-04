@@ -13,6 +13,29 @@ using System.Xml.Linq;
 
 namespace VisualTeX.WindowsOffice.VstoShared;
 
+internal sealed class OfficeOleInkSafePreview
+{
+    internal OfficeOleInkSafePreview(
+        string emfPath,
+        string pngPath,
+        float widthPixels,
+        float heightPixels,
+        float baselinePixels)
+    {
+        EmfPath = emfPath;
+        PngPath = pngPath;
+        WidthPixels = widthPixels;
+        HeightPixels = heightPixels;
+        BaselinePixels = baselinePixels;
+    }
+
+    internal string EmfPath { get; }
+    internal string PngPath { get; }
+    internal float WidthPixels { get; }
+    internal float HeightPixels { get; }
+    internal float BaselinePixels { get; }
+}
+
 internal static class OfficeOlePreview
 {
     private const long MaximumSvgBytes = 16L * 1024L * 1024L;
@@ -74,6 +97,84 @@ internal static class OfficeOlePreview
         catch
         {
             try { File.Delete(emfPath); } catch { }
+            throw;
+        }
+    }
+
+    internal static OfficeOleInkSafePreview CreateInkSafePreviewFromSvg(
+        string svgPath,
+        float widthPixels,
+        float heightPixels,
+        float? baselinePixels,
+        string? fallbackPngPath = null,
+        float safetyPaddingPixels = 1f)
+    {
+        if (string.IsNullOrWhiteSpace(svgPath))
+            throw new ArgumentException("SVG preview path is required.", nameof(svgPath));
+        if (!File.Exists(svgPath))
+            throw new FileNotFoundException("SVG preview does not exist.", svgPath);
+        var information = new FileInfo(svgPath);
+        if (information.Length <= 0 || information.Length > MaximumSvgBytes)
+            throw new InvalidDataException("SVG preview size is invalid.");
+        if (!IsPositiveFinite(widthPixels) || !IsPositiveFinite(heightPixels))
+            throw new InvalidDataException("SVG preview dimensions are invalid.");
+        if (float.IsNaN(safetyPaddingPixels)
+            || float.IsInfinity(safetyPaddingPixels)
+            || safetyPaddingPixels < 0f)
+            throw new InvalidDataException("SVG ink safety padding is invalid.");
+
+        var directory = Path.GetDirectoryName(svgPath)
+            ?? throw new InvalidOperationException("SVG preview has no parent directory.");
+        var emfPath = Path.Combine(directory, $"{Guid.NewGuid():N}.emf");
+        string? generatedPngPath = null;
+        try
+        {
+            var renderer = SvgVectorRenderer.Load(svgPath);
+            var geometry = renderer.ResolveInkSafeGeometry(
+                widthPixels,
+                heightPixels,
+                baselinePixels,
+                safetyPaddingPixels);
+            renderer.Render(
+                emfPath,
+                geometry.WidthPixels,
+                geometry.HeightPixels,
+                usePowerPointStablePhysicalFrame: false,
+                horizontalSafetyInsetPixels: 0f,
+                geometry.ViewBox);
+
+            var reuseFallbackPng = !geometry.IsExpanded
+                && !renderer.ContainsTextOutlines
+                && !string.IsNullOrWhiteSpace(fallbackPngPath)
+                && File.Exists(fallbackPngPath);
+            var pngPath = reuseFallbackPng
+                ? fallbackPngPath!
+                : generatedPngPath = Path.Combine(
+                    directory,
+                    $"{Guid.NewGuid():N}.png");
+            if (!reuseFallbackPng)
+            {
+                renderer.RenderPng(
+                    pngPath,
+                    geometry.WidthPixels,
+                    geometry.HeightPixels,
+                    geometry.ViewBox);
+            }
+            ValidateVectorEmf(emfPath);
+            return new OfficeOleInkSafePreview(
+                emfPath,
+                pngPath,
+                geometry.WidthPixels,
+                geometry.HeightPixels,
+                geometry.BaselinePixels);
+        }
+        catch
+        {
+            try { File.Delete(emfPath); } catch { }
+            if (!string.IsNullOrWhiteSpace(generatedPngPath))
+            {
+                try { File.Delete(generatedPngPath); } catch { }
+            }
             throw;
         }
     }
@@ -177,17 +278,22 @@ internal static class OfficeOlePreview
         private readonly XElement _root;
         private readonly Dictionary<string, XElement> _definitions;
         private readonly SvgViewBox _viewBox;
+        private readonly bool _containsTextOutlines;
 
         private SvgVectorRenderer(XElement root)
         {
             _root = root;
             _viewBox = ParseViewBox(root.Attribute("viewBox")?.Value);
+            _containsTextOutlines = root.Descendants().Any(element =>
+                string.Equals(element.Name.LocalName, "text", StringComparison.Ordinal));
             _definitions = root
                 .Descendants()
                 .Select(element => new { Element = element, Id = element.Attribute("id")?.Value })
                 .Where(item => !string.IsNullOrWhiteSpace(item.Id))
                 .ToDictionary(item => item.Id!, item => item.Element, StringComparer.Ordinal);
         }
+
+        public bool ContainsTextOutlines => _containsTextOutlines;
 
         public static SvgVectorRenderer Load(string path)
         {
@@ -215,8 +321,10 @@ internal static class OfficeOlePreview
             float widthPixels,
             float heightPixels,
             bool usePowerPointStablePhysicalFrame,
-            float horizontalSafetyInsetPixels)
+            float horizontalSafetyInsetPixels,
+            SvgViewBox? viewBoxOverride = null)
         {
+            var renderedViewBox = viewBoxOverride ?? _viewBox;
             // Use a real display DC as the EMF reference device. A memory DC
             // obtained from a 1x1 Bitmap records a mismatched physical-device
             // mapping on Windows: a 100x50 SVG frame replays as roughly 67x34
@@ -335,12 +443,12 @@ internal static class OfficeOlePreview
                 var insetX = Math.Min(requestedInsetX, maxInsetX);
                 var contentRecordingWidth = Math.Max(1d, recordingWidth - 2d * insetX);
                 var rootTransform = new SvgMatrix(
-                    contentRecordingWidth / _viewBox.Width,
+                    contentRecordingWidth / renderedViewBox.Width,
                     0,
                     0,
-                    recordingHeight / _viewBox.Height,
-                    insetX - _viewBox.X * contentRecordingWidth / _viewBox.Width,
-                    -_viewBox.Y * recordingHeight / _viewBox.Height);
+                    recordingHeight / renderedViewBox.Height,
+                    insetX - renderedViewBox.X * contentRecordingWidth / renderedViewBox.Width,
+                    -renderedViewBox.Y * recordingHeight / renderedViewBox.Height);
                 var style = SvgStyle.Default;
                 foreach (var child in _root.Elements())
                     RenderElement(graphics, child, rootTransform, style, false, new HashSet<string>());
@@ -352,6 +460,227 @@ internal static class OfficeOlePreview
 
             if (!File.Exists(emfPath) || new FileInfo(emfPath).Length == 0)
                 throw new InvalidDataException("Vector EMF generation produced an empty file.");
+        }
+
+        public SvgRenderGeometry ResolveInkSafeGeometry(
+            float widthPixels,
+            float heightPixels,
+            float? baselinePixels,
+            float safetyPaddingPixels)
+        {
+            var unitsPerPixelX = _viewBox.Width / widthPixels;
+            var unitsPerPixelY = _viewBox.Height / heightPixels;
+            var resolvedBaseline = baselinePixels.HasValue
+                && IsFinite(baselinePixels.Value)
+                && baselinePixels.Value >= 0f
+                && baselinePixels.Value <= heightPixels
+                    ? baselinePixels.Value
+                    : (float)Math.Max(
+                        0d,
+                        Math.Min(heightPixels, -_viewBox.Y / unitsPerPixelY));
+            var original = new SvgRenderGeometry(
+                _viewBox,
+                widthPixels,
+                heightPixels,
+                resolvedBaseline,
+                isExpanded: false);
+
+            // The normal one-pixel export margin already protects MathJax path
+            // geometry. Only installed-font <text> replacements can invalidate the
+            // original MathJax viewBox, because GDI+ builds their actual outlines
+            // later from a different font. Keep the default KaTeX path fast and run
+            // the expensive painted-bounds pass only for that replacement case.
+            if (!ContainsTextOutlines) return original;
+
+            var measured = MeasurePaintedBounds();
+            if (!measured.HasValue) return original;
+            var ink = measured.Value;
+            var safetyX = safetyPaddingPixels * unitsPerPixelX;
+            var safetyY = safetyPaddingPixels * unitsPerPixelY;
+            var left = Math.Min(_viewBox.X, ink.X - safetyX);
+            var top = Math.Min(_viewBox.Y, ink.Y - safetyY);
+            var right = Math.Max(
+                _viewBox.X + _viewBox.Width,
+                ink.X + ink.Width + safetyX);
+            var bottom = Math.Max(
+                _viewBox.Y + _viewBox.Height,
+                ink.Y + ink.Height + safetyY);
+            var epsilonX = unitsPerPixelX * 0.0001d;
+            var epsilonY = unitsPerPixelY * 0.0001d;
+            if (Math.Abs(left - _viewBox.X) <= epsilonX
+                && Math.Abs(top - _viewBox.Y) <= epsilonY
+                && Math.Abs(right - (_viewBox.X + _viewBox.Width)) <= epsilonX
+                && Math.Abs(bottom - (_viewBox.Y + _viewBox.Height)) <= epsilonY)
+                return original;
+
+            var expanded = new SvgViewBox(left, top, right - left, bottom - top);
+            var baselineCoordinate = _viewBox.Y + resolvedBaseline * unitsPerPixelY;
+            var expandedWidthPixels = (float)(expanded.Width / unitsPerPixelX);
+            var expandedHeightPixels = (float)(expanded.Height / unitsPerPixelY);
+            var expandedBaselinePixels = (float)Math.Max(
+                0d,
+                Math.Min(
+                    expandedHeightPixels,
+                    (baselineCoordinate - expanded.Y) / unitsPerPixelY));
+            return new SvgRenderGeometry(
+                expanded,
+                expandedWidthPixels,
+                expandedHeightPixels,
+                expandedBaselinePixels,
+                isExpanded: true);
+        }
+
+        public void RenderPng(
+            string pngPath,
+            float widthPixels,
+            float heightPixels,
+            SvgViewBox renderedViewBox)
+        {
+            var maximumDimension = Math.Max(widthPixels, heightPixels);
+            var scale = Math.Min(2d, 8192d / maximumDimension);
+            if (!IsPositiveFinite(scale)) scale = 1d;
+            var pixelWidth = Math.Max(1, checked((int)Math.Ceiling(widthPixels * scale)));
+            var pixelHeight = Math.Max(1, checked((int)Math.Ceiling(heightPixels * scale)));
+            using var bitmap = new Bitmap(
+                pixelWidth,
+                pixelHeight,
+                PixelFormat.Format32bppArgb);
+            bitmap.SetResolution((float)(96d * scale), (float)(96d * scale));
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.Transparent);
+                graphics.PageUnit = GraphicsUnit.Pixel;
+                graphics.PageScale = 1f;
+                graphics.ResetTransform();
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.CompositingMode = CompositingMode.SourceOver;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                RenderToGraphics(
+                    graphics,
+                    pixelWidth,
+                    pixelHeight,
+                    renderedViewBox);
+            }
+            bitmap.Save(pngPath, ImageFormat.Png);
+        }
+
+        private SvgViewBox? MeasurePaintedBounds()
+        {
+            const int measurementWidth = 1536;
+            const int measurementHeight = 1536;
+            foreach (var marginFactor in new[] { 1d, 3d, 7d })
+            {
+                var measurementViewBox = new SvgViewBox(
+                    _viewBox.X - _viewBox.Width * marginFactor,
+                    _viewBox.Y - _viewBox.Height * marginFactor,
+                    _viewBox.Width * (1d + 2d * marginFactor),
+                    _viewBox.Height * (1d + 2d * marginFactor));
+                using var bitmap = new Bitmap(
+                    measurementWidth,
+                    measurementHeight,
+                    PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(Color.Transparent);
+                    graphics.PageUnit = GraphicsUnit.Pixel;
+                    graphics.PageScale = 1f;
+                    graphics.ResetTransform();
+                    graphics.SmoothingMode = SmoothingMode.None;
+                    graphics.PixelOffsetMode = PixelOffsetMode.None;
+                    graphics.CompositingMode = CompositingMode.SourceCopy;
+                    graphics.CompositingQuality = CompositingQuality.Default;
+                    RenderToGraphics(
+                        graphics,
+                        measurementWidth,
+                        measurementHeight,
+                        measurementViewBox);
+                }
+
+                var pixels = FindOpaquePixelBounds(bitmap);
+                if (pixels.IsEmpty) return null;
+                if (pixels.Left <= 0
+                    || pixels.Top <= 0
+                    || pixels.Right >= measurementWidth
+                    || pixels.Bottom >= measurementHeight)
+                    continue;
+
+                var left = measurementViewBox.X
+                    + pixels.Left / (double)measurementWidth * measurementViewBox.Width;
+                var top = measurementViewBox.Y
+                    + pixels.Top / (double)measurementHeight * measurementViewBox.Height;
+                var right = measurementViewBox.X
+                    + pixels.Right / (double)measurementWidth * measurementViewBox.Width;
+                var bottom = measurementViewBox.Y
+                    + pixels.Bottom / (double)measurementHeight * measurementViewBox.Height;
+                return new SvgViewBox(left, top, right - left, bottom - top);
+            }
+            return null;
+        }
+
+        private void RenderToGraphics(
+            Graphics graphics,
+            double recordingWidth,
+            double recordingHeight,
+            SvgViewBox renderedViewBox)
+        {
+            var rootTransform = new SvgMatrix(
+                recordingWidth / renderedViewBox.Width,
+                0,
+                0,
+                recordingHeight / renderedViewBox.Height,
+                -renderedViewBox.X * recordingWidth / renderedViewBox.Width,
+                -renderedViewBox.Y * recordingHeight / renderedViewBox.Height);
+            var style = SvgStyle.Default;
+            foreach (var child in _root.Elements())
+                RenderElement(
+                    graphics,
+                    child,
+                    rootTransform,
+                    style,
+                    false,
+                    new HashSet<string>());
+        }
+
+        private static Rectangle FindOpaquePixelBounds(Bitmap bitmap)
+        {
+            var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            var data = bitmap.LockBits(
+                rectangle,
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format32bppArgb);
+            try
+            {
+                var absoluteStride = Math.Abs(data.Stride);
+                var bytes = new byte[checked(absoluteStride * bitmap.Height)];
+                Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+                var left = bitmap.Width;
+                var top = bitmap.Height;
+                var right = -1;
+                var bottom = -1;
+                for (var y = 0; y < bitmap.Height; y++)
+                {
+                    var row = data.Stride >= 0
+                        ? y * data.Stride
+                        : (bitmap.Height - 1 - y) * absoluteStride;
+                    for (var x = 0; x < bitmap.Width; x++)
+                    {
+                        var alpha = bytes[row + x * 4 + 3];
+                        if (alpha <= 8) continue;
+                        left = Math.Min(left, x);
+                        top = Math.Min(top, y);
+                        right = Math.Max(right, x);
+                        bottom = Math.Max(bottom, y);
+                    }
+                }
+                return right < left || bottom < top
+                    ? Rectangle.Empty
+                    : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
         }
 
         private void RenderElement(
@@ -1049,6 +1378,29 @@ internal static class OfficeOlePreview
             !double.IsNaN(value) && !double.IsInfinity(value);
 
         private static bool IsPositiveFinite(double value) => IsFinite(value) && value > 0;
+    }
+
+    private readonly struct SvgRenderGeometry
+    {
+        public SvgRenderGeometry(
+            SvgViewBox viewBox,
+            float widthPixels,
+            float heightPixels,
+            float baselinePixels,
+            bool isExpanded)
+        {
+            ViewBox = viewBox;
+            WidthPixels = widthPixels;
+            HeightPixels = heightPixels;
+            BaselinePixels = baselinePixels;
+            IsExpanded = isExpanded;
+        }
+
+        public SvgViewBox ViewBox { get; }
+        public float WidthPixels { get; }
+        public float HeightPixels { get; }
+        public float BaselinePixels { get; }
+        public bool IsExpanded { get; }
     }
 
     private readonly struct SvgViewBox

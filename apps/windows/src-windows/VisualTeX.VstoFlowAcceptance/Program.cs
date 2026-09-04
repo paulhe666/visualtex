@@ -480,6 +480,10 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-installed-inline-ole-ribbon-reedit",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-installed-mathtype-reedit-regression",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -882,6 +886,10 @@ internal static partial class Program
             {
                 RunWordInstalledMathTypeLeftUiE2eAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-installed-inline-ole-ribbon-reedit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledInlineOleRibbonReeditAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledMathTypeReeditRegressionAcceptance(client, artifactRoot);
@@ -913,6 +921,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-mathtype-number-format", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeNumberFormatAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-native-format-parity", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeNativeFormatParityAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "win32-thread-execution-probe", StringComparison.OrdinalIgnoreCase))
             {
@@ -1334,7 +1346,9 @@ internal static partial class Program
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error);
+            Console.Error.WriteLine(
+                $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                + error.Message);
             Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
             return 1;
         }

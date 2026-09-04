@@ -1899,20 +1899,37 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             MathTypePreviewHorizontalSafetyInsetPixels);
                 }
             }
+            else if (string.Equals(
+                         session.ObjectMode,
+                         FormulaOleContract.NativeOleMode,
+                         StringComparison.Ordinal))
+            {
+                imagePath = client.MaterializePng(session);
+                svgPath = client.MaterializeSvg(session);
+                var originalImagePath = imagePath;
+                var preview = OfficeOlePreview.CreateInkSafePreviewFromSvg(
+                    svgPath,
+                    export.Width,
+                    export.Height,
+                    export.Baseline,
+                    fallbackPngPath: originalImagePath);
+                if (!string.Equals(
+                        preview.PngPath,
+                        originalImagePath,
+                        StringComparison.OrdinalIgnoreCase))
+                    TryDeleteFile(originalImagePath);
+                emfPath = preview.EmfPath;
+                imagePath = preview.PngPath;
+                // Keep the OLE physical frame, vector/raster previews and
+                // mathematical baseline on one geometry after final GDI+ font
+                // outline measurement.
+                export.Width = preview.WidthPixels;
+                export.Height = preview.HeightPixels;
+                export.Baseline = preview.BaselinePixels;
+            }
             else
             {
                 imagePath = client.MaterializePng(session);
-                if (string.Equals(
-                        session.ObjectMode,
-                        FormulaOleContract.NativeOleMode,
-                        StringComparison.Ordinal))
-                {
-                    svgPath = client.MaterializeSvg(session);
-                    emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
-                        svgPath,
-                        export.Width,
-                        export.Height);
-                }
             }
             // Word can fire WindowSelectionChange synchronously while an edit moves
             // an OLE formula into/out of the numbered 1x3 host.  SelectionChange
@@ -3110,24 +3127,42 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 StringComparison.Ordinal);
         if (needsVectorPreview)
         {
-            if (string.Equals(
-                    objectMode,
-                    FormulaOleContract.NativeOleMode,
-                    StringComparison.Ordinal))
-                template.PngPath = client.MaterializePng(session);
             template.SvgPath = client.MaterializeSvg(session);
             try
             {
-                template.EmfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
-                    template.SvgPath,
-                    export.Width,
-                    export.Height,
-                    horizontalSafetyInsetPixels: string.Equals(
-                            objectMode,
-                            FormulaOleContract.MathTypeOleMode,
-                            StringComparison.Ordinal)
-                        ? MathTypePreviewHorizontalSafetyInsetPixels
-                        : 0f);
+                if (string.Equals(
+                        objectMode,
+                        FormulaOleContract.NativeOleMode,
+                        StringComparison.Ordinal))
+                {
+                    template.PngPath = client.MaterializePng(session);
+                    var originalPngPath = template.PngPath;
+                    var preview = OfficeOlePreview.CreateInkSafePreviewFromSvg(
+                        template.SvgPath,
+                        export.Width,
+                        export.Height,
+                        export.Baseline,
+                        fallbackPngPath: originalPngPath);
+                    if (!string.Equals(
+                            preview.PngPath,
+                            originalPngPath,
+                            StringComparison.OrdinalIgnoreCase))
+                        TryDeleteFile(originalPngPath);
+                    template.EmfPath = preview.EmfPath;
+                    template.PngPath = preview.PngPath;
+                    export.Width = preview.WidthPixels;
+                    export.Height = preview.HeightPixels;
+                    export.Baseline = preview.BaselinePixels;
+                }
+                else
+                {
+                    template.EmfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+                        template.SvgPath,
+                        export.Width,
+                        export.Height,
+                        horizontalSafetyInsetPixels:
+                            MathTypePreviewHorizontalSafetyInsetPixels);
+                }
             }
             catch (Exception error)
             {

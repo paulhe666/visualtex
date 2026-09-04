@@ -1435,6 +1435,8 @@ fn emit_recognition_progress(
         "model": model,
     });
     let _ = app.emit("ocr-recognition-progress", &progress);
+    #[cfg(windows)]
+    windows_silent_ocr_hotkey::handle_ocr_progress(app, &progress);
     if let Some(state) = app.try_state::<OcrState>() {
         state.events.publish("ocr-recognition-progress", &progress);
     }

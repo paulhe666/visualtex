@@ -8131,7 +8131,10 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .suggestion-popup {
   position: fixed;
-  z-index: 300;
+  /* Command completion is a document-level portal. Keep it above normal
+     workspace chrome (Office/classic source + toolbar layers reach 520), but
+     below context menus and modal dialogs (1800+). */
+  z-index: 1600;
 }
 
 .toolbar-tabs {

@@ -25,6 +25,7 @@ internal static class MathTypeWordOpenXml
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private static readonly XNamespace OfficeNamespace =
         "urn:schemas-microsoft-com:office:office";
+    private const string EquationBookmarkPrefix = "ZEqnNum";
     private static readonly XNamespace VmlNamespace =
         "urn:schemas-microsoft-com:vml";
     private static readonly XNamespace WordNamespace =
@@ -96,6 +97,10 @@ internal static class MathTypeWordOpenXml
         {
             template.Segments.Add(NumberSegment.Field(
                 " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT "));
+            // Keep VisualTeX's document-wide preset identical across OMML,
+            // VisualTeX OLE and MathType-native fields. At heading level 2 the
+            // chapter/section delimiter remains '.', while the configured
+            // separator is used immediately before MTEqn (for example 1.1-1).
             template.Segments.Add(NumberSegment.Text(
                 format.HeadingLevel == 1 ? format.Separator : "."));
         }
@@ -109,6 +114,146 @@ internal static class MathTypeWordOpenXml
             " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT "));
         template.Segments.Add(NumberSegment.Text(")"));
         return template;
+    }
+
+    /// <summary>
+    /// Rewrites one exact MTPlaceRef field-range Flat OPC fragment using the
+    /// topology emitted by MathType's own Word commands. The caller deliberately
+    /// supplies only the outer field span, so tabs, the Equation.DSMT4 object,
+    /// paragraph marks and MTEditEquationSection2 state remain outside this
+    /// transaction and cannot be moved by the rewrite.
+    /// </summary>
+    internal static string RewriteMathTypePlaceRefFieldFlatOpc(
+        string sourceFlatOpc,
+        NumberTemplate numberingTemplate)
+    {
+        if (string.IsNullOrWhiteSpace(sourceFlatOpc))
+            throw new ArgumentException(
+                "MathType MTPlaceRef source Flat OPC is empty.",
+                nameof(sourceFlatOpc));
+        if (numberingTemplate is null || numberingTemplate.Segments.Count == 0)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef numbering template is empty.");
+        EnsureFlatOpcSize(sourceFlatOpc, "MathType MTPlaceRef field package");
+
+        var package = XDocument.Parse(
+            sourceFlatOpc,
+            LoadOptions.PreserveWhitespace);
+        var documentPart = FindPart(package, "/word/document.xml");
+        var xmlData = documentPart.Element(PackageNamespace + "xmlData")
+            ?? throw new InvalidDataException(
+                "MathType MTPlaceRef Flat OPC document part has no xmlData.");
+        var wordDocument = xmlData.Elements().SingleOrDefault()
+            ?? throw new InvalidDataException(
+                "MathType MTPlaceRef Flat OPC document part is empty.");
+
+        var ownerParagraphs = wordDocument
+            .Descendants(WordNamespace + "p")
+            .Where(paragraph => string.Concat(
+                    paragraph
+                        .Descendants(WordNamespace + "instrText")
+                        .Select(node => node.Value))
+                .IndexOf(
+                    "MACROBUTTON MTPlaceRef",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+            .ToList();
+        if (ownerParagraphs.Count != 1)
+            throw new InvalidDataException(
+                $"MathType MTPlaceRef field package must contain exactly one owner paragraph; found {ownerParagraphs.Count}.");
+
+        var owner = ownerParagraphs[0];
+        if (owner.Descendants(WordNamespace + "object").Any()
+            || owner.Descendants(WordNamespace + "tab").Any())
+            throw new InvalidDataException(
+                "MathType MTPlaceRef field package unexpectedly includes an OLE object or tab outside the field boundary.");
+
+        var directChildren = owner.Elements().ToList();
+        var unsupportedNodes = directChildren
+            .Where(node => node.Name != WordNamespace + "pPr"
+                && node.Name != WordNamespace + "r"
+                && node.Name != WordNamespace + "bookmarkStart"
+                && node.Name != WordNamespace + "bookmarkEnd")
+            .Select(node => node.Name.LocalName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (unsupportedNodes.Count > 0)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef field package contains unsupported inline nodes: "
+                + string.Join(", ", unsupportedNodes));
+
+        var bookmarkStarts = directChildren
+            .Where(node => node.Name == WordNamespace + "bookmarkStart")
+            .ToList();
+        var nonMathTypeBookmarks = bookmarkStarts
+            .Where(node => !(node.Attribute(WordNamespace + "name")?.Value
+                    .StartsWith(
+                        EquationBookmarkPrefix,
+                        StringComparison.OrdinalIgnoreCase)
+                ?? false))
+            .Select(node => node.Attribute(WordNamespace + "name")?.Value
+                ?? "<unnamed>")
+            .ToList();
+        if (nonMathTypeBookmarks.Count > 0)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef field package contains non-MathType bookmarks: "
+                + string.Join(", ", nonMathTypeBookmarks));
+
+        var bookmarkIds = bookmarkStarts
+            .Select(node => node.Attribute(WordNamespace + "id")?.Value
+                ?? throw new InvalidDataException(
+                    "MathType ZEqnNum bookmark has no w:id."))
+            .ToList();
+        if (bookmarkIds.Count != bookmarkIds.Distinct(StringComparer.Ordinal).Count())
+            throw new InvalidDataException(
+                "MathType MTPlaceRef field contains duplicate bookmark ids.");
+
+        var bookmarkEndsById = directChildren
+            .Where(node => node.Name == WordNamespace + "bookmarkEnd")
+            .GroupBy(
+                node => node.Attribute(WordNamespace + "id")?.Value
+                    ?? string.Empty,
+                StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToList(),
+                StringComparer.Ordinal);
+        foreach (var bookmarkId in bookmarkIds)
+        {
+            if (!bookmarkEndsById.TryGetValue(bookmarkId, out var ends)
+                || ends.Count != 1)
+                throw new InvalidDataException(
+                    $"MathType ZEqnNum bookmark id '{bookmarkId}' does not have exactly one matching end.");
+        }
+        var unmatchedBookmarkEnds = bookmarkEndsById.Keys
+            .Where(id => !bookmarkIds.Contains(id, StringComparer.Ordinal))
+            .ToList();
+        if (unmatchedBookmarkEnds.Count > 0)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef field contains unmatched bookmark ends: "
+                + string.Join(", ", unmatchedBookmarkEnds));
+
+        var paragraphProperties = directChildren
+            .Where(node => node.Name == WordNamespace + "pPr")
+            .Select(node => new XElement(node))
+            .ToList();
+        var bookmarkStartClones = bookmarkStarts
+            .Select(node => new XElement(node))
+            .ToList();
+        var bookmarkEndClones = bookmarkIds
+            .AsEnumerable()
+            .Reverse()
+            .Select(id => new XElement(bookmarkEndsById[id][0]))
+            .ToList();
+
+        var rebuiltField = BuildMathTypePlaceRef(
+                numberingTemplate,
+                bookmarkStartClones,
+                bookmarkEndClones)
+            .ToList();
+        owner.RemoveNodes();
+        owner.Add(paragraphProperties);
+        owner.Add(rebuiltField);
+        return package.ToString(SaveOptions.DisableFormatting);
     }
 
     internal static Fragment Read(Word.InlineShape shape)
@@ -557,27 +702,122 @@ internal static class MathTypeWordOpenXml
         yield return FieldCharRun("end");
     }
 
-    private static IEnumerable<XElement> BuildMathTypePlaceRef(NumberTemplate template)
+    private static IEnumerable<XElement> BuildMathTypePlaceRef(
+        NumberTemplate template) =>
+        BuildMathTypePlaceRef(
+            template,
+            Array.Empty<XElement>(),
+            Array.Empty<XElement>());
+
+    private static IEnumerable<XElement> BuildMathTypePlaceRef(
+        NumberTemplate template,
+        IReadOnlyList<XElement> bookmarkStarts,
+        IReadOnlyList<XElement> bookmarkEnds)
     {
         if (template.Segments.Count == 0)
             throw new InvalidDataException("MathType MTPlaceRef numbering template is empty.");
+        if (bookmarkStarts.Count != bookmarkEnds.Count)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef bookmark start/end counts differ.");
 
-        yield return FieldCharRun("begin");
-        yield return InstructionRun(" MACROBUTTON MTPlaceRef");
+        var nodes = new List<XElement>
+        {
+            FieldCharRun("begin"),
+            // Native MathType keeps MERGEFORMAT in the outer instruction and has
+            // no outer field separator/result. Everything through the closing
+            // parenthesis is part of MTPlaceRef.Code.
+            InstructionRun(" MACROBUTTON MTPlaceRef \\* MERGEFORMAT "),
+        };
+        var hiddenIncrementCount = 0;
+        var visibleSequenceCount = 0;
+        var bookmarksInserted = false;
+
+        void InsertBookmarkStarts()
+        {
+            if (bookmarksInserted) return;
+            nodes.AddRange(bookmarkStarts.Select(node => new XElement(node)));
+            bookmarksInserted = true;
+        }
+
         foreach (var segment in template.Segments)
         {
             if (!segment.IsField)
             {
-                if (!string.IsNullOrEmpty(segment.Value))
-                    yield return InstructionRun(segment.Value);
+                // Legacy in-memory templates keep the outer MERGEFORMAT switch as
+                // their first literal. The exact native XML builder owns it above.
+                if (IsOuterMergeFormatSegment(segment.Value)
+                    || string.IsNullOrEmpty(segment.Value))
+                    continue;
+                if (hiddenIncrementCount > 0) InsertBookmarkStarts();
+                nodes.Add(InstructionRun(segment.Value));
                 continue;
             }
-            foreach (var nestedRun in BuildSimpleComplexField(segment.Value))
-                yield return nestedRun;
+
+            var hidden = IsHiddenMathTypeSequenceInstruction(segment.Value);
+            if (!hidden) InsertBookmarkStarts();
+            nodes.AddRange(BuildNativeMathTypeSequenceField(
+                segment.Value,
+                hidden));
+            if (hidden) hiddenIncrementCount++;
+            else visibleSequenceCount++;
         }
-        yield return FieldCharRun("separate");
+
+        if (hiddenIncrementCount != 1)
+            throw new InvalidDataException(
+                $"MathType MTPlaceRef must own exactly one hidden MTEqn increment; found {hiddenIncrementCount}.");
+        if (visibleSequenceCount == 0)
+            throw new InvalidDataException(
+                "MathType MTPlaceRef has no visible sequence field.");
+        InsertBookmarkStarts();
+        nodes.AddRange(bookmarkEnds.Select(node => new XElement(node)));
+        nodes.Add(FieldCharRun("end"));
+        return nodes;
+    }
+
+    private static IEnumerable<XElement> BuildNativeMathTypeSequenceField(
+        string instruction,
+        bool hidden)
+    {
+        if (string.IsNullOrWhiteSpace(instruction))
+            throw new InvalidDataException(
+                "MathType nested Word field instruction is empty.");
+        yield return FieldCharRun("begin");
+        yield return InstructionRun(instruction);
+        if (!hidden)
+        {
+            yield return FieldCharRun("separate");
+            // The installed MathType add-in serializes visible SEQ results as
+            // instrText with noProof. Word refreshes this placeholder immediately
+            // from the live MTChap/MTSec/MTEqn state.
+            yield return new XElement(
+                WordNamespace + "r",
+                new XElement(
+                    WordNamespace + "rPr",
+                    new XElement(WordNamespace + "noProof")),
+                new XElement(WordNamespace + "instrText", "0"));
+        }
         yield return FieldCharRun("end");
     }
+
+    private static bool IsHiddenMathTypeSequenceInstruction(string instruction)
+    {
+        if (string.IsNullOrWhiteSpace(instruction)) return false;
+        var normalized = instruction
+            .Replace('\t', ' ')
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+        return normalized.StartsWith(
+                "SEQ MTEqn ",
+                StringComparison.OrdinalIgnoreCase)
+            && normalized.IndexOf("\\h", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsOuterMergeFormatSegment(string? value) =>
+        string.Equals(
+            value?.Trim(),
+            "\\* MERGEFORMAT",
+            StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<XElement> BuildSimpleComplexField(string instruction)
     {

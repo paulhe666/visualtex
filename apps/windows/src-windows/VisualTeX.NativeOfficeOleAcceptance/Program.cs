@@ -626,7 +626,7 @@ internal static class Program
             {
                 Console.WriteLine(
                     $"  O: width={originalShape.Width:0.###}pt; height={originalShape.Height:0.###}pt; "
-                    + $"position={originalShape.Range.Font.Position:0.###}pt.");
+                    + $"position={ReadInlineOleObjectFontPosition(originalShape):0.###}pt.");
             }
             finally { Release(originalShape); }
             selection = application.Selection;
@@ -661,13 +661,13 @@ internal static class Program
                     ?? throw new InvalidOperationException("Word baseline visual probe did not create its OLE formula.");
                 try
                 {
-                    var initialPosition = shape.Range.Font.Position;
+                    var initialPosition = ReadInlineOleObjectFontPosition(shape);
                     shape.Range.Select();
                     service.SetSelectedFormulaFontSize(targetFontSizePt);
                     Console.WriteLine(
                         $"  {variant.Label}: width={shape.Width:0.###}pt; height={shape.Height:0.###}pt; "
                         + $"initialPosition={initialPosition:0.###}pt; "
-                        + $"finalPosition={shape.Range.Font.Position:0.###}pt.");
+                        + $"finalPosition={ReadInlineOleObjectFontPosition(shape):0.###}pt.");
                 }
                 finally { Release(shape); }
 
@@ -2679,7 +2679,7 @@ internal static class Program
                         }
                         if (item.DisplayMode == "inline")
                         {
-                            var objectModelPosition = shape.Range.Font.Position;
+                            var objectModelPosition = ReadInlineOleObjectFontPosition(shape);
                             var persistedPosition = ReadPersistedRunFontPosition(shape);
                             Assert(
                                 persistedPosition < 0,
@@ -2690,6 +2690,10 @@ internal static class Program
                                 + $"Shape={shape.Width:0.##}x{shape.Height:0.##} pt; "
                                 + $"RenderHeight={item.RenderHeightPx:0.##}; "
                                 + $"Baseline={item.Baseline:0.##}; FontSize={item.FontSizePt:0.##}.");
+                            AssertInlineOleFieldBaselineIsolation(
+                                shape,
+                                objectModelPosition,
+                                "Bulk inline OLE insertion");
                             AssertClose(
                                 0f,
                                 ReadParagraphMarkFontPosition(shape.Range),
@@ -3551,8 +3555,12 @@ internal static class Program
                 shape.Height,
                 (float)(metadata.RenderHeightPx ?? 0),
                 metadata.Baseline.HasValue ? (float?)metadata.Baseline.Value : null);
-            AssertClose(expectedInlinePosition, shape.Range.Font.Position, 0.1f,
+            AssertClose(expectedInlinePosition, ReadInlineOleObjectFontPosition(shape), 0.1f,
                 "Word OLE inline baseline was lost after changing font size.");
+            AssertInlineOleFieldBaselineIsolation(
+                shape,
+                expectedInlinePosition,
+                "Word OLE font sizing");
             AssertClose(0f, ReadParagraphMarkFontPosition(shape.Range), 0.1f,
                 "Word OLE font sizing contaminated the paragraph default baseline.");
             AssertClose(0f, application.Selection.Font.Position, 0.1f,
@@ -3577,7 +3585,7 @@ internal static class Program
             Release(shape);
             shape = FindWordFormula(document, legacyOleFormulaId)
                 ?? throw new InvalidOperationException("Word legacy OLE font-size object was not created.");
-            var legacyInitialPosition = shape.Range.Font.Position;
+            var legacyInitialPosition = ReadInlineOleObjectFontPosition(shape);
             Assert(
                 legacyInitialPosition < 0,
                 "Word legacy OLE insertion did not receive a fallback inline baseline.");
@@ -3592,9 +3600,13 @@ internal static class Program
                 targetSemanticFontSizePoints: 42);
             AssertClose(
                 expectedLegacyInlinePosition,
-                shape.Range.Font.Position,
+                ReadInlineOleObjectFontPosition(shape),
                 0.1f,
                 "Word legacy OLE formula did not scale its existing baseline when metadata was missing.");
+            AssertInlineOleFieldBaselineIsolation(
+                shape,
+                expectedLegacyInlinePosition,
+                "Word legacy OLE font sizing");
             AssertClose(0f, ReadParagraphMarkFontPosition(shape.Range), 0.1f,
                 "Word legacy OLE font sizing contaminated the paragraph default baseline.");
 
@@ -3860,6 +3872,10 @@ internal static class Program
                 "Saved Word OLE formula did not preserve its physical font-size scale.");
             AssertClose(expectedInlinePosition, ReadPersistedRunFontPosition(shape), 0.1f,
                 "Saved Word OLE formula did not preserve its inline baseline.");
+            AssertInlineOleFieldBaselineIsolation(
+                shape,
+                expectedInlinePosition,
+                "Saved Word OLE formula");
             AssertClose(0f, ReadParagraphMarkFontPosition(shape.Range), 0.1f,
                 "Saved Word OLE formula contaminated the paragraph default baseline.");
             Release(range);
@@ -3877,6 +3893,10 @@ internal static class Program
                 ReadPersistedRunFontPosition(shape),
                 0.1f,
                 "Saved legacy Word OLE formula did not preserve its scaled inline baseline.");
+            AssertInlineOleFieldBaselineIsolation(
+                shape,
+                expectedLegacyInlinePosition,
+                "Saved legacy Word OLE formula");
             AssertClose(0f, ReadParagraphMarkFontPosition(shape.Range), 0.1f,
                 "Saved legacy Word OLE formula contaminated the paragraph default baseline.");
 
@@ -6348,6 +6368,96 @@ internal static class Program
         if (!int.TryParse(position, NumberStyles.Integer, CultureInfo.InvariantCulture, out var halfPoints))
             return 0f;
         return halfPoints / 2f;
+    }
+
+    private static float ReadInlineOleObjectFontPosition(Word.InlineShape shape)
+    {
+        Word.Range? shapeRange = null;
+        Word.Range? character = null;
+        Word.Font? font = null;
+        Word.Document? document = null;
+        try
+        {
+            shapeRange = shape.Range;
+            document = shapeRange.Document;
+            for (var position = shapeRange.Start; position < shapeRange.End; position++)
+            {
+                Release(font);
+                font = null;
+                Release(character);
+                character = document.Range(position, position + 1);
+                if (!string.Equals(character.Text, "\u0001", StringComparison.Ordinal))
+                    continue;
+                font = character.Font;
+                var result = font.Position;
+                return result == (int)Word.WdConstants.wdUndefined ? 0f : result;
+            }
+            font = shapeRange.Font;
+            var fallback = font.Position;
+            return fallback == (int)Word.WdConstants.wdUndefined ? 0f : fallback;
+        }
+        finally
+        {
+            Release(font);
+            Release(character);
+            Release(shapeRange);
+            Release(document);
+        }
+    }
+
+    private static void AssertInlineOleFieldBaselineIsolation(
+        Word.InlineShape shape,
+        float expectedObjectPosition,
+        string context)
+    {
+        Word.Range? shapeRange = null;
+        Word.Range? character = null;
+        Word.Font? font = null;
+        Word.Document? document = null;
+        var objectCharacters = 0;
+        try
+        {
+            shapeRange = shape.Range;
+            document = shapeRange.Document;
+            for (var position = shapeRange.Start; position < shapeRange.End; position++)
+            {
+                Release(font);
+                font = null;
+                Release(character);
+                character = document.Range(position, position + 1);
+                font = character.Font;
+                var actual = font.Position == (int)Word.WdConstants.wdUndefined
+                    ? 0f
+                    : font.Position;
+                if (string.Equals(character.Text, "\u0001", StringComparison.Ordinal))
+                {
+                    objectCharacters++;
+                    AssertClose(
+                        expectedObjectPosition,
+                        actual,
+                        0.1f,
+                        context + ": the painted OLE object character has the wrong baseline.");
+                }
+                else
+                {
+                    AssertClose(
+                        0f,
+                        actual,
+                        0.1f,
+                        context + ": the hidden EMBED field instruction inherited the object baseline.");
+                }
+            }
+            Assert(
+                objectCharacters == 1,
+                context + ": the OLE field did not expose exactly one U+0001 object character.");
+        }
+        finally
+        {
+            Release(font);
+            Release(character);
+            Release(shapeRange);
+            Release(document);
+        }
     }
 
     private static float ReadParagraphMarkFontPosition(Word.Range formulaRange)

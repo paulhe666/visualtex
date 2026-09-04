@@ -190,11 +190,17 @@ export function calculateInlineFormulaPosition(
   if (!(downwardShiftPoints > 0) || !Number.isFinite(downwardShiftPoints)) {
     return 0;
   }
-  // Word quantizes inline-object positions to whole points. Applying the full
-  // rounded MathJax descent makes OLE formulas sit about one point below native
-  // OMML, so retain the geometry while adding a one-point optical lift.
-  const roundedDescent = Math.max(0, Math.round(downwardShiftPoints));
-  return -Math.max(0, roundedDescent - 1);
+  // Word exposes only whole-point inline-object positions. Apply the complete
+  // whole-point part of the rendered descent. Office float geometry can report
+  // an exact integer descent as 9.994...pt, so snap only values already within
+  // one hundredth of the next point; 0.0001pt absorbs floating representation
+  // at that boundary, while ordinary 0.6/0.7pt remainders stay intact.
+  // This remains one geometry rule for every formula and font size.
+  const wholePointDescent = Math.max(
+    0,
+    Math.floor(downwardShiftPoints + 0.0101),
+  );
+  return wholePointDescent === 0 ? 0 : -wholePointDescent;
 }
 
 /** Calculate the exact offset used after Word has scaled the exported image.

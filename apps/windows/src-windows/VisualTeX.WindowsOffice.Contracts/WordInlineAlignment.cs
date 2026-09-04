@@ -5,7 +5,7 @@ namespace VisualTeX.WindowsOffice.Contracts;
 public static class WordInlineAlignment
 {
     public const float LegacyDescentRatio = 0.25f;
-    public const int OpticalBaselineLiftPoints = 1;
+    public const float WholePointSnapTolerancePoints = 0.0101f;
 
     public static int CalculateFontPositionWithLegacyFallback(
         float actualHeightPoints,
@@ -19,8 +19,7 @@ public static class WordInlineAlignment
             return CalculateFontPosition(
                 actualHeightPoints,
                 exportedHeight,
-                exportedBaseline,
-                targetSemanticFontSizePoints);
+                exportedBaseline);
 
         var sourceSize = FormulaFontSize.Normalize(sourceSemanticFontSizePoints);
         var targetSize = FormulaFontSize.Normalize(targetSemanticFontSizePoints);
@@ -56,18 +55,7 @@ public static class WordInlineAlignment
     public static int CalculateFontPosition(
         float actualHeightPoints,
         float exportedHeight,
-        float? exportedBaseline) =>
-        CalculateFontPosition(
-            actualHeightPoints,
-            exportedHeight,
-            exportedBaseline,
-            semanticFontSizePoints: null);
-
-    private static int CalculateFontPosition(
-        float actualHeightPoints,
-        float exportedHeight,
-        float? exportedBaseline,
-        double? semanticFontSizePoints)
+        float? exportedBaseline)
     {
         if (!(actualHeightPoints > 0)
             || !IsFinite(actualHeightPoints)
@@ -80,32 +68,19 @@ public static class WordInlineAlignment
         if (!(downwardShiftPoints > 0) || float.IsInfinity(downwardShiftPoints))
             return 0;
 
-        // Word positions inline objects in whole points. Rounding the complete
-        // MathJax descent places OLE previews about one point below native OMML
-        // on ordinary text lines. Keep the geometric descent, but apply a small
-        // optical lift so the visible glyph baseline matches Word's math zone.
-        var roundedDescent = Math.Max(
+        // Word exposes Font.Position only in whole points. Lower the object by
+        // the complete whole-point part of its rendered descent. Float32 Word/
+        // Office geometry can report an exact 10 pt descent as 9.994... pt, so
+        // snap only values already within one hundredth of the next integer;
+        // the extra 0.0001 pt absorbs Float32 representation at that boundary.
+        // This tolerance is far below Word's one-point Position resolution and
+        // avoids formula-type heuristics while preserving genuine sub-point
+        // remainders such as 0.6 or 0.7 pt.
+        var wholePointDescent = Math.Max(
             0,
-            (int)Math.Round(downwardShiftPoints, MidpointRounding.AwayFromZero));
-        var largeFontLift = CalculateLargeFontOpticalLift(semanticFontSizePoints);
-        return -Math.Max(
-            0,
-            roundedDescent - OpticalBaselineLiftPoints - largeFontLift);
-    }
-
-    private static int CalculateLargeFontOpticalLift(double? semanticFontSizePoints)
-    {
-        if (!semanticFontSizePoints.HasValue
-            || double.IsNaN(semanticFontSizePoints.Value)
-            || double.IsInfinity(semanticFontSizePoints.Value))
-            return 0;
-        var fontSize = FormulaFontSize.Normalize(semanticFontSizePoints.Value);
-        // Office 2021's inline OLE box starts to sit visibly below adjacent
-        // Times New Roman text only at large display sizes. Keep 12/18/24 pt
-        // untouched; add one point around 33–41 pt and two points at 42 pt+.
-        return Math.Max(
-            0,
-            Math.Min(2, (int)Math.Floor((fontSize - 24.0) / 9.0)));
+            (int)Math.Floor(
+                downwardShiftPoints + WholePointSnapTolerancePoints));
+        return -wholePointDescent;
     }
 
     private static bool HasValidExportedBaseline(

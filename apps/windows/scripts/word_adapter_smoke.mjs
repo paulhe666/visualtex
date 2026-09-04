@@ -474,7 +474,7 @@ const lineId = crypto.randomUUID();
 const inlineSession = createSession(formulaId, lineId, "inline");
 assert.equal(
   calculateInlineSessionPosition(inlineSession),
-  -8,
+  -9,
   "native Word fallback must reuse the exact scaled Office.js offset",
 );
 const runsBeforeInlineCreate = wordRunCount;
@@ -492,7 +492,7 @@ assert.equal(picture.altTextTitle, `VisualTeX_${formulaId}`);
 assert.match(picture.altTextDescription, /^visualtex:v1:deflate:/);
 assert.equal(
   picture.fontPosition,
-  -8,
+  -9,
   "inline formula must align its exported mathematical baseline with Word text",
 );
 assert.equal(

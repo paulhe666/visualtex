@@ -220,6 +220,50 @@ impl Default for SimpleTexConfigurationUpdate {
     }
 }
 
+#[cfg(windows)]
+fn remote_provider_progress_message(provider: &str, stage: &str) -> Option<&'static str> {
+    match (provider, stage) {
+        (OPENAI_COMPATIBLE_PROVIDER, "api-submit") => {
+            Some("正在准备向 OpenAI 兼容 API 提交图片…")
+        }
+        (OPENAI_COMPATIBLE_PROVIDER, "api-inference") => {
+            Some("OpenAI 兼容 API 正在上传图片并识别公式…")
+        }
+        (OPENAI_COMPATIBLE_PROVIDER, "api-result") => {
+            Some("OpenAI 兼容 API 已返回结果，正在写入编辑器…")
+        }
+        (OLLAMA_PROVIDER, "api-submit") => Some("正在准备向 Ollama 提交图片…"),
+        (OLLAMA_PROVIDER, "api-inference") => Some("Ollama 正在上传图片并识别公式…"),
+        (OLLAMA_PROVIDER, "api-result") => Some("Ollama 已返回结果，正在写入编辑器…"),
+        (MATHPIX_PROVIDER, "api-submit") => Some("正在准备向 Mathpix 提交图片…"),
+        (MATHPIX_PROVIDER, "api-inference") => Some("Mathpix 正在上传图片并识别公式…"),
+        (MATHPIX_PROVIDER, "api-result") => Some("Mathpix 已返回结果，正在写入编辑器…"),
+        (PADDLEOCR_PROVIDER, "api-submit") => Some("正在提交图片到 PaddleOCR…"),
+        (SIMPLETEX_PROVIDER, "api-submit") => Some("正在准备向 SimpleTex 提交图片…"),
+        (SIMPLETEX_PROVIDER, "api-inference") => {
+            Some("SimpleTex 正在上传图片并识别公式…")
+        }
+        (SIMPLETEX_PROVIDER, "api-result") => {
+            Some("SimpleTex 已返回结果，正在写入编辑器…")
+        }
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn emit_remote_provider_progress(
+    progress: Option<&RemoteRecognitionProgress>,
+    provider: &str,
+    stage: &str,
+) {
+    if let (Some(progress), Some(message)) = (
+        progress,
+        remote_provider_progress_message(provider, stage),
+    ) {
+        progress.emit(stage, message);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredOcrProviderConfiguration {
@@ -482,16 +526,15 @@ impl OcrProviderState {
         #[cfg(windows)]
         {
             let progress = RemoteRecognitionProgress::new(app, &request.model);
-            progress.emit(
-                "api-submit",
-                if configuration.active_provider == PADDLEOCR_PROVIDER {
-                    "正在提交图片到 PaddleOCR…"
-                } else if configuration.active_provider == SIMPLETEX_PROVIDER {
-                    "正在提交图片到 SimpleTex…"
-                } else {
-                    "正在将图片发送到已配置的 OCR API…"
-                },
-            );
+            // Paddle selects its direct/system-proxy route before submitting and
+            // therefore emits a more specific submit message from its adapter.
+            if configuration.active_provider != PADDLEOCR_PROVIDER {
+                emit_remote_provider_progress(
+                    Some(&progress),
+                    &configuration.active_provider,
+                    "api-submit",
+                );
+            }
             recognize_remote_inner(&configuration, request, Some(&progress)).await
         }
         #[cfg(not(windows))]
@@ -1103,6 +1146,11 @@ async fn recognize_remote_inner(
                 .as_deref()
                 .map(unprotect_secret)
                 .transpose()?;
+            emit_remote_provider_progress(
+                progress,
+                OPENAI_COMPATIBLE_PROVIDER,
+                "api-inference",
+            );
             let formulas = recognize_openai_compatible(
                 &client,
                 &configuration.open_ai_compatible,
@@ -1117,6 +1165,7 @@ async fn recognize_remote_inner(
             )
         }
         OLLAMA_PROVIDER => {
+            emit_remote_provider_progress(progress, OLLAMA_PROVIDER, "api-inference");
             let formulas = recognize_ollama(&client, &configuration.ollama, &data_base64).await?;
             (
                 OLLAMA_PROVIDER,
@@ -1138,6 +1187,7 @@ async fn recognize_remote_inner(
                     .as_deref()
                     .ok_or_else(|| "Mathpix app_key is required".to_string())?,
             )?;
+            emit_remote_provider_progress(progress, MATHPIX_PROVIDER, "api-inference");
             let formulas =
                 recognize_mathpix(&client, &configuration.mathpix, app_key.as_str(), &data_url)
                     .await?;
@@ -1173,6 +1223,7 @@ async fn recognize_remote_inner(
                     .ok_or_else(|| "SimpleTex user access token is required".to_string())?,
             )?;
             let simpletex_model = normalize_simpletex_model(&configuration.simple_tex.model)?;
+            emit_remote_provider_progress(progress, SIMPLETEX_PROVIDER, "api-inference");
             let formulas = recognize_simpletex(
                 &client,
                 &configuration.simple_tex,
@@ -1192,6 +1243,9 @@ async fn recognize_remote_inner(
     };
     if formulas.is_empty() {
         return Err("OCR API returned no usable formula".to_string());
+    }
+    if provider != PADDLEOCR_PROVIDER {
+        emit_remote_provider_progress(progress, provider, "api-result");
     }
     Ok(OcrRecognitionResult {
         provider: provider.to_string(),
@@ -1434,6 +1488,16 @@ fn parse_simpletex_formula_output(value: &Value) -> Result<Vec<String>, String> 
 }
 
 #[cfg(windows)]
+fn paddleocr_progress_for_state(state: &str) -> Option<(&'static str, &'static str)> {
+    match state {
+        "pending" => Some(("api-queued", "PaddleOCR 任务正在排队…")),
+        "running" => Some(("api-inference", "PaddleOCR 正在识别公式…")),
+        "done" => Some(("api-result", "PaddleOCR 识别完成，正在读取结果…")),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
 async fn recognize_paddleocr_aistudio(
     system_proxy_client: &reqwest::Client,
     configuration: &StoredPaddleOcrConfiguration,
@@ -1617,11 +1681,8 @@ async fn recognize_paddleocr_aistudio_at_with_progress(
             .ok_or_else(|| "PaddleOCR job status contains no state".to_string())?;
         if state != last_reported_state {
             if let Some(progress) = progress {
-                match state {
-                    "pending" => progress.emit("api-queued", "PaddleOCR 任务正在排队…"),
-                    "running" => progress.emit("api-inference", "PaddleOCR 正在识别公式…"),
-                    "done" => progress.emit("api-result", "PaddleOCR 识别完成，正在读取结果…"),
-                    _ => {}
+                if let Some((stage, message)) = paddleocr_progress_for_state(state) {
+                    progress.emit(stage, message);
                 }
             }
             last_reported_state = state.to_string();
@@ -3273,6 +3334,47 @@ mod tests {
         }))
         .unwrap_err()
         .contains("failed"));
+    }
+
+    #[test]
+    fn paddleocr_remote_states_map_to_visible_progress_stages() {
+        assert_eq!(
+            paddleocr_progress_for_state("pending"),
+            Some(("api-queued", "PaddleOCR 任务正在排队…"))
+        );
+        assert_eq!(
+            paddleocr_progress_for_state("running"),
+            Some(("api-inference", "PaddleOCR 正在识别公式…"))
+        );
+        assert_eq!(
+            paddleocr_progress_for_state("done"),
+            Some(("api-result", "PaddleOCR 识别完成，正在读取结果…"))
+        );
+        assert_eq!(paddleocr_progress_for_state("failed"), None);
+    }
+
+    #[test]
+    fn every_remote_api_has_visible_progress_messages() {
+        for provider in [
+            OPENAI_COMPATIBLE_PROVIDER,
+            OLLAMA_PROVIDER,
+            MATHPIX_PROVIDER,
+            SIMPLETEX_PROVIDER,
+        ] {
+            for stage in ["api-submit", "api-inference", "api-result"] {
+                assert!(
+                    remote_provider_progress_message(provider, stage).is_some(),
+                    "missing {stage} progress for {provider}"
+                );
+            }
+        }
+        assert!(
+            remote_provider_progress_message(PADDLEOCR_PROVIDER, "api-submit").is_some()
+        );
+        assert_eq!(
+            remote_provider_progress_message(LOCAL_PROVIDER, "api-submit"),
+            None
+        );
     }
 
     #[tokio::test]

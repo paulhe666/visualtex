@@ -285,13 +285,11 @@ async function main() {
             hostAligned: host?.classList.contains('has-explicit-align-marker') ?? false,
           };
         });
-        // TeX align columns are right/left pairs. Even-numbered markers are
-        // the visible relation anchors; odd-numbered markers only separate
-        // one pair from the next and may intentionally precede an empty cell.
-        const visibleAlignmentMarkerIndices = [0, 2];
-        const visualAnchorSpreads = visibleAlignmentMarkerIndices.map((markerIndex) => {
+        // TeX align columns are delimited by markers; a cell after a marker may
+        // intentionally be empty (two adjacent ampersands), so marker boundaries are authoritative.
+        const markerSpreads = [0, 1, 2].map((markerIndex) => {
           const positions = entries
-            .map((entry) => entry.visualAnchorLefts[markerIndex])
+            .map((entry) => entry.markerLefts[markerIndex])
             .filter((value) => Number.isFinite(value));
           return positions.length === fields.length
             ? Math.max(...positions) - Math.min(...positions)
@@ -303,10 +301,10 @@ async function main() {
             entries.every(
               (entry) => entry.hostAligned && entry.markerLefts.length === 3,
             ) &&
-            visualAnchorSpreads.every((spread) => spread <= 1),
+            markerSpreads.every((spread) => spread <= 1),
           count: fields.length,
           entries,
-          visualAnchorSpreads,
+          markerSpreads,
         };
       })()`);
       if (state?.ready) break;
@@ -315,8 +313,8 @@ async function main() {
 
     assert.ok(state?.ready, `OCR alignment geometry did not converge: ${JSON.stringify(state)}`);
     assert.ok(
-      state.visualAnchorSpreads.every((spread: number) => spread <= 1),
-      `OCR visible alignment columns diverged: ${state.visualAnchorSpreads.join('/')}px`,
+      state.markerSpreads.every((spread: number) => spread <= 1),
+      `OCR marker columns diverged: ${state.markerSpreads.join('/')}px`,
     );
     assert.ok(
       new Set(state.entries.map((entry: any) => Math.round(entry.marginLeft * 1000))).size > 1,
@@ -332,7 +330,7 @@ async function main() {
     );
 
     console.log(
-      `OCR multi-align editor geometry acceptance passed: visualAnchorSpreads=${state.visualAnchorSpreads.join('/')}px, ` +
+      `OCR multi-align editor geometry acceptance passed: markerSpreads=${state.markerSpreads.join('/')}px, ` +
         `margins=${state.entries.map((entry: any) => entry.marginLeft).join('/')}, ` +
         `copy restored 9 '&' tokens including '&&'.`,
     );

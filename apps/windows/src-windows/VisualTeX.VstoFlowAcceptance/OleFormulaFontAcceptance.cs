@@ -39,6 +39,7 @@ internal static partial class Program
             arialEmf = OfficeOlePreview.CreateVectorEmfFromSvg(arialSvg, 320, 96);
             AssertChineseEmfFontRenderingDiffers(timesEmf, arialEmf);
             RunWordOleFontReplacementAcceptance(artifactRoot, timesPng, timesEmf, arialPng, arialEmf);
+            RunWordInlineOleReeditReplacementAcceptance(artifactRoot, timesPng, timesEmf, arialPng, arialEmf);
             RunPowerPointOleFontReplacementAcceptance(artifactRoot, timesPng, timesEmf, arialPng, arialEmf);
             Console.WriteLine("OLE formula font acceptance passed: the native EMF glyph outlines changed and Word/PowerPoint rebuilt embedded OLE objects for font-only edits.");
         }
@@ -99,6 +100,93 @@ internal static partial class Program
                 Path.Combine(artifactRoot, "word-ole-font-replacement.docx"),
                 Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine("  Word OLE Chinese-font-only edit rebuilt the embedded object and persisted times/kaiti metadata.");
+        }
+        finally
+        {
+            Release(updatedShape);
+            Release(originalShape);
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunWordInlineOleReeditReplacementAcceptance(
+        string artifactRoot,
+        string initialPng,
+        string initialEmf,
+        string updatedPng,
+        string updatedEmf)
+    {
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.InlineShape? originalShape = null;
+        Word.InlineShape? updatedShape = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            document.Activate();
+            application.Selection.SetRange(0, 0);
+            application.Selection.TypeText("before  after");
+            application.Selection.SetRange(7, 7);
+
+            var service = new WordFormulaService(application);
+            var formulaId = Guid.NewGuid().ToString("D");
+            var initial = CreateOleFontSession(
+                "word", "create", formulaId, document.FullName, WordRangeReference(7, 7), null,
+                "times", "songti", displayMode: "inline", latex: @"a^2+b^2=c^2");
+            initial.ExportResult!.Width = 75.5938f;
+            initial.ExportResult.Height = 14.8226f;
+            initial.ExportResult.Baseline = 11.5f;
+            service.InsertOle(initial, initialPng, initialEmf);
+            AssertEqual(1, document.InlineShapes.Count,
+                "Word did not insert exactly one initial inline VisualTeX OLE formula.");
+            originalShape = document.InlineShapes[1];
+            var originalStart = originalShape.Range.Start;
+            var originalEnd = originalShape.Range.End;
+            var originalMetadata = WordFormulaMetadataReader.TryRead(originalShape)
+                ?? throw new InvalidOperationException(
+                    "Word inline OLE metadata could not be read before re-editing.");
+            Word.Range? selectedSourceRange = null;
+            try
+            {
+                selectedSourceRange = originalShape.Range.Duplicate;
+                selectedSourceRange.Select();
+            }
+            finally { Release(selectedSourceRange); }
+
+            var update = CreateOleFontSession(
+                "word", "edit", formulaId, document.FullName,
+                WordRangeReference(originalStart, originalEnd), originalMetadata,
+                "times", "songti", displayMode: "inline", latex: @"a^2+b^2=c^2+1");
+            update.ExportResult!.Width = 141.1502f;
+            update.ExportResult.Height = 14.8534f;
+            update.ExportResult.Baseline = 11.5f;
+            service.ReplaceOle(update, updatedPng, updatedEmf);
+
+            AssertEqual(1, document.InlineShapes.Count,
+                "Re-editing one inline VisualTeX OLE formula appended a stale duplicate.");
+            updatedShape = document.InlineShapes[1];
+            var updatedMetadata = WordFormulaMetadataReader.TryRead(updatedShape)
+                ?? throw new InvalidOperationException(
+                    "Word inline OLE metadata could not be read after re-editing.");
+            AssertEqual(formulaId, updatedMetadata.FormulaId,
+                "Word inline OLE re-edit changed the formula identity.");
+            AssertEqual(@"a^2+b^2=c^2+1", updatedMetadata.Latex,
+                "Word inline OLE re-edit retained the old LaTeX payload.");
+            AssertEqual(originalStart, updatedShape.Range.Start,
+                "Word inline OLE re-edit moved the formula away from its original text position.");
+            AssertTrue(IsDeletedWordInlineShape(originalShape),
+                "Word inline OLE re-edit retained the old embedded object.");
+
+            document.SaveAs2(
+                Path.Combine(artifactRoot, "word-inline-ole-reedit-replacement.docx"),
+                Word.WdSaveFormat.wdFormatXMLDocument);
+            Console.WriteLine(
+                "  Word inline VisualTeX OLE re-edit replaced one object in place without appending the stale source OLE.");
         }
         finally
         {
@@ -182,7 +270,9 @@ internal static partial class Program
         string? sourceObjectId,
         FormulaMetadata? originalMetadata,
         string letterFont,
-        string chineseFont)
+        string chineseFont,
+        string displayMode = "block",
+        string latex = @"E=mc^2+\text{中文}")
     {
         return new OfficeSessionDocument
         {
@@ -194,14 +284,14 @@ internal static partial class Program
             SourceObjectId = sourceObjectId,
             Title = "OLE formula font acceptance",
             CodeFormat = "latex",
-            DisplayMode = "block",
+            DisplayMode = displayMode,
             ObjectMode = FormulaOleContract.NativeOleMode,
             Numbered = false,
             FontSizePt = 20,
             OriginalMetadata = originalMetadata,
             Lines = new List<FormulaLine>
             {
-                new() { Id = Guid.NewGuid().ToString("D"), Latex = @"E=mc^2+\text{中文}" },
+                new() { Id = Guid.NewGuid().ToString("D"), Latex = latex },
             },
             ExportResult = new OfficeExportDocument
             {

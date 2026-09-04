@@ -911,6 +911,10 @@ export function OfficeDialogApp() {
       fontSizePt: outputFontSizePt,
       paddingPx: isMathTypeOle ? 0 : sourceDisplayMode === "inline" ? 1 : 10,
       paddingXPx: isMathTypeOle ? 0 : undefined,
+      // Keep the normal one-pixel inline safety margin on every side. It is part
+      // of the rendered presentation geometry used by Word's baseline placement;
+      // removing only the vertical margin both reintroduces edge clipping and
+      // moves common subscript formulas one whole Word Position quantum upward.
       paddingYPx: isMathTypeOle ? mathTypeVerticalPaddingPx : undefined,
       background: "transparent",
       formulaLetterFont: outputLetterFont,

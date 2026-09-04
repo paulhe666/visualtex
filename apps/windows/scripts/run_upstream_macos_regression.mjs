@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
+import ts from "typescript";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
@@ -38,7 +39,17 @@ if (sourceFromGit) {
 
 const profilePattern = /const (chromeProfile|profile) = `\/tmp\/[^`]+`;/;
 const browserPattern = /const chromePath\s*=\s*"[^"]+";/;
-if (!profilePattern.test(source) || !browserPattern.test(source)) {
+const profileFactoryPattern =
+  /const (chromeProfile|profile) = createBrowserProfilePath\([^;]+;/;
+const browserFactoryPattern =
+  /const chromePath\s*=\s*resolveChromiumExecutable\(\);/;
+const selectedProfilePattern = profilePattern.test(source)
+  ? profilePattern
+  : profileFactoryPattern;
+const selectedBrowserPattern = browserPattern.test(source)
+  ? browserPattern
+  : browserFactoryPattern;
+if (!selectedProfilePattern.test(source) || !selectedBrowserPattern.test(source)) {
   throw new Error(
     `The upstream regression launcher declarations were not found in ${sourcePath}`,
   );
@@ -49,17 +60,29 @@ source = source.replace(
   "async function waitUntil(client, expression, timeoutMs = 45000)",
 );
 source = source.replace(
-  profilePattern,
+  selectedProfilePattern,
   (_match, variableName) =>
     `const ${variableName} = ${JSON.stringify(browserProfile)};`,
 );
 source = source.replace(
-  browserPattern,
+  selectedBrowserPattern,
   `const chromePath = ${JSON.stringify(browserPath)};`,
+);
+source = source.replace(
+  /import\s*\{\s*createBrowserProfilePath,\s*resolveChromiumExecutable,\s*\}\s*from\s*["']\.\/browser_test_runtime\.mjs["'];\s*/,
+  "",
+);
+source = source.replace(
+  /import\s*\{\s*VISUALTEX_ALIGNMENT_MARKER_LATEX\s*\}\s*from\s*["']\.\.\/src\/editor\/alignmentMarkers\.ts["'];\s*/,
+  `const VISUALTEX_ALIGNMENT_MARKER_LATEX = ${JSON.stringify("\\class{visualtex-align-marker}{\\kern0pt}")};\n`,
 );
 source = source.replace(
   "    this.pending = new Map();",
   "    this.pending = new Map();\n    this.visualtexRuntimeEvents = [];\n    this.visualtexPendingRequests = new Map();",
+);
+source = source.replace(
+  /(\n\s*pending = new Map[^\r\n]*;\r?\n)/,
+  "$1  visualtexRuntimeEvents = [];\n  visualtexPendingRequests = new Map();\n",
 );
 source = source.replace(
   "      if (!message.id) return;",
@@ -684,6 +707,15 @@ source = source.replace(
 );
 
 process.argv = [process.execPath, sourcePath, ...forwardedArguments];
+if (/\.mts?$/.test(sourcePath)) {
+  source = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: sourcePath,
+  }).outputText;
+}
 const encodedSource = Buffer.from(source, "utf8").toString("base64");
 try {
   await import(`data:text/javascript;base64,${encodedSource}`);
