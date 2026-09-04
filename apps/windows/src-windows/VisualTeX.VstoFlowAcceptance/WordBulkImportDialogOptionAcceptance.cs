@@ -65,6 +65,29 @@ internal static partial class Program
         AssertTrue(
             redrawDialog.NumberDisplayFormulas,
             "LaTeX redraw did not expose a selectable global display-formula numbering option.");
+
+        redrawDialog.PerformLayout();
+        var redrawLayout = DescendantControls(redrawDialog)
+            .OfType<TableLayoutPanel>()
+            .First(panel => panel.Controls.Cast<Control>().Any(control =>
+                (control.Text ?? string.Empty).StartsWith(
+                    "编号格式：",
+                    StringComparison.Ordinal)));
+        redrawLayout.PerformLayout();
+        var redrawDetail = redrawLayout.Controls.Cast<Control>()
+            .OfType<Label>()
+            .Single(label => (label.Text ?? string.Empty).StartsWith(
+                "编号格式：",
+                StringComparison.Ordinal));
+        var detailRow = redrawLayout.GetPositionFromControl(redrawDetail).Row;
+        var detailRowHeight = redrawLayout.GetRowHeights()[detailRow];
+        var preferredDetailHeight = redrawDetail.GetPreferredSize(
+            new System.Drawing.Size(
+                Math.Max(1, redrawDetail.MaximumSize.Width),
+                0)).Height;
+        AssertTrue(
+            detailRowHeight >= preferredDetailHeight,
+            $"LaTeX redraw detail text is clipped: row={detailRowHeight}px preferred={preferredDetailHeight}px.");
     }
 
     private static void AssertBulkImportMixedSingleDollarSubmission()

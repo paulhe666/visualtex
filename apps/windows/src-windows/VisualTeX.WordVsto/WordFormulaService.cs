@@ -4380,22 +4380,29 @@ internal sealed partial class WordFormulaService
 
             selection = _application.Selection;
             viewState = CaptureViewState();
-            // Resolve and validate every Word Range before changing the document.
+            // Resolve and validate every target before changing the document.
             // Word story coordinates are not always a one-to-one mapping of .NET
-            // UTF-16 string offsets (for example after supplementary Unicode
-            // characters, tracked revisions or hidden story markers). Keeping the
-            // resolved live ranges also prevents a late locator failure after some
-            // formulas have already been replaced.
+            // UTF-16 string offsets (for example after supplementary Unicode,
+            // tracked revisions or hidden story markers), so capture the verified
+            // Word coordinates once. Do not reuse the live Range RCWs during the
+            // mutation loop: creating a numbered OMML 1x3 table can make an earlier
+            // live Range acquire table/cell affinity and redirect the next redraw
+            // into the table that was just created. Because targets are replaced
+            // strictly from the end of the story toward the start, mutations after
+            // the current target cannot shift its frozen Start/End coordinates.
             resolvedTargets = ResolveLatexRedrawTargets(document, plan, prepared);
             undoRecord = BeginUndoRecord("VisualTeX 重绘 LaTeX 公式");
             foreach (var resolved in resolvedTargets
-                         .OrderByDescending(item => item.SourceRange.Start))
+                         .OrderByDescending(item => item.SourceStart))
             {
+                Range? targetRange = null;
                 Range? preservedDisplayParagraphRange = null;
                 string? preservedFollowingParagraphText = null;
                 try
                 {
-                    var targetRange = resolved.SourceRange;
+                    targetRange = document.Range(
+                        resolved.SourceStart,
+                        resolved.SourceEnd);
                     if (!string.Equals(
                             targetRange.Text ?? string.Empty,
                             resolved.ExpectedSource,
@@ -4403,7 +4410,19 @@ internal sealed partial class WordFormulaService
                         throw new InvalidOperationException(
                             $"渲染期间公式内容发生变化：{resolved.Target.Latex}");
 
-                    if (resolved.Target.PreserveDisplayParagraphBoundary)
+                    var preserveDisplayParagraphBoundary =
+                        resolved.Target.PreserveDisplayParagraphBoundary
+                        && !(string.Equals(
+                                resolved.Target.DisplayMode,
+                                "block",
+                                StringComparison.Ordinal)
+                            && string.Equals(
+                                resolved.Formula.Session.ObjectMode,
+                                FormulaOleContract.WordOmmlMode,
+                                StringComparison.Ordinal)
+                            && resolved.Formula.Session.Numbered);
+
+                    if (preserveDisplayParagraphBoundary)
                     {
                         preservedDisplayParagraphRange =
                             DuplicateContainingParagraphRange(targetRange);
@@ -4431,7 +4450,7 @@ internal sealed partial class WordFormulaService
                             "block",
                             StringComparison.Ordinal),
                         preserveExistingDisplayParagraphBoundary:
-                            resolved.Target.PreserveDisplayParagraphBoundary,
+                            preserveDisplayParagraphBoundary,
                         preservedDisplayParagraphRange:
                             preservedDisplayParagraphRange,
                         preservedFollowingParagraphText:
@@ -4443,17 +4462,60 @@ internal sealed partial class WordFormulaService
                         stopwatch.ElapsedMilliseconds);
                     insertedFormulaIds.Add(resolved.Formula.Session.FormulaId);
                 }
-                finally { Release(preservedDisplayParagraphRange); }
+                finally
+                {
+                    Release(preservedDisplayParagraphRange);
+                    Release(targetRange);
+                }
             }
 
-            if (plan.NumberDisplayFormulas
-                && plan.Targets.Any(target => string.Equals(
-                    target.DisplayMode,
-                    "block",
-                    StringComparison.Ordinal)))
+            if (plan.NumberDisplayFormulas)
             {
-                WordEquationNumbering.UpdateEquationNumbers(document);
-                MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                var numberedOmmlFormulaIds = resolvedTargets
+                    .Where(item => string.Equals(
+                            item.Target.DisplayMode,
+                            "block",
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            item.Formula.Session.ObjectMode,
+                            FormulaOleContract.WordOmmlMode,
+                            StringComparison.Ordinal)
+                        && item.Formula.Session.Numbered)
+                    .Select(item => item.Formula.Session.FormulaId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                // Build every numbered OMML table first, while its temporary body
+                // paragraphs still isolate it from the neighboring tables. Only
+                // after the reverse-order redraw is complete may those generated
+                // paragraphs be removed. The first cleanup removes source residue;
+                // the separator pass then preserves Word's mandatory paragraph
+                // between independent tables by collapsing it to 1pt. A final
+                // cleanup is required after compaction: only then can the existing
+                // typing-tail cleanup prove the preceding full-height paragraph is
+                // generated residue followed by a compact separator + managed table.
+                foreach (var formulaId in numberedOmmlFormulaIds)
+                    WordEquationNumbering.CleanupNumberedDisplayInsertionSpacing(
+                        document,
+                        formulaId);
+                foreach (var formulaId in numberedOmmlFormulaIds)
+                    WordEquationNumbering.CompactManagedNativeOmmlTableSeparatorBefore(
+                        document,
+                        formulaId);
+                foreach (var formulaId in numberedOmmlFormulaIds)
+                    WordEquationNumbering.CleanupNumberedDisplayInsertionSpacing(
+                        document,
+                        formulaId);
+
+                if (plan.Targets.Any(target => string.Equals(
+                        target.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal)))
+                {
+                    WordEquationNumbering.UpdateEquationNumbers(document);
+                    MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                }
             }
 
             return new WordLatexRedrawResult
@@ -7451,8 +7513,39 @@ internal sealed partial class WordFormulaService
                             metadata.FormulaId,
                             metadata.Numbered);
                     TryReconcileOmml(document, bookmark, equationRange, metadata);
-                    if (!preserveExistingDisplayParagraphBoundary)
+                    if (metadata.Numbered)
+                    {
+                        // Numbering moves the display OMath out of its source
+                        // paragraph and into the center cell of a new direct-SEQ
+                        // 1x3 table. The pre-reconcile Range/Bookmark can point at
+                        // the now-empty source paragraph, so reacquire the live
+                        // formula before cleanup/fingerprinting. This mirrors the
+                        // mature InsertOmml path used by ordinary single inserts.
+                        Release(equationRange);
+                        equationRange = null;
+                        Release(bookmark);
+                        bookmark = null;
+                        bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                                document,
+                                metadata.FormulaId)
+                            ?? throw new InvalidOperationException(
+                                "Word lost the redrawn numbered OMML bookmark after building its 1x3 host.");
+                        equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+
+                        // Do not remove the numbered OMML source/typing paragraphs
+                        // here during LaTeX redraw. The redraw loop runs from the end
+                        // of the story toward the start; cleaning the later table
+                        // immediately can make the next source paragraph sit directly
+                        // against that table. Word may then interpret the next 1x3
+                        // insertion as content inside the existing table. Keep the
+                        // temporary body paragraphs as isolation until the complete
+                        // redraw batch has created every independent table. The caller
+                        // performs one safe post-batch cleanup/compaction pass.
+                    }
+                    else if (!preserveExistingDisplayParagraphBoundary)
+                    {
                         MoveSelectionAfterDisplayFormula(selection, equationRange);
+                    }
                 }
                 else if (bulkImport)
                 {

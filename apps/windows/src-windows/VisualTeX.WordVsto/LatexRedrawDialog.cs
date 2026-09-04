@@ -17,9 +17,9 @@ internal sealed class LatexRedrawDialog : Form
         Text = "VisualTeX LaTeX 重绘";
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(520, 210);
-        MinimumSize = new Size(520, 210);
-        MaximumSize = new Size(760, 320);
+        ClientSize = new Size(540, 235);
+        MinimumSize = new Size(540, 235);
+        MaximumSize = new Size(780, 360);
         Font = new Font(
             "Microsoft YaHei UI",
             9f,
@@ -35,9 +35,10 @@ internal sealed class LatexRedrawDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             Padding = new Padding(18),
         };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -47,7 +48,7 @@ internal sealed class LatexRedrawDialog : Form
         var description = new Label
         {
             AutoSize = true,
-            MaximumSize = new Size(480, 0),
+            MaximumSize = new Size(500, 0),
             Text = wholeDocument
                 ? $"将在整个文档中原位重绘 {formulaCount} 个 LaTeX 公式为 {objectModeLabel}。"
                 : $"将在所选内容中原位重绘 {formulaCount} 个 LaTeX 公式为 {objectModeLabel}。",
@@ -66,7 +67,7 @@ internal sealed class LatexRedrawDialog : Form
         var detail = new Label
         {
             AutoSize = true,
-            MaximumSize = new Size(480, 0),
+            MaximumSize = new Size(500, 0),
             Text = $"编号格式：{equationNumberFormatDisplayName}。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
             ForeColor = Color.FromArgb(88, 88, 88),
             Margin = new Padding(22, 0, 0, 12),
@@ -96,7 +97,7 @@ internal sealed class LatexRedrawDialog : Form
         };
         actions.Controls.Add(cancel);
         actions.Controls.Add(redraw);
-        root.Controls.Add(actions, 0, 3);
+        root.Controls.Add(actions, 0, 4);
 
         AcceptButton = redraw;
         CancelButton = cancel;

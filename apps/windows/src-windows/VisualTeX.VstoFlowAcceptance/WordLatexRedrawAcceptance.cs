@@ -186,6 +186,231 @@ internal static partial class Program
             objectMode: FormulaOleContract.WordOmmlMode,
             wholeDocument: false,
             expectedFileName: "VisualTeX-Word-Latex-Redraw-OMML-Only.docx");
+        RunWordLatexRedrawNumberedOmmlSpacingScenario(artifactRoot);
+    }
+
+    private static void RunWordLatexRedrawNumberedOmmlSpacingScenario(
+        string artifactRoot)
+    {
+        var documentPath = Path.Combine(
+            artifactRoot,
+            "VisualTeX-Word-Latex-Redraw-Numbered-OMML-Spacing.docx");
+        var logPath = Path.Combine(
+            artifactRoot,
+            "word-latex-redraw-numbered-omml-spacing.log");
+        TryDeleteAcceptanceFile(documentPath);
+        TryDeleteAcceptanceFile(logPath);
+        var previousLog = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG");
+        var previousNumbering = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+            logPath);
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS",
+            "1");
+        try
+        {
+            using var host = new WordPerformanceHost(documentPath: null);
+            var selection = host.Application.Selection;
+            selection.HomeKey(Word.WdUnits.wdStory);
+            selection.Font.Size = 10.5f;
+            selection.ParagraphFormat.Alignment =
+                Word.WdParagraphAlignment.wdAlignParagraphLeft;
+            selection.TypeText("BEFORE_NUMBERED_REDRAW");
+            selection.TypeParagraph();
+            selection.ParagraphFormat.Alignment =
+                Word.WdParagraphAlignment.wdAlignParagraphCenter;
+            selection.TypeText("$$a_1=b_1$$");
+            selection.TypeParagraph();
+            selection.TypeText("$$a_2=b_2$$");
+            selection.TypeParagraph();
+            selection.TypeText("$$a_3=b_3$$");
+            selection.TypeParagraph();
+            selection.ParagraphFormat.Alignment =
+                Word.WdParagraphAlignment.wdAlignParagraphLeft;
+            selection.TypeText("AFTER_NUMBERED_REDRAW");
+
+            host.Application.Selection.SetRange(
+                host.Document.Content.Start,
+                host.Document.Content.Start);
+            host.AddIn.OnRedrawDocumentToOmml(new object());
+            _ = WaitForLatexRedraw(logPath, TimeSpan.FromMinutes(4));
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
+            host.Save(documentPath);
+
+            AssertEqual(3, host.Document.OMaths.Count,
+                "First centered numbered OMML redraw created the wrong equation count.");
+            AssertEqual(3, host.Document.Tables.Count,
+                "First centered numbered OMML redraw did not create one direct-SEQ 1x3 table per display formula.");
+            AssertNumberedOmmlRedrawTableSpacing(host.Document);
+
+            // Reproduce the real multi-redraw workflow: flatten the numbered OMML
+            // tables back to visible LaTeX, keep those display-source paragraphs
+            // centered, then redraw the whole document to numbered OMML again.
+            // The second pass used to preserve the centered source paragraph pPr
+            // and leave a full-height paragraph between neighboring direct-SEQ
+            // tables even though no stale SEQ field remained.
+            TryDeleteAcceptanceFile(logPath);
+            host.Application.Selection.SetRange(
+                host.Document.Content.Start,
+                host.Document.Content.Start);
+            host.AddIn.OnRedrawDocumentOmmlToLatex(new object());
+            _ = WaitForFormulaToLatex(logPath, expectedCompletions: 1);
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
+            AssertEqual(0, host.Document.OMaths.Count,
+                "OMML-to-LaTeX round trip left native equations before the second redraw.");
+            AssertEqual(0, host.Document.Tables.Count,
+                "OMML-to-LaTeX round trip left numbered direct-SEQ tables before the second redraw.");
+            foreach (var latexSource in new[]
+                     {
+                         "$$a_1=b_1$$",
+                         "$$a_2=b_2$$",
+                         "$$a_3=b_3$$",
+                     })
+                SetLatexSourceParagraphAlignment(
+                    host.Document,
+                    latexSource,
+                    Word.WdParagraphAlignment.wdAlignParagraphCenter);
+
+            TryDeleteAcceptanceFile(logPath);
+            host.Application.Selection.SetRange(
+                host.Document.Content.Start,
+                host.Document.Content.Start);
+            host.AddIn.OnRedrawDocumentToOmml(new object());
+            _ = WaitForLatexRedraw(logPath, TimeSpan.FromMinutes(4));
+            WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(30));
+            host.Save(documentPath);
+
+            AssertEqual(3, host.Document.OMaths.Count,
+                "Second centered numbered OMML redraw created the wrong equation count.");
+            AssertEqual(3, host.Document.Tables.Count,
+                "Second centered numbered OMML redraw did not create one direct-SEQ 1x3 table per display formula.");
+            AssertNumberedOmmlRedrawTableSpacing(host.Document);
+            Console.WriteLine(
+                $"[Word LaTeX redraw] Centered multi-redraw numbered OMML spacing regression passed: {documentPath}");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS",
+                previousNumbering);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+                previousLog);
+        }
+    }
+
+    private static void SetLatexSourceParagraphAlignment(
+        Word.Document document,
+        string latexSource,
+        Word.WdParagraphAlignment alignment)
+    {
+        Word.Range? search = null;
+        Word.Find? find = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.ParagraphFormat? format = null;
+        try
+        {
+            search = document.Content.Duplicate;
+            find = search.Find;
+            find.ClearFormatting();
+            find.Text = latexSource;
+            find.Forward = true;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            find.MatchWildcards = false;
+            AssertTrue(find.Execute(),
+                $"Centered multi-redraw source '{latexSource}' was not found after OMML-to-LaTeX conversion.");
+            paragraphs = search.Paragraphs;
+            AssertEqual(1, paragraphs.Count,
+                $"Centered multi-redraw source '{latexSource}' spans multiple paragraphs.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            format = paragraphRange.ParagraphFormat;
+            format.Alignment = alignment;
+            AssertEqual(alignment, format.Alignment,
+                $"Centered multi-redraw source '{latexSource}' did not retain the requested paragraph alignment.");
+        }
+        finally
+        {
+            Release(format);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(find);
+            Release(search);
+        }
+    }
+
+    private static void AssertNumberedOmmlRedrawTableSpacing(
+        Word.Document document)
+    {
+        Word.Tables? tables = null;
+        var tableRanges = new List<(int Start, int End)>();
+        try
+        {
+            tables = document.Tables;
+            for (var index = 1; index <= tables.Count; index++)
+            {
+                Word.Table? table = null;
+                Word.Range? tableRange = null;
+                try
+                {
+                    table = tables[index];
+                    AssertEqual(1, table.Rows.Count,
+                        $"Numbered OMML redraw table {index} has the wrong row count.");
+                    AssertEqual(3, table.Columns.Count,
+                        $"Numbered OMML redraw table {index} has the wrong column count.");
+                    tableRange = table.Range;
+                    tableRanges.Add((tableRange.Start, tableRange.End));
+                }
+                finally
+                {
+                    Release(tableRange);
+                    Release(table);
+                }
+            }
+
+            tableRanges.Sort((left, right) => left.Start.CompareTo(right.Start));
+            for (var index = 0; index + 1 < tableRanges.Count; index++)
+            {
+                var left = tableRanges[index];
+                var right = tableRanges[index + 1];
+                Word.Range? gap = null;
+                Word.Font? font = null;
+                Word.ParagraphFormat? format = null;
+                try
+                {
+                    gap = document.Range(left.End, right.Start);
+                    var gapText = gap.Text ?? string.Empty;
+                    if (gapText.Length > 1
+                        || gapText.Any(character => character != '\r'))
+                        throw new InvalidDataException(
+                            $"Numbered OMML redraw left extra body paragraphs between tables {index + 1} and {index + 2}: length={gapText.Length}.");
+                    if (gapText.Length == 0) continue;
+
+                    font = gap.Font;
+                    format = gap.ParagraphFormat;
+                    if (font.Size > 1.25f
+                        || format.LineSpacing > 1.25f)
+                        throw new InvalidDataException(
+                            $"Numbered OMML redraw left a full-height separator between tables {index + 1} and {index + 2}: font={font.Size:F2}pt line={format.LineSpacing:F2}pt.");
+                }
+                finally
+                {
+                    Release(format);
+                    Release(font);
+                    Release(gap);
+                }
+            }
+        }
+        finally
+        {
+            Release(tables);
+        }
     }
 
     private static void RunWordLatexRedrawMathTypeOnly(
