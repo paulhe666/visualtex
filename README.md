@@ -1,161 +1,164 @@
 <div align="center">
+  <img src="apps/macos/src-tauri/app-icon.svg" width="160" alt="VisualTeX" />
   <h1>VisualTeX</h1>
-  <p><strong>为科研写作打造的可视化公式编辑器与 Microsoft Office 原生公式工具</strong></p>
-  <p>流畅结构化输入 · LaTeX 双向编辑 · MathType 兼容 · Word / PowerPoint 深度集成</p>
+  <p><strong>面向科研写作的可视化公式编辑器</strong></p>
+  <p>可视化输入 · LaTeX 源码编辑 · MathType 兼容 · Word / PowerPoint 插件 · 公式 OCR</p>
   <p>
     <a href="https://visualtex.pauljianliao.com/">官方网站</a> ·
-    <a href="https://github.com/paulhe666/visualtex/releases">下载与更新</a> ·
-    <a href="#english">English</a>
+    <a href="https://github.com/paulhe666/visualtex/releases">下载安装</a> ·
+    <a href="apps/macos/docs/help/VisualTeX_帮助手册.md">帮助手册</a>
   </p>
 </div>
 
 ---
 
-VisualTeX 面向数学、物理、工程和科研写作，把可视化公式输入、LaTeX 源码、图片识别与 Office 排版放在同一套工作流里。你可以像使用专业公式编辑器一样直接搭建复杂结构，也可以随时切换到源码精确调整；完成后的公式能够进入 Word 或 PowerPoint，继续编辑、转换、编号和引用，而不是停留在一次性的截图。
+VisualTeX 是一款面向 macOS 和 Windows 的公式编辑器，适合写论文、整理报告和制作课件。你可以直接在可视化编辑区输入公式，也可以随时切到 LaTeX 源码里细调；写好的公式能直接插入 Word 或 PowerPoint，之后仍可继续编辑、转换、编号和引用。
 
 <div align="center">
   <img src="docs/images/application.png" width="92%" alt="VisualTeX 应用界面" />
 </div>
 
-## 为什么选择 VisualTeX
+## 公式编辑
 
-- **编辑手感优先**：基于 MathLive 的结构化编辑与 CodeMirror 源码区实时同步，兼顾鼠标操作、键盘连续输入和精确源码控制。
-- **Office 不是导出终点**：Word 与 PowerPoint 提供原生插件入口，公式可以新建、二次编辑、批量重绘、格式转换和继续管理。
-- **面向现有论文资产**：Windows 端重点适配 MathType 原生 OLE，可在 VisualTeX、MathType 与 Word OMML 之间迁移公式，降低旧文档改造成本。
-- **从图片到可编辑公式**：既支持本地离线 PP-FormulaNet，也支持多种可选 OCR API；识别结果直接回到编辑器继续校正。
-- **围绕长文档设计**：公式编号、交叉引用、章节编号、批量导入和全文重绘都以论文、报告和教材中的真实文档为目标。
+写公式时不必频繁切换鼠标和键盘。常用结构既能从工具栏选择，也能通过命令候选和快捷键快速输入。
 
-## 公式编辑：可视化与源码并重
+- 支持分式、根式、上下标、积分、求和、极限、重音、定界符、希腊字母、集合、关系、箭头和常用物理符号。
+- 支持多行公式以及自定义尺寸的矩阵。
+- `align` 和 `aligned` 可以直接设置 `&` 对齐点，`cases` 对多行分段函数做了单独适配。
+- 每一行都可以单独设为行内或行间公式；文字与公式混排使用 `$...$`。
+- Enter、Tab、结构跳出、选区包裹和命令补全都针对公式输入进行了调整。
+- 粗体、数学斜体和正体可以直接对选中内容切换。
+- 支持自定义公式快捷键、希腊字母快捷输入、常用工具和自定义公式磁贴。
+- 普通模式与小键盘模式分别记忆窗口大小，适合桌面编辑和紧凑输入。
+- 撤销、重做和历史记录会保留公式内容、活动行、光标与选区。
 
-VisualTeX 的主编辑区适合连续录入，而不是只提供一个公式预览框。分式、根式、积分、求和、极限、上下标、重音、定界符、集合、关系、箭头、物理符号等常用结构可以直接插入；矩阵支持自定义尺寸，多行公式可以按行管理。
+## LaTeX 源码区
 
-对于复杂推导，VisualTeX 对以下结构提供了专门的编辑行为：
+可视化编辑区和源码区保持双向同步，既可以直接搭建公式，也可以在源码中精确修改。
 
-- `align` / `aligned` 可显式设置 `&` 对齐点；
-- `cases` 支持稳定的多行分段函数编辑；
-- 支持 `equation`、`gather`、`multline`、`split` 及常用矩阵环境；
-- 每一行可独立设置行内或行间模式，文字与公式混排可使用 `$...$`；
-- Enter、Tab、选区包裹、结构跳出和命令候选针对数学输入做了适配。
+源码区基于 CodeMirror，支持：
 
-LaTeX 源码区采用 CodeMirror，提供行号、分层语法高亮、环境缩进、缩进引导线、当前行提示、代码折叠、括号匹配、Tab / Shift+Tab 与自动缩进。可视化内容和源码保持双向同步，既能快速输入，也能直接处理较长的 `align`、矩阵或多行公式。
+- LaTeX 语法高亮，不同类型的命令使用不同颜色；
+- 行号、当前行高亮、括号匹配和代码折叠；
+- 环境层级缩进、缩进引导线、自动缩进以及 Tab / Shift+Tab；
+- `equation`、`align`、`aligned`、`gather`、`multline`、`split`、矩阵等多行环境；
+- 纯 LaTeX、`$...$`、`\(...\)`、`\[...\]` 等复制格式。
 
-编辑器还包含：
+日常复制和导出不需要安装 TeX Live。
 
-- 可自定义的公式工具栏、常用工具和公式磁贴；
-- 公式快捷键、冲突检查与 `⌘G` / 对应 Windows 快捷方式的希腊字母输入；
-- 粗体、数学斜体、正体等选区格式切换；
-- 多公式历史记录、撤销/重做和 JSON 文档保存；
-- 普通模式与小键盘模式，以及分别记忆的窗口布局；
-- 中英文界面、多套主题、完整配色自定义、公式字号与界面密度设置；
-- 自定义字符设计器，可组合矢量字形、注册 LaTeX 命令，并进入编辑、自动补全与导出链路。
+## MathType 兼容（Windows）
 
-## MathType 兼容：让旧公式继续可用
+Windows 版可以直接处理 Word 中的 MathType 7 原生 OLE 公式，不会把它们简单转成截图。VisualTeX 会读取 MathType 公式内容，并尽量保留原来的行内/行间状态、字号、位置、编号和引用。
 
-VisualTeX 的 Windows Office 插件针对 MathType 7 原生公式进行了系统适配。它不是把 MathType 公式简单截图，而是识别并处理 Word 中的 `Equation.DSMT4` / MathType OLE 对象及其原生编号结构。
+目前支持：
 
-支持的主要工作流包括：
-
-- 在 VisualTeX 编辑器中打开并修改所选 MathType 公式；
+- 使用 VisualTeX 打开并修改所选 MathType 公式；
 - VisualTeX OLE 与 MathType OLE 双向转换；
 - Word OMML 与 MathType OLE 双向转换；
-- 将选区或全文中的 LaTeX 重绘为 MathType、VisualTeX OLE 或 Word OMML；
-- 将选区或全文中的 MathType、VisualTeX OLE、OMML 还原为 LaTeX；
-- 批量转换时保留行内/行间语义、公式位置、字号、编号与引用关系；
-- 兼容 MathType 左/右编号，以及 `MTDisplayEquation`、`MTPlaceRef`、`MTEqn`、`MTChap`、`MTSec` 和 `ZEqnNum` 等原生 Word 结构；
-- 更新 VisualTeX 与 MathType 公式编号及对应引用，而不把两套体系粗暴混为一种格式。
+- 将 LaTeX 重绘为 VisualTeX OLE、Word OMML 或 MathType；
+- 将 VisualTeX、OMML、MathType 公式恢复为 LaTeX；
+- 对选中部分或全文批量转换；
+- 处理 MathType 左编号和右编号；
+- 保留 `MTDisplayEquation`、`MTPlaceRef`、`MTEqn`、`MTChap`、`MTSec`、`ZEqnNum` 等原生编号与引用结构；
+- 同时更新文档中的 VisualTeX 编号、MathType 编号及相关引用。
 
-需要 MathType 原生编辑器或渲染器的操作仍以本机正确安装 MathType 为前提。macOS 版本采用自身的图片公式与 OMML 工作流；直接的 MathType OLE 转换能力以 Windows 版本为主。
+需要调用 MathType 原生编辑或渲染能力时，电脑上仍需正确安装 MathType。macOS 版目前以图片公式和 Word OMML 为主，MathType 原生 OLE 转换主要由 Windows 版提供。
 
-## Word：从单个公式到整篇论文
+## Word 插件
 
-Word 插件直接出现在 Ribbon 中，覆盖公式从插入到维护的完整过程。
+安装插件后，Word 顶部会出现 VisualTeX 工具栏。插入、编辑、转换、编号等常用操作都可以直接在 Word 里完成，不用在两个程序之间来回复制。
 
-### 插入与编辑
+- 插入行内或行间公式。
+- macOS 可以插入图片公式或 Word 原生 OMML。
+- Windows 可以插入 VisualTeX OLE 或 Word OMML，也可以处理 MathType OLE。
+- 支持通过工具栏编辑所选公式，也支持双击重新打开编辑器。
+- 不同平台支持的格式略有区别，图片公式、OMML、VisualTeX OLE 和 MathType 之间可以按需转换。
+- 编辑已有公式时会恢复 LaTeX、字号、显示方式和公式元数据。
 
-- 插入行内或行间公式；
-- macOS 可选择图片公式或 Word 原生 OMML；
-- Windows 可选择 VisualTeX OLE、Word OMML，并处理 MathType OLE；
-- 支持按钮编辑与原生双击唤起；
-- 二次编辑时恢复 LaTeX、显示模式、字号和公式元数据；
-- 图片、OMML、VisualTeX OLE 与 MathType 的可用转换按平台提供。
+### 公式编号与引用
 
-### 编号与交叉引用
-
-VisualTeX 支持全文连续编号、按章编号和按节编号，并提供 `.` / `-` 等常用分隔形式。带编号公式可在文档中间插入，引用通过 Word 原生字段与书签保持联动；“更新公式编号”可以按文档物理顺序刷新和修复编号、引用及兼容结构。
+Word 插件支持全文连续编号、按章编号和按节编号，也支持点号或短横线分隔。编号公式可以插在文档中间，引用会随编号更新。对于旧文档中残留或损坏的编号结构，可以使用“更新公式编号”重新整理。
 
 ### 批量导入与重绘
 
-- 导入 LaTeX 或 Markdown，把普通文字保留为 Word 原生段落；
-- 将其中每个行内、行间公式生成为独立可编辑对象；
-- 扫描选区或全文中的 `$...$`、`\(...\)`、`$$...$$` 与 `\[...\]`；
-- 原位重绘为 VisualTeX 公式、Word OMML，Windows 端还可选择 MathType；
-- 公式字号按周围正文继承，尽量保持段落布局和公式位置；
-- 批量处理使用预检、缓存、稳定目标定位与事务式替换，失败时优先保留原内容。
+- 导入 LaTeX 或 Markdown，普通文字仍是 Word 原生段落。
+- 文档中的每个行内公式和行间公式都会成为独立对象，可以分别编辑和调整字号。
+- 可以扫描选区或全文中的 `$...$`、`\(...\)`、`$$...$$` 和 `\[...\]`。
+- 可以把选区或全文原位重绘为 VisualTeX 公式、Word OMML；Windows 版还可以重绘为 MathType。
+- 行内公式会参考周围正文的字号，行间公式会参考相邻段落，尽量不破坏原有排版。
+- 批量处理带有预检、缓存和失败回退，避免转换中途留下不完整公式。
 
-## PowerPoint：公式保持可编辑
+## PowerPoint 插件
 
-VisualTeX 为 PowerPoint 提供原生加载项入口，可新建公式、编辑或替换所选公式、删除公式，并从插件直接打开主应用。macOS 使用 PPAM 与本地矢量/图片公式流程；Windows 使用原生 VSTO 与 OLE，并提供图片、OLE、OMML 等格式之间的转换能力，便于在可编辑性、兼容性和演示效果之间切换。
+macOS 使用原生 PPAM 加载项，Windows 使用原生 VSTO 加载项。两端都可以新建公式、编辑或替换所选公式、删除公式，并从 PowerPoint 打开 VisualTeX。
 
-## OCR：本地优先，也可连接现有服务
+Windows 版使用真实的 VisualTeX OLE 对象，并提供图片、OLE、OMML 等格式之间的转换。macOS 版使用本地矢量和图片公式，适合在演示文稿中继续调整内容与尺寸。
 
-公式图片可以通过文件选择、拖放、剪贴板粘贴或区域截图送入 OCR。识别结果会回填到当前光标位置，多行识别结果可以继续作为多行公式编辑。
+## 公式 OCR
 
-本地模式使用 PaddleOCR PP-FormulaNet：
+图片可以通过文件选择、拖放、剪贴板粘贴或区域截图送入 OCR，识别出的 LaTeX 会直接回到当前编辑位置。多行识别结果可以继续按多行公式编辑。
 
-- **plus-S**：体积较小、速度优先；
-- **plus-M**：兼顾中文、复杂公式与速度，作为默认推荐；
-- **plus-L**：精度优先，适合更复杂的图片。
+### 本地识别
 
-除完整 OCR 窗口外，还提供快捷 OCR 和静默 OCR：前者缩短“截图—识别—回填”的路径，后者可在后台识别并把 LaTeX 直接写入剪贴板。深色背景、透明图片、进度提示和取消操作也包含在统一流程中。
+本地 OCR 使用 PaddleOCR PP-FormulaNet，图片不会发送到第三方服务。
 
-如果希望复用已有服务，还可选择 OpenAI 兼容接口、Ollama、Mathpix、PaddleOCR-VL 1.6 或 SimpleTex（标准/极速）。密钥与提供器设置由本机配置管理；只有选择在线提供器时，图片才会发送到相应服务。
+- plus-S：速度优先，模型较小；
+- plus-M：兼顾中文、复杂公式与速度，默认推荐；
+- plus-L：精度优先，适合较复杂的公式图片。
 
-## 导出、复制与个性化
+完整 OCR 窗口适合检查和修改结果；快捷 OCR 用于截图后立即回填；静默 OCR 会在后台识别并把 LaTeX 放入剪贴板。
 
-VisualTeX 不依赖 TeX Live 即可完成常用公式输出：
+### 在线与自建服务
 
-- 复制 LaTeX 或带透明背景的 PNG；
-- 导出 Markdown、SVG 和 PNG；
-- 记忆导出目录、PNG 背景色与常用输出选项；
-- 支持公式颜色、字号、布局、工具栏尺寸、面板状态和主题持久化；
-- 配置可备份和迁移，方便在新设备恢复快捷键、磁贴、外观与编辑习惯。
+也可以接入 OpenAI 兼容接口、Ollama、Mathpix、PaddleOCR-VL 1.6 或 SimpleTex。只有主动选用在线服务时，图片才会发送到对应接口；API 地址、模型和密钥都由你在本机设置。
 
-## 两个平台，各自采用原生实现
+## 导出与个性化
+
+- 复制 LaTeX 或 PNG。
+- 导出 Markdown、SVG 和 PNG。
+- 支持透明背景以及自定义 PNG 背景色。
+- 导出目录和常用输出设置可以自动记忆。
+- 支持中英文界面、多套主题和完整配色自定义。
+- 公式字号、工具栏大小、面板状态、编辑模式等设置会在重启后保留。
+- 配置可以备份和迁移。
+- 内置自定义字符设计器，可以组合矢量字形、注册 LaTeX 命令，并在编辑、补全、SVG、PNG 和 Office 图片公式中继续使用。
+
+## 平台说明
 
 | | macOS | Windows |
 |---|---|---|
-| 桌面应用 | React + TypeScript + Tauri | React + TypeScript + Tauri |
-| Word | 原生 DOTM、VBA、AppleScriptTask 与本地 Session | 原生 VSTO Ribbon、Office 事件与 COM |
-| PowerPoint | 原生 PPAM 与本地 Session | 原生 VSTO Ribbon 与 OLE |
-| 公式对象 | 图片公式、Word OMML | VisualTeX OLE、Word OMML、图片公式、MathType OLE |
-| MathType | 与现有文档共存；直接转换不是主要路线 | 原生 OLE 编辑、插入、批量转换、编号与引用适配 |
-| 安装维护 | 应用内检测并安装/更新/修复 DOTM、PPAM | 安装器部署与 Office 位数匹配的原生组件 |
+| 桌面应用 | React、TypeScript、Tauri | React、TypeScript、Tauri |
+| Word 插件 | DOTM、VBA、AppleScriptTask、本地 Session | VSTO Ribbon、Office 事件、COM |
+| PowerPoint 插件 | PPAM、本地 Session | VSTO Ribbon、OLE |
+| 主要公式格式 | 图片公式、Word OMML | VisualTeX OLE、Word OMML、图片公式、MathType OLE |
+| MathType | 可与现有文档共存 | 原生 OLE 编辑、转换、编号和引用 |
+| 插件维护 | 应用内安装、更新和修复 DOTM / PPAM | 安装器部署与 Office 位数匹配的原生组件 |
 
-两个平台拥有独立源码、依赖、Office 插件和构建流程，避免用大量平台判断维持一套脆弱实现；同时通过一致的公式元数据约定，让图片公式和 OMML 在跨平台文档中尽可能保留 LaTeX、公式 ID 与显示模式。
+macOS 和 Windows 拥有各自独立的源码、依赖、Office 插件和构建流程。两端使用一致的公式元数据约定，使图片公式和 OMML 在跨平台文档中尽量保留 LaTeX、公式 ID 与显示方式。
 
-## 下载与使用
+## 下载
 
 - [VisualTeX 官方网站](https://visualtex.pauljianliao.com/)
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS 帮助手册](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-macOS 构建要求 macOS 11 或更高版本。Office 功能需要本机安装受支持的 Microsoft Word / PowerPoint；Windows 的 MathType 原生功能需要相应的 MathType 安装环境。应用、可选 OCR 模型和 Office 插件的具体版本请以下载页说明为准。
+macOS 版本要求 macOS 11 或更高版本。Office 功能需要本机安装 Microsoft Word 或 PowerPoint；Windows 的 MathType 原生功能还需要相应的 MathType 安装环境。
 
 ## 开发
 
-仓库将 macOS 与 Windows 实现完全隔离：
+仓库中的两个平台相互独立：
 
 ```text
 visualtex/
 ├── apps/
 │   ├── macos/       # macOS 应用、Tauri、DOTM/PPAM、OCR 与测试
 │   └── windows/     # Windows 应用、Tauri、VSTO/OLE、OCR 与测试
-├── docs/            # 架构与 README 资源
+├── docs/            # 架构文档与 README 图片
 ├── tools/           # 仓库结构检查
 └── README.md
 ```
 
-常用顶层命令：
+常用命令：
 
 ```bash
 npm run bootstrap
@@ -165,37 +168,20 @@ npm run test:repository
 npm run check
 ```
 
-平台原生打包与 Office 验收请进入对应应用目录执行。架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，各平台开发入口见 [apps/macos/README.md](apps/macos/README.md) 与 [apps/windows/README.md](apps/windows/README.md)。
+详细架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。平台相关的构建与测试说明见 [apps/macos/README.md](apps/macos/README.md) 和 [apps/windows/README.md](apps/windows/README.md)。
 
-## License
+## 开源协议
 
-VisualTeX 以 [MIT License](LICENSE) 发布。
-
----
-
-# English
-
-VisualTeX is a desktop formula editor for mathematics, physics, engineering, and scientific writing. It combines fast structured input with two-way LaTeX source editing, formula OCR, and native Microsoft Word / PowerPoint workflows.
-
-Its main strengths are:
-
-- MathLive visual editing paired with an IDE-like CodeMirror LaTeX editor;
-- dedicated editing for multiline structures such as `align`, `aligned`, `cases`, matrices, and mixed inline/display content;
-- customizable toolbars, hotkeys, formula tiles, themes, history, and a compact keypad mode;
-- Word insertion, re-editing, numbering, cross-references, document import, and selection/document-wide redraw;
-- native PowerPoint add-ins for creating and re-editing presentation formulas;
-- local PP-FormulaNet OCR plus optional OpenAI-compatible, Ollama, Mathpix, PaddleOCR-VL, and SimpleTex providers;
-- SVG, PNG, Markdown, and LaTeX output without requiring a TeX Live installation;
-- Windows-native MathType 7 OLE workflows, including VisualTeX / MathType / OMML conversion, LaTeX restoration, batch processing, and numbering/reference preservation.
-
-The macOS implementation uses native offline DOTM / PPAM add-ins with VBA, AppleScriptTask, and local Tauri sessions. The Windows implementation uses native VSTO Ribbons, COM/OLE, and real `VisualTeX.Formula.1` objects. See [Releases](https://github.com/paulhe666/visualtex/releases) for installers and [the project architecture](docs/ARCHITECTURE.md) for technical details.
+VisualTeX 使用 [MIT License](LICENSE)。
 
 ## 支持 VisualTeX
 
-如果 VisualTeX 改善了你的论文、报告或课件公式工作流，欢迎支持项目继续开发。使用问题、功能建议和 Office 插件交流可加入 QQ 群：`1045801770`。
+如果 VisualTeX 对你的论文、报告或课件排版有所帮助，欢迎支持项目继续开发。使用问题、功能建议和 Office 插件相关交流可加入 QQ 群：`1045801770`。
 
-<div align="center">
-  <img src="docs/images/wechat-pay.jpg" width="28%" alt="微信收款" />
-  <img src="docs/images/alipay.jpg" width="28%" alt="支付宝收款" />
-  <img src="docs/images/qq-group.png" width="28%" alt="VisualTeX QQ 交流群" />
-</div>
+<p align="center">
+  <img src="docs/images/wechat-pay.jpg" height="360" alt="微信收款" />
+  &nbsp;
+  <img src="docs/images/alipay.jpg" height="360" alt="支付宝收款" />
+  &nbsp;
+  <img src="docs/images/qq-group.png" height="360" alt="VisualTeX QQ 交流群" />
+</p>
