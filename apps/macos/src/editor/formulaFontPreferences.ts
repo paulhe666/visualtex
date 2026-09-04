@@ -18,6 +18,18 @@ export type FormulaChineseFont =
 export const DEFAULT_FORMULA_LETTER_FONT: FormulaLetterFont = "katex";
 export const DEFAULT_FORMULA_CHINESE_FONT: FormulaChineseFont = "system";
 
+export const VISUALTEX_FORMULA_LETTER_GLYPH_CLASS =
+  "visualtex-formula-letter-glyph";
+export const VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS =
+  "visualtex-chinese-glyph";
+
+const VISUALTEX_FORMULA_FONT_GLYPH_SELECTOR =
+  ".ML__cmr, .ML__mathbf, .ML__mathit, .ML__mathbfit, .ML__text";
+const VISUALTEX_FORMULA_LETTER_GLYPH_PATTERN =
+  /^[\p{Script=Latin}\p{Script=Greek}0-9]+$/u;
+const VISUALTEX_FORMULA_CHINESE_GLYPH_PATTERN =
+  /^[\p{Script=Han}，。；：！？、（）【】《》“”‘’]+$/u;
+
 const FORMULA_LETTER_FONT_STORAGE_KEY = "visualtex.formula-letter-font";
 const FORMULA_CHINESE_FONT_STORAGE_KEY = "visualtex.formula-chinese-font";
 
@@ -171,4 +183,27 @@ export function formulaLetterPrimaryFontName(value: FormulaLetterFont) {
 
 export function formulaChinesePrimaryFontName(value: FormulaChineseFont) {
   return CHINESE_PRIMARY_FONT_NAMES[normalizeFormulaChineseFont(value)];
+}
+
+export function markVisualTexFormulaFontGlyphs(root: ParentNode) {
+  root
+    .querySelectorAll<HTMLElement>(VISUALTEX_FORMULA_FONT_GLYPH_SELECTOR)
+    .forEach((node) => {
+      const text = (node.textContent ?? "").trim();
+      const isChinese =
+        Boolean(text) && VISUALTEX_FORMULA_CHINESE_GLYPH_PATTERN.test(text);
+      const isLetterGlyph =
+        Boolean(text) &&
+        !isChinese &&
+        VISUALTEX_FORMULA_LETTER_GLYPH_PATTERN.test(text);
+
+      node.classList.toggle(
+        VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS,
+        isChinese,
+      );
+      node.classList.toggle(
+        VISUALTEX_FORMULA_LETTER_GLYPH_CLASS,
+        isLetterGlyph,
+      );
+    });
 }

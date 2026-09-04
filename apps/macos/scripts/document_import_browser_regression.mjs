@@ -210,6 +210,7 @@ async function main() {
               return {
                 protocolVersion: 1,
                 sessionId: ${JSON.stringify(sessionId)},
+                operation: "documentImport",
                 host: "word",
                 sourceDocumentId: "visualtex-word-test-document",
                 bookmarkName: "VT_D_12345678123442349234",
@@ -437,6 +438,64 @@ f^{*}(\mathbf{x})
       throw new Error(`Unexpected parsed formula blocks: ${JSON.stringify(parsed)}`);
     }
 
+    const primaryButtonAppearance = await evaluate(`(() => {
+      const button = document.querySelector(".doc-import-primary");
+      if (!button) throw new Error("Missing primary document import button");
+      const probe = document.createElement("span");
+      probe.style.color = "var(--accent-primary, var(--accent))";
+      document.body.appendChild(probe);
+      const appearance = {
+        disabled: button.disabled,
+        backgroundColor: getComputedStyle(button).backgroundColor,
+        accentColor: getComputedStyle(probe).color,
+      };
+      probe.remove();
+      return appearance;
+    })()`);
+    if (
+      primaryButtonAppearance.disabled ||
+      primaryButtonAppearance.backgroundColor !== primaryButtonAppearance.accentColor
+    ) {
+      throw new Error(
+        `Document import primary button lost its visible accent background: ${JSON.stringify(primaryButtonAppearance)}`,
+      );
+    }
+
+    if (customSettingsRegression) {
+      await evaluate(`(() => {
+        const globalToggle = document.querySelector(
+          ".doc-import-global-number-toggle input[type='checkbox']",
+        );
+        if (!globalToggle) throw new Error("Missing global display-formula numbering toggle");
+        if (globalToggle.checked) {
+          throw new Error("Mixed formula numbering must not present as globally enabled");
+        }
+        globalToggle.click();
+      })()`);
+      await sleep(100);
+      const globalNumberingState = await evaluate(`(() => ({
+        globalChecked: document.querySelector(
+          ".doc-import-global-number-toggle input[type='checkbox']",
+        )?.checked ?? false,
+        displayNumbered: [...document.querySelectorAll(
+          ".document-import-formula-card.is-block input[type='checkbox']",
+        )].map((input) => input.checked),
+        inlineCheckboxCount: document.querySelectorAll(
+          ".document-import-formula-card.is-inline input[type='checkbox']",
+        ).length,
+      }))()`);
+      if (
+        !globalNumberingState.globalChecked ||
+        globalNumberingState.displayNumbered.length !== 3 ||
+        globalNumberingState.displayNumbered.some((numbered) => !numbered) ||
+        globalNumberingState.inlineCheckboxCount !== 0
+      ) {
+        throw new Error(
+          `Global display-formula numbering did not select every display formula: ${JSON.stringify(globalNumberingState)}`,
+        );
+      }
+    }
+
     await evaluate(`(() => {
       if (!${JSON.stringify(longPhysicsRegression)}) {
         const outputSelect = document.querySelector(
@@ -516,7 +575,7 @@ f^{*}(\mathbf{x})
       formulas[2].numbered !== true ||
       formulas[2].fontSizePt !== 14 ||
       formulas[3].displayMode !== "block" ||
-      formulas[3].numbered !== false ||
+      formulas[3].numbered !== true ||
       formulas[3].fontSizePt !== 16
     )) {
       throw new Error(`Independent formula settings were lost: ${JSON.stringify(formulas)}`);

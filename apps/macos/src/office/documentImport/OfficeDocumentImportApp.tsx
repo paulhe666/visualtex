@@ -385,6 +385,16 @@ export function OfficeDocumentImportApp() {
     [],
   );
 
+  const setAllDisplayFormulaNumbering = useCallback((numbered: boolean) => {
+    setBlocks((current) =>
+      current.map((block) =>
+        block.kind === "formula" && block.displayMode === "block"
+          ? { ...block, numbered }
+          : block,
+      ),
+    );
+  }, []);
+
   const handleSourceChange = (value: string) => {
     setSource(value);
     setImportedFile((current) =>
@@ -596,6 +606,19 @@ export function OfficeDocumentImportApp() {
   }
 
   const formulas = formulaCount(blocks);
+  const displayFormulaCount = blocks.reduce(
+    (count, block) =>
+      count + (block.kind === "formula" && block.displayMode === "block" ? 1 : 0),
+    0,
+  );
+  const allDisplayFormulasNumbered =
+    displayFormulaCount > 0 &&
+    blocks.every(
+      (block) =>
+        block.kind !== "formula" ||
+        block.displayMode !== "block" ||
+        block.numbered,
+    );
   const textCharacters = textCharacterCount(blocks);
 
   return (
@@ -635,6 +658,21 @@ export function OfficeDocumentImportApp() {
               <option value="omml">Word 原生 OMML</option>
               <option value="image">SVG 图片公式</option>
             </select>
+          </label>
+          <label
+            className="doc-import-global-number-toggle"
+            title="统一设置当前所有行间公式的编号"
+          >
+            <input
+              type="checkbox"
+              checked={allDisplayFormulasNumbered}
+              onChange={(event) =>
+                setAllDisplayFormulaNumbering(event.target.checked)
+              }
+              disabled={busy || displayFormulaCount === 0}
+              aria-label="所有行间公式添加编号"
+            />
+            <span>行间公式全部编号</span>
           </label>
           <button
             type="button"

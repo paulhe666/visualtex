@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 
+const rareIntegralOnly = process.argv.includes("--rare-integrals");
 const offset = process.pid % 1000;
 const previewPort = 17600 + offset;
 const debugPort = 22600 + offset;
@@ -308,18 +309,20 @@ async function main() {
       assert.match(contour.overlay.mask, /data:image\/svg\+xml/, `${contourLatex} oval mask`);
     };
 
-    comparePair(formulas[0], formulas[1], "visualtex-oiint");
-    comparePair(formulas[2], formulas[3], "visualtex-oiint");
-    comparePair(formulas[4], formulas[5], "visualtex-oiint");
-    comparePair(formulas[6], formulas[7], "visualtex-oiint");
-    comparePair(formulas[8], formulas[9], "visualtex-oiiint");
+    if (!rareIntegralOnly) {
+      comparePair(formulas[0], formulas[1], "visualtex-oiint");
+      comparePair(formulas[2], formulas[3], "visualtex-oiint");
+      comparePair(formulas[4], formulas[5], "visualtex-oiint");
+      comparePair(formulas[6], formulas[7], "visualtex-oiint");
+      comparePair(formulas[8], formulas[9], "visualtex-oiiint");
 
-    approximatelyEqual(result[formulas[1]].overlay.width, 1.472, 0.02, "oiint Size2 oval width");
-    approximatelyEqual(result[formulas[1]].overlay.height, 0.659, 0.02, "oiint Size2 oval height");
-    approximatelyEqual(result[formulas[7]].overlay.width, 0.957, 0.02, "oiint Size1 oval width");
-    approximatelyEqual(result[formulas[7]].overlay.height, 0.499, 0.02, "oiint Size1 oval height");
-    approximatelyEqual(result[formulas[9]].overlay.width, 1.98, 0.02, "oiiint Size2 oval width");
-    approximatelyEqual(result[formulas[9]].overlay.height, 0.659, 0.02, "oiiint Size2 oval height");
+      approximatelyEqual(result[formulas[1]].overlay.width, 1.472, 0.02, "oiint Size2 oval width");
+      approximatelyEqual(result[formulas[1]].overlay.height, 0.659, 0.02, "oiint Size2 oval height");
+      approximatelyEqual(result[formulas[7]].overlay.width, 0.957, 0.02, "oiint Size1 oval width");
+      approximatelyEqual(result[formulas[7]].overlay.height, 0.499, 0.02, "oiint Size1 oval height");
+      approximatelyEqual(result[formulas[9]].overlay.width, 1.98, 0.02, "oiiint Size2 oval width");
+      approximatelyEqual(result[formulas[9]].overlay.height, 0.659, 0.02, "oiiint Size2 oval height");
+    }
 
     for (const command of rareIntegralCommands) {
       const latex = `\\${command}_{a}^{b}`;
@@ -425,7 +428,13 @@ async function main() {
     client?.close();
     chrome?.kill("SIGTERM");
     preview.kill("SIGTERM");
-    await rm(chromeProfile, { recursive: true, force: true });
+    await sleep(120);
+    await rm(chromeProfile, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 }
 

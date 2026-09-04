@@ -2755,18 +2755,19 @@ kbd {
   font-size: 19px;
 }
 
-.formula-font-live-preview .ML__cmr,
-.formula-font-live-preview .ML__mathbf {
+.formula-font-live-preview .ML__cmr.visualtex-formula-letter-glyph:not(.ML__it),
+.formula-font-live-preview .ML__mathbf.visualtex-formula-letter-glyph:not(.lcGreek) {
   font-family: var(--visualtex-formula-upright-font-family, KaTeX_Main, serif) !important;
 }
 
-.formula-font-live-preview .ML__mathit,
-.formula-font-live-preview .lcGreek.ML__mathbf,
-.formula-font-live-preview .ML__mathbfit {
+.formula-font-live-preview .ML__cmr.visualtex-formula-letter-glyph.ML__it,
+.formula-font-live-preview .ML__mathit.visualtex-formula-letter-glyph,
+.formula-font-live-preview .lcGreek.ML__mathbf.visualtex-formula-letter-glyph,
+.formula-font-live-preview .ML__mathbfit.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-italic-font-family, KaTeX_Math, KaTeX_Main, serif) !important;
 }
 
-.formula-font-live-preview .ML__text {
+.formula-font-live-preview .visualtex-chinese-glyph {
   font-family: var(--visualtex-formula-chinese-font-family, sans-serif) !important;
 }
 
@@ -7874,9 +7875,7 @@ textarea:disabled {
 
 .update-community-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
-  align-items: center;
-  gap: 14px;
+  gap: 12px;
   margin-top: 14px;
   padding: 13px;
   border: 1px solid var(--accent-border);
@@ -7939,14 +7938,37 @@ textarea:disabled {
   letter-spacing: 0.2px;
 }
 
-.update-community-card > img {
-  width: 112px;
-  height: 178px;
+.update-community-qr-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  min-width: 0;
+}
+
+.update-community-qr-row figure {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  margin: 0;
+}
+
+.update-community-qr-row img {
+  width: 100%;
+  height: 148px;
   display: block;
   object-fit: contain;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: white;
+}
+
+.update-community-qr-row figcaption {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
 }
 
 .update-preference-row {
@@ -8007,14 +8029,12 @@ textarea:disabled {
     padding: 14px;
   }
 
-  .update-community-card {
-    grid-template-columns: 1fr;
+  .update-community-qr-row {
+    gap: 6px;
   }
 
-  .update-community-card > img {
-    width: 104px;
-    height: 166px;
-    justify-self: center;
+  .update-community-qr-row img {
+    height: 116px;
   }
 }
 
@@ -8183,7 +8203,15 @@ html body #mathlive-suggestion-popover .ML__popover__latex {
 }
 
 html body #mathlive-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  align-self: center;
+  margin-left: auto;
   color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
   opacity: 1 !important;
 }
 
@@ -8326,7 +8354,15 @@ html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-pr
 }
 
 html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  align-self: center;
+  margin-left: auto;
   color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
   opacity: 1;
 }
 
@@ -12732,10 +12768,38 @@ body[data-workspace-resize="dock"] * {
   padding: 0 28px 0 9px;
   border: 0;
   border-radius: 6px;
-  background: var(--surface-secondary);
+  background: var(--surface-secondary, var(--bg-elevated));
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
+}
+
+.doc-import-options .doc-import-global-number-toggle {
+  gap: 8px;
+  padding: 0 10px;
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 38%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 8%, var(--surface-primary, var(--surface)));
+  color: var(--text-primary, var(--text));
+  cursor: pointer;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.doc-import-global-number-toggle:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 62%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 15%, var(--surface-primary, var(--surface)));
+}
+
+.doc-import-global-number-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-primary, var(--accent));
+}
+
+.doc-import-options .doc-import-global-number-toggle:has(input:disabled) {
+  cursor: default;
+  opacity: 0.58;
 }
 
 .doc-import-secondary,
@@ -12762,16 +12826,26 @@ body[data-workspace-resize="dock"] * {
 }
 
 .doc-import-primary {
-  border-color: color-mix(in srgb, var(--accent-primary) 82%, var(--border-strong));
-  background: var(--accent-primary);
+  min-width: 132px;
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 82%, var(--border-strong));
+  background: var(--accent-primary, var(--accent));
   color: var(--primary-foreground);
   font-weight: 750;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--text-primary, var(--text)) 24%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary-foreground) 14%, transparent);
 }
 
 .doc-import-primary:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent-hover) 82%, var(--border-strong));
   background: var(--accent-hover);
+}
+
+.doc-import-primary:focus-visible,
+.doc-import-secondary:focus-visible,
+.doc-import-global-number-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .doc-import-secondary:disabled {
@@ -12784,9 +12858,9 @@ body[data-workspace-resize="dock"] * {
 
 .doc-import-primary:disabled {
   cursor: default;
-  border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-default));
-  background: color-mix(in srgb, var(--accent-primary) 22%, var(--surface-secondary));
-  color: color-mix(in srgb, var(--text-primary) 68%, var(--surface-secondary));
+  border-color: color-mix(in srgb, var(--accent-primary, var(--accent)) 28%, var(--border-default, var(--border)));
+  background: color-mix(in srgb, var(--accent-primary, var(--accent)) 22%, var(--surface-secondary, var(--bg-elevated)));
+  color: color-mix(in srgb, var(--text-primary, var(--text)) 68%, var(--surface-secondary, var(--bg-elevated)));
   box-shadow: none;
   opacity: 1;
 }

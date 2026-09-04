@@ -9998,7 +9998,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
       await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
         if (!field?.isConnected) return { ready: false };
-        field.setValue("x+\\\\alpha+\\\\mathrm{A}+\\\\text{中文}+\\\\sqrt{y}+\\\\sum_{i=1}^{n}i", {
+        field.setValue("x+\\\\alpha+\\\\Gamma+\\\\mathrm{A}+\\\\text{中文}+\\\\sqrt{y}+\\\\sum_{i=1}^{n}i+a\\\\cdot b+a\\\\times b+a\\\\le b+(a,b)+\\\\pm+\\\\div+\\\\neq+\\\\ge+\\\\mathbf{+}+\\\\mathit{+}+\\\\hbar+\\\\aleph+\\\\partial+\\\\nabla+\\\\infty+\\\\ell", {
           mode: "math",
           format: "latex",
           insertionMode: "replaceAll",
@@ -10046,27 +10046,48 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
       const customState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
         const shadow = field?.shadowRoot;
-        const italic = shadow?.querySelector(".ML__mathit");
-        const upright = shadow?.querySelector(".ML__cmr");
-        const chinese = shadow?.querySelector(".ML__text");
+        const italic = shadow?.querySelector(".ML__mathit.visualtex-formula-letter-glyph");
+        const upright = shadow?.querySelector(".ML__cmr.visualtex-formula-letter-glyph");
+        const chinese = shadow?.querySelector(".visualtex-chinese-glyph");
         const largeOperator = shadow?.querySelector(".ML__op-symbol.ML__large-op");
+        const symbolTexts = new Set(["⋅", "×", "≤", "+", "(", ")", ",", "±", "÷", "≠", "≥", "ℏ", "ℵ", "∂", "∇", "∞", "ℓ"]);
+        const symbols = shadow
+          ? [...shadow.querySelectorAll(".ML__cmr, .ML__mathbf, .ML__mathit, .ML__mathbfit")]
+              .filter((node) => symbolTexts.has((node.textContent || "").trim()))
+              .map((node) => ({
+                text: (node.textContent || "").trim(),
+                font: getComputedStyle(node).fontFamily,
+                letterGlyph: node.classList.contains("visualtex-formula-letter-glyph"),
+              }))
+          : [];
+        const gamma = shadow
+          ? [...shadow.querySelectorAll(".ML__cmr")].find((node) => (node.textContent || "").trim() === "Γ")
+          : null;
         const preview = document.querySelector("[data-formula-font-preview]");
-        const previewItalic = preview?.querySelector(".ML__mathit");
-        const previewChinese = preview?.querySelector(".ML__text");
+        const previewItalic = preview?.querySelector(".ML__mathit.visualtex-formula-letter-glyph");
+        const previewChinese = preview?.querySelector(".visualtex-chinese-glyph");
+        const previewSymbol = preview
+          ? [...preview.querySelectorAll(".ML__cmr")].find((node) => ["+", "="].includes((node.textContent || "").trim()))
+          : null;
         const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
         const result = {
           ready:
             persisted.state?.formulaLetterFont === "palatino" &&
             persisted.state?.formulaChineseFont === "songti" &&
-            Boolean(italic && upright && chinese && largeOperator && previewItalic && previewChinese),
+            Boolean(italic && upright && chinese && largeOperator && gamma && previewItalic && previewChinese && previewSymbol) &&
+            symbols.length >= 13,
           letterSetting: persisted.state?.formulaLetterFont ?? "",
           chineseSetting: persisted.state?.formulaChineseFont ?? "",
           italicFont: italic ? getComputedStyle(italic).fontFamily : "",
           uprightFont: upright ? getComputedStyle(upright).fontFamily : "",
           chineseFont: chinese ? getComputedStyle(chinese).fontFamily : "",
           operatorFont: largeOperator ? getComputedStyle(largeOperator).fontFamily : "",
+          gammaFont: gamma ? getComputedStyle(gamma).fontFamily : "",
+          gammaLetterGlyph: gamma?.classList.contains("visualtex-formula-letter-glyph") ?? false,
           previewItalicFont: previewItalic ? getComputedStyle(previewItalic).fontFamily : "",
           previewChineseFont: previewChinese ? getComputedStyle(previewChinese).fontFamily : "",
+          previewSymbolFont: previewSymbol ? getComputedStyle(previewSymbol).fontFamily : "",
+          symbols,
           value: field?.value ?? "",
         };
         result.ready =
@@ -10076,11 +10097,67 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
           result.chineseFont.includes("Songti SC") &&
           result.previewItalicFont.includes("Palatino") &&
           result.previewChineseFont.includes("Songti SC") &&
+          result.gammaFont.includes("Palatino") &&
+          result.gammaLetterGlyph &&
+          result.previewSymbolFont.includes("KaTeX_Main") &&
+          result.symbols.every((item) => item.font.includes("KaTeX_Main") && !item.letterGlyph) &&
           result.operatorFont.includes("KaTeX_Size");
         return result;
-      })()`, "custom formula fonts applied");
+      })()`, "custom formula fonts applied without overriding math symbols");
       assert.equal(customState.value, sourceBefore.value, "font changes must not mutate LaTeX");
       assert.ok(customState.operatorFont.includes("KaTeX_Size"), JSON.stringify(customState));
+      assert.ok(customState.symbols.every((item) => item.font.includes("KaTeX_Main")), JSON.stringify(customState));
+
+      const letterFontSwitches = [];
+      for (const [id, family] of [
+        ["katex", "KaTeX_Math"],
+        ["times", "Times New Roman"],
+        ["cambria", "Cambria Math"],
+        ["stix", "STIX Two Math"],
+        ["helvetica", "Helvetica Neue"],
+        ["palatino", "Palatino"],
+      ]) {
+        await evaluate(`(() => {
+          const letter = document.querySelector("[data-formula-letter-font-setting]");
+          letter.value = ${JSON.stringify(id)};
+          letter.dispatchEvent(new Event("change", { bubbles: true }));
+        })()`);
+        letterFontSwitches.push(
+          await waitForEvaluation(`(() => {
+            const field = document.querySelector("math-field");
+            const shadow = field?.shadowRoot;
+            const italic = shadow?.querySelector(".ML__mathit.visualtex-formula-letter-glyph");
+            const dot = shadow
+              ? [...shadow.querySelectorAll(".ML__cmr")].find((node) => (node.textContent || "").trim() === "⋅")
+              : null;
+            const plus = shadow
+              ? [...shadow.querySelectorAll(".ML__cmr")].find((node) => (node.textContent || "").trim() === "+")
+              : null;
+            const selected = document.querySelector("[data-formula-letter-font-setting]")?.value ?? "";
+            const italicFont = italic ? getComputedStyle(italic).fontFamily : "";
+            const dotFont = dot ? getComputedStyle(dot).fontFamily : "";
+            const plusFont = plus ? getComputedStyle(plus).fontFamily : "";
+            return {
+              ready:
+                selected === ${JSON.stringify(id)} &&
+                italicFont.includes(${JSON.stringify(family)}) &&
+                dotFont.includes("KaTeX_Main") &&
+                plusFont.includes("KaTeX_Main") &&
+                Boolean(dot && !dot.classList.contains("visualtex-formula-letter-glyph")),
+              selected,
+              italicFont,
+              dotFont,
+              plusFont,
+              dotWidth: dot?.getBoundingClientRect().width ?? -1,
+            };
+          })()`, "letter font switch preserves native math-symbol metrics"),
+        );
+      }
+      const dotWidths = letterFontSwitches.map((item) => item.dotWidth);
+      assert.ok(
+        Math.max(...dotWidths) - Math.min(...dotWidths) < 0.1,
+        `cdot width drifted across formula fonts: ${JSON.stringify(letterFontSwitches)}`,
+      );
 
       await evaluate(`(() => {
         const chinese = document.querySelector("[data-formula-chinese-font-setting]");
@@ -10195,7 +10272,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
       })()`, "formula font defaults restored");
       assert.equal(resetState.value, beforeResetValue, "font reset must not mutate LaTeX");
 
-      console.log(JSON.stringify({ sourceBefore, customState, kaitiState, chineseFontSwitches, resetState }, null, 2));
+      console.log(JSON.stringify({ sourceBefore, customState, letterFontSwitches, kaitiState, chineseFontSwitches, resetState }, null, 2));
       console.log("Targeted formula font settings regression passed");
       return;
     }

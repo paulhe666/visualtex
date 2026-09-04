@@ -1,5 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 
 interface MathPreviewProps {
@@ -129,6 +130,8 @@ function MathPreviewComponent({
     const host = hostRef.current;
     const content = contentRef.current;
     if (!host || !content) return;
+
+    markVisualTexFormulaFontGlyphs(content);
 
     if (staticLayout) {
       content.style.setProperty("--math-preview-fit-scale", "1");

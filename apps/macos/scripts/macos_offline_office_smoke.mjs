@@ -432,6 +432,14 @@ expectIncludes(wordAdapter, "Private Function VTReplaceFormulaRestoreRangeWithLa
 expectIncludes(wordAdapter, "legacyNumberTable.Delete", "Formula-to-LaTeX restore must remove a verified legacy 1x3 numbered table instead of leaving an empty scaffold around LaTeX");
 expectIncludes(wordAdapter, "Private Sub VTFinalizeFormulaRestoreNumbering", "Bulk formula restore must defer Equation scaffold cleanup until every source formula range has been replaced");
 expectIncludes(wordAdapter, "VTDeleteEquationNumberScaffold documentObject, formulaId, False", "Formula-to-LaTeX restore must delete the exact VT_N_/VT_R_/VT_C_ Equation scaffold and hidden SEQ helper");
+const deleteEquationScaffoldStart = wordAdapter.indexOf("Private Sub VTDeleteEquationNumberScaffold(");
+const deleteEquationScaffoldEnd = wordAdapter.indexOf("Private Function VTNumberedTableScaffoldComplete(", deleteEquationScaffoldStart);
+const deleteEquationScaffoldSource = wordAdapter.slice(deleteEquationScaffoldStart, deleteEquationScaffoldEnd);
+expect(
+  deleteEquationScaffoldSource.indexOf("paragraphScaffold.Delete") <
+    deleteEquationScaffoldSource.indexOf("VTReplaceDeletedEquationBodyReferences"),
+  "Formula-to-LaTeX restore must remove its own visible number before repairing remaining body references",
+);
 expectIncludes(wordAdapter, "Prefer the exact SEQ field result when resolving the hidden helper", "Equation scaffold deletion must resolve the hidden helper from VT_N_ before the collapsed VT_C_ paragraph-end fallback");
 expectIncludes(wordAdapter, "VTNormalizePlainWordParagraph paragraphRange", "Restored numbered LaTeX must remove the old Caption/tabbed numbering paragraph layout");
 expectIncludes(wordAdapter, "VTWriteFormulaRestoreAndLaunchSession", "Small native OMML restore requests must write both payloads and launch VisualTeX in one AppleScriptTask");

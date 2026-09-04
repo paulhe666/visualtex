@@ -37,7 +37,7 @@ VisualTeX 是适用于 macOS 和 Windows 的桌面公式编辑器，提供可视
 
 ## 支持 VisualTeX 
 
-VisualTeX 的持续开发由用户支持。使用问题、功能建议和 Office 加载项相关交流可加入 QQ 群：`1045801770`。
+VisualTeX 的持续开发由用户支持。如果认为该产品帮助到了您，在有经济支配能力的情况下欢迎打赏支持一下作者。是否打赏完全不会影响软件功能使用。使用问题、功能建议和 Office 加载项相关交流可加入 QQ 群：`1045801770`。
 
 <table align="center">
   <tr>

@@ -67,6 +67,20 @@ for (const glyph of ESINT_INTEGRAL_GLYPHS) {
         variant.bounds.yMax > variant.bounds.yMin,
       `${glyph.command} ${variantName} bounds`,
     );
+    // Type 1 CharString closepath keeps the pre-close current point. If the
+    // generator incorrectly resets that point to the subpath origin, later
+    // relative moveto/hmoveto commands shift secondary contours far outside
+    // the font's own advance + italic-correction metrics (sqint/sqiint were
+    // the most visible examples in MathLive's native suggestion preview).
+    assert.ok(
+      variant.bounds.xMax <=
+        variant.advanceWidth + variant.italicCorrection + 25,
+      `${glyph.command} ${variantName} right outline stays within font metrics`,
+    );
+    assert.ok(
+      variant.bounds.xMin >= -25,
+      `${glyph.command} ${variantName} left outline stays within font metrics`,
+    );
   }
   assert.ok(
     glyph.large.depth + glyph.large.height >
