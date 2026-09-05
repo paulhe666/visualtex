@@ -160,6 +160,9 @@ function MathPreviewComponent({
             Math.max(1, host.clientWidth * fitInsetRatio) / naturalWidth,
             Math.max(1, host.clientHeight * fitInsetRatio) / naturalHeight,
           );
+          // Horizontal toolbar static previews historically render at 0.92x.
+          // Keep that visual ceiling, but allow narrower Windows/WebView2
+          // glyph boxes to shrink further when containment requires it.
           scale = Math.max(
             Number.EPSILON,
             Math.min(0.92, maximumFitScale, containedScale),
@@ -189,10 +192,18 @@ function MathPreviewComponent({
     let animationFrame = 0;
     const measure = () => {
       animationFrame = 0;
+      // Always measure the unscaled MathLive formula itself. WebView2 can report
+      // a zero/near-zero outer inline-flex box during the first toolbar layout
+      // pass; feeding that value back into the fit scale makes the preview appear
+      // blank even though MathLive already produced valid markup.
       content.style.setProperty("--math-preview-fit-scale", "1");
       const visualRoot =
         content.querySelector<HTMLElement>(".ML__latex") ?? content;
       const visualRect = visualRoot.getBoundingClientRect();
+      // WebView2 can give the MathLive subtree narrower metrics than the
+      // surrounding max-content flex box (notably for multi-integral glyphs).
+      // Include the unscaled fit-content box itself so the containment scale
+      // is based on what is actually painted, rather than an inner estimate.
       const contentRect = content.getBoundingClientRect();
       const naturalWidth = Math.max(
         1,
@@ -206,10 +217,7 @@ function MathPreviewComponent({
         contentRect.height,
         visualRect.height,
       );
-      onMeasureRef.current?.({
-        width: Math.max(1, content.offsetWidth),
-        height: Math.max(1, content.offsetHeight),
-      });
+      onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
           intrinsicMaxWidth,
@@ -279,14 +287,33 @@ function MathPreviewComponent({
       animationFrame = requestAnimationFrame(measure);
     };
 
+    // Establish a usable fit state in the same layout phase so large toolbar
+    // batches never expose an unmeasured preview for a full animation frame.
+    // Keep the scheduled pass as a geometry/font refinement after paint.
     measure();
     scheduleMeasure();
     void document.fonts?.ready.then(scheduleMeasure);
-    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    let observedHostWidth = host.clientWidth;
+    const resizeObserver = new ResizeObserver(() => {
+      if (fluidHeight) {
+        // A fluid tile writes its own measured height back to the host. Watching
+        // that height creates a feedback loop on fractional-DPI WebView2 setups:
+        // ResizeObserver -> temporarily unscale -> measure -> resize -> repeat,
+        // which makes the formula appear to breathe by a fraction of a pixel.
+        // Fluid previews only need a new fit calculation when their width changes;
+        // markup changes and font loading already schedule their own measurements.
+        const nextWidth = host.clientWidth;
+        if (nextWidth === observedHostWidth) return;
+        observedHostWidth = nextWidth;
+      }
+      scheduleMeasure();
+    });
     resizeObserver.observe(host);
-    resizeObserver.observe(content);
-    const observedVisualRoot = content.querySelector<HTMLElement>(".ML__latex");
-    if (observedVisualRoot) resizeObserver.observe(observedVisualRoot);
+    if (!fluidHeight) {
+      resizeObserver.observe(content);
+      const observedVisualRoot = content.querySelector<HTMLElement>(".ML__latex");
+      if (observedVisualRoot) resizeObserver.observe(observedVisualRoot);
+    }
 
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);

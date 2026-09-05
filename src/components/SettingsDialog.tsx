@@ -35,11 +35,6 @@ import {
   readCustomSymbolLibrary,
   replaceCustomSymbolLibrary,
 } from "../math/customSymbolRegistry";
-import {
-  readWebKeypadMode,
-  subscribeWebKeypadMode,
-  writeWebKeypadMode,
-} from "../runtime/webKeypadMode";
 import { useEditorStore } from "../stores/editorStore";
 import type {
   InputBehaviorSettingKey,
@@ -165,7 +160,6 @@ interface WebEditorConfiguration {
     personalize: boolean;
     suggestionCount: number;
     checkUpdatesOnStartup: boolean;
-    webKeypadMode: boolean;
   };
   customTheme: CustomThemeState;
   customSymbols: ReturnType<typeof readCustomSymbolLibrary>;
@@ -275,10 +269,7 @@ export function SettingsDialog({
     readCustomTheme(),
   );
   const [customSymbolDesignerOpen, setCustomSymbolDesignerOpen] = useState(false);
-  const [webKeypadMode, setWebKeypadMode] = useState(readWebKeypadMode);
   const [backupStatus, setBackupStatus] = useState("");
-
-  useEffect(() => subscribeWebKeypadMode(setWebKeypadMode), []);
 
   useEffect(() => {
     if (!open) return;
@@ -377,7 +368,6 @@ export function SettingsDialog({
         personalize: current.personalize,
         suggestionCount: current.suggestionCount,
         checkUpdatesOnStartup: current.checkUpdatesOnStartup,
-        webKeypadMode: readWebKeypadMode(),
       },
       customTheme: readCustomTheme(),
       customSymbols: readCustomSymbolLibrary(),
@@ -479,9 +469,6 @@ export function SettingsDialog({
       }
       if (typeof editor.checkUpdatesOnStartup === "boolean") {
         current.setCheckUpdatesOnStartup(editor.checkUpdatesOnStartup);
-      }
-      if (typeof editor.webKeypadMode === "boolean") {
-        writeWebKeypadMode(editor.webKeypadMode);
       }
       if (editor.inputBehavior && typeof editor.inputBehavior === "object") {
         for (const row of inputBehaviorRows) {
@@ -596,19 +583,6 @@ export function SettingsDialog({
               <Keyboard size={15} />
               {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
             </button>
-            <ToggleRow
-              title={isEn ? "Keypad mode" : "小键盘模式"}
-              description={
-                isEn
-                  ? "Ctrl/Cmd+S copies the current LaTeX source in the browser."
-                  : "浏览器中 Ctrl/Cmd+S 复制当前 LaTeX 源码。"
-              }
-              checked={webKeypadMode}
-              onChange={(enabled) => {
-                setWebKeypadMode(enabled);
-                writeWebKeypadMode(enabled);
-              }}
-            />
           </div>
 
           <div className="settings-section">

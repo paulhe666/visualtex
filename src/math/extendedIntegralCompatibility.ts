@@ -24,6 +24,9 @@ export const RARE_INTEGRAL_SYMBOLS = {
 } as const;
 
 export const ESINT_INTEGRAL_REPLACEMENTS = {
+  // Commands supplied by the esint package but absent from MathLive's native
+  // command table. Multi-glyph fallbacks are used only for semantic MathML /
+  // Word conversion; editor and SVG rendering use the official esint10 paths.
   idotsint: "\\int\\!\\cdots\\!\\int",
   dotsint: "\\int\\!\\cdots\\!\\int",
   sqint: "⨖",
@@ -33,6 +36,7 @@ export const ESINT_INTEGRAL_REPLACEMENTS = {
   varoiint: "∯",
   landupint: "⨛",
   landdownint: "⨜",
+  // Existing spellings whose editor glyph must also follow esint10.
   iiiint: "⨌",
   intclockwise: "∱",
   ointctrclockwise: "∳",
@@ -69,6 +73,8 @@ const CANONICAL_COMMAND_BY_CHARACTER = new Map<string, string>([
   ["⨎", "intBar"],
   ["⨏", "fint"],
   ["⨐", "cirfnint"],
+  // Keep the long-standing VisualTeX spelling as the serialization form;
+  // MathLive also accepts the esint alias \\awint.
   ["⨑", "intctrclockwise"],
   ["⨒", "rppolint"],
   ["⨓", "scpolint"],
@@ -85,6 +91,12 @@ const CANONICAL_COMMAND_BY_CHARACTER = new Map<string, string>([
 
 const EXTENDED_INTEGRAL_CHARACTER_PATTERN = /[∯∰∱∲∳⨋-⨜]/gu;
 
+/**
+ * MathLive and old OLE objects can serialize an integral as its Unicode glyph.
+ * Convert it back to one canonical LaTeX command before it reaches the editor,
+ * metadata store, MathJax, or Word. A trailing command terminator prevents the
+ * restored control word from consuming a following Latin variable.
+ */
 export function normalizeExtendedIntegralLatexCommands(source: string) {
   return source.replace(EXTENDED_INTEGRAL_CHARACTER_PATTERN, (character) => {
     const command = CANONICAL_COMMAND_BY_CHARACTER.get(character);
@@ -99,6 +111,9 @@ function svgMarker(command: string, placeholder: string) {
 const RARE_INTEGRAL_SVG_MACROS = Object.fromEntries(
   Object.keys(RARE_INTEGRAL_SYMBOLS).map((command) => [
     command,
+    // Do not reference \\iiiint from its own compatibility macro. A triple-
+    // integral placeholder provides the closest built-in MathJax width for the
+    // four-integral vector without recursive macro expansion.
     svgMarker(command, command === "iiiint" ? "\\iiint" : "\\int"),
   ]),
 ) as Record<string, string>;
@@ -130,10 +145,16 @@ const ESINT_INTEGRAL_SVG_MACROS = Object.fromEntries(
   ]),
 ) as Record<keyof typeof ESINT_INTEGRAL_REPLACEMENTS, string>;
 
+/** Semantic operators used by MathML and native Word OMML conversion. */
 export const EXTENDED_INTEGRAL_MATHML_MACROS = {
   ...EXTENDED_INTEGRAL_SYMBOLS,
 } as const;
 
+/**
+ * SVG/OLE rendering uses standard large-operator placeholders so MathJax lays
+ * out limits and surrounding content with integral metrics. The export runtime
+ * replaces the marked glyph with the same contour/STIX vector used by MathLive.
+ */
 export const EXTENDED_INTEGRAL_SVG_MACROS = {
   oiint: svgMarker("oiint", "\\iint"),
   oiiint: svgMarker("oiiint", "\\iiint"),

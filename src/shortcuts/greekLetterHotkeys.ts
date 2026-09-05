@@ -89,14 +89,14 @@ function toLatexCommand(definition: GreekShortcutDefinition): LatexCommand {
   };
 }
 
-// Web keeps parity with Windows Ctrl+G and also supports Command+G on macOS.
+// macOS uses Command+G. On Windows the equivalent one-shot prefix is Ctrl+G.
 export function isGreekLetterHotkeyPrefix(event: GreekShortcutEvent) {
-  const platformModifier = (event.ctrlKey && !event.metaKey) || (event.metaKey && !event.ctrlKey);
   return (
     !event.repeat &&
     !event.isComposing &&
     event.code === "KeyG" &&
-    platformModifier &&
+    event.ctrlKey &&
+    !event.metaKey &&
     !event.altKey &&
     !event.shiftKey
   );

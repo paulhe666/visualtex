@@ -1,3 +1,5 @@
+import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
+
 export type NativeSuggestionPreviewKind =
   | "arguments"
   | "delimiter"
@@ -205,6 +207,13 @@ registerPreviews("state", [
   ["\\vphantom", "A\\vphantom{\\frac{a}{b}}B"],
 ]);
 
+for (const command of compatibilityCommands) {
+  previewRegistry.set(command.command, {
+    latex: command.previewLatex,
+    kind: "arguments",
+  });
+}
+
 registerPreviews("alias", [
   ["\\bf", "{\\bf ABC}"],
   ["\\it", "{\\it ABC}"],
@@ -296,7 +305,8 @@ function delimiterPreview(command: string): NativeSuggestionPreview | null {
 }
 
 export function nativeSuggestionPreviewHasVisibleInk(preview: HTMLElement) {
-  const rendered = preview.querySelector<HTMLElement>(".ML__latex") ?? preview;
+  const rendered =
+    preview.querySelector<HTMLElement>(".ML__latex") ?? preview;
   if (rendered.querySelector(".ML__error")) return false;
   const text = (rendered.textContent ?? "")
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -333,12 +343,7 @@ export function nativeSuggestionPreviewHasVisibleInk(preview: HTMLElement) {
         ) {
           return true;
         }
-        if (
-          content &&
-          content !== "none" &&
-          content !== "normal" &&
-          content !== '\"\"'
-        ) {
+        if (content && content !== "none" && content !== "normal" && content !== '\"\"') {
           return true;
         }
       }

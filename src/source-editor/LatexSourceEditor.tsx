@@ -1,9 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import {
+  foldGutter,
+  foldKeymap,
+  HighlightStyle,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import {
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import {
   AlertTriangle,
@@ -15,6 +32,7 @@ import {
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
 import type { LatexCodeFormat, Theme } from "../types/formula";
+import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 
 const visualTeXLatexHighlightStyle = HighlightStyle.define([
   {
@@ -30,6 +48,12 @@ const visualTeXLatexHighlightStyle = HighlightStyle.define([
   {
     tag: [tags.className, tags.typeName, tags.namespace],
     color: "var(--syntax-function)",
+    fontWeight: "650",
+  },
+  {
+    tag: [tags.strong, tags.emphasis, tags.monospace],
+    color: "var(--syntax-command)",
+    fontWeight: "600",
   },
   {
     tag: [tags.operator, tags.processingInstruction],
@@ -113,22 +137,108 @@ export function LatexSourceEditor({
     if (!hostRef.current) return;
 
     const editorTheme = EditorView.theme({
-      "&": { backgroundColor: "transparent", color: "var(--text)" },
-      ".cm-content": { caretColor: "var(--accent)", fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace", fontSize: "12px", padding: "10px 0" },
-      ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-faint)", border: "none" },
-      ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--accent-soft) 38%, transparent)" },
+      "&": {
+        backgroundColor: "transparent",
+        color: "var(--text)",
+      },
+      ".cm-content": {
+        caretColor: "var(--accent)",
+        fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
+        fontSize: "12px",
+        lineHeight: "1.62",
+        padding: "10px 0 18px",
+      },
+      ".cm-line": {
+        paddingInline: "4px 10px",
+      },
+      ".cm-gutters": {
+        backgroundColor: "transparent",
+        color: "var(--text-faint)",
+        border: "none",
+      },
+      ".cm-lineNumbers .cm-gutterElement": {
+        minWidth: "32px",
+        paddingInline: "6px 7px",
+      },
+      ".cm-foldGutter .cm-gutterElement": {
+        width: "18px",
+        paddingInline: "1px",
+        color: "var(--text-faint)",
+        cursor: "pointer",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: "color-mix(in srgb, var(--accent-soft) 45%, transparent)",
+        color: "var(--text-muted)",
+      },
+      ".cm-activeLine": {
+        backgroundColor: "color-mix(in srgb, var(--accent-soft) 32%, transparent)",
+      },
       ".cm-focused": { outline: "none" },
-      ".cm-selectionBackground, ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 22%, transparent) !important" },
+      ".cm-selectionBackground, ::selection": {
+        backgroundColor:
+          "color-mix(in srgb, var(--accent) 22%, transparent) !important",
+      },
+      ".cm-matchingBracket": {
+        backgroundColor: "color-mix(in srgb, var(--syntax-bracket) 18%, transparent)",
+        outline: "1px solid color-mix(in srgb, var(--syntax-bracket) 55%, transparent)",
+        borderRadius: "2px",
+      },
+      ".cm-vt-indent-guide": {
+        backgroundImage:
+          "linear-gradient(to right, transparent calc(2ch - 1px), color-mix(in srgb, var(--border-strong) 58%, transparent) calc(2ch - 1px), color-mix(in srgb, var(--border-strong) 58%, transparent) 2ch)",
+        backgroundSize: "2ch 100%",
+      },
+      ".cm-vt-command-default, .cm-vt-command-structure, .cm-vt-command-calculus, .cm-vt-command-matrix, .cm-vt-command-greek, .cm-vt-command-relation, .cm-vt-command-set, .cm-vt-command-arrow, .cm-vt-command-physics": {
+        fontWeight: "600",
+      },
+      ".cm-vt-command-default, .cm-vt-command-structure": {
+        color: "var(--syntax-command)",
+      },
+      ".cm-vt-command-calculus": { color: "var(--syntax-number)" },
+      ".cm-vt-command-matrix": { color: "var(--syntax-function)" },
+      ".cm-vt-command-greek": { color: "var(--syntax-string)" },
+      ".cm-vt-command-relation": { color: "var(--syntax-error)" },
+      ".cm-vt-command-set": { color: "var(--syntax-bracket)" },
+      ".cm-vt-command-arrow": {
+        color:
+          "color-mix(in srgb, var(--syntax-command) 45%, var(--syntax-function))",
+      },
+      ".cm-vt-command-physics": {
+        color:
+          "color-mix(in srgb, var(--syntax-bracket) 55%, var(--syntax-string))",
+      },
+      ".cm-tooltip-autocomplete": {
+        border: "1px solid var(--border-strong)",
+        borderRadius: "7px",
+        backgroundColor: "var(--bg-elevated)",
+        boxShadow: "var(--shadow-md)",
+        overflow: "hidden",
+      },
+      ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+        backgroundColor: "var(--accent-soft)",
+        color: "var(--text)",
+      },
     });
 
     const state = EditorState.create({
       doc: sourceRef.current,
       extensions: [
         lineNumbers(),
+        foldGutter({ openText: "⌄", closedText: "›" }),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        highlightSpecialChars(),
         history(),
         latexLanguageSupport({ enableLinting: false, enableTooltips: false }),
+        visualTeXLatexEditingExtensions,
         syntaxHighlighting(visualTeXLatexHighlightStyle),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),
+        EditorView.contentAttributes.of({
+          spellcheck: "false",
+          autocapitalize: "off",
+          autocomplete: "off",
+          "data-gramm": "false",
+        }),
         editorTheme,
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
@@ -147,8 +257,7 @@ export function LatexSourceEditor({
                 if (!view || view.hasFocus) return;
                 sourceFocusedRef.current = false;
                 onFocusChangeRef.current?.(false);
-                if (!hasLivePreviewRef.current) return;
-                updateSyncError(null);
+                if (syncErrorRef.current || !hasLivePreviewRef.current) return;
                 updateDirty(false);
                 const canonical = latestLatexRef.current;
                 const current = view.state.doc.toString();
@@ -159,6 +268,7 @@ export function LatexSourceEditor({
                   });
                 }
                 draftRef.current = canonical;
+                updateDirty(false);
               });
             }
           }
@@ -174,7 +284,10 @@ export function LatexSourceEditor({
             draftRef.current,
             formatRef.current,
           );
-          const acceptedLivePreview = result.valid || result.values.length > 0;
+          const acceptedLivePreview =
+            result.valid ||
+            result.values.length > 0 ||
+            Boolean(result.previewValues?.length);
           hasLivePreviewRef.current = acceptedLivePreview;
           setHasLivePreview(acceptedLivePreview);
           updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
@@ -193,33 +306,7 @@ export function LatexSourceEditor({
     draftRef.current = sourceRef.current;
     updateDirty(false);
 
-    type SourceEditorProbe = {
-      replaceDocument: (value: string) => void;
-      getDocument: () => string;
-    };
-    const probeWindow = window as Window & {
-      __visualtexSourceEditorProbe?: SourceEditorProbe;
-    };
-    const testProbeEnabled =
-      new URLSearchParams(window.location.search).get("visualtex-test-probe") ===
-      "1";
-    const sourceEditorProbe: SourceEditorProbe = {
-      replaceDocument: (value) => {
-        const current = view.state.doc.toString();
-        view.dispatch({
-          changes: { from: 0, to: current.length, insert: value },
-        });
-      },
-      getDocument: () => view.state.doc.toString(),
-    };
-    if (testProbeEnabled) {
-      probeWindow.__visualtexSourceEditorProbe = sourceEditorProbe;
-    }
-
     return () => {
-      if (probeWindow.__visualtexSourceEditorProbe === sourceEditorProbe) {
-        delete probeWindow.__visualtexSourceEditorProbe;
-      }
       if (formatRefreshFrameRef.current !== null) {
         window.cancelAnimationFrame(formatRefreshFrameRef.current);
         formatRefreshFrameRef.current = null;
@@ -290,7 +377,10 @@ export function LatexSourceEditor({
     view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     draftRef.current = value;
     const result = onLiveChangeRef.current(value, formatRef.current);
-    const acceptedLivePreview = result.valid || result.values.length > 0;
+    const acceptedLivePreview =
+      result.valid ||
+      result.values.length > 0 ||
+      Boolean(result.previewValues?.length);
     hasLivePreviewRef.current = acceptedLivePreview;
     setHasLivePreview(acceptedLivePreview);
     updateSyncError(result.valid ? null : result.error ?? "invalid-latex");

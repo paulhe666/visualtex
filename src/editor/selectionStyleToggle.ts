@@ -18,14 +18,39 @@ const boldCommands = new Set([
   "boldsymbol",
   "bm",
   "bold",
+  "boldmath",
+  "symbf",
+  "symbfup",
+  "symbfit",
+  "symbfcal",
+  "symbfscr",
+  "symbffrak",
+  "symbfsfup",
+  "symbfsfit",
 ]);
 
-const uprightCommands = new Set(["mathrm", "textrm", "mathbf"]);
+const uprightCommands = new Set([
+  "mathrm",
+  "textrm",
+  "mathbf",
+  "symup",
+  "symbf",
+  "symbfup",
+  "symsfup",
+  "symbfsfup",
+  "symtt",
+]);
 const italicCommands = new Set([
   "mathit",
   "mathbfit",
   "boldsymbol",
   "bm",
+  "bold",
+  "boldmath",
+  "symit",
+  "symbfit",
+  "symsfit",
+  "symbfsfit",
 ]);
 const mathVariantCommands = new Set([
   ...boldCommands,
@@ -118,20 +143,37 @@ function removeBold(source: string) {
 
 function removeItalicPreservingBold(source: string) {
   return transformCommandWrappers(source, (command, body) => {
-    if (command === "mathbfit" || command === "boldsymbol" || command === "bm") {
+    if (
+      command === "mathbfit" ||
+      command === "boldsymbol" ||
+      command === "bm" ||
+      command === "bold" ||
+      command === "boldmath" ||
+      command === "symbfit" ||
+      command === "symbfsfit"
+    ) {
       return `\\mathbf{${body}}`;
     }
-    if (command === "mathit") return body;
+    if (command === "mathit" || command === "symit" || command === "symsfit") {
+      return body;
+    }
     return null;
   });
 }
 
 function applyItalicPreservingBold(source: string) {
   return transformCommandWrappers(source, (command, body) => {
-    if (command === "mathrm" || command === "textrm" || command === "mathnormal") {
+    if (
+      command === "mathrm" ||
+      command === "textrm" ||
+      command === "mathnormal" ||
+      command === "symup"
+    ) {
       return body;
     }
-    if (command === "mathbf") return `\\mathbfit{${body}}`;
+    if (command === "mathbf" || command === "symbf" || command === "symbfup") {
+      return `\\mathbfit{${body}}`;
+    }
     return null;
   });
 }
@@ -181,7 +223,14 @@ export function inferFormulaSelectionStyleState(
   return {
     allBold: queried.allBold || rootBold,
     allBoldItalic:
-      queried.allBoldItalic || command === "mathbfit" || command === "boldsymbol" || command === "bm",
+      queried.allBoldItalic ||
+      command === "mathbfit" ||
+      command === "boldsymbol" ||
+      command === "bm" ||
+      command === "bold" ||
+      command === "boldmath" ||
+      command === "symbfit" ||
+      command === "symbfsfit",
     allItalic:
       queried.allItalic ||
       rootItalic ||
@@ -207,13 +256,19 @@ export function toggleFormulaSelectionLatex(
     const body = outer && mathVariantCommands.has(outer.command)
       ? stripMathVariantCommands(outer.body)
       : stripMathVariantCommands(normalized);
-    return `\\mathbf{${body}}`;
+    return state.allItalic && !state.allUpright
+      ? `\\mathbfit{${body}}`
+      : `\\mathbf{${body}}`;
   }
 
   if (state.allItalic || state.allBoldItalic) {
     if (outer?.command === "mathbfit"
       || outer?.command === "boldsymbol"
-      || outer?.command === "bm") {
+      || outer?.command === "bm"
+      || outer?.command === "bold"
+      || outer?.command === "boldmath"
+      || outer?.command === "symbfit"
+      || outer?.command === "symbfsfit") {
       return `\\mathbf{${outer.body}}`;
     }
     if (outer?.command === "mathit") {

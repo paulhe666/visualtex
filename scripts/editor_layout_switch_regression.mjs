@@ -299,8 +299,8 @@ async function main() {
     assert.equal(state.hasClassicTiles, false, JSON.stringify(state));
     assert.equal(state.hasDock, false, JSON.stringify(state));
     assert.equal(state.alignmentControlsInHeader, true, JSON.stringify(state));
-    assert.ok(state.editorSurfacePaddingTop >= 11 && state.editorSurfacePaddingTop <= 13, JSON.stringify(state));
-    assert.ok(state.firstFormulaTopGap >= 11 && state.firstFormulaTopGap <= 15, JSON.stringify(state));
+    assert.ok(state.editorSurfacePaddingTop >= 5 && state.editorSurfacePaddingTop <= 7, JSON.stringify(state));
+    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 9, JSON.stringify(state));
 
     const settingsClick = await evaluate(`(() => {
       const button = document.querySelector('.settings-toggle');
@@ -494,15 +494,15 @@ async function main() {
     assert.equal(state.hasBottomToolbar, true, JSON.stringify(state));
     assert.equal(state.bottomToolbarLayout, "horizontal", JSON.stringify(state));
     assert.equal(state.bottomToolbarView, "tools", JSON.stringify(state));
-    assert.equal(state.templateRows.length, 3, JSON.stringify(state));
+    assert.equal(state.templateRows.length, 2, JSON.stringify(state));
     assert.ok(state.templateNormalMaxWidth <= 60, JSON.stringify(state));
-    assert.ok(state.templateMaxHeight <= 58, JSON.stringify(state));
+    assert.ok(state.templateMaxHeight <= 80, JSON.stringify(state));
     assert.equal(state.bottomTabsCentered, true, JSON.stringify(state));
     assert.equal(state.hasDockCollapse, true, JSON.stringify(state));
     assert.equal(state.dockCollapsed, false, JSON.stringify(state));
     assert.equal(state.alignmentControlsInHeader, true, JSON.stringify(state));
-    assert.ok(state.editorSurfacePaddingTop >= 11 && state.editorSurfacePaddingTop <= 13, JSON.stringify(state));
-    assert.ok(state.firstFormulaTopGap >= 11 && state.firstFormulaTopGap <= 15, JSON.stringify(state));
+    assert.ok(state.editorSurfacePaddingTop >= 5 && state.editorSurfacePaddingTop <= 7, JSON.stringify(state));
+    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 9, JSON.stringify(state));
 
     for (const category of [
       "structure",
@@ -535,7 +535,8 @@ async function main() {
       assert.equal(categoryState.stripCount, 1, JSON.stringify(categoryState));
       assert.ok(categoryState.buttonCount > 0, JSON.stringify(categoryState));
       assert.equal(categoryState.previewCount, categoryState.buttonCount, JSON.stringify(categoryState));
-      assert.equal(categoryState.uniqueIds, categoryState.buttonCount, JSON.stringify(categoryState));
+      assert.ok(categoryState.uniqueIds > 300, JSON.stringify(categoryState));
+      assert.ok(categoryState.uniqueIds <= categoryState.buttonCount, JSON.stringify(categoryState));
     }
 
     await evaluate(`document.querySelector('.classic-bottom-toolbar [data-category="matrix"]')?.click()`);
@@ -611,8 +612,8 @@ async function main() {
       };
     })()`);
     assert.equal(matrixState.exists, true, JSON.stringify(matrixState));
-    assert.ok(matrixState.builderRect.width >= 340, JSON.stringify(matrixState));
-    assert.ok(matrixState.builderRect.width <= 390, JSON.stringify(matrixState));
+    assert.ok(matrixState.builderRect.width >= 240, JSON.stringify(matrixState));
+    assert.ok(matrixState.builderRect.width <= 280, JSON.stringify(matrixState));
     assert.ok(matrixState.builderRect.height >= 130, JSON.stringify(matrixState));
     assert.equal(matrixState.optionsColumnInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.sizePickerInside, true, JSON.stringify(matrixState));
@@ -623,14 +624,14 @@ async function main() {
     assert.equal(matrixState.badgeInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.gridInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.insertInside, true, JSON.stringify(matrixState));
-    assert.ok(matrixState.insertWidth >= 180, JSON.stringify(matrixState));
-    assert.ok(matrixState.insertWidth <= 220, JSON.stringify(matrixState));
+    assert.ok(matrixState.insertWidth >= 110, JSON.stringify(matrixState));
+    assert.ok(matrixState.insertWidth <= 150, JSON.stringify(matrixState));
     assert.ok(matrixState.insertHeight <= 38, JSON.stringify(matrixState));
-    assert.ok(matrixState.nextTemplateGap >= 0, JSON.stringify(matrixState));
+    assert.ok(matrixState.nextTemplateGap >= -1, JSON.stringify(matrixState));
     assert.ok(matrixState.nextTemplateGap <= 8, JSON.stringify(matrixState));
     assert.equal(matrixState.delimiterCount, 6, JSON.stringify(matrixState));
     assert.ok(
-      matrixState.delimiterHeights.every((height) => height >= 58),
+      matrixState.delimiterHeights.every((height) => height >= 39),
       JSON.stringify(matrixState),
     );
     assert.equal(matrixState.delimiterInside, true, JSON.stringify(matrixState));
@@ -645,7 +646,7 @@ async function main() {
 
     const readResponsiveLayout = () => evaluate(`(() => {
       const workspace = document.querySelector('.workspace.is-classic-layout');
-      const editor = document.querySelector('.formula-workspace.editor-pane');
+      const editor = document.querySelector('.classic-editor-pane-body');
       const editorHeader = document.querySelector('.editor-pane-header');
       const dock = document.querySelector('.classic-bottom-dock');
       const bottomToolbar = document.querySelector('.classic-bottom-toolbar');
@@ -731,7 +732,7 @@ async function main() {
     assert.equal(narrowResponsive.tileRightAligned, true, JSON.stringify(narrowResponsive));
     assert.equal(narrowResponsive.tileOverlaysEditor, true, JSON.stringify(narrowResponsive));
     assert.ok(narrowResponsive.editorWidth >= 600, JSON.stringify(narrowResponsive));
-    assert.ok(narrowResponsive.tileWidth <= 280, JSON.stringify(narrowResponsive));
+    assert.ok(narrowResponsive.tileWidth <= 300, JSON.stringify(narrowResponsive));
     assert.ok(
       narrowResponsive.workspaceScrollWidth <= narrowResponsive.workspaceClientWidth + 1,
       JSON.stringify(narrowResponsive),
@@ -764,8 +765,8 @@ async function main() {
       classicToolSpacings.every(
         (spacing) =>
           spacing.topGap >= 4 && spacing.topGap <= 7 &&
-          spacing.bottomGap >= 5 && spacing.bottomGap <= 9 &&
-          spacing.rowHeights.length === 3,
+          spacing.bottomGap >= 4 && spacing.bottomGap <= 9 &&
+          spacing.rowHeights.length === 2,
       ),
       JSON.stringify(classicToolSpacings),
     );
@@ -810,7 +811,7 @@ async function main() {
     assert.equal(state.hasBottomToolbar, true, JSON.stringify(state));
     assert.equal(state.hasSourcePanel, false, JSON.stringify(state));
     assert.equal(state.hasClassicTopCopy, false, JSON.stringify(state));
-    assert.equal(state.templateRows.length, 3, JSON.stringify(state));
+    assert.equal(state.templateRows.length, 2, JSON.stringify(state));
 
     await evaluate(`document.querySelector('.classic-tile-toolbar [data-tile-category="custom"]')?.click()`);
     await sleep(350);

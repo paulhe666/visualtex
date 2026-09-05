@@ -2,16 +2,16 @@ import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
 import type { WorkspaceMode } from "./workspaceTypes";
 
 export type WorkspacePanelPreference = "toolbar" | "tiles" | "source";
-type WorkspacePanelScope = "desktop" | "office";
+type WorkspacePanelScope = "web" | "office";
 
 const workspacePanelStorageKeys: Record<
   WorkspacePanelScope,
   Record<WorkspacePanelPreference, string>
 > = {
-  desktop: {
-    toolbar: "visualtex-desktop-editor-toolbar-open",
-    tiles: "visualtex-desktop-editor-tiles-open",
-    source: "visualtex-desktop-editor-source-open",
+  web: {
+    toolbar: "visualtex-web-editor-toolbar-open",
+    tiles: "visualtex-web-editor-tiles-open",
+    source: "visualtex-web-editor-source-open",
   },
   office: {
     toolbar: "visualtex-office-editor-toolbar-open",
@@ -21,7 +21,7 @@ const workspacePanelStorageKeys: Record<
 };
 
 function workspacePanelScope(mode: WorkspaceMode): WorkspacePanelScope {
-  return mode === "desktop" ? "desktop" : "office";
+  return mode === "web" ? "web" : "office";
 }
 
 export function workspacePanelStorageKey(

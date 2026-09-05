@@ -233,10 +233,16 @@ async function main() {
 
     const replaceFocusedText = async (text) => {
       await evaluate(`(() => {
-        const probe = window.__visualtexSourceEditorProbe;
-        if (!probe) throw new Error("Source editor probe is unavailable");
-        probe.replaceDocument(${JSON.stringify(text)});
+        const content = document.querySelector(".source-panel .cm-content");
+        if (!content) throw new Error("Source editor is unavailable");
+        content.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        selection.removeAllRanges();
+        selection.addRange(range);
       })()`);
+      await client.send("Input.insertText", { text });
       await sleep(220);
     };
 
@@ -300,15 +306,17 @@ async function main() {
       .split(/\s+/)
       .filter(Boolean);
     if (
-      columnTracks.length !== 2 ||
+      columnTracks.length !== 3 ||
       Math.abs(originalWebGeometry.tileWidth - 300) > 1.5 ||
-      rowTracks.length !== 2 ||
-      Math.abs(originalWebGeometry.dockHeight - 250) > 1.5 ||
-      originalWebGeometry.tileResizerPosition !== "absolute" ||
-      originalWebGeometry.dockResizerPosition !== "absolute"
+      rowTracks.length !== 3 ||
+      Math.abs(originalWebGeometry.dockHeight - 240) > 1.5 ||
+      originalWebGeometry.tileResizerPosition !== "relative" ||
+      originalWebGeometry.dockResizerPosition !== "relative" ||
+      Math.abs(originalWebGeometry.tileResizerWidth - 7) > 1.5 ||
+      Math.abs(originalWebGeometry.dockResizerHeight - 7) > 1.5
     ) {
       throw new Error(
-        `Classic layout no longer preserves the original Web geometry: ${JSON.stringify(originalWebGeometry)}`,
+        `Classic layout does not match the migrated editor geometry: ${JSON.stringify(originalWebGeometry)}`,
       );
     }
 
@@ -334,11 +342,11 @@ async function main() {
     if (
       !originalWebSettingsGeometry.usesOriginalDialog ||
       originalWebSettingsGeometry.hasWindowsStyleNavigation ||
-      Math.abs(originalWebSettingsGeometry.width - 570) > 1.5 ||
+      Math.abs(originalWebSettingsGeometry.width - 720) > 1.5 ||
       originalWebSettingsGeometry.sectionCount < 7
     ) {
       throw new Error(
-        `Settings no longer preserve the original Web dialog: ${JSON.stringify(originalWebSettingsGeometry)}`,
+        `Settings dialog does not match the migrated editor: ${JSON.stringify(originalWebSettingsGeometry)}`,
       );
     }
     await evaluate(`document.querySelector(".settings-dialog .dialog-header .icon-button")?.click()`);
@@ -1107,8 +1115,8 @@ async function main() {
         viewportHeight: window.innerHeight,
       };
     })()`);
-    if (formatMenuState.count !== 17) {
-      throw new Error(`Expected 17 LaTeX code formats, found ${formatMenuState.count}`);
+    if (formatMenuState.count !== 18) {
+      throw new Error(`Expected 18 LaTeX code formats, found ${formatMenuState.count}`);
     }
     if (
       formatMenuState.visibleTitleCount !== 0 ||
@@ -1199,7 +1207,7 @@ async function main() {
     await replaceFocusedText(editedEquationSource);
     const dirtyBeforeFormatSwitch = await evaluate(`(() => ({
       dirty: Boolean(document.querySelector(".source-panel .unsaved-chip")),
-      source: window.__visualtexSourceEditorProbe?.getDocument() ?? "",
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
     }))()`);
     if (!dirtyBeforeFormatSwitch.source.includes("a=q")) {
       throw new Error(`CodeMirror draft edit was not registered: ${JSON.stringify(dirtyBeforeFormatSwitch)}`);

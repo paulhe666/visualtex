@@ -3,8 +3,8 @@ import type {
   CustomSymbolMetrics,
   CustomSymbolVectorMatrix,
   CustomSymbolVectorShape,
-} from "./customSymbolTypes";
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
+} from "./customSymbolTypes.ts";
+import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes.ts";
 
 type Matrix = CustomSymbolVectorMatrix;
 

@@ -5,23 +5,27 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
   Bold,
   Braces,
+  ChevronDown,
   Code2,
   Copy,
+  FileDown,
   Highlighter,
   Italic,
   Minus,
+  Palette,
   PanelBottomClose,
   PanelBottomOpen,
-  Palette,
+  PanelRightOpen,
   Plus,
-  ScanLine,
   X,
 } from "lucide-react";
 import {
@@ -29,9 +33,9 @@ import {
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
-import { ExportMenu } from "../components/ExportMenu";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
+import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import {
   DEFAULT_CLASSIC_DOCK_HEIGHT,
   DEFAULT_CLASSIC_TILE_WIDTH,
@@ -46,7 +50,7 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import {
-  formatLatex,
+  formatFormulaLines,
   parseLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
@@ -86,10 +90,23 @@ const formulaBackgroundColorPresets = [
 type FormulaColorMenu = "color" | "backgroundColor";
 type ClassicResizeTarget = "tiles" | "dock";
 
+const compactOfficeTileBreakpoint = 760;
+const compactOfficeEditorReserve = 220;
+
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
   "visualtex-custom-formula-background-colors";
 const maximumCustomFormulaColors = 8;
+
+function PortalOrInline({
+  target,
+  children,
+}: {
+  target: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return target ? createPortal(children, target) : children;
+}
 
 function clampPanelSize(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -111,7 +128,7 @@ function persistCustomFormulaColors(storageKey: string, colors: string[]) {
   try {
     localStorage.setItem(storageKey, JSON.stringify(colors));
   } catch {
-    // Keep the current-session palette usable when storage is unavailable.
+    // Custom colors still work for the current session without storage.
   }
 }
 
@@ -119,30 +136,20 @@ export function EditorWorkspace({
   mode,
   showFileActions,
   showOfficeActions,
-  showOcrActions,
-  primaryActionLabel,
-  onPrimaryAction,
-  onCancel,
-  onExport,
-  onChooseExportDirectory,
-  exportDirectory,
-  exportBusy = false,
+  officeHeaderLeadingControls,
+  officeHeaderTrailingActions,
+  desktopHeaderControls,
+  onOpenExport,
   editorRef,
   editorInstanceKey,
+  reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
   onHistoryBusyChange,
-  onPasteImage,
-  onCopy,
   onCopyPng,
+  onCopy,
   onReplaceDocument,
-  ocrModel,
-  ocrModels = [],
-  ocrBusy = false,
-  onOcrModelChange,
-  ocrOverlay,
 }: EditorWorkspaceProps) {
-  const [primaryBusy, setPrimaryBusy] = useState(false);
   const [classicDockOpen, setClassicDockOpenState] = useState(() =>
     readWorkspacePanelOpen(mode, "toolbar"),
   );
@@ -155,6 +162,8 @@ export function EditorWorkspace({
       return resolved;
     });
   };
+  const [officeFormattingMount, setOfficeFormattingMount] =
+    useState<HTMLDivElement | null>(null);
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
@@ -166,12 +175,24 @@ export function EditorWorkspace({
   const classicEditorBodyRef = useRef<HTMLDivElement>(null);
   const activeResizeCleanupRef = useRef<(() => void) | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
-  const persistedClassicTileWidth = useEditorStore((state) => state.classicTileWidth);
-  const persistClassicTileWidth = useEditorStore((state) => state.setClassicTileWidth);
-  const persistedClassicDockHeight = useEditorStore((state) => state.classicDockHeight);
-  const persistClassicDockHeight = useEditorStore((state) => state.setClassicDockHeight);
-  const [classicTileWidth, setClassicTileWidth] = useState(persistedClassicTileWidth);
-  const [classicDockHeight, setClassicDockHeight] = useState(persistedClassicDockHeight);
+  const persistedClassicTileWidth = useEditorStore(
+    (state) => state.classicTileWidth,
+  );
+  const persistClassicTileWidth = useEditorStore(
+    (state) => state.setClassicTileWidth,
+  );
+  const persistedClassicDockHeight = useEditorStore(
+    (state) => state.classicDockHeight,
+  );
+  const persistClassicDockHeight = useEditorStore(
+    (state) => state.setClassicDockHeight,
+  );
+  const [classicTileWidth, setClassicTileWidth] = useState(
+    persistedClassicTileWidth,
+  );
+  const [classicDockHeight, setClassicDockHeight] = useState(
+    persistedClassicDockHeight,
+  );
   const [formulaTextColor, setFormulaTextColor] = useState("#2563eb");
   const [formulaBackgroundColor, setFormulaBackgroundColor] = useState("#fef3c7");
   const [formulaTextColorPickerValue, setFormulaTextColorPickerValue] =
@@ -181,16 +202,17 @@ export function EditorWorkspace({
   const [customFormulaTextColors, setCustomFormulaTextColors] = useState(() =>
     loadCustomFormulaColors(customFormulaTextColorsStorageKey),
   );
-  const [customFormulaBackgroundColors, setCustomFormulaBackgroundColors] = useState(() =>
-    loadCustomFormulaColors(customFormulaBackgroundColorsStorageKey),
-  );
+  const [customFormulaBackgroundColors, setCustomFormulaBackgroundColors] =
+    useState(() =>
+      loadCustomFormulaColors(customFormulaBackgroundColorsStorageKey),
+    );
   const [sourceDraftFallback, setSourceDraftFallback] = useState<{
     source: string;
     error: string;
     previewLines: FormulaLine[] | null;
   } | null>(null);
-  const sourceDraftFallbackRef = useRef(sourceDraftFallback);
   const [sourceFocused, setSourceFocused] = useState(false);
+  const sourceFocusedRef = useRef(false);
   const title = useEditorStore((state) => state.title);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
@@ -203,7 +225,9 @@ export function EditorWorkspace({
     (state) => state.setFormulaAlignment,
   );
   const editorLayout = useEditorStore((state) => state.editorLayout);
-  const highlightActiveLine = useEditorStore((state) => state.highlightActiveLine);
+  const highlightActiveLine = useEditorStore(
+    (state) => state.highlightActiveLine,
+  );
   const sourceOpen = useEditorStore((state) => state.sourceOpen);
   const setStoredSourceOpen = useEditorStore((state) => state.setSourceOpen);
   const setSourceOpen = (open: boolean) => {
@@ -212,43 +236,37 @@ export function EditorWorkspace({
   };
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const isEn = language === "en";
+  const isOfficeWorkspace = mode !== "web";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatLatex(latex, latexCodeFormat);
-
-  const acceptSourcePreview = () => {
-    const previewLines = sourceDraftFallbackRef.current?.previewLines;
-    if (!previewLines?.length) return;
-    sourceDraftFallbackRef.current = null;
-    setSourceDraftFallback(null);
-    const nextActiveLineId = previewLines.some((line) => line.id === activeLineId)
-      ? activeLineId
-      : previewLines[0]?.id ?? null;
-    onReplaceDocument(
-      {
-        title,
-        lines: previewLines,
-        activeLineId: nextActiveLineId,
-        formulaAlignment,
-        selectionByLineId: {},
-      },
-      "source-apply",
-    );
-  };
+  const sourceLatex = formatLatexSourceForEditor(
+    formatFormulaLines(lines, latexCodeFormat),
+  );
 
   const handleSourceFocusChange = (focused: boolean) => {
+    sourceFocusedRef.current = focused;
+    document.documentElement.classList.toggle(
+      "visualtex-source-editor-focused",
+      focused,
+    );
     setSourceFocused(focused);
-    document.documentElement.classList.toggle("visualtex-source-editor-focused", focused);
-    if (!focused) acceptSourcePreview();
   };
 
-  useLayoutEffect(() => {
-    // Preserve the original Web store as the source of truth when no newer
-    // per-workspace panel preference exists. This keeps saved documents and
-    // imported configurations with sourceOpen=true compatible after reload.
-    const storedSourceOpen = useEditorStore.getState().sourceOpen;
-    setStoredSourceOpen(
-      readWorkspacePanelOpen(mode, "source", storedSourceOpen),
+  useEffect(() => {
+    document.documentElement.classList.toggle(
+      "visualtex-source-editor-focused",
+      sourceFocused,
     );
+    return () => {
+      document.documentElement.classList.remove(
+        "visualtex-source-editor-focused",
+      );
+    };
+  }, [sourceFocused]);
+
+  useLayoutEffect(() => {
+    // The Web and Office workspaces keep independent panel preferences. New
+    // browser sessions start on formula tools instead of opening source view.
+    setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
   }, [mode, setStoredSourceOpen]);
 
   useEffect(() => {
@@ -260,10 +278,7 @@ export function EditorWorkspace({
   }, [persistedClassicDockHeight]);
 
   useEffect(() => {
-    if (!sourceOpen) {
-      sourceDraftFallbackRef.current = null;
-      setSourceDraftFallback(null);
-    }
+    if (!sourceOpen) setSourceDraftFallback(null);
   }, [sourceOpen]);
 
   useEffect(() => {
@@ -296,14 +311,30 @@ export function EditorWorkspace({
     };
   }, [formulaColorMenu]);
 
+  useEffect(
+    () => () => {
+      activeResizeCleanupRef.current?.();
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    },
+    [],
+  );
+
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - 360);
+    const editorReserve =
+      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
+        ? compactOfficeEditorReserve
+        : 360;
+    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
   };
 
   const classicDockHeightLimit = () => {
-    const editorHeight = classicEditorBodyRef.current?.getBoundingClientRect().height;
+    const editorHeight =
+      classicEditorBodyRef.current?.getBoundingClientRect().height;
     if (!editorHeight) return MAX_CLASSIC_DOCK_HEIGHT;
     return Math.max(MIN_CLASSIC_DOCK_HEIGHT, editorHeight - 120);
   };
@@ -314,14 +345,29 @@ export function EditorWorkspace({
     persist = false,
   ) => {
     if (target === "tiles") {
-      const next = clampPanelSize(value, MIN_CLASSIC_TILE_WIDTH, classicTileWidthLimit());
-      workspaceRef.current?.style.setProperty("--classic-tile-width", `${next}px`);
+      const next = clampPanelSize(
+        value,
+        MIN_CLASSIC_TILE_WIDTH,
+        classicTileWidthLimit(),
+      );
+      workspaceRef.current?.style.setProperty(
+        "--classic-tile-width",
+        `${next}px`,
+      );
       setClassicTileWidth(next);
       if (persist) persistClassicTileWidth(next);
       return next;
     }
-    const next = clampPanelSize(value, MIN_CLASSIC_DOCK_HEIGHT, classicDockHeightLimit());
-    classicEditorBodyRef.current?.style.setProperty("--classic-dock-height", `${next}px`);
+
+    const next = clampPanelSize(
+      value,
+      MIN_CLASSIC_DOCK_HEIGHT,
+      classicDockHeightLimit(),
+    );
+    classicEditorBodyRef.current?.style.setProperty(
+      "--classic-dock-height",
+      `${next}px`,
+    );
     setClassicDockHeight(next);
     if (persist) persistClassicDockHeight(next);
     return next;
@@ -335,10 +381,13 @@ export function EditorWorkspace({
     event.preventDefault();
     event.stopPropagation();
     activeResizeCleanupRef.current?.();
+
     const handle = event.currentTarget;
     const pointerId = event.pointerId;
-    let latestValue = target === "tiles" ? classicTileWidth : classicDockHeight;
+    let latestValue =
+      target === "tiles" ? classicTileWidth : classicDockHeight;
     let finished = false;
+
     const applyLatestValue = () => {
       resizeFrameRef.current = null;
       commitClassicPanelSize(target, latestValue);
@@ -370,11 +419,15 @@ export function EditorWorkspace({
         window.cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
       }
-      commitClassicPanelSize(target, latestValue, true);
+      const finalValue = commitClassicPanelSize(target, latestValue, true);
+      latestValue = finalValue;
       if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
       delete document.body.dataset.workspaceResize;
-      if (activeResizeCleanupRef.current === finish) activeResizeCleanupRef.current = null;
+      if (activeResizeCleanupRef.current === finish) {
+        activeResizeCleanupRef.current = null;
+      }
     };
+
     document.body.dataset.workspaceResize = target;
     handle.setPointerCapture(pointerId);
     document.addEventListener("pointermove", move, { passive: false });
@@ -395,10 +448,68 @@ export function EditorWorkspace({
   const resetClassicPanelSize = (target: ClassicResizeTarget) => {
     commitClassicPanelSize(
       target,
-      target === "tiles" ? DEFAULT_CLASSIC_TILE_WIDTH : DEFAULT_CLASSIC_DOCK_HEIGHT,
+      target === "tiles"
+        ? DEFAULT_CLASSIC_TILE_WIDTH
+        : DEFAULT_CLASSIC_DOCK_HEIGHT,
       true,
     );
   };
+
+  useEffect(() => {
+    if (editorLayout !== "classic") return;
+    const workspace = workspaceRef.current;
+    const editorBody = classicEditorBodyRef.current;
+    if (!workspace || !editorBody) return;
+
+    let frame = 0;
+    const constrainPanelSizes = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const workspaceWidth = workspace.getBoundingClientRect().width;
+        const editorReserve =
+          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
+            ? compactOfficeEditorReserve
+            : 360;
+        const tileMaximum = Math.max(
+          MIN_CLASSIC_TILE_WIDTH,
+          workspaceWidth - editorReserve,
+        );
+        setClassicTileWidth((current) => {
+          const next = clampPanelSize(
+            current,
+            MIN_CLASSIC_TILE_WIDTH,
+            tileMaximum,
+          );
+          if (next !== current) persistClassicTileWidth(next);
+          return next;
+        });
+
+        const editorHeight = editorBody.getBoundingClientRect().height;
+        const dockMaximum = Math.max(
+          MIN_CLASSIC_DOCK_HEIGHT,
+          editorHeight - 120,
+        );
+        setClassicDockHeight((current) => {
+          const next = clampPanelSize(
+            current,
+            MIN_CLASSIC_DOCK_HEIGHT,
+            dockMaximum,
+          );
+          if (next !== current) persistClassicDockHeight(next);
+          return next;
+        });
+      });
+    };
+
+    const observer = new ResizeObserver(constrainPanelSizes);
+    observer.observe(workspace);
+    observer.observe(editorBody);
+    constrainPanelSizes();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [editorLayout, isOfficeWorkspace]);
 
   const preserveFormulaFocus = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -414,7 +525,8 @@ export function EditorWorkspace({
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
     preserveFormulaFocus(event);
-    rememberFormulaSelection();
+    const liveTarget = editorRef.current?.captureSelectionTarget() ?? null;
+    if (liveTarget) formulaSelectionTargetRef.current = liveTarget;
   };
 
   const applySelectedFormulaStyle = (kind: "bold" | "italic") => {
@@ -424,6 +536,14 @@ export function EditorWorkspace({
       null;
     if (target) editorRef.current?.applySelectionStyle({ kind }, target);
     formulaSelectionTargetRef.current = null;
+  };
+
+  const applySelectedFormulaStyleFromPointer = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    kind: "bold" | "italic",
+  ) => {
+    preserveFormulaSelection(event);
+    applySelectedFormulaStyle(kind);
   };
 
   const toggleFormulaColorMenu = (kind: FormulaColorMenu) => {
@@ -528,26 +648,27 @@ export function EditorWorkspace({
     setFormulaAlignment(alignment);
     editorRef.current?.focus();
   };
+
   const applySource = (source: string, sourceFormat: typeof latexCodeFormat) => {
     const parsed = parseLatexSourceDraft(source, sourceFormat);
     if (!parsed.valid) {
-      const previewValues = parsed.values.map(normalizeChineseLatex);
+      const previewValues = (parsed.previewValues ?? parsed.values).map(
+        normalizeChineseLatex,
+      );
       const fallback = {
         source,
         error: parsed.error ?? "invalid-latex",
         previewLines: previewValues.length
-          ? reconcileFormulaLines(previewValues, lines)
+          ? reconcileFormulaLines(previewValues, lines, parsed.modes)
           : null,
       };
-      sourceDraftFallbackRef.current = fallback;
       setSourceDraftFallback(fallback);
       return parsed;
     }
 
-    sourceDraftFallbackRef.current = null;
     setSourceDraftFallback(null);
     const values = parsed.values.map(normalizeChineseLatex);
-    const nextLines = reconcileFormulaLines(values, lines);
+    const nextLines = reconcileFormulaLines(values, lines, parsed.modes);
     const nextActiveLineId = nextLines.some(
       (line) => line.id === activeLineId,
     )
@@ -559,12 +680,15 @@ export function EditorWorkspace({
         lines: nextLines,
         activeLineId: nextActiveLineId,
         formulaAlignment,
-        selectionByLineId: editorRef.current?.getSelectionMap() ?? {},
+        selectionByLineId: sourceFocusedRef.current
+          ? {}
+          : editorRef.current?.getSelectionMap() ?? {},
       },
       "source-apply",
     );
     return parsed;
   };
+
   const renderSourceEditor = ({
     showCollapseAction = true,
     showCopyAction = true,
@@ -629,103 +753,40 @@ export function EditorWorkspace({
         ref={editorRef}
         lines={visualLines}
         activeLineId={visualActiveLineId}
+        reuseLineSlots={reuseEditorLineSlots}
         formulaAlignment={formulaAlignment}
         latexCodeFormat={latexCodeFormat}
         zoom={zoom}
-        readOnly={Boolean(previewLines) && !sourceFocused}
-        previewOnly={sourceFocused}
-        onPreviewActivate={() => handleSourceFocusChange(false)}
-        draftError={sourceDraftFallback?.error}
-        onPasteImage={
-          previewLines ? undefined : showOcrActions ? onPasteImage : undefined
+        readOnly={false}
+        previewOnly={sourceFocused || Boolean(sourceDraftFallback)}
+        onPreviewActivate={
+          sourceDraftFallback ? undefined : () => handleSourceFocusChange(false)
         }
-        onCopyPng={onCopyPng}
+        draftError={sourceDraftFallback?.error}
+        onCopyPng={previewLines ? undefined : onCopyPng}
         onHistoryBusyChange={onHistoryBusyChange}
-        overlay={previewLines ? undefined : ocrOverlay}
       />
     );
   };
 
-  const runPrimaryAction = async () => {
-    if (!onPrimaryAction || primaryBusy) return;
-    setPrimaryBusy(true);
-    try {
-      await onPrimaryAction();
-    } finally {
-      setPrimaryBusy(false);
-    }
-  };
-
   return (
     <>
-      {showOfficeActions && (
-        <div className="office-workspace-actions" data-workspace-mode={mode}>
-          <div>
-            <strong>
-              {mode === "office-edit"
-                ? isEn
-                  ? "Edit selected formula"
-                  : "编辑所选公式"
-                : isEn
-                  ? "Create Office formula"
-                  : "新建 Office 公式"}
-            </strong>
-            <span>
-              {isEn
-                ? "The document is updated only after you finish or close this window."
-                : "点击完成或关闭本窗口后，公式才会写入 Office 文档。"}
-            </span>
-          </div>
-          <div>
-            {onCancel && (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => void onCancel()}
-                disabled={primaryBusy}
-              >
-                {isEn ? "Cancel" : "取消"}
-              </button>
-            )}
-            {onPrimaryAction && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => void runPrimaryAction()}
-                disabled={primaryBusy}
-              >
-                {primaryBusy
-                  ? isEn
-                    ? "Applying…"
-                    : "正在应用…"
-                  : primaryActionLabel ??
-                    (mode === "office-edit"
-                      ? isEn
-                        ? "Update formula"
-                        : "更新公式"
-                      : isEn
-                        ? "Finish and insert"
-                        : "完成并插入")}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       <main
         ref={workspaceRef}
         className={
           `workspace ${editorLayout === "classic" ? "is-classic-layout" : "is-standard-layout"}` +
           (sidebarOpen ? " has-sidebar" : "") +
-          (highlightActiveLine ? " has-active-line-highlight" : "")
+          (isOfficeWorkspace ? " is-office-workspace" : "") +
+          (highlightActiveLine ? " has-active-line-highlight" : "") +
+          (sourceFocused ? " is-source-editor-focused" : "")
         }
         style={
-          (classicTileWidth === DEFAULT_CLASSIC_TILE_WIDTH
-            ? undefined
-            : ({ "--classic-tile-width": `${classicTileWidth}px` } as CSSProperties))
+          {
+            "--classic-tile-width": `${classicTileWidth}px`,
+          } as CSSProperties
         }
         data-editor-layout={editorLayout}
-        data-highlight-active-line={highlightActiveLine ? "true" : "false"}
+        data-office-actions={showOfficeActions ? "true" : undefined}
       >
         {editorLayout === "standard" && sidebarOpen && (
           <FormulaToolbar
@@ -734,17 +795,44 @@ export function EditorWorkspace({
           />
         )}
 
+        {editorLayout === "classic" && !sidebarOpen && (
+          <button
+            type="button"
+            className="classic-tile-expand-button"
+            data-formula-tile-expand
+            aria-label={isEn ? "Expand formula tiles" : "展开公式磁贴"}
+            title={isEn ? "Expand formula tiles" : "展开公式磁贴"}
+            onClick={() => onSidebarOpenChange(true)}
+          >
+            <PanelRightOpen size={16} />
+          </button>
+        )}
+
         <section className="formula-workspace editor-pane">
-          <header className="workspace-heading pane-header editor-pane-header">
+          <header
+            className={
+              "workspace-heading pane-header editor-pane-header" +
+              (isOfficeWorkspace ? " is-office-editor-header" : "")
+            }
+          >
             <div className="pane-title-group">
-              <span className="pane-icon" aria-hidden="true">
-                <Braces size={16} />
-              </span>
-              <div className="pane-title-copy">
-                <h1>{isEn ? "Visual editor" : "可视化编辑"}</h1>
-              </div>
-              <div
-                className="formula-alignment-controls"
+              {isOfficeWorkspace && officeHeaderLeadingControls ? (
+                <div className="office-inline-options">
+                  {officeHeaderLeadingControls}
+                </div>
+              ) : null}
+              {isOfficeWorkspace && editorLayout !== "classic" ? (
+                <div
+                  className="office-formatting-mount"
+                  ref={setOfficeFormattingMount}
+                />
+              ) : null}
+              {!isOfficeWorkspace || officeFormattingMount ? (
+                <PortalOrInline
+                  target={isOfficeWorkspace ? officeFormattingMount : null}
+                >
+                  <div
+                    className="formula-alignment-controls"
                 role="toolbar"
                 aria-label={isEn ? "Formula alignment" : "公式对齐方式"}
               >
@@ -772,254 +860,301 @@ export function EditorWorkspace({
                     <Icon size={16} strokeWidth={2} />
                   </button>
                 ))}
-              </div>
-              <span className="formula-formatting-divider" aria-hidden="true" />
-              <div
-                ref={formulaColorMenuRef}
-                className="formula-formatting-controls"
-                role="group"
-                aria-label={isEn ? "Formula formatting" : "公式格式"}
-              >
-                <button
-                  type="button"
-                  className="icon-button compact formula-formatting-button is-selection-action"
-                  aria-label={isEn ? "Apply bold to selected content" : "将选中内容设为粗体"}
-                  title={isEn ? "Selection bold · does not affect later input" : "选中部分粗体 · 不影响后续输入"}
-                  data-formula-selection-bold
-                  onPointerEnter={rememberFormulaSelection}
-                  onPointerDown={preserveFormulaSelection}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => applySelectedFormulaStyle("bold")}
-                >
-                  <Bold size={15} strokeWidth={2.2} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button compact formula-formatting-button is-selection-action"
-                  aria-label={isEn ? "Apply italic to selected content" : "将选中内容设为斜体"}
-                  title={isEn ? "Selection italic · does not affect later input" : "选中部分斜体 · 不影响后续输入"}
-                  data-formula-selection-italic
-                  onPointerEnter={rememberFormulaSelection}
-                  onPointerDown={preserveFormulaSelection}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => applySelectedFormulaStyle("italic")}
-                >
-                  <Italic size={15} strokeWidth={2.2} />
-                </button>
-                <button
-                  type="button"
-                  className={
-                    "icon-button compact formula-formatting-button is-color-action" +
-                    (formulaColorMenu === "color" ? " is-active" : "")
-                  }
-                  style={{ "--formula-format-color": formulaTextColor } as CSSProperties}
-                  aria-label={isEn ? "Selected text color" : "选中内容字体颜色"}
-                  title={isEn ? "Apply a font color to the selection only" : "字体颜色 · 仅应用于选中内容"}
-                  aria-pressed={formulaColorMenu === "color"}
-                  data-formula-selection-color
-                  onPointerEnter={rememberFormulaSelection}
-                  onPointerDown={preserveFormulaSelection}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => toggleFormulaColorMenu("color")}
-                >
-                  <Palette size={15} strokeWidth={2} />
-                </button>
-                <button
-                  type="button"
-                  className={
-                    "icon-button compact formula-formatting-button is-color-action" +
-                    (formulaColorMenu === "backgroundColor" ? " is-active" : "")
-                  }
-                  style={{ "--formula-format-color": formulaBackgroundColor } as CSSProperties}
-                  aria-label={isEn ? "Selected text background color" : "选中内容字体背景颜色"}
-                  title={isEn ? "Apply a background color to the selection only" : "字体背景颜色 · 仅应用于选中内容"}
-                  aria-pressed={formulaColorMenu === "backgroundColor"}
-                  data-formula-selection-background
-                  onPointerEnter={rememberFormulaSelection}
-                  onPointerDown={preserveFormulaSelection}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => toggleFormulaColorMenu("backgroundColor")}
-                >
-                  <Highlighter size={15} strokeWidth={2} />
-                </button>
+                <span className="formula-formatting-divider" aria-hidden="true" />
+                    <div
+                      ref={formulaColorMenuRef}
+                      className="formula-formatting-controls"
+                      role="group"
+                      aria-label={isEn ? "Formula formatting" : "公式格式"}
+                    >
+                      <button
+                        type="button"
+                        className="icon-button compact formula-formatting-button is-selection-action"
+                        aria-label={
+                          isEn
+                            ? "Toggle bold for selected content"
+                            : "切换选中内容的粗体状态"
+                        }
+                        title={
+                          isEn
+                            ? "Toggle bold while preserving math italic/upright shape"
+                            : "切换粗体 · 保留原有数学斜体/正体 · 仅作用于选中内容"
+                        }
+                        data-formula-selection-bold
+                        onPointerEnter={rememberFormulaSelection}
+                        onPointerDown={(event) =>
+                          applySelectedFormulaStyleFromPointer(event, "bold")
+                        }
+                        onClick={(event) => {
+                          if (event.detail === 0) applySelectedFormulaStyle("bold");
+                        }}
+                      >
+                        <Bold size={15} strokeWidth={2.2} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button compact formula-formatting-button is-selection-action"
+                        aria-label={
+                          isEn
+                            ? "Toggle italic or upright for selected content"
+                            : "切换选中内容的斜体或正体状态"
+                        }
+                        title={
+                          isEn
+                            ? "Toggle default math italic and \\mathrm upright"
+                            : "切换默认数学斜体与 \\mathrm 正体 · 仅作用于选中内容"
+                        }
+                        data-formula-selection-italic
+                        onPointerEnter={rememberFormulaSelection}
+                        onPointerDown={(event) =>
+                          applySelectedFormulaStyleFromPointer(event, "italic")
+                        }
+                        onClick={(event) => {
+                          if (event.detail === 0) applySelectedFormulaStyle("italic");
+                        }}
+                      >
+                        <Italic size={15} strokeWidth={2.2} />
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-color-action" +
+                          (formulaColorMenu === "color" ? " is-active" : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaTextColor,
+                          } as CSSProperties
+                        }
+                        aria-label={isEn ? "Selected text color" : "选中内容字体颜色"}
+                        title={
+                          isEn
+                            ? "Apply a font color to the selection only"
+                            : "字体颜色 · 仅应用于选中内容"
+                        }
+                        aria-pressed={formulaColorMenu === "color"}
+                        data-formula-selection-color
+                        onPointerEnter={rememberFormulaSelection}
+                        onPointerDown={preserveFormulaSelection}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => toggleFormulaColorMenu("color")}
+                      >
+                        <Palette size={15} strokeWidth={2} />
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-color-action" +
+                          (formulaColorMenu === "backgroundColor"
+                            ? " is-active"
+                            : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaBackgroundColor,
+                          } as CSSProperties
+                        }
+                        aria-label={
+                          isEn
+                            ? "Selected text background color"
+                            : "选中内容字体背景颜色"
+                        }
+                        title={
+                          isEn
+                            ? "Apply a background color to the selection only"
+                            : "字体背景颜色 · 仅应用于选中内容"
+                        }
+                        aria-pressed={formulaColorMenu === "backgroundColor"}
+                        data-formula-selection-background
+                        onPointerEnter={rememberFormulaSelection}
+                        onPointerDown={preserveFormulaSelection}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => toggleFormulaColorMenu("backgroundColor")}
+                      >
+                        <Highlighter size={15} strokeWidth={2} />
+                      </button>
 
-                {formulaColorMenu && (
-                  <div
-                    className="formula-color-popover"
-                    data-formula-color-popover={formulaColorMenu}
-                    role="dialog"
-                    aria-label={
-                      formulaColorMenu === "color"
-                        ? isEn ? "Formula text color" : "公式字体颜色"
-                        : isEn ? "Formula background color" : "公式背景颜色"
-                    }
-                  >
-                    <strong>
-                      {formulaColorMenu === "color"
-                        ? isEn ? "Text color" : "字体颜色"
-                        : isEn ? "Background color" : "背景颜色"}
-                    </strong>
-                    <div className="formula-color-content">
-                      <section className="formula-color-presets">
-                        <span className="formula-color-section-label">
-                          {isEn ? "Preset" : "固定颜色"}
-                        </span>
-                        <div className="formula-color-swatches" role="group">
-                          {(formulaColorMenu === "color"
-                            ? formulaTextColorPresets
-                            : formulaBackgroundColorPresets
-                          ).map((color) => (
-                            <button
-                              key={color}
-                              type="button"
-                              className="formula-color-swatch"
-                              style={{ backgroundColor: color }}
-                              aria-label={`${isEn ? "Use" : "使用"} ${color}`}
-                              title={color}
-                              data-formula-color={color}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => applySelectedFormulaColor(formulaColorMenu, color)}
-                            />
-                          ))}
-                          <label
-                            className="formula-custom-color"
-                            title={isEn ? "Add custom color" : "添加自定义颜色"}
-                          >
-                            <input
-                              type="color"
-                              value={
-                                formulaColorMenu === "color"
-                                  ? formulaTextColorPickerValue
-                                  : formulaBackgroundColorPickerValue
-                              }
-                              aria-label={isEn ? "Add custom color" : "添加自定义颜色"}
-                              onPointerDown={(event) => {
-                                event.stopPropagation();
-                                beginCustomFormulaColorSelection(formulaColorMenu);
-                              }}
-                              onInput={(event) =>
-                                saveCustomFormulaColor(
-                                  formulaColorMenu,
-                                  event.currentTarget.value,
-                                )
-                              }
-                              onChange={(event) =>
-                                saveCustomFormulaColor(
-                                  formulaColorMenu,
-                                  event.currentTarget.value,
-                                )
-                              }
-                            />
-                            <Plus size={13} />
-                          </label>
-                        </div>
-                      </section>
-                      <section className="formula-custom-colors-panel">
-                        <div className="formula-custom-colors-heading">
-                          <span>{isEn ? "Custom" : "自定义颜色"}</span>
-                          <small>
-                            {(formulaColorMenu === "color"
-                              ? customFormulaTextColors
-                              : customFormulaBackgroundColors
-                            ).length}
-                            /{maximumCustomFormulaColors}
-                          </small>
-                        </div>
-                        {(formulaColorMenu === "color"
-                          ? customFormulaTextColors
-                          : customFormulaBackgroundColors
-                        ).length > 0 ? (
-                          <div className="formula-custom-colors-grid">
-                            {(formulaColorMenu === "color"
-                              ? customFormulaTextColors
-                              : customFormulaBackgroundColors
-                            ).map((color) => (
-                              <div
-                                key={color}
-                                className="formula-custom-color-item"
-                                data-formula-custom-color={color}
-                              >
-                                <button
-                                  type="button"
-                                  className="formula-color-swatch"
-                                  style={{ backgroundColor: color }}
-                                  aria-label={`${isEn ? "Use custom" : "使用自定义颜色"} ${color}`}
-                                  title={color}
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() =>
-                                    applySelectedFormulaColor(formulaColorMenu, color)
-                                  }
-                                />
-                                <button
-                                  type="button"
-                                  className="formula-custom-color-delete"
-                                  aria-label={`${isEn ? "Delete custom" : "删除自定义颜色"} ${color}`}
-                                  title={isEn ? "Delete" : "删除"}
-                                  data-delete-formula-custom-color={color}
-                                  onPointerDown={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                  }}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeCustomFormulaColor(formulaColorMenu, color);
-                                  }}
+                      {formulaColorMenu && (
+                        <div
+                          className="formula-color-popover"
+                          data-formula-color-popover={formulaColorMenu}
+                          data-visualtex-floating-layer
+                          role="dialog"
+                          aria-label={
+                            formulaColorMenu === "color"
+                              ? isEn
+                                ? "Formula text color"
+                                : "公式字体颜色"
+                              : isEn
+                                ? "Formula background color"
+                                : "公式背景颜色"
+                          }
+                        >
+                          <strong>
+                            {formulaColorMenu === "color"
+                              ? isEn
+                                ? "Text color"
+                                : "字体颜色"
+                              : isEn
+                                ? "Background color"
+                                : "背景颜色"}
+                          </strong>
+                          <div className="formula-color-content">
+                            <section className="formula-color-presets">
+                              <span className="formula-color-section-label">
+                                {isEn ? "Preset" : "固定颜色"}
+                              </span>
+                              <div className="formula-color-swatches" role="group">
+                                {(formulaColorMenu === "color"
+                                  ? formulaTextColorPresets
+                                  : formulaBackgroundColorPresets
+                                ).map((color) => (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    className="formula-color-swatch"
+                                    style={{ backgroundColor: color }}
+                                    aria-label={`${isEn ? "Use" : "使用"} ${color}`}
+                                    title={color}
+                                    data-formula-color={color}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() =>
+                                      applySelectedFormulaColor(formulaColorMenu, color)
+                                    }
+                                  />
+                                ))}
+                                <label
+                                  className="formula-custom-color"
+                                  title={isEn ? "Add custom color" : "添加自定义颜色"}
                                 >
-                                  <X size={9} strokeWidth={2.4} />
-                                </button>
+                                  <input
+                                    type="color"
+                                    value={
+                                      formulaColorMenu === "color"
+                                        ? formulaTextColorPickerValue
+                                        : formulaBackgroundColorPickerValue
+                                    }
+                                    aria-label={
+                                      isEn ? "Add custom color" : "添加自定义颜色"
+                                    }
+                                    onPointerDown={(event) => {
+                                      event.stopPropagation();
+                                      beginCustomFormulaColorSelection(formulaColorMenu);
+                                    }}
+                                    onInput={(event) =>
+                                      saveCustomFormulaColor(
+                                        formulaColorMenu,
+                                        event.currentTarget.value,
+                                      )
+                                    }
+                                    onChange={(event) =>
+                                      saveCustomFormulaColor(
+                                        formulaColorMenu,
+                                        event.currentTarget.value,
+                                      )
+                                    }
+                                  />
+                                  <Plus size={13} />
+                                </label>
                               </div>
-                            ))}
+                            </section>
+                            <section className="formula-custom-colors-panel">
+                              <div className="formula-custom-colors-heading">
+                                <span>{isEn ? "Custom" : "自定义颜色"}</span>
+                                <small>
+                                  {(formulaColorMenu === "color"
+                                    ? customFormulaTextColors
+                                    : customFormulaBackgroundColors
+                                  ).length}
+                                  /{maximumCustomFormulaColors}
+                                </small>
+                              </div>
+                              {(formulaColorMenu === "color"
+                                ? customFormulaTextColors
+                                : customFormulaBackgroundColors
+                              ).length > 0 ? (
+                                <div className="formula-custom-colors-grid">
+                                  {(formulaColorMenu === "color"
+                                    ? customFormulaTextColors
+                                    : customFormulaBackgroundColors
+                                  ).map((color) => (
+                                    <div
+                                      key={color}
+                                      className="formula-custom-color-item"
+                                      data-formula-custom-color={color}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="formula-color-swatch"
+                                        style={{ backgroundColor: color }}
+                                        aria-label={`${isEn ? "Use custom" : "使用自定义颜色"} ${color}`}
+                                        title={color}
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() =>
+                                          applySelectedFormulaColor(
+                                            formulaColorMenu,
+                                            color,
+                                          )
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        className="formula-custom-color-delete"
+                                        aria-label={`${isEn ? "Delete custom" : "删除自定义颜色"} ${color}`}
+                                        title={isEn ? "Delete" : "删除"}
+                                        data-delete-formula-custom-color={color}
+                                        onPointerDown={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                        }}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          removeCustomFormulaColor(
+                                            formulaColorMenu,
+                                            color,
+                                          );
+                                        }}
+                                      >
+                                        <X size={9} strokeWidth={2.4} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="formula-custom-colors-empty">
+                                  {isEn
+                                    ? "Pick + to save a color, then click its swatch to apply."
+                                    : "点击 + 保存颜色，再点击色块应用。"}
+                                </span>
+                              )}
+                            </section>
                           </div>
-                        ) : (
-                          <span className="formula-custom-colors-empty">
-                            {isEn
-                              ? "Pick + to save a color, then click its swatch to apply."
-                              : "点击 + 保存颜色，再点击色块应用。"}
-                          </span>
-                        )}
-                      </section>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+                </PortalOrInline>
+              ) : null}
+              {!isOfficeWorkspace && desktopHeaderControls ? (
+                <div className="desktop-editor-header-controls">
+                  {desktopHeaderControls}
+                </div>
+              ) : null}
             </div>
             <div className="canvas-tool-group">
-              {showFileActions && onExport && onChooseExportDirectory && (
-                <ExportMenu
-                  isEn={isEn}
-                  directory={exportDirectory}
-                  busy={exportBusy}
-                  onChooseDirectory={onChooseExportDirectory}
-                  onExport={onExport}
-                />
+              {showFileActions && onOpenExport && (
+                <button
+                  type="button"
+                  className="export-trigger-button workspace-export-trigger"
+                  onClick={onOpenExport}
+                  aria-label={isEn ? "Export" : "导出"}
+                  title={isEn ? "Export Markdown, SVG or PNG" : "导出 Markdown、SVG 或 PNG"}
+                >
+                  <FileDown size={16} />
+                  <span>{isEn ? "Export" : "导出"}</span>
+                </button>
               )}
               <InputBehaviorMenu />
-              {showOcrActions && ocrModels.length > 0 && ocrModel && (
-                <label
-                  className="canvas-ocr-model"
-                  title={
-                    isEn
-                      ? "Model used when an image is pasted into a formula field"
-                      : "在公式输入框中粘贴图片时使用的 OCR 模型"
-                  }
-                >
-                  <ScanLine size={14} />
-                  <select
-                    value={ocrModel}
-                    disabled={ocrBusy}
-                    onChange={(event) =>
-                      onOcrModelChange?.(event.target.value)
-                    }
-                    aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
-                  >
-                    {ocrModels.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {isEn ? item.labelEn : item.labelZh}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <div className="canvas-controls">
                 <button
                   type="button"
@@ -1058,6 +1193,11 @@ export function EditorWorkspace({
                 </button>
               </div>
             </div>
+            {isOfficeWorkspace && officeHeaderTrailingActions ? (
+              <div className="office-inline-actions">
+                {officeHeaderTrailingActions}
+              </div>
+            ) : null}
           </header>
 
           {editorLayout === "classic" ? (
@@ -1068,47 +1208,61 @@ export function EditorWorkspace({
                 (classicDockOpen ? "" : " is-dock-collapsed")
               }
               style={
-                classicDockHeight === DEFAULT_CLASSIC_DOCK_HEIGHT
-                  ? undefined
-                  : ({
-                      "--classic-dock-height": `${classicDockHeight}px`,
-                    } as CSSProperties)
+                {
+                  "--classic-dock-height": `${classicDockHeight}px`,
+                } as CSSProperties
               }
             >
               <div className="editor-pane-scroll">
                 {renderVisualEditor()}
               </div>
 
-              {classicDockOpen ? (
+              {classicDockOpen && (
                 <div
                   className="workspace-panel-resizer classic-dock-resizer"
                   role="separator"
                   tabIndex={0}
                   aria-orientation="horizontal"
-                  aria-label={isEn ? "Resize bottom formula tools" : "调整底部公式工具高度"}
                   aria-valuemin={MIN_CLASSIC_DOCK_HEIGHT}
                   aria-valuemax={Math.round(classicDockHeightLimit())}
                   aria-valuenow={Math.round(classicDockHeight)}
-                  data-classic-resize="dock"
-                  onDoubleClick={() => resetClassicPanelSize("dock")}
+                  aria-label={
+                    isEn
+                      ? "Resize formula tools and source panel"
+                      : "调整公式工具与源码区高度"
+                  }
+                  title={
+                    isEn
+                      ? "Drag to resize · Double-click to reset"
+                      : "拖动调整高度 · 双击恢复默认"
+                  }
                   onPointerDown={(event) => startClassicResize("dock", event)}
+                  onDoubleClick={() => resetClassicPanelSize("dock")}
                   onKeyDown={(event) => {
                     if (event.key === "ArrowUp") {
                       event.preventDefault();
-                      adjustClassicPanelFromKeyboard("dock", 12);
+                      adjustClassicPanelFromKeyboard("dock", 16);
                     } else if (event.key === "ArrowDown") {
                       event.preventDefault();
-                      adjustClassicPanelFromKeyboard("dock", -12);
+                      adjustClassicPanelFromKeyboard("dock", -16);
                     } else if (event.key === "Home") {
                       event.preventDefault();
-                      commitClassicPanelSize("dock", MIN_CLASSIC_DOCK_HEIGHT, true);
+                      commitClassicPanelSize(
+                        "dock",
+                        MIN_CLASSIC_DOCK_HEIGHT,
+                        true,
+                      );
                     } else if (event.key === "End") {
                       event.preventDefault();
-                      commitClassicPanelSize("dock", classicDockHeightLimit(), true);
+                      commitClassicPanelSize(
+                        "dock",
+                        classicDockHeightLimit(),
+                        true,
+                      );
                     }
                   }}
                 />
-              ) : null}
+              )}
 
               <section
                 className={
@@ -1124,7 +1278,19 @@ export function EditorWorkspace({
                   className="classic-bottom-tabs"
                   aria-label={isEn ? "Bottom editor panel" : "底部编辑面板"}
                 >
-                  <span className="classic-bottom-tab-spacer" aria-hidden="true" />
+                  {isOfficeWorkspace ? (
+                    <div
+                      ref={setOfficeFormattingMount}
+                      className="classic-bottom-formatting-slot"
+                      aria-label={
+                        isEn
+                          ? "Formula alignment and formatting"
+                          : "公式对齐与格式"
+                      }
+                    />
+                  ) : (
+                    <span className="classic-bottom-tab-spacer" aria-hidden="true" />
+                  )}
                   <div
                     className="classic-bottom-tab-group"
                     role="tablist"
@@ -1142,7 +1308,9 @@ export function EditorWorkspace({
                       }}
                     >
                       <Braces size={16} />
-                      {isEn ? "Formula tools" : "公式工具"}
+                      <span className="classic-bottom-tab-label">
+                        {isEn ? "Formula tools" : "公式工具"}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -1156,7 +1324,9 @@ export function EditorWorkspace({
                       }}
                     >
                       <Code2 size={16} />
-                      {isEn ? "LaTeX source" : "LaTeX 源码"}
+                      <span className="classic-bottom-tab-label">
+                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                      </span>
                     </button>
                   </div>
                   <div className="classic-bottom-actions">
@@ -1220,6 +1390,7 @@ export function EditorWorkspace({
                         view="tools"
                         layout="horizontal"
                         className="classic-bottom-toolbar"
+                        compactDensity={isOfficeWorkspace}
                         onInsert={(command) =>
                           editorRef.current?.insertCommand(command)
                         }
@@ -1264,26 +1435,38 @@ export function EditorWorkspace({
               role="separator"
               tabIndex={0}
               aria-orientation="vertical"
-              aria-label={isEn ? "Resize formula tiles" : "调整公式磁贴栏宽度"}
               aria-valuemin={MIN_CLASSIC_TILE_WIDTH}
               aria-valuemax={Math.round(classicTileWidthLimit())}
               aria-valuenow={Math.round(classicTileWidth)}
-              data-classic-resize="tiles"
-              onDoubleClick={() => resetClassicPanelSize("tiles")}
+              aria-label={isEn ? "Resize formula tiles" : "调整公式磁贴区宽度"}
+              title={
+                isEn
+                  ? "Drag to resize · Double-click to reset"
+                  : "拖动调整宽度 · 双击恢复默认"
+              }
               onPointerDown={(event) => startClassicResize("tiles", event)}
+              onDoubleClick={() => resetClassicPanelSize("tiles")}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft") {
                   event.preventDefault();
-                  adjustClassicPanelFromKeyboard("tiles", 12);
+                  adjustClassicPanelFromKeyboard("tiles", 16);
                 } else if (event.key === "ArrowRight") {
                   event.preventDefault();
-                  adjustClassicPanelFromKeyboard("tiles", -12);
+                  adjustClassicPanelFromKeyboard("tiles", -16);
                 } else if (event.key === "Home") {
                   event.preventDefault();
-                  commitClassicPanelSize("tiles", MIN_CLASSIC_TILE_WIDTH, true);
+                  commitClassicPanelSize(
+                    "tiles",
+                    MIN_CLASSIC_TILE_WIDTH,
+                    true,
+                  );
                 } else if (event.key === "End") {
                   event.preventDefault();
-                  commitClassicPanelSize("tiles", classicTileWidthLimit(), true);
+                  commitClassicPanelSize(
+                    "tiles",
+                    classicTileWidthLimit(),
+                    true,
+                  );
                 }
               }}
             />

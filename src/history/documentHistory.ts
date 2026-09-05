@@ -56,22 +56,33 @@ export function documentSnapshotsEquivalent(
     (left.formulaAlignment ?? "left") ===
       (right.formulaAlignment ?? "left") &&
     left.lines.length === right.lines.length &&
-    left.lines.every(
-      (line, index) =>
-        line.id === right.lines[index]?.id &&
-        line.latex === right.lines[index]?.latex,
-    )
+    left.lines.every((line, index) => {
+      const rightLine = right.lines[index];
+      return (
+        line.id === rightLine?.id &&
+        line.latex === rightLine?.latex &&
+        (line.mode === "inline" ? "inline" : "display") ===
+          (rightLine?.mode === "inline" ? "inline" : "display")
+      );
+    })
   );
 }
 
 export function reconcileFormulaLines(
   values: readonly string[],
   currentLines: readonly FormulaLine[],
+  modes?: readonly FormulaLine["mode"][],
 ): FormulaLine[] {
   const normalizedValues = values.length ? values : [""];
   return normalizedValues.map((latex, index) => ({
     id: currentLines[index]?.id ?? createUuid(),
     latex,
+    mode:
+      modes?.[index] === "inline"
+        ? "inline"
+        : modes?.[index] === "display"
+          ? "display"
+          : currentLines[index]?.mode ?? "display",
   }));
 }
 

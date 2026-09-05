@@ -30,7 +30,7 @@ import type {
   PngExportResult,
   SvgExportOptions,
   SvgExportResult,
-} from "./exportTypes.ts";
+} from "./exportTypes";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -196,8 +196,8 @@ function parseSvgViewBox(value: string | null) {
     throw new Error("Exported SVG has an invalid viewBox.");
   }
   const [x, y, width, height] = values;
-  if (!(width > 0) || !(height > 0)) {
-    throw new Error("Exported SVG has a non-positive viewBox.");
+  if (width <= 0 || height <= 0) {
+    throw new Error("Exported SVG has non-positive dimensions.");
   }
   return { x, y, width, height };
 }
@@ -234,6 +234,11 @@ function resolveSvgRootGeometry(
     };
   }
 
+  // MathJax renders a top-level equation tag as a full-width labeled table.
+  // In that special layout the root SVG intentionally has width="100%" and no
+  // viewBox; its intrinsic width is carried in style.min-width, while the table
+  // and label are nested SVG viewports. Materialized Office SVGs have no CSS
+  // layout container, so make that implicit CSS-pixel viewport explicit.
   const style = readSvgAttribute(rootOpening, "style");
   const widthPx = parseCssSvgLength(
     readStyleDeclaration(style, "min-width") ?? readSvgAttribute(rootOpening, "width"),
@@ -375,7 +380,11 @@ function applyVisualTexSvgFontPreferences(
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}" transform="scale(1,-1)" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']*)["']/i)?.[1]?.trim();
+    const placement = `${originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""}${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""} transform="${originalTransform ? `${escapeSvgAttribute(originalTransform)} ` : ""}scale(1,-1)"`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${placement} font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
   return output;
 }
@@ -415,6 +424,8 @@ export function latexToSvg(
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
+  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
+  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
   const exPx = fontSizePx * 0.442;
 
@@ -434,24 +445,22 @@ export function latexToSvg(
     svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
   }
 
-  const paddingUnits = paddingPx * rootGeometry.unitsPerPx;
+  const paddingXUnits = paddingXPx * rootGeometry.unitsPerPx;
+  const paddingYUnits = paddingYPx * rootGeometry.unitsPerPx;
   const padded = {
-    x: viewBox.x - paddingUnits,
-    y: viewBox.y - paddingUnits,
-    width: viewBox.width + 2 * paddingUnits,
-    height: viewBox.height + 2 * paddingUnits,
+    x: viewBox.x - paddingXUnits,
+    y: viewBox.y - paddingYUnits,
+    width: viewBox.width + 2 * paddingXUnits,
+    height: viewBox.height + 2 * paddingYUnits,
   };
   const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
   const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
-  const baseline =
-    rootGeometry.baselinePx === null
-      ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
-      : Math.max(0, Math.min(height, paddingPx + rootGeometry.baselinePx));
+  const baseline = rootGeometry.baselinePx === null
+    ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
+    : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
 
-  svg = rewriteRootSvgOpening(svg, width, height, padded).replaceAll(
-    "currentColor",
-    "#111111",
-  );
+  svg = rewriteRootSvgOpening(svg, width, height, padded)
+    .replaceAll("currentColor", "#111111");
 
   const openingEnd = svg.indexOf(">");
   if (options.background === "white") {
@@ -490,7 +499,7 @@ function blobToBase64(blob: Blob) {
 }
 
 export async function svgToPng(
-  svgResult: SvgExportResult,
+  svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
 ): Promise<PngExportResult> {
   if (typeof document === "undefined" || typeof Image === "undefined") {

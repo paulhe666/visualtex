@@ -1,5 +1,6 @@
 import type { LatexCommand } from "../types/command";
 import { additionalCommands } from "./additionalCommands.ts";
+import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
 
 const baseCommandRegistry: LatexCommand[] = [
@@ -110,6 +111,7 @@ const baseCommandRegistry: LatexCommand[] = [
 
 export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
+  ...compatibilityCommands,
   ...additionalCommands,
   ...latestSharedCommands,
 ];
@@ -187,6 +189,22 @@ export const commonCommandIds = [
 ];
 
 export const calculusCommandIds = [
+  "int-bare",
+  "iint-bare",
+  "iiint-bare",
+  "oint-bare",
+  "oiint-bare",
+  "oiiint-bare",
+  "intplain-no-d",
+  "int-bounds-no-d",
+  "iint-no-d",
+  "iint-bounds-no-d",
+  "iiint-no-d",
+  "iiint-bounds-no-d",
+  "oint-no-d",
+  "oint-bounds-no-d",
+  "oiint-no-d",
+  "oiiint-no-d",
   "intplain",
   "int",
   "iint-bounds",

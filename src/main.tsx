@@ -1,17 +1,21 @@
-import { StrictMode } from "react";
+import { StrictMode, Suspense, lazy } from "react";
 import { installBrowserCompatibility } from "./runtime/browserCompatibility";
-import "./editor/formulaFontRuntime";
-import "./shortcuts/greekLetterHotkeyRuntime";
-import "./runtime/editorVisualPreferencesRuntime";
-import "./runtime/webKeypadMode";
+import { VisualTexErrorBoundary } from "./runtime/VisualTexErrorBoundary";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "./styles.css";
+import "./styles-macos-main.css";
 import "./styles-editor-parity.css";
-import "./styles-editor-features.css";
+import "./styles-latest-macos-ui.css";
+import "./styles-windows-shared-latest.css";
+import "./styles-custom-symbol-designer.css";
 import "./landing/landing.css";
-import App from "./App";
-import { LandingPage } from "./landing/LandingPage";
+const App = lazy(() => import("./App"));
+const LandingPage = lazy(() =>
+  import("./landing/LandingPage").then((module) => ({
+    default: module.LandingPage,
+  })),
+);
 
 installBrowserCompatibility();
 
@@ -41,6 +45,10 @@ if (canonical) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {showEditor ? <App /> : <LandingPage />}
+    <VisualTexErrorBoundary>
+      <Suspense fallback={<main className="route-loading" aria-label="Loading VisualTeX" />}>
+        {showEditor ? <App /> : <LandingPage />}
+      </Suspense>
+    </VisualTexErrorBoundary>
   </StrictMode>,
 );
