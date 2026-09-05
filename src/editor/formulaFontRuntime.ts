@@ -31,8 +31,7 @@ function runtimeCss() {
 .math-preview .ML__mathrm,
 .math-preview .ML__operator_name,
 .math-preview .ML__lcGreek,
-.math-preview .ML__ucGreek,
-.math-preview .ML__latin {
+.math-preview .ML__ucGreek {
   font-family: var(--visualtex-formula-italic-font-family, ${letter.italic});
 }
 .math-preview .ML__mathrm,

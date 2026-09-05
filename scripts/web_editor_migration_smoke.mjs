@@ -269,6 +269,10 @@ async function main() {
             "visualtex-formula-font-runtime-shadow-style",
           ),
         ).length,
+        previewUsesBroadLatinOverride:
+          document
+            .getElementById("visualtex-formula-font-runtime-style")
+            ?.textContent?.includes(".ML__latin") ?? false,
       };
     })()`);
     assert.ok(fontRuntimeState.fieldCount > 0, JSON.stringify(fontRuntimeState));
@@ -280,6 +284,11 @@ async function main() {
     assert.equal(
       fontRuntimeState.conflictingStyles,
       0,
+      JSON.stringify(fontRuntimeState),
+    );
+    assert.equal(
+      fontRuntimeState.previewUsesBroadLatinOverride,
+      false,
       JSON.stringify(fontRuntimeState),
     );
 
