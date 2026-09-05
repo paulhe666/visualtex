@@ -158,20 +158,30 @@ async function main() {
       app: Boolean(document.querySelector(".app-shell")),
       field: Boolean(document.querySelector("math-field")),
       fileAccept: document.querySelector('input[type="file"]')?.accept ?? "",
-      nativeButtons: [...document.querySelectorAll("button")].filter((button) =>
-        /OCR|小键盘|keypad|Office|检查更新|check for updates/i.test(
+      desktopOnlyButtons: [...document.querySelectorAll("button")].filter((button) =>
+        /小键盘|keypad|Office|检查更新|check for updates/i.test(
           [button.textContent, button.getAttribute("aria-label"), button.title]
             .filter(Boolean)
             .join(" "),
         ),
       ).length,
+      ocrButtons: [...document.querySelectorAll("button")].filter((button) =>
+        /图片公式识别|Formula image OCR/i.test(
+          [button.textContent, button.getAttribute("aria-label"), button.title]
+            .filter(Boolean)
+            .join(" "),
+        ),
+      ).length,
+      zoom: document.querySelector(".canvas-controls span")?.textContent?.trim() ?? "",
       errorBoundary: Boolean(document.querySelector('[role="alert"]')),
     }))()`);
     assert.equal(boundary.page, "editor", JSON.stringify(boundary));
     assert.equal(boundary.app, true, JSON.stringify(boundary));
     assert.equal(boundary.field, true, JSON.stringify(boundary));
     assert.match(boundary.fileAccept, /\.visualtex/);
-    assert.equal(boundary.nativeButtons, 0, JSON.stringify(boundary));
+    assert.equal(boundary.desktopOnlyButtons, 0, JSON.stringify(boundary));
+    assert.ok(boundary.ocrButtons > 0, JSON.stringify(boundary));
+    assert.equal(boundary.zoom, "45%", JSON.stringify(boundary));
     assert.equal(boundary.errorBoundary, false, JSON.stringify(boundary));
 
     const formulaValue = await evaluate(`(() => {
@@ -198,10 +208,17 @@ async function main() {
       const help = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
         /帮助手册|Help manual/i.test(item.textContent || ""),
       );
-      help?.click();
-      return Boolean(help);
+      if (!help) return { found: false, hit: false };
+      const bounds = help.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      const clickable = hit === help || Boolean(hit?.closest('[role="menuitem"]') === help);
+      if (clickable) hit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return { found: true, hit: clickable };
     })()`);
-    assert.equal(helpOpened, true);
+    assert.deepEqual(helpOpened, { found: true, hit: true });
     await evaluate(`new Promise((resolve) => {
       const done = () => document.querySelector(".help-dialog")
         ? resolve(true)
@@ -215,6 +232,29 @@ async function main() {
     assert.equal(helpState.subtitle, "VisualTeX Web");
     assert.match(helpState.text, /浏览器|browser/i);
     await evaluate(`document.querySelector('[aria-label="关闭帮助手册"], [aria-label="Close help manual"]')?.click()`);
+
+    await evaluate(`document.querySelector('[aria-label="图片公式识别"], [aria-label="Formula image OCR"]')?.click()`);
+    await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        if (document.querySelector(".web-ocr-dialog")) return resolve(true);
+        if (performance.now() - started > 5000) return reject(new Error("Web OCR dialog did not open"));
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    const ocrState = await evaluate(`(() => ({
+      options: [...document.querySelectorAll('.web-ocr-dialog option')].map((option) => option.value),
+      privacy: document.querySelector('.web-ocr-dialog .ocr-provider-actions span')?.textContent ?? "",
+      localRuntime: /安装 OCR 运行环境|Install OCR runtime/i.test(document.querySelector('.web-ocr-dialog')?.textContent ?? ""),
+    }))()`);
+    assert.ok(ocrState.options.includes("simpletex"), JSON.stringify(ocrState));
+    assert.ok(ocrState.options.includes("paddleocr"), JSON.stringify(ocrState));
+    assert.ok(ocrState.options.includes("mathpix"), JSON.stringify(ocrState));
+    assert.ok(ocrState.options.includes("openai-compatible"), JSON.stringify(ocrState));
+    assert.match(ocrState.privacy, /固定目标转发|fixed-target relay/i);
+    assert.equal(ocrState.localRuntime, false, JSON.stringify(ocrState));
+    await evaluate(`document.querySelector('.web-ocr-dialog [aria-label="关闭 OCR"], .web-ocr-dialog [aria-label="Close OCR"]')?.click()`);
 
     await evaluate(`document.querySelector('[data-classic-bottom-view="source"], .source-toggle')?.click()`);
     await evaluate(`new Promise((resolve, reject) => {

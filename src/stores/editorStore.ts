@@ -49,6 +49,7 @@ export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 export const EDITOR_ZOOM_STEP = 0.05;
+export const DEFAULT_EDITOR_ZOOM = 0.45;
 export const DEFAULT_FORMULA_INSET = 34;
 export const MIN_FORMULA_INSET = 0;
 export const MAX_FORMULA_INSET = 96;
@@ -133,7 +134,10 @@ function normalizeTheme(value: unknown): Theme {
 }
 
 function normalizeEditorZoom(value: unknown) {
-  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
+  const zoom =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : DEFAULT_EDITOR_ZOOM;
   const steppedZoom =
     Math.round(
       Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100,
@@ -404,7 +408,7 @@ export const useEditorStore = create<EditorState>()(
       editorLayout: DEFAULT_EDITOR_LAYOUT,
       theme: DEFAULT_THEME,
       language: "cn",
-      zoom: 0.6,
+      zoom: DEFAULT_EDITOR_ZOOM,
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       autoPairDelimiters: true,

@@ -25,6 +25,7 @@ import {
   Plus,
   Redo2,
   Save,
+  ScanLine,
   Settings2,
   Undo2,
   X,
@@ -36,6 +37,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpDialog } from "./components/HelpDialog";
+import { WebOcrDialog } from "./components/WebOcrDialog";
 import { ExportMenu } from "./components/ExportMenu";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
@@ -83,6 +85,7 @@ installFloatingLayerAutoAvoidance();
 
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
 const LEGACY_ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
+const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
 const LANDING_PREVIEW_LINES = [
   String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
   String.raw`R_{\mu\nu}-\frac{1}{2}Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\frac{8\pi G}{c^4}T_{\mu\nu}`,
@@ -102,6 +105,7 @@ function App() {
   const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [ocrOpen, setOcrOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [onboardingOpen, setOnboardingOpen] = useState(
     () =>
@@ -179,6 +183,13 @@ function App() {
     setZoom(0.8);
     setSourceOpen(false);
   }, [formulaAlignment, landingPreview, replaceDocumentState, setSourceOpen, setZoom]);
+
+  useLayoutEffect(() => {
+    if (landingPreview) return;
+    if (readLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY) === "true") return;
+    if (useEditorStore.getState().zoom === 0.6) setZoom(0.45);
+    writeLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY, "true");
+  }, [landingPreview, setZoom]);
 
   const captureDocumentSnapshot = (): DocumentSnapshot =>
     getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
@@ -538,6 +549,7 @@ function App() {
         formulaHotkeyManagerOpen ||
         historyOpen ||
         helpOpen ||
+        ocrOpen ||
         onboardingOpen
       ) {
         return;
@@ -588,7 +600,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, historyOpen, helpOpen, onboardingOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, historyOpen, helpOpen, ocrOpen, onboardingOpen]);
 
   return (
     <div className="app-shell">
@@ -600,7 +612,11 @@ function App() {
         onChange={openDocument}
       />
 
-      <header className="app-header">
+      <header
+        className={
+          "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
+        }
+      >
         <div className="brand-area">
           <button
             ref={menuButtonRef}
@@ -696,6 +712,14 @@ function App() {
               >
                 <History size={16} />
                 <span>{isEn ? "Formula history" : "公式历史"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => setOcrOpen(true))}
+              >
+                <ScanLine size={16} />
+                <span>{isEn ? "Formula image OCR" : "图片公式识别"}</span>
               </button>
               <button
                 type="button"
@@ -812,6 +836,9 @@ function App() {
           </div>
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
+          </button>
+          <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Formula image OCR" : "图片公式识别"} title={isEn ? "Formula image OCR · API" : "图片公式识别 · API"}>
+            <ScanLine size={17} />
           </button>
           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
             <Settings2 size={17} />
@@ -1006,6 +1033,14 @@ function App() {
         open={helpOpen}
         language={language}
         onClose={() => setHelpOpen(false)}
+      />
+      <WebOcrDialog
+        open={ocrOpen}
+        language={language}
+        onClose={() => setOcrOpen(false)}
+        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
+        onNotify={setToast}
       />
       <OnboardingTour
         open={onboardingOpen}
