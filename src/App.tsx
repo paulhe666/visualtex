@@ -211,7 +211,7 @@ function App() {
     setOcrOpen(true);
   };
 
-  const handleEditorImagePaste = async (
+  const handleEditorImagePaste = useCallback(async (
     file: File,
     target: MathEditorInsertionTarget,
   ) => {
@@ -264,7 +264,41 @@ function App() {
     } finally {
       pastedImageOcrBusyRef.current = false;
     }
-  };
+  }, [isEn]);
+
+  useEffect(() => {
+    const handleFormulaImagePaste = (event: ClipboardEvent) => {
+      const formulaField = event.composedPath().find(
+        (target): target is HTMLElement =>
+          target instanceof HTMLElement && target.tagName === "MATH-FIELD",
+      );
+      if (!formulaField && document.activeElement?.tagName !== "MATH-FIELD") {
+        return;
+      }
+
+      const clipboard = event.clipboardData;
+      const item = Array.from(clipboard?.items ?? []).find(
+        (candidate) =>
+          candidate.kind === "file" && candidate.type.startsWith("image/"),
+      );
+      const image =
+        item?.getAsFile() ??
+        Array.from(clipboard?.files ?? []).find((file) =>
+          file.type.startsWith("image/"),
+        );
+      if (!image) return;
+
+      const target = editorRef.current?.captureInsertionTarget();
+      if (!target) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void handleEditorImagePaste(image, target);
+    };
+
+    document.addEventListener("paste", handleFormulaImagePaste, true);
+    return () =>
+      document.removeEventListener("paste", handleFormulaImagePaste, true);
+  }, [handleEditorImagePaste]);
 
   const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
     const lineId = snapshot.activeLineId;

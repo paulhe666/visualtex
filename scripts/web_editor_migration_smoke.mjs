@@ -172,6 +172,10 @@ async function main() {
     await client.connect();
     await client.send("Runtime.enable");
     await client.send("Page.enable");
+    await client.send("Browser.grantPermissions", {
+      origin: `http://127.0.0.1:${previewPort}`,
+      permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+    });
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(250);
 
@@ -313,32 +317,69 @@ async function main() {
     })()`);
     assert.match(formulaValue, /\\frac/);
 
-    const pastedImageEvent = await evaluate(`(() => {
+    const clipboardState = await evaluate(`(async () => {
       const field = document.querySelector("math-field");
       if (!field) throw new Error("Formula field is unavailable");
+      const canvas = document.createElement("canvas");
+      canvas.width = 2;
+      canvas.height = 2;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "white";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(
+          (value) => value ? resolve(value) : reject(new Error("Unable to create clipboard PNG")),
+          "image/png",
+        ),
+      );
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
+      const clipboardTypes = (await navigator.clipboard.read())
+        .flatMap((item) => item.types);
       field.focus();
       field.position = field.lastOffset;
-      const file = new File(
-        [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
-        "clipboard-formula.png",
-        { type: "image/png" },
-      );
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      const event = new ClipboardEvent("paste", {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clipboardData: transfer,
-      });
-      const dispatched = field.dispatchEvent(event);
-      return { dispatched, defaultPrevented: event.defaultPrevented };
+      const keyboardSink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!keyboardSink) throw new Error("MathLive keyboard sink is unavailable");
+      keyboardSink.focus();
+      return { clipboardTypes };
     })()`);
-    assert.deepEqual(
-      pastedImageEvent,
-      { dispatched: false, defaultPrevented: true },
-      JSON.stringify(pastedImageEvent),
+    assert.ok(
+      clipboardState.clipboardTypes.includes("image/png"),
+      JSON.stringify(clipboardState),
     );
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      modifiers: 2,
+      key: "Control",
+      code: "ControlLeft",
+      windowsVirtualKeyCode: 17,
+      nativeVirtualKeyCode: 17,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      modifiers: 2,
+      key: "v",
+      code: "KeyV",
+      windowsVirtualKeyCode: 86,
+      nativeVirtualKeyCode: 86,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      modifiers: 2,
+      key: "v",
+      code: "KeyV",
+      windowsVirtualKeyCode: 86,
+      nativeVirtualKeyCode: 86,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      modifiers: 0,
+      key: "Control",
+      code: "ControlLeft",
+      windowsVirtualKeyCode: 17,
+      nativeVirtualKeyCode: 17,
+    });
     const directPasteFormula = await evaluate(`new Promise((resolve, reject) => {
       const started = performance.now();
       const done = () => {
@@ -348,7 +389,11 @@ async function main() {
         const toast = document.querySelector(".toast")?.textContent?.trim() ?? "";
         if (/OCR failed|OCR 失败/.test(toast)) return reject(new Error(toast));
         if (performance.now() - started > 5000) {
-          return reject(new Error("Pasted image was not recognized and inserted"));
+          return reject(new Error("Pasted image was not recognized and inserted: " + JSON.stringify({
+            activeTag: document.activeElement?.tagName,
+            value,
+            toast,
+          })));
         }
         setTimeout(done, 30);
       };
