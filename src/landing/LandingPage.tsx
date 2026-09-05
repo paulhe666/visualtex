@@ -8,6 +8,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
+import { SupportCodes } from "./SupportCodes";
 
 const VERSION = "1.2.4";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
@@ -75,7 +76,7 @@ const ocrModels = [
 
 const features = [
   { title: "可视化编辑", detail: "直接编辑分式、积分和矩阵，LaTeX 源码同步更新。", scope: "网页 / 桌面" },
-  { title: "原生 MathType 公式", detail: "无需安装 MathType，即可插入和编辑原生公式。", scope: "桌面" },
+  { title: "原生 MathType 公式", detail: "无需安装 MathType，即可插入和编辑原生公式。", scope: "Windows" },
   { title: "Word 与 PowerPoint", detail: "插入、修改公式，管理编号与交叉引用。", scope: "桌面" },
   { title: "图片转公式", detail: "粘贴图片识别；桌面端还支持离线 OCR。", scope: "网页 / 桌面" },
   { title: "LaTeX 源码", detail: "语法高亮、命令补全、多行编辑。", scope: "网页 / 桌面" },
@@ -173,10 +174,10 @@ export function LandingPage() {
           <div className="landing-hero-copy">
             <div>
               <p className="landing-eyebrow">Visual LaTeX Editor</p>
-              <h1 id="landing-title">公式，<br /><span className="landing-highlight-blue">直接编辑。</span></h1>
+              <h1 id="landing-title">可视化编辑，<br /><mark className="landing-mark landing-mark-lilac">LaTeX</mark> 同步。</h1>
             </div>
             <div className="landing-hero-intro">
-              <p>可视化 <strong className="landing-highlight-blue">LaTeX</strong> 编辑器。<br />从浏览器到 <strong className="landing-highlight-teal">Office</strong>。</p>
+              <p>在浏览器中编辑公式，<br />在 Word 与 PowerPoint 中继续使用。</p>
               <div className="landing-actions">
                 <a className="landing-button" href="/editor">打开编辑器 <ArrowRight size={18} aria-hidden="true" /></a>
                 <a className="landing-button landing-button-outline" href="#download">下载桌面端 <Download size={17} aria-hidden="true" /></a>
@@ -187,14 +188,15 @@ export function LandingPage() {
           <EditorPreview />
         </section>
 
-        <section className="landing-features landing-container" id="features" aria-labelledby="features-title">
+        <section className="landing-features" id="features" aria-labelledby="features-title">
+          <div className="landing-container">
           <div className="landing-section-heading">
-            <p className="landing-eyebrow">编辑 / 识别 / 排版</p>
-            <h2 id="features-title">公式与文档。</h2>
+            <p className="landing-eyebrow">功能</p>
+            <h2 id="features-title">专注<mark className="landing-mark landing-mark-coral">公式</mark>，连接<mark className="landing-mark landing-mark-lilac">文档</mark>。</h2>
           </div>
           <div className="landing-feature-grid">
             {features.map((feature, index) => (
-              <article className="landing-feature" data-accent={["blue", "teal", "blue", "ochre", "blue", "blue"][index]} key={feature.title}>
+              <article className="landing-feature" data-feature={index} key={feature.title}>
                 <div className="landing-feature-meta">
                   <span>0{index + 1}</span><span>{feature.scope}</span>
                 </div>
@@ -202,6 +204,7 @@ export function LandingPage() {
                 <p>{feature.detail}</p>
               </article>
             ))}
+          </div>
           </div>
         </section>
 
@@ -236,8 +239,8 @@ export function LandingPage() {
               })}
             </div>
 
-            <details className="landing-models">
-              <summary><span>Windows 离线 OCR 模型</span><span className="landing-model-count">S / M / L</span><span className="landing-expand" aria-hidden="true">+</span></summary>
+            <section className="landing-models" aria-labelledby="models-title">
+              <div className="landing-models-heading"><h3 id="models-title">Windows 离线 OCR 模型</h3><p>下载后在桌面端导入。</p></div>
               <div className="landing-ocr-model-grid">
                 {ocrModels.map((model) => (
                   <article className="landing-model-row" key={model.id}>
@@ -247,8 +250,15 @@ export function LandingPage() {
                   </article>
                 ))}
               </div>
-            </details>
+            </section>
           </div>
+        </section>
+        <section className="landing-support landing-container" aria-labelledby="support-title">
+          <div className="landing-support-heading">
+            <h2 id="support-title">支持与交流</h2>
+            <p>打赏自愿，不影响任何功能的使用。<br />QQ 交流群：1045801770</p>
+          </div>
+          <SupportCodes />
         </section>
       </main>
 
