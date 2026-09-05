@@ -7,6 +7,10 @@ export interface SvgExportOptions {
   displayMode: boolean;
   fontSizePt: number;
   paddingPx: number;
+  /** Optional horizontal padding override. Defaults to paddingPx. */
+  paddingXPx?: number;
+  /** Optional vertical padding override. Defaults to paddingPx. */
+  paddingYPx?: number;
   background: "transparent" | "white";
   forceExplicitBlack?: boolean;
   formulaLetterFont?: FormulaLetterFont;
@@ -18,7 +22,8 @@ export interface SvgExportResult {
   base64: string;
   width: number;
   height: number;
-  baseline?: number;
+  /** Mathematical baseline measured from the SVG top edge, in CSS pixels. */
+  baseline: number;
 }
 
 export interface PngExportOptions {

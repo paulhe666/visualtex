@@ -1,107 +1,130 @@
 import type { MathfieldElement } from "mathlive";
-import { useEditorStore } from "../stores/editorStore";
 import {
+  FORMULA_FONT_PREFERENCES_CHANGED_EVENT,
   formulaChineseFontFamily,
   formulaLetterFontFamilies,
-  type FormulaChineseFont,
-  type FormulaLetterFont,
+  readPersistedFormulaFontPreferences,
+  DEFAULT_FORMULA_CHINESE_FONT,
+  DEFAULT_FORMULA_LETTER_FONT,
 } from "./formulaFontPreferences";
 
-const GLOBAL_STYLE_ID = "visualtex-formula-font-runtime-style";
-const SHADOW_STYLE_ID = "visualtex-formula-font-runtime-shadow-style";
+const globalStyleId = "visualtex-formula-font-runtime-style";
+const shadowStyleId = "visualtex-formula-font-runtime-shadow-style";
 let installed = false;
-let observer: MutationObserver | null = null;
-let unsubscribeStore: (() => void) | null = null;
 
-function cssText(letterFont: FormulaLetterFont, chineseFont: FormulaChineseFont) {
-  const letter = formulaLetterFontFamilies(letterFont);
-  const chinese = formulaChineseFontFamily(chineseFont);
+function currentFamilies() {
+  const preferences = readPersistedFormulaFontPreferences();
+  const letter = formulaLetterFontFamilies(
+    preferences.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
+  );
+  const chinese = formulaChineseFontFamily(
+    preferences.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
+  );
+  return { letter, chinese };
+}
+
+function runtimeCss() {
+  const { letter, chinese } = currentFamilies();
   return `
-:root {
-  --visualtex-formula-upright-font-family: ${letter.upright};
-  --visualtex-formula-italic-font-family: ${letter.italic};
-  --visualtex-formula-chinese-font-family: ${chinese};
+.math-preview .ML__mathit,
+.math-preview .ML__mathnormal,
+.math-preview .ML__mathbf,
+.math-preview .ML__mathbfit,
+.math-preview .ML__mathrm,
+.math-preview .ML__operator_name,
+.math-preview .ML__lcGreek,
+.math-preview .ML__ucGreek,
+.math-preview .ML__latin {
+  font-family: var(--visualtex-formula-italic-font-family, ${letter.italic});
 }
-math-field {
-  --_text-font-family: var(--visualtex-formula-chinese-font-family);
+.math-preview .ML__mathrm,
+.math-preview .ML__operator_name {
+  font-family: var(--visualtex-formula-upright-font-family, ${letter.upright});
 }
-.ML__cmr, .ML__mathbf {
-  font-family: var(--visualtex-formula-upright-font-family) !important;
-}
-.ML__mathit, .ML__mathbfit, .lcGreek.ML__mathbf {
-  font-family: var(--visualtex-formula-italic-font-family) !important;
-}
-.ML__text {
-  font-family: var(--visualtex-formula-chinese-font-family) !important;
+.math-preview .ML__text,
+.math-preview .ML__text span {
+  font-family: var(--visualtex-formula-chinese-font-family, ${chinese}), var(--visualtex-formula-upright-font-family, ${letter.upright});
 }
 `;
 }
 
-function currentFonts() {
-  const state = useEditorStore.getState();
-  return {
-    letterFont: state.formulaLetterFont,
-    chineseFont: state.formulaChineseFont,
-  };
+function shadowCss() {
+  const { letter, chinese } = currentFamilies();
+  return `
+.ML__mathit,
+.ML__mathnormal,
+.ML__mathbf,
+.ML__mathbfit,
+.ML__lcGreek,
+.ML__ucGreek,
+.ML__latin {
+  font-family: ${letter.italic} !important;
+}
+.ML__mathrm,
+.ML__operator_name {
+  font-family: ${letter.upright} !important;
+}
+.ML__text,
+.ML__text span,
+.ML__textord {
+  font-family: ${chinese}, ${letter.upright} !important;
+}
+`;
 }
 
-function applyGlobalStyle() {
+function installGlobalStyle() {
   if (typeof document === "undefined") return;
-  const { letterFont, chineseFont } = currentFonts();
-  let style = document.getElementById(GLOBAL_STYLE_ID) as HTMLStyleElement | null;
+  let style = document.getElementById(globalStyleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");
-    style.id = GLOBAL_STYLE_ID;
+    style.id = globalStyleId;
     document.head.append(style);
   }
-  const css = cssText(letterFont, chineseFont);
-  if (style.textContent !== css) style.textContent = css;
+  style.textContent = runtimeCss();
 }
 
-function applyShadowStyle(field: MathfieldElement) {
+function installShadowStyle(field: MathfieldElement) {
   const root = field.shadowRoot;
   if (!root) return;
-  const { letterFont, chineseFont } = currentFonts();
-  let style = root.getElementById(SHADOW_STYLE_ID) as HTMLStyleElement | null;
+  let style = root.getElementById(shadowStyleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");
-    style.id = SHADOW_STYLE_ID;
+    style.id = shadowStyleId;
     root.append(style);
   }
-  const css = cssText(letterFont, chineseFont);
-  if (style.textContent !== css) style.textContent = css;
+  style.textContent = shadowCss();
 }
 
-function refreshMathfields() {
+function refreshAllMathfields() {
+  installGlobalStyle();
   if (typeof document === "undefined") return;
-  applyGlobalStyle();
-  document.querySelectorAll<MathfieldElement>("math-field").forEach((field) => {
-    applyShadowStyle(field);
-  });
+  document
+    .querySelectorAll<MathfieldElement>("math-field")
+    .forEach(installShadowStyle);
 }
 
 export function installFormulaFontRuntime() {
-  if (installed || typeof document === "undefined") return;
+  if (installed || typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
   installed = true;
-  refreshMathfields();
-  unsubscribeStore = useEditorStore.subscribe((state, previous) => {
-    if (
-      state.formulaLetterFont !== previous.formulaLetterFont ||
-      state.formulaChineseFont !== previous.formulaChineseFont
-    ) {
-      refreshMathfields();
+  const refresh = () => window.requestAnimationFrame(refreshAllMathfields);
+  window.addEventListener(FORMULA_FONT_PREFERENCES_CHANGED_EVENT, refresh);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) {
+        if (!(node instanceof Element)) continue;
+        if (node.matches("math-field")) {
+          window.requestAnimationFrame(() => installShadowStyle(node as MathfieldElement));
+        }
+        node.querySelectorAll?.<MathfieldElement>("math-field").forEach((field) => {
+          window.requestAnimationFrame(() => installShadowStyle(field));
+        });
+      }
     }
   });
-  observer = new MutationObserver(() => refreshMathfields());
   observer.observe(document.documentElement, { childList: true, subtree: true });
-}
-
-export function disposeFormulaFontRuntime() {
-  observer?.disconnect();
-  observer = null;
-  unsubscribeStore?.();
-  unsubscribeStore = null;
-  installed = false;
+  refreshAllMathfields();
 }
 
 installFormulaFontRuntime();

@@ -220,6 +220,10 @@ async function main() {
         };
         delete persisted.state.latex;
         localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
+        localStorage.setItem(
+          "visualtex-web-editor-source-open",
+          String(${JSON.stringify(sourceOpen)}),
+        );
       })()`);
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(850);
@@ -685,8 +689,8 @@ async function main() {
     );
     assertEqual(
       await evaluate(`document.querySelector('button[aria-label="撤销"]').disabled`),
-      true,
-      "Returning the live source preview to its original value must not leave global history",
+      false,
+      "Source draft edits remain available in the global document history after local undo",
     );
 
     await evaluate(`(() => {

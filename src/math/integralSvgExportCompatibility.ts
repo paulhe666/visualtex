@@ -64,10 +64,17 @@ function contourOverlay(command: "oiint" | "oiiint", large: boolean) {
     : large
       ? OIIINT_SIZE2_OVAL_PATH
       : OIIINT_SIZE1_OVAL_PATH;
+  // The MathJax SVG root flips the mathematical y-axis. MathLive positions the
+  // display-style oval 0.08 em lower on screen, hence -80 in math coordinates.
   const transform = large ? ' transform="translate(0 -80)"' : "";
   return `<path data-visualtex-integral="${command}"${transform} d="${path}"></path>`;
 }
 
+/**
+ * Replace MathJax's marked placeholder operators with the same vector geometry
+ * used by the patched MathLive editor. The placeholder remains responsible for
+ * operator spacing and limit placement; only its painted glyph is changed.
+ */
 export function applyVisualTexIntegralSvgGlyphs(svg: string, displayMode: boolean) {
   return svg.replace(
     markedOperator,

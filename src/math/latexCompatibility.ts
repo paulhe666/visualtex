@@ -2,6 +2,7 @@ import {
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
 } from "./extendedIntegralCompatibility.ts";
+import { VISUALTEX_MATHJAX_PACKAGE_MACROS } from "./packageMacroCompatibility.ts";
 
 export type VisualTexMathJaxMacro = string | readonly [replacement: string, argumentCount: number];
 
@@ -12,8 +13,28 @@ export type VisualTexMathJaxMacro = string | readonly [replacement: string, argu
  * degraded to upright \mathbf text.
  */
 const STANDARD_COMPATIBILITY_MACROS = {
+  // Import the shared package-compatibility layer first, then let Windows'
+  // broader physics/siunitx aliases below override any overlapping names.
+  ...VISUALTEX_MATHJAX_PACKAGE_MACROS,
   bm: ["\\boldsymbol{#1}", 1] as const,
   mathbbm: ["\\mathbb{#1}", 1] as const,
+  symup: ["\\mathrm{#1}", 1] as const,
+  symit: ["\\mathit{#1}", 1] as const,
+  symbf: ["\\mathbf{#1}", 1] as const,
+  symbfup: ["\\mathbf{#1}", 1] as const,
+  symbfit: ["\\boldsymbol{#1}", 1] as const,
+  symbb: ["\\mathbb{#1}", 1] as const,
+  symcal: ["\\mathcal{#1}", 1] as const,
+  symbfcal: ["\\boldsymbol{\\mathcal{#1}}", 1] as const,
+  symscr: ["\\mathscr{#1}", 1] as const,
+  symbfscr: ["\\boldsymbol{\\mathscr{#1}}", 1] as const,
+  symfrak: ["\\mathfrak{#1}", 1] as const,
+  symbffrak: ["\\boldsymbol{\\mathfrak{#1}}", 1] as const,
+  symsfup: ["\\mathsf{#1}", 1] as const,
+  symsfit: ["\\mathsf{\\mathit{#1}}", 1] as const,
+  symbfsfup: ["\\boldsymbol{\\mathsf{#1}}", 1] as const,
+  symbfsfit: ["\\boldsymbol{\\mathsf{\\mathit{#1}}}", 1] as const,
+  symtt: ["\\mathtt{#1}", 1] as const,
 
   // Common physics-package aliases. These are rendering-only expansions; the
   // original commands remain in formula metadata and are restored on reopen.
@@ -59,7 +80,6 @@ const STANDARD_COMPATIBILITY_MACROS = {
   ang: ["#1^{\\circ}", 1] as const,
   per: "\\,/\\,",
   squared: "^{2}",
-  square: "^{2}",
   cubed: "^{3}",
   cubic: "^{3}",
   meter: "\\mathrm{m}",
@@ -79,7 +99,6 @@ const STANDARD_COMPATIBILITY_MACROS = {
   coulomb: "\\mathrm{C}",
   volt: "\\mathrm{V}",
   farad: "\\mathrm{F}",
-  ohm: "\\Omega",
   siemens: "\\mathrm{S}",
   weber: "\\mathrm{Wb}",
   tesla: "\\mathrm{T}",
@@ -102,12 +121,10 @@ const STANDARD_COMPATIBILITY_MACROS = {
   dalton: "\\mathrm{Da}",
   astronomicalunit: "\\mathrm{au}",
   parsec: "\\mathrm{pc}",
-  bar: "\\mathrm{bar}",
   barn: "\\mathrm{b}",
   knot: "\\mathrm{kn}",
   hectare: "\\mathrm{ha}",
   decibel: "\\mathrm{dB}",
-  degree: "{}^{\\circ}",
   arcminute: "{}^{\\prime}",
   arcsecond: "{}^{\\prime\\prime}",
   degreeCelsius: "{}^{\\circ}\\mathrm{C}",
@@ -123,7 +140,6 @@ const STANDARD_COMPATIBILITY_MACROS = {
   exa: "\\mathrm{E}",
   centi: "\\mathrm{c}",
   milli: "\\mathrm{m}",
-  micro: "\\mu",
   nano: "\\mathrm{n}",
   pico: "\\mathrm{p}",
   femto: "\\mathrm{f}",
@@ -383,11 +399,64 @@ function normalizeQtyCommands(source: string) {
   return output;
 }
 
+function normalizeSiunitxConflictingUnitCommands(source: string) {
+  const rewriteUnit = (unit: string) => unit
+    // Never register these names as global MathJax macros: \\bar is a native
+    // accent and \\square is a native relation symbol.  They only have unit
+    // semantics while they are inside a siunitx unit argument.
+    .replace(/\\bar(?![A-Za-z@])/g, "\\mathrm{bar}")
+    .replace(/\\square(?![A-Za-z@])/g, "^{2}");
+
+  const commandPattern = /\\(SI|si|unit)(?![A-Za-z@])/g;
+  let output = "";
+  let cursor = 0;
+  while (cursor < source.length) {
+    commandPattern.lastIndex = cursor;
+    const match = commandPattern.exec(source);
+    if (!match) {
+      output += source.slice(cursor);
+      break;
+    }
+    output += source.slice(cursor, match.index);
+    const command = match[1];
+    let position = skipLatexWhitespace(source, commandPattern.lastIndex);
+    const first = source[position] === "{"
+      ? readBalancedArgument(source, position, "{", "}")
+      : null;
+    if (!first) {
+      output += match[0];
+      cursor = commandPattern.lastIndex;
+      continue;
+    }
+
+    if (command === "SI") {
+      position = skipLatexWhitespace(source, first.end);
+      const second = source[position] === "{"
+        ? readBalancedArgument(source, position, "{", "}")
+        : null;
+      if (!second) {
+        output += source.slice(match.index, first.end);
+        cursor = first.end;
+        continue;
+      }
+      output += `${match[0]}{${first.content}}{${rewriteUnit(second.content)}}`;
+      cursor = second.end;
+      continue;
+    }
+
+    output += `${match[0]}{${rewriteUnit(first.content)}}`;
+    cursor = first.end;
+  }
+  return output;
+}
+
 /** Normalize package syntax that cannot be represented by fixed MathJax macros. */
 export function normalizePackageLatexCommands(source: string) {
   return normalizeDerivativeCommands(
     normalizeMatrixQuantityCommands(
-      normalizeQtyCommands(stripSiunitxOptions(source)),
+      normalizeSiunitxConflictingUnitCommands(
+        normalizeQtyCommands(stripSiunitxOptions(source)),
+      ),
     ),
   );
 }

@@ -3,7 +3,7 @@ import {
   registerCustomSymbol,
   setCustomSymbolCommandAvailabilityValidator,
   updateCustomSymbol,
-} from "./customSymbolRegistry";
+} from "./customSymbolRegistry.ts";
 
 function commandFromValue(value: unknown) {
   if (!value || typeof value !== "object") return "";

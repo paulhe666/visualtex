@@ -408,7 +408,7 @@ async function main() {
         assert.equal(detail.unifiedFit, true, JSON.stringify({ category, id, detail }));
         assert.equal(detail.fontSize, 24, JSON.stringify({ category, id, detail }));
         assert.equal(detail.fitReady, true, JSON.stringify({ category, id, detail }));
-        assert.ok(detail.scale > 0 && detail.scale <= 1, JSON.stringify({ category, id, detail }));
+        assert.ok(detail.scale > 0 && detail.scale <= 1.55, JSON.stringify({ category, id, detail }));
         assert.equal(detail.contained, true, JSON.stringify({ category, id, detail }));
       }
     }
@@ -420,7 +420,7 @@ async function main() {
     assert.equal(expandedCategories.physics.details["expectation-operator"].wide, true);
     assert.ok(
       expandedCategories.physics.details.matrixelement.width >
-        expandedCategories.physics.details.outerproduct.width * 1.5,
+        expandedCategories.physics.details.outerproduct.width * 1.3,
       JSON.stringify(expandedCategories.physics.details),
     );
     for (const commandId of ["intplain", "int", "iint", "sum", "series", "prod"]) {

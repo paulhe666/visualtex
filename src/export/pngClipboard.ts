@@ -55,6 +55,11 @@ async function writePngClipboard(blob: Blob) {
   ]);
 }
 
+/**
+ * WebView2 exposes the standard image clipboard API while VisualTeX is
+ * foregrounded. Keep the Windows implementation on that native browser path
+ * instead of importing the macOS AppKit clipboard command.
+ */
 export async function copyFormulaDocumentPngToClipboard(
   formulas: readonly string[],
   preferences: FormulaPngRenderPreferences,

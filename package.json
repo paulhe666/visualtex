@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "deploy:web": "npx wrangler deploy",
     "test:landing": "node scripts/landing_page_smoke.mjs",
+    "test:web-editor:run": "node scripts/web_editor_migration_smoke.mjs",
+    "test:web-editor": "npm run build && npm run test:web-editor:run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

@@ -37,7 +37,9 @@ export function readErrorMessage(error: unknown, fallback = "发生未知错误�
     const id = usefulString(record.id);
     const code = usefulString(record.code);
     const args = Array.isArray(record.args)
-      ? record.args.map((value) => usefulString(value)).filter(Boolean)
+      ? record.args
+          .map((value) => usefulString(value))
+          .filter(Boolean)
       : [];
     const structured = [code || id, args.join(", ")].filter(Boolean).join(": ");
     if (structured) return structured;

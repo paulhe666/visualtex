@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import {
   getCustomSymbolRevision,
   subscribeCustomSymbols,
-} from "./customSymbolRegistry";
+} from "./customSymbolRegistry.ts";
 
 export function useCustomSymbolRevision() {
   return useSyncExternalStore(

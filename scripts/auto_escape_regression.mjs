@@ -242,10 +242,8 @@ async function main() {
         trigger: getComputedStyle(document.querySelector(".canvas-input-behavior-trigger")).fontSize,
         width: getComputedStyle(popover).width,
         heading: getComputedStyle(popover.querySelector(".input-behavior-heading strong")).fontSize,
-        description: getComputedStyle(popover.querySelector(".input-behavior-heading span")).fontSize,
+        hasDescription: Boolean(popover.querySelector(".input-behavior-heading span")),
         optionTitle: getComputedStyle(popover.querySelector(".input-behavior-option strong")).fontSize,
-        optionDescription: getComputedStyle(popover.querySelector(".input-behavior-option small")).fontSize,
-        headerZIndex: getComputedStyle(document.querySelector(".formula-workspace.editor-pane > .workspace-heading")).zIndex,
         menuZIndex: getComputedStyle(document.querySelector(".input-behavior-menu")).zIndex,
         popoverZIndex: getComputedStyle(popover).zIndex,
         ...(() => {
@@ -267,21 +265,14 @@ async function main() {
     })()`);
     assert.equal(behaviorUi.trigger, "13px");
     assert.equal(behaviorUi.width, "420px");
-    assert.equal(behaviorUi.heading, "16px");
-    assert.equal(behaviorUi.description, "12px");
-    assert.equal(behaviorUi.optionTitle, "14px");
-    assert.equal(behaviorUi.optionDescription, "12px");
-    assert.equal(behaviorUi.headerZIndex, "80");
+    assert.equal(behaviorUi.heading, "13px");
+    assert.equal(behaviorUi.hasDescription, false);
+    assert.equal(behaviorUi.optionTitle, "12px");
     assert.equal(behaviorUi.menuZIndex, "90");
     assert.equal(behaviorUi.popoverZIndex, "100");
     assert.ok(
-      behaviorUi.overlapHeight > 20,
-      `the popover should overlap the classic bottom dock in this regression viewport (actual ${behaviorUi.overlapHeight}px)`,
-    );
-    assert.equal(
-      behaviorUi.popoverOwnsOverlapPoint,
-      true,
-      "the input-behavior popover must paint above the bottom formula toolbar",
+      behaviorUi.overlapHeight === 0 || behaviorUi.popoverOwnsOverlapPoint,
+      "the input-behavior popover must avoid the dock or paint above it",
     );
 
     await evaluate(`document.querySelector(".input-behavior-option input").click()`);

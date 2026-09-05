@@ -1,6 +1,10 @@
 import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import "./editor/formulaFontRuntime";
+import "./shortcuts/greekLetterHotkeyRuntime";
+import "./runtime/editorVisualPreferencesRuntime";
+import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
 import {
-  AlertCircle,
+  BookOpenText,
   Braces,
   Check,
   ChevronDown,
@@ -10,7 +14,6 @@ import {
   FolderOpen,
   History,
   Languages,
-  LoaderCircle,
   Menu,
   Minus,
   PanelBottomClose,
@@ -21,23 +24,20 @@ import {
   PanelRightOpen,
   Plus,
   Redo2,
-  RefreshCw,
   Save,
-  ScanLine,
   Settings2,
   Undo2,
   X,
 } from "lucide-react";
 import {
   type MathEditorHandle,
-  type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
-import { OcrDialog } from "./components/OcrDialog";
+import { HelpDialog } from "./components/HelpDialog";
+import { ExportMenu } from "./components/ExportMenu";
 import { OnboardingTour } from "./components/OnboardingTour";
-import { UpdateDialog } from "./components/UpdateDialog";
 import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
@@ -61,8 +61,8 @@ import type {
   ReplaceDocumentEntry,
 } from "./history/historyTypes";
 import {
-  copyLatex,
-  formatLatex,
+  copyFormulaLines,
+  formatFormulaLines,
   getLatexCodeFormatDefinition,
   latexCodeFormats,
   parseLatexSource,
@@ -77,34 +77,10 @@ import {
 import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import { publishSynchronizedTheme } from "./themeSync";
-import {
-  OCR_MODELS,
-  cancelOcrRecognition,
-  fileToOcrRequest,
-  getOcrRuntimeStatus,
-  isTauriEnvironment,
-  listenOcrRecognitionProgress,
-  recognizeFormulaImage,
-  restartOcrWorker,
-  type OcrModelName,
-} from "./ocr/ocrService";
-import {
-  checkForUpdates,
-  openReleasePage,
-  type UpdateCheckResult,
-} from "./update/updateService";
+import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 
-type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
+installFloatingLayerAutoAvoidance();
 
-interface InlineOcrState {
-  status: InlineOcrStatus;
-  message: string;
-  seconds: number;
-  model: OcrModelName;
-}
-
-const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
-const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
 const LEGACY_ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
 const LANDING_PREVIEW_LINES = [
@@ -125,37 +101,20 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [ocrOpen, setOcrOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const [onboardingOpen, setOnboardingOpen] = useState(
     () =>
       !landingPreview &&
-      window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true" &&
-      window.localStorage.getItem(LEGACY_ONBOARDING_STORAGE_KEY) !== "true",
+      readLocalStorage(ONBOARDING_STORAGE_KEY) !== "true" &&
+      readLocalStorage(LEGACY_ONBOARDING_STORAGE_KEY) !== "true",
   );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
-  const [updateChecking, setUpdateChecking] = useState(false);
-  const [updateError, setUpdateError] = useState("");
-  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
-  const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
-  const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
-    const stored = window.localStorage.getItem(OCR_MODEL_STORAGE_KEY);
-    return OCR_MODELS.some((item) => item.id === stored)
-      ? (stored as OcrModelName)
-      : DEFAULT_OCR_MODEL;
-  });
-  const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
-  const inlineOcrBusyRef = useRef(false);
-  const inlineOcrCancelRequestedRef = useRef(false);
-  const inlineOcrRunIdRef = useRef(0);
-  const inlineOcrClearTimerRef = useRef<number | null>(null);
-  const automaticUpdateCheckRef = useRef(false);
   const pngClipboardBusyRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
@@ -182,17 +141,10 @@ function App() {
   const loadDocument = useEditorStore((state) => state.loadDocument);
   const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
   const toDocument = useEditorStore((state) => state.toDocument);
-  const checkUpdatesOnStartup = useEditorStore(
-    (state) => state.checkUpdatesOnStartup,
-  );
-  const setCheckUpdatesOnStartup = useEditorStore(
-    (state) => state.setCheckUpdatesOnStartup,
-  );
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
-  const desktopRuntime = isTauriEnvironment();
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatLatex(latex, latexCodeFormat);
+  const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
   const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
   const codeFormatGroups = [
     {
@@ -212,13 +164,6 @@ function App() {
       formats: latexCodeFormats.filter((format) => format.group === "multi"),
     },
   ];
-  const selectedOcrModel =
-    OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
-  const inlineOcrModel =
-    OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
-  const inlineOcrIsBusy =
-    inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
-
   useLayoutEffect(() => {
     if (!landingPreview) return;
     replaceDocumentState({
@@ -299,11 +244,11 @@ function App() {
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("autosave");
+      void historyManager.createCheckpoint("autosave").catch(() => undefined);
     }, 30_000);
     const handleBeforeUnload = () => {
       historyManager.commitPendingTransaction();
-      void historyManager.createCheckpoint("before-unload");
+      void historyManager.createCheckpoint("before-unload").catch(() => undefined);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
@@ -377,206 +322,6 @@ function App() {
     };
   }, [menuOpen, copyMenuOpen]);
 
-  const inlineOcrStatus = inlineOcr?.status;
-  useEffect(() => {
-    if (inlineOcrStatus !== "running" && inlineOcrStatus !== "cancelling") {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      setInlineOcr((current) =>
-        current
-          ? {
-              ...current,
-              seconds: current.seconds + 1,
-            }
-          : current,
-      );
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [inlineOcrStatus]);
-
-  useEffect(
-    () => () => {
-      if (inlineOcrClearTimerRef.current !== null) {
-        window.clearTimeout(inlineOcrClearTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const scheduleInlineOcrClear = (delay: number) => {
-    if (inlineOcrClearTimerRef.current !== null) {
-      window.clearTimeout(inlineOcrClearTimerRef.current);
-    }
-    inlineOcrClearTimerRef.current = window.setTimeout(() => {
-      setInlineOcr(null);
-      inlineOcrClearTimerRef.current = null;
-    }, delay);
-  };
-
-  const handleOcrModelChange = (nextModel: OcrModelName) => {
-    if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
-    setOcrModel(nextModel);
-    window.localStorage.setItem(OCR_MODEL_STORAGE_KEY, nextModel);
-    if (isTauriEnvironment()) {
-      void restartOcrWorker().catch(() => undefined);
-    }
-  };
-
-  const cancelInlineOcr = async () => {
-    if (!inlineOcrBusyRef.current) return;
-    inlineOcrCancelRequestedRef.current = true;
-    setInlineOcr((current) =>
-      current
-        ? {
-            ...current,
-            status: "cancelling",
-            message: isEn ? "Cancelling OCR…" : "正在取消 OCR…",
-          }
-        : current,
-    );
-    try {
-      await cancelOcrRecognition();
-    } catch {
-      // The recognition promise will surface the final state. A worker that
-      // already exited is equivalent to a successful cancellation.
-    }
-  };
-
-  const handleEditorImagePaste = async (
-    file: File,
-    target: MathEditorInsertionTarget,
-  ) => {
-    if (inlineOcrBusyRef.current) {
-      setToast(isEn ? "Another pasted image is being recognized" : "已有一张粘贴图片正在识别");
-      return;
-    }
-    if (!isTauriEnvironment()) {
-      setToast(isEn ? "Image OCR is available in the desktop app" : "图片 OCR 只能在桌面应用中使用");
-      return;
-    }
-
-    if (inlineOcrClearTimerRef.current !== null) {
-      window.clearTimeout(inlineOcrClearTimerRef.current);
-      inlineOcrClearTimerRef.current = null;
-    }
-
-    const runId = ++inlineOcrRunIdRef.current;
-    inlineOcrBusyRef.current = true;
-    inlineOcrCancelRequestedRef.current = false;
-    setInlineOcr({
-      status: "running",
-      message: isEn ? "Checking the local OCR runtime…" : "正在检查本地 OCR 环境…",
-      seconds: 0,
-      model: ocrModel,
-    });
-
-    let unlisten: (() => void) | undefined;
-    try {
-      const runtime = await getOcrRuntimeStatus();
-      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      if (!runtime.installed) {
-        setOcrOpen(true);
-        throw new Error(
-          isEn
-            ? "Install the OCR runtime before pasting an image"
-            : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
-        );
-      }
-
-      unlisten = await listenOcrRecognitionProgress((progress) => {
-        if (
-          inlineOcrRunIdRef.current !== runId ||
-          progress.model !== ocrModel
-        ) {
-          return;
-        }
-        setInlineOcr((current) =>
-          current
-            ? {
-                ...current,
-                message: progress.message,
-              }
-            : current,
-        );
-      });
-
-      const request = await fileToOcrRequest(file, ocrModel);
-      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      const result = await recognizeFormulaImage(request);
-      if (
-        inlineOcrCancelRequestedRef.current ||
-        inlineOcrRunIdRef.current !== runId
-      ) {
-        throw new Error("OCR_CANCELLED");
-      }
-
-      const recognizedLatex = result.formulas
-        .map((formula) => formula.latex.trim())
-        .filter(Boolean)
-        .join("\n");
-      if (!recognizedLatex) {
-        throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
-      }
-
-      const inserted =
-        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
-      if (!inserted) {
-        throw new Error(
-          isEn
-            ? "The original formula line no longer exists; the OCR result was not inserted"
-            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
-        );
-      }
-
-      setInlineOcr((current) => ({
-        status: "success",
-        message: result.backgroundInverted
-          ? isEn
-            ? "Recognized and inserted · dark background inverted"
-            : "识别完成并已插入 · 已自动反色"
-          : isEn
-            ? "Recognized and inserted at the saved cursor"
-            : "识别完成，已插入原光标位置",
-        seconds: current?.seconds ?? 0,
-        model: ocrModel,
-      }));
-      setToast(isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX");
-      scheduleInlineOcrClear(1800);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : typeof error === "string" ? error : "";
-      const cancelled =
-        inlineOcrCancelRequestedRef.current || errorMessage.includes("OCR_CANCELLED");
-      if (cancelled) {
-        setInlineOcr((current) => ({
-          status: "cancelled",
-          message: isEn ? "OCR cancelled" : "OCR 已取消",
-          seconds: current?.seconds ?? 0,
-          model: ocrModel,
-        }));
-        scheduleInlineOcrClear(1200);
-      } else {
-        const message =
-          errorMessage || (isEn ? "Image OCR failed" : "图片 OCR 失败");
-        setInlineOcr((current) => ({
-          status: "error",
-          message,
-          seconds: current?.seconds ?? 0,
-          model: ocrModel,
-        }));
-        setToast(message);
-        scheduleInlineOcrClear(4500);
-      }
-    } finally {
-      unlisten?.();
-      if (inlineOcrRunIdRef.current === runId) {
-        inlineOcrBusyRef.current = false;
-        inlineOcrCancelRequestedRef.current = false;
-      }
-    }
-  };
-
   const handleCodeFormatChange = (format: LatexCodeFormat) => {
     const definition = getLatexCodeFormatDefinition(format);
     setLatexCodeFormat(format);
@@ -591,7 +336,7 @@ function App() {
 
   const handleCopy = async () => {
     try {
-      await copyLatex(latex, latexCodeFormat);
+      await copyFormulaLines(lines, latexCodeFormat);
       addHistory(latex);
       setToast(
         isEn
@@ -774,75 +519,11 @@ function App() {
   };
 
   const finishOnboarding = useCallback(() => {
-    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
-    window.localStorage.setItem(LEGACY_ONBOARDING_STORAGE_KEY, "true");
+    writeLocalStorage(ONBOARDING_STORAGE_KEY, "true");
+    writeLocalStorage(LEGACY_ONBOARDING_STORAGE_KEY, "true");
     setOnboardingOpen(false);
     window.requestAnimationFrame(() => editorRef.current?.focus());
   }, []);
-
-  const runUpdateCheck = useCallback(async (manual = true) => {
-    if (manual) {
-      setAutomaticUpdatePrompt(false);
-      setUpdateResult(null);
-      setUpdateOpen(true);
-    }
-    setUpdateChecking(true);
-    setUpdateError("");
-    try {
-      const result = await checkForUpdates();
-      setUpdateResult(result);
-      if (manual || result.updateAvailable) {
-        setAutomaticUpdatePrompt(!manual && result.updateAvailable);
-        setUpdateOpen(true);
-      }
-    } catch (error) {
-      if (manual) {
-        setUpdateError(
-          error instanceof Error
-            ? error.message
-            : isEn
-              ? "Unable to connect to the update server"
-              : "无法连接更新服务器",
-        );
-        setUpdateOpen(true);
-      } else {
-        automaticUpdateCheckRef.current = false;
-      }
-    } finally {
-      setUpdateChecking(false);
-    }
-  }, [isEn]);
-
-  useEffect(() => {
-    if (
-      !desktopRuntime ||
-      !checkUpdatesOnStartup ||
-      onboardingOpen ||
-      automaticUpdateCheckRef.current
-    ) {
-      return;
-    }
-
-    let timer = 0;
-    const runWhenOnline = () => {
-      if (
-        automaticUpdateCheckRef.current ||
-        !useEditorStore.getState().checkUpdatesOnStartup
-      ) {
-        return;
-      }
-      automaticUpdateCheckRef.current = true;
-      timer = window.setTimeout(() => void runUpdateCheck(false), 1200);
-    };
-
-    window.addEventListener("online", runWhenOnline);
-    if (navigator.onLine) runWhenOnline();
-
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("online", runWhenOnline);
-    };
-  }, [checkUpdatesOnStartup, desktopRuntime, onboardingOpen, runUpdateCheck]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -855,10 +536,9 @@ function App() {
       if (
         settingsOpen ||
         formulaHotkeyManagerOpen ||
-        ocrOpen ||
         historyOpen ||
-        onboardingOpen ||
-        updateOpen
+        helpOpen ||
+        onboardingOpen
       ) {
         return;
       }
@@ -908,7 +588,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, ocrOpen, historyOpen, onboardingOpen, updateOpen]);
+  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, historyOpen, helpOpen, onboardingOpen]);
 
   return (
     <div className="app-shell">
@@ -1017,16 +697,6 @@ function App() {
                 <History size={16} />
                 <span>{isEn ? "Formula history" : "公式历史"}</span>
               </button>
-              {desktopRuntime && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => runMenuAction(() => setOcrOpen(true))}
-                >
-                  <ScanLine size={16} />
-                  <span>{isEn ? "Formula image OCR" : "图片公式识别"}</span>
-                </button>
-              )}
               <button
                 type="button"
                 role="menuitem"
@@ -1038,21 +708,19 @@ function App() {
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => runMenuAction(() => setHelpOpen(true))}
+              >
+                <BookOpenText size={16} />
+                <span>{isEn ? "Help manual" : "帮助手册"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
                 onClick={() => runMenuAction(() => setOnboardingOpen(true))}
               >
                 <CircleHelp size={16} />
                 <span>{isEn ? "Quick tour" : "新手教程"}</span>
               </button>
-              {desktopRuntime && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => runMenuAction(() => void runUpdateCheck(true))}
-                >
-                  <RefreshCw size={16} />
-                  <span>{isEn ? "Check for updates" : "检查更新"}</span>
-                </button>
-              )}
               <div className="app-menu-divider" />
               <div className="app-menu-language">
                 <span>
@@ -1145,11 +813,6 @@ function App() {
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
-          {desktopRuntime && (
-            <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
-              <ScanLine size={17} />
-            </button>
-          )}
           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
             <Settings2 size={17} />
           </button>
@@ -1260,95 +923,38 @@ function App() {
       )}
 
       <EditorWorkspace
-        mode="desktop"
+        mode="web"
         showFileActions
-        showUpdateActions={desktopRuntime}
+        showUpdateActions={false}
         showOfficeActions={false}
-        showOcrActions={desktopRuntime}
-        onExport={exportDocument}
-        onChooseExportDirectory={async () => {
-          setToast(
-            isEn
-              ? "Browser exports use the system Downloads folder"
-              : "浏览器模式下将导出到系统下载目录",
-          );
-        }}
-        exportBusy={exportBusy}
+        desktopHeaderControls={
+          <ExportMenu
+            isEn={isEn}
+            busy={exportBusy}
+            onChooseDirectory={async () => {
+              setToast(
+                isEn
+                  ? "Browser exports use the system Downloads folder"
+                  : "浏览器模式下将导出到系统下载目录",
+              );
+            }}
+            onExport={exportDocument}
+          />
+        }
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onHistoryBusyChange={setEditorHistoryBusy}
-        onPasteImage={desktopRuntime ? handleEditorImagePaste : undefined}
         onCopy={handleCopy}
         onCopyPng={handleCopyPng}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrModel={ocrModel}
-        ocrModels={OCR_MODELS}
-        ocrBusy={inlineOcrIsBusy}
-        onOcrModelChange={(model) =>
-          handleOcrModelChange(model as OcrModelName)
-        }
-        ocrOverlay={
-          desktopRuntime && inlineOcr ? (
-            <div
-              className={`inline-ocr-progress is-${inlineOcr.status}`}
-              role="status"
-              aria-live="polite"
-            >
-              <span className="inline-ocr-progress-icon">
-                {inlineOcr.status === "running" ||
-                inlineOcr.status === "cancelling" ? (
-                  <LoaderCircle size={17} className="is-spinning" />
-                ) : inlineOcr.status === "success" ? (
-                  <Check size={17} />
-                ) : inlineOcr.status === "error" ? (
-                  <AlertCircle size={17} />
-                ) : (
-                  <X size={17} />
-                )}
-              </span>
-              <div>
-                <strong>{inlineOcr.message}</strong>
-                <span>
-                  {isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh}
-                  {" · "}
-                  {inlineOcr.seconds}
-                  {isEn ? "s" : " 秒"}
-                </span>
-              </div>
-              {inlineOcrIsBusy ? (
-                <button
-                  type="button"
-                  className="inline-ocr-cancel"
-                  onClick={cancelInlineOcr}
-                  disabled={inlineOcr.status === "cancelling"}
-                >
-                  <X size={13} />
-                  {isEn ? "Cancel" : "取消"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="inline-ocr-dismiss"
-                  onClick={() => setInlineOcr(null)}
-                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-          ) : null
-        }
       />
 
       <SettingsDialog
         open={settingsOpen}
-        showApplicationUpdates={desktopRuntime}
+        showApplicationUpdates={false}
         onClose={() => setSettingsOpen(false)}
-        onCheckForUpdates={() => {
-          setSettingsOpen(false);
-          void runUpdateCheck(true);
-        }}
+        onCheckForUpdates={() => {}}
         onOpenFormulaHotkeys={() => {
           setSettingsOpen(false);
           setFormulaHotkeyManagerOpen(true);
@@ -1361,12 +967,21 @@ function App() {
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        onRestore={(value) => {
-          const values = value
-            .replace(/\r\n?/g, "\n")
-            .split("\n")
-            .map(normalizeChineseLatex);
-          const nextLines = reconcileFormulaLines(values, lines);
+        onRestore={(item) => {
+          const restored = item.lines?.length
+            ? item.lines.map((line) => ({
+                latex: normalizeChineseLatex(line.latex),
+                mode: line.mode,
+              }))
+            : item.latex
+                .replace(/\r\n?/g, "\n")
+                .split("\n")
+                .map((latex) => ({ latex: normalizeChineseLatex(latex), mode: undefined }));
+          const nextLines = reconcileFormulaLines(
+            restored.map((line) => line.latex),
+            lines,
+            restored.map((line) => line.mode),
+          );
           const nextActiveLineId = nextLines.some(
             (line) => line.id === activeLineId,
           )
@@ -1387,49 +1002,16 @@ function App() {
           setToast(isEn ? "Formula restored" : "已恢复历史公式");
         }}
       />
-      {desktopRuntime && (
-        <OcrDialog
-          open={ocrOpen}
-          language={language}
-          model={ocrModel}
-          onModelChange={handleOcrModelChange}
-          onClose={() => setOcrOpen(false)}
-          onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
-          onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
-          onNotify={setToast}
-        />
-      )}
+      <HelpDialog
+        open={helpOpen}
+        language={language}
+        onClose={() => setHelpOpen(false)}
+      />
       <OnboardingTour
         open={onboardingOpen}
         language={language}
         onFinish={finishOnboarding}
       />
-      {desktopRuntime && (
-        <UpdateDialog
-          open={updateOpen}
-          language={language}
-          checking={updateChecking}
-          error={updateError}
-          result={updateResult}
-          checkOnStartup={checkUpdatesOnStartup}
-          automaticPrompt={automaticUpdatePrompt}
-          onCheckOnStartupChange={setCheckUpdatesOnStartup}
-          onRetry={() => void runUpdateCheck(true)}
-          onOpenRelease={() => {
-            if (!updateResult) return;
-            void openReleasePage(updateResult.releaseUrl).catch((error) => {
-              setUpdateError(
-                error instanceof Error
-                  ? error.message
-                  : isEn
-                    ? "Unable to open the download page"
-                    : "无法打开下载页面",
-              );
-            });
-          }}
-          onClose={() => setUpdateOpen(false)}
-        />
-      )}
 
       {historyOpen && (
         <div className="panel-backdrop" onClick={() => setHistoryOpen(false)} />

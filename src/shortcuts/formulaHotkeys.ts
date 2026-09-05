@@ -126,7 +126,10 @@ const defaultFormulaHotkeyDefinitions: Array<{
   { command: commandById("subscript"), chord: controlChord("KeyL") },
   { command: commandById("degree"), chord: controlChord("KeyD") },
   { command: partialSymbolCommand, chord: controlChord("KeyP", true) },
-  { command: boundedIntegralTemplateCommand, chord: controlChord("KeyI", true) },
+  {
+    command: boundedIntegralTemplateCommand,
+    chord: controlChord("KeyI", true),
+  },
   { command: commandById("sum"), chord: controlChord("KeyS", true) },
   { command: underlinedXCommand, chord: altShiftChord("KeyX") },
   { command: underlinedYCommand, chord: altShiftChord("KeyY") },
