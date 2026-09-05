@@ -79,7 +79,7 @@ try {
     const response = await runRequest("/api/ocr/paddle/jobs", {
       method: "POST",
       headers: {
-        authorization: "Bearer paddle-session-token",
+        "x-visualtex-ocr-token": "Bearer paddle-session-token",
         "content-type": "multipart/form-data; boundary=test",
       },
       body: "--test--",
@@ -101,7 +101,7 @@ try {
     const response = await runRequest("/api/ocr/paddle/jobs", {
       method: "POST",
       headers: {
-        authorization: "Bearer paddle-session-token",
+        "x-visualtex-ocr-token": "paddle-session-token",
         "content-type": "multipart/form-data; boundary=test",
       },
       body: "--test--",
@@ -110,6 +110,23 @@ try {
     assert.match(
       String((await response.json()).error),
       /task submission unexpectedly redirected/,
+    );
+  }
+
+  {
+    globalThis.fetch = async () => new Response(null, { status: 401 });
+    const response = await runRequest("/api/ocr/paddle/jobs", {
+      method: "POST",
+      headers: {
+        "x-visualtex-ocr-token": "expired-token",
+        "content-type": "multipart/form-data; boundary=test",
+      },
+      body: "--test--",
+    });
+    assert.equal(response.status, 401);
+    assert.match(
+      String((await response.json()).error),
+      /Access Token 无效或已过期/,
     );
   }
 
@@ -147,7 +164,7 @@ try {
     };
     const response = await runRequest("/api/ocr/paddle/jobs/job_123", {
       method: "GET",
-      headers: { authorization: "Bearer paddle-session-token" },
+      headers: { "x-visualtex-ocr-token": "paddle-session-token" },
     });
     assert.equal(response.status, 200);
     const value = await response.json();

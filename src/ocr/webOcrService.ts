@@ -696,8 +696,11 @@ async function recognizePaddle(
     }),
   );
   form.append("file", file, file.name || "visualtex-formula.png");
+  const accessToken = configuration.paddleOcr.accessToken
+    .replace(/^Bearer\s+/i, "")
+    .trim();
   const headers = {
-    authorization: `Bearer ${configuration.paddleOcr.accessToken}`,
+    "x-visualtex-ocr-token": accessToken,
   };
   const submitted = await responseJson(
     await fetchWithTimeout(

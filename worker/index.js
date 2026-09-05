@@ -64,6 +64,21 @@ function rejectUpstreamRedirect(response, label) {
   }
 }
 
+function readPaddleAccessToken(request) {
+  const supplied = request.headers.get("x-visualtex-ocr-token")?.trim() ?? "";
+  return supplied.replace(/^Bearer\s+/i, "").trim();
+}
+
+function paddleUnauthorizedResponse() {
+  return jsonResponse(
+    {
+      error:
+        "PaddleOCR Access Token 无效或已过期，请从 AI Studio 重新复制完整 Token",
+    },
+    401,
+  );
+}
+
 async function proxySimpleTex(request, url) {
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
@@ -101,8 +116,8 @@ async function proxyPaddleSubmit(request) {
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
-  const authorization = request.headers.get("authorization")?.trim();
-  if (!authorization?.startsWith("Bearer ")) {
+  const accessToken = readPaddleAccessToken(request);
+  if (!accessToken) {
     return jsonResponse({ error: "PaddleOCR access token is required" }, 400);
   }
   if (!requestBodyIsWithinLimit(request)) {
@@ -116,7 +131,7 @@ async function proxyPaddleSubmit(request) {
   const response = await fetch(PADDLE_JOBS_URL, {
     method: "POST",
     headers: {
-      authorization,
+      authorization: `Bearer ${accessToken}`,
       "content-type": contentType,
       accept: "application/json",
     },
@@ -124,6 +139,7 @@ async function proxyPaddleSubmit(request) {
     redirect: "manual",
   });
   rejectUpstreamRedirect(response, "PaddleOCR task submission");
+  if (response.status === 401) return paddleUnauthorizedResponse();
   const body = await readLimitedBody(response, 2 * 1024 * 1024);
   return upstreamResponse(response, body);
 }
@@ -135,8 +151,8 @@ async function proxyPaddleStatus(request, jobId) {
   if (!/^[A-Za-z0-9_-]{1,200}$/.test(jobId)) {
     return jsonResponse({ error: "Invalid PaddleOCR job id" }, 400);
   }
-  const authorization = request.headers.get("authorization")?.trim();
-  if (!authorization?.startsWith("Bearer ")) {
+  const accessToken = readPaddleAccessToken(request);
+  if (!accessToken) {
     return jsonResponse({ error: "PaddleOCR access token is required" }, 400);
   }
 
@@ -144,11 +160,15 @@ async function proxyPaddleStatus(request, jobId) {
     `${PADDLE_JOBS_URL}/${encodeURIComponent(jobId)}`,
     {
       method: "GET",
-      headers: { authorization, accept: "application/json" },
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        accept: "application/json",
+      },
       redirect: "manual",
     },
   );
   rejectUpstreamRedirect(response, "PaddleOCR task status");
+  if (response.status === 401) return paddleUnauthorizedResponse();
   const statusBody = await readLimitedBody(response, 2 * 1024 * 1024);
   if (!response.ok) return upstreamResponse(response, statusBody);
 
