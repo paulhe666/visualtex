@@ -1320,5 +1320,183 @@ export function EditorWorkspace({
                       className={sourceOpen ? "is-active" : ""}
                       aria-selected={sourceOpen}
                       data-classic-bottom-view="source"
+                      onClick={() => {
+                        setSourceOpen(true);
+                        setClassicDockOpen(true);
+                      }}
+                    >
+                      <Code2 size={16} />
+                      <span className="classic-bottom-tab-label">
+                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="classic-bottom-actions">
+                    {sourceOpen && classicDockOpen && (
+                      <button
+                        type="button"
+                        className="icon-button compact classic-bottom-copy"
+                        data-classic-bottom-copy
+                        onClick={() => void onCopy()}
+                        aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                        title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      >
+                        <Copy size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-collapse"
+                      data-classic-bottom-collapse
+                      aria-expanded={classicDockOpen}
+                      aria-label={
+                        classicDockOpen
+                          ? isEn
+                            ? "Collapse formula tools and source"
+                            : "收起公式工具与源码"
+                          : isEn
+                            ? "Expand formula tools and source"
+                            : "展开公式工具与源码"
+                      }
+                      title={
+                        classicDockOpen
+                          ? isEn
+                            ? "Collapse bottom panel"
+                            : "收起底部面板"
+                          : isEn
+                            ? "Expand bottom panel"
+                            : "展开底部面板"
+                      }
+                      onClick={() => setClassicDockOpen((open) => !open)}
+                    >
+                      {classicDockOpen ? (
+                        <PanelBottomClose size={14} />
+                      ) : (
+                        <PanelBottomOpen size={14} />
+                      )}
+                    </button>
+                  </div>
+                </nav>
+                {classicDockOpen && (
+                  <div className="classic-bottom-content">
+                    {sourceOpen ? (
+                      <div className="source-pane-slot classic-source-pane-slot">
+                        {renderSourceEditor({
+                          showCollapseAction: false,
+                          showCopyAction: false,
+                          compact: true,
+                        })}
+                      </div>
+                    ) : (
+                      <FormulaToolbar
+                        view="tools"
+                        layout="horizontal"
+                        className="classic-bottom-toolbar"
+                        compactDensity={isOfficeWorkspace}
+                        onInsert={(command) =>
+                          editorRef.current?.insertCommand(command)
+                        }
+                      />
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : (
+            <div className={`editor-pane-body${sourceOpen ? " has-source" : ""}`}>
+              <div className="editor-pane-scroll">
+                {renderVisualEditor()}
+              </div>
 
-[Showing lines 1-1322 of 1503 (50.0KB limit). Use offset=1323 to continue.]
+              {sourceOpen ? (
+                <div className="source-pane-slot">{renderSourceEditor()}</div>
+              ) : (
+                <div className="source-toggle-row">
+                  <span className="source-toggle-label" aria-hidden="true">
+                    <Code2 size={15} />
+                  </span>
+                  <button
+                    type="button"
+                    className="source-toggle"
+                    onClick={() => setSourceOpen(true)}
+                    aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                    title={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                  >
+                    <PanelBottomOpen size={15} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {editorLayout === "classic" && sidebarOpen && (
+          <>
+            <div
+              className="workspace-panel-resizer classic-tile-resizer"
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-valuemin={MIN_CLASSIC_TILE_WIDTH}
+              aria-valuemax={Math.round(classicTileWidthLimit())}
+              aria-valuenow={Math.round(classicTileWidth)}
+              aria-label={isEn ? "Resize formula tiles" : "调整公式磁贴区宽度"}
+              title={
+                isEn
+                  ? "Drag to resize · Double-click to reset"
+                  : "拖动调整宽度 · 双击恢复默认"
+              }
+              onPointerDown={(event) => startClassicResize("tiles", event)}
+              onDoubleClick={() => resetClassicPanelSize("tiles")}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  adjustClassicPanelFromKeyboard("tiles", 16);
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  adjustClassicPanelFromKeyboard("tiles", -16);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  commitClassicPanelSize(
+                    "tiles",
+                    MIN_CLASSIC_TILE_WIDTH,
+                    true,
+                  );
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  commitClassicPanelSize(
+                    "tiles",
+                    classicTileWidthLimit(),
+                    true,
+                  );
+                }
+              }}
+            />
+            <FormulaToolbar
+              view="tiles"
+              className="classic-tile-toolbar"
+              stabilizeTileLayout
+              onCollapseTiles={() => onSidebarOpenChange(false)}
+              onInsert={(command) => editorRef.current?.insertCommand(command)}
+            />
+          </>
+        )}
+      </main>
+
+      <footer className="status-bar">
+        <div>
+          <span className="status-live-dot" />
+          {isEn ? "Ready" : "就绪"}
+        </div>
+        <div>
+          <span>
+            {lines.length} {isEn ? "lines" : "行"}
+          </span>
+          <span>
+            · {latex.length} {isEn ? "characters" : "字符"}
+          </span>
+        </div>
+      </footer>
+    </>
+  );
+}

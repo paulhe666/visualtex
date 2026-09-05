@@ -998,8 +998,7 @@ function restoreRawCommandAnchor(
           direction: "none",
         };
         field.selection = selection;
-
-[9420 more lines in file. Use offset=1001 to continue.]        return selection;
+        return selection;
       }
 
       const position = Math.max(
@@ -1999,8 +1998,7 @@ function captureStructuredCompositionAnchor(
   return {
     snapshot,
     modelPlaceholderIndex,
-
-[8420 more lines in file. Use offset=2001 to continue.]    textualPlaceholderIndex,
+    textualPlaceholderIndex,
   };
 }
 
@@ -3000,8 +2998,7 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
 
       .ML__sqrt .ML__placeholder,
       .ML__sqrt .${visualTexPlaceholderClass} {
-
-[7420 more lines in file. Use offset=3001 to continue.]        width: 0.40em !important;
+        width: 0.40em !important;
         min-width: 0.32em !important;
         height: 0.71em !important;
       }
@@ -4001,8 +3998,7 @@ function caretIsInsideLatexContainer(
       info.depth < currentDepth &&
       containerPattern.test(info.latex ?? "")
     ) {
-
-[6420 more lines in file. Use offset=4001 to continue.]      return true;
+      return true;
     }
   }
   return false;
@@ -5002,8 +4998,7 @@ function FormulaField(props: FormulaFieldProps) {
         wrapperPlaceholderFrame = window.requestAnimationFrame(
           measurePendingWrapperPlaceholderPosition,
         );
-
-[5420 more lines in file. Use offset=5001 to continue.]      }
+      }
     };
     const schedulePendingWrapperPlaceholderPosition = () => {
       window.cancelAnimationFrame(wrapperPlaceholderFrame);
@@ -6003,8 +5998,7 @@ function FormulaField(props: FormulaFieldProps) {
       if (!selectedNativeCommand) return false;
 
       event.preventDefault();
-
-[4420 more lines in file. Use offset=6001 to continue.]      event.stopImmediatePropagation();
+      event.stopImmediatePropagation();
       clearPendingAutoExit();
       const before = captureFieldSnapshot(field);
       const committed = commitNativeSuggestion(
@@ -7004,8 +6998,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             ? [{ entry, marker, left: marker.getBoundingClientRect().left }]
             : [];
         });
-
-[3420 more lines in file. Use offset=7001 to continue.]        if (!positioned.length) continue;
+        if (!positioned.length) continue;
         const targetLeft = Math.max(...positioned.map((item) => item.left));
         for (const item of positioned) {
           const correction = Math.max(0, targetLeft - item.left);
@@ -8005,8 +7998,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
       if (tryInsert()) {
         finishInsertion();
-
-[2420 more lines in file. Use offset=8001 to continue.]        return;
+        return;
       }
 
       window.requestAnimationFrame(() => {
@@ -9006,8 +8998,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         !event.altKey &&
         !event.ctrlKey &&
         !event.metaKey &&
-
-[1420 more lines in file. Use offset=9001 to continue.]        !event.shiftKey &&
+        !event.shiftKey &&
         !rawCommandActive &&
         liveSuggestions.length === 0 &&
         (field.dataset.visualtexBoundedOperatorStage === "lower" ||
@@ -10007,8 +9998,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             document
               .querySelector<HTMLElement>(".source-panel .cm-content")
               ?.focus({ preventScroll: true });
-
-[420 more lines in file. Use offset=10001 to continue.]            return;
+            return;
           }
           previewOnlyRef.current = false;
           for (const field of fieldRefs.current.values()) {
