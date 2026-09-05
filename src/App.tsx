@@ -81,6 +81,10 @@ import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
 import { publishSynchronizedTheme } from "./themeSync";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import {
+  loadWebOcrConfiguration,
+  recognizeFormulaWithWebApi,
+} from "./ocr/webOcrService";
 
 installFloatingLayerAutoAvoidance();
 
@@ -122,6 +126,7 @@ function App() {
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const pngClipboardBusyRef = useRef(false);
+  const pastedImageOcrBusyRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
@@ -204,6 +209,61 @@ function App() {
   const openOcrDialog = () => {
     captureOcrInsertionTarget();
     setOcrOpen(true);
+  };
+
+  const handleEditorImagePaste = async (
+    file: File,
+    target: MathEditorInsertionTarget,
+  ) => {
+    if (pastedImageOcrBusyRef.current) {
+      setToast(
+        isEn
+          ? "Another pasted image is already being recognized"
+          : "已有一张粘贴图片正在识别",
+      );
+      return;
+    }
+
+    pastedImageOcrBusyRef.current = true;
+    setToast(isEn ? "Recognizing the pasted image…" : "正在识别粘贴的图片…");
+    try {
+      const configuration = loadWebOcrConfiguration();
+      const result = await recognizeFormulaWithWebApi(
+        file,
+        configuration,
+        (progress) =>
+          setToast(isEn ? progress.messageEn : progress.messageZh),
+      );
+      const recognizedLatex = result.formulas
+        .map((formula) => formula.trim())
+        .filter(Boolean)
+        .join("\n");
+      if (!recognizedLatex) {
+        throw new Error(
+          isEn ? "OCR returned no usable formula" : "OCR 没有返回可用公式",
+        );
+      }
+
+      const inserted =
+        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
+      if (!inserted) {
+        throw new Error(
+          isEn
+            ? "The original formula line no longer exists"
+            : "原来的公式行已被删除，识别结果未插入",
+        );
+      }
+      setToast(
+        isEn
+          ? "Pasted image recognized and inserted at the saved cursor"
+          : "粘贴图片识别完成，已插入原光标位置",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setToast(isEn ? `Image OCR failed: ${message}` : `图片 OCR 失败：${message}`);
+    } finally {
+      pastedImageOcrBusyRef.current = false;
+    }
   };
 
   const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
@@ -985,6 +1045,7 @@ function App() {
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onHistoryBusyChange={setEditorHistoryBusy}
+        onPasteImage={handleEditorImagePaste}
         onCopy={handleCopy}
         onCopyPng={handleCopyPng}
         onReplaceDocument={replaceDocumentWithHistory}

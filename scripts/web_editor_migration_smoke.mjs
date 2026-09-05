@@ -313,6 +313,71 @@ async function main() {
     })()`);
     assert.match(formulaValue, /\\frac/);
 
+    const pastedImageEvent = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      if (!field) throw new Error("Formula field is unavailable");
+      field.focus();
+      field.position = field.lastOffset;
+      const file = new File(
+        [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
+        "clipboard-formula.png",
+        { type: "image/png" },
+      );
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      const event = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData: transfer,
+      });
+      const dispatched = field.dispatchEvent(event);
+      return { dispatched, defaultPrevented: event.defaultPrevented };
+    })()`);
+    assert.deepEqual(
+      pastedImageEvent,
+      { dispatched: false, defaultPrevented: true },
+      JSON.stringify(pastedImageEvent),
+    );
+    const directPasteFormula = await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        const field = document.querySelector("math-field");
+        const value = field?.value ?? "";
+        if (value.includes("\\\\sqrt{x}")) return resolve(value);
+        const toast = document.querySelector(".toast")?.textContent?.trim() ?? "";
+        if (/OCR failed|OCR 失败/.test(toast)) return reject(new Error(toast));
+        if (performance.now() - started > 5000) {
+          return reject(new Error("Pasted image was not recognized and inserted"));
+        }
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    assert.match(directPasteFormula, /\\frac/);
+    assert.match(directPasteFormula, /\\sqrt/);
+    assert.equal(
+      await evaluate(`Boolean(document.querySelector(".web-ocr-dialog"))`),
+      false,
+    );
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("\\\\frac{a}{b}", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        composed: true,
+        inputType: "insertText",
+      }));
+      field.position = field.lastOffset;
+      field.focus();
+    })()`);
+
     await evaluate(`document.querySelector('.menu-button')?.click()`);
     const helpOpened = await evaluate(`(() => {
       const help = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
@@ -440,7 +505,7 @@ async function main() {
     })`);
     assert.match(insertedFormula, /\\frac/);
     assert.match(insertedFormula, /\\sqrt/);
-    assert.equal(openAiStructuredRejections, 1);
+    assert.equal(openAiStructuredRejections, 2);
 
     await evaluate(`document.querySelector('[data-classic-bottom-view="source"], .source-toggle')?.click()`);
     await evaluate(`new Promise((resolve, reject) => {
