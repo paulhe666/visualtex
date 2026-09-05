@@ -66,6 +66,24 @@ function providerLabel(provider: WebOcrProvider) {
   }
 }
 
+function openAiUsesFixedRelay(configuration: WebOcrConfiguration) {
+  return (
+    configuration.openAiCompatible.baseUrl
+      .trim()
+      .replace(/\/+$/, "")
+      .toLowerCase() === "https://api.openai.com/v1"
+  );
+}
+
+function providerUsesFixedRelay(configuration: WebOcrConfiguration) {
+  return (
+    configuration.activeProvider === "simpletex" ||
+    configuration.activeProvider === "paddleocr" ||
+    (configuration.activeProvider === "openai-compatible" &&
+      openAiUsesFixedRelay(configuration))
+  );
+}
+
 function normalizeLatex(value: string) {
   return value
     .replace(/\r\n?/g, "\n")
@@ -528,8 +546,8 @@ export function WebOcrDialog({
                     </label>
                     <p className="ocr-provider-protocol-note">
                       {isEn
-                        ? "Uploads one image directly to SimpleTex V2.5 and reads res.latex."
-                        : "图片由浏览器直接上传到 SimpleTex V2.5，并读取 res.latex。"}
+                        ? "Sends one image through the fixed SimpleTex relay and reads res.latex."
+                        : "图片经固定目标转发至 SimpleTex V2.5，并读取 res.latex。"}
                     </p>
                   </>
                 )}
@@ -722,6 +740,15 @@ export function WebOcrDialog({
                         }
                       />
                     </label>
+                    <p className="ocr-provider-protocol-note">
+                      {openAiUsesFixedRelay(configuration)
+                        ? isEn
+                          ? "The official OpenAI endpoint uses VisualTeX's fixed-target relay. Custom compatible endpoints are contacted directly from the browser."
+                          : "OpenAI 官方地址使用 VisualTeX 固定目标转发；自定义兼容地址仍由浏览器直接连接。"
+                        : isEn
+                          ? "This custom compatible endpoint is contacted directly from the browser and must allow browser CORS."
+                          : "该自定义兼容地址由浏览器直接连接，服务端必须允许浏览器跨域访问。"}
+                    </p>
                   </>
                 )}
               </div>
@@ -729,7 +756,7 @@ export function WebOcrDialog({
               <div className="ocr-provider-actions">
                 <span>
                   <ShieldCheck size={14} />
-                  {activeProvider === "simpletex" || activeProvider === "paddleocr"
+                  {providerUsesFixedRelay(configuration)
                     ? isEn
                       ? "This provider blocks browser CORS, so requests use VisualTeX's fixed-target relay. The relay accepts no arbitrary URL and does not log or store images, formulas, or credentials."
                       : "该服务商阻止浏览器跨域调用，因此请求经 VisualTeX 固定目标转发；转发层不接受任意网址，也不记录或存储图片、公式与密钥。"

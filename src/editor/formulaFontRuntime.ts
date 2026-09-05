@@ -1,4 +1,3 @@
-import type { MathfieldElement } from "mathlive";
 import {
   FORMULA_FONT_PREFERENCES_CHANGED_EVENT,
   formulaChineseFontFamily,
@@ -9,7 +8,6 @@ import {
 } from "./formulaFontPreferences";
 
 const globalStyleId = "visualtex-formula-font-runtime-style";
-const shadowStyleId = "visualtex-formula-font-runtime-shadow-style";
 let installed = false;
 
 function currentFamilies() {
@@ -48,29 +46,6 @@ function runtimeCss() {
 `;
 }
 
-function shadowCss() {
-  const { letter, chinese } = currentFamilies();
-  return `
-.ML__mathit,
-.ML__mathnormal,
-.ML__mathbf,
-.ML__mathbfit,
-.ML__lcGreek,
-.ML__ucGreek,
-.ML__latin {
-  font-family: ${letter.italic} !important;
-}
-.ML__mathrm,
-.ML__operator_name {
-  font-family: ${letter.upright} !important;
-}
-.ML__text,
-.ML__text span,
-.ML__textord {
-  font-family: ${chinese}, ${letter.upright} !important;
-}
-`;
-}
 
 function installGlobalStyle() {
   if (typeof document === "undefined") return;
@@ -83,48 +58,15 @@ function installGlobalStyle() {
   style.textContent = runtimeCss();
 }
 
-function installShadowStyle(field: MathfieldElement) {
-  const root = field.shadowRoot;
-  if (!root) return;
-  let style = root.getElementById(shadowStyleId) as HTMLStyleElement | null;
-  if (!style) {
-    style = document.createElement("style");
-    style.id = shadowStyleId;
-    root.append(style);
-  }
-  style.textContent = shadowCss();
-}
-
-function refreshAllMathfields() {
-  installGlobalStyle();
-  if (typeof document === "undefined") return;
-  document
-    .querySelectorAll<MathfieldElement>("math-field")
-    .forEach(installShadowStyle);
-}
 
 export function installFormulaFontRuntime() {
   if (installed || typeof window === "undefined" || typeof document === "undefined") {
     return;
   }
   installed = true;
-  const refresh = () => window.requestAnimationFrame(refreshAllMathfields);
+  const refresh = () => window.requestAnimationFrame(installGlobalStyle);
   window.addEventListener(FORMULA_FONT_PREFERENCES_CHANGED_EVENT, refresh);
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of Array.from(record.addedNodes)) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches("math-field")) {
-          window.requestAnimationFrame(() => installShadowStyle(node as MathfieldElement));
-        }
-        node.querySelectorAll?.<MathfieldElement>("math-field").forEach((field) => {
-          window.requestAnimationFrame(() => installShadowStyle(field));
-        });
-      }
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  refreshAllMathfields();
+  installGlobalStyle();
 }
 
 installFormulaFontRuntime();

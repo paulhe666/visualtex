@@ -4,6 +4,10 @@ const SIMPLETEX_ENDPOINTS = {
 };
 const PADDLE_JOBS_URL =
   "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs";
+const OPENAI_ENDPOINTS = {
+  responses: "https://api.openai.com/v1/responses",
+  "chat-completions": "https://api.openai.com/v1/chat/completions",
+};
 
 function securityHeaders(extra = {}) {
   return {
@@ -64,7 +68,7 @@ function rejectUpstreamRedirect(response, label) {
   }
 }
 
-function readPaddleAccessToken(request) {
+function readRelayAccessToken(request) {
   const supplied = request.headers.get("x-visualtex-ocr-token")?.trim() ?? "";
   return supplied.replace(/^Bearer\s+/i, "").trim();
 }
@@ -112,11 +116,55 @@ async function proxySimpleTex(request, url) {
   return upstreamResponse(response, body);
 }
 
+async function proxyOpenAi(request, protocol) {
+  if (request.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+  const endpoint = OPENAI_ENDPOINTS[protocol];
+  if (!endpoint) {
+    return jsonResponse({ error: "Unsupported OpenAI protocol" }, 400);
+  }
+  const accessToken = readRelayAccessToken(request);
+  if (!accessToken) {
+    return jsonResponse({ error: "OpenAI API Key is required" }, 400);
+  }
+  if (!requestBodyIsWithinLimit(request, 30 * 1024 * 1024)) {
+    return jsonResponse({ error: "OpenAI OCR request is too large" }, 413);
+  }
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("application/json")) {
+    return jsonResponse({ error: "Expected application/json" }, 415);
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: request.body,
+    redirect: "manual",
+  });
+  rejectUpstreamRedirect(response, "OpenAI");
+  if (response.status === 401) {
+    return jsonResponse(
+      {
+        error:
+          "OpenAI API Key 无效或已过期，请检查当前账号和项目的密钥",
+      },
+      401,
+    );
+  }
+  const body = await readLimitedBody(response, 4 * 1024 * 1024);
+  return upstreamResponse(response, body);
+}
+
 async function proxyPaddleSubmit(request) {
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
-  const accessToken = readPaddleAccessToken(request);
+  const accessToken = readRelayAccessToken(request);
   if (!accessToken) {
     return jsonResponse({ error: "PaddleOCR access token is required" }, 400);
   }
@@ -151,7 +199,7 @@ async function proxyPaddleStatus(request, jobId) {
   if (!/^[A-Za-z0-9_-]{1,200}$/.test(jobId)) {
     return jsonResponse({ error: "Invalid PaddleOCR job id" }, 400);
   }
-  const accessToken = readPaddleAccessToken(request);
+  const accessToken = readRelayAccessToken(request);
   if (!accessToken) {
     return jsonResponse({ error: "PaddleOCR access token is required" }, 400);
   }
@@ -224,6 +272,12 @@ async function handleApiRequest(request) {
   const url = new URL(request.url);
   if (url.pathname === "/api/ocr/simpletex") {
     return proxySimpleTex(request, url);
+  }
+  if (url.pathname === "/api/ocr/openai/responses") {
+    return proxyOpenAi(request, "responses");
+  }
+  if (url.pathname === "/api/ocr/openai/chat-completions") {
+    return proxyOpenAi(request, "chat-completions");
   }
   if (url.pathname === "/api/ocr/paddle/jobs") {
     return proxyPaddleSubmit(request);

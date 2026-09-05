@@ -64,6 +64,43 @@ try {
   }
 
   {
+    const upstreamCalls = [];
+    globalThis.fetch = async (input, init) => {
+      upstreamCalls.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+        redirect: init?.redirect,
+      });
+      return Response.json({
+        output_text: '{"formulas":[{"latex":"\\\\sqrt{x}"}]}',
+      });
+    };
+    for (const route of ["responses", "chat-completions"]) {
+      const response = await runRequest(`/api/ocr/openai/${route}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-visualtex-ocr-token": "Bearer openai-session-token",
+        },
+        body: "{}",
+      });
+      assert.equal(response.status, 200);
+    }
+    assert.deepEqual(upstreamCalls, [
+      {
+        url: "https://api.openai.com/v1/responses",
+        authorization: "Bearer openai-session-token",
+        redirect: "manual",
+      },
+      {
+        url: "https://api.openai.com/v1/chat/completions",
+        authorization: "Bearer openai-session-token",
+        redirect: "manual",
+      },
+    ]);
+  }
+
+  {
     let forwarded;
     globalThis.fetch = async (input, init) => {
       forwarded = {

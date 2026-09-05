@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   type MathEditorHandle,
+  type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
@@ -96,6 +97,7 @@ const LANDING_PREVIEW_LINES = [
 function App() {
   const landingPreview = new URLSearchParams(window.location.search).has("landing-preview");
   const editorRef = useRef<MathEditorHandle>(null);
+  const ocrInsertionTargetRef = useRef<MathEditorInsertionTarget | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
@@ -193,6 +195,16 @@ function App() {
 
   const captureDocumentSnapshot = (): DocumentSnapshot =>
     getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
+
+  const captureOcrInsertionTarget = () => {
+    const target = editorRef.current?.captureInsertionTarget() ?? null;
+    if (target) ocrInsertionTargetRef.current = target;
+  };
+
+  const openOcrDialog = () => {
+    captureOcrInsertionTarget();
+    setOcrOpen(true);
+  };
 
   const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
     const lineId = snapshot.activeLineId;
@@ -716,7 +728,8 @@ function App() {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => runMenuAction(() => setOcrOpen(true))}
+                onPointerDown={captureOcrInsertionTarget}
+                onClick={() => runMenuAction(openOcrDialog)}
               >
                 <ScanLine size={16} />
                 <span>{isEn ? "Formula image OCR" : "图片公式识别"}</span>
@@ -837,7 +850,7 @@ function App() {
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
-          <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Formula image OCR" : "图片公式识别"} title={isEn ? "Formula image OCR · API" : "图片公式识别 · API"}>
+          <button type="button" className="icon-button workspace-action" onPointerDown={captureOcrInsertionTarget} onClick={openOcrDialog} aria-label={isEn ? "Formula image OCR" : "图片公式识别"} title={isEn ? "Formula image OCR · API" : "图片公式识别 · API"}>
             <ScanLine size={17} />
           </button>
           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
@@ -1037,8 +1050,17 @@ function App() {
       <WebOcrDialog
         open={ocrOpen}
         language={language}
-        onClose={() => setOcrOpen(false)}
-        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+        onClose={() => {
+          ocrInsertionTargetRef.current = null;
+          setOcrOpen(false);
+        }}
+        onInsert={(value) => {
+          const target = ocrInsertionTargetRef.current;
+          const inserted = target
+            ? editorRef.current?.insertLatexAt(target, value, "ocr")
+            : false;
+          if (!inserted) editorRef.current?.insertLatex(value, "ocr");
+        }}
         onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
       />

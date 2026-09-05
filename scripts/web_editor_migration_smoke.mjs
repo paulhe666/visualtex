@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import process from "node:process";
 import {
   browserTestProfilePath,
@@ -9,8 +10,10 @@ import {
 
 const portOffset = process.pid % 1000;
 const previewPort = 7300 + portOffset;
+const ocrMockPort = 9300 + portOffset;
 const debugPort = 12300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const ocrMockBaseUrl = `http://127.0.0.1:${ocrMockPort}/v1`;
 const chromeProfile = browserTestProfilePath("visualtex-web-migration");
 const chromePath = resolveBrowserTestChromePath();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -72,6 +75,58 @@ class CdpClient {
 }
 
 async function main() {
+  let openAiStructuredRejections = 0;
+  const ocrMock = createServer((request, response) => {
+    response.setHeader("access-control-allow-origin", `http://127.0.0.1:${previewPort}`);
+    response.setHeader(
+      "access-control-allow-headers",
+      "authorization, content-type",
+    );
+    response.setHeader("access-control-allow-methods", "POST, OPTIONS");
+    if (request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (request.method === "POST" && request.url === "/v1/responses") {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const value = JSON.parse(body);
+        if (value.text?.format?.type === "json_schema") {
+          openAiStructuredRejections += 1;
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: {
+                message: "unknown field text.format json_schema",
+              },
+            }),
+          );
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            output_text: JSON.stringify({
+              formulas: [{ latex: "\\sqrt{x}" }],
+            }),
+          }),
+        );
+      });
+      return;
+    }
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "Unknown mock OCR route" }));
+  });
+  await new Promise((resolve, reject) => {
+    ocrMock.once("error", reject);
+    ocrMock.listen(ocrMockPort, "127.0.0.1", resolve);
+  });
+
   const preview = spawn(
     process.execPath,
     [
@@ -136,7 +191,25 @@ async function main() {
       return result.result?.value;
     };
 
-    await evaluate(`localStorage.setItem("visualtex.onboarding.web.v3.completed", "true")`);
+    await evaluate(`(() => {
+      localStorage.setItem("visualtex.onboarding.web.v3.completed", "true");
+      localStorage.setItem(
+        "visualtex.web.ocr.configuration.v1",
+        JSON.stringify({
+          activeProvider: "openai-compatible",
+          openAiCompatible: {
+            protocol: "responses",
+            baseUrl: ${JSON.stringify(ocrMockBaseUrl)},
+            model: "mock-vision",
+            prompt: "Recognize the formula",
+          },
+        }),
+      );
+      sessionStorage.setItem(
+        "visualtex.web.ocr.secrets.v1",
+        JSON.stringify({ openAiApiKey: "mock-session-key" }),
+      );
+    })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await evaluate(`new Promise((resolve, reject) => {
       const started = performance.now();
@@ -184,6 +257,32 @@ async function main() {
     assert.equal(boundary.zoom, "45%", JSON.stringify(boundary));
     assert.equal(boundary.errorBoundary, false, JSON.stringify(boundary));
 
+    const fontRuntimeState = await evaluate(`(() => {
+      const fields = [...document.querySelectorAll("math-field")];
+      return {
+        fieldCount: fields.length,
+        editorStyles: fields.filter((field) =>
+          field.shadowRoot?.getElementById("visualtex-formula-font-style"),
+        ).length,
+        conflictingStyles: fields.filter((field) =>
+          field.shadowRoot?.getElementById(
+            "visualtex-formula-font-runtime-shadow-style",
+          ),
+        ).length,
+      };
+    })()`);
+    assert.ok(fontRuntimeState.fieldCount > 0, JSON.stringify(fontRuntimeState));
+    assert.equal(
+      fontRuntimeState.editorStyles,
+      fontRuntimeState.fieldCount,
+      JSON.stringify(fontRuntimeState),
+    );
+    assert.equal(
+      fontRuntimeState.conflictingStyles,
+      0,
+      JSON.stringify(fontRuntimeState),
+    );
+
     const formulaValue = await evaluate(`(() => {
       const field = document.querySelector("math-field");
       field.focus();
@@ -199,6 +298,8 @@ async function main() {
         composed: true,
         inputType: "insertText",
       }));
+      field.position = field.lastOffset;
+      field.focus();
       return field.value;
     })()`);
     assert.match(formulaValue, /\\frac/);
@@ -245,6 +346,9 @@ async function main() {
     })`);
     const ocrState = await evaluate(`(() => ({
       options: [...document.querySelectorAll('.web-ocr-dialog option')].map((option) => option.value),
+      activeProvider: document.querySelector(
+        '.web-ocr-dialog [aria-label="OCR 提供器"] select, .web-ocr-dialog [aria-label="OCR provider"] select',
+      )?.value ?? "",
       privacy: document.querySelector('.web-ocr-dialog .ocr-provider-actions span')?.textContent ?? "",
       localRuntime: /安装 OCR 运行环境|Install OCR runtime/i.test(document.querySelector('.web-ocr-dialog')?.textContent ?? ""),
     }))()`);
@@ -252,9 +356,82 @@ async function main() {
     assert.ok(ocrState.options.includes("paddleocr"), JSON.stringify(ocrState));
     assert.ok(ocrState.options.includes("mathpix"), JSON.stringify(ocrState));
     assert.ok(ocrState.options.includes("openai-compatible"), JSON.stringify(ocrState));
-    assert.match(ocrState.privacy, /固定目标转发|fixed-target relay/i);
+    assert.equal(ocrState.activeProvider, "openai-compatible", JSON.stringify(ocrState));
+    assert.match(ocrState.privacy, /直接发送|directly/i);
     assert.equal(ocrState.localRuntime, false, JSON.stringify(ocrState));
-    await evaluate(`document.querySelector('.web-ocr-dialog [aria-label="关闭 OCR"], .web-ocr-dialog [aria-label="Close OCR"]')?.click()`);
+
+    await evaluate(`(() => {
+      const input = document.querySelector('.web-ocr-dialog input[type="file"]');
+      if (!input) throw new Error("OCR file input is unavailable");
+      const file = new File(
+        [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
+        "formula.png",
+        { type: "image/png" },
+      );
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      Object.defineProperty(input, "files", {
+        configurable: true,
+        value: transfer.files,
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        const recognize = [...document.querySelectorAll(".web-ocr-dialog button")].find(
+          (button) => /开始识别|^Recognize$/i.test(button.textContent?.trim() ?? ""),
+        );
+        if (recognize && !recognize.disabled) {
+          recognize.click();
+          return resolve(true);
+        }
+        if (performance.now() - started > 5000) {
+          return reject(new Error("OCR image did not become ready"));
+        }
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        const result = document.querySelector(".ocr-latex-editor textarea")?.value ?? "";
+        if (result.includes("\\\\sqrt{x}")) return resolve(true);
+        const error = document.querySelector(".ocr-error-box")?.textContent?.trim();
+        if (error) return reject(new Error(error));
+        if (performance.now() - started > 5000) {
+          return reject(new Error("Mock OCR did not return a result"));
+        }
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    await evaluate(`(() => {
+      const insert = [...document.querySelectorAll(".web-ocr-dialog button")].find(
+        (button) => /插入当前光标|Insert at cursor/i.test(button.textContent ?? ""),
+      );
+      if (!insert || insert.disabled) throw new Error("OCR insert button is unavailable");
+      insert.click();
+    })()`);
+    const insertedFormula = await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        const field = document.querySelector("math-field");
+        const value = field?.value ?? "";
+        if (!document.querySelector(".web-ocr-dialog") && value.includes("\\\\sqrt{x}")) {
+          return resolve(value);
+        }
+        if (performance.now() - started > 5000) {
+          return reject(new Error("OCR result was not inserted at the saved cursor"));
+        }
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    assert.match(insertedFormula, /\\frac/);
+    assert.match(insertedFormula, /\\sqrt/);
+    assert.equal(openAiStructuredRejections, 1);
 
     await evaluate(`document.querySelector('[data-classic-bottom-view="source"], .source-toggle')?.click()`);
     await evaluate(`new Promise((resolve, reject) => {
@@ -272,6 +449,7 @@ async function main() {
     client?.close();
     chrome?.kill("SIGTERM");
     preview.kill("SIGTERM");
+    await new Promise((resolve) => ocrMock.close(resolve));
     await sleep(200);
     await rm(chromeProfile, { recursive: true, force: true });
   }

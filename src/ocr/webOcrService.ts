@@ -47,6 +47,11 @@ export interface WebOcrResult {
 const PUBLIC_CONFIGURATION_KEY = "visualtex.web.ocr.configuration.v1";
 const SECRET_CONFIGURATION_KEY = "visualtex.web.ocr.secrets.v1";
 const PADDLE_JOBS_URL = "/api/ocr/paddle/jobs";
+const OPENAI_OFFICIAL_BASE_URL = "https://api.openai.com/v1";
+const OPENAI_RELAY_ENDPOINTS: Record<OpenAiCompatibleProtocol, string> = {
+  responses: "/api/ocr/openai/responses",
+  "chat-completions": "/api/ocr/openai/chat-completions",
+};
 const SIMPLETEX_ENDPOINTS: Record<SimpleTexModel, string> = {
   standard: "/api/ocr/simpletex?model=standard",
   turbo: "/api/ocr/simpletex?model=turbo",
@@ -58,7 +63,7 @@ export const DEFAULT_WEB_OCR_CONFIGURATION: WebOcrConfiguration = {
   activeProvider: "simpletex",
   openAiCompatible: {
     protocol: "responses",
-    baseUrl: "https://api.openai.com/v1",
+    baseUrl: OPENAI_OFFICIAL_BASE_URL,
     model: "gpt-5-mini",
     prompt: DEFAULT_PROMPT,
     apiKey: "",
@@ -293,8 +298,10 @@ async function responseJson(response: Response, label: string): Promise<unknown>
           : typeof value.error === "string"
             ? value.error
             : "");
+    const fallbackDetail = text.trim().replace(/\s+/g, " ").slice(0, 800);
+    const errorDetail = detail || fallbackDetail;
     throw new Error(
-      `${label}返回 HTTP ${response.status}${detail ? `：${detail}` : ""}`,
+      `${label}返回 HTTP ${response.status}${errorDetail ? `：${errorDetail}` : ""}`,
     );
   }
   if (value === null) throw new Error(`${label}返回的不是 JSON`);
@@ -421,6 +428,23 @@ function extractOpenAiText(value: unknown): string {
   return "";
 }
 
+function isOfficialOpenAiBaseUrl(value: string): boolean {
+  return (
+    value.trim().replace(/\/+$/, "").toLowerCase() ===
+    OPENAI_OFFICIAL_BASE_URL.toLowerCase()
+  );
+}
+
+function structuredOutputRejected(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("response_format") ||
+    normalized.includes("json_schema") ||
+    normalized.includes("structured output") ||
+    (normalized.includes("unknown field") && normalized.includes("format"))
+  );
+}
+
 const FORMULA_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -446,8 +470,11 @@ async function recognizeOpenAi(
   const dataUrl = await fileToDataUrl(file);
   const route =
     selected.protocol === "responses" ? "responses" : "chat/completions";
-  const endpoint = appendEndpoint(selected.baseUrl, route);
-  const body =
+  const usesOfficialRelay = isOfficialOpenAiBaseUrl(selected.baseUrl);
+  const endpoint = usesOfficialRelay
+    ? OPENAI_RELAY_ENDPOINTS[selected.protocol]
+    : appendEndpoint(selected.baseUrl, route);
+  let body: Record<string, unknown> =
     selected.protocol === "responses"
       ? {
           model: selected.model,
@@ -491,21 +518,40 @@ async function recognizeOpenAi(
           },
           temperature: 0,
         };
-  const value = await responseJson(
-    await fetchWithTimeout(
+  const accessToken = selected.apiKey.replace(/^Bearer\s+/i, "").trim();
+  const requestHeaders: Record<string, string> = usesOfficialRelay
+    ? {
+        "content-type": "application/json",
+        "x-visualtex-ocr-token": accessToken,
+      }
+    : {
+        "content-type": "application/json",
+        authorization: `Bearer ${accessToken}`,
+      };
+  const sendRequest = () =>
+    fetchWithTimeout(
       endpoint,
       {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${selected.apiKey}`,
-        },
+        headers: requestHeaders,
         body: JSON.stringify(body),
       },
       120_000,
-    ),
-    "OpenAI 兼容 OCR",
-  );
+    );
+
+  let response = await sendRequest();
+  if (response.status === 400) {
+    const rejectionText = await response.clone().text();
+    if (structuredOutputRejected(rejectionText)) {
+      if (selected.protocol === "responses") {
+        delete body.text;
+      } else {
+        delete body.response_format;
+      }
+      response = await sendRequest();
+    }
+  }
+  const value = await responseJson(response, "OpenAI 兼容 OCR");
   const text = extractOpenAiText(value);
   const formulas = parseFormulaText(text);
   if (!formulas.length) throw new Error("OCR API 没有返回可用公式");
