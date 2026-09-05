@@ -1,18 +1,11 @@
+import { useEffect, useRef } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   ArrowUpRight,
-  Braces,
-  Check,
-  Code2,
   Download,
-  FileImage,
-  FileText,
-  Github,
   Laptop,
   Monitor,
-  ScanLine,
-  ShieldCheck,
 } from "lucide-react";
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 
@@ -81,36 +74,12 @@ const ocrModels = [
 ] as const;
 
 const features = [
-  {
-    icon: Braces,
-    title: "结构化可视化编辑",
-    description: "分式、根式、积分、求和、矩阵与上下标都能直接点击插入，并保持完整数学结构。",
-  },
-  {
-    icon: Code2,
-    title: "LaTeX 双向同步",
-    description: "可视化公式与 LaTeX 源码同步编辑，支持多种常用环境与复制格式。",
-  },
-  {
-    icon: ScanLine,
-    title: "本地公式 OCR",
-    description: "桌面端可把公式截图识别成可编辑 LaTeX，图片仅在本机处理。",
-  },
-  {
-    icon: FileText,
-    title: "Office 公式工作流",
-    description: "在 Word 与 PowerPoint 中插入、更新并重新打开 VisualTeX 公式。",
-  },
-  {
-    icon: ShieldCheck,
-    title: "本地优先",
-    description: "文档、历史记录与桌面 OCR 工作流优先保存在本机，减少不必要的数据上传。",
-  },
-  {
-    icon: FileImage,
-    title: "清晰公式导出",
-    description: "适合课程作业、论文、讲义和演示文稿，兼顾公式质量与后续编辑。",
-  },
+  { title: "可视化编辑", detail: "直接编辑分式、积分和矩阵，LaTeX 源码同步更新。", scope: "网页 / 桌面" },
+  { title: "原生 MathType 公式", detail: "无需安装 MathType，即可插入和编辑原生公式。", scope: "桌面" },
+  { title: "Word 与 PowerPoint", detail: "插入、修改公式，管理编号与交叉引用。", scope: "桌面" },
+  { title: "图片转公式", detail: "粘贴图片识别；桌面端还支持离线 OCR。", scope: "网页 / 桌面" },
+  { title: "LaTeX 源码", detail: "语法高亮、命令补全、多行编辑。", scope: "网页 / 桌面" },
+  { title: "复制与导出", detail: "导出 LaTeX、SVG 和 PNG。", scope: "网页 / 桌面" },
 ] as const;
 
 type PlatformDetection = {
@@ -136,174 +105,157 @@ function detectPlatform(): PlatformDetection {
   return { platform: "", isMobileDevice: false };
 }
 
+
 function EditorPreview() {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const resize = () => {
+      if (frameRef.current) {
+        frameRef.current.style.transform = `scale(${viewport.clientWidth / 1440})`;
+      }
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="landing-preview-wrap">
-      <div className="landing-orbit landing-orbit-one" />
-      <div className="landing-orbit landing-orbit-two" />
-      <figure className="landing-preview-window">
+    <figure className="landing-preview">
+      <div className="landing-preview-label">
+        <span>VisualTeX / 网页编辑器</span>
+        <a href="/editor">打开编辑器 <ArrowUpRight size={16} aria-hidden="true" /></a>
+      </div>
+      <div className="landing-preview-viewport" ref={viewportRef}>
         <iframe
+          ref={frameRef}
           className="landing-preview-frame"
           src="/editor?landing-preview=1"
-          title="VisualTeX 真实网页公式编辑器界面"
+          title="VisualTeX 网页公式编辑器预览"
           tabIndex={-1}
           aria-hidden="true"
         />
-      </figure>
-    </div>
+      </div>
+    </figure>
   );
 }
 
 export function LandingPage() {
   const { platform: detectedPlatform, isMobileDevice } = detectPlatform();
-  const detectedPlatformName = downloads.find((download) => download.id === detectedPlatform)?.title;
   const orderedDownloads = [...downloads].sort(
     (left, right) => Number(right.id === detectedPlatform) - Number(left.id === detectedPlatform),
   );
 
   return (
     <div className="landing-page">
+      <a className="landing-skip" href="#main">跳转到正文</a>
       <header className="landing-header">
-        <div className="landing-header-inner">
+        <div className="landing-container landing-header-inner">
           <a className="landing-brand" href="/" aria-label="VisualTeX 首页">
-            <span className="landing-brand-mark"><VisualTeXLogo /></span>
+            <VisualTeXLogo />
             <span>VisualTeX</span>
           </a>
-
           <nav className="landing-nav" aria-label="主要导航">
-            <a className="landing-nav-download" href="#download"><Download size={17} /><span>下载桌面端</span></a>
-            <a className="landing-nav-editor" href="/editor"><span>打开网页端</span><ArrowRight size={17} /></a>
+            <a className="landing-nav-detail" href="#features">功能</a>
+            <a href="#download">下载</a>
+            <a className="landing-nav-detail" href={RELEASES_URL} target="_blank" rel="noreferrer">GitHub</a>
+            <a className="landing-button landing-button-small" href="/editor">在线编辑 <ArrowUpRight size={16} aria-hidden="true" /></a>
           </nav>
         </div>
       </header>
 
-      <main>
-        <section className="landing-hero">
-          <div className="landing-hero-glow landing-hero-glow-one" />
-          <div className="landing-hero-glow landing-hero-glow-two" />
-
-          <div className="landing-hero-inner">
-            <div className="landing-hero-copy">
-              <div className="landing-eyebrow"><span className="landing-eyebrow-dot" />可视化 LaTeX 公式编辑器</div>
-              <h1>让复杂公式编辑，<span>回归直觉。</span></h1>
-              <p>VisualTeX 将结构化公式编辑、LaTeX 源码、本地公式 OCR 与 Office 工作流放在同一个界面中，让数学与科研写作更自然、更高效。</p>
-
-              <div className="landing-hero-actions">
-                <a className="landing-primary-action" href="/editor">立即使用网页端<ArrowRight size={19} /></a>
-                <a className="landing-secondary-action" href="#download"><Download size={18} />下载桌面端</a>
-              </div>
-
-              <div className="landing-hero-meta">
-                <span><Check size={15} />网页端无需安装</span>
-                <span><Check size={15} />桌面端支持 Office 与本地 OCR</span>
-              </div>
+      <main id="main">
+        <section className="landing-hero landing-container" aria-labelledby="landing-title">
+          <div className="landing-hero-copy">
+            <div>
+              <p className="landing-eyebrow">Visual LaTeX Editor</p>
+              <h1 id="landing-title">公式，<br />直接编辑。</h1>
             </div>
-
-            <EditorPreview />
+            <div className="landing-hero-intro">
+              <p>可视化 LaTeX 编辑器。<br />从浏览器到 Office。</p>
+              <div className="landing-actions">
+                <a className="landing-button" href="/editor">打开编辑器 <ArrowRight size={18} aria-hidden="true" /></a>
+                <a className="landing-text-link" href="#download">下载桌面端 <Download size={17} aria-hidden="true" /></a>
+              </div>
+              <p className="landing-platforms">Web · Windows · macOS</p>
+            </div>
           </div>
+          <EditorPreview />
         </section>
 
-        <section className="landing-section landing-features-section">
+        <section className="landing-features landing-container" id="features" aria-labelledby="features-title">
           <div className="landing-section-heading">
-            <span>核心能力</span>
-            <h2>一个更完整，也更克制的公式工作区</h2>
-            <p>网页端负责快速编辑，桌面端进一步连接 Office、本地 OCR 与系统级工作流。</p>
+            <p className="landing-eyebrow">编辑 / 识别 / 排版</p>
+            <h2 id="features-title">公式与文档。</h2>
           </div>
-
           <div className="landing-feature-grid">
-            {features.map(({ icon: Icon, title, description }, index) => (
-              <article className="landing-feature-card" key={title}>
-                <div className="landing-feature-topline">
-                  <span className="landing-feature-icon"><Icon size={21} /></span>
-                  <span className="landing-feature-number">0{index + 1}</span>
+            {features.map((feature, index) => (
+              <article className="landing-feature" key={feature.title}>
+                <div className="landing-feature-meta">
+                  <span>0{index + 1}</span><span>{feature.scope}</span>
                 </div>
-                <h3>{title}</h3>
-                <p>{description}</p>
+                <h3>{feature.title}</h3>
+                <p>{feature.detail}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="landing-download-section" id="download">
-          <div className="landing-section-heading landing-download-heading">
-            <span>桌面应用</span>
-            <h2>选择你的系统，直接开始使用</h2>
-            <p>当前版本 v{VERSION}。安装包由 VisualTeX 官方下载服务提供。</p>
-          </div>
-
-          <p className="landing-device-note" role="status">
-            {detectedPlatformName
-              ? `已识别当前设备为 ${detectedPlatformName}，对应安装包已优先展示。`
-              : isMobileDevice
-                ? "移动设备可直接使用网页端；桌面安装包请在对应电脑上下载。"
-                : "未能自动识别当前系统，请手动选择对应安装包。"}
-          </p>
-
-          <div className="landing-download-grid">
-            {orderedDownloads.map((download) => {
-              const Icon = download.icon;
-              const recommended = download.id === detectedPlatform;
-              return (
-                <article
-                  className={`landing-download-card${recommended ? " is-recommended" : ""}`}
-                  key={download.id}
-                  aria-label={recommended ? `${download.title}，当前设备推荐` : download.title}
-                >
-                  {recommended && <span className="landing-recommended-badge">为此设备推荐</span>}
-                  <span className="landing-download-icon"><Icon size={25} /></span>
-                  <h3>{download.title}</h3>
-                  <p>{download.detail}</p>
-                  <div className={`landing-download-actions${download.secondaryHref ? " has-two" : ""}`}>
-                    <a className="landing-download-primary" href={download.href}><Download size={17} />{download.action}</a>
-                    {download.secondaryHref && download.secondaryAction && (
-                      <a className="landing-download-primary" href={download.secondaryHref}><Download size={17} />{download.secondaryAction}</a>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          <div className="landing-ocr-model-section">
-            <div className="landing-ocr-model-heading">
-              <span>本地公式识别</span>
-              <h3>按需下载 Windows OCR 模型</h3>
-              <p>S 版体积最小，M 版兼顾速度与精度，L 版适合精度优先的使用场景。</p>
+        <section className="landing-download" id="download" aria-labelledby="download-title">
+          <div className="landing-container">
+            <div className="landing-download-heading">
+              <div>
+                <p className="landing-eyebrow">Desktop</p>
+                <h2 id="download-title">下载 VisualTeX</h2>
+              </div>
+              <a className="landing-text-link" href={RELEASES_URL} target="_blank" rel="noreferrer">全部版本与安装说明 <ArrowUpRight size={16} aria-hidden="true" /></a>
+            </div>
+            {isMobileDevice && <p className="landing-device-note">桌面安装包请在电脑上下载。</p>}
+            <div className="landing-download-grid">
+              {orderedDownloads.map((download) => {
+                const Icon = download.icon;
+                const recommended = download.id === detectedPlatform;
+                return (
+                  <article className="landing-download-item" key={download.id} aria-label={recommended ? `${download.title}，当前设备` : download.title}>
+                    <div className="landing-download-title">
+                      <Icon size={24} strokeWidth={1.5} aria-hidden="true" />
+                      <h3>{download.title}</h3>
+                      {recommended && <span className="landing-device-label">当前设备</span>}
+                    </div>
+                    <p>{download.detail}</p>
+                    <div className="landing-download-bottom">
+                      <a className="landing-button landing-button-outline" href={download.href}><Download size={17} aria-hidden="true" />{download.action}</a>
+                      <span className="landing-version">v{VERSION}</span>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
 
-            <div className="landing-ocr-model-grid">
-              {ocrModels.map((model) => (
-                <article
-                  className={`landing-download-card landing-ocr-model-card${model.recommended ? " is-recommended" : ""}`}
-                  key={model.id}
-                >
-                  {model.recommended && <span className="landing-recommended-badge">推荐</span>}
-                  <span className="landing-download-icon"><ScanLine size={25} /></span>
-                  <h3>{model.title}</h3>
-                  <p>{model.detail}</p>
-                  <div className="landing-download-actions">
-                    <a className="landing-download-primary" href={model.href}><Download size={17} />{model.action}</a>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="landing-release-link">
-            <Github size={18} />
-            <span>需要旧版本、校验文件或安装说明？</span>
-            <a href={RELEASES_URL} target="_blank" rel="noreferrer">查看 GitHub 全部发布<ArrowUpRight size={16} /></a>
+            <details className="landing-models">
+              <summary><span>Windows 离线 OCR 模型</span><span className="landing-model-count">S / M / L</span><span className="landing-expand" aria-hidden="true">+</span></summary>
+              <div className="landing-ocr-model-grid">
+                {ocrModels.map((model) => (
+                  <article className="landing-model-row" key={model.id}>
+                    <h3>{model.title}</h3>
+                    <p>{model.detail}</p>
+                    <a className="landing-text-link" href={model.href} aria-label={model.action}>下载 <Download size={16} aria-hidden="true" /></a>
+                  </article>
+                ))}
+              </div>
+            </details>
           </div>
         </section>
-
       </main>
 
-      <footer className="landing-footer">
-        <div className="landing-footer-inner">
-          <a className="landing-brand" href="/"><span className="landing-brand-mark"><VisualTeXLogo /></span><span>VisualTeX</span></a>
-          <p>Visual LaTeX Formula Editor</p>
-          <a href="https://github.com/paulhe666/visualtex" target="_blank" rel="noreferrer">GitHub<ArrowUpRight size={15} /></a>
-        </div>
+      <footer className="landing-footer landing-container">
+        <a className="landing-brand" href="/"><VisualTeXLogo /><span>VisualTeX</span></a>
+        <span>Visual LaTeX Editor</span>
+        <a className="landing-text-link" href="https://github.com/paulhe666/visualtex" target="_blank" rel="noreferrer">GitHub <ArrowUpRight size={16} aria-hidden="true" /></a>
       </footer>
     </div>
   );
