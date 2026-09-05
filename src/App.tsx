@@ -86,6 +86,8 @@ import {
   recognizeFormulaWithWebApi,
 } from "./ocr/webOcrService";
 
+import { isLandingPreview } from "./runtime/landingPreview";
+
 installFloatingLayerAutoAvoidance();
 
 const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
@@ -99,7 +101,7 @@ const LANDING_PREVIEW_LINES = [
 ] as const;
 
 function App() {
-  const landingPreview = new URLSearchParams(window.location.search).has("landing-preview");
+  const landingPreview = isLandingPreview;
   const editorRef = useRef<MathEditorHandle>(null);
   const ocrInsertionTargetRef = useRef<MathEditorInsertionTarget | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -187,9 +189,8 @@ function App() {
       formulaAlignment,
       selectionByLineId: {},
     });
-    setZoom(0.8);
     setSourceOpen(false);
-  }, [formulaAlignment, landingPreview, replaceDocumentState, setSourceOpen, setZoom]);
+  }, [formulaAlignment, landingPreview, replaceDocumentState, setSourceOpen]);
 
   useLayoutEffect(() => {
     if (landingPreview) return;

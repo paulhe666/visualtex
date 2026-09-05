@@ -563,6 +563,69 @@ async function main() {
       done();
     })`);
 
+    console.log("Editor, fonts, menus and clipboard OCR checks passed");
+    // The actual editor and homepage frame share an origin but not preferences.
+    const previewIsolation = await evaluate(`(async () => {
+      const pause = () => new Promise(resolve => setTimeout(resolve, 40));
+      const label = doc => doc.querySelector(".canvas-controls span")?.textContent?.trim();
+      const clickZoom = async (doc, direction) => {
+        doc.querySelector(".canvas-controls button:" + (direction === "in" ? "last-child" : "first-child")).click();
+        await pause();
+      };
+      for (let i = 0; i < 7; i++) await clickZoom(document, "in");
+      if (label(document) !== "80%") throw new Error("Could not set actual editor to 80%");
+      // The earlier OCR edit saves history after 1800 ms; let that finish first.
+      await new Promise(resolve => setTimeout(resolve, 2200));
+      const saved = localStorage.getItem("visualtex-editor");
+      // Allow the formula zoom CSS transition to finish before measuring pixels.
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const editorFont = parseFloat(getComputedStyle(document.querySelector("math-field")).fontSize);
+      const frame = document.createElement("iframe");
+      frame.style.cssText = "width:1440px;height:780px;position:fixed;top:0;left:0";
+      frame.src = "/editor?landing-preview=1";
+      document.body.append(frame);
+      const waitPreview = async () => {
+        const started = performance.now();
+        while (performance.now() - started < 15000) {
+          const doc = frame.contentDocument;
+          if (label(doc) === "50%" && doc.querySelectorAll("math-field").length >= 4) {
+            await new Promise(resolve => frame.contentWindow.requestAnimationFrame(resolve));
+            return doc;
+          }
+          await pause();
+        }
+        throw new Error("Homepage preview did not mount at 50%");
+      };
+      let doc = await waitPreview();
+      const previewFont = parseFloat(frame.contentWindow.getComputedStyle(doc.querySelector("math-field")).fontSize);
+      if (localStorage.getItem("visualtex-editor") !== saved) throw new Error("Preview overwrote user document/preferences");
+      await clickZoom(doc, "in");
+      if (label(doc) !== "50%") throw new Error("Preview zoom is not locked");
+      if (localStorage.getItem("visualtex-editor") !== saved) throw new Error("Preview action wrote user preferences");
+      await clickZoom(document, "in");
+      const updated = localStorage.getItem("visualtex-editor");
+      if (label(doc) !== "50%") throw new Error("User zoom changed the open preview");
+      await new Promise(resolve => {
+        frame.addEventListener("load", resolve, { once: true });
+        frame.contentWindow.location.reload();
+      });
+      doc = await waitPreview();
+      if (localStorage.getItem("visualtex-editor") !== updated) {
+        const before = JSON.parse(updated).state;
+        const after = JSON.parse(localStorage.getItem("visualtex-editor")).state;
+        throw new Error("Reloading preview changed: " + Object.keys(before).filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key])).join(", "));
+      }
+      const result = { preview: label(doc), editor: label(document), editorFont, previewFont };
+      frame.remove();
+      return result;
+    })()`);
+    assert.equal(previewIsolation.preview, "50%", JSON.stringify(previewIsolation));
+    assert.equal(previewIsolation.editor, "85%", JSON.stringify(previewIsolation));
+    assert.ok(
+      Math.abs(previewIsolation.previewFont / previewIsolation.editorFont - 0.5 / 0.8) < 0.01,
+      JSON.stringify(previewIsolation),
+    );
+    console.log("Homepage preview stays at 50%; actual editor stays at 85%; persisted document unchanged");
     console.log("Web editor migration smoke test passed");
   } finally {
     client?.close();

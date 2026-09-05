@@ -23,6 +23,7 @@ import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { createUuid } from "../runtime/browserCompatibility";
 import { safeStorage } from "../runtime/safeStorage";
+import { isLandingPreview, LANDING_PREVIEW_ZOOM } from "../runtime/landingPreview";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
@@ -408,7 +409,7 @@ export const useEditorStore = create<EditorState>()(
       editorLayout: DEFAULT_EDITOR_LAYOUT,
       theme: DEFAULT_THEME,
       language: "cn",
-      zoom: DEFAULT_EDITOR_ZOOM,
+      zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : DEFAULT_EDITOR_ZOOM,
       sourceOpen: false,
       latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
       autoPairDelimiters: true,
@@ -496,7 +497,9 @@ export const useEditorStore = create<EditorState>()(
         }),
       setTheme: (theme) => set({ theme: normalizeTheme(theme) }),
       setLanguage: (language) => set({ language }),
-      setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
+      setZoom: (zoom) => set({
+        zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : normalizeEditorZoom(zoom),
+      }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
       setLatexCodeFormat: (latexCodeFormat) =>
         set({
@@ -871,7 +874,7 @@ export const useEditorStore = create<EditorState>()(
           ),
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
-          zoom: normalizeEditorZoom(persisted.zoom),
+          zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : normalizeEditorZoom(persisted.zoom),
           latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
             ? persisted.latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,

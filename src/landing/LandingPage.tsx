@@ -173,13 +173,13 @@ export function LandingPage() {
           <div className="landing-hero-copy">
             <div>
               <p className="landing-eyebrow">Visual LaTeX Editor</p>
-              <h1 id="landing-title">公式，<br />直接编辑。</h1>
+              <h1 id="landing-title">公式，<br /><span className="landing-highlight-blue">直接编辑。</span></h1>
             </div>
             <div className="landing-hero-intro">
-              <p>可视化 LaTeX 编辑器。<br />从浏览器到 Office。</p>
+              <p>可视化 <strong className="landing-highlight-blue">LaTeX</strong> 编辑器。<br />从浏览器到 <strong className="landing-highlight-teal">Office</strong>。</p>
               <div className="landing-actions">
                 <a className="landing-button" href="/editor">打开编辑器 <ArrowRight size={18} aria-hidden="true" /></a>
-                <a className="landing-text-link" href="#download">下载桌面端 <Download size={17} aria-hidden="true" /></a>
+                <a className="landing-button landing-button-outline" href="#download">下载桌面端 <Download size={17} aria-hidden="true" /></a>
               </div>
               <p className="landing-platforms">Web · Windows · macOS</p>
             </div>
@@ -194,7 +194,7 @@ export function LandingPage() {
           </div>
           <div className="landing-feature-grid">
             {features.map((feature, index) => (
-              <article className="landing-feature" key={feature.title}>
+              <article className="landing-feature" data-accent={["blue", "teal", "blue", "ochre", "blue", "blue"][index]} key={feature.title}>
                 <div className="landing-feature-meta">
                   <span>0{index + 1}</span><span>{feature.scope}</span>
                 </div>
@@ -228,7 +228,7 @@ export function LandingPage() {
                     </div>
                     <p>{download.detail}</p>
                     <div className="landing-download-bottom">
-                      <a className="landing-button landing-button-outline" href={download.href}><Download size={17} aria-hidden="true" />{download.action}</a>
+                      <a className="landing-button landing-download-action" href={download.href}><Download size={17} aria-hidden="true" />{download.action}</a>
                       <span className="landing-version">v{VERSION}</span>
                     </div>
                   </article>
@@ -243,7 +243,7 @@ export function LandingPage() {
                   <article className="landing-model-row" key={model.id}>
                     <h3>{model.title}</h3>
                     <p>{model.detail}</p>
-                    <a className="landing-text-link" href={model.href} aria-label={model.action}>下载 <Download size={16} aria-hidden="true" /></a>
+                    <a className="landing-button landing-model-download" href={model.href} aria-label={model.action}>下载 <Download size={16} aria-hidden="true" /></a>
                   </article>
                 ))}
               </div>
