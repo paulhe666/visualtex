@@ -58,6 +58,12 @@ async function readLimitedBody(response, maximumBytes) {
   return body;
 }
 
+function rejectUpstreamRedirect(response, label) {
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`${label} unexpectedly redirected`);
+  }
+}
+
 async function proxySimpleTex(request, url) {
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
@@ -84,8 +90,9 @@ async function proxySimpleTex(request, url) {
       accept: "application/json",
     },
     body: request.body,
-    redirect: "error",
+    redirect: "manual",
   });
+  rejectUpstreamRedirect(response, "SimpleTex");
   const body = await readLimitedBody(response, 2 * 1024 * 1024);
   return upstreamResponse(response, body);
 }
@@ -114,8 +121,9 @@ async function proxyPaddleSubmit(request) {
       accept: "application/json",
     },
     body: request.body,
-    redirect: "error",
+    redirect: "manual",
   });
+  rejectUpstreamRedirect(response, "PaddleOCR task submission");
   const body = await readLimitedBody(response, 2 * 1024 * 1024);
   return upstreamResponse(response, body);
 }
@@ -137,9 +145,10 @@ async function proxyPaddleStatus(request, jobId) {
     {
       method: "GET",
       headers: { authorization, accept: "application/json" },
-      redirect: "error",
+      redirect: "manual",
     },
   );
+  rejectUpstreamRedirect(response, "PaddleOCR task status");
   const statusBody = await readLimitedBody(response, 2 * 1024 * 1024);
   if (!response.ok) return upstreamResponse(response, statusBody);
 

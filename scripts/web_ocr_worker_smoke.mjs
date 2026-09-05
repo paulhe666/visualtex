@@ -38,9 +38,11 @@ try {
   {
     let forwardedUrl = "";
     let forwardedToken = "";
+    let forwardedRedirect = "";
     globalThis.fetch = async (input, init) => {
       forwardedUrl = String(input);
       forwardedToken = new Headers(init?.headers).get("token") ?? "";
+      forwardedRedirect = init?.redirect ?? "";
       return Response.json({
         status: true,
         res: { latex: "\\frac{1}{2}" },
@@ -57,13 +59,68 @@ try {
     assert.equal(response.status, 200);
     assert.equal(forwardedUrl, "https://server.simpletex.cn/api/latex_ocr");
     assert.equal(forwardedToken, "session-token");
+    assert.equal(forwardedRedirect, "manual");
     assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
+  }
+
+  {
+    let forwarded;
+    globalThis.fetch = async (input, init) => {
+      forwarded = {
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+        redirect: init?.redirect,
+      };
+      return Response.json({
+        code: 0,
+        data: { jobId: "job_123" },
+      });
+    };
+    const response = await runRequest("/api/ocr/paddle/jobs", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer paddle-session-token",
+        "content-type": "multipart/form-data; boundary=test",
+      },
+      body: "--test--",
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(forwarded, {
+      url: "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs",
+      authorization: "Bearer paddle-session-token",
+      redirect: "manual",
+    });
+  }
+
+  {
+    globalThis.fetch = async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://redirect.example/jobs" },
+      });
+    const response = await runRequest("/api/ocr/paddle/jobs", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer paddle-session-token",
+        "content-type": "multipart/form-data; boundary=test",
+      },
+      body: "--test--",
+    });
+    assert.equal(response.status, 502);
+    assert.match(
+      String((await response.json()).error),
+      /task submission unexpectedly redirected/,
+    );
   }
 
   {
     const upstreamCalls = [];
     globalThis.fetch = async (input, init) => {
-      upstreamCalls.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization") });
+      upstreamCalls.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+        redirect: init?.redirect,
+      });
       if (upstreamCalls.length === 1) {
         return Response.json({
           code: 0,
@@ -100,10 +157,12 @@ try {
       {
         url: "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs/job_123",
         authorization: "Bearer paddle-session-token",
+        redirect: "manual",
       },
       {
         url: "https://result.example/paddle.json",
         authorization: null,
+        redirect: "follow",
       },
     ]);
   }
