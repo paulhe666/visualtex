@@ -1,0 +1,65 @@
+{
+    "id":  "3805eefd-0532-485f-ab61-b7f9160d0569",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "05a96469-b894-478c-ab15-912c098efbe8",
+    "sourceDocumentId":  "文档153",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "cdcce777-655b-4848-bc21-31329ad613c4",
+                      "latex":  "E=mc^2"
+                  }
+              ],
+    "activeLineId":  "cdcce777-655b-4848-bc21-31329ad613c4",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmi\u003eE\u003c/mi\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmi\u003em\u003c/mi\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003ec\u003c/mi\u003e\n    \u003cmn\u003e2\u003c/mn\u003e\n  \u003c/msup\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "05a96469-b894-478c-ab15-912c098efbe8",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "E=mc^2",
+                             "lines":  [
+                                           {
+                                               "id":  "cdcce777-655b-4848-bc21-31329ad613c4",
+                                               "latex":  "E=mc^2"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T10:03:43.4896923+00:00",
+                             "updatedAt":  "2026-09-06T10:03:43.4896923+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: Reference number bookmark \u0027VTEqNum_9c1479442a5d4b6089c88da72b17c73f\u0027 is missing.\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.ResolveNavigationBookmark(Document document, String numberBookmarkName)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateNavigationTarget(Document document, Field outerField, String numberBookmarkName)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateNavigableReferences(Document document, ISet`1 targetBookmarkNames)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateReferences(Document document, ISet`1 targetBookmarkNames)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()",
+    "createdAt":  1788689023491,
+    "updatedAt":  1788689061519,
+    "expiresAt":  1788775461519
+}

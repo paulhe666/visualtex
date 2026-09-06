@@ -1,0 +1,35 @@
+﻿{
+    "bookmark":  "VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e",
+    "action":  "real mouse double-click",
+    "document":  "文档81",
+    "passed":  true,
+    "rectangle":  {
+                      "left":  1155,
+                      "width":  1,
+                      "top":  1210,
+                      "height":  1
+                  },
+    "actualReferenceRectangle":  {
+                                     "left":  1130,
+                                     "width":  0,
+                                     "top":  1181,
+                                     "height":  59
+                                 },
+    "time":  "2026-09-06T03:04:30.1097287Z",
+    "wordExpandedTargetField":  null,
+    "target":  {
+                   "end":  157,
+                   "text":  "0.0.1",
+                   "start":  111
+               },
+    "before":  {
+                   "start":  286,
+                   "end":  286
+               },
+    "pid":  68776,
+    "after":  {
+                  "end":  157,
+                  "text":  "0.0.1",
+                  "start":  111
+              }
+}

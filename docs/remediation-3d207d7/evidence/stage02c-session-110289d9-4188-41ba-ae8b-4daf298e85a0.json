@@ -1,0 +1,65 @@
+{
+  "id": "110289d9-4188-41ba-ae8b-4daf298e85a0",
+  "mode": "create",
+  "host": "word",
+  "formulaId": "409434b4-e602-420a-8454-2c6086c919b8",
+  "sourceDocumentId": "文档19",
+  "sourceObjectId": null,
+  "title": "Bulk imported Word formula",
+  "lines": [
+    {
+      "id": "8b71c7a1-c147-45d5-93fb-4294f45a1876",
+      "latex": "a^2+b^2=c^2"
+    }
+  ],
+  "activeLineId": "8b71c7a1-c147-45d5-93fb-4294f45a1876",
+  "codeFormat": "latex",
+  "displayMode": "block",
+  "objectMode": "wordOmml",
+  "numbered": false,
+  "mathTypeNumberPosition": "right",
+  "fontSizePt": 10.5,
+  "exportWidth": 240.0,
+  "exportHeight": 80.0,
+  "exportResult": {
+    "svg": "",
+    "svgBase64": "",
+    "mathMl": "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">\n  <msup>\n    <mi>a</mi>\n    <mn>2</mn>\n  </msup>\n  <mo>+</mo>\n  <msup>\n    <mi>b</mi>\n    <mn>2</mn>\n  </msup>\n  <mo>=</mo>\n  <msup>\n    <mi>c</mi>\n    <mn>2</mn>\n  </msup>\n</math>",
+    "pngBase64": null,
+    "width": 240.0,
+    "height": 80.0,
+    "baseline": 60.0,
+    "formulaLetterFont": "times",
+    "formulaChineseFont": "system"
+  },
+  "originalMetadata": {
+    "schema": "visualtex-formula",
+    "schemaVersion": 1,
+    "formulaId": "409434b4-e602-420a-8454-2c6086c919b8",
+    "title": "Bulk imported Word formula",
+    "latex": "a^2+b^2=c^2",
+    "lines": [
+      {
+        "id": "8b71c7a1-c147-45d5-93fb-4294f45a1876",
+        "latex": "a^2+b^2=c^2"
+      }
+    ],
+    "codeFormat": "latex",
+    "displayMode": "block",
+    "numbered": false,
+    "fontSizePt": 10.5,
+    "renderFontSizePt": 10.5,
+    "createdWithVersion": "1.2.6",
+    "updatedWithVersion": "1.2.6",
+    "createdAt": "2026-09-06T01:40:17.6386852+00:00",
+    "updatedAt": "2026-09-06T01:40:17.6386852+00:00"
+  },
+  "dirty": false,
+  "status": "committing",
+  "autoCommitOnClose": false,
+  "explicitCancel": false,
+  "error": null,
+  "createdAt": 1788658817640,
+  "updatedAt": 1788658817661,
+  "expiresAt": 1788745217661
+}

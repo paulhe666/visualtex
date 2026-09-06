@@ -1,0 +1,17 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04u-vt-before-conversion-__138.json",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04u-vt-after-conversion-__138.json",
+  "count": 2,
+  "differences": [
+    {
+      "path": "/bookmarks/5/start",
+      "before": 887,
+      "after": 933
+    },
+    {
+      "path": "/bookmarks/5/text",
+      "before": "2.0-3<CR>",
+      "after": "<CR>"
+    }
+  ]
+}

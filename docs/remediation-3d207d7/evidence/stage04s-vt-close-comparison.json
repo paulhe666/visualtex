@@ -1,0 +1,17 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04s-vt-imported-__134.json",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04s-vt-closed-__134.json",
+  "count": 2,
+  "differences": [
+    {
+      "path": "/bookmarks/16/start",
+      "before": 196,
+      "after": 240
+    },
+    {
+      "path": "/bookmarks/16/text",
+      "before": "1<CR><TAB>\u0001",
+      "after": "\u0001"
+    }
+  ]
+}

@@ -1,0 +1,232 @@
+{
+    "name":  "文档29",
+    "fullName":  "文档29",
+    "saved":  false,
+    "end":  416,
+    "paragraphs":  4,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  163,
+                       "alternative":  null,
+                       "width":  95.9,
+                       "index":  1,
+                       "type":  1,
+                       "height":  34.95,
+                       "prog":  "Equation.DSMT4",
+                       "end":  189
+                   },
+                   {
+                       "start":  353,
+                       "alternative":  null,
+                       "width":  58.05,
+                       "index":  2,
+                       "type":  1,
+                       "height":  16.05,
+                       "prog":  "Equation.DSMT4",
+                       "end":  379
+                   },
+                   {
+                       "start":  380,
+                       "alternative":  "visualtex:v1:deflate:nVLbitRAEP0V6eck9L3TAR9WYXBB2QUX52FHoZPUTBqSzJh0Vtdh_t3qSYygILgvga5TVedSOZOxaqBzpCBPfpxcG-B7uj8O3dQ6kizgJxhGf-xJwRKyYLc1ThhuoNK5TvN9JVNpSkid2ZvUWZrrUlcVLSUuCT60gO3b41C_2qy7W4dcWN7tOheaoTvD5ct5ffjLbnfCz0Qpf8Ne0zjgexhJ8XgmPrILy3JjKRLLOk9lzUWKFZvuZcmUtRWU_AU0l88JqY41RJ0u4Nw8n5Daj6fWPX9ADKu-j2qw3E9dCQOgoL1rR0gIfJ1cwLQe3IEU_dS2CRmgr2HY-jo09yhFm0wpLayWuRRG_cLfgT80ITYwlTHGjTacWSWFVCYhpRvhSlkwnlmFuKY214LnTMSr9OGj_wH3qJjRbN25-au-3O89hDDDaCb4DoNdsbdNDBoWcHweA3SIfsPz3V5t37Uwm0Fc0UyjUGvEVQtXfzQuriI_y0T0orQS1GhmOKaHUT3BXde1G98fYDgNPpLOsVUDYPb11odm_QMJy2jGcpQznep_oMvsTXTAKdcptSlVD0wVghWcZpYzY5Sc705pQenvlf8zdPkJ",
+                       "width":  49.65,
+                       "index":  3,
+                       "type":  1,
+                       "height":  11.3,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  414
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  414,
+                          "name":  "VTO_727ec6868fc447bea7f7a9086b6cc0b4",
+                          "text":  "\u0001",
+                          "start":  380
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  1,
+                       "end":  162,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  41,
+                       "end":  71,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  73,
+                       "end":  115,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  118,
+                       "end":  159,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  164,
+                       "end":  188,
+                       "index":  5
+                   },
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  191,
+                       "end":  352,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  231,
+                       "end":  261,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  263,
+                       "end":  305,
+                       "index":  8
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  308,
+                       "end":  349,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  354,
+                       "end":  378,
+                       "index":  10
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  381,
+                       "end":  413,
+                       "index":  11
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  190,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  190,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  380,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  380,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  415,
+                      "lineRule":  0,
+                      "text":  "\u0001\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  415,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  416,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading1-dot",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

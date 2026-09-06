@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="8f07e7bb-173f-4d2a-8126-9c7e70ef08fc" name="pojian_liao@DESKTOP-VM8VUAQ 2026-09-06 21:08:28" runUser="DESKTOP-VM8VUAQ\pojian_liao" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-06T21:08:28.0658467+08:00" queuing="2026-09-06T21:08:28.0658468+08:00" start="2026-09-06T21:08:27.6224472+08:00" finish="2026-09-06T21:08:28.0695233+08:00" />
+  <TestSettings name="default" id="0b4bc31f-90a5-4736-89b9-ae133e9fcd3f">
+    <Deployment runDeploymentRoot="pojian_liao_DESKTOP-VM8VUAQ_2026-09-06_21_08_28" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="7c1a8f5a-3f18-4925-bd27-eb36f21c3c40" testId="e2a37eac-e1cc-40ff-901c-92524cd1f902" testName="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests.MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot(useBase64: False)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0453741" startTime="2026-09-06T21:08:27.9798004+08:00" endTime="2026-09-06T21:08:27.9798075+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7c1a8f5a-3f18-4925-bd27-eb36f21c3c40" />
+    <UnitTestResult executionId="ccfbeaa7-64c8-4760-8cc1-1b2f67640e12" testId="6e9a5c6e-1c7e-e9e1-23fb-59188011e873" testName="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests.MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot(useBase64: True)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0294988" startTime="2026-09-06T21:08:28.0089431+08:00" endTime="2026-09-06T21:08:28.0089435+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ccfbeaa7-64c8-4760-8cc1-1b2f67640e12" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests.MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot(useBase64: False)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\release\net8.0-windows\visualtex.windowsoffice.tests.dll" id="e2a37eac-e1cc-40ff-901c-92524cd1f902">
+      <Execution id="7c1a8f5a-3f18-4925-bd27-eb36f21c3c40" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Release\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests" name="MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests.MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot(useBase64: True)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\release\net8.0-windows\visualtex.windowsoffice.tests.dll" id="6e9a5c6e-1c7e-e9e1-23fb-59188011e873">
+      <Execution id="ccfbeaa7-64c8-4760-8cc1-1b2f67640e12" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Release\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.VisualTeXSessionVectorExportTests" name="MaterializeSvgWritesUtf8InsideTheControlledOfficeTempRoot" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="e2a37eac-e1cc-40ff-901c-92524cd1f902" executionId="7c1a8f5a-3f18-4925-bd27-eb36f21c3c40" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6e9a5c6e-1c7e-e9e1-23fb-59188011e873" executionId="ccfbeaa7-64c8-4760-8cc1-1b2f67640e12" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.29)&#xD;
+[xUnit.net 00:00:00.04]   Discovering: VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.08]   Discovered:  VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.09]   Starting:    VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.18]   Finished:    VisualTeX.WindowsOffice.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

@@ -1,0 +1,9 @@
+[
+  ["new", "stage04ai-mt-empty"],
+  ["number-format", "continuous", "stage04ai-continuous"],
+  ["import", "mathType", "true", "stage04ai-mt-import", "import-source.tex"],
+  ["snapshot", "stage04ai-mt-imported"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ai-mt-import-visible\"}"],
+  ["edit-ole", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04ai-mt-closed"]
+]

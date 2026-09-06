@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  926190,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  598500,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  10034834,
+        "name":  "Conversion failed and Word undo recovery could not be verified.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

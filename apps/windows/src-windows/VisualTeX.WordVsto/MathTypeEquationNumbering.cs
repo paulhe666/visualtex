@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -22,12 +23,21 @@ internal static class MathTypeEquationNumbering
         internal bool NumberOnLeft { get; set; }
         internal WdColor CodeColor { get; set; } = WdColor.wdColorAutomatic;
         internal string OleProgId { get; set; } = string.Empty;
-        internal string SourceFlatOpc { get; set; } = string.Empty;
         internal string RewrittenFlatOpc { get; set; } = string.Empty;
         internal string[] BookmarkNames { get; set; } = Array.Empty<string>();
     }
 
     internal static int UpdateEquationNumbers(Document document)
+    {
+        var count = UpdateNumberFields(document);
+        if (count > 0) WordEquationReferenceFields.UpdateReferences(document);
+        return count;
+    }
+
+    // Conversion restores compatibility aliases after all target hosts exist.
+    // Number fields must be ready first; the caller then refreshes and validates
+    // references after rebinding, through the same common reference mechanism.
+    internal static int UpdateNumberFields(Document document)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
 
@@ -50,22 +60,9 @@ internal static class MathTypeEquationNumbering
                 field = fields[index];
                 code = field.Code;
                 if (!IsMathTypeSequenceFieldCode(code.Text)) continue;
-                try { field.Update(); } catch { }
+                field.Update();
             }
 
-            // MathType equation references use a nested REF ZEqnNum... field
-            // inside GOTOBUTTON. The REF fields are also exposed by
-            // Document.Fields, so update those explicitly after all sequences.
-            for (var index = 1; index <= fields.Count; index++)
-            {
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                code = field.Code;
-                if (!IsMathTypeReferenceFieldCode(code.Text)) continue;
-                try { field.Update(); } catch { }
-            }
         }
         finally
         {
@@ -77,12 +74,14 @@ internal static class MathTypeEquationNumbering
         return numberedEquationCount;
     }
 
-    internal static int ValidateEquationNumberFormat(
+    internal static IReadOnlyList<int> ValidateEquationNumberFormat(
         Document document,
         string? formatId)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
-        return CreatePlaceRefRewritePlans(document, formatId).Count;
+        var plans = CreatePlaceRefRewritePlans(document, formatId);
+        if (plans.Count > 0) _ = CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(formatId));
+        return plans.Select(plan => plan.ParagraphStart).Distinct().ToArray();
     }
 
     internal static int SetEquationNumberFormat(Document document, string? formatId)
@@ -90,79 +89,145 @@ internal static class MathTypeEquationNumbering
         if (document is null) throw new ArgumentNullException(nameof(document));
         var plans = CreatePlaceRefRewritePlans(document, formatId);
         if (plans.Count == 0) return 0;
-
-        // MathType was used only to observe the native Word/OpenXML contract.
-        // Production never calls a MathType macro or process: VisualTeX prepares
-        // every replacement package itself and writes one exact MTPlaceRef field
-        // range at a time. MTEditEquationSection2, tabs, OLE objects and paragraph
-        // marks remain outside those transactions.
         var paragraphCountBefore = ReadDocumentParagraphCount(document);
         var inlineShapeCountBefore = ReadDocumentInlineShapeCount(document);
-        var applied = new List<PlaceRefRewritePlan>(plans.Count);
         Document? stagingDocument = null;
         try
         {
-            // Do not FinalRelease document.Application/Documents here. Office may
-            // return the same RCW held by the caller; disconnecting it would make
-            // the active Word session unusable after an otherwise successful
-            // rewrite. The short-lived staging Document is the only owned RCW.
             stagingDocument = document.Application.Documents.Add(Visible: false);
-            try
+            // The service owns the document transaction. Any failure, including
+            // reference refresh, is recovered by its verified native Word undo.
+            // Re-inserting old field XML here would compete with that recovery.
+            foreach (var plan in plans)
+                ApplyPlaceRefRewritePlan(document, stagingDocument, plan);
+            foreach (var counter in CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(formatId))
+                         .OrderByDescending(item => item.Start))
             {
-                foreach (var plan in plans)
+                Range? range = null;
+                try
                 {
-                    applied.Add(plan);
-                    ApplyPlaceRefRewritePlan(
-                        document,
-                        stagingDocument,
-                        plan);
+                    range = document.Range(counter.Start, counter.Start + counter.Before.Length);
+                    if (range.Text != counter.Before)
+                        throw new InvalidDataException("MathType section counter moved before its format update.");
+                    range.Text = counter.After;
+                    if (range.Text != counter.After)
+                        throw new InvalidDataException("Word did not retain the requested MathType section counter.");
                 }
-
-                UpdateEquationNumbers(document);
-                if (ReadDocumentParagraphCount(document) != paragraphCountBefore)
-                    throw new InvalidDataException(
-                        "MathType number-format rewrite changed the document paragraph count.");
-                if (ReadDocumentInlineShapeCount(document) != inlineShapeCountBefore)
-                    throw new InvalidDataException(
-                        "MathType number-format rewrite changed the Equation.DSMT4 object count.");
-                return plans.Count;
+                finally { Release(range); }
             }
-            catch (Exception error)
-            {
-                var rollbackErrors = new List<Exception>();
-                foreach (var plan in applied.AsEnumerable().Reverse())
-                {
-                    try
-                    {
-                        RestorePlaceRefRewritePlan(
-                            document,
-                            stagingDocument,
-                            plan);
-                    }
-                    catch (Exception rollbackError)
-                    {
-                        rollbackErrors.Add(rollbackError);
-                    }
-                }
-                try { UpdateEquationNumbers(document); } catch { }
-                if (rollbackErrors.Count > 0)
-                    throw new AggregateException(
-                        "MathType number-format rewrite failed and one or more native MTPlaceRef fields could not be restored.",
-                        new[] { error }.Concat(rollbackErrors));
-                throw;
-            }
+            UpdateEquationNumbers(document);
+            if (ReadDocumentParagraphCount(document) != paragraphCountBefore)
+                throw new InvalidDataException("MathType number-format rewrite changed the document paragraph count.");
+            if (ReadDocumentInlineShapeCount(document) != inlineShapeCountBefore)
+                throw new InvalidDataException("MathType number-format rewrite changed the Equation.DSMT4 object count.");
+            return plans.Count;
         }
         finally
         {
-            if (stagingDocument is not null)
+            try
             {
-                try { stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges); }
-                catch { }
+                if (stagingDocument is not null)
+                    stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges);
             }
-            Release(stagingDocument);
+            finally
+            {
+                Release(stagingDocument);
+                document.Activate();
+            }
         }
     }
 
+    private sealed class SectionCounterPlan
+    {
+        internal int Start { get; set; }
+        internal string Before { get; set; } = string.Empty;
+        internal string After { get; set; } = string.Empty;
+    }
+
+    // Changing the visible MTPlaceRef template alone leaves native section
+    // restarts active in continuous mode. Keep the entire native section field,
+    // its chapter/section state, formatting and bookmarks; change only the
+    // nested equation counter's restart/current switch for the chosen scope.
+    private static List<SectionCounterPlan> CreateSectionCounterPlans(Document document, EquationNumberFormat format)
+    {
+        var plans = new List<SectionCounterPlan>();
+        Fields? fields = null;
+        var previousChapter = 0;
+        var previousSection = 0;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? owner = null;
+                Range? ownerCode = null;
+                Fields? nested = null;
+                try
+                {
+                    owner = fields[index];
+                    ownerCode = owner.Code;
+                    if (!Regex.IsMatch(ownerCode.Text ?? string.Empty,
+                            @"^\s*MACROBUTTON\s+MTEditEquationSection2\b", RegexOptions.IgnoreCase)) continue;
+                    nested = ownerCode.Fields;
+                    var counters = new Dictionary<string, (int Start, string Code)>(StringComparer.OrdinalIgnoreCase);
+                    for (var childIndex = 1; childIndex <= nested.Count; childIndex++)
+                    {
+                        Field? child = null;
+                        Range? childCode = null;
+                        try
+                        {
+                            child = nested[childIndex];
+                            childCode = child.Code;
+                            var childText = childCode.Text ?? string.Empty;
+                            var match = Regex.Match(childText,
+                                @"^\s*SEQ\s+(MTEqn|MTChap|MTSec)\s", RegexOptions.IgnoreCase);
+                            if (!match.Success || childCode.StoryType != ownerCode.StoryType
+                                || childCode.Start <= ownerCode.Start || childCode.End >= ownerCode.End
+                                || counters.ContainsKey(match.Groups[1].Value))
+                                throw new InvalidDataException("MathType section state has ambiguous native counter ownership.");
+                            counters.Add(match.Groups[1].Value, (childCode.Start, childText));
+                        }
+                        finally { Release(childCode); Release(child); }
+                    }
+                    if (counters.Count != 3)
+                        throw new InvalidDataException("MathType section state must own equation, chapter and section counters.");
+                    var chapter = ReadSectionCounter(counters["MTChap"].Code, previousChapter);
+                    var section = ReadSectionCounter(counters["MTSec"].Code, previousSection);
+                    var restart = format.HeadingLevel > 0 && (chapter != previousChapter
+                        || format.HeadingLevel > 1 && section != previousSection);
+                    var equation = counters["MTEqn"];
+                    var operation = Regex.Matches(equation.Code, @"\\(?:r(?:\s+-?\d+)?|c)(?=\s|$)", RegexOptions.IgnoreCase);
+                    if (operation.Count != 1)
+                        throw new InvalidDataException("MathType section equation counter has no unique restart/current operation.");
+                    var after = restart ? @"\r" : @"\c";
+                    if (operation[0].Value != after)
+                        plans.Add(new SectionCounterPlan
+                        {
+                            Start = equation.Start + operation[0].Index,
+                            Before = operation[0].Value,
+                            After = after,
+                        });
+                    previousChapter = chapter;
+                    previousSection = section;
+                }
+                finally { Release(nested); Release(ownerCode); Release(owner); }
+            }
+            return plans;
+        }
+        finally { Release(fields); }
+    }
+
+    private static int ReadSectionCounter(string code, int previous)
+    {
+        var restart = Regex.Match(code, @"\\r(?:\s+(-?\d+))?(?=\s|$)", RegexOptions.IgnoreCase);
+        if (restart.Success) return restart.Groups[1].Success
+            ? int.Parse(restart.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
+        if (Regex.IsMatch(code, @"\\c(?=\s|$)", RegexOptions.IgnoreCase)) return previous;
+        if (Regex.IsMatch(code, @"\\s(?=\s|$)", RegexOptions.IgnoreCase))
+            throw new InvalidDataException("MathType section state uses an unsupported heading-dependent sequence switch.");
+        // SEQ increments by default; an explicit \\n has the same native meaning.
+        return checked(previous + 1);
+    }
     private static List<PlaceRefRewritePlan> CreatePlaceRefRewritePlans(
         Document document,
         string? formatId)
@@ -377,7 +442,8 @@ internal static class MathTypeEquationNumbering
                 bookmark = bookmarks[index];
                 if (!bookmark.Name.StartsWith(
                         ReferenceBookmarkPrefix,
-                        StringComparison.OrdinalIgnoreCase))
+                        StringComparison.OrdinalIgnoreCase)
+                    && !MathTypeWordOpenXml.IsVisualTeXNumberAlias(bookmark.Name))
                     continue;
                 bookmarkRange = bookmark.Range;
                 if (bookmarkRange.Start < fieldStart
@@ -398,7 +464,6 @@ internal static class MathTypeEquationNumbering
                 NumberOnLeft = numberOnLeft,
                 CodeColor = codeColor,
                 OleProgId = progId,
-                SourceFlatOpc = sourceFlatOpc,
                 RewrittenFlatOpc = rewrittenFlatOpc,
                 BookmarkNames = bookmarkNames.ToArray(),
             };
@@ -496,70 +561,6 @@ internal static class MathTypeEquationNumbering
         }
     }
 
-    private static void RestorePlaceRefRewritePlan(
-        Document document,
-        Document stagingDocument,
-        PlaceRefRewritePlan plan)
-    {
-        Field? current = null;
-        Field? restored = null;
-        Range? code = null;
-        Range? result = null;
-        Range? fieldRange = null;
-        try
-        {
-            current = ResolvePlaceRefAtCodeStart(
-                    document,
-                    plan.FieldStart + 1)
-                ?? throw new InvalidDataException(
-                    $"MathType MTPlaceRef at {plan.FieldStart} is unavailable for rollback.");
-            code = current.Code;
-            result = current.Result;
-            var fieldEnd = ResolvePlaceRefFieldEndExclusive(
-                document,
-                code,
-                result);
-            fieldRange = document.Range(plan.FieldStart, fieldEnd);
-            ReplacePlaceRefRangeFromFlatOpc(
-                stagingDocument,
-                fieldRange,
-                plan.SourceFlatOpc);
-
-            Release(fieldRange);
-            fieldRange = null;
-            Release(result);
-            result = null;
-            Release(code);
-            code = null;
-            Release(current);
-            current = null;
-
-            restored = ResolvePlaceRefAtCodeStart(
-                    document,
-                    plan.FieldStart + 1)
-                ?? throw new InvalidDataException(
-                    $"Word did not restore the original MathType MTPlaceRef at {plan.FieldStart}.");
-            try { restored.ShowCodes = false; } catch { }
-            RestoreNativeBookmarkRanges(
-                document,
-                restored,
-                plan.BookmarkNames);
-            ValidatePlaceRefLayout(
-                document,
-                restored,
-                plan,
-                requireNativeFieldEnd: false);
-        }
-        finally
-        {
-            Release(fieldRange);
-            Release(result);
-            Release(code);
-            Release(restored);
-            Release(current);
-        }
-    }
-
     private static void ReplacePlaceRefRangeFromFlatOpc(
         Document stagingDocument,
         Range targetRange,
@@ -646,9 +647,6 @@ internal static class MathTypeEquationNumbering
     {
         if (bookmarkNames.Count == 0) return;
         Range? visibleRange = null;
-        Range? bookmarkRange = null;
-        Bookmarks? bookmarks = null;
-        Bookmark? bookmark = null;
         try
         {
             if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
@@ -659,26 +657,11 @@ internal static class MathTypeEquationNumbering
                 throw new InvalidDataException(
                     "MathType MTPlaceRef has no visible range for its ZEqnNum bookmark.");
 
-            bookmarks = document.Bookmarks;
             foreach (var name in bookmarkNames)
-            {
-                if (bookmarks.Exists(name))
-                {
-                    Release(bookmark);
-                    bookmark = bookmarks[name];
-                    try { bookmark.Delete(); } catch { }
-                }
-                Release(bookmarkRange);
-                bookmarkRange = visibleRange.Duplicate;
-                Release(bookmark);
-                bookmark = bookmarks.Add(name, bookmarkRange);
-            }
+                MathTypeEquationReferences.BindNumberAlias(document, visibleRange, name);
         }
         finally
         {
-            Release(bookmark);
-            Release(bookmarks);
-            Release(bookmarkRange);
             Release(visibleRange);
         }
     }
@@ -789,10 +772,14 @@ internal static class MathTypeEquationNumbering
                 Release(bookmark);
                 bookmark = bookmarks[bookmarkName];
                 bookmarkRange = bookmark.Range;
-                if (bookmarkRange.Start < visibleNumberRange.Start
-                    || bookmarkRange.End > visibleNumberRange.End)
-                    throw new InvalidDataException(
-                        $"Rebuilt MathType bookmark '{bookmarkName}' no longer wraps the visible equation number.");
+                Range? expected = null;
+                try
+                {
+                    expected = MathTypeEquationReferences.ResolveNumberAliasRange(document, visibleNumberRange, bookmarkName);
+                    if (bookmarkRange.Start != expected.Start || bookmarkRange.End != expected.End)
+                        throw new InvalidDataException($"Rebuilt MathType bookmark '{bookmarkName}' changed its exact number range.");
+                }
+                finally { Release(expected); }
             }
         }
         finally
@@ -883,18 +870,6 @@ internal static class MathTypeEquationNumbering
             || normalized.StartsWith("SEQ MTChap ", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsMathTypeReferenceFieldCode(string? code)
-    {
-        if (string.IsNullOrWhiteSpace(code)) return false;
-        var normalized = code!
-            .Replace('\t', ' ')
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .TrimStart();
-        return normalized.StartsWith("REF " + ReferenceBookmarkPrefix,
-            StringComparison.OrdinalIgnoreCase);
-    }
-
     internal static bool IsMathTypeSectionBreakCode(string? code) =>
         !string.IsNullOrWhiteSpace(code)
         && code!.IndexOf(SectionBreakMarker, StringComparison.OrdinalIgnoreCase) >= 0;
@@ -902,7 +877,7 @@ internal static class MathTypeEquationNumbering
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.FinalReleaseComObject(value); }
+        try { Marshal.ReleaseComObject(value); }
         catch { }
     }
 }

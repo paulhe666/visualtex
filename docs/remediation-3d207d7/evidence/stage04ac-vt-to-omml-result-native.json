@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  4354370,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  553228,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1077574,
+        "name":  "Reference number bookmark \u0027VTEqNum_9c1479442a5d4b6089c88da72b17c73f\u0027 is missing.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

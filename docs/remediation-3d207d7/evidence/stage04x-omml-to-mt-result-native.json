@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  1599736,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  289002,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  813258,
+        "name":  "无法编辑 Range。",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

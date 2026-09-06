@@ -1,0 +1,33 @@
+
+7-Zip 25.01 (x64) : Copyright (c) 1999-2025 Igor Pavlov : 2025-08-03
+
+Scanning the drive for archives:
+1 file, 1896448 bytes (1852 KiB)
+
+Extracting archive: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\stage06-package-payload\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi
+--
+Path = C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\stage06-package-payload\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi
+Type = Compound
+Physical Size = 1896448
+Extension = msi
+Cluster Size = 4096
+Sector Size = 64
+----
+Path = cab1.cab
+Size = 1845123
+Packed Size = 1847296
+--
+Path = cab1.cab
+Type = Cab
+Physical Size = 1845123
+Method = LZX:18
+Blocks = 1
+Volumes = 1
+Volume Index = 0
+ID = 0
+
+Everything is Ok
+
+Files: 19
+Size:       5932660
+Compressed: 1896448

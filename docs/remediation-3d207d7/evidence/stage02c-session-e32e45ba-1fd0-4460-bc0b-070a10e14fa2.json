@@ -1,0 +1,65 @@
+{
+  "id": "e32e45ba-1fd0-4460-bc0b-070a10e14fa2",
+  "mode": "create",
+  "host": "word",
+  "formulaId": "f481f034-e82a-4a52-a558-93729251097f",
+  "sourceDocumentId": "文档19",
+  "sourceObjectId": null,
+  "title": "Bulk imported Word formula",
+  "lines": [
+    {
+      "id": "37b4700a-34e9-4880-98d3-5144533d1517",
+      "latex": "\\int_{-\\infty}^{\\infty}\\mathrm{e}^{-x^2}\\,\\mathrm{d}x=\\sqrt{\\pi}"
+    }
+  ],
+  "activeLineId": "37b4700a-34e9-4880-98d3-5144533d1517",
+  "codeFormat": "latex",
+  "displayMode": "inline",
+  "objectMode": "wordOmml",
+  "numbered": false,
+  "mathTypeNumberPosition": "right",
+  "fontSizePt": 10.5,
+  "exportWidth": 240.0,
+  "exportHeight": 80.0,
+  "exportResult": {
+    "svg": "",
+    "svgBase64": "",
+    "mathMl": "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n  <msubsup>\n    <mo data-mjx-texclass=\"OP\">&#x222B;</mo>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mo>&#x2212;</mo>\n      <mi mathvariant=\"normal\">&#x221E;</mi>\n    </mrow>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mi mathvariant=\"normal\">&#x221E;</mi>\n    </mrow>\n  </msubsup>\n  <msup>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mi mathvariant=\"normal\">e</mi>\n    </mrow>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mo>&#x2212;</mo>\n      <msup>\n        <mi>x</mi>\n        <mn>2</mn>\n      </msup>\n    </mrow>\n  </msup>\n  <mstyle scriptlevel=\"0\">\n    <mspace width=\"0.167em\"></mspace>\n  </mstyle>\n  <mrow data-mjx-texclass=\"ORD\">\n    <mi mathvariant=\"normal\">d</mi>\n  </mrow>\n  <mi>x</mi>\n  <mo>=</mo>\n  <msqrt>\n    <mi>&#x3C0;</mi>\n  </msqrt>\n</math>",
+    "pngBase64": null,
+    "width": 240.0,
+    "height": 80.0,
+    "baseline": 60.0,
+    "formulaLetterFont": "times",
+    "formulaChineseFont": "system"
+  },
+  "originalMetadata": {
+    "schema": "visualtex-formula",
+    "schemaVersion": 1,
+    "formulaId": "f481f034-e82a-4a52-a558-93729251097f",
+    "title": "Bulk imported Word formula",
+    "latex": "\\int_{-\\infty}^{\\infty}\\mathrm{e}^{-x^2}\\,\\mathrm{d}x=\\sqrt{\\pi}",
+    "lines": [
+      {
+        "id": "37b4700a-34e9-4880-98d3-5144533d1517",
+        "latex": "\\int_{-\\infty}^{\\infty}\\mathrm{e}^{-x^2}\\,\\mathrm{d}x=\\sqrt{\\pi}"
+      }
+    ],
+    "codeFormat": "latex",
+    "displayMode": "inline",
+    "numbered": false,
+    "fontSizePt": 10.5,
+    "renderFontSizePt": 10.5,
+    "createdWithVersion": "1.2.6",
+    "updatedWithVersion": "1.2.6",
+    "createdAt": "2026-09-06T01:40:17.6472902+00:00",
+    "updatedAt": "2026-09-06T01:40:17.6472902+00:00"
+  },
+  "dirty": false,
+  "status": "committing",
+  "autoCommitOnClose": false,
+  "explicitCancel": false,
+  "error": null,
+  "createdAt": 1788658817648,
+  "updatedAt": 1788658817674,
+  "expiresAt": 1788745217674
+}

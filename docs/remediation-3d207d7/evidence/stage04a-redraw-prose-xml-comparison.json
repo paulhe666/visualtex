@@ -1,0 +1,92 @@
+[
+  {
+    "document": 92,
+    "label": "stage04a-omml-soft",
+    "text": "自己推导一下：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  },
+  {
+    "document": 92,
+    "label": "stage04a-omml-soft",
+    "text": "有这个可以得到类似的密度守恒方程：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  },
+  {
+    "document": 93,
+    "label": "stage04a-vt-soft",
+    "text": "自己推导一下：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  },
+  {
+    "document": 93,
+    "label": "stage04a-vt-soft",
+    "text": "有这个可以得到类似的密度守恒方程：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  },
+  {
+    "document": 94,
+    "label": "stage04a-mt-soft",
+    "text": "自己推导一下：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  },
+  {
+    "document": 94,
+    "label": "stage04a-mt-soft",
+    "text": "有这个可以得到类似的密度守恒方程：",
+    "runFormattingEqual": true,
+    "paragraphFormattingEqual": true,
+    "before": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    },
+    "after": {
+      "run": "<ns0:rPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr>",
+      "paragraph": "<ns0:pPr xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rPr><ns0:rFonts ns0:ascii=\"宋体\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"宋体\" /><ns0:sz ns0:val=\"24\" /></ns0:rPr></ns0:pPr>"
+    }
+  }
+]

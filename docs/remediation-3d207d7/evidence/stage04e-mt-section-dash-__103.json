@@ -1,0 +1,391 @@
+{
+    "name":  "文档103",
+    "fullName":  "文档103",
+    "saved":  false,
+    "end":  838,
+    "paragraphs":  10,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  8,
+                       "alternative":  null,
+                       "width":  59.9,
+                       "index":  1,
+                       "type":  1,
+                       "height":  18.15,
+                       "prog":  "Equation.DSMT4",
+                       "end":  34
+                   },
+                   {
+                       "start":  264,
+                       "alternative":  null,
+                       "width":  42.05,
+                       "index":  2,
+                       "type":  1,
+                       "height":  16.05,
+                       "prog":  "Equation.DSMT4",
+                       "end":  290
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  495,
+                          "name":  "VTEqNum_138a8895f65840fbb469682042e57e47",
+                          "text":  "0.0-2",
+                          "start":  363
+                      },
+                      {
+                          "end":  495,
+                          "name":  "VTEqNum_6a319116fb6a4df0af12bee279bcc8ee",
+                          "text":  "0.0-2",
+                          "start":  363
+                      },
+                      {
+                          "end":  496,
+                          "name":  "ZEqnNum100273",
+                          "text":  "(0.0-2)",
+                          "start":  362
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  9,
+                       "end":  33,
+                       "index":  1
+                   },
+                   {
+                       "nested":  4,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  36,
+                       "end":  241,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  76,
+                       "end":  106,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  108,
+                       "end":  150,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  153,
+                       "end":  194,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  197,
+                       "end":  238,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  265,
+                       "end":  289,
+                       "index":  7
+                   },
+                   {
+                       "nested":  4,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  292,
+                       "end":  497,
+                       "index":  8
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  332,
+                       "end":  362,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  364,
+                       "end":  406,
+                       "index":  10
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  409,
+                       "end":  450,
+                       "index":  11
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  453,
+                       "end":  494,
+                       "index":  12
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \u0013 REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  507,
+                       "end":  632,
+                       "index":  13
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! ",
+                       "result":  "0.0-2",
+                       "type":  3,
+                       "start":  561,
+                       "end":  630,
+                       "index":  14
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON ZEqnNum100273 \u0013 REF ZEqnNum100273 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  635,
+                       "end":  708,
+                       "index":  15
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF ZEqnNum100273 \\* CHARFORMAT \\! ",
+                       "result":  "(0.0-2)",
+                       "type":  3,
+                       "start":  662,
+                       "end":  706,
+                       "index":  16
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_138a8895f65840fbb469682042e57e47 \u0013 REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  711,
+                       "end":  836,
+                       "index":  17
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! ",
+                       "result":  "0.0-2",
+                       "type":  3,
+                       "start":  765,
+                       "end":  834,
+                       "index":  18
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  7,
+                      "lineRule":  0,
+                      "text":  "第一段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  7,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  242,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  242,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  256,
+                      "lineRule":  0,
+                      "text":  "这一段保留在第一公式之后。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  256,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  263,
+                      "lineRule":  0,
+                      "text":  "第二段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  263,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  498,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  498,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  504,
+                      "lineRule":  0,
+                      "text":  "结尾正文。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  504,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  505,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  505,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  634,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  634,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  709,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  709,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  838,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading2-dash",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "138a8895-f658-40fb-b469-682042e57e47",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

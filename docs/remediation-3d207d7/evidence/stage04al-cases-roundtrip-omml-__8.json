@@ -1,0 +1,395 @@
+{
+    "name":  "文档8",
+    "fullName":  "文档8",
+    "saved":  false,
+    "end":  332,
+    "paragraphs":  12,
+    "tables":  [
+                   {
+                       "index":  1,
+                       "start":  1,
+                       "end":  255,
+                       "rows":  2,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0.0-1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0.0-2)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  1,
+                                         "end":  2
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  2,
+                                         "end":  62
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(0.0-1)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  62,
+                                         "end":  127
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  2,
+                                         "start":  128,
+                                         "end":  129
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  2,
+                                         "start":  129,
+                                         "end":  189
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(0.0-2)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  2,
+                                         "start":  189,
+                                         "end":  254
+                                     }
+                                 ]
+                   }
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  2,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e",
+                      "index":  1,
+                      "tables":  1,
+                      "font":  "",
+                      "end":  61
+                  },
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  129,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e",
+                      "index":  2,
+                      "tables":  1,
+                      "font":  "",
+                      "end":  188
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  253,
+                          "name":  "VTEq_cbeffddaf2c1444693b3077d3b21d6a3",
+                          "text":  "(0.0-2)",
+                          "start":  190
+                      },
+                      {
+                          "end":  126,
+                          "name":  "VTEq_edf4e4e5655349e9b6a29d437af81332",
+                          "text":  "(0.0-1)",
+                          "start":  63
+                      },
+                      {
+                          "end":  252,
+                          "name":  "VTEqCap_cbeffddaf2c1444693b3077d3b21d6a3",
+                          "text":  "0.0-2",
+                          "start":  191
+                      },
+                      {
+                          "end":  125,
+                          "name":  "VTEqCap_edf4e4e5655349e9b6a29d437af81332",
+                          "text":  "0.0-1",
+                          "start":  64
+                      },
+                      {
+                          "end":  252,
+                          "name":  "VTEqNum_cbeffddaf2c1444693b3077d3b21d6a3",
+                          "text":  "0.0-2",
+                          "start":  191
+                      },
+                      {
+                          "end":  125,
+                          "name":  "VTEqNum_edf4e4e5655349e9b6a29d437af81332",
+                          "text":  "0.0-1",
+                          "start":  64
+                      },
+                      {
+                          "end":  129,
+                          "name":  "VTOMML_cbeffddaf2c1444693b3077d3b21d6a3",
+                          "text":  "",
+                          "start":  129
+                      },
+                      {
+                          "end":  2,
+                          "name":  "VTOMML_edf4e4e5655349e9b6a29d437af81332",
+                          "text":  "",
+                          "start":  2
+                      },
+                      {
+                          "end":  126,
+                          "name":  "ZEqnNum100100",
+                          "text":  "(0.0-1)",
+                          "start":  63
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  69,
+                       "end":  124,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  196,
+                       "end":  251,
+                       "index":  2
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON ZEqnNum100100 \u0013 REF ZEqnNum100100 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  258,
+                       "end":  331,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF ZEqnNum100100 \\* CHARFORMAT \\! ",
+                       "result":  "(0.0-1)",
+                       "type":  3,
+                       "start":  285,
+                       "end":  329,
+                       "index":  4
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  1,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  1,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  2,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  2,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  true,
+                      "end":  62,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  62,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  127,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(0.0-1)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  127,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  128,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  128,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  129,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  129,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  true,
+                      "end":  189,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸\u003cCR\u003e𝜔\u003cCR\u003e\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  189,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  254,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(0.0-2)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  254,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  255,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  255,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  256,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  256,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  11,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  257,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  257,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  12,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  332,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading2-dash",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "520ab7ea-4f5a-4392-9a55-7fbc034bdee1",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  2,
+    "customXml":  [
+
+                  ]
+}

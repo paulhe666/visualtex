@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  212974,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  212978,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  278502,
+        "name":  "The display source does not occupy one isolated paragraph.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

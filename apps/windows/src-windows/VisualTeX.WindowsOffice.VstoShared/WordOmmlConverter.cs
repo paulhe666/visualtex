@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -17,9 +17,6 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordOmmlConverter
 {
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr windowHandle);
-
     private const int MaximumFormulaXmlCharacters = 16 * 1024 * 1024;
     private const int MaximumFormulaXmlDepth = 256;
     private const int MaximumFormulaXmlElements = 250_000;
@@ -99,6 +96,13 @@ internal static class WordOmmlConverter
                 throw new InvalidDataException(
                     $"The OMML batch source does not contain formula {formulaId}.");
             return entry.SourceFingerprint;
+        }
+
+        internal string GetSourceOmml(string formulaId)
+        {
+            if (!_entries.TryGetValue(formulaId, out var entry))
+                throw new InvalidDataException($"The OMML batch source does not contain formula {formulaId}.");
+            return entry.Omml;
         }
 
         internal IReadOnlyList<Range> InsertAdjacentInlineGroup(
@@ -206,6 +210,28 @@ internal static class WordOmmlConverter
                 entries.Add(entry);
             }
 
+            var bodyFormatting = new List<WordCharacterFormatting>(formulaIds.Count);
+            Paragraphs? targetParagraphs = null;
+            try
+            {
+                targetParagraphs = targetRange.Paragraphs;
+                if (targetParagraphs.Count != formulaIds.Count)
+                    throw new InvalidDataException("The display group does not have one body paragraph per formula.");
+                for (var index = 1; index <= targetParagraphs.Count; index++)
+                {
+                    Paragraph? paragraph = null;
+                    Range? paragraphRange = null;
+                    try
+                    {
+                        paragraph = targetParagraphs[index];
+                        paragraphRange = paragraph.Range;
+                        bodyFormatting.Add(WordCharacterFormatting.CaptureParagraphMark(paragraphRange));
+                    }
+                    finally { Release(paragraphRange); Release(paragraph); }
+                }
+            }
+            finally { Release(targetParagraphs); }
+
             var path = CreateTemporaryDisplayGroupDocx(entries, _mathFontName);
             Document? sourceDocument = null;
             Range? sourceRange = null;
@@ -266,6 +292,7 @@ internal static class WordOmmlConverter
                         || mathRange.End > insertionEnd)
                         throw new InvalidOperationException(
                             "A grouped display OMath escaped the atomic replacement range.");
+                    bodyFormatting[index - 1].ApplyToParagraphMark(mathRange);
                     results.Add(targetDocument.Range(mathRange.Start, mathRange.End));
                 }
                 return results;
@@ -336,7 +363,17 @@ internal static class WordOmmlConverter
                 // one Word operation. This lets Word tear down the Equation.DSMT4
                 // OLE and the outer MTPlaceRef/nested sequence tree as one owner,
                 // instead of exposing any partially deleted field hierarchy.
+                var bodyFormatting = WordCharacterFormatting.CaptureParagraphMark(target);
                 target.FormattedText = sourceRange.FormattedText;
+                Range? emptyParagraph = null;
+                try
+                {
+                    emptyParagraph = targetDocument.Range(start, start + 1);
+                    if (emptyParagraph.Text != "\r")
+                        throw new InvalidDataException("The replacement did not retain its one empty body paragraph.");
+                    bodyFormatting.ApplyToParagraphMark(emptyParagraph);
+                }
+                finally { Release(emptyParagraph); }
                 result = targetDocument.Range(start, start);
                 var returned = result;
                 result = null;
@@ -774,172 +811,6 @@ internal static class WordOmmlConverter
             }
             Release(sourceDocument);
             try { File.Delete(tempPath); } catch { }
-        }
-    }
-
-    internal static float? MeasurePreparedDisplayHeightPoints(
-        Application application,
-        Document targetDocument,
-        string omml,
-        string? mathFontName = null)
-    {
-        if (application is null) throw new ArgumentNullException(nameof(application));
-        if (targetDocument is null) throw new ArgumentNullException(nameof(targetDocument));
-        if (string.IsNullOrWhiteSpace(omml)) return null;
-
-        var normalizedMathFontName = NormalizeMathFontName(mathFontName);
-        string semanticOmml;
-        try
-        {
-            semanticOmml = ApplyExplicitTransferMathFont(
-                ExtractSingleOMath(omml),
-                normalizedMathFontName);
-        }
-        catch
-        {
-            return null;
-        }
-        Range? content = null;
-        Range? separatorInsertion = null;
-        Range? formulaInsertion = null;
-        Range? measuredRange = null;
-        Range? cleanupRange = null;
-        Window? window = null;
-        Microsoft.Office.Interop.Word.View? view = null;
-        Zoom? zoom = null;
-        var scratchBoundary = -1;
-        var measurementStage = "prepare-target-scratch";
-        var previousScreenUpdating = true;
-        var screenUpdatingSuspended = false;
-        int? previousVerticalScroll = null;
-        int? previousHorizontalScroll = null;
-        try
-        {
-            targetDocument.Activate();
-            try
-            {
-                previousScreenUpdating = application.ScreenUpdating;
-                application.ScreenUpdating = false;
-                screenUpdatingSuspended = true;
-            }
-            catch { }
-            content = targetDocument.Content;
-            scratchBoundary = Math.Max(content.Start, content.End - 1);
-            Release(content);
-            content = null;
-
-            // Create one ordinary terminal paragraph without touching the current
-            // selection. The caller runs this inside its existing Word undo record
-            // with ScreenUpdating disabled. Everything from scratchBoundary to the
-            // final document mark is removed in finally, so no temporary source,
-            // bookmark or paragraph survives the measurement.
-            separatorInsertion = targetDocument.Range(
-                scratchBoundary,
-                scratchBoundary);
-            separatorInsertion.InsertBefore("\r");
-            formulaInsertion = targetDocument.Range(
-                scratchBoundary + 1,
-                scratchBoundary + 1);
-            measurementStage = "insert-target-scratch";
-            measuredRange = ReplaceWithPreparedOmml(
-                application,
-                targetDocument,
-                formulaInsertion,
-                semanticOmml,
-                display: true,
-                mathFontName: normalizedMathFontName);
-            measurementStage = "repaginate-target-scratch";
-            try { targetDocument.Repaginate(); } catch { }
-            window = targetDocument.ActiveWindow;
-            try { previousVerticalScroll = window.VerticalPercentScrolled; } catch { }
-            try { previousHorizontalScroll = window.HorizontalPercentScrolled; } catch { }
-            object scrollStart = true;
-            try { window.ScrollIntoView(measuredRange, ref scrollStart); } catch { }
-            measurementStage = "get-point-target-scratch";
-            window.GetPoint(
-                out _,
-                out _,
-                out _,
-                out var heightPixels,
-                measuredRange);
-            view = window.View;
-            zoom = view.Zoom;
-            var zoomPercentage = zoom.Percentage;
-            var dpi = 96u;
-            try
-            {
-                var detected = GetDpiForWindow(new IntPtr(window.Hwnd));
-                if (detected > 0) dpi = detected;
-            }
-            catch (EntryPointNotFoundException) { }
-            if (heightPixels <= 0 || zoomPercentage <= 0 || dpi == 0)
-                return null;
-            var heightPoints = heightPixels
-                * 72f
-                * 100f
-                / dpi
-                / zoomPercentage;
-            return heightPoints > 0f
-                && !float.IsNaN(heightPoints)
-                && !float.IsInfinity(heightPoints)
-                    ? heightPoints
-                    : null;
-        }
-        catch (Exception error)
-        {
-            if (string.Equals(
-                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-                    "1",
-                    StringComparison.Ordinal))
-                Console.WriteLine(
-                    $"[PREPARED OMML HEIGHT FAILED] stage={measurementStage} type={error.GetType().Name} hresult=0x{error.HResult:X8} message={error.Message}");
-            return null;
-        }
-        finally
-        {
-            Release(zoom);
-            Release(view);
-            Release(measuredRange);
-            Release(formulaInsertion);
-            Release(separatorInsertion);
-            if (scratchBoundary >= 0)
-            {
-                try
-                {
-                    content = targetDocument.Content;
-                    var cleanupEnd = Math.Max(
-                        scratchBoundary,
-                        content.End - 1);
-                    cleanupRange = targetDocument.Range(
-                        scratchBoundary,
-                        cleanupEnd);
-                    cleanupRange.Delete();
-                }
-                catch { }
-            }
-            Release(cleanupRange);
-            Release(content);
-            try { targetDocument.Activate(); } catch { }
-            if (window is not null)
-            {
-                try
-                {
-                    if (previousHorizontalScroll.HasValue)
-                        window.HorizontalPercentScrolled = previousHorizontalScroll.Value;
-                }
-                catch { }
-                try
-                {
-                    if (previousVerticalScroll.HasValue)
-                        window.VerticalPercentScrolled = previousVerticalScroll.Value;
-                }
-                catch { }
-            }
-            Release(window);
-            if (screenUpdatingSuspended)
-            {
-                try { application.ScreenUpdating = previousScreenUpdating; } catch { }
-            }
         }
     }
 
@@ -3097,9 +2968,12 @@ internal static class WordOmmlConverter
             // token positions, canonicalize that Word spelling back to the Unicode
             // operator. Deliberate text-mode '*' remains mtext and is untouched.
             token.Name = mathMl + "mo";
-            token.Value = "∗";
+            token.Value = RestoreWordAsteriskSpelling(token.Value);
         }
     }
+
+    private static string RestoreWordAsteriskSpelling(string mathematicalText)
+        => mathematicalText.Replace('*', '∗');
 
     private static bool ContainsOnlyMathSymbols(string value)
     {
@@ -3432,6 +3306,104 @@ internal static class WordOmmlConverter
         using var hash = SHA256.Create();
         var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(normalized));
         return string.Concat(bytes.Select(value => value.ToString("x2")));
+    }
+
+    internal static string ComputeVerifiedMaterializedOmmlFingerprint(
+        string preparedWordOpenXml,
+        string materializedWordOpenXml)
+    {
+        if (!string.Equals(ComputeImportedOmmlContentSignature(preparedWordOpenXml),
+                ComputeImportedOmmlContentSignature(materializedWordOpenXml), StringComparison.Ordinal))
+            throw new InvalidDataException("The materialized Word equation differs from its prepared formula content.");
+        // Word's final native representation is the durable identity. The
+        // prepared XML is only evidence of the intended content, never a proxy
+        // for what Word actually stored after importing and laying out the row.
+        return ComputeOmmlFingerprint(materializedWordOpenXml);
+    }
+
+    // Used only to validate the first materialization of a prepared formula.
+    // Durable managed identities retain ComputeOmmlFingerprint of the actual
+    // Word equation. Namespace spelling, empty property containers, on/off
+    // lexical forms and Word's default integral glyph are equivalent encodings,
+    // not a reason to bind an identity to different mathematical content.
+    internal static string ComputeImportedOmmlContentSignature(string wordOpenXml)
+    {
+        var document = XDocument.Parse(StripVisualTeXNativeEquationNumber(wordOpenXml), LoadOptions.PreserveWhitespace);
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+        document.Descendants(word + "rPr").Remove();
+        document.Descendants(math + "ctrlPr").Remove();
+        document.Descendants(word + "bookmarkStart").Remove();
+        document.Descendants(word + "bookmarkEnd").Remove();
+        var booleans = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "degHide", "subHide", "supHide", "grow", "nor", "lit", "aln", "diff", "noBreak",
+            "opEmu", "transp", "zeroAsc", "zeroDesc", "zeroWid", "hideTop", "hideBot",
+            "hideLeft", "hideRight", "strikeH", "strikeV", "strikeBLTR", "strikeTLBR",
+        };
+        foreach (var property in document.Descendants().Where(e => e.Name.Namespace == math && booleans.Contains(e.Name.LocalName)))
+        {
+            var value = property.Attribute(math + "val");
+            if (value is null) property.SetAttributeValue(math + "val", "1");
+            else if (value.Value is "on" or "true") value.Value = "1";
+            else if (value.Value is "off" or "false") value.Value = "0";
+        }
+        foreach (var nary in document.Descendants(math + "nary"))
+        {
+            var properties = nary.Element(math + "naryPr");
+            if (properties is null) { properties = new XElement(math + "naryPr"); nary.AddFirst(properties); }
+            if (properties.Element(math + "chr") is null)
+                properties.AddFirst(new XElement(math + "chr", new XAttribute(math + "val", "∫")));
+        }
+        // ISO/IEC 29500 m:fPr/m:type defaults to bar both when the element
+        // is absent and when val is absent. Word omits this default on import.
+        // Keep every nondefault type: a stack or skewed fraction is not bar.
+        foreach (var fraction in document.Descendants(math + "f"))
+        {
+            var properties = fraction.Element(math + "fPr");
+            if (properties is null) { properties = new XElement(math + "fPr"); fraction.AddFirst(properties); }
+            var type = properties.Element(math + "type");
+            if (type is null) properties.AddFirst(new XElement(math + "type", new XAttribute(math + "val", "bar")));
+            else if (type.Attribute(math + "val") is null) type.SetAttributeValue(math + "val", "bar");
+        }
+        // A separator is rendered only between distinct delimiter arguments.
+        // A single argument (including a multirow equation array) has none;
+        // Word drops sepChr there. Beginning/end delimiters are always retained.
+        foreach (var delimiter in document.Descendants(math + "d"))
+            if (delimiter.Elements(math + "e").Count() == 1)
+                delimiter.Element(math + "dPr")?.Elements(math + "sepChr").Remove();
+        foreach (var text in document.Descendants(math + "t"))
+        {
+            var properties = text.Parent?.Element(math + "rPr");
+            var literal = properties?.Elements().Any(e => (e.Name == math + "nor" || e.Name == math + "lit")
+                && (string?)e.Attribute(math + "val") == "1") == true;
+            if (!literal) text.Value = RestoreWordAsteriskSpelling(text.Value.Replace('\u2212', '-'));
+        }
+        foreach (var property in document.Descendants().Where(e => e.Name.Namespace == math
+                     && e.Name.LocalName.EndsWith("Pr", StringComparison.Ordinal)
+                     && !e.HasElements && !e.HasAttributes && string.IsNullOrWhiteSpace(e.Value)).ToArray())
+            property.Remove();
+        NormalizeMathRunGrouping(document, math);
+        var canonical = new StringBuilder();
+        void AppendToken(string token) { canonical.Append(token.Length).Append(':').Append(token); }
+        void AppendElement(XElement element)
+        {
+            canonical.Append('('); AppendToken(element.Name.ToString());
+            foreach (var attribute in element.Attributes().Where(a => !a.IsNamespaceDeclaration)
+                         .OrderBy(a => a.Name.ToString(), StringComparer.Ordinal))
+            { canonical.Append('@'); AppendToken(attribute.Name.ToString()); AppendToken(attribute.Value); }
+            foreach (var node in element.Nodes())
+            {
+                if (node is XElement child) AppendElement(child);
+                else if (node is XText text && (element.Name == math + "t" || !string.IsNullOrWhiteSpace(text.Value)))
+                { canonical.Append('#'); AppendToken(text.Value); }
+            }
+            canonical.Append(')');
+        }
+        AppendElement(document.Root ?? throw new InvalidDataException("The imported OMML has no equation root."));
+        using var hash = SHA256.Create();
+        return string.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()))
+            .Select(value => value.ToString("x2")));
     }
 
     private static void NormalizeMathRunGrouping(XDocument document, XNamespace math)

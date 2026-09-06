@@ -1,0 +1,19 @@
+[
+  ["edit", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04an-omml-closed"],
+  ["edit-source", "math", "4", "E=mc^2", "stage04an-omml-edit"],
+  ["snapshot", "stage04an-omml-edited"],
+  ["convert", "omml-vt", "full", "stage04an-omml-vt"],
+  ["snapshot", "stage04an-vt-converted"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04an-vt-converted-visible\"}"],
+  ["edit-ole", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04an-vt-closed"],
+  ["edit-source", "ole", "4", "a^2+b^2=c^2", "stage04an-vt-edit"],
+  ["snapshot", "stage04an-vt-edited"],
+  ["convert", "vt-mt", "full", "stage04an-vt-mt"],
+  ["snapshot", "stage04an-mt-roundtrip"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04an-mt-roundtrip-visible\"}"],
+  ["convert", "mt-omml", "full", "stage04an-mt-omml-second"],
+  ["snapshot", "stage04an-omml-second"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04an-omml-second-visible\"}"]
+]

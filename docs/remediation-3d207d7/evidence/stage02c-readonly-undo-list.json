@@ -1,0 +1,664 @@
+﻿{
+    "pid":  55728,
+    "document":  "文档19",
+    "recording":  false,
+    "level":  0,
+    "controls":  [
+                     {
+                         "id":  128,
+                         "found":  true,
+                         "caption":  "VBA-Range.Delete",
+                         "type":  6,
+                         "listCount":  125,
+                         "items":  [
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  1
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  2
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Subscript",
+                                           "index":  3
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Superscript",
+                                           "index":  4
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  5
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  6
+                                       },
+                                       {
+                                           "text":  "VBA-TabStops.ClearAll",
+                                           "index":  7
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.Alignment",
+                                           "index":  8
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  9
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  10
+                                       },
+                                       {
+                                           "text":  "清除",
+                                           "index":  11
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  12
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  13
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.Delete",
+                                           "index":  14
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  15
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  16
+                                       },
+                                       {
+                                           "text":  "VisualTeX Insert Word OMML Display Formula",
+                                           "index":  17
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  18
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  19
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Subscript",
+                                           "index":  20
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Superscript",
+                                           "index":  21
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  22
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  23
+                                       },
+                                       {
+                                           "text":  "VBA-TabStops.ClearAll",
+                                           "index":  24
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.Alignment",
+                                           "index":  25
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  26
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  27
+                                       },
+                                       {
+                                           "text":  "清除",
+                                           "index":  28
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  29
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  30
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.Delete",
+                                           "index":  31
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  32
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  33
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  34
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  35
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  36
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  37
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Delete",
+                                           "index":  38
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  39
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  40
+                                       },
+                                       {
+                                           "text":  "VisualTeX Convert Formula Format",
+                                           "index":  41
+                                       },
+                                       {
+                                           "text":  "VisualTeX Insert Native OLE Inline Formula",
+                                           "index":  42
+                                       },
+                                       {
+                                           "text":  "键入",
+                                           "index":  43
+                                       },
+                                       {
+                                           "text":  "VisualTeX Insert Native OLE Display Formula",
+                                           "index":  44
+                                       },
+                                       {
+                                           "text":  "键入",
+                                           "index":  45
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  46
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceAfter",
+                                           "index":  47
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceBefore",
+                                           "index":  48
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.LineSpacingRule",
+                                           "index":  49
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Color",
+                                           "index":  50
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  51
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Reset",
+                                           "index":  52
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Style",
+                                           "index":  53
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.OutlineLevel",
+                                           "index":  54
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceAfter",
+                                           "index":  55
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceBefore",
+                                           "index":  56
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.LineSpacingRule",
+                                           "index":  57
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Color",
+                                           "index":  58
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  59
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Reset",
+                                           "index":  60
+                                       },
+                                       {
+                                           "text":  "VBA-ListFormat.RemoveNumbers",
+                                           "index":  61
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Style",
+                                           "index":  62
+                                       },
+                                       {
+                                           "text":  "VBA-Font.NameBi",
+                                           "index":  63
+                                       },
+                                       {
+                                           "text":  "VBA-Font.NameFarEast",
+                                           "index":  64
+                                       },
+                                       {
+                                           "text":  "VBA-Font.NameAscii",
+                                           "index":  65
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Name",
+                                           "index":  66
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Kerning",
+                                           "index":  67
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Spacing",
+                                           "index":  68
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Scaling",
+                                           "index":  69
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Subscript",
+                                           "index":  70
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Superscript",
+                                           "index":  71
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Italic",
+                                           "index":  72
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Bold",
+                                           "index":  73
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  74
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Color",
+                                           "index":  75
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  76
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  77
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Reset",
+                                           "index":  78
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  79
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  80
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  81
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  82
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.DisableLineHeightGrid",
+                                           "index":  83
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.WidowControl",
+                                           "index":  84
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.PageBreakBefore",
+                                           "index":  85
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.KeepWithNext",
+                                           "index":  86
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.KeepTogether",
+                                           "index":  87
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.LineSpacing",
+                                           "index":  88
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.LineSpacingRule",
+                                           "index":  89
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceAfter",
+                                           "index":  90
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceBefore",
+                                           "index":  91
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.LockAnchor",
+                                           "index":  92
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.TextWrap",
+                                           "index":  93
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.VerticalPosition",
+                                           "index":  94
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.HorizontalPosition",
+                                           "index":  95
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.RelativeVerticalPosition",
+                                           "index":  96
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.RelativeHorizontalPosition",
+                                           "index":  97
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.Height",
+                                           "index":  98
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.Width",
+                                           "index":  99
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.HeightRule",
+                                           "index":  100
+                                       },
+                                       {
+                                           "text":  "VBA-Frame.WidthRule",
+                                           "index":  101
+                                       },
+                                       {
+                                           "text":  "VBA-ListFormat.RemoveNumbers",
+                                           "index":  102
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.WidowControl",
+                                           "index":  103
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.PageBreakBefore",
+                                           "index":  104
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.KeepWithNext",
+                                           "index":  105
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.KeepTogether",
+                                           "index":  106
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.LineSpacingRule",
+                                           "index":  107
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceAfter",
+                                           "index":  108
+                                       },
+                                       {
+                                           "text":  "VBA-ParagraphFormat.SpaceBefore",
+                                           "index":  109
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  110
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Color",
+                                           "index":  111
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  112
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  113
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Position",
+                                           "index":  114
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Color",
+                                           "index":  115
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Size",
+                                           "index":  116
+                                       },
+                                       {
+                                           "text":  "VBA-Font.Hidden",
+                                           "index":  117
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  118
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  119
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  120
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  121
+                                       },
+                                       {
+                                           "text":  "书签",
+                                           "index":  122
+                                       },
+                                       {
+                                           "text":  "VBA-Field.Update",
+                                           "index":  123
+                                       },
+                                       {
+                                           "text":  "VBA-Range.Text",
+                                           "index":  124
+                                       },
+                                       {
+                                           "text":  "VisualTeX Insert Native OLE Display Formula",
+                                           "index":  125
+                                       }
+                                   ]
+                     }
+                 ],
+    "standard":  [
+                     {
+                         "caption":  "新建​​空白文档(\u0026B)",
+                         "id":  2520,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打开​​(\u0026O)...",
+                         "id":  23,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "保存​​(\u0026S)",
+                         "id":  3,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "(自由访问) 的权限",
+                         "id":  9004,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "邮件收件人​​(\u0026M)",
+                         "id":  3738,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打印​​(\u0026P)",
+                         "id":  2521,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打印预览​​(\u0026V)",
+                         "id":  109,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "简繁转换(\u0026R)...",
+                         "id":  4026,
+                         "type":  13
+                     },
+                     {
+                         "caption":  "拼写和语法​​(\u0026S)...",
+                         "id":  2566,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "信息检索(\u0026R)...",
+                         "id":  7343,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "剪切​​(\u0026T)",
+                         "id":  21,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "复制​​(\u0026C)",
+                         "id":  19,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "粘贴​​(\u0026P)",
+                         "id":  22,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "格式刷​​(\u0026F)",
+                         "id":  108,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "VBA-Range.Delete",
+                         "id":  128,
+                         "type":  6
+                     },
+                     {
+                         "caption":  "恢复VisualTeX Insert Word OMML Display Formula(\u0026R)",
+                         "id":  129,
+                         "type":  6
+                     },
+                     {
+                         "caption":  "插入墨迹注释(\u0026I)",
+                         "id":  9404,
+                         "type":  13
+                     },
+                     {
+                         "caption":  "超链接(\u0026I)...",
+                         "id":  1576,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "“表格和边框”工具栏(\u0026T)",
+                         "id":  916,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "插入表格​​(\u0026I)...",
+                         "id":  333,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "插入​​Excel 电子表格(\u0026I)",
+                         "id":  142,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "分栏​​(\u0026C)...",
+                         "id":  9,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "更改​​文字方向(\u0026C)",
+                         "id":  2872,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "绘图​​(\u0026D)",
+                         "id":  204,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "文档结构图​​(\u0026D)",
+                         "id":  1714,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "显示/隐藏​​编辑标记(\u0026S)",
+                         "id":  3900,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "显示比例​​(\u0026Z):",
+                         "id":  1733,
+                         "type":  4
+                     },
+                     {
+                         "caption":  "帮助(\u0026H)",
+                         "id":  984,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "阅读(\u0026R)",
+                         "id":  7226,
+                         "type":  1
+                     }
+                 ]
+}

@@ -1,0 +1,24 @@
+{
+  "before": "stage04ai-omml-edited-__10",
+  "after": "stage04ai-omml-roundtrip-__10",
+  "mathsEqual": true,
+  "paragraphsEqual": true,
+  "fieldsEqual": true,
+  "referenceAliasBefore": [
+    {
+      "end": 603,
+      "name": "ZEqnNum100835",
+      "text": "(1.1-1)",
+      "start": 540
+    }
+  ],
+  "referenceAliasAfter": [
+    {
+      "end": 603,
+      "name": "ZEqnNum100835",
+      "text": "(1.1-1)",
+      "start": 540
+    }
+  ],
+  "note": "Read-only comparison of recorded real Word evidence; generated formula identities are separately captured in full snapshots."
+}

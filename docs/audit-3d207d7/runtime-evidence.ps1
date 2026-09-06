@@ -1,0 +1,8 @@
+param([string]$Label='runtime',[string]$DocumentFilter='',[int]$Last=12)
+$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$out=Join-Path $PSScriptRoot 'evidence';[void][IO.Directory]::CreateDirectory($out)
+$sessionRoot=Join-Path $env:APPDATA 'com.visualtex.studio\office\sessions'
+$items=@();foreach($dir in (Get-ChildItem -LiteralPath $sessionRoot -Directory|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 60)) { $p=Join-Path $dir.FullName 'session.json';if(Test-Path $p){try{$s=Get-Content $p -Raw -Encoding UTF8|ConvertFrom-Json;if(!$DocumentFilter -or $s.sourceDocumentId -like ('*'+$DocumentFilter+'*')){$items+=@{id=$dir.Name;session=$s;time=$dir.LastWriteTime.ToString('o')};[IO.File]::WriteAllText((Join-Path $out ($Label+'-session-'+$dir.Name+'.json')),($s|ConvertTo-Json -Depth 15),[Text.UTF8Encoding]::new($false))}}catch{}};if($items.Count -ge $Last){break}}
+foreach($x in $items){$s=$x.session;Write-Output ('SESSION|'+$x.id+'|doc='+$s.sourceDocumentId+'|mode='+$s.mode+'|object='+$s.objectMode+'|display='+$s.displayMode+'|numbered='+$s.numbered+'|status='+$s.status+'|error='+$s.error)}
+$modules=@();foreach($p in (Get-Process WINWORD,visualtex -ErrorAction SilentlyContinue)){foreach($m in $p.Modules){if($m.FileName -match 'VisualTeX' -and $m.FileName -notmatch 'WebView|D3D|vcruntime|msvcp|libssl|libcrypto'){$modules+=@{process=$p.ProcessName;path=$m.FileName;sha256=(Get-FileHash -LiteralPath $m.FileName -Algorithm SHA256).Hash}}}}
+[IO.File]::WriteAllText((Join-Path $out ($Label+'-modules.json')),($modules|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false));$modules|ConvertTo-Json -Depth 5

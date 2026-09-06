@@ -1,0 +1,66 @@
+[
+  {
+    "paragraphIndex": 0,
+    "bodyText": "VisualTeX MathType 对照：正文 Arial 14 pt。",
+    "maths": 0,
+    "bookmarks": [],
+    "immediateChildren": [
+      "pPr",
+      "r",
+      "r",
+      "r",
+      "r"
+    ]
+  },
+  {
+    "paragraphIndex": 1,
+    "bodyText": "",
+    "maths": 1,
+    "bookmarks": [],
+    "immediateChildren": [
+      "pPr",
+      "oMathPara"
+    ]
+  },
+  {
+    "paragraphIndex": 2,
+    "bodyText": "第二段正文 Times New Roman 12 pt，沿用已有原生样式。",
+    "maths": 0,
+    "bookmarks": [],
+    "immediateChildren": [
+      "pPr",
+      "r",
+      "r",
+      "r"
+    ]
+  },
+  {
+    "paragraphIndex": 3,
+    "bodyText": "",
+    "maths": 1,
+    "bookmarks": [],
+    "immediateChildren": [
+      "pPr",
+      "oMathPara"
+    ]
+  },
+  {
+    "paragraphIndex": 4,
+    "bodyText": "",
+    "maths": 0,
+    "bookmarks": [],
+    "immediateChildren": [
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r"
+    ]
+  }
+]

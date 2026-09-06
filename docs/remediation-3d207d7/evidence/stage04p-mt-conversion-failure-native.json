@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  1268574,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  416618,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  351074,
+        "name":  "OMML anchor 9aaa7117-69f8-42b1-8b61-54f1f96489bb owns different formula content.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

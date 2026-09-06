@@ -1,0 +1,55 @@
+SESSION|ff370344-3908-4a5f-af9c-687b13d3a8e0|doc=文档140|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|ee4a6fb1-6b4a-4cc5-858a-15e9b9957b5d|doc=文档140|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|b06d60ca-ef83-4315-a5d4-433993aac95a|doc=文档140|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|843ca25c-0fbd-4f6a-80fe-2a3786550665|doc=文档140|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|fc9a877e-95fa-426d-8058-ab56d1e89443|doc=文档140|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|6bc5b0e6-7b2c-4cf4-b81d-39db4b04baf5|doc=文档140|mode=create|object=wordOmml|display=inline|numbered=False|status=failed|error=System.IO.InvalidDataException: Converted target finalization failed: Reference number bookmark 'VTEqNum_521ed14e8a0d45b797b5bfea63eae5f3' is missing.
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+SESSION|33a2028c-9e47-4729-9ad4-f42fcc86391c|doc=文档140|mode=edit|object=nativeOle|display=block|numbered=True|status=completed|error=
+SESSION|0cd9c4d6-4e65-4947-a472-4c3fd73318e8|doc=文档140|mode=edit|object=nativeOle|display=block|numbered=True|status=completed|error=
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "process":  "visualtex"
+}

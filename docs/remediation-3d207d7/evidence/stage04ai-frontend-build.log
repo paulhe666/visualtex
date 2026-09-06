@@ -1,0 +1,27 @@
+
+> visualtex-windows@1.2.6 build:all
+> npm run build:desktop && npm run build:office:windows-native
+
+
+> visualtex-windows@1.2.6 build:desktop
+> tsc --noEmit && vite build
+
+X [ERROR] Cannot read directory "../../../../..": Access is denied.
+
+X [ERROR] Could not resolve "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\vite.config.ts"
+
+failed to load config from C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\vite.config.ts
+error during build:
+Error: Build failed with 2 errors:
+error: Cannot read directory "../../../../..": Access is denied.
+error: Could not resolve "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\vite.config.ts"
+    at failureErrorWithLog (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:1467:15)
+    at C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:926:25
+    at runOnEndCallbacks (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:1307:45)
+    at buildResponseToResult (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:924:7)
+    at C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:951:16
+    at responseCallbacks.<computed> (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:603:9)
+    at handleIncomingPacket (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:658:12)
+    at Socket.readFromStdout (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\node_modules\esbuild\lib\main.js:581:7)
+    at Socket.emit (node:events:508:20)
+    at addChunk (node:internal/streams/readable:564:12)

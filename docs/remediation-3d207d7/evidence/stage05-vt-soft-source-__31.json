@@ -1,0 +1,52 @@
+{
+    "name":  "文档31",
+    "fullName":  "文档31",
+    "saved":  false,
+    "end":  370,
+    "paragraphs":  1,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+
+                  ],
+    "fields":  [
+
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  370,
+                      "lineRule":  0,
+                      "text":  "自己推导一下：$$\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right] $$\u003cBR\u003e有这个可以得到类似的密度守恒方程：$$\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0$$\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

@@ -1,0 +1,172 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04u-word-hook.log.recovery-339d12e93ea6456a80237b62a47fe439-before.xml",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04u-word-hook.log.recovery-339d12e93ea6456a80237b62a47fe439-after.xml",
+  "count": 33,
+  "differences": [
+    {
+      "path": "/children/22/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id",
+      "before": "VTEqCap_4d74c37ab6d64c5ea4605b99c3d3e78f",
+      "after": "VTEqNum_4d74c37ab6d64c5ea4605b99c3d3e78f"
+    },
+    {
+      "path": "/children/22/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}name",
+      "before": "VTEqCap_4d74c37ab6d64c5ea4605b99c3d3e78f",
+      "after": "VTEqNum_4d74c37ab6d64c5ea4605b99c3d3e78f"
+    },
+    {
+      "path": "/children/22/children/2/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id",
+      "before": "VTEqNum_4d74c37ab6d64c5ea4605b99c3d3e78f",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/2/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}name",
+      "before": "VTEqNum_4d74c37ab6d64c5ea4605b99c3d3e78f",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/2/children/length",
+      "before": 0,
+      "after": 2
+    },
+    {
+      "path": "/children/22/children/2/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bookmarkStart",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"
+    },
+    {
+      "path": "/children/22/children/3/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
+      "before": null,
+      "after": "begin"
+    },
+    {
+      "path": "/children/22/children/3/children/1/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar"
+    },
+    {
+      "path": "/children/22/children/3/children/1/text",
+      "before": "2.0-",
+      "after": ""
+    },
+    {
+      "path": "/children/22/children/4/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
+      "before": "begin",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/4/children/1/attrs/{http://www.w3.org/XML/1998/namespace}space",
+      "before": null,
+      "after": "preserve"
+    },
+    {
+      "path": "/children/22/children/4/children/1/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}instrText"
+    },
+    {
+      "path": "/children/22/children/4/children/1/text",
+      "before": "",
+      "after": " SEQ VisualTeXEquation \\r 3 \\* ARABIC "
+    },
+    {
+      "path": "/children/22/children/5/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
+      "before": null,
+      "after": "separate"
+    },
+    {
+      "path": "/children/22/children/5/children/1/attrs/{http://www.w3.org/XML/1998/namespace}space",
+      "before": "preserve",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/5/children/1/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}instrText",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar"
+    },
+    {
+      "path": "/children/22/children/5/children/1/text",
+      "before": " SEQ VisualTeXEquation \\r 3 \\* ARABIC ",
+      "after": ""
+    },
+    {
+      "path": "/children/22/children/6/children/0/children/length",
+      "before": 1,
+      "after": 2
+    },
+    {
+      "path": "/children/22/children/6/children/0/children/0/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val",
+      "before": "22",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/6/children/0/children/0/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}noProof"
+    },
+    {
+      "path": "/children/22/children/6/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
+      "before": "separate",
+      "after": null
+    },
+    {
+      "path": "/children/22/children/6/children/1/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
+    },
+    {
+      "path": "/children/22/children/6/children/1/text",
+      "before": "",
+      "after": "3"
+    },
+    {
+      "path": "/children/22/children/7/children/0/children/length",
+      "before": 2,
+      "after": 1
+    },
+    {
+      "path": "/children/22/children/7/children/0/children/0/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val",
+      "before": null,
+      "after": "22"
+    },
+    {
+      "path": "/children/22/children/7/children/0/children/0/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}noProof",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz"
+    },
+    {
+      "path": "/children/22/children/7/children/1/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
+      "before": null,
+      "after": "end"
+    },
+    {
+      "path": "/children/22/children/7/children/1/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar"
+    },
+    {
+      "path": "/children/22/children/7/children/1/text",
+      "before": "3",
+      "after": ""
+    },
+    {
+      "path": "/children/22/children/8/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id",
+      "before": null,
+      "after": "VTEqCap_4d74c37ab6d64c5ea4605b99c3d3e78f"
+    },
+    {
+      "path": "/children/22/children/8/attrs/{http://schemas.openxmlformats.org/wordprocessingml/2006/main}name",
+      "before": null,
+      "after": "VTEqCap_4d74c37ab6d64c5ea4605b99c3d3e78f"
+    },
+    {
+      "path": "/children/22/children/8/children/length",
+      "before": 2,
+      "after": 0
+    },
+    {
+      "path": "/children/22/children/8/tag",
+      "before": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r",
+      "after": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bookmarkStart"
+    }
+  ]
+}

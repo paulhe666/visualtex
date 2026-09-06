@@ -1,0 +1,26 @@
+[
+    {
+        "handle":  1533870,
+        "name":  "是(\u0026Y)",
+        "id":  6,
+        "class":  "Button"
+    },
+    {
+        "handle":  812948,
+        "name":  "否(\u0026N)",
+        "id":  7,
+        "class":  "Button"
+    },
+    {
+        "handle":  2058882,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  7039064,
+        "name":  "将把全文 6 个 VisualTeX 公式重新绘制为 MathType。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

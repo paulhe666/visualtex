@@ -1,0 +1,52 @@
+﻿{
+    "bookmark":  "ZEqnNum100242",
+    "wordMacroButtonTarget":  {
+                                  "nativeSelectionType":  1,
+                                  "codeStart":  261,
+                                  "codeEnd":  465,
+                                  "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                  "type":  51
+                              },
+    "actualReferenceRectangle":  {
+                                     "left":  329,
+                                     "width":  0,
+                                     "top":  1059,
+                                     "height":  60
+                                 },
+    "passed":  true,
+    "target":  {
+                   "end":  465,
+                   "frames":  0,
+                   "text":  "(0.0-2)",
+                   "start":  331
+               },
+    "before":  {
+                   "start":  568,
+                   "end":  568
+               },
+    "pid":  64844,
+    "completeReferenceRectangle":  {
+                                       "left":  329,
+                                       "width":  149,
+                                       "top":  1059,
+                                       "height":  60
+                                   },
+    "rectangle":  {
+                      "left":  329,
+                      "width":  149,
+                      "top":  1059,
+                      "height":  60
+                  },
+    "wordExpandedTargetField":  null,
+    "time":  "2026-09-06T13:47:47.0255759Z",
+    "navigationBookmark":  "ZEqnNum100242",
+    "visualReviewRequired":  true,
+    "selectionMatched":  true,
+    "after":  {
+                  "end":  260,
+                  "text":  "\u0015",
+                  "start":  260
+              },
+    "document":  "文档34",
+    "action":  "real mouse double-click"
+}

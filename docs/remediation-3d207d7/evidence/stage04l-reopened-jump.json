@@ -1,0 +1,36 @@
+﻿{
+    "pid":  88240,
+    "time":  "2026-09-06T06:13:48.0654802Z",
+    "action":  "real mouse double-click",
+    "wordMacroButtonTarget":  null,
+    "after":  {
+                  "end":  224,
+                  "text":  "(2)",
+                  "start":  165
+              },
+    "before":  {
+                   "start":  0,
+                   "end":  0
+               },
+    "rectangle":  {
+                      "left":  1141,
+                      "width":  1,
+                      "top":  1508,
+                      "height":  1
+                  },
+    "passed":  true,
+    "target":  {
+                   "end":  224,
+                   "text":  "(2)",
+                   "start":  165
+               },
+    "actualReferenceRectangle":  {
+                                     "left":  1118,
+                                     "width":  0,
+                                     "top":  1480,
+                                     "height":  60
+                                 },
+    "wordExpandedTargetField":  null,
+    "bookmark":  "ZEqnNum100364",
+    "document":  "stage04l-identical.docx"
+}

@@ -1,0 +1,65 @@
+{
+    "id":  "2749e3f3-0cfa-4840-ae27-816672c042f5",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "5cc94fa6-a7ee-4d16-96df-7919a2e121f7",
+    "sourceDocumentId":  "文档11",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "c4ccebc2-bf59-4cdd-953e-065f0782fdd5",
+                      "latex":  "i\\hbar \\frac{\\partial}{\\partial t}\\psi(\\mathbf{r},t) = \\left[ -\\frac{\\hbar^2}{2m}\\nabla^2 + V(\\mathbf{r},t) \\right]\\psi(\\mathbf{r},t)"
+                  }
+              ],
+    "activeLineId":  "c4ccebc2-bf59-4cdd-953e-065f0782fdd5",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmi\u003ei\u003c/mi\u003e\n  \u003cmi data-mjx-alternate=\"1\"\u003e\u0026#x210F;\u003c/mi\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e,\u003c/mo\u003e\n  \u003cmi\u003et\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e[\u003c/mo\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmfrac\u003e\n      \u003cmsup\u003e\n        \u003cmi data-mjx-alternate=\"1\"\u003e\u0026#x210F;\u003c/mi\u003e\n        \u003cmn\u003e2\u003c/mn\u003e\n      \u003c/msup\u003e\n      \u003cmrow\u003e\n        \u003cmn\u003e2\u003c/mn\u003e\n        \u003cmi\u003em\u003c/mi\u003e\n      \u003c/mrow\u003e\n    \u003c/mfrac\u003e\n    \u003cmsup\u003e\n      \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n      \u003cmn\u003e2\u003c/mn\u003e\n    \u003c/msup\u003e\n    \u003cmo\u003e+\u003c/mo\u003e\n    \u003cmi\u003eV\u003c/mi\u003e\n    \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmo\u003e,\u003c/mo\u003e\n    \u003cmi\u003et\u003c/mi\u003e\n    \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e]\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e,\u003c/mo\u003e\n  \u003cmi\u003et\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "5cc94fa6-a7ee-4d16-96df-7919a2e121f7",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "i\\hbar \\frac{\\partial}{\\partial t}\\psi(\\mathbf{r},t) = \\left[ -\\frac{\\hbar^2}{2m}\\nabla^2 + V(\\mathbf{r},t) \\right]\\psi(\\mathbf{r},t)",
+                             "lines":  [
+                                           {
+                                               "id":  "c4ccebc2-bf59-4cdd-953e-065f0782fdd5",
+                                               "latex":  "i\\hbar \\frac{\\partial}{\\partial t}\\psi(\\mathbf{r},t) = \\left[ -\\frac{\\hbar^2}{2m}\\nabla^2 + V(\\mathbf{r},t) \\right]\\psi(\\mathbf{r},t)"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T12:25:51.8832498+00:00",
+                             "updatedAt":  "2026-09-06T12:25:51.8832498+00:00"
+                         },
+    "dirty":  false,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788697551885,
+    "updatedAt":  1788697558028,
+    "expiresAt":  1788783958028
+}

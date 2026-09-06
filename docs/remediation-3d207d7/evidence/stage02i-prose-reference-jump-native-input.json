@@ -1,0 +1,28 @@
+﻿{
+    "bookmark":  "VTEqNum_fa8f151b47a74780aad2d33a40fe78dc",
+    "action":  "real mouse double-click",
+    "document":  "文档41",
+    "passed":  true,
+    "rectangle":  {
+                      "left":  1225,
+                      "width":  1,
+                      "top":  1553,
+                      "height":  1
+                  },
+    "time":  "2026-09-06T02:33:02.0854201Z",
+    "target":  {
+                   "end":  178,
+                   "text":  "0.0.2",
+                   "start":  117
+               },
+    "before":  {
+                   "start":  231,
+                   "end":  388
+               },
+    "pid":  65336,
+    "after":  {
+                  "end":  178,
+                  "text":  "0.0.2",
+                  "start":  117
+              }
+}

@@ -1,0 +1,65 @@
+{
+    "id":  "aa56b819-2a4e-41d7-8de7-e84ae77401c9",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "62b9581f-4bd0-4441-ab46-34558a645870",
+    "sourceDocumentId":  "文档149",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "c14ac1d6-f272-4c3a-aae3-3a9186541cac",
+                      "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]"
+                  }
+              ],
+    "activeLineId":  "c14ac1d6-f272-4c3a-aae3-3a9186541cac",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n  \u003c/msup\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ei\u003c/mi\u003e\n      \u003cmi data-mjx-alternate=\"1\"\u003e\u0026#x210F;\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmrow\u003e\n      \u003cmn\u003e2\u003c/mn\u003e\n      \u003cmi\u003em\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e[\u003c/mo\u003e\n    \u003cmsup\u003e\n      \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/msup\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n    \u003cmsup\u003e\n      \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/msup\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e]\u003c/mo\u003e\n  \u003c/mrow\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "62b9581f-4bd0-4441-ab46-34558a645870",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]",
+                             "lines":  [
+                                           {
+                                               "id":  "c14ac1d6-f272-4c3a-aae3-3a9186541cac",
+                                               "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T09:41:03.7492269+00:00",
+                             "updatedAt":  "2026-09-06T09:41:03.7492269+00:00"
+                         },
+    "dirty":  false,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788687663750,
+    "updatedAt":  1788687683608,
+    "expiresAt":  1788774083608
+}

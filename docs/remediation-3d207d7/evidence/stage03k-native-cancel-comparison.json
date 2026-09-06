@@ -1,0 +1,6 @@
+{
+  "before": "stage03k-native-user-edited",
+  "after": "stage03k-native-cancel",
+  "fullComEqual": true,
+  "customXmlEqual": true
+}

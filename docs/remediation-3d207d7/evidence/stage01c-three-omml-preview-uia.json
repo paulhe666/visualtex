@@ -1,0 +1,470 @@
+[
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor - Web 内容",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "RootWebArea",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "885,413,2070,1320",
+        "value":  "https://127.0.0.1:43127/dialog/3301eef6-191b-4aeb-8b5c-b89b884a5fff?runtime=vsto-bulk-import",
+        "enabled":  true
+    },
+    {
+        "id":  "root",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,94",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "909,432,54,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 文档批量导入",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "979,430,198,31",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "左侧编辑源码，右侧实时查看 Word 导入结构",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "979,465,330,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "源格式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1862,447,50,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "源格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1922,438,187,43",
+        "value":  "自动识别",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2145,447,66,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "2221,438,221,43",
+        "value":  "Word 原生 OMML",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2462,432,234,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "所有行间公式添加编号",
+        "offscreen":  false,
+        "type":  "ControlType.CheckBox",
+        "rect":  "2480,448,23,23",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "所有行间公式添加编号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2513,447,165,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "导入 .tex / .md",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2709,433,222,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2736,447,25,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "903,524,958,1106",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "LaTeX / Markdown 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "982,543,217,27",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "支持正文、标题、列表、引用、代码块和混合公式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "982,574,330,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "86",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1778,557,17,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 字符",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1794,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "文档源码",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "904,612,956,1017",
+        "value":  "$$a^2+b^2=c^2$$\n\n$$e^{i\\pi}+1=0$$\n\n$$\\int_{-\\infty}^{\\infty}e^{-x^2}\\,dx=\\sqrt{\\pi}$$\n",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1878,524,1059,1106",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 结构预览",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1957,543,135,27",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "按最终导入层级模拟正文、公式与段落间距",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1957,574,286,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "预览统计",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2723,550,194,37",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "3",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2735,557,9,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 块",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2743,557,20,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "0",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2791,557,9,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 行内",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2799,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "3",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2862,557,9,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 行间",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2870,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "1879,662,1034,976",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2321,725,150,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2328,810,137,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2287,895,218,74",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,1648,2070,85",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "909,1679,23,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "预览解析正常；Word 将按当前结构化预览结果插入。",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "940,1679,392,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2606,1665,119,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2628,1679,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "导入到 Word",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2737,1665,194,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2759,1679,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    }
+]

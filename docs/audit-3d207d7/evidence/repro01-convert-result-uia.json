@@ -1,0 +1,38 @@
+[
+    {
+        "id":  "6",
+        "name":  "是(Y)",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1979,1175,125,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "7",
+        "name":  "否(N)",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "2116,1175,125,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "20",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1626,1028,48,48",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "65535",
+        "name":  "将把全文 3 个 VisualTeX 公式重新绘制为 OMML。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1686,1028,533,95",
+        "value":  "",
+        "enabled":  true
+    }
+]

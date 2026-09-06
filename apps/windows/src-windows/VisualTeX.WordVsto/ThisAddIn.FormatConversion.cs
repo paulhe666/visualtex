@@ -329,9 +329,10 @@ public sealed partial class ThisAddIn
                         target.DisplayMode,
                         "inline",
                         StringComparison.OrdinalIgnoreCase);
-                    var generated = MathTypeMtefCodec.CreateEquationNative(
+                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
                         mathMl,
-                        inline);
+                        inline,
+                        formula.Session.FontSizePt);
                     nativePreviewInputs[target.Id] = generated.Mtef;
                     // Once the batch is attempted, InsertMathTypeOle must never
                     // start one MathPage sidecar per formula or silently switch
@@ -429,15 +430,18 @@ public sealed partial class ThisAddIn
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException error)
         {
-            SetStatus("公式格式转换已取消。");
+            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
+            WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={reported}");
+            SetStatus(ReferenceEquals(reported, error) ? "公式格式转换已取消。" : reported.Message);
         }
         catch (Exception error)
         {
+            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={error}");
-            SetStatus($"公式格式转换失败：{error.Message}");
+                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={reported}");
+            SetStatus($"公式格式转换失败：{reported.Message}");
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -449,14 +453,17 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
+                            reported.Message,
                             "VisualTeX 公式格式转换",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
                     }).ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception displayError)
+                {
+                    WordDoubleClickHook.TraceMessage($"format-conversion-error-display-failed error={displayError}");
+                }
             }
         }
         finally
@@ -489,6 +496,23 @@ public sealed partial class ThisAddIn
                          .Distinct())
                 preview!.Dispose();
             _operationGate.Release();
+        }
+    }
+
+    private static async Task<Exception> RecordSessionFailureAsync(
+        VisualTeXSessionClient client,
+        IReadOnlyCollection<string> sessionIds,
+        Exception error)
+    {
+        if (sessionIds.Count == 0) return error;
+        try
+        {
+            await FinalizeOfficeSessionsAsync(client, sessionIds, completed: false, error.ToString()).ConfigureAwait(false);
+            return error;
+        }
+        catch (Exception recordingError)
+        {
+            return new AggregateException("Word 操作失败，且未能记录运行时失败状态。", error, recordingError);
         }
     }
 

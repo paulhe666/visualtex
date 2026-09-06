@@ -1,0 +1,46 @@
+﻿[
+    {
+        "mode":  "original",
+        "xmlMaths":  2,
+        "shapes":  0,
+        "document":  "文档19",
+        "start":  0,
+        "xmlOle":  0,
+        "maths":  2,
+        "view":  3,
+        "end":  43
+    },
+    {
+        "mode":  "draft-suspended",
+        "xmlMaths":  2,
+        "shapes":  0,
+        "document":  "文档19",
+        "start":  0,
+        "xmlOle":  0,
+        "maths":  2,
+        "view":  1,
+        "end":  43
+    },
+    {
+        "mode":  "print-suspended",
+        "xmlMaths":  2,
+        "shapes":  0,
+        "document":  "文档19",
+        "start":  0,
+        "xmlOle":  0,
+        "maths":  2,
+        "view":  3,
+        "end":  43
+    },
+    {
+        "mode":  "original-restored",
+        "xmlMaths":  2,
+        "shapes":  0,
+        "document":  "文档19",
+        "start":  0,
+        "xmlOle":  0,
+        "maths":  2,
+        "view":  3,
+        "end":  43
+    }
+]

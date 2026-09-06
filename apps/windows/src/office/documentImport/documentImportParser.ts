@@ -1615,6 +1615,7 @@ export function parseDocumentImport(
     .replace(/\r/g, "\n")
     .trim();
   const blocks: DocumentImportBlock[] = [];
+  const latexHeadings: DocumentImportBlock[] = [];
   const paragraph: string[] = [];
   const quote: string[] = [];
   const listModes: Array<"bullet" | "numbered"> = [];
@@ -1739,20 +1740,22 @@ export function parseDocumentImport(
         flushParagraph();
         flushQuote();
         const levels: Record<string, number> = {
-          part: 1,
-          chapter: 1,
+          part: -1,
+          chapter: 0,
           section: 1,
           subsection: 2,
           subsubsection: 3,
           paragraph: 4,
           subparagraph: 5,
         };
-        blocks.push({
+        const headingBlock: DocumentImportBlock = {
           id: id(),
           kind: "heading",
           level: levels[heading[1].toLowerCase()] ?? 4,
           runs: parseInline(heading[2], format),
-        });
+        };
+        blocks.push(headingBlock);
+        latexHeadings.push(headingBlock);
         continue;
       }
       const item = trimmed.match(/^\\item(?:\s*\[[^\]]*\])?\s*(.*)$/);
@@ -1815,6 +1818,14 @@ export function parseDocumentImport(
   }
   if (listModes.length) warnings.push(`LaTeX 文档有 ${listModes.length} 个列表环境未闭合。`);
   if (!blocks.length) throw new Error("没有找到可以插入 Word 的文字或公式。");
+
+  // Match WordBulkImportParser: section begins at level 1 in an article,
+  // but follows chapter (or part) in a book. Only parsed headings count;
+  // commented commands, verbatim text and theorem labels do not shift levels.
+  if (latexHeadings.length) {
+    const offset = 1 - latexHeadings.reduce((rank, heading) => Math.min(rank, heading.level), 1);
+    for (const heading of latexHeadings) heading.level += offset;
+  }
 
   const runs = blocks.flatMap((block) => block.runs);
   const formulaCount = runs.filter((run) => run.kind === "formula").length;

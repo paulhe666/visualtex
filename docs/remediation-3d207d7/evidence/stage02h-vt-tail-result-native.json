@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  206222,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  337276,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  730466,
+        "name":  "COM and Word XML disagree on the complete equation inventory.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

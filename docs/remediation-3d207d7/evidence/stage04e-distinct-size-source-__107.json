@@ -1,0 +1,67 @@
+{
+    "name":  "文档107",
+    "fullName":  "文档107",
+    "saved":  false,
+    "end":  26,
+    "paragraphs":  2,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+
+                  ],
+    "fields":  [
+
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  false,
+                      "end":  25,
+                      "lineRule":  0,
+                      "text":  "正文 Arial 14 pt，公式采用不同字号。\u003cCR\u003e",
+                      "size":  14
+                  },
+                  {
+                      "start":  25,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Arial",
+                      "inTable":  false,
+                      "end":  26,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  14
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

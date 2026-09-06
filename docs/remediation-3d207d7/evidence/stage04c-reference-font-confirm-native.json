@@ -1,0 +1,44 @@
+[
+    {
+        "handle":  148218,
+        "name":  "",
+        "id":  148218,
+        "class":  "WindowsForms10.Window.8.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  738040,
+        "name":  "将在整个文档中原位重绘 2 个 LaTeX 公式为 Word OMML。",
+        "id":  738040,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  3687096,
+        "name":  "为全部 2 个行间公式添加编号",
+        "id":  3687096,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  82688,
+        "name":  "编号格式：按节编号（1.1.1）。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
+        "id":  82688,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  82690,
+        "name":  "",
+        "id":  82690,
+        "class":  "WindowsForms10.Window.8.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  82692,
+        "name":  "取消",
+        "id":  82692,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r134_ad1"
+    },
+    {
+        "handle":  82694,
+        "name":  "开始重绘",
+        "id":  82694,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r134_ad1"
+    }
+]

@@ -1,0 +1,29 @@
+﻿{
+    "bookmark":  "VTEqNum_92642adfa46b4cc68549364741b31549",
+    "action":  "real mouse double-click",
+    "document":  "文档79",
+    "passed":  false,
+    "rectangle":  {
+                      "left":  1155,
+                      "width":  1,
+                      "top":  1210,
+                      "height":  1
+                  },
+    "time":  "2026-09-06T03:00:23.5426323Z",
+    "wordExpandedTargetField":  null,
+    "target":  {
+                   "end":  232,
+                   "text":  "0.0.1",
+                   "start":  100
+               },
+    "before":  {
+                   "start":  0,
+                   "end":  0
+               },
+    "pid":  31432,
+    "after":  {
+                  "end":  369,
+                  "text":  "\r",
+                  "start":  369
+              }
+}

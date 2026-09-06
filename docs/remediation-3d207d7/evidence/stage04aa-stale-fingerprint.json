@@ -1,0 +1,88 @@
+﻿{
+    "scope":  "read-only real COM plus pure-data diagnostic; not acceptance",
+    "pid":  87408,
+    "dllSha256":  "7EDE567B9F8804F48389AC66C781A4D593C4E97309FC57D5138C2B951A9BBCD8",
+    "metadata":  [
+                     {
+                         "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}",
+                         "id":  "34d775c1-645f-4527-9f80-d806fcf27571",
+                         "stored":  "0f04fce013e737e5426de1d811d0bdd3529bcd7922a33314dd2f648af34dae57"
+                     },
+                     {
+                         "latex":  "\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{m}{2}} \\end{cases}",
+                         "id":  "4dfcb874-52bc-4ac8-987d-94b44cdb6b19",
+                         "stored":  "47cdafd39503a240fc7f01577d35de91879182ba0dad508048a09b25cf6b398f"
+                     },
+                     {
+                         "latex":  "E=mc^2",
+                         "id":  "8260ae5a-f1c0-49a6-be31-9300a31b9bb6",
+                         "stored":  "062780faacf5cf9a1c2f5d6e890ff9848819f94becb9b053edbcb98e88173c54"
+                     },
+                     {
+                         "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]",
+                         "id":  "6a5fede0-7971-4879-9ef9-2085d04a26bd",
+                         "stored":  "e939e6c088666fd593240c5eaee55408799052fd76d59fbdd19905e6753411a0"
+                     },
+                     {
+                         "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0",
+                         "id":  "b88ed384-cfa4-429c-b1aa-1910af6a1427",
+                         "stored":  "b1e4d97b886c565b238b55ddd79957188e3691148d3b55208266773d74d9f2f5"
+                     },
+                     {
+                         "latex":  "i\\hbar \\frac{\\partial}{\\partial t}\\psi(\\mathbf{r},t) = \\left[ -\\frac{\\hbar^2}{2m}\\nabla^2 + V(\\mathbf{r},t) \\right]\\psi(\\mathbf{r},t)",
+                         "id":  "f0c0f8ff-6dee-49c7-b1f2-5bc622b186da",
+                         "stored":  "a7d2975d189bd367c339c3d7d04c34fa142bbc7e595d2a0d897039780c21b5cd"
+                     }
+                 ],
+    "actual":  [
+                   {
+                       "fingerprint":  "0f04fce013e737e5426de1d811d0bdd3529bcd7922a33314dd2f648af34dae57",
+                       "matchingStored":  [
+                                              "34d775c1-645f-4527-9f80-d806fcf27571"
+                                          ],
+                       "text":  "\r𝐸−𝑢(𝑥)\r=\r1\r𝑓(𝜔)\r𝑣\r𝑝ℎ\r(𝜔,𝑥)\r",
+                       "index":  1
+                   },
+                   {
+                       "fingerprint":  "47cdafd39503a240fc7f01577d35de91879182ba0dad508048a09b25cf6b398f",
+                       "matchingStored":  [
+                                              "4dfcb874-52bc-4ac8-987d-94b44cdb6b19"
+                                          ],
+                       "text":  "\r\r\rd\rd𝜔\r(𝜔𝑓(𝜔))=0\r\r𝜔𝑓(𝜔)\r2\r\rd𝐸(𝜔)\rd𝜔\r=\r\r𝑚\r2\r\r\r\r",
+                       "index":  2
+                   },
+                   {
+                       "fingerprint":  "25e52097d5ef19e931e2ebd3891174490af6e69b9a9528c0e6457e3c276efc91",
+                       "matchingStored":  [
+
+                                          ],
+                       "text":  "𝐸=𝑚\r𝑐\r2\r",
+                       "index":  3
+                   },
+                   {
+                       "fingerprint":  "a7d2975d189bd367c339c3d7d04c34fa142bbc7e595d2a0d897039780c21b5cd",
+                       "matchingStored":  [
+                                              "f0c0f8ff-6dee-49c7-b1f2-5bc622b186da"
+                                          ],
+                       "text":  "𝑖ℏ\r𝜕\r𝜕𝑡\r𝜓(𝐫,𝑡)=[−\r\rℏ\r2\r\r2𝑚\r\r∇\r2\r+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)",
+                       "index":  4
+                   },
+                   {
+                       "fingerprint":  "e939e6c088666fd593240c5eaee55408799052fd76d59fbdd19905e6753411a0",
+                       "matchingStored":  [
+                                              "6a5fede0-7971-4879-9ef9-2085d04a26bd"
+                                          ],
+                       "text":  "\r𝜕\r𝜕𝑡\r\r𝜓\r∗\r(\r𝑟\r)𝜓(\r𝑟\r)=\r𝑖ℏ\r2𝑚\r∇⋅[\r𝜓\r∗\r(\r𝑟\r)∇𝜓(\r𝑟\r)−𝜓(\r𝑟\r)∇\r𝜓\r∗\r(𝑟)]",
+                       "index":  5
+                   },
+                   {
+                       "fingerprint":  "b1e4d97b886c565b238b55ddd79957188e3691148d3b55208266773d74d9f2f5",
+                       "matchingStored":  [
+                                              "b88ed384-cfa4-429c-b1aa-1910af6a1427"
+                                          ],
+                       "text":  "\r𝜕\r𝜕𝑡\r𝜌(\r𝑟\r,𝑡)+∇⋅\r𝑗\r=0",
+                       "index":  6
+                   }
+               ],
+    "document":  "文档149"
+}

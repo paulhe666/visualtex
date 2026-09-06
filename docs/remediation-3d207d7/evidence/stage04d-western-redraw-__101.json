@@ -1,0 +1,397 @@
+{
+    "name":  "文档101",
+    "fullName":  "文档101",
+    "saved":  false,
+    "end":  183,
+    "paragraphs":  13,
+    "tables":  [
+                   {
+                       "index":  1,
+                       "start":  7,
+                       "end":  93,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  7,
+                                         "end":  8
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  8,
+                                         "end":  29
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  29,
+                                         "end":  92
+                                     }
+                                 ]
+                   },
+                   {
+                       "index":  2,
+                       "start":  114,
+                       "end":  176,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0-2)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  114,
+                                         "end":  115
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  115,
+                                         "end":  127
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(0-2)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  127,
+                                         "end":  175
+                                     }
+                                 ]
+                   }
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  12,
+                      "start":  8,
+                      "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e",
+                      "index":  1,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  28
+                  },
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  12,
+                      "start":  115,
+                      "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e",
+                      "index":  2,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  126
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  174,
+                          "name":  "VTEq_8efa55faebf749b787030fb2c0e35778",
+                          "text":  "(0-2)",
+                          "start":  128
+                      },
+                      {
+                          "end":  91,
+                          "name":  "VTEq_e9d5821efac14af4b67b22753618080f",
+                          "text":  "(0-1)",
+                          "start":  30
+                      },
+                      {
+                          "end":  173,
+                          "name":  "VTEqCap_8efa55faebf749b787030fb2c0e35778",
+                          "text":  "0-2",
+                          "start":  129
+                      },
+                      {
+                          "end":  90,
+                          "name":  "VTEqCap_e9d5821efac14af4b67b22753618080f",
+                          "text":  "0-1",
+                          "start":  31
+                      },
+                      {
+                          "end":  173,
+                          "name":  "VTEqNum_8efa55faebf749b787030fb2c0e35778",
+                          "text":  "0-2",
+                          "start":  129
+                      },
+                      {
+                          "end":  90,
+                          "name":  "VTEqNum_e9d5821efac14af4b67b22753618080f",
+                          "text":  "0-1",
+                          "start":  31
+                      },
+                      {
+                          "end":  115,
+                          "name":  "VTOMML_8efa55faebf749b787030fb2c0e35778",
+                          "text":  "",
+                          "start":  115
+                      },
+                      {
+                          "end":  8,
+                          "name":  "VTOMML_e9d5821efac14af4b67b22753618080f",
+                          "text":  "",
+                          "start":  8
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  34,
+                       "end":  89,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  132,
+                       "end":  172,
+                       "index":  2
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  7,
+                      "lineRule":  0,
+                      "text":  "第一段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  7,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  8,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  8,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  29,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  29,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  92,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  92,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  93,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  93,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  107,
+                      "lineRule":  0,
+                      "text":  "这一段保留在第一公式之后。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  107,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  114,
+                      "lineRule":  0,
+                      "text":  "第二段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  114,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  115,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  115,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  127,
+                      "lineRule":  0,
+                      "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  127,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  175,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(0-2)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  175,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  11,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  176,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  176,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  12,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  182,
+                      "lineRule":  0,
+                      "text":  "结尾正文。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  182,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  13,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  183,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading1-dash",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "8efa55fa-ebf7-49b7-8703-0fb2c0e35778",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  2,
+    "customXml":  [
+
+                  ]
+}

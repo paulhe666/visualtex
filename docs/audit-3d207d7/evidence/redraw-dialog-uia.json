@@ -1,0 +1,65 @@
+[
+    {
+        "id":  "201006",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1136,985,540,235",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "201002",
+        "name":  "将在整个文档中原位重绘 2 个 LaTeX 公式为 Word OMML。",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1154,1003,431,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "69964",
+        "name":  "为全部 2 个行间公式添加编号",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1154,1066,277,30",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "69966",
+        "name":  "编号格式：按章编号（1-1）。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1176,1101,500,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "69968",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1157,1151,516,48",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "69970",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1595,1154,75,42",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "69972",
+        "name":  "开始重绘",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1478,1154,111,42",
+        "value":  "",
+        "enabled":  true
+    }
+]

@@ -1,0 +1,30 @@
+﻿2026-09-06T21:42:09.0886757+08:00 redraw-start scope=document mode=wordOmml formulas=2 numberDisplayFormulas=True
+2026-09-06T21:42:09.1492743+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:42:09.2077902+08:00 render index=1 elapsedMs=49 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:09.2097914+08:00 render index=2 elapsedMs=0 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:10.6177999+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=24 renderMaxMs=49 insertTotalMs=1085 insertMaxMs=574
+2026-09-06T21:42:30.8357758+08:00 redraw-start scope=document mode=wordOmml formulas=2 numberDisplayFormulas=True
+2026-09-06T21:42:30.8565212+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:42:30.8902432+08:00 render index=1 elapsedMs=29 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:30.8912411+08:00 render index=2 elapsedMs=0 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:31.9524354+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=14 renderMaxMs=29 insertTotalMs=785 insertMaxMs=501
+2026-09-06T21:42:52.0294280+08:00 redraw-start scope=document mode=nativeOle formulas=2 numberDisplayFormulas=True
+2026-09-06T21:42:52.0494278+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:42:52.2161950+08:00 render index=1 elapsedMs=162 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:52.3147656+08:00 render index=2 elapsedMs=98 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:52.8671104+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=130 renderMaxMs=162 insertTotalMs=468 insertMaxMs=286
+2026-09-06T21:43:14.6130899+08:00 redraw-start scope=document mode=nativeOle formulas=2 numberDisplayFormulas=True
+2026-09-06T21:43:14.6320861+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:43:14.7728901+08:00 render index=1 elapsedMs=137 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:14.8768886+08:00 render index=2 elapsedMs=103 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:15.2445995+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=120 renderMaxMs=137 insertTotalMs=268 insertMaxMs=148
+2026-09-06T21:43:36.3814572+08:00 redraw-start scope=document mode=mathTypeOle formulas=2 numberDisplayFormulas=True
+2026-09-06T21:43:36.4004570+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:43:36.4534690+08:00 render index=1 elapsedMs=49 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:36.4654695+08:00 render index=2 elapsedMs=11 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:37.5521494+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=30 renderMaxMs=49 insertTotalMs=959 insertMaxMs=505
+2026-09-06T21:43:57.1833552+08:00 redraw-start scope=document mode=mathTypeOle formulas=2 numberDisplayFormulas=True
+2026-09-06T21:43:57.2013589+08:00 render-batch-start unique=2 total=2
+2026-09-06T21:43:57.2543584+08:00 render index=1 elapsedMs=49 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:57.2663553+08:00 render index=2 elapsedMs=11 fontSizePt=12 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:58.2616059+08:00 redraw-complete formulas=2 unique=2 skipped=0 renderAverageMs=30 renderMaxMs=49 insertTotalMs=867 insertMaxMs=436

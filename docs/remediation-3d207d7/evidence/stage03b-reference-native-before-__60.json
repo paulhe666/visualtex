@@ -1,0 +1,162 @@
+{
+    "name":  "文档60",
+    "fullName":  "文档60",
+    "saved":  false,
+    "end":  162,
+    "paragraphs":  4,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  1,
+                       "alternative":  "visualtex:v1:deflate:lZLdatwwEIVfpejaMvqzZBly0RaWBloSaOhetF2Q5elaVLa3tpw2DXn3jlmvSygEejvfmTk6M3okk2-hc6Qi92GaXUzwi34bxm6OjmQr_ATjFIaeVDwjK7tusMNo7S2XjHqpDVUSCuq0E5RxUUvhhWK8xiEppAgo3w9j82q3zY4OvbDsDuLLzJh4Ux_ElT-IBYUeJlJ9fiRh8SmM0cYrSY1TjiouOS2h5NQ0TvMaSl9a-dLAp68Z8UMDi7dLqDgrM9KE6RTdwwdkWK3j4L9jtZ-7GkZA5zTOkBH4MbuE-e_ckVT9HGNGRugbGPehSe0tWlqZF1aWTCpWGM0NtxfJOwjHNi0aiRohClsKrTXjhZYZqd0ES1ZSCZFLowprVaFNaTizy6r79DH8hlt8Mmd5cZm5-6e-HuU9pHTGmCaFDne4sbftslNY4fQwJeiQ_sSbXPfLG24inPOkS8hnbA2ywR5Xcg83XRd3oT_CeBpDv0E_Am642YfUbn-H8JzlvETP-dS8QNfe18szBROaMkuZvmOiUqJiJtdaaSX0-cKMVYz9Hfk_TU9_AA",
+                       "width":  69.35,
+                       "index":  1,
+                       "type":  1,
+                       "height":  25.25,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  35
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  106,
+                          "name":  "VTEq_766c9130c36743e5a6a2012b32c2401b",
+                          "text":  "\u003cTAB\u003e(1)",
+                          "start":  35
+                      },
+                      {
+                          "end":  159,
+                          "name":  "VTEqCap_766c9130c36743e5a6a2012b32c2401b",
+                          "text":  "1",
+                          "start":  107
+                      },
+                      {
+                          "end":  158,
+                          "name":  "VTEqNum_766c9130c36743e5a6a2012b32c2401b",
+                          "text":  "1",
+                          "start":  157
+                      },
+                      {
+                          "end":  35,
+                          "name":  "VTO_766c9130c36743e5a6a2012b32c2401b",
+                          "text":  "\u0001",
+                          "start":  1
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  2,
+                       "end":  34,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_766c9130c36743e5a6a2012b32c2401b \\h \\* CHARFORMAT ",
+                       "result":  "1",
+                       "type":  3,
+                       "start":  38,
+                       "end":  104,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  108,
+                       "end":  158,
+                       "index":  3
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  107,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(1)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  107,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  160,
+                      "lineRule":  4,
+                      "text":  "1\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  160,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  161,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  161,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  162,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "766c9130-c367-43e5-a6a2-012b32c2401b",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

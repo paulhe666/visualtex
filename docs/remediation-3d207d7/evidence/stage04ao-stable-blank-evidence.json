@@ -1,0 +1,80 @@
+{
+  "scope": "All original blank paragraphs between first formula and prose; recorded COM, not automatic Word acceptance",
+  "rows": [
+    {
+      "label": "omml-seed",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 84,
+          "end": 85,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-imported",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 84,
+          "end": 85,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-ready",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-roundtrip",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-final",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    }
+  ]
+}

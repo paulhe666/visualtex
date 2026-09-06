@@ -1,0 +1,65 @@
+{
+    "id":  "5027b264-cc20-48ef-abb0-faffff28293c",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "6a784b22-cc85-43ba-b7d7-3e8521bdd4ed",
+    "sourceDocumentId":  "文档138",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "075ac789-f493-43e0-a6f8-ef7f1ece9c00",
+                      "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                  }
+              ],
+    "activeLineId":  "075ac789-f493-43e0-a6f8-ef7f1ece9c00",
+    "codeFormat":  "latex",
+    "displayMode":  "inline",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\n  \u003cmsqrt\u003e\n    \u003cmi\u003eE\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmi\u003eu\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003ex\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msqrt\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmn\u003e1\u003c/mn\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ef\u003c/mi\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n      \u003cmsub\u003e\n        \u003cmi\u003ev\u003c/mi\u003e\n        \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n          \u003cmi\u003ep\u003c/mi\u003e\n          \u003cmi\u003eh\u003c/mi\u003e\n        \u003c/mrow\u003e\n      \u003c/msub\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo\u003e,\u003c/mo\u003e\n        \u003cmi\u003ex\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "6a784b22-cc85-43ba-b7d7-3e8521bdd4ed",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}",
+                             "lines":  [
+                                           {
+                                               "id":  "075ac789-f493-43e0-a6f8-ef7f1ece9c00",
+                                               "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "inline",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T08:46:28.3104268+00:00",
+                             "updatedAt":  "2026-09-06T08:46:28.3104268+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---\u003e System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   --- 内部异常堆栈跟踪的结尾 ---\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()\r\n---\u003e (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n\r\n---\u003e (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.\r\n   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n",
+    "createdAt":  1788684388311,
+    "updatedAt":  1788684407703,
+    "expiresAt":  1788770807703
+}

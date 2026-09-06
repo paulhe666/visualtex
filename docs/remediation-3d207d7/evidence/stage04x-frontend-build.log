@@ -1,0 +1,8 @@
+
+> visualtex-windows@1.2.6 build:all
+> npm run build:desktop && npm run build:office:windows-native
+
+
+> visualtex-windows@1.2.6 build:desktop
+> tsc --noEmit && vite build
+

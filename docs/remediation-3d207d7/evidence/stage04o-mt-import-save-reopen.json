@@ -1,0 +1,22 @@
+﻿{
+    "before":  {
+                   "fields":  37,
+                   "name":  "文档127",
+                   "shapes":  6,
+                   "bookmarks":  1,
+                   "maths":  0,
+                   "end":  1551
+               },
+    "time":  "2026-09-06T06:52:31.6450973Z",
+    "pid":  82668,
+    "path":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04o-mt-import.docx",
+    "after":  {
+                  "fields":  37,
+                  "name":  "stage04o-mt-import.docx",
+                  "saved":  true,
+                  "shapes":  6,
+                  "bookmarks":  1,
+                  "maths":  0,
+                  "end":  1551
+              }
+}

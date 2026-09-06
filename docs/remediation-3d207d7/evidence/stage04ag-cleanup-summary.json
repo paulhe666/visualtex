@@ -1,0 +1,15 @@
+{
+  "processes": 7,
+  "workingSetMB": 2944.0,
+  "pids": [
+    27664,
+    55728,
+    60152,
+    81452,
+    82668,
+    100440,
+    101980
+  ],
+  "closedDocuments": 113,
+  "normallyExitedProcesses": 50
+}

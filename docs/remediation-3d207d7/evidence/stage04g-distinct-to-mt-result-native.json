@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  2115274,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  1198532,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  477296,
+        "name":  "The Word OMML source formula moved before conversion started.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

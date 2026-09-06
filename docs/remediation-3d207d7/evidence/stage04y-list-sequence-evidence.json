@@ -1,0 +1,22 @@
+[
+  {
+    "stage": "imported",
+    "firstListHasNumbering": true,
+    "secondListHasNumbering": true
+  },
+  {
+    "stage": "closed",
+    "firstListHasNumbering": true,
+    "secondListHasNumbering": true
+  },
+  {
+    "stage": "edited",
+    "firstListHasNumbering": true,
+    "secondListHasNumbering": true
+  },
+  {
+    "stage": "before-mt",
+    "firstListHasNumbering": true,
+    "secondListHasNumbering": true
+  }
+]

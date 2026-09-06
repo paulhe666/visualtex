@@ -1,0 +1,16 @@
+[
+  ["reference", "2", "stage05-mt-redraw-reference"],
+  ["number-format", "heading2-dash", "stage05-mt-redraw-renumber"],
+  ["snapshot", "stage05-mt-redraw-reference-result"],
+  ["jump", "stage05-mt-redraw-reference-jump"],
+  ["activate-redraw", "stage05-vt-soft-result-__31.json"],
+  ["reference", "2", "stage05-vt-redraw-reference"],
+  ["number-format", "heading2-dash", "stage05-vt-redraw-renumber"],
+  ["snapshot", "stage05-vt-redraw-reference-result"],
+  ["jump", "stage05-vt-redraw-reference-jump"],
+  ["activate-redraw", "stage05-omml-soft-result-__25.json"],
+  ["reference", "2", "stage05-omml-redraw-reference"],
+  ["number-format", "heading2-dash", "stage05-omml-redraw-renumber"],
+  ["snapshot", "stage05-omml-redraw-reference-result"],
+  ["jump", "stage05-omml-redraw-reference-jump"]
+]

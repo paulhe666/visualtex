@@ -1,0 +1,22 @@
+{
+    "document":  "文档68",
+    "mathFont":  "Latin Modern Math",
+    "anchors":  [
+                    {
+                        "insideMath":  false,
+                        "name":  "VTOMML_8eb35c7ae60b4645b6b41f535478175a",
+                        "parentXml":  "\u003cw:body xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"\u003e\u003cw:bookmarkStart w:id=\"0\" w:name=\"VTOMML_8eb35c7ae60b4645b6b41f535478175a\" /\u003e\u003cw:bookmarkEnd w:id=\"0\" /\u003e\u003cw:p w:rsidR=\"00000000\" w:rsidRDefault=\"00266B49\"\u003e\u003cm:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"\u003e\u003cm:oMath\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003ea\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e2\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e+\u003c/m:t\u003e\u003c/m:r\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003eb\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e2\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e=\u003c/m:t\u003e\u003c/m:r\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003ec\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e2\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003c/m:oMath\u003e\u003c/m:oMathPara\u003e\u003c/w:p\u003e\u003cw:sectPr w:rsidR=\"00000000\"\u003e\u003cw:pgSz w:w=\"11906\" w:h=\"16838\" /\u003e\u003cw:pgMar w:top=\"1440\" w:right=\"1800\" w:bottom=\"1440\" w:left=\"1800\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\" /\u003e\u003cw:cols w:space=\"425\" /\u003e\u003cw:docGrid w:type=\"lines\" w:linePitch=\"312\" /\u003e\u003c/w:sectPr\u003e\u003c/w:body\u003e",
+                        "parents":  [
+                                        "w:body",
+                                        "w:document",
+                                        "pkg:xmlData",
+                                        "/word/document.xml",
+                                        "pkg:package",
+                                        "#document"
+                                    ]
+                    }
+                ],
+    "separators":  [
+
+                   ]
+}

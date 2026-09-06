@@ -1,0 +1,17 @@
+[
+  ["new", "stage04aj-vt-seeded"],
+  ["number-format", "continuous", "stage04aj-continuous"],
+  ["insert", "native", "block", "right", "勾股定理"],
+  ["snapshot", "stage04aj-vt-seed"],
+  ["next"],
+  ["import", "native", "true", "stage04aj-vt-import", "import-source.tex"],
+  ["snapshot", "stage04aj-vt-imported"],
+  ["edit-ole", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04aj-vt-closed"],
+  ["edit-source", "ole", "4", "E=mc^2", "stage04aj-vt-edit"],
+  ["reference", "3", "stage04aj-vt-ref"],
+  ["snapshot", "stage04aj-vt-before-convert"],
+  ["convert", "vt-omml", "full", "stage04aj-vt-omml"],
+  ["snapshot", "stage04aj-omml-converted"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04aj-omml-visible\"}"]
+]

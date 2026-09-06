@@ -1,0 +1,22 @@
+
+7-Zip 25.01 (x64) : Copyright (c) 1999-2025 Igor Pavlov : 2025-08-03
+
+Scanning the drive for archives:
+1 file, 323777910 bytes (309 MiB)
+
+Extracting archive: apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+--
+Path = apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+Type = Nsis
+Physical Size = 323777910
+Method = LZMA:23
+Solid = +
+Headers Size = 160794
+Embedded Stub Size = 62976
+SubType = NSIS-3 Unicode BadCmd=13
+
+Everything is Ok
+
+Files: 30
+Size:       185417482
+Compressed: 323777910
