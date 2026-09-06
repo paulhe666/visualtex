@@ -74,6 +74,7 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "VTWordRibbonApplyImageFontSizePreset",
   "VisualTeX_EditImageField",
   "VisualTeX_EditSelectedImageFromNativeMonitor",
+  "VisualTeX_RunWordNumberedCopyIdentityRegression",
   "VTEnsureVisualTeXImageMacroButton",
   "VTAppendText",
   "VTWriteAndLaunchSession",

@@ -18,6 +18,8 @@ Private Const VT_WORD_EQUATION_NUMBER_FONT_NAME As String = "Cambria Math"
 Private Const VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO _
     As Double = 0.242431640625#
 Private Const VT_WORD_BOOKMARK_PREFIX As String = "VT_Pending_"
+Private Const VT_WORD_EDIT_BOOKMARK_PREFIX As String = "VT_E_"
+Private Const VT_WORD_IMAGE_OWNER_BOOKMARK_PREFIX As String = "VT_I_"
 Private Const VT_WORD_DOCUMENT_IMPORT_BOOKMARK_PREFIX As String = "VT_D_"
 Private Const VT_WORD_NATIVE_BOOKMARK_PREFIX As String = "VT_F_"
 Private Const VT_WORD_CAPTION_BOOKMARK_PREFIX As String = "VT_C_"
@@ -112,6 +114,7 @@ Private VT_WORD_NUMBERING_PREFERENCE_CACHE_SEPARATOR As String
 Private VT_WORD_REFERENCE_MENU_DOCUMENT As Document
 Private VT_WORD_REFERENCE_MENU_INSERTION_RANGE As Range
 Private VT_WORD_NATIVE_ROLLBACK_DOCUMENT As Document
+Private VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT As Document
 
 Private Sub VTClosePreparedNativeRollbackDocument()
     On Error Resume Next
@@ -597,6 +600,1091 @@ RegressionFailed:
     On Error GoTo 0
     Err.Raise regressionErrorNumber, "VisualTeX MacroButton regression", _
         regressionStage & ": " & regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_RunWordCopyIdentityRegression()
+    Const formulaId As String = _
+        "67676767-6767-4767-8767-676767676767"
+
+    Dim sourceDocument As Document
+    Dim testDocument As Document
+    Dim pastedDocument As Document
+    Dim sourceShape As InlineShape
+    Dim copiedShape As InlineShape
+    Dim crossDocumentShape As InlineShape
+    Dim insertionRange As Range
+    Dim pasteRange As Range
+    Dim ownerShape As InlineShape
+    Dim editBookmark As Bookmark
+    Dim encodedMetadata As String
+    Dim formulaReference As String
+    Dim cacheFileName As String
+    Dim vectorDocumentPath As String
+    Dim fallbackImagePath As String
+    Dim sessionId As String
+    Dim resultPath As String
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    If Documents.Count > 0 Then Set sourceDocument = ActiveDocument
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-identity-regression-result.txt"
+    encodedMetadata = VT_METADATA_PREFIX & "e30"
+    formulaReference = VTFormulaReference(formulaId, "inline", False)
+
+    regressionStage = "create-source"
+    cacheFileName = Dir$( _
+        VTApplicationSupportRoot() & "/ImageDocuments/*.docx")
+    If Len(cacheFileName) = 0 Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "No real VisualTeX SVG staging DOCX is available for the copy fixture."
+    End If
+    vectorDocumentPath = _
+        VTApplicationSupportRoot() & "/ImageDocuments/" & cacheFileName
+    fallbackImagePath = Left$( _
+        vectorDocumentPath, Len(vectorDocumentPath) - Len(".docx")) & ".png"
+    If Not VTPathFileExists(fallbackImagePath) Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "The VisualTeX SVG staging cache has no PNG compatibility preview."
+    End If
+    Set testDocument = Documents.Add(Visible:=False)
+    Set insertionRange = testDocument.Range(Start:=0, End:=0)
+    Set sourceShape = VTAddWordFormulaPicture( _
+        testDocument, insertionRange, vectorDocumentPath, fallbackImagePath)
+    sourceShape.Title = formulaReference
+    sourceShape.AlternativeText = encodedMetadata
+    VTSetWordMetadataPayload testDocument, formulaId, encodedMetadata
+    VTSetWordFormulaFormat testDocument, formulaId, "inline", False
+    VTSetWordImageOwnerBookmark testDocument, sourceShape, formulaId
+
+    regressionStage = "copy-paste"
+    sourceShape.Range.Copy
+    testDocument.Content.InsertAfter vbCr
+    Set pasteRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    pasteRange.Paste
+    If testDocument.InlineShapes.Count <> 2 Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "Word did not create exactly one copied formula image."
+    End If
+    Set sourceShape = testDocument.InlineShapes(1)
+    Set copiedShape = testDocument.InlineShapes(2)
+    If copiedShape.AlternativeText <> encodedMetadata Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "Word did not preserve copied formula metadata on the pasted image."
+    End If
+    Set ownerShape = VTWordImageOwnerShape(testDocument, formulaId)
+    If ownerShape Is Nothing Or _
+       ownerShape.Range.Start <> sourceShape.Range.Start Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "Copy/paste moved the formula owner bookmark away from the source."
+    End If
+    If VTShouldForkWordImageFormulaCopy( _
+       testDocument, sourceShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "The original Word formula was incorrectly classified as a copy."
+    End If
+    If Not VTShouldForkWordImageFormulaCopy( _
+       testDocument, copiedShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "The copied Word formula did not receive copy-isolation semantics."
+    End If
+
+    regressionStage = "edit-anchor"
+    sessionId = VTNewUuidV4()
+    VTAddWordEditBookmark copiedShape, sessionId
+    If Not testDocument.Bookmarks.Exists(VTWordEditBookmarkName(sessionId)) Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "The copied formula edit bookmark was not created."
+    End If
+    Set editBookmark = _
+        testDocument.Bookmarks(VTWordEditBookmarkName(sessionId))
+    If editBookmark.Range.InlineShapes.Count <> 1 Or _
+       editBookmark.Range.InlineShapes(1).Range.Start <> copiedShape.Range.Start Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "The copied formula edit bookmark resolved the wrong physical object."
+    End If
+    VTDeleteWordEditBookmark testDocument, sessionId
+
+    regressionStage = "cross-document-copy"
+    sourceShape.Range.Copy
+    Set pastedDocument = Documents.Add(Visible:=False)
+    Set pasteRange = pastedDocument.Range(Start:=0, End:=0)
+    pasteRange.Paste
+    If pastedDocument.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "Word did not paste one formula into the second document."
+    End If
+    Set crossDocumentShape = pastedDocument.InlineShapes(1)
+    If Not VTShouldForkWordImageFormulaCopy( _
+       pastedDocument, crossDocumentShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7604, "VisualTeX regression", _
+            "A cross-document Word formula copy retained the source identity."
+    End If
+
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
+        "sourceStart=" & CStr(sourceShape.Range.Start) & vbLf & _
+        "copyStart=" & CStr(copiedShape.Range.Start) & vbLf & _
+        "ownerBookmark=" & VTWordImageOwnerBookmarkName(formulaId) & vbLf
+    pastedDocument.Close SaveChanges:=wdDoNotSaveChanges
+    testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    If Not pastedDocument Is Nothing Then
+        pastedDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not testDocument Is Nothing Then
+        testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, "VisualTeX Word copy identity regression", _
+        regressionStage & ": " & regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_RunWordNumberedCopyIdentityRegression()
+    Const formulaId As String = _
+        "61616161-6161-4616-8616-616161616161"
+
+    Dim sourceDocument As Document
+    Dim testDocument As Document
+    Dim sourceShape As InlineShape
+    Dim copiedShape As InlineShape
+    Dim canonicalShape As InlineShape
+    Dim canonicalRange As Range
+    Dim insertionRange As Range
+    Dim pasteRange As Range
+    Dim encodedMetadata As String
+    Dim ownerBookmarkName As String
+    Dim resultPath As String
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    If Documents.Count > 0 Then Set sourceDocument = ActiveDocument
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-numbered-copy-identity-regression-result.txt"
+    encodedMetadata = VT_METADATA_PREFIX & "e30"
+    ownerBookmarkName = VTWordImageOwnerBookmarkName(formulaId)
+
+    regressionStage = "create-numbered-source"
+    Set testDocument = Documents.Add(Visible:=True)
+    testDocument.Activate
+    VTSetEquationNumberingFormat _
+        testDocument, VT_WORD_NUMBERING_MODE_SEQUENCE, "."
+    Set insertionRange = testDocument.Range(Start:=0, End:=0)
+    Set sourceShape = testDocument.InlineShapes.AddPicture( _
+        FileName:=VTPlaceholderImagePath(), _
+        LinkToFile:=False, SaveWithDocument:=True, _
+        Range:=insertionRange)
+    sourceShape.LockAspectRatio = msoFalse
+    sourceShape.Width = 72!
+    sourceShape.Height = 24!
+    sourceShape.LockAspectRatio = msoTrue
+    sourceShape.Title = VTFormulaReference(formulaId, "block", True)
+    sourceShape.AlternativeText = encodedMetadata
+    VTSetWordMetadataPayload testDocument, formulaId, encodedMetadata
+    VTSetWordFormulaFormat testDocument, formulaId, "block", True
+    Set canonicalRange = VTInsertEquationNumber( _
+        sourceShape, formulaId, "numbered copy identity regression")
+    Set canonicalRange = VTNumberedFormulaRangeForId(testDocument, formulaId)
+    If canonicalRange Is Nothing Or canonicalRange.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The numbered source formula did not expose one canonical image."
+    End If
+    Set sourceShape = canonicalRange.InlineShapes(1)
+    VTSetWordImageOwnerBookmark testDocument, sourceShape, formulaId
+
+    regressionStage = "copy-numbered-image"
+    sourceShape.Range.Copy
+    testDocument.Content.InsertAfter vbCr
+    Set pasteRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    pasteRange.Paste
+    If testDocument.InlineShapes.Count <> 2 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Word did not create exactly one copied numbered formula image."
+    End If
+    Set sourceShape = testDocument.InlineShapes(1)
+    Set copiedShape = testDocument.InlineShapes(2)
+    If copiedShape.Title <> sourceShape.Title Or _
+       copiedShape.AlternativeText <> encodedMetadata Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Word did not preserve numbered formula identity metadata on copy."
+    End If
+
+    regressionStage = "resolve-numbered-canonical-owner"
+    Set canonicalRange = VTNumberedFormulaRangeForId(testDocument, formulaId)
+    If canonicalRange Is Nothing Or canonicalRange.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The numbered bookmarks no longer resolve one canonical image."
+    End If
+    Set canonicalShape = canonicalRange.InlineShapes(1)
+    If canonicalShape.Range.Start <> sourceShape.Range.Start Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The numbered bookmarks resolved the copied image instead of the source."
+    End If
+
+    regressionStage = "owner-bookmark-missing"
+    If testDocument.Bookmarks.Exists(ownerBookmarkName) Then
+        testDocument.Bookmarks(ownerBookmarkName).Delete
+    End If
+    If VTShouldForkWordImageFormulaCopy( _
+       testDocument, sourceShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "A numbered source formula was classified as a copy without VT_I_."
+    End If
+    If Not VTShouldForkWordImageFormulaCopy( _
+       testDocument, copiedShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "A numbered formula copy retained the source identity without VT_I_."
+    End If
+
+    regressionStage = "owner-bookmark-moved-to-copy"
+    VTSetWordImageOwnerBookmark testDocument, copiedShape, formulaId
+    If VTShouldForkWordImageFormulaCopy( _
+       testDocument, sourceShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Numbered anchors did not override a moved image-owner bookmark."
+    End If
+    If Not VTShouldForkWordImageFormulaCopy( _
+       testDocument, copiedShape, formulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The moved image-owner bookmark made the copy canonical."
+    End If
+
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
+        "sourceStart=" & CStr(sourceShape.Range.Start) & vbLf & _
+        "copyStart=" & CStr(copiedShape.Range.Start) & vbLf & _
+        "numberOwner=" & VTEquationNumberBookmarkName(formulaId) & vbLf
+    testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    If regressionErrorNumber = 0 Then regressionErrorNumber = vbObjectError + 7606
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & regressionErrorDescription & vbLf
+    If Not testDocument Is Nothing Then
+        testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX Word numbered copy identity regression", _
+        regressionStage & ": " & regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_RunWordNativeCopyIdentityProbe()
+    Const formulaId As String = _
+        "69696969-6969-4969-8969-696969696969"
+
+    Dim sourceDocument As Document
+    Dim testDocument As Document
+    Dim pastedDocument As Document
+    Dim insertionRange As Range
+    Dim formulaRange As Range
+    Dim sourceMath As OMath
+    Dim copiedMath As OMath
+    Dim resolvedMath As OMath
+    Dim resolvedSourceDocument As Document
+    Dim crossCopiedMath As OMath
+    Dim crossResolvedMath As OMath
+    Dim crossSourceDocument As Document
+    Dim candidateBookmark As Bookmark
+    Dim bookmarkSummary As String
+    Dim encodedMetadata As String
+    Dim resolvedMetadata As String
+    Dim resolvedFormulaId As String
+    Dim resolvedDisplayMode As String
+    Dim resolvedNumbered As Boolean
+    Dim crossFormulaId As String
+    Dim crossMetadata As String
+    Dim crossDisplayMode As String
+    Dim crossNumbered As Boolean
+    Dim editSessionId As String
+    Dim editBookmarkName As String
+    Dim crossSessionId As String
+    Dim crossEditBookmarkName As String
+    Dim crossLocalBookmark As Bookmark
+    Dim crossLocalBookmarkFound As Boolean
+    Dim sourceSignature As String
+    Dim copiedSignature As String
+    Dim directMetadata As String
+    Dim directDisplayMode As String
+    Dim directNumbered As Boolean
+    Dim directMetadataReadable As Boolean
+    Dim directFormatReadable As Boolean
+    Dim directSignatureMatch As Boolean
+    Dim directSourceMath As OMath
+    Dim directLocalBookmark As Bookmark
+    Dim directLocalBookmarkFound As Boolean
+    Dim resultPath As String
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    If Documents.Count > 0 Then Set sourceDocument = ActiveDocument
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-native-copy-identity-probe-result.txt"
+
+    regressionStage = "create-native"
+    Set testDocument = Documents.Add(Visible:=False)
+    Set insertionRange = testDocument.Range(Start:=0, End:=0)
+    insertionRange.Text = "x+1=2"
+    Set formulaRange = testDocument.OMaths.Add(insertionRange)
+    If formulaRange.OMaths.Count <> 1 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Word did not create exactly one source native equation."
+    End If
+    Set sourceMath = formulaRange.OMaths(1)
+    sourceMath.BuildUp
+    sourceMath.Type = wdOMathInline
+    VTSetNativeFormulaBookmark testDocument, sourceMath.Range, formulaId
+    encodedMetadata = VT_METADATA_PREFIX & "e30"
+    VTSetWordMetadataPayload testDocument, formulaId, encodedMetadata
+    VTSetWordFormulaFormat testDocument, formulaId, "inline", False
+    VTSetWordNativeSignature testDocument, formulaId, sourceMath
+
+    regressionStage = "copy-paste"
+    sourceMath.Range.Copy
+    testDocument.Content.InsertAfter vbCr
+    Set insertionRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    insertionRange.Paste
+    If testDocument.OMaths.Count <> 2 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Word did not create exactly one copied native equation."
+    End If
+
+    regressionStage = "resolve-copy-source"
+    Set copiedMath = testDocument.OMaths(2)
+    sourceSignature = VTNativeMathFastSignature( _
+        testDocument, formulaId, sourceMath)
+    copiedSignature = VTNativeMathFastSignature( _
+        testDocument, formulaId, copiedMath)
+    Set directSourceMath = VTNativeMathForBookmark( _
+        testDocument.Bookmarks(VTNativeFormulaBookmarkName(formulaId)))
+    directMetadataReadable = VTTryReadWordMetadataPayload( _
+        testDocument, formulaId, directMetadata)
+    directFormatReadable = VTTryReadWordFormulaFormat( _
+        testDocument, formulaId, directDisplayMode, directNumbered)
+    directSignatureMatch = VTWordNativeSignatureMatches( _
+        testDocument, formulaId, copiedMath)
+    directLocalBookmarkFound = VTTryFindNativeFormulaBookmarkLocally( _
+        copiedMath.Range, directLocalBookmark)
+    If Not VTTryResolveCopiedNativeFormulaSource( _
+       copiedMath.Range, resolvedMath, resolvedSourceDocument, _
+       resolvedFormulaId, resolvedMetadata, resolvedDisplayMode, _
+       resolvedNumbered) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "VisualTeX did not recover the copied native equation source. " & _
+            "sourceType=" & CStr(sourceMath.Type) & _
+            " copiedType=" & CStr(copiedMath.Type) & _
+            " sourceSignature=" & sourceSignature & _
+            " copiedSignature=" & copiedSignature & _
+            " directSource=" & CStr(Not directSourceMath Is Nothing) & _
+            " metadataReadable=" & CStr(directMetadataReadable) & _
+            " formatReadable=" & CStr(directFormatReadable) & _
+            " directDisplayMode=" & directDisplayMode & _
+            " signatureMatch=" & CStr(directSignatureMatch) & _
+            " localBookmarkFound=" & CStr(directLocalBookmarkFound) & _
+            " sourceText=" & Replace$(sourceMath.Range.Text, vbCr, "<CR>") & _
+            " copiedText=" & Replace$(copiedMath.Range.Text, vbCr, "<CR>")
+    End If
+    If resolvedMath Is Nothing Or resolvedSourceDocument Is Nothing Or _
+       VTWordDocumentIdentityForDocument(resolvedSourceDocument) <> _
+           VTWordDocumentIdentityForDocument(testDocument) Or _
+       resolvedFormulaId <> formulaId Or _
+       resolvedMetadata <> encodedMetadata Or _
+       resolvedDisplayMode <> IIf( _
+           copiedMath.Type = wdOMathInline, "inline", "block") Or _
+       resolvedNumbered Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The copied native equation resolved to the wrong source identity. " & _
+            "resolvedFormulaId=" & resolvedFormulaId & _
+            " resolvedDisplayMode=" & resolvedDisplayMode & _
+            " resolvedNumbered=" & CStr(resolvedNumbered) & _
+            " metadataMatch=" & CStr(resolvedMetadata = encodedMetadata) & _
+            " documentMatch=" & CStr( _
+                VTWordDocumentIdentityForDocument(resolvedSourceDocument) = _
+                VTWordDocumentIdentityForDocument(testDocument))
+    End If
+
+    regressionStage = "anchor-copy-session"
+    editSessionId = VTNewUuidV4()
+    editBookmarkName = VTWordEditBookmarkName(editSessionId)
+    VTAddWordEditRangeBookmark copiedMath.Range, editSessionId
+    If Not testDocument.Bookmarks.Exists(editBookmarkName) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "VisualTeX did not create the copied native Session Bookmark."
+    End If
+    If testDocument.Bookmarks(editBookmarkName).Range.Start <> _
+       copiedMath.Range.Start Or _
+       testDocument.Bookmarks(editBookmarkName).Range.End <> _
+       copiedMath.Range.End Or _
+       testDocument.Bookmarks(editBookmarkName).Range.Start = _
+       sourceMath.Range.Start Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The copied native Session Bookmark does not isolate the pasted equation."
+    End If
+
+    regressionStage = "cross-document-copy"
+    Set pastedDocument = Documents.Add(Visible:=False)
+    sourceMath.Range.Copy
+    Set insertionRange = pastedDocument.Range(Start:=0, End:=0)
+    insertionRange.Paste
+    If pastedDocument.OMaths.Count <> 1 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Word did not create one cross-document copied native equation."
+    End If
+    Set crossCopiedMath = pastedDocument.OMaths(1)
+    crossLocalBookmarkFound = VTTryFindNativeFormulaBookmarkLocally( _
+        crossCopiedMath.Range, crossLocalBookmark)
+    If Not VTTryResolveCopiedNativeFormulaSource( _
+       crossCopiedMath.Range, crossResolvedMath, crossSourceDocument, _
+       crossFormulaId, crossMetadata, crossDisplayMode, crossNumbered) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "VisualTeX did not recover the cross-document copied native source. " & _
+            "localBookmark=" & CStr(crossLocalBookmarkFound) & _
+            " bookmarkName=" & IIf( _
+                crossLocalBookmarkFound, crossLocalBookmark.Name, "") & _
+            " sourceCopySignature=" & VTNativeMathCopySignature(sourceMath) & _
+            " copiedCopySignature=" & VTNativeMathCopySignature(crossCopiedMath)
+    End If
+    If crossResolvedMath Is Nothing Or crossSourceDocument Is Nothing Or _
+       VTWordDocumentIdentityForDocument(crossSourceDocument) <> _
+           VTWordDocumentIdentityForDocument(testDocument) Or _
+       crossFormulaId <> formulaId Or crossMetadata <> encodedMetadata Or _
+       crossNumbered Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The cross-document native copy resolved to the wrong source identity."
+    End If
+    crossSessionId = VTNewUuidV4()
+    crossEditBookmarkName = VTWordEditBookmarkName(crossSessionId)
+    VTAddWordEditRangeBookmark crossCopiedMath.Range, crossSessionId
+    If Not pastedDocument.Bookmarks.Exists(crossEditBookmarkName) Or _
+       pastedDocument.Bookmarks(crossEditBookmarkName).Range.Start <> _
+           crossCopiedMath.Range.Start Or _
+       pastedDocument.Bookmarks(crossEditBookmarkName).Range.End <> _
+           crossCopiedMath.Range.End Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "The cross-document copied native Session Bookmark is not isolated."
+    End If
+
+    regressionStage = "inspect-bookmarks"
+    For Each candidateBookmark In testDocument.Bookmarks
+        If Left$(candidateBookmark.Name, _
+           Len(VT_WORD_NATIVE_BOOKMARK_PREFIX)) = _
+           VT_WORD_NATIVE_BOOKMARK_PREFIX Then
+            If Len(bookmarkSummary) > 0 Then bookmarkSummary = bookmarkSummary & ";"
+            bookmarkSummary = bookmarkSummary & _
+                candidateBookmark.Name & "@" & _
+                CStr(candidateBookmark.Range.Start) & ":" & _
+                CStr(candidateBookmark.Range.End)
+        End If
+    Next candidateBookmark
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
+        "omaths=" & CStr(testDocument.OMaths.Count) & vbLf & _
+        "nativeBookmarks=" & bookmarkSummary & vbLf & _
+        "resolvedSourceFormulaId=" & resolvedFormulaId & vbLf & _
+        "editBookmark=" & editBookmarkName & "@" & _
+            CStr(testDocument.Bookmarks(editBookmarkName).Range.Start) & ":" & _
+            CStr(testDocument.Bookmarks(editBookmarkName).Range.End) & vbLf & _
+        "crossDocumentSourceFormulaId=" & crossFormulaId & vbLf & _
+        "crossEditBookmark=" & crossEditBookmarkName & "@" & _
+            CStr(pastedDocument.Bookmarks(crossEditBookmarkName).Range.Start) & ":" & _
+            CStr(pastedDocument.Bookmarks(crossEditBookmarkName).Range.End) & vbLf & _
+        "firstRange=" & CStr(testDocument.OMaths(1).Range.Start) & ":" & _
+            CStr(testDocument.OMaths(1).Range.End) & vbLf & _
+        "secondRange=" & CStr(testDocument.OMaths(2).Range.Start) & ":" & _
+            CStr(testDocument.OMaths(2).Range.End) & vbLf
+    pastedDocument.Close SaveChanges:=wdDoNotSaveChanges
+    Set pastedDocument = Nothing
+    testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    If Not pastedDocument Is Nothing Then
+        pastedDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not testDocument Is Nothing Then
+        testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, "VisualTeX Word native copy probe", _
+        regressionStage & ": " & regressionErrorDescription
+End Sub
+
+Private Function VTWordCopyConversionRegressionDocument( _
+    ByVal expectedIdentity As String) As Document
+
+    Dim candidate As Document
+
+    On Error Resume Next
+    If Not VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT Is Nothing Then
+        If VTWordDocumentIdentityForDocument( _
+           VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT) = expectedIdentity Then
+            Set VTWordCopyConversionRegressionDocument = _
+                VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT
+            Exit Function
+        End If
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    Set candidate = VTFindOpenWordDocumentByIdentity(expectedIdentity)
+    If Not candidate Is Nothing Then
+        Set VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT = candidate
+        Set VTWordCopyConversionRegressionDocument = candidate
+    End If
+End Function
+
+Private Sub VTCloseWordCopyConversionRegressionDocument()
+    On Error Resume Next
+    If Not VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT Is Nothing Then
+        VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT.Close _
+            SaveChanges:=wdDoNotSaveChanges
+    End If
+    Set VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT = Nothing
+    On Error GoTo 0
+End Sub
+
+Public Sub VisualTeX_RunWordCopiedImageToNativeConversionRegression()
+    Const sourceFormulaId As String = _
+        "68686868-6868-4868-8868-686868686868"
+
+    Dim sourceDocument As Document
+    Dim testDocument As Document
+    Dim sourceShape As InlineShape
+    Dim copiedShape As InlineShape
+    Dim insertionRange As Range
+    Dim pasteRange As Range
+    Dim encodedMetadata As String
+    Dim formulaReference As String
+    Dim cacheFileName As String
+    Dim vectorDocumentPath As String
+    Dim fallbackImagePath As String
+    Dim sessionId As String
+    Dim inputPath As String
+    Dim documentPath As String
+    Dim fixturePath As String
+    Dim runtimeRoot As String
+    Dim homeBoundary As Long
+    Dim resultPath As String
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+    Dim launchErrorNumber As Long
+    Dim launchErrorDescription As String
+    Dim sourceStart As Long
+    Dim copyStart As Long
+
+    On Error GoTo RegressionFailed
+    If Documents.Count > 0 Then Set sourceDocument = ActiveDocument
+    inputPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-conversion-metadata.txt"
+    documentPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-conversion-document.txt"
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-image-to-native-start.txt"
+    runtimeRoot = VTApplicationSupportRoot()
+    homeBoundary = InStr( _
+        1, runtimeRoot, "/Library/Application Scripts/", vbBinaryCompare)
+    If homeBoundary <= 1 Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The copied-conversion fixture could not resolve the user home path."
+    End If
+    fixturePath = _
+        Left$(runtimeRoot, homeBoundary - 1) & _
+        "/Library/Group Containers/UBF8T346G9.Office/VisualTeX/Scratch/" & _
+        "word-copy-conversion-fixture.docx"
+    encodedMetadata = Trim$(VTReadText(inputPath, 262144))
+    If Not VTIsEncodedMetadata(encodedMetadata) Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The copied-conversion metadata fixture is invalid."
+    End If
+
+    regressionStage = "create-source-image"
+    cacheFileName = Dir$( _
+        VTApplicationSupportRoot() & "/ImageDocuments/*.docx")
+    If Len(cacheFileName) = 0 Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "No real VisualTeX SVG staging DOCX is available for conversion."
+    End If
+    vectorDocumentPath = _
+        VTApplicationSupportRoot() & "/ImageDocuments/" & cacheFileName
+    fallbackImagePath = Left$( _
+        vectorDocumentPath, Len(vectorDocumentPath) - Len(".docx")) & ".png"
+    If Not VTPathFileExists(fallbackImagePath) Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The conversion staging cache has no PNG compatibility preview."
+    End If
+
+    On Error Resume Next
+    Kill fixturePath
+    Err.Clear
+    On Error GoTo RegressionFailed
+    regressionStage = "create-source-document"
+    Set testDocument = Documents.Add
+    testDocument.SaveAs2 _
+        FileName:=fixturePath, _
+        FileFormat:=wdFormatXMLDocument
+    Set VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT = testDocument
+    regressionStage = "insert-source-image"
+    Set insertionRange = testDocument.Range(Start:=0, End:=0)
+    Set sourceShape = VTAddWordFormulaPicture( _
+        testDocument, insertionRange, vectorDocumentPath, fallbackImagePath)
+    regressionStage = "write-source-image-metadata"
+    formulaReference = VTFormulaReference(sourceFormulaId, "inline", False)
+    sourceShape.Title = formulaReference
+    sourceShape.AlternativeText = encodedMetadata
+    sourceShape.Range.Font.Position = 0
+    On Error Resume Next
+    sourceShape.Range.Font.Size = VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+    Err.Clear
+    On Error GoTo RegressionFailed
+    VTSetWordMetadataPayload testDocument, sourceFormulaId, encodedMetadata
+    VTSetWordFormulaFormat testDocument, sourceFormulaId, "inline", False
+    VTSetWordImageScaleState _
+        testDocument, sourceFormulaId, VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT, _
+        sourceShape.Width, sourceShape.Height, 0#, _
+        VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+    regressionStage = "write-source-image-owner"
+    VTSetWordImageOwnerBookmark _
+        testDocument, sourceShape, sourceFormulaId
+
+    regressionStage = "copy-source-image"
+    sourceShape.Range.Copy
+    testDocument.Content.InsertAfter vbCr
+    Set pasteRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    pasteRange.Paste
+    If testDocument.InlineShapes.Count <> 2 Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "Word did not create one copied image for conversion."
+    End If
+    Set sourceShape = testDocument.InlineShapes(1)
+    Set copiedShape = testDocument.InlineShapes(2)
+    If Not VTShouldForkWordImageFormulaCopy( _
+       testDocument, copiedShape, sourceFormulaId, encodedMetadata) Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The copied image was not classified for conversion isolation."
+    End If
+    sourceStart = sourceShape.Range.Start
+    copyStart = copiedShape.Range.Start
+
+    regressionStage = "launch-image-to-native"
+    testDocument.Activate
+    copiedShape.Select
+    VTWriteTextAtomic _
+        documentPath, _
+        VTWordDocumentIdentityForDocument(testDocument) & vbLf
+    On Error Resume Next
+    VTWordEditInlineShape copiedShape, True, "imageToNative", sessionId
+    launchErrorNumber = Err.Number
+    launchErrorDescription = Err.Description
+    Err.Clear
+    On Error GoTo RegressionFailed
+    If launchErrorNumber <> 0 Then
+        Err.Raise launchErrorNumber, _
+            "VisualTeX copied image conversion launch", _
+            launchErrorDescription
+    End If
+    If Not VTIsCanonicalUuid(sessionId) Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The copied image conversion did not return its launched Session id."
+    End If
+    VTWriteTextAtomic _
+        resultPath, _
+        "START" & vbLf & _
+        "revision=" & VT_WORD_SOURCE_REVISION & vbLf & _
+        "documentName=" & testDocument.Name & vbLf & _
+        "sourceFormulaId=" & sourceFormulaId & vbLf & _
+        "sessionId=" & sessionId & vbLf & _
+        "sourceStart=" & CStr(sourceStart) & vbLf & _
+        "copyStart=" & CStr(copyStart) & vbLf
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    If Not testDocument Is Nothing Then
+        testDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    Set VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT = Nothing
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX copied image conversion regression", _
+        regressionStage & ": " & regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_InspectWordCopiedImageToNativeConversionRegression()
+    Const sourceFormulaId As String = _
+        "68686868-6868-4868-8868-686868686868"
+
+    Dim testDocument As Document
+    Dim ownerShape As InlineShape
+    Dim candidateBookmark As Bookmark
+    Dim nativeMath As OMath
+    Dim newFormulaId As String
+    Dim candidateFormulaId As String
+    Dim encodedMetadata As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim matchCount As Long
+    Dim documentName As String
+    Dim documentPath As String
+    Dim resultPath As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    documentPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-conversion-document.txt"
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-image-to-native-result.txt"
+    documentName = Replace$(Replace$( _
+        Trim$(VTReadText(documentPath, 512)), vbCr, ""), vbLf, "")
+    Set testDocument = VTWordCopyConversionRegressionDocument(documentName)
+    If testDocument Is Nothing Then
+        Err.Raise vbObjectError + 7608, "VisualTeX regression", _
+            "The copied image conversion test document is no longer open."
+    End If
+    If testDocument.InlineShapes.Count <> 1 Or _
+       testDocument.OMaths.Count <> 1 Then
+        Err.Raise vbObjectError + 7608, "VisualTeX regression", _
+            "Copied image conversion did not leave one source image and one OMath."
+    End If
+    Set ownerShape = VTWordImageOwnerShape(testDocument, sourceFormulaId)
+    If ownerShape Is Nothing Or _
+       ownerShape.Range.Start <> testDocument.InlineShapes(1).Range.Start Then
+        Err.Raise vbObjectError + 7608, "VisualTeX regression", _
+            "Copied image conversion changed the source image owner."
+    End If
+
+    For Each candidateBookmark In testDocument.Bookmarks
+        candidateFormulaId = ""
+        If VTTryFormulaIdFromNativeBookmark( _
+           candidateBookmark.Name, candidateFormulaId) Then
+            matchCount = matchCount + 1
+            newFormulaId = candidateFormulaId
+            Set nativeMath = VTNativeMathForBookmark(candidateBookmark)
+        End If
+    Next candidateBookmark
+    If matchCount <> 1 Or Not VTIsCanonicalUuid(newFormulaId) Or _
+       newFormulaId = sourceFormulaId Or nativeMath Is Nothing Then
+        Err.Raise vbObjectError + 7608, "VisualTeX regression", _
+            "Copied image conversion did not create one independent native identity."
+    End If
+    If Not VTTryReadWordMetadataPayload( _
+       testDocument, newFormulaId, encodedMetadata) Or _
+       Not VTTryReadWordFormulaFormat( _
+           testDocument, newFormulaId, displayMode, numbered) Or _
+       Not VTWordNativeSignatureMatches( _
+           testDocument, newFormulaId, nativeMath) Then
+        Err.Raise vbObjectError + 7608, "VisualTeX regression", _
+            "Copied image conversion did not persist independent native state."
+    End If
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "sourceFormulaId=" & sourceFormulaId & vbLf & _
+        "newFormulaId=" & newFormulaId & vbLf & _
+        "displayMode=" & displayMode & vbLf & _
+        "numbered=" & CStr(numbered) & vbLf & _
+        "metadata=" & encodedMetadata & vbLf
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX copied image conversion inspection", _
+        regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_RunWordCopiedNativeToImageConversionRegression()
+    Dim testDocument As Document
+    Dim sourceBookmark As Bookmark
+    Dim candidateBookmark As Bookmark
+    Dim sourceMath As OMath
+    Dim copiedMath As OMath
+    Dim candidateFormulaId As String
+    Dim sourceFormulaId As String
+    Dim sessionId As String
+    Dim insertionRange As Range
+    Dim documentName As String
+    Dim documentPath As String
+    Dim resultPath As String
+    Dim copyStart As Long
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    documentPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-conversion-document.txt"
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-native-to-image-start.txt"
+    documentName = Replace$(Replace$( _
+        Trim$(VTReadText(documentPath, 512)), vbCr, ""), vbLf, "")
+    Set testDocument = VTWordCopyConversionRegressionDocument(documentName)
+    If testDocument Is Nothing Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "The native-to-image copy test document is no longer open."
+    End If
+    For Each candidateBookmark In testDocument.Bookmarks
+        candidateFormulaId = ""
+        If VTTryFormulaIdFromNativeBookmark( _
+           candidateBookmark.Name, candidateFormulaId) Then
+            If sourceBookmark Is Nothing Then
+                Set sourceBookmark = candidateBookmark
+                sourceFormulaId = candidateFormulaId
+            Else
+                Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+                    "The native-to-image copy fixture contains multiple native owners."
+            End If
+        End If
+    Next candidateBookmark
+    If sourceBookmark Is Nothing Or Not VTIsCanonicalUuid(sourceFormulaId) Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "The native-to-image copy fixture has no managed native source."
+    End If
+    Set sourceMath = VTNativeMathForBookmark(sourceBookmark)
+    If sourceMath Is Nothing Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "The native-to-image copy source has no OMath."
+    End If
+
+    sourceMath.Range.Copy
+    testDocument.Content.InsertAfter vbCr
+    Set insertionRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    insertionRange.Paste
+    If testDocument.OMaths.Count <> 2 Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "Word did not create one copied native equation for conversion."
+    End If
+    Set copiedMath = testDocument.OMaths(2)
+    copyStart = copiedMath.Range.Start
+    testDocument.Activate
+    copiedMath.Range.Select
+    If Not VTWordOpenCopiedNativeSession( _
+       copiedMath.Range, False, "nativeToImage", sessionId) Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "The copied native conversion did not resolve its source identity."
+    End If
+    If Not VTIsCanonicalUuid(sessionId) Then
+        Err.Raise vbObjectError + 7609, "VisualTeX regression", _
+            "The copied native conversion did not return its launched Session id."
+    End If
+    VTWriteTextAtomic _
+        resultPath, _
+        "START" & vbLf & _
+        "sourceFormulaId=" & sourceFormulaId & vbLf & _
+        "sessionId=" & sessionId & vbLf & _
+        "copyStart=" & CStr(copyStart) & vbLf
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX copied native conversion regression", _
+        regressionErrorDescription
+End Sub
+
+Public Sub VisualTeX_InspectWordCopiedNativeToImageConversionRegression()
+    Const originalImageFormulaId As String = _
+        "68686868-6868-4868-8868-686868686868"
+
+    Dim testDocument As Document
+    Dim candidateBookmark As Bookmark
+    Dim candidateShape As InlineShape
+    Dim sourceNativeFormulaId As String
+    Dim nativeFormulaId As String
+    Dim imageFormulaId As String
+    Dim candidateFormulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim parsedDisplayMode As String
+    Dim parsedNumbered As Boolean
+    Dim encodedMetadata As String
+    Dim nativeCount As Long
+    Dim newImageCount As Long
+    Dim ownerShape As InlineShape
+    Dim documentName As String
+    Dim documentPath As String
+    Dim resultPath As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    documentPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-conversion-document.txt"
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/word-copy-native-to-image-result.txt"
+    documentName = Replace$(Replace$( _
+        Trim$(VTReadText(documentPath, 512)), vbCr, ""), vbLf, "")
+    Set testDocument = VTWordCopyConversionRegressionDocument(documentName)
+    If testDocument Is Nothing Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "The copied native conversion test document is no longer open."
+    End If
+    If testDocument.InlineShapes.Count <> 2 Or _
+       testDocument.OMaths.Count <> 1 Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "Copied native conversion did not leave two images and one source OMath."
+    End If
+
+    For Each candidateBookmark In testDocument.Bookmarks
+        candidateFormulaId = ""
+        If VTTryFormulaIdFromNativeBookmark( _
+           candidateBookmark.Name, candidateFormulaId) Then
+            nativeCount = nativeCount + 1
+            sourceNativeFormulaId = candidateFormulaId
+        End If
+    Next candidateBookmark
+    If nativeCount <> 1 Or Not VTIsCanonicalUuid(sourceNativeFormulaId) Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "Copied native conversion changed the source native identity."
+    End If
+
+    For Each candidateShape In testDocument.InlineShapes
+        candidateFormulaId = ""
+        parsedDisplayMode = ""
+        parsedNumbered = False
+        If VTTryParseFormulaReference( _
+           candidateShape.Title, candidateFormulaId, _
+           parsedDisplayMode, parsedNumbered) Then
+            If candidateFormulaId <> originalImageFormulaId Then
+                newImageCount = newImageCount + 1
+                imageFormulaId = candidateFormulaId
+            End If
+        End If
+    Next candidateShape
+    If newImageCount <> 1 Or Not VTIsCanonicalUuid(imageFormulaId) Or _
+       imageFormulaId = sourceNativeFormulaId Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "Copied native conversion did not create one independent image identity."
+    End If
+    Set ownerShape = VTWordImageOwnerShape(testDocument, imageFormulaId)
+    If ownerShape Is Nothing Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "Copied native conversion did not persist the new image owner."
+    End If
+    If Not VTTryReadWordMetadataPayload( _
+       testDocument, imageFormulaId, encodedMetadata) Or _
+       Not VTTryReadWordFormulaFormat( _
+           testDocument, imageFormulaId, displayMode, numbered) Then
+        Err.Raise vbObjectError + 7610, "VisualTeX regression", _
+            "Copied native conversion did not persist independent image state."
+    End If
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "sourceNativeFormulaId=" & sourceNativeFormulaId & vbLf & _
+        "newImageFormulaId=" & imageFormulaId & vbLf & _
+        "displayMode=" & displayMode & vbLf & _
+        "numbered=" & CStr(numbered) & vbLf & _
+        "metadata=" & encodedMetadata & vbLf
+    VTCloseWordCopyConversionRegressionDocument
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX copied native conversion inspection", _
+        regressionErrorDescription
 End Sub
 
 Public Sub VisualTeX_RunDocumentImportFormulaRegression()
@@ -15639,6 +16727,7 @@ End Sub
 
 Public Sub VisualTeX_EditSelected()
     Dim selectedShape As InlineShape
+    Dim nativeBookmark As Bookmark
 
     On Error GoTo Failed
 
@@ -15647,7 +16736,13 @@ Public Sub VisualTeX_EditSelected()
     If Not selectedShape Is Nothing Then
         VTWordEditInlineShape selectedShape
     Else
-        VTWordEditNativeBookmark VTFindSelectedNativeFormulaBookmark(Selection)
+        Set nativeBookmark = VTFindNativeFormulaBookmark(Selection.Range, False)
+        If Not nativeBookmark Is Nothing Then
+            VTWordEditNativeBookmark nativeBookmark
+        ElseIf Not VTWordOpenCopiedNativeSession(Selection.Range) Then
+            Err.Raise vbObjectError + 7461, "VisualTeX", _
+                "Select one VisualTeX formula image or native equation."
+        End If
     End If
     Exit Sub
 
@@ -16033,7 +17128,13 @@ Public Function VTHandleWordBeforeDoubleClick( _
     If Not VTTryFindNativeFormulaBookmarkLocally( _
        selected.Range, nativeBookmark) Then Set nativeBookmark = Nothing
     If nativeBookmark Is Nothing Then
-        VTTraceWordDoubleClick "handler-native-not-found", selected, ""
+        If VTWordOpenCopiedNativeSession(selected.Range) Then
+            VTHandleWordBeforeDoubleClick = True
+            VTTraceWordDoubleClick _
+                "handler-native-copy-edit-dispatched", selected, ""
+        Else
+            VTTraceWordDoubleClick "handler-native-not-found", selected, ""
+        End If
         GoTo HandlerFinished
     End If
     VTTraceWordDoubleClick _
@@ -16068,9 +17169,17 @@ Failed:
 End Sub
 
 Public Sub VisualTeX_EditNativeSelection(ByVal selectedRange As Range)
+    Dim nativeBookmark As Bookmark
+
     On Error GoTo Failed
     VTRequireWritableWordDocument
-    VTWordEditNativeBookmark VTFindNativeFormulaBookmark(selectedRange)
+    Set nativeBookmark = VTFindNativeFormulaBookmark(selectedRange, False)
+    If Not nativeBookmark Is Nothing Then
+        VTWordEditNativeBookmark nativeBookmark
+    ElseIf Not VTWordOpenCopiedNativeSession(selectedRange) Then
+        Err.Raise vbObjectError + 7461, "VisualTeX", _
+            "Select one VisualTeX native Word equation."
+    End If
     Exit Sub
 Failed:
     VTShowError "Word native equation edit", Err.Number, Err.Description
@@ -16375,6 +17484,228 @@ Public Function VTIsVisualTeXInlineShape(ByVal selectedShape As InlineShape) As 
     Exit Function
 InvalidShape:
     VTIsVisualTeXInlineShape = False
+End Function
+
+Private Function VTWordImageOwnerBookmarkName( _
+    ByVal formulaId As String) As String
+
+    If Not VTIsCanonicalUuid(formulaId) Then
+        Err.Raise vbObjectError + 7601, "VisualTeX", _
+            "VisualTeX cannot bookmark an image formula with an invalid formula id."
+    End If
+    VTWordImageOwnerBookmarkName = _
+        VT_WORD_IMAGE_OWNER_BOOKMARK_PREFIX & Replace$(formulaId, "-", "")
+    If Len(VTWordImageOwnerBookmarkName) > 40 Then
+        Err.Raise vbObjectError + 7602, "VisualTeX", _
+            "VisualTeX generated an image formula bookmark longer than Word permits."
+    End If
+End Function
+
+Private Function VTWordImageOwnerShape( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String) As InlineShape
+
+    Dim bookmarkName As String
+    Dim ownerRange As Range
+
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then Exit Function
+    bookmarkName = VTWordImageOwnerBookmarkName(formulaId)
+    If Not documentObject.Bookmarks.Exists(bookmarkName) Then Exit Function
+    Set ownerRange = documentObject.Bookmarks(bookmarkName).Range.Duplicate
+    If ownerRange.InlineShapes.Count <> 1 Then Exit Function
+    Set VTWordImageOwnerShape = ownerRange.InlineShapes(1)
+End Function
+
+Private Sub VTDeleteWordImageOwnerBookmark( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String)
+
+    Dim bookmarkName As String
+
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then Exit Sub
+    bookmarkName = VTWordImageOwnerBookmarkName(formulaId)
+    On Error Resume Next
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Function VTWordImageShapeIsOwner( _
+    ByVal documentObject As Document, _
+    ByVal formulaShape As InlineShape, _
+    ByVal formulaId As String) As Boolean
+
+    Dim ownerShape As InlineShape
+
+    If documentObject Is Nothing Or formulaShape Is Nothing Then Exit Function
+    Set ownerShape = VTWordImageOwnerShape(documentObject, formulaId)
+    If ownerShape Is Nothing Then Exit Function
+    VTWordImageShapeIsOwner = _
+        ownerShape.Range.Start = formulaShape.Range.Start And _
+        ownerShape.Range.End = formulaShape.Range.End
+End Function
+
+Private Sub VTSetWordImageOwnerBookmark( _
+    ByVal documentObject As Document, _
+    ByVal formulaShape As InlineShape, _
+    ByVal formulaId As String)
+
+    Dim bookmarkName As String
+    Dim ownerRange As Range
+    Dim persistedOwner As InlineShape
+
+    If documentObject Is Nothing Or formulaShape Is Nothing Then
+        Err.Raise vbObjectError + 7603, "VisualTeX", _
+            "VisualTeX cannot persist a missing image formula owner."
+    End If
+    bookmarkName = VTWordImageOwnerBookmarkName(formulaId)
+    Set ownerRange = formulaShape.Range.Duplicate
+    On Error Resume Next
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    On Error GoTo OwnerFailed
+    documentObject.Bookmarks.Add Name:=bookmarkName, Range:=ownerRange
+    Set persistedOwner = VTWordImageOwnerShape(documentObject, formulaId)
+    If persistedOwner Is Nothing Or _
+       persistedOwner.Range.Start <> formulaShape.Range.Start Or _
+       persistedOwner.Range.End <> formulaShape.Range.End Then
+        Err.Raise vbObjectError + 7603, "VisualTeX", _
+            "Word did not persist the VisualTeX image formula owner bookmark."
+    End If
+    Exit Sub
+
+OwnerFailed:
+    Err.Raise Err.Number, "VisualTeX image owner bookmark", Err.Description
+End Sub
+
+Private Function VTShouldForkWordImageFormulaCopy( _
+    ByVal documentObject As Document, _
+    ByVal selectedShape As InlineShape, _
+    ByVal formulaId As String, _
+    ByVal encodedMetadata As String) As Boolean
+
+    Dim candidate As InlineShape
+    Dim canonicalShape As InlineShape
+    Dim canonicalRange As Range
+    Dim candidateFormulaId As String
+    Dim candidateDisplayMode As String
+    Dim candidateNumbered As Boolean
+    Dim storedMetadata As String
+    Dim storedDisplayMode As String
+    Dim storedNumbered As Boolean
+    Dim identityCount As Long
+
+    If documentObject Is Nothing Or selectedShape Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Or _
+       Not VTIsEncodedMetadata(encodedMetadata) Then Exit Function
+
+    ' A formula pasted from another Word document carries its shape metadata but
+    ' not this document's formula-scoped Variables. Rekey it before it can bind
+    ' to the source formula's global cache identity.
+    If Not VTTryReadWordMetadataPayload( _
+       documentObject, formulaId, storedMetadata) Then
+        VTShouldForkWordImageFormulaCopy = True
+        Exit Function
+    End If
+    If StrComp(storedMetadata, encodedMetadata, vbBinaryCompare) <> 0 Then
+        VTShouldForkWordImageFormulaCopy = True
+        Exit Function
+    End If
+    If Not VTTryReadWordFormulaFormat( _
+       documentObject, formulaId, storedDisplayMode, storedNumbered) Then
+        VTShouldForkWordImageFormulaCopy = True
+        Exit Function
+    End If
+
+    ' Numbered display formulas have a stronger durable identity than the generic
+    ' image-owner bookmark: VT_R_/VT_N_/VT_C_ remain attached to the original
+    ' numbered equation when Word duplicates only the formula picture. Resolve
+    ' that numbered owner first so a copied display image can never become the
+    ' canonical source merely because VT_I_ was dropped or moved by Word.
+    If storedDisplayMode = "block" And storedNumbered Then
+        Set canonicalRange = VTNumberedFormulaRangeForId( _
+            documentObject, formulaId)
+        If Not canonicalRange Is Nothing Then
+            If canonicalRange.InlineShapes.Count = 1 And _
+               canonicalRange.OMaths.Count = 0 Then
+                Set canonicalShape = canonicalRange.InlineShapes(1)
+                If canonicalShape.Range.Start = selectedShape.Range.Start And _
+                   canonicalShape.Range.End = selectedShape.Range.End Then
+                    If Not VTWordImageShapeIsOwner( _
+                       documentObject, canonicalShape, formulaId) Then
+                        VTSetWordImageOwnerBookmark _
+                            documentObject, canonicalShape, formulaId
+                    End If
+                    VTShouldForkWordImageFormulaCopy = False
+                Else
+                    VTShouldForkWordImageFormulaCopy = True
+                End If
+                Exit Function
+            End If
+        End If
+    End If
+
+    ' Current formulas have one durable physical owner bookmark. Word does not
+    ' clone a same-document bookmark name onto a pasted copy, so the original
+    ' remains canonical while only the copied InlineShape is forked.
+    Set canonicalShape = VTWordImageOwnerShape(documentObject, formulaId)
+    If Not canonicalShape Is Nothing Then
+        VTShouldForkWordImageFormulaCopy = _
+            Not VTWordImageShapeIsOwner( _
+                documentObject, selectedShape, formulaId)
+        Exit Function
+    End If
+
+    ' Migrate pre-owner-bookmark formulas lazily. With one physical object the
+    ' selected formula is necessarily the canonical legacy object. If several
+    ' identical legacy objects already exist, preserve the first in document
+    ' order and fork only the others when they are edited.
+    For Each candidate In documentObject.InlineShapes
+        candidateFormulaId = ""
+        candidateDisplayMode = ""
+        candidateNumbered = False
+        On Error Resume Next
+        If VTTryParseFormulaReference( _
+           candidate.Title, candidateFormulaId, _
+           candidateDisplayMode, candidateNumbered) Then
+            If candidateFormulaId = formulaId Then
+                identityCount = identityCount + 1
+                If canonicalShape Is Nothing Then Set canonicalShape = candidate
+            End If
+        End If
+        Err.Clear
+        On Error GoTo 0
+    Next candidate
+    If canonicalShape Is Nothing Then
+        VTShouldForkWordImageFormulaCopy = True
+        Exit Function
+    End If
+    VTSetWordImageOwnerBookmark documentObject, canonicalShape, formulaId
+    VTShouldForkWordImageFormulaCopy = _
+        Not VTWordImageShapeIsOwner(documentObject, selectedShape, formulaId)
+End Function
+
+Private Function VTIsCopiedWordImageFormula( _
+    ByVal selectedShape As InlineShape) As Boolean
+
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim documentObject As Document
+
+    If selectedShape Is Nothing Then Exit Function
+    If Not VTTryResolveVisualTeXInlineShapeReference( _
+       selectedShape, formulaId, displayMode, numbered, _
+       encodedMetadata, metadataNeedsWrite, formatNeedsWrite) Then Exit Function
+    Set documentObject = selectedShape.Range.Document
+    VTIsCopiedWordImageFormula = _
+        VTShouldForkWordImageFormulaCopy( _
+            documentObject, selectedShape, formulaId, encodedMetadata)
 End Function
 
 Private Function VTTryResolveVisualTeXInlineShapeAtSelection( _
@@ -16696,6 +18027,8 @@ Private Sub VTReadWordImageConversionState( _
     ByRef observedWordFontSizePt As Double)
 
     Dim stateReadable As Boolean
+    Dim stateErrorNumber As Long
+    Dim stateErrorDescription As String
 
     If formulaShape Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then
         Err.Raise vbObjectError + 7493, "VisualTeX", _
@@ -16745,7 +18078,11 @@ Private Sub VTReadWordImageConversionState( _
     Exit Sub
 
 StateFailed:
-    Err.Raise Err.Number, "VisualTeX image conversion state", Err.Description
+    stateErrorNumber = Err.Number
+    stateErrorDescription = Err.Description
+    If stateErrorNumber = 0 Then stateErrorNumber = vbObjectError + 7493
+    Err.Raise stateErrorNumber, "VisualTeX image conversion state", _
+        stateErrorDescription
 End Sub
 
 Private Sub VTWordOpenResolvedInlineShape( _
@@ -16757,7 +18094,8 @@ Private Sub VTWordOpenResolvedInlineShape( _
     ByVal metadataNeedsWrite As Boolean, _
     ByVal formatNeedsWrite As Boolean, _
     Optional ByVal convertToNative As Boolean = False, _
-    Optional ByVal operationName As String = "formula")
+    Optional ByVal operationName As String = "formula", _
+    Optional ByRef launchedSessionId As Variant)
 
     Dim documentObject As Document
     Dim sessionId As String
@@ -16774,6 +18112,10 @@ Private Sub VTWordOpenResolvedInlineShape( _
     Dim openErrorNumber As Long
     Dim openErrorDescription As String
     Dim openStage As String
+    Dim sourceFormulaId As String
+    Dim sourceObjectId As String
+    Dim forkCopiedFormula As Boolean
+    Dim editBookmarkCreated As Boolean
 
     VTTraceWordDoubleClick _
         "edit-inline-enter", Selection, _
@@ -16794,16 +18136,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
         Err.Raise vbObjectError + 7400, "VisualTeX", _
             "The selected image does not contain recoverable VisualTeX edit metadata."
     End If
-    If Not convertToNative And VTImageEditDispatchDebounced(formulaId) Then
-        VTTraceWordDoubleClick _
-            "edit-inline-debounced", Selection, "formulaId=" & formulaId
-        Exit Sub
-    End If
-    If Not convertToNative Then
-        VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID = formulaId
-        VT_WORD_LAST_IMAGE_EDIT_AT = Timer
-        debounceArmed = True
-    End If
+    sourceFormulaId = formulaId
     On Error GoTo OpenFailed
     openStage = "resolve-document"
     Set documentObject = selectedShape.Range.Document
@@ -16823,6 +18156,22 @@ Private Sub VTWordOpenResolvedInlineShape( _
         End If
         Set selectedShape = migratedNumberRange.InlineShapes(1)
     End If
+    forkCopiedFormula = _
+        (operationName = "formula" Or operationName = "imageToNative") And _
+        VTShouldForkWordImageFormulaCopy( _
+            documentObject, selectedShape, sourceFormulaId, encodedMetadata)
+    If Not convertToNative And Not forkCopiedFormula And _
+       VTImageEditDispatchDebounced(sourceFormulaId) Then
+        VTTraceWordDoubleClick _
+            "edit-inline-debounced", Selection, _
+            "formulaId=" & sourceFormulaId
+        Exit Sub
+    End If
+    If Not convertToNative And Not forkCopiedFormula Then
+        VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID = sourceFormulaId
+        VT_WORD_LAST_IMAGE_EDIT_AT = Timer
+        debounceArmed = True
+    End If
     openStage = "prepare-formula-state"
     If operationName = "imageToNative" Then
         VTReadWordImageConversionState _
@@ -16836,16 +18185,20 @@ Private Sub VTWordOpenResolvedInlineShape( _
     End If
 
     openStage = "write-metadata"
-    If metadataNeedsWrite Then
+    If Not forkCopiedFormula And metadataNeedsWrite Then
         VTSetWordMetadataPayload documentObject, formulaId, encodedMetadata
     End If
     openStage = "write-format"
-    If formatNeedsWrite Then
+    If Not forkCopiedFormula And formatNeedsWrite Then
         VTSetWordFormulaFormat documentObject, formulaId, displayMode, numbered
     End If
 
     openStage = "build-request"
     sessionId = VTNewUuidV4()
+    VTAddWordEditBookmark selectedShape, sessionId
+    editBookmarkCreated = True
+    sourceObjectId = VTWordEditBookmarkName(sessionId)
+    If forkCopiedFormula Then formulaId = VTNewUuidV4()
     requestJson = VTRequestJson( _
         sessionId, _
         VT_WORD_HOST, _
@@ -16854,7 +18207,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
         displayMode, _
         numbered, _
         VTWordDocumentIdentity(), _
-        encodedMetadata, _
+        sourceObjectId, _
         encodedMetadata, _
         "", _
         "", _
@@ -16862,15 +18215,19 @@ Private Sub VTWordOpenResolvedInlineShape( _
         fontSizePt, _
         referenceWidthPt, _
         referenceHeightPt, _
-        operationName)
+        operationName, _
+        forkCopiedFormula)
     VTTraceWordDoubleClick _
         "edit-inline-resolved", Selection, _
         "formulaId=" & formulaId & _
+        " sourceFormulaId=" & sourceFormulaId & _
+        " forkCopied=" & CStr(forkCopiedFormula) & _
         " displayMode=" & displayMode & _
         " numbered=" & CStr(numbered)
     openStage = "launch-session"
     launchTiming = _
         VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
+    If Not IsMissing(launchedSessionId) Then launchedSessionId = sessionId
     VTTraceWordDoubleClick _
         "edit-inline-editor-launched", Selection, _
         "sessionId=" & sessionId & " " & launchTiming
@@ -16883,8 +18240,12 @@ OpenFailed:
         VTEndWordInternalMutation
         migrationMutationStarted = False
     End If
+    If editBookmarkCreated And Not documentObject Is Nothing And _
+       VTIsCanonicalUuid(sessionId) Then
+        VTDeleteWordEditBookmark documentObject, sessionId
+    End If
     If debounceArmed And _
-       StrComp(VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID, formulaId, _
+       StrComp(VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID, sourceFormulaId, _
            vbBinaryCompare) = 0 Then
         VT_WORD_LAST_IMAGE_EDIT_FORMULA_ID = ""
         VT_WORD_LAST_IMAGE_EDIT_AT = 0!
@@ -16917,7 +18278,8 @@ End Function
 Private Sub VTWordEditInlineShape( _
     ByVal selectedShape As InlineShape, _
     Optional ByVal convertToNative As Boolean = False, _
-    Optional ByVal operationName As String = "formula")
+    Optional ByVal operationName As String = "formula", _
+    Optional ByRef launchedSessionId As Variant)
 
     Dim formulaId As String
     Dim displayMode As String
@@ -16933,14 +18295,122 @@ Private Sub VTWordEditInlineShape( _
         Err.Raise vbObjectError + 7400, "VisualTeX", _
             "The selected image does not contain recoverable VisualTeX edit metadata."
     End If
-    VTWordOpenResolvedInlineShape _
-        selectedShape, formulaId, displayMode, numbered, encodedMetadata, _
-        metadataNeedsWrite, formatNeedsWrite, convertToNative, operationName
+    If IsMissing(launchedSessionId) Then
+        VTWordOpenResolvedInlineShape _
+            selectedShape, formulaId, displayMode, numbered, encodedMetadata, _
+            metadataNeedsWrite, formatNeedsWrite, convertToNative, operationName
+    Else
+        VTWordOpenResolvedInlineShape _
+            selectedShape, formulaId, displayMode, numbered, encodedMetadata, _
+            metadataNeedsWrite, formatNeedsWrite, convertToNative, operationName, _
+            launchedSessionId
+    End If
 End Sub
 
 Private Sub VTWordEditNativeBookmark(ByVal nativeBookmark As Bookmark)
     VTWordOpenNativeSession nativeBookmark
 End Sub
+
+Private Function VTWordOpenCopiedNativeSession( _
+    ByVal selectedRange As Range, _
+    Optional ByVal keepNativeEquation As Boolean = True, _
+    Optional ByVal operationName As String = "formula", _
+    Optional ByRef launchedSessionId As Variant) As Boolean
+
+    Dim copiedMath As OMath
+    Dim sourceDocument As Document
+    Dim targetDocument As Document
+    Dim sourceFormulaId As String
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim sessionId As String
+    Dim sourceObjectId As String
+    Dim requestJson As String
+    Dim fontSizePt As Double
+    Dim storedFontSizePt As Double
+    Dim referenceWidthPt As Double
+    Dim referenceHeightPt As Double
+    Dim referenceBaselinePt As Double
+    Dim observedWordFontSizePt As Double
+    Dim launchTiming As String
+    Dim openErrorNumber As Long
+    Dim openErrorDescription As String
+    Dim editBookmarkCreated As Boolean
+
+    If selectedRange Is Nothing Then Exit Function
+    If Not VTTryResolveCopiedNativeFormulaSource( _
+       selectedRange, copiedMath, sourceDocument, sourceFormulaId, _
+       encodedMetadata, displayMode, numbered) Then Exit Function
+    If copiedMath Is Nothing Or sourceDocument Is Nothing Then Exit Function
+
+    On Error GoTo OpenFailed
+    Set targetDocument = copiedMath.Range.Document
+    formulaId = VTNewUuidV4()
+    sessionId = VTNewUuidV4()
+    sourceObjectId = VTWordEditBookmarkName(sessionId)
+    VTAddWordEditRangeBookmark copiedMath.Range, sessionId
+    editBookmarkCreated = True
+
+    fontSizePt = copiedMath.Range.Font.Size
+    On Error Resume Next
+    If VTTryReadWordImageScaleState( _
+       sourceDocument, sourceFormulaId, storedFontSizePt, _
+       referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
+       observedWordFontSizePt) Then
+        If Not VTValidWordFormulaFontSize(fontSizePt) Then
+            fontSizePt = storedFontSizePt
+        End If
+    End If
+    Err.Clear
+    On Error GoTo OpenFailed
+    If Not VTValidWordFormulaFontSize(fontSizePt) Then
+        fontSizePt = VTPreferredWordFormulaFontSize(copiedMath.Range)
+    End If
+
+    requestJson = VTRequestJson( _
+        sessionId, _
+        VT_WORD_HOST, _
+        "edit", _
+        formulaId, _
+        displayMode, _
+        numbered, _
+        VTWordDocumentIdentityForDocument(targetDocument), _
+        sourceObjectId, _
+        encodedMetadata, _
+        "", _
+        "", _
+        keepNativeEquation, _
+        fontSizePt, _
+        referenceWidthPt, _
+        referenceHeightPt, _
+        operationName, _
+        True)
+    VTPrepareNativeRollbackDocument targetDocument
+    launchTiming = _
+        VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
+    If Not IsMissing(launchedSessionId) Then launchedSessionId = sessionId
+    VTTraceWordDoubleClick _
+        "edit-native-copy-editor-launched", Selection, _
+        "sourceFormulaId=" & sourceFormulaId & _
+        " formulaId=" & formulaId & _
+        " sessionId=" & sessionId & " " & launchTiming
+    VTWordOpenCopiedNativeSession = True
+    Exit Function
+
+OpenFailed:
+    openErrorNumber = Err.Number
+    openErrorDescription = Err.Description
+    On Error Resume Next
+    If editBookmarkCreated And Not targetDocument Is Nothing Then
+        VTDeleteWordEditBookmark targetDocument, sessionId
+    End If
+    VTClosePreparedNativeRollbackDocument
+    On Error GoTo 0
+    Err.Raise openErrorNumber, "VisualTeX Word copied native edit", _
+        openErrorDescription
+End Function
 
 Private Sub VTWordOpenNativeSession( _
     ByVal nativeBookmark As Bookmark, _
@@ -17076,6 +18546,12 @@ End Sub
 
 Public Sub VisualTeX_ConvertSelectedToNativeEquation()
     Dim selectedShape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
     Dim conversionStage As String
 
     On Error GoTo Failed
@@ -17088,6 +18564,31 @@ Public Sub VisualTeX_ConvertSelectedToNativeEquation()
         Err.Raise vbObjectError + 7428, "VisualTeX", _
             "Select exactly one VisualTeX formula image to convert to Word OMML."
     End If
+    If VTTryResolveVisualTeXInlineShapeReference( _
+       selectedShape, formulaId, displayMode, numbered, encodedMetadata, _
+       metadataNeedsWrite, formatNeedsWrite) Then
+        If VTShouldForkWordImageFormulaCopy( _
+           selectedShape.Range.Document, selectedShape, formulaId, _
+           encodedMetadata) Then
+            ' A copied image must receive its own metadata and formula id before
+            ' conversion. Route it through the renderer fork transaction rather
+            ' than the formula-id keyed fast cache, which belongs to the source.
+            conversionStage = "fork-copied-image-to-native"
+            VTWordEditInlineShape selectedShape, True, "imageToNative"
+            Exit Sub
+        End If
+    End If
+    ' A copied image must obtain a fresh formula identity before conversion.
+    ' Its Title/AlternativeText still point at the source formula, so neither
+    ' the warm-cache fast path nor the legacy direct converter may run with the
+    ' inherited id. Use the renderer-backed edit transaction: Rust forks the
+    ' metadata/line ids and Word commits the native result to this exact copy.
+    If VTIsCopiedWordImageFormula(selectedShape) Then
+        conversionStage = "fork-copied-image-to-native"
+        VTWordEditInlineShape selectedShape, True, "imageToNative"
+        Exit Sub
+    End If
+
     ' A current VisualTeX image already carries the structural OMML payload and
     ' normally has a durable native DOCX cache. Convert it entirely inside Word
     ' to avoid waking the hidden renderer and paying two AppleEvent round trips.
@@ -17227,6 +18728,7 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
         VTNormalizeImageDisplayParagraph candidate.Range
     End If
     VTDeleteTrailingNativeImageArtifact candidate
+    VTSetWordImageOwnerBookmark targetDocument, candidate, formulaId
     candidate.Select
 
     If internalMutationStarted Then
@@ -17264,6 +18766,8 @@ Public Sub VisualTeX_ConvertSelectedToImageFormula()
     VTRequireWritableWordDocument
     Set nativeBookmark = VTFindNativeFormulaBookmark(Selection.Range, False)
     If nativeBookmark Is Nothing Then
+        If VTWordOpenCopiedNativeSession( _
+           Selection.Range, False, "nativeToImage") Then Exit Sub
         VTStartWordFormulaRestore "selection", "omml", "image"
     Else
         ' Managed OMML created from a current VisualTeX image already has a
@@ -18333,6 +19837,7 @@ Private Sub VTDocumentImportInsertFormula( _
         formulaRange.Font.Size = CSng(fontSizePt)
         formulaStage = "bookmark-native-final"
         VTSetNativeFormulaBookmark targetDocument, formulaRange, formulaId
+        VTDeleteWordImageOwnerBookmark targetDocument, formulaId
         formulaStage = "resolve-native-before-signature"
         Set nativeMath = VTNativeMathForBookmark( _
             targetDocument.Bookmarks( _
@@ -18459,6 +19964,7 @@ Private Sub VTDocumentImportInsertFormula( _
         End If
         VTNormalizeImageDisplayParagraph candidate.Range
     End If
+    VTSetWordImageOwnerBookmark targetDocument, candidate, formulaId
     insertedFormulaIds.Add formulaId
 
     If displayMode = "block" Then
@@ -20952,6 +22458,7 @@ Private Sub VTCommitWordDispatch( _
     Dim targetDocument As Document
     Dim targetImage As InlineShape
     Dim pendingBookmark As Bookmark
+    Dim sourceEditBookmark As Bookmark
     Dim targetFromPendingBookmark As Boolean
     Dim nativeTarget As Bookmark
     Dim targetRange As Range
@@ -20974,6 +22481,7 @@ Private Sub VTCommitWordDispatch( _
     Dim nativeTargetReplaced As Boolean
     Dim nativeBookmarkSet As Boolean
     Dim targetIsNative As Boolean
+    Dim nativeTargetFromEditBookmark As Boolean
     Dim committed As InlineShape
     Dim stagedCandidate As InlineShape
     Dim candidate As InlineShape
@@ -21021,6 +22529,11 @@ Private Sub VTCommitWordDispatch( _
     Dim nativeEquationStart As Long
     Dim restoredPlaceholder As InlineShape
     Dim targetFormulaId As String
+    Dim forkCopiedFormula As Boolean
+    Dim originalImageBackupDocument As Document
+    Dim originalImageBackupRange As Range
+    Dim originalImageStart As Long
+    Dim originalImageRemoved As Boolean
     Dim transactionErrorNumber As Long
     Dim transactionErrorDescription As String
     Dim transactionStage As String
@@ -21062,6 +22575,8 @@ Private Sub VTCommitWordDispatch( _
     pendingMarker = VTDispatchOptional(dispatch, "pendingMarker")
     sourceMarker = VTDispatchOptional(dispatch, "sourceMarker")
     sourceDocumentId = VTDispatchOptional(dispatch, "sourceDocumentId")
+    forkCopiedFormula = _
+        (VTDispatchOptional(dispatch, "forkCopiedFormula") = "1")
 
     VTTraceWordSession sessionId, "commit-dispatch-read", pendingMarker
 
@@ -21159,6 +22674,18 @@ Private Sub VTCommitWordDispatch( _
                 targetIsNative = True
             End If
         End If
+    ElseIf Left$(sourceMarker, Len(VT_WORD_EDIT_BOOKMARK_PREFIX)) = _
+           VT_WORD_EDIT_BOOKMARK_PREFIX Then
+        If targetDocument.Bookmarks.Exists(sourceMarker) Then
+            Set sourceEditBookmark = targetDocument.Bookmarks(sourceMarker)
+            If sourceEditBookmark.Range.OMaths.Count = 1 Then
+                Set nativeTarget = sourceEditBookmark
+                targetIsNative = True
+                nativeTargetFromEditBookmark = True
+            ElseIf sourceEditBookmark.Range.InlineShapes.Count = 1 Then
+                Set targetImage = sourceEditBookmark.Range.InlineShapes(1)
+            End If
+        End If
     Else
         Set targetImage = VTFindUniqueInlineShape(sourceMarker)
     End If
@@ -21171,10 +22698,21 @@ Private Sub VTCommitWordDispatch( _
 
     transactionStage = "capture-target-range"
     If targetIsNative Then
-        Set originalNativeMath = VTNativeMathForBookmark(nativeTarget)
-        If Not VTTryFormulaIdFromNativeBookmark(nativeTarget.Name, targetFormulaId) Or _
-           targetFormulaId <> formulaId Or originalNativeMath Is Nothing Then
-            Err.Raise vbObjectError + 7454, "VisualTeX", "The original VisualTeX native equation target is invalid."
+        If nativeTargetFromEditBookmark Then
+            If nativeTarget.Range.OMaths.Count = 1 Then
+                Set originalNativeMath = nativeTarget.Range.OMaths(1)
+            End If
+            targetFormulaId = formulaId
+        Else
+            Set originalNativeMath = VTNativeMathForBookmark(nativeTarget)
+            If Not VTTryFormulaIdFromNativeBookmark( _
+               nativeTarget.Name, targetFormulaId) Then
+                targetFormulaId = ""
+            End If
+        End If
+        If targetFormulaId <> formulaId Or originalNativeMath Is Nothing Then
+            Err.Raise vbObjectError + 7454, "VisualTeX", _
+                "The original VisualTeX native equation target is invalid."
         End If
         Set originalNativeRange = originalNativeMath.Range.Duplicate
         originalNativeStart = originalNativeRange.Start
@@ -21232,7 +22770,8 @@ Private Sub VTCommitWordDispatch( _
     End If
 
     If mode = "edit" And nativeEquation And Not targetImage Is Nothing And _
-       VTDispatchOptional(dispatch, "operation") = "imageToNative" Then
+       VTDispatchOptional(dispatch, "operation") = "imageToNative" And _
+       Not forkCopiedFormula Then
         ' The renderer has supplied the missing native staging DOCX. Resume the
         ' same protected conversion used by a warm cache: generic edit commit
         ' backs up native sources only and cannot restore a deleted image.
@@ -21244,6 +22783,30 @@ Private Sub VTCommitWordDispatch( _
         VTWordConvertInlineShapeToNativeEquation targetImage
         VTDeletePendingBookmark targetDocument, sessionId
         GoTo CommitSucceeded
+    End If
+
+    If forkCopiedFormula And mode = "edit" And nativeEquation And _
+       Not targetImage Is Nothing And _
+       VTDispatchOptional(dispatch, "operation") = "imageToNative" Then
+        ' A copied image is being converted under a fresh formula id. Preserve
+        ' the exact source container before the generic native commit removes it;
+        ' unlike an ordinary native edit, there is no original OMath rollback
+        ' document to restore this image if a later layout step fails.
+        transactionStage = "backup-forked-image-source"
+        originalImageStart = targetRange.Start
+        Set originalImageBackupDocument = Documents.Add(Visible:=False)
+        Set originalImageBackupRange = originalImageBackupDocument.Content
+        originalImageBackupRange.Text = ""
+        originalImageBackupRange.Collapse wdCollapseStart
+        originalImageBackupRange.FormattedText = targetRange.FormattedText
+        If originalImageBackupDocument.InlineShapes.Count <> 1 Then
+            Err.Raise vbObjectError + 7472, "VisualTeX", _
+                "Word could not back up the copied image before native conversion."
+        End If
+        Set originalImageBackupRange = _
+            VTVisualTeXImageContainerRange( _
+                originalImageBackupDocument.InlineShapes(1))
+        targetDocument.Activate
     End If
 
     transactionStage = "read-previous-state"
@@ -21336,6 +22899,9 @@ Private Sub VTCommitWordDispatch( _
                 pendingPlaceholderRemoved = True
             End If
             VTDeleteVisualTeXImageContainer targetImage
+            If Not originalImageBackupRange Is Nothing Then
+                originalImageRemoved = True
+            End If
         End If
 
         transactionStage = "resolve-native-after-source-removal"
@@ -21398,6 +22964,7 @@ Private Sub VTCommitWordDispatch( _
 
         transactionStage = "bookmark-native-equation"
         VTSetNativeFormulaBookmark targetDocument, nativeEquationRange, formulaId
+        VTDeleteWordImageOwnerBookmark targetDocument, formulaId
         nativeBookmarkSet = True
         VTWordPerformanceMark "native-final-bookmark-complete"
         Set originalNativeMath = VTNativeMathForBookmark( _
@@ -21680,6 +23247,7 @@ Private Sub VTCommitWordDispatch( _
         Err.Raise vbObjectError + 7593, "VisualTeX", _
             "The committed VisualTeX formula picture is still inside a Word field."
     End If
+    VTSetWordImageOwnerBookmark targetDocument, candidate, formulaId
     VTDeletePendingBookmark targetDocument, sessionId
     VTWordPerformanceMark "image-layout-complete"
 
@@ -21701,6 +23269,13 @@ Private Sub VTCommitWordDispatch( _
     End If
     On Error GoTo RollbackCandidate
 CommitSucceeded:
+    VTDeleteWordEditBookmark targetDocument, sessionId
+    On Error Resume Next
+    If Not originalImageBackupDocument Is Nothing Then
+        originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
+        Set originalImageBackupDocument = Nothing
+    End If
+    On Error GoTo 0
     VTWordPerformanceMark "commit-succeeded"
     If internalMutationStarted Then
         VTEndWordInternalMutation
@@ -21781,6 +23356,11 @@ RollbackCandidate:
             If Not rollbackMacroField Is Nothing Then rollbackMacroField.Delete
         End If
         If Not nativeEquationRange Is Nothing Then nativeEquationRange.Delete
+        If originalImageRemoved And Not originalImageBackupRange Is Nothing Then
+            Set insertionRange = targetDocument.Range( _
+                Start:=originalImageStart, End:=originalImageStart)
+            insertionRange.FormattedText = originalImageBackupRange.FormattedText
+        End If
         If pendingPlaceholderRemoved Then
             Set insertionRange = targetDocument.Range( _
                 Start:=pendingPlaceholderStart, _
@@ -21848,6 +23428,9 @@ RestorePreviousState:
     If Not originalNativeBackupDocument Is Nothing Then
         originalNativeBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
     End If
+    If Not originalImageBackupDocument Is Nothing Then
+        originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
     If internalMutationStarted Then
         VTEndWordInternalMutation
         internalMutationStarted = False
@@ -21879,6 +23462,7 @@ Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
         On Error GoTo 0
     End If
     VTDeletePendingBookmark ActiveDocument, sessionId
+    VTDeleteWordEditBookmark ActiveDocument, sessionId
     VTClosePreparedNativeRollbackDocument
 End Sub
 
@@ -32231,6 +33815,7 @@ Private Function VTWordConvertInlineShapeToNativeFast( _
         targetDocument, formulaId, sourceFontSizePt, referenceWidthPt, _
         referenceHeightPt, referenceBaselinePt, sourceFontSizePt
     VTSetNativeFormulaBookmark targetDocument, equationRange, formulaId
+    VTDeleteWordImageOwnerBookmark targetDocument, formulaId
     Set nativeMath = VTNativeMathForBookmark( _
         targetDocument.Bookmarks(VTNativeFormulaBookmarkName(formulaId)))
     If nativeMath Is Nothing Then
@@ -32583,6 +34168,7 @@ Private Sub VTWordConvertInlineShapeToNativeEquation( _
         referenceHeightPt, referenceBaselinePt, sourceFontSizePt
     VTSetNativeFormulaBookmark _
         targetDocument, finalFormulaRange, formulaId
+    VTDeleteWordImageOwnerBookmark targetDocument, formulaId
     VTSetWordNativeSignature _
         targetDocument, formulaId, finalFormulaRange.OMaths(1)
     If Not targetDocument.Bookmarks.Exists( _
@@ -32763,6 +34349,326 @@ Private Function VTNativeMathForBookmark(ByVal nativeBookmark As Bookmark) As OM
 
 NoMatch:
     Set VTNativeMathForBookmark = Nothing
+End Function
+
+Private Function VTTryResolveSingleNativeMath( _
+    ByVal selectedRange As Range, _
+    ByRef nativeMath As OMath) As Boolean
+
+    Dim probeRange As Range
+
+    Set nativeMath = Nothing
+    If selectedRange Is Nothing Then Exit Function
+    On Error GoTo ResolveFailed
+    Set probeRange = selectedRange.Duplicate
+    If probeRange.OMaths.Count <> 1 Then
+        If probeRange.Start > 0 Then
+            probeRange.MoveStart Unit:=wdCharacter, Count:=-1
+        End If
+        If probeRange.End < probeRange.Document.Content.End Then
+            probeRange.MoveEnd Unit:=wdCharacter, Count:=1
+        End If
+    End If
+    If probeRange.OMaths.Count <> 1 Then Exit Function
+    Set nativeMath = probeRange.OMaths(1)
+    VTTryResolveSingleNativeMath = True
+    Exit Function
+
+ResolveFailed:
+    Set nativeMath = Nothing
+    Err.Clear
+End Function
+
+Private Function VTTryResolveCopiedNativeFormulaSource( _
+    ByVal selectedRange As Range, _
+    ByRef copiedMath As OMath, _
+    ByRef sourceDocument As Document, _
+    ByRef sourceFormulaId As String, _
+    ByRef encodedMetadata As String, _
+    ByRef displayMode As String, _
+    ByRef numbered As Boolean) As Boolean
+
+    Dim destinationDocument As Document
+    Dim candidateDocument As Document
+    Dim candidateBookmark As Bookmark
+    Dim candidateMath As OMath
+    Dim existingBookmark As Bookmark
+    Dim candidateFormulaId As String
+    Dim candidateMetadata As String
+    Dim candidateDisplayMode As String
+    Dim candidateNumbered As Boolean
+    Dim copiedDisplayMode As String
+    Dim copiedSignature As String
+    Dim localBookmarkFormulaId As String
+    Dim localMetadata As String
+    Dim localDisplayMode As String
+    Dim localNumbered As Boolean
+    Dim localBackingState As Boolean
+    Dim candidateSignature As String
+    Dim destinationDocumentId As String
+    Dim candidateDocumentId As String
+    Dim passIndex As Long
+    Dim candidateDistance As Double
+    Dim bestDistance As Double
+    Dim foundMatch As Boolean
+    Dim ambiguousCrossDocumentMatch As Boolean
+    Dim bestMetadata As String
+    Dim bestDisplayMode As String
+    Dim bestNumbered As Boolean
+
+    Set copiedMath = Nothing
+    Set sourceDocument = Nothing
+    sourceFormulaId = ""
+    encodedMetadata = ""
+    displayMode = ""
+    numbered = False
+    If selectedRange Is Nothing Then Exit Function
+    If Not VTTryResolveSingleNativeMath(selectedRange, copiedMath) Then Exit Function
+
+    Set destinationDocument = copiedMath.Range.Document
+    destinationDocumentId = _
+        VTWordDocumentIdentityForDocument(destinationDocument)
+    If copiedMath.Type = wdOMathInline Then
+        copiedDisplayMode = "inline"
+    Else
+        copiedDisplayMode = "block"
+    End If
+    copiedSignature = VTNativeMathCopySignature(copiedMath)
+    If Len(copiedSignature) = 0 Then Exit Function
+
+    ' Cross-document paste can preserve VT_F_<formulaId> because the target
+    ' document has no Bookmark-name collision. A genuine managed formula has
+    ' matching document Variables behind that Bookmark; a pasted external copy
+    ' has the Bookmark but not those per-document Variables. In the latter case
+    ' the Bookmark gives us an exact source formulaId, so prefer it over any
+    ' content-signature heuristic.
+    If VTTryFindNativeFormulaBookmarkLocally( _
+       selectedRange, existingBookmark) Then
+        If Not VTTryFormulaIdFromNativeBookmark( _
+           existingBookmark.Name, localBookmarkFormulaId) Then Exit Function
+        localMetadata = ""
+        localDisplayMode = ""
+        localNumbered = False
+        On Error Resume Next
+        localBackingState = _
+            VTTryReadWordMetadataPayload( _
+                destinationDocument, localBookmarkFormulaId, _
+                localMetadata) And _
+            VTTryReadWordFormulaFormat( _
+                destinationDocument, localBookmarkFormulaId, _
+                localDisplayMode, localNumbered)
+        Err.Clear
+        On Error GoTo 0
+        If localBackingState Then Exit Function
+
+        foundMatch = False
+        ambiguousCrossDocumentMatch = False
+        For Each candidateDocument In Documents
+            candidateDocumentId = _
+                VTWordDocumentIdentityForDocument(candidateDocument)
+            If candidateDocumentId <> destinationDocumentId Then
+                candidateFormulaId = localBookmarkFormulaId
+                If candidateDocument.Bookmarks.Exists( _
+                   VTNativeFormulaBookmarkName(candidateFormulaId)) Then
+                    Set candidateBookmark = candidateDocument.Bookmarks( _
+                        VTNativeFormulaBookmarkName(candidateFormulaId))
+                    Set candidateMath = VTNativeMathForBookmark(candidateBookmark)
+                    If Not candidateMath Is Nothing Then
+                        candidateMetadata = ""
+                        candidateDisplayMode = ""
+                        candidateNumbered = False
+                        If VTTryReadWordMetadataPayload( _
+                           candidateDocument, candidateFormulaId, _
+                           candidateMetadata) And _
+                           VTTryReadWordFormulaFormat( _
+                               candidateDocument, candidateFormulaId, _
+                               candidateDisplayMode, candidateNumbered) Then
+                            candidateSignature = _
+                                VTNativeMathCopySignature(candidateMath)
+                            If Len(candidateSignature) > 0 And _
+                               StrComp(candidateSignature, copiedSignature, _
+                                   vbBinaryCompare) = 0 Then
+                                If Not foundMatch Then
+                                    foundMatch = True
+                                    Set sourceDocument = candidateDocument
+                                    sourceFormulaId = candidateFormulaId
+                                    bestMetadata = candidateMetadata
+                                    If candidateNumbered Then
+                                        bestDisplayMode = "block"
+                                    Else
+                                        bestDisplayMode = copiedDisplayMode
+                                    End If
+                                    bestNumbered = candidateNumbered
+                                ElseIf StrComp( _
+                                   bestMetadata, candidateMetadata, _
+                                   vbBinaryCompare) <> 0 Or _
+                                   bestNumbered <> candidateNumbered Then
+                                    ambiguousCrossDocumentMatch = True
+                                End If
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        Next candidateDocument
+        If foundMatch And Not ambiguousCrossDocumentMatch Then
+            encodedMetadata = bestMetadata
+            displayMode = bestDisplayMode
+            numbered = bestNumbered
+            VTTryResolveCopiedNativeFormulaSource = True
+        End If
+        Exit Function
+    End If
+
+    ' The common case is a paste inside the same Word document. Resolve it
+    ' directly from that document's Bookmark collection instead of relying on
+    ' the global Documents enumerator: Word for Mac can expose hidden/temporary
+    ' documents through different COM proxy collections even though direct
+    ' access to copiedMath.Range.Document is stable.
+    bestDistance = 2147483647#
+    foundMatch = False
+    For Each candidateBookmark In destinationDocument.Bookmarks
+        candidateFormulaId = ""
+        If VTTryFormulaIdFromNativeBookmark( _
+           candidateBookmark.Name, candidateFormulaId) Then
+            Set candidateMath = VTNativeMathForBookmark(candidateBookmark)
+            If Not candidateMath Is Nothing Then
+                candidateMetadata = ""
+                candidateDisplayMode = ""
+                candidateNumbered = False
+                If VTTryReadWordMetadataPayload( _
+                   destinationDocument, candidateFormulaId, _
+                   candidateMetadata) And _
+                   VTTryReadWordFormulaFormat( _
+                       destinationDocument, candidateFormulaId, _
+                       candidateDisplayMode, candidateNumbered) Then
+                    candidateSignature = _
+                        VTNativeMathCopySignature(candidateMath)
+                    If Len(candidateSignature) > 0 And _
+                       StrComp(candidateSignature, copiedSignature, _
+                           vbBinaryCompare) = 0 Then
+                        candidateDistance = Abs( _
+                            CDbl(candidateMath.Range.Start) - _
+                            CDbl(copiedMath.Range.Start))
+                        If Not foundMatch Or candidateDistance < bestDistance Then
+                            foundMatch = True
+                            bestDistance = candidateDistance
+                            Set sourceDocument = destinationDocument
+                            sourceFormulaId = candidateFormulaId
+                            bestMetadata = candidateMetadata
+                            If candidateNumbered Then
+                                bestDisplayMode = "block"
+                            Else
+                                bestDisplayMode = copiedDisplayMode
+                            End If
+                            bestNumbered = candidateNumbered
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next candidateBookmark
+    If foundMatch Then
+        encodedMetadata = bestMetadata
+        displayMode = bestDisplayMode
+        numbered = bestNumbered
+        VTTryResolveCopiedNativeFormulaSource = True
+        Exit Function
+    End If
+
+    ' Word deliberately drops the unique VT_F_ Bookmark when a native OMath is
+    ' copied. Recover the source from the persisted structural signature. Prefer
+    ' a source in the destination document, choosing the nearest exact match;
+    ' then fall back to other currently open Word documents for cross-document
+    ' paste. Cross-document matches are accepted only when their metadata and
+    ' display format agree, so unrelated look-alike formulas are never merged.
+    For passIndex = 0 To 1
+        foundMatch = False
+        ambiguousCrossDocumentMatch = False
+        bestDistance = 2147483647#
+        For Each candidateDocument In Documents
+            candidateDocumentId = _
+                VTWordDocumentIdentityForDocument(candidateDocument)
+            If (passIndex = 0 And _
+                candidateDocumentId = destinationDocumentId) Or _
+               (passIndex = 1 And _
+                candidateDocumentId <> destinationDocumentId) Then
+                For Each candidateBookmark In candidateDocument.Bookmarks
+                    candidateFormulaId = ""
+                    If VTTryFormulaIdFromNativeBookmark( _
+                       candidateBookmark.Name, candidateFormulaId) Then
+                        Set candidateMath = VTNativeMathForBookmark(candidateBookmark)
+                        If Not candidateMath Is Nothing Then
+                            candidateMetadata = ""
+                            candidateDisplayMode = ""
+                            candidateNumbered = False
+                            If VTTryReadWordMetadataPayload( _
+                               candidateDocument, candidateFormulaId, _
+                               candidateMetadata) And _
+                               VTTryReadWordFormulaFormat( _
+                                   candidateDocument, candidateFormulaId, _
+                                   candidateDisplayMode, candidateNumbered) Then
+                                candidateSignature = _
+                                    VTNativeMathCopySignature(candidateMath)
+                                If Len(candidateSignature) > 0 And _
+                                   StrComp(candidateSignature, copiedSignature, _
+                                       vbBinaryCompare) = 0 Then
+                                    If passIndex = 0 Then
+                                        candidateDistance = Abs( _
+                                            CDbl(candidateMath.Range.Start) - _
+                                            CDbl(copiedMath.Range.Start))
+                                        If Not foundMatch Or _
+                                           candidateDistance < bestDistance Then
+                                            foundMatch = True
+                                            bestDistance = candidateDistance
+                                            Set sourceDocument = candidateDocument
+                                            sourceFormulaId = candidateFormulaId
+                                            bestMetadata = candidateMetadata
+                                            If candidateNumbered Then
+                                                bestDisplayMode = "block"
+                                            Else
+                                                bestDisplayMode = copiedDisplayMode
+                                            End If
+                                            bestNumbered = candidateNumbered
+                                        End If
+                                    ElseIf Not foundMatch Then
+                                        foundMatch = True
+                                        Set sourceDocument = candidateDocument
+                                        sourceFormulaId = candidateFormulaId
+                                        bestMetadata = candidateMetadata
+                                        If candidateNumbered Then
+                                            bestDisplayMode = "block"
+                                        Else
+                                            bestDisplayMode = copiedDisplayMode
+                                        End If
+                                        bestNumbered = candidateNumbered
+                                    ElseIf StrComp( _
+                                       bestMetadata, candidateMetadata, _
+                                       vbBinaryCompare) <> 0 Or _
+                                       bestDisplayMode <> candidateDisplayMode Or _
+                                       bestNumbered <> candidateNumbered Then
+                                        ambiguousCrossDocumentMatch = True
+                                    End If
+                                End If
+                            End If
+                        End If
+                    End If
+                Next candidateBookmark
+            End If
+        Next candidateDocument
+        If foundMatch Then
+            If ambiguousCrossDocumentMatch Then
+                Set sourceDocument = Nothing
+                sourceFormulaId = ""
+                Exit Function
+            End If
+            encodedMetadata = bestMetadata
+            displayMode = bestDisplayMode
+            numbered = bestNumbered
+            VTTryResolveCopiedNativeFormulaSource = True
+            Exit Function
+        End If
+    Next passIndex
 End Function
 
 Private Function VTFindSelectedNativeFormulaBookmark(ByVal selected As Selection) As Bookmark
@@ -33916,6 +35822,53 @@ Private Function VTStableTextHash(ByVal value As String) As String
             Fix(hashValue / 2147483629#) * 2147483629#
     Next characterIndex
     VTStableTextHash = CStr(Len(value)) & "|" & Hex$(CLng(hashValue))
+End Function
+
+Private Function VTNativeMathCopySignature( _
+    ByVal nativeMath As OMath) As String
+
+    Dim signatureRange As Range
+    Dim formulaContentRange As Range
+    Dim functionIndex As Long
+    Dim functionTypes As String
+    Dim signatureText As String
+
+    If nativeMath Is Nothing Then Exit Function
+    Set signatureRange = nativeMath.Range.Duplicate
+
+    ' A copied numbered Equation can carry the visible array marker while Word
+    ' drops the unique VT_F_ Bookmark. Strip the generated marker whenever the
+    ' array shape is recognizable, regardless of whether the copied object still
+    ' owns any VisualTeX numbering Bookmarks.
+    On Error Resume Next
+    Set formulaContentRange = _
+        VTNativeEquationFormulaContentRange(signatureRange)
+    Err.Clear
+    On Error GoTo 0
+    If Not formulaContentRange Is Nothing Then
+        Set signatureRange = formulaContentRange.Duplicate
+    End If
+
+    signatureText = signatureRange.Text
+    signatureText = Replace$(signatureText, vbCrLf, vbLf)
+    signatureText = Replace$(signatureText, vbCr, vbLf)
+    signatureText = Replace$(signatureText, Chr$(7), "")
+
+    On Error Resume Next
+    For functionIndex = 1 To nativeMath.Functions.Count
+        functionTypes = functionTypes & "," & _
+            CStr(nativeMath.Functions(functionIndex).Type)
+    Next functionIndex
+    Err.Clear
+    On Error GoTo 0
+
+    ' Copy/Paste can legitimately change wdOMathInline <-> wdOMathDisplay when
+    ' Word moves the same equation between paragraph contexts. The copy identity
+    ' signature therefore excludes OMath.Type and formula-specific numbering
+    ' state while retaining the mathematical text and ordered function kinds.
+    VTNativeMathCopySignature = "copy-v1:" & VTStableTextHash( _
+        CStr(signatureRange.OMaths.Count) & "|" & _
+        functionTypes & "|" & signatureText)
 End Function
 
 Private Function VTNativeMathFastSignature( _
@@ -35390,18 +37343,46 @@ Private Function VTWordDocumentIdentity() As String
         VTWordDocumentIdentityForDocument(ActiveDocument)
 End Function
 
+Private Function VTWordDocumentIdentityLeaf( _
+    ByVal identity As String) As String
+
+    Dim separator As Long
+
+    identity = Trim$(identity)
+    If Len(identity) = 0 Then Exit Function
+    separator = InStrRev(identity, "/")
+    If separator = 0 Then separator = InStrRev(identity, ":")
+    If separator > 0 And separator < Len(identity) Then
+        VTWordDocumentIdentityLeaf = Mid$(identity, separator + 1)
+    Else
+        VTWordDocumentIdentityLeaf = identity
+    End If
+End Function
+
 Private Function VTFindOpenWordDocumentByIdentity( _
     ByVal expectedIdentity As String) As Document
 
     Dim candidate As Document
+    Dim fallback As Document
+    Dim expectedName As String
+    Dim fallbackCount As Long
 
     If Len(expectedIdentity) = 0 Then Exit Function
+    expectedName = VTWordDocumentIdentityLeaf(expectedIdentity)
     For Each candidate In Documents
         If VTWordDocumentIdentityForDocument(candidate) = expectedIdentity Then
             Set VTFindOpenWordDocumentByIdentity = candidate
             Exit Function
         End If
+        If Len(expectedName) > 0 And _
+           StrComp(candidate.Name, expectedName, vbBinaryCompare) = 0 Then
+            fallbackCount = fallbackCount + 1
+            Set fallback = candidate
+        End If
     Next candidate
+    If fallbackCount = 1 Then
+        Set VTFindOpenWordDocumentByIdentity = fallback
+    End If
 End Function
 
 Private Function VTDoubleClickTraceValue(ByVal value As String) As String
@@ -35609,6 +37590,74 @@ Private Sub VTWriteWordFailureTrace( _
         "documentId=" & VTWordDocumentIdentity() & vbLf
     VTWriteTextAtomic tracePath, traceText
     Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Function VTWordEditBookmarkName(ByVal sessionId As String) As String
+    If Not VTIsCanonicalUuid(sessionId) Then
+        Err.Raise vbObjectError + 7420, "VisualTeX", _
+            "VisualTeX cannot create an edit Bookmark for an invalid Session id."
+    End If
+    VTWordEditBookmarkName = _
+        VT_WORD_EDIT_BOOKMARK_PREFIX & Replace$(Left$(sessionId, 24), "-", "")
+    If Len(VTWordEditBookmarkName) > 40 Then
+        Err.Raise vbObjectError + 7421, "VisualTeX", _
+            "VisualTeX generated an edit Bookmark name longer than 40 characters."
+    End If
+End Function
+
+Private Sub VTAddWordEditBookmark( _
+    ByVal formulaShape As InlineShape, _
+    ByVal sessionId As String)
+
+    Dim documentObject As Document
+    Dim targetRange As Range
+    Dim bookmarkName As String
+
+    If formulaShape Is Nothing Then Exit Sub
+    Set documentObject = formulaShape.Range.Document
+    Set targetRange = VTVisualTeXImageContainerRange(formulaShape)
+    bookmarkName = VTWordEditBookmarkName(sessionId)
+    On Error Resume Next
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    On Error GoTo 0
+    documentObject.Bookmarks.Add Name:=bookmarkName, Range:=targetRange
+End Sub
+
+Private Sub VTAddWordEditRangeBookmark( _
+    ByVal targetRange As Range, _
+    ByVal sessionId As String)
+
+    Dim documentObject As Document
+    Dim exactRange As Range
+    Dim bookmarkName As String
+
+    If targetRange Is Nothing Then Exit Sub
+    Set documentObject = targetRange.Document
+    Set exactRange = targetRange.Duplicate
+    bookmarkName = VTWordEditBookmarkName(sessionId)
+    On Error Resume Next
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    On Error GoTo 0
+    documentObject.Bookmarks.Add Name:=bookmarkName, Range:=exactRange
+End Sub
+
+Private Sub VTDeleteWordEditBookmark( _
+    ByVal documentObject As Document, _
+    ByVal sessionId As String)
+
+    Dim bookmarkName As String
+
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(sessionId) Then Exit Sub
+    bookmarkName = VTWordEditBookmarkName(sessionId)
+    On Error Resume Next
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
     On Error GoTo 0
 End Sub
 

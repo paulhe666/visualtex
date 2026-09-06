@@ -1627,15 +1627,23 @@ function nativeSuggestionUsageId(command: string) {
   );
 }
 
-function nativeSuggestionFrequency(command: string) {
+function nativeSuggestionFrequency(command: string, rawPrefix: string) {
   const usage = nativeSuggestionUsageSnapshot[nativeSuggestionUsageId(command)];
+  const normalizedPrefix = rawPrefix
+    .trim()
+    .replace(/^\\/, "")
+    .toLocaleLowerCase();
   return {
-    // Rank native MathLive candidates by the same overall command frequency
-    // learned from toolbar, shortcut and candidate usage. This lets a commonly
-    // used environment such as cases rise for a short prefix like \\b even when
-    // most of its previous uses came from the visual toolbar.
+    // Native MathLive candidates now use the same learned history as the main
+    // VisualTeX candidate system. Prefix acceptance frequency is intentionally
+    // considered before total use count: a command repeatedly chosen for \\b
+    // should rise for \\b even if another command is used more often elsewhere.
+    prefixCount: normalizedPrefix
+      ? (usage?.acceptedPrefixes[normalizedPrefix] ?? 0)
+      : 0,
     count: usage?.useCount ?? 0,
     lastUsedAt: usage?.lastUsedAt ?? 0,
+    pinned: usage?.pinned ?? false,
   };
 }
 
@@ -1658,16 +1666,27 @@ function rankNativeSuggestionItems(panel: HTMLElement) {
     return false;
   });
 
+  const activePrefix = nativeInputPopoverActiveField?.isConnected
+    ? rawLatexInput(nativeInputPopoverActiveField)
+    : "";
   const ranked = nativeSuggestionPersonalizeSnapshot
     ? items
         .map((item, index) => ({ item, index }))
         .sort((left, right) => {
           const rightUsage = nativeSuggestionFrequency(
             right.item.dataset.command ?? "",
+            activePrefix,
           );
           const leftUsage = nativeSuggestionFrequency(
             left.item.dataset.command ?? "",
+            activePrefix,
           );
+          if (rightUsage.pinned !== leftUsage.pinned) {
+            return Number(rightUsage.pinned) - Number(leftUsage.pinned);
+          }
+          if (rightUsage.prefixCount !== leftUsage.prefixCount) {
+            return rightUsage.prefixCount - leftUsage.prefixCount;
+          }
           if (rightUsage.count !== leftUsage.count) {
             return rightUsage.count - leftUsage.count;
           }

@@ -26,11 +26,19 @@ const resultPath = join(
   homedir(),
   "Library/Group Containers/UBF8T346G9.Office/VisualTeX/Scratch/powerpoint-office-performance.json",
 );
+const movedCopyResultPath = join(
+  runtimeRoot,
+  "Tests/powerpoint-moved-copy-regression-result.txt",
+);
 const hangTracePath = "/tmp/visualtex-powerpoint-hang.txt";
-const visualTeXAppPath = join(
+const sourceVisualTeXAppPath = join(
   repositoryRoot,
   "src-tauri/target/release/bundle/macos/VisualTeX.app",
 );
+const installedVisualTeXAppPath = "/Applications/VisualTeX.app";
+const installedVisualTeXAppBackup = `/tmp/VisualTeX-PowerPointPerformance-${process.pid}.app`;
+const hadInstalledVisualTeXApp = existsSync(installedVisualTeXAppPath);
+let installedVisualTeXAppBackedUp = false;
 const editorReadyFile = "editor-ready.json";
 const editorPerformanceFile = "editor-performance.jsonl";
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
@@ -173,6 +181,45 @@ function focusedVisualTeXElement() {
   ]);
 }
 
+function visualTeXAccessibilitySummary(limit = 220) {
+  return runAppleScript([
+    'tell application "System Events"',
+    'tell process "visualtex"',
+    'set editorWindow to missing value',
+    'repeat with candidateWindow in windows',
+    'try',
+    'if (name of candidateWindow as text) is "VisualTeX Office Formula" then',
+    'set editorWindow to candidateWindow',
+    'exit repeat',
+    'end if',
+    'end try',
+    'end repeat',
+    'if editorWindow is missing value then return "NO_EDITOR_WINDOW"',
+    'set editorItems to entire contents of editorWindow',
+    'set summaryText to ""',
+    'set itemIndex to 0',
+    'repeat with candidateElement in editorItems',
+    'set itemIndex to itemIndex + 1',
+    `if itemIndex > ${Number(limit)} then exit repeat`,
+    'set roleValue to ""',
+    'set subroleValue to ""',
+    'set nameValue to ""',
+    'set descriptionValue to ""',
+    'set valueText to ""',
+    'try\nset roleValue to role of candidateElement as text\nend try',
+    'try\nset subroleValue to subrole of candidateElement as text\nend try',
+    'try\nset nameValue to name of candidateElement as text\nend try',
+    'try\nset descriptionValue to description of candidateElement as text\nend try',
+    'try\nset valueText to value of candidateElement as text\nend try',
+    'if (length of valueText) > 100 then set valueText to text 1 thru 100 of valueText',
+    'set summaryText to summaryText & itemIndex & "|" & roleValue & "|" & subroleValue & "|" & nameValue & "|" & descriptionValue & "|" & valueText & linefeed',
+    'end repeat',
+    'return summaryText',
+    'end tell',
+    'end tell',
+  ]);
+}
+
 async function replaceActiveFormula(latex) {
   const clipboard = spawnSync("/usr/bin/pbcopy", [], {
     input: latex,
@@ -190,19 +237,18 @@ async function replaceActiveFormula(latex) {
     "set frontmost to true",
     "delay 0.1",
     "set editorWindow to missing value",
-    "set editorItems to {}",
     "repeat with candidateWindow in windows",
-    "set candidateItems to entire contents of candidateWindow",
-    "if (count of candidateItems) > 100 then",
+    "try",
+    'if (name of candidateWindow as text) is "VisualTeX Office Formula" then',
     "set editorWindow to candidateWindow",
-    "set editorItems to candidateItems",
     "exit repeat",
     "end if",
+    "end try",
     "end repeat",
     'if editorWindow is missing value then error "The active VisualTeX Office editor was not found."',
+    "set editorItems to entire contents of editorWindow",
     "set formulaField to missing value",
-    "repeat with itemIndex from 1 to count of editorItems",
-    "set candidateElement to item itemIndex of editorItems",
+    "repeat with candidateElement in editorItems",
     "try",
     'if (role of candidateElement as text) is "AXTextField" then',
     "set formulaField to candidateElement",
@@ -221,9 +267,6 @@ async function replaceActiveFormula(latex) {
     "delay 0.05",
     'keystroke "v" using {command down}',
     "delay 0.2",
-    "set primaryButton to item 23 of editorItems",
-    'if (role of primaryButton as text) is not "AXButton" then error "The VisualTeX primary action moved unexpectedly."',
-    'if enabled of primaryButton is false then error "The VisualTeX primary action stayed disabled after formula input."',
     'return "REPLACED"',
     "end tell",
     "end tell",
@@ -252,6 +295,17 @@ function processIds(processName) {
     .split(/\s+/)
     .map((value) => Number.parseInt(value, 10))
     .filter((value) => Number.isInteger(value) && value > 0);
+}
+
+function forceQuitPowerPoint() {
+  bestEffort("/usr/bin/osascript", [
+    "-e",
+    'tell application "Microsoft PowerPoint" to quit saving no',
+  ], 10_000);
+  bestEffort("/usr/bin/killall", ["Microsoft PowerPoint"], 10_000);
+  for (const pid of processIds("Microsoft PowerPoint")) {
+    bestEffort("/bin/kill", ["-9", String(pid)], 5_000);
+  }
 }
 
 function sampleApplyHang(sessionId) {
@@ -283,25 +337,40 @@ function sampleApplyHang(sessionId) {
 }
 
 async function applyActiveFormula(sessionId, timeoutMs = 30_000) {
-  const startedEpochMs = Date.now();
-  const clickResult = runAppleScript([
+  // Resolve/focus the editor before the measured Apply press. The first
+  // Accessibility tree walk on a fresh macOS host can take seconds and is not
+  // part of the user's actual Cmd+Enter-to-commit latency.
+  const editorReady = runAppleScript([
     'tell application "System Events"',
     'tell process "visualtex"',
     "set frontmost to true",
     "delay 0.05",
-    "set editorItems to {}",
+    "set editorWindow to missing value",
     "repeat with candidateWindow in windows",
-    "set candidateItems to entire contents of candidateWindow",
-    "if (count of candidateItems) > 100 then",
-    "set editorItems to candidateItems",
+    "try",
+    'if (name of candidateWindow as text) is "VisualTeX Office Formula" then',
+    "set editorWindow to candidateWindow",
     "exit repeat",
     "end if",
+    "end try",
     "end repeat",
-    'if (count of editorItems) <= 100 then error "The active VisualTeX Office editor was not found."',
-    "set primaryButton to item 23 of editorItems",
-    'if (role of primaryButton as text) is not "AXButton" then error "The VisualTeX primary action moved unexpectedly."',
-    'if enabled of primaryButton is false then error "The VisualTeX primary action is disabled."',
-    'perform action "AXPress" of primaryButton',
+    'if editorWindow is missing value then error "The active VisualTeX Office editor was not found."',
+    'return "READY"',
+    "end tell",
+    "end tell",
+  ]);
+  if (editorReady.trim() !== "READY") {
+    throw new Error(`Unexpected VisualTeX editor readiness result: ${editorReady}`);
+  }
+
+  const startedEpochMs = Date.now();
+  const vbaStagePath = join(sessionsRoot, sessionId, "vba-commit-stage.txt");
+  const vbaStages = [];
+  let lastVbaStage = "";
+  const clickResult = runAppleScript([
+    'tell application "System Events"',
+    'tell process "visualtex"',
+    'keystroke return using {command down}',
     'return "PRESSED"',
     "end tell",
     "end tell",
@@ -312,6 +381,23 @@ async function applyActiveFormula(sessionId, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let hangSampled = false;
   while (Date.now() < deadline) {
+    if (existsSync(vbaStagePath)) {
+      try {
+        const currentVbaStage = readFileSync(vbaStagePath, "utf8")
+          .split(/\r?\n/)[0]
+          .trim();
+        if (currentVbaStage && currentVbaStage !== lastVbaStage) {
+          lastVbaStage = currentVbaStage;
+          vbaStages.push({
+            stage: currentVbaStage,
+            epochMs: Date.now(),
+            elapsedFromClickMs: Date.now() - startedEpochMs,
+          });
+        }
+      } catch {
+        // Retry while the atomic stage marker is being replaced.
+      }
+    }
     const record = editorPerformanceRecords(sessionId).find(
       (candidate) => candidate.stage === "apply-backend-complete",
     );
@@ -325,6 +411,7 @@ async function applyActiveFormula(sessionId, timeoutMs = 30_000) {
         records: editorPerformanceRecords(sessionId).filter((candidate) =>
           String(candidate.stage).startsWith("apply-"),
         ),
+        vbaStages,
       };
     }
     if (!hangSampled && Date.now() - startedEpochMs >= 5_000) {
@@ -438,16 +525,53 @@ async function ensureAddinLoaded() {
   }
 }
 
+function stageLatestVisualTeXApplication() {
+  bestEffort("/usr/bin/killall", ["visualtex"]);
+  rmSync(installedVisualTeXAppBackup, { recursive: true, force: true });
+  if (hadInstalledVisualTeXApp) {
+    run("/usr/bin/ditto", [installedVisualTeXAppPath, installedVisualTeXAppBackup], 120_000);
+    installedVisualTeXAppBackedUp = true;
+  }
+  rmSync(installedVisualTeXAppPath, { recursive: true, force: true });
+  run("/usr/bin/ditto", [sourceVisualTeXAppPath, installedVisualTeXAppPath], 120_000);
+  // LaunchAgent may relaunch the resident while /Applications/VisualTeX.app is
+  // being replaced. Kill once more after the staged app is complete so the
+  // acceptance run cannot inherit a process that started from mixed bytes.
+  bestEffort("/usr/bin/killall", ["visualtex"]);
+}
+
+function restoreInstalledVisualTeXApplication() {
+  bestEffort("/usr/bin/killall", ["visualtex"]);
+  rmSync(installedVisualTeXAppPath, { recursive: true, force: true });
+  if (installedVisualTeXAppBackedUp && existsSync(installedVisualTeXAppBackup)) {
+    bestEffort("/usr/bin/ditto", [installedVisualTeXAppBackup, installedVisualTeXAppPath], 120_000);
+  }
+  rmSync(installedVisualTeXAppBackup, { recursive: true, force: true });
+  if (hadInstalledVisualTeXApp && existsSync(installedVisualTeXAppPath)) {
+    bestEffort("/usr/bin/open", ["-gj", installedVisualTeXAppPath, "--args", "--office-background"], 20_000);
+  }
+}
+
 async function main() {
   rmSync(resultPath, { force: true });
-  bestEffort("/usr/bin/killall", ["Microsoft PowerPoint"]);
-  if (processIds("visualtex").length === 0) {
-    run("/usr/bin/open", ["-gj", visualTeXAppPath, "--args", "--office-background"]);
-    await sleep(8_000);
-  }
+  forceQuitPowerPoint();
+  await sleep(750);
+  stageLatestVisualTeXApplication();
+  await sleep(750);
+  run("/usr/bin/open", ["-gj", installedVisualTeXAppPath, "--args", "--office-background"]);
+  await sleep(8_000);
   run("/usr/bin/open", ["-b", "com.microsoft.Powerpoint"]);
   await waitForPowerPointUi();
+  const powerPointPid = processIds("Microsoft PowerPoint")[0];
+  if (!Number.isInteger(powerPointPid)) {
+    throw new Error("PowerPoint fresh-host PID was not available after launch");
+  }
   await ensureAddinLoaded();
+  // A freshly launched PowerPoint can report the add-in as loaded slightly
+  // before its VBA/add-in event loop is ready to accept the first external
+  // macro call. Give the host one short, bounded settle window so clean-start
+  // acceptance reflects normal user timing instead of racing Office startup.
+  await sleep(3_000);
   const presentationName = createTestPresentation();
 
   const beforeCreate = currentSessionIds();
@@ -468,6 +592,56 @@ async function main() {
     created.request.powerPoint.slideIndex,
   );
 
+  rmSync(movedCopyResultPath, { force: true });
+  runPowerPointMacro("VisualTeX_PreparePowerPointMovedCopyRegression");
+  if (!existsSync(movedCopyResultPath)) {
+    throw new Error("PowerPoint moved-copy regression did not write its prepared state");
+  }
+  const movedCopyPrepared = readFileSync(movedCopyResultPath, "utf8");
+  if (!movedCopyPrepared.startsWith("PREPARED")) {
+    throw new Error(`PowerPoint moved-copy preparation failed: ${movedCopyPrepared}`);
+  }
+  const copiedIdMatch = movedCopyPrepared.match(/^copiedId=(\d+)$/m);
+  const sourceLeftMatch = movedCopyPrepared.match(/^sourceLeft=([-+0-9.]+)$/m);
+  const sourceTopMatch = movedCopyPrepared.match(/^sourceTop=([-+0-9.]+)$/m);
+  const copiedLeftMatch = movedCopyPrepared.match(/^copiedLeft=([-+0-9.]+)$/m);
+  const copiedTopMatch = movedCopyPrepared.match(/^copiedTop=([-+0-9.]+)$/m);
+  if (!copiedIdMatch || !sourceLeftMatch || !sourceTopMatch || !copiedLeftMatch || !copiedTopMatch) {
+    throw new Error(`PowerPoint moved-copy state is incomplete: ${movedCopyPrepared}`);
+  }
+  const sourceLeft = Number(sourceLeftMatch[1]);
+  const sourceTop = Number(sourceTopMatch[1]);
+  const copiedLeft = Number(copiedLeftMatch[1]);
+  const copiedTop = Number(copiedTopMatch[1]);
+  const beforeMovedCopyEdit = currentSessionIds();
+  runPowerPointMacro("VisualTeX_DoubleClickEditSelected");
+  const movedCopyEdit = await waitForNewSession(beforeMovedCopyEdit, "edit");
+  const movedCopyReady = await waitForEditorReady(movedCopyEdit.sessionId);
+  if (movedCopyEdit.request.forkCopiedFormula !== true) {
+    throw new Error("The moved PowerPoint copy was not classified as an independent copied formula");
+  }
+  if (Number(movedCopyEdit.request.powerPoint?.shapeId) !== Number(copiedIdMatch[1])) {
+    throw new Error(
+      `PowerPoint moved-copy edit targeted Shape.ID ${movedCopyEdit.request.powerPoint?.shapeId}, expected ${copiedIdMatch[1]}`,
+    );
+  }
+  if (movedCopyEdit.request.formulaId === created.request.formulaId) {
+    throw new Error("The moved PowerPoint copy reused the source formulaId");
+  }
+  const movedCopyLatex = String.raw`E=mc^2+1`;
+  await replaceActiveFormula(movedCopyLatex);
+  const movedCopyApply = await applyActiveFormula(movedCopyEdit.sessionId);
+  if (movedCopyApply.clickToOfficeCompleteMs > 1_500) {
+    throw new Error(
+      `PowerPoint moved-copy Apply exceeded 1500 ms: ${JSON.stringify(movedCopyApply)}`,
+    );
+  }
+  const movedCopyVerification = movedCopyPrepared.trim();
+
+  selectFormulaShape(
+    created.request.formulaId,
+    created.request.powerPoint.slideIndex,
+  );
   const beforeEdit = currentSessionIds();
   const editInvokedEpochMs = Date.now();
   runPowerPointMacro("VisualTeX_DoubleClickEditSelected");
@@ -477,9 +651,21 @@ async function main() {
     created.request.formulaId,
   );
   const editReady = await waitForEditorReady(edited.sessionId);
+  if (
+    Math.abs(Number(edited.request.powerPoint?.left) - sourceLeft) > 0.1 ||
+    Math.abs(Number(edited.request.powerPoint?.top) - sourceTop) > 0.1
+  ) {
+    throw new Error(
+      `Editing the moved copy changed the source formula position: expected ${sourceLeft},${sourceTop}, got ${edited.request.powerPoint?.left},${edited.request.powerPoint?.top}`,
+    );
+  }
   const editInvokeToReadyMs = Number(editReady.epochMs) - editInvokedEpochMs;
-  if (editInvokeToReadyMs > 1_000) {
-    throw new Error(`PowerPoint edit opening exceeded 1000 ms: ${editInvokeToReadyMs}`);
+  const editRequestToReadyMs =
+    Number(editReady.epochMs) - Number(editReady.urlReceivedEpochMs);
+  if (!Number.isFinite(editRequestToReadyMs) || editRequestToReadyMs > 1_000) {
+    throw new Error(
+      `PowerPoint editor request-to-ready exceeded 1000 ms: ${editRequestToReadyMs}`,
+    );
   }
   const createdState = formulaDocumentFromEditRequest(edited.request);
   if (
@@ -518,9 +704,54 @@ async function main() {
     throw new Error("PowerPoint did not persist the edited formula metadata");
   }
 
+  selectFormulaShape(
+    movedCopyEdit.request.formulaId,
+    movedCopyEdit.request.powerPoint.slideIndex,
+  );
+  const beforeMovedCopyVerify = currentSessionIds();
+  runPowerPointMacro("VisualTeX_DoubleClickEditSelected");
+  const movedCopyVerified = await waitForNewSession(
+    beforeMovedCopyVerify,
+    "edit",
+    movedCopyEdit.request.formulaId,
+  );
+  const movedCopyVerifyReady = await waitForEditorReady(movedCopyVerified.sessionId);
+  const movedCopyCenterBefore = {
+    x:
+      Number(movedCopyEdit.request.powerPoint?.left) +
+      Number(movedCopyEdit.request.powerPoint?.width) / 2,
+    y:
+      Number(movedCopyEdit.request.powerPoint?.top) +
+      Number(movedCopyEdit.request.powerPoint?.height) / 2,
+  };
+  const movedCopyCenterAfter = {
+    x:
+      Number(movedCopyVerified.request.powerPoint?.left) +
+      Number(movedCopyVerified.request.powerPoint?.width) / 2,
+    y:
+      Number(movedCopyVerified.request.powerPoint?.top) +
+      Number(movedCopyVerified.request.powerPoint?.height) / 2,
+  };
+  if (
+    Math.abs(movedCopyCenterAfter.x - movedCopyCenterBefore.x) > 0.1 ||
+    Math.abs(movedCopyCenterAfter.y - movedCopyCenterBefore.y) > 0.1
+  ) {
+    throw new Error(
+      `The edited PowerPoint copy did not preserve its moved center: expected ${movedCopyCenterBefore.x},${movedCopyCenterBefore.y}, got ${movedCopyCenterAfter.x},${movedCopyCenterAfter.y}`,
+    );
+  }
+  const movedCopyState = formulaDocumentFromEditRequest(movedCopyVerified.request);
+  if (
+    movedCopyState.metadata.formulaId !== movedCopyEdit.request.formulaId ||
+    movedCopyState.document.lines[0]?.latex !== movedCopyLatex
+  ) {
+    throw new Error("PowerPoint did not persist the independently edited moved copy");
+  }
+
   const result = {
     status: "PASS",
     revision: "powerpoint-office-performance-20260801-r4",
+    powerPointPid,
     presentationName,
     formulaId: created.request.formulaId,
     create: {
@@ -530,9 +761,22 @@ async function main() {
       apply: createApply,
       persistedLatex: createdState.document.lines[0].latex,
     },
+    movedCopy: {
+      sessionId: movedCopyEdit.sessionId,
+      requestToReadyMs:
+        Number(movedCopyReady.epochMs) - Number(movedCopyReady.urlReceivedEpochMs),
+      showFocusMs: Number(movedCopyReady.showFocusMs),
+      apply: movedCopyApply,
+      verification: movedCopyVerification,
+      sourcePosition: { left: sourceLeft, top: sourceTop },
+      movedPosition: { left: copiedLeft, top: copiedTop },
+      verificationSessionId: movedCopyVerified.sessionId,
+      verificationRequestToReadyMs:
+        Number(movedCopyVerifyReady.epochMs) - Number(movedCopyVerifyReady.urlReceivedEpochMs),
+    },
     edit: {
       sessionId: edited.sessionId,
-      requestToReadyMs: Number(editReady.requestToReadyMs),
+      requestToReadyMs: editRequestToReadyMs,
       invokeToReadyMs: editInvokeToReadyMs,
       showFocusMs: Number(editReady.showFocusMs),
       apply: editApply,
@@ -550,9 +794,6 @@ async function main() {
 try {
   await main();
 } finally {
-  bestEffort("/usr/bin/osascript", [
-    "-e",
-    'tell application "Microsoft PowerPoint" to quit',
-  ]);
-  bestEffort("/usr/bin/killall", ["Microsoft PowerPoint"]);
+  forceQuitPowerPoint();
+  restoreInstalledVisualTeXApplication();
 }

@@ -167,6 +167,8 @@ struct MacOfflinePowerPointRequest {
     presentation_identity: String,
     slide_index: u32,
     slide_id: u32,
+    shape_index: u32,
+    shape_id: u32,
     shape_name: String,
     left: f64,
     top: f64,
@@ -204,6 +206,8 @@ struct MacOfflineSessionRequest {
     mode: String,
     #[serde(default)]
     operation: Option<String>,
+    #[serde(default)]
+    fork_copied_formula: bool,
     formula_id: Option<String>,
     display_mode: String,
     numbered: bool,
@@ -817,15 +821,34 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         let persist_result = persist_fast_open_claim(host, &session_id, &claim_path);
         let _ = fs::remove_file(&claim_path);
         persist_result?;
-        let url = format!("visualtex://office/open?session={session_id}");
-        handle_open_url_safely(app, &url)?;
+        if host == OfficeHost::Word {
+            let url = format!("visualtex://office/open?session={session_id}");
+            handle_open_url_safely(app, &url)?;
+        }
         return Ok(true);
     }
     Ok(false)
 }
 
+fn fast_open_ready_heartbeat() -> Result<String, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Unable to resolve VisualTeX resident executable: {error}"))?;
+    let executable = executable
+        .to_str()
+        .ok_or_else(|| "VisualTeX resident executable path is not valid UTF-8".to_string())?;
+    if executable.contains(['\r', '\n']) {
+        return Err("VisualTeX resident executable path contains a newline".to_string());
+    }
+    Ok(format!(
+        "visualtex-fast-open-ready-v2\n{}\n{}\n{}\n",
+        epoch_ms(),
+        std::process::id(),
+        executable
+    ))
+}
+
 fn refresh_fast_open_ready_markers() -> Result<(), String> {
-    let heartbeat = format!("visualtex-fast-open-ready-v1\n{}\n", epoch_ms());
+    let heartbeat = fast_open_ready_heartbeat()?;
     for (_host, root) in fast_open_inbox_roots()? {
         fs::create_dir_all(&root).map_err(|error| {
             format!(
@@ -1326,6 +1349,7 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
             || request.document_import.is_none()
             || request.numbered
             || request.native_equation
+            || request.fork_copied_formula
         {
             return Err("Document import request contains formula-only fields".to_string());
         }
@@ -1335,6 +1359,30 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         || request.document_import.is_some()
     {
         return Err("Unsupported offline Office operation".to_string());
+    }
+    if request.host == "word"
+        && request.mode == "edit"
+        && operation == "formula"
+        && (request.formula_id.is_none()
+            || request.source_document_id.is_none()
+            || request.source_object_id.is_none()
+            || request.encoded_metadata.is_none()
+            || request.pending_marker.is_some()
+            || request.power_point.is_some())
+    {
+        return Err("Word formula edit is missing its explicit source target".to_string());
+    }
+    if request.fork_copied_formula
+        && (request.mode != "edit"
+            || !matches!(operation, "formula" | "nativeToImage" | "imageToNative")
+            || request.formula_id.is_none()
+            || request.source_object_id.is_none()
+            || request.encoded_metadata.is_none())
+    {
+        return Err(
+            "Copied-formula isolation requires an existing formula edit with an explicit target"
+                .to_string(),
+        );
     }
     if matches!(operation, "nativeToImage" | "imageToNative") {
         let output_matches_operation = if operation == "nativeToImage" {
@@ -1435,8 +1483,15 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
                 MAX_SHAPE_NAME_CHARS,
                 "PowerPoint shape name",
             )?;
-            if powerpoint.slide_index == 0 || powerpoint.slide_id == 0 || powerpoint.z_order == 0 {
-                return Err("PowerPoint slide and z-order references must be positive".to_string());
+            if powerpoint.slide_index == 0
+                || powerpoint.slide_id == 0
+                || powerpoint.shape_index == 0
+                || powerpoint.shape_id == 0
+                || powerpoint.z_order == 0
+            {
+                return Err(
+                    "PowerPoint slide, shape-index, shape and z-order references must be positive".to_string(),
+                );
             }
             for (value, label) in [
                 (powerpoint.left, "left"),
@@ -1996,6 +2051,21 @@ fn hex_encode(value: &str) -> String {
         .collect()
 }
 
+fn fork_copied_metadata_identity(
+    metadata: &mut VisualTeXFormulaMetadata,
+    formula_id: &str,
+) -> Result<(), String> {
+    validate_uuid(formula_id, "Copied formula id")?;
+    if metadata.formula_id == formula_id {
+        return Err("Copied formula request must use a fresh formulaId".to_string());
+    }
+    metadata.formula_id = formula_id.to_string();
+    for line in &mut metadata.lines {
+        line.id = Uuid::new_v4().to_string();
+    }
+    Ok(())
+}
+
 fn import_request(
     state: &OfficeCompanionState,
     request: MacOfflineSessionRequest,
@@ -2006,7 +2076,7 @@ fn import_request(
         Err(error) => return Err(error.to_string()),
     }
 
-    let original_metadata = request
+    let mut original_metadata = request
         .encoded_metadata
         .as_deref()
         .map(decode_metadata)
@@ -2014,16 +2084,36 @@ fn import_request(
     let metadata_formula_id = original_metadata
         .as_ref()
         .map(|value| value.formula_id.clone());
-    let formula_id = match (request.formula_id.clone(), metadata_formula_id) {
-        (Some(request_id), Some(metadata_id)) if request_id != metadata_id => {
-            return Err("Request formulaId does not match encoded metadata".to_string())
+    let formula_id = if request.fork_copied_formula {
+        let request_id = request
+            .formula_id
+            .clone()
+            .ok_or_else(|| "Copied formula request is missing its new formulaId".to_string())?;
+        let source_id = metadata_formula_id
+            .as_deref()
+            .ok_or_else(|| "Copied formula request is missing source metadata".to_string())?;
+        if request_id == source_id {
+            return Err("Copied formula request must use a fresh formulaId".to_string());
         }
-        (Some(request_id), _) => request_id,
-        (None, Some(metadata_id)) => metadata_id,
-        (None, None) if request.mode == "create" => Uuid::new_v4().to_string(),
-        (None, None) => return Err("Edit request does not contain a formulaId".to_string()),
+        request_id
+    } else {
+        match (request.formula_id.clone(), metadata_formula_id) {
+            (Some(request_id), Some(metadata_id)) if request_id != metadata_id => {
+                return Err("Request formulaId does not match encoded metadata".to_string())
+            }
+            (Some(request_id), _) => request_id,
+            (None, Some(metadata_id)) => metadata_id,
+            (None, None) if request.mode == "create" => Uuid::new_v4().to_string(),
+            (None, None) => return Err("Edit request does not contain a formulaId".to_string()),
+        }
     };
     validate_uuid(&formula_id, "Imported formula id")?;
+    if request.fork_copied_formula {
+        let metadata = original_metadata
+            .as_mut()
+            .ok_or_else(|| "Copied formula request is missing source metadata".to_string())?;
+        fork_copied_metadata_identity(metadata, &formula_id)?;
+    }
 
     let host = match request.host.as_str() {
         "word" => OfficeHost::Word,
@@ -2072,8 +2162,9 @@ fn import_request(
         },
         OfficeHost::Powerpoint => request.power_point.as_ref().map(|powerpoint| {
             format!(
-                "visualtex-ppt-native-edit:{}:{}",
-                powerpoint.slide_index,
+                "visualtex-ppt-native-edit:{}:{}:{}",
+                powerpoint.slide_id,
+                powerpoint.shape_id,
                 hex_encode(&powerpoint.shape_name)
             )
         }),
@@ -2485,21 +2576,16 @@ fn clear_any_editor_session(host: OfficeHost) -> Option<MacOfflineOfficeEditorAc
 }
 
 #[cfg(target_os = "macos")]
-fn set_resident_editor_parked(window: &WebviewWindow, parked: bool) -> Result<(), String> {
+fn set_resident_editor_native_state(
+    window: &WebviewWindow,
+    alpha: f64,
+    parked: bool,
+) -> Result<(), String> {
     window
         .with_webview(move |webview| unsafe {
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
-            // Keep the resident WKWebView continuously alive, exactly as in
-            // eb2fcf2a. orderOut()/hide() suspends WebKit and causes the observed
-            // multi-second transparent wake-up before the editor can paint.
-            // 1% native opacity is still visible on bright/high-contrast desktop
-            // backgrounds, so park at a much smaller non-zero alpha instead.
-            native_window.setAlphaValue(if parked { 0.001 } else { 1.0 });
+            native_window.setAlphaValue(alpha);
             native_window.setIgnoresMouseEvents(parked);
-            // A ready Office editor must remain visually above Word/PowerPoint
-            // even when macOS refuses a cross-application activation request.
-            // Only the dedicated editor is promoted; the desktop main window
-            // stays at/below the normal level and is never revealed here.
             native_window.setLevel(if parked {
                 objc2_app_kit::NSNormalWindowLevel
             } else {
@@ -2507,6 +2593,24 @@ fn set_resident_editor_parked(window: &WebviewWindow, parked: bool) -> Result<()
             });
         })
         .map_err(|error| format!("Unable to update the resident Office editor window: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn set_resident_editor_parked(window: &WebviewWindow, parked: bool) -> Result<(), String> {
+    // 0.001 keeps an already-hydrated resident visually imperceptible, but on
+    // current macOS/WebKit it is low enough to suspend a freshly mounting
+    // WKWebView and a silent conversion. Use the stronger wake state below for
+    // those active phases, then return to 0.001 when idle.
+    set_resident_editor_native_state(window, if parked { 0.001 } else { 1.0 }, parked)
+}
+
+#[cfg(target_os = "macos")]
+fn wake_resident_editor_invisibly(window: &WebviewWindow) -> Result<(), String> {
+    // Keep the editor mouse-inert and at normal window level, but raise native
+    // alpha just enough that WebKit continues timers/rendering. Formula content
+    // stays CSS-hidden during silent conversions, so this does not expose the
+    // editor while preventing the 0.001-alpha suspension observed on macOS 26.
+    set_resident_editor_native_state(window, 0.01, true)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2717,10 +2821,10 @@ fn create_editor_window(app: &AppHandle, host: OfficeHost) -> Result<WebviewWind
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .build()
         .map_err(|error| format!("Unable to initialize the VisualTeX Office editor: {error}"))?;
-    // Keep the resident editor continuously ordered at an imperceptible alpha,
-    // matching eb2fcf2a. A truly hidden WKWebView is suspended before React can
-    // mount and later needs seconds to wake and repaint.
-    set_resident_editor_parked(&window, true)?;
+    // A freshly created WKWebView must stay above WebKit's suspension threshold
+    // until React/MathLive report prewarm readiness. It is parked back at 0.001
+    // immediately after that handshake.
+    wake_resident_editor_invisibly(&window)?;
     window
         .show()
         .map_err(|error| format!("Unable to prewarm the VisualTeX Office editor: {error}"))?;
@@ -2753,9 +2857,14 @@ fn open_editor_window(
         let mut runtime = office_editor_runtime()
             .lock()
             .map_err(|_| "VisualTeX Office editor state is unavailable".to_string())?;
-        // Match eb2fcf2a: park only by alpha, never by orderOut/hide, so the
-        // resident WebView remains mounted and can hydrate immediately.
-        set_resident_editor_parked(&window, true)?;
+        // Silent conversions need WebKit timers while remaining invisible.
+        // Ordinary edits can stay at the idle parked alpha until the explicit
+        // full-opacity hydration wake below.
+        if silent {
+            wake_resident_editor_invisibly(&window)?;
+        } else {
+            set_resident_editor_parked(&window, true)?;
+        }
         runtime.next_generation = runtime.next_generation.saturating_add(1).max(1);
         let activation = MacOfflineOfficeEditorActivation {
             session_id: session_id.to_string(),
@@ -4687,6 +4796,10 @@ fn commit_word(
         ("pendingMarker", pending_marker),
         ("sourceMarker", source_marker),
         (
+            "forkCopiedFormula",
+            if request.fork_copied_formula { "1" } else { "0" }.to_string(),
+        ),
+        (
             "sourceDocumentId",
             request.source_document_id.clone().unwrap_or_default(),
         ),
@@ -4745,11 +4858,13 @@ fn commit_word(
 }
 
 fn commit_powerpoint(
+    app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
     session: &OfficeFormulaSession,
     metadata: &str,
     geometry: PowerPointGeometry,
 ) -> Result<(), String> {
+    let commit_started = Instant::now();
     let powerpoint = request
         .power_point
         .as_ref()
@@ -4782,6 +4897,8 @@ fn commit_powerpoint(
             "sourceMarker",
             request.encoded_metadata.clone().unwrap_or_default(),
         ),
+        ("sourceShapeIndex", powerpoint.shape_index.to_string()),
+        ("sourceShapeId", powerpoint.shape_id.to_string()),
         ("sourceShapeName", powerpoint.shape_name.clone()),
         ("shapeName", format!("VisualTeX_{}", session.formula_id)),
         ("targetLeft", format!("{:.6}", geometry.left)),
@@ -4811,9 +4928,25 @@ fn commit_powerpoint(
         dispatch.as_bytes(),
         0o600,
     )?;
+    queue_editor_performance(
+        OfficeHost::Powerpoint,
+        &session.id,
+        "apply-powerpoint-dispatch-ready",
+        commit_started.elapsed().as_secs_f64() * 1000.0,
+        None,
+        json!({}),
+    );
     with_dispatch_pointer(OfficeHost::Powerpoint, &session.id, || {
-        run_vba_callback(OfficeHost::Powerpoint)
+        run_vba_callback_on_main_thread(app, OfficeHost::Powerpoint)
     })?;
+    queue_editor_performance(
+        OfficeHost::Powerpoint,
+        &session.id,
+        "apply-powerpoint-vba-complete",
+        commit_started.elapsed().as_secs_f64() * 1000.0,
+        None,
+        json!({}),
+    );
     Ok(())
 }
 
@@ -6404,7 +6537,13 @@ fn commit_session_blocking(
             metadata.reference_height_pt = Some(geometry.reference_height_pt);
             metadata.reference_baseline_pt = None;
             let encoded = encode_metadata(&metadata)?;
-            commit_powerpoint(&request, &session, &encoded, geometry)
+            commit_powerpoint(
+                state.app.as_ref(),
+                &request,
+                &session,
+                &encoded,
+                geometry,
+            )
         }
     };
     if let Err(error) = result {
@@ -7285,6 +7424,7 @@ mod tests {
             host: "word".to_string(),
             mode: "create".to_string(),
             operation: Some("latexRedraw".to_string()),
+            fork_copied_formula: false,
             formula_id: None,
             display_mode: "inline".to_string(),
             numbered: false,
@@ -7551,7 +7691,7 @@ mod tests {
             .expect("live PowerPoint request should contain geometry");
         let geometry = calculate_powerpoint_geometry(powerpoint, &session)
             .expect("live PowerPoint geometry should resolve");
-        commit_powerpoint(&request, &session, &metadata, geometry)
+        commit_powerpoint(None, &request, &session, &metadata, geometry)
             .expect("real PowerPoint PPAM SVG transaction should succeed");
         let svg_path = result_svg_path(OfficeHost::Powerpoint, &session_id)
             .expect("SVG result path should resolve");
@@ -7583,6 +7723,7 @@ mod tests {
             host: "word".to_string(),
             mode: "create".to_string(),
             operation: None,
+            fork_copied_formula: false,
             formula_id: Some("12345678-1234-4234-9234-123456789abc".to_string()),
             display_mode: "inline".to_string(),
             numbered: false,
@@ -7687,6 +7828,117 @@ mod tests {
             created_at: "unix-ms:1".to_string(),
             updated_at: "unix-ms:1".to_string(),
         }
+    }
+
+    #[test]
+    fn copied_formula_metadata_gets_independent_formula_and_line_ids() {
+        let mut metadata = document_formula_metadata(
+            "align",
+            &["a=b", "c=d"],
+            "a=b\nc=d",
+            "block",
+            false,
+        );
+        let source_formula_id = metadata.formula_id.clone();
+        let source_line_ids = metadata
+            .lines
+            .iter()
+            .map(|line| line.id.clone())
+            .collect::<Vec<_>>();
+        let copied_formula_id = "22345678-1234-4234-9234-123456789abc";
+
+        fork_copied_metadata_identity(&mut metadata, copied_formula_id)
+            .expect("copied formula metadata should be rekeyed");
+
+        assert_ne!(metadata.formula_id, source_formula_id);
+        assert_eq!(metadata.formula_id, copied_formula_id);
+        assert_eq!(metadata.lines.len(), source_line_ids.len());
+        for (line, source_id) in metadata.lines.iter().zip(source_line_ids) {
+            assert_ne!(line.id, source_id);
+            validate_uuid(&line.id, "Copied line id").unwrap();
+        }
+    }
+
+    #[test]
+    fn word_formula_edit_requires_explicit_source_target() {
+        let session_id = "31345678-1234-4234-9234-123456789abc".to_string();
+        let mut request = MacOfflineSessionRequest {
+            protocol_version: OFFLINE_PROTOCOL_VERSION,
+            session_id: session_id.clone(),
+            host: "word".to_string(),
+            mode: "edit".to_string(),
+            operation: Some("formula".to_string()),
+            fork_copied_formula: false,
+            formula_id: Some("41345678-1234-4234-9234-123456789abc".to_string()),
+            display_mode: "block".to_string(),
+            numbered: true,
+            native_equation: false,
+            source_document_id: Some("Document1".to_string()),
+            source_object_id: None,
+            encoded_metadata: Some(format!("{METADATA_PREFIX}fixture")),
+            pending_marker: None,
+            font_size_pt: Some(11.0),
+            reference_width_pt: Some(72.0),
+            reference_height_pt: Some(18.0),
+            power_point: None,
+            document_import: None,
+        };
+
+        assert!(validate_request(&request, &session_id)
+            .unwrap_err()
+            .contains("explicit source target"));
+
+        request.source_object_id = Some("VT_E_31345678123442349234".to_string());
+        validate_request(&request, &session_id)
+            .expect("image formula edits with an explicit edit bookmark should validate");
+
+        request.native_equation = true;
+        request.source_object_id = Some(
+            "VT_F_41345678-1234-4234-9234-123456789abc".to_string(),
+        );
+        validate_request(&request, &session_id)
+            .expect("native formula edits with an explicit formula bookmark should validate");
+    }
+
+    #[test]
+    fn copied_formula_fork_validation_accepts_word_conversion_edits() {
+        let session_id = "32345678-1234-4234-9234-123456789abc".to_string();
+        let formula_id = "42345678-1234-4234-9234-123456789abc".to_string();
+        let encoded_metadata = format!("{METADATA_PREFIX}fixture");
+        let mut request = MacOfflineSessionRequest {
+            protocol_version: OFFLINE_PROTOCOL_VERSION,
+            session_id: session_id.clone(),
+            host: "word".to_string(),
+            mode: "edit".to_string(),
+            operation: Some("imageToNative".to_string()),
+            fork_copied_formula: true,
+            formula_id: Some(formula_id),
+            display_mode: "inline".to_string(),
+            numbered: false,
+            native_equation: true,
+            source_document_id: Some("Document1".to_string()),
+            source_object_id: Some("VT_E_32345678123442349234".to_string()),
+            encoded_metadata: Some(encoded_metadata),
+            pending_marker: None,
+            font_size_pt: Some(14.0),
+            reference_width_pt: Some(42.0),
+            reference_height_pt: Some(18.0),
+            power_point: None,
+            document_import: None,
+        };
+
+        validate_request(&request, &session_id)
+            .expect("a copied Word image should be forkable while converting to OMML");
+
+        request.operation = Some("nativeToImage".to_string());
+        request.native_equation = false;
+        validate_request(&request, &session_id)
+            .expect("a copied Word OMML equation should be forkable while converting to image");
+
+        request.native_equation = true;
+        assert!(validate_request(&request, &session_id)
+            .unwrap_err()
+            .contains("matching Word edit output request"));
     }
 
     #[test]
@@ -7940,6 +8192,8 @@ c &= e
             presentation_identity: "Deck".to_string(),
             slide_index: 1,
             slide_id: 2,
+            shape_index: 3,
+            shape_id: 3,
             shape_name: "VisualTeX_12345678-1234-4234-9234-123456789abc".to_string(),
             left: 100.0,
             top: 200.0,
@@ -8065,6 +8319,7 @@ c &= e
             host: "word".to_string(),
             mode: "edit".to_string(),
             operation: None,
+            fork_copied_formula: false,
             formula_id: Some("12345678-1234-4234-9234-123456789abc".to_string()),
             display_mode: "inline".to_string(),
             numbered: false,

@@ -51,6 +51,11 @@ Public Function VTWriteAndLaunchSession( _
 #If Mac Then
     If VTTryWriteAndLaunchSessionDirect( _
        normalizedHost, sessionId, requestJson, directTimingDetail) Then
+        If normalizedHost = "powerpoint" Then
+            operationStage = "powerpoint-fast-open-activate"
+            VTLaunchSession normalizedHost, sessionId
+            directTimingDetail = directTimingDetail & ";activate=applescript-task"
+        End If
         VTWriteAndLaunchSession = directTimingDetail
         Exit Function
     End If

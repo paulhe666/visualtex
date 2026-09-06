@@ -49,6 +49,10 @@ const modules = [
     path: join(offlineOfficeRoot, "shared", "VTProtocol.bas"),
   },
   {
+    name: "VTMetadata",
+    path: join(offlineOfficeRoot, "shared", "VTMetadata.bas"),
+  },
+  {
     name: "VTLauncher",
     path: join(offlineOfficeRoot, "shared", "VTLauncher.bas"),
   },

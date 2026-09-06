@@ -159,6 +159,7 @@ export function EditorWorkspace({
   ocrSelection,
   ocrOptions = [],
   ocrBusy = false,
+  onOcrOptionsRequest,
   onOcrSelectionChange,
   onQuickOcr,
   quickOcrCaptureMode = "immediate",
@@ -1362,6 +1363,7 @@ export function EditorWorkspace({
                   <select
                     value={ocrSelection}
                     disabled={ocrBusy}
+                    onFocus={() => onOcrOptionsRequest?.()}
                     onChange={(event) =>
                       onOcrSelectionChange?.(event.target.value)
                     }

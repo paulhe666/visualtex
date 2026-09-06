@@ -1222,17 +1222,27 @@ for (const [host, script] of [["Word", wordScript], ["PowerPoint", powerpointScr
   const launchStart = script.indexOf("on launchVisualTeXURL(visualTeXURL)");
   const launchEnd = script.indexOf("end launchVisualTeXURL", launchStart);
   const launchSource = script.slice(launchStart, launchEnd);
-  expectIncludes(launchSource, "/usr/bin/nohup", `${host} Session launch must preserve the detached forwarding helper that does not steal Office focus`);
-  expectIncludes(launchSource, "quoted form of executablePath", `${host} Session launch must execute only the resolved VisualTeX binary`);
-  expectIncludes(launchSource, "quoted form of safeURL", `${host} Session launch must put only the validated URL in argv for Tauri single-instance IPC`);
+  if (host === "PowerPoint") {
+    expect(!launchSource.includes("/usr/bin/nohup"), "PowerPoint Session activation must not launch a sandbox-inherited second VisualTeX process");
+    expectIncludes(launchSource, '/usr/bin/open -b ', "PowerPoint Session activation must deliver the validated URL through LaunchServices");
+    expectIncludes(launchSource, 'quoted form of "com.visualtex.studio"', "PowerPoint Session activation must target the fixed production VisualTeX bundle id");
+    expectIncludes(launchSource, "quoted form of safeURL", "PowerPoint Session activation must deliver only the validated Office URL");
+  } else {
+    expectIncludes(launchSource, "/usr/bin/nohup", `${host} Session launch must preserve the detached forwarding helper that does not steal Office focus`);
+    expectIncludes(launchSource, "quoted form of executablePath", `${host} Session launch must execute only the resolved VisualTeX binary`);
+    expectIncludes(launchSource, "quoted form of safeURL", `${host} Session launch must put only the validated URL in argv for Tauri single-instance IPC`);
+  }
   const resolverStart = script.indexOf("on runningVisualTeXExecutable()");
   const resolverEnd = script.indexOf("end runningVisualTeXExecutable", resolverStart);
   const resolverSource = script.slice(resolverStart, resolverEnd);
-  expectIncludes(resolverSource, 'if cachedVisualTeXExecutable is not "" then return cachedVisualTeXExecutable', `${host} hot formula launch must return the prewarmed executable without pgrep/ps validation`);
+  expectIncludes(resolverSource, "readyResidentVisualTeXExecutable", `${host} hot formula launch must prefer the v2 resident heartbeat over process enumeration`);
+  expectIncludes(resolverSource, "isRunningVisualTeXExecutable", `${host} cached resident paths must be revalidated before reuse`);
   expect(
-    resolverSource.indexOf('if cachedVisualTeXExecutable is not "" then return cachedVisualTeXExecutable') < resolverSource.indexOf("firstRunningVisualTeXExecutable"),
-    `${host} hot formula launch must hit the cached resident before any process scan`,
+    resolverSource.indexOf("readyResidentVisualTeXExecutable") < resolverSource.indexOf("firstRunningVisualTeXExecutable"),
+    `${host} resident heartbeat binding must run before the legacy pgrep fallback`,
   );
+  expectIncludes(script, "visualtex-fast-open-ready-v2", `${host} launcher must understand the PID/path-bound resident heartbeat`);
+  expectIncludes(script, 'set actualPath to do shell script "/bin/ps -p " & quoted form of processId & " -o comm="', `${host} heartbeat PID must be verified against the exact executable path`);
   expectIncludes(resolverSource, '/usr/bin/open -gj -b ', `${host} cold formula launch must prewarm VisualTeX without activating it`);
   expectIncludes(resolverSource, 'delay 0.5', `${host} cold formula launch must preserve the validated single-instance settling wait`);
   expectIncludes(resolverSource, 'repeat with attemptIndex from 1 to 80', `${host} cold formula launch must bound resident startup waiting`);
@@ -1531,6 +1541,8 @@ expectIncludes(backgroundRuntime, "Every Accessory-to-Regular transition must ha
 expectIncludes(backgroundRuntime, 'const DOCK_ICON_MIGRATION_MARKER_FILE: &str = "dock-icon-v5.refreshed"', "The repaired Dock icon lifecycle must refresh stale same-version icon cache once");
 expectIncludes(backgroundRuntime, "Install the bundle icon before changing activation policy", "Foreground reveal must install the VisualTeX icon before creating a regular Dock tile");
 expectIncludes(rustRuntime, "open_editor_window(\n        app,\n        host,\n        &session_id,\n        received_epoch_ms,\n        received_at,\n        silent,", "Office formula requests must activate the fixed host editor with one generation, timing origin and explicit silent mode");
+expectIncludes(rustRuntime, 'if host == OfficeHost::Word {\n            let url = format!("visualtex://office/open?session={session_id}");\n            handle_open_url_safely(app, &url)?;', "The resident watcher must keep direct in-process fast-open activation scoped to Word only");
+expectIncludes(launcher, 'If normalizedHost = "powerpoint" Then\n            operationStage = "powerpoint-fast-open-activate"\n            VTLaunchSession normalizedHost, sessionId', "PowerPoint must activate a claimed fast-open request through its proven AppleScriptTask URL launcher instead of the resident watcher thread");
 expectIncludes(rustRuntime, "office-native-dialog.html?transport=tauri", "The resident Office editor must use the direct native-dialog entry so a hidden prewarmed WebView cannot stall on the desktop entry's dynamic import");
 expectIncludes(read("src/desktop/main.tsx"), 'view === "office-formula"', "The desktop entry must select the dedicated Office formula view from the window query");
 expectIncludes(read("src/desktop/main.tsx"), "<OfficeDialogApp />", "The dedicated desktop window must render the Office formula editor");
@@ -1824,7 +1836,8 @@ expectIncludes(toolbarCommandOmmlRegression, "latexLinesToOmml", "Every newly ad
 expectIncludes(styles, "overflow-y: hidden", "The horizontal formula tool strip must never expose a vertical scrollbar");
 expect(!rustRuntime.includes("native_window.orderOut(None)"), "The resident Office editor must remain in AppKit ordering so WebKit is never suspended between formula edits");
 expect(!rustRuntime.includes("Unable to hide the resident Office editor"), "The macOS resident editor must not use Tauri hide as part of its idle lifecycle");
-expectIncludes(rustRuntime, "setAlphaValue(if parked { 0.001 } else { 1.0 })", "Parking must keep a non-zero native alpha without leaving a visible resident Office window on the desktop");
+expectIncludes(rustRuntime, "set_resident_editor_native_state(window, if parked { 0.001 } else { 1.0 }, parked)", "Idle parking must keep a non-zero native alpha without leaving a visible resident Office window on the desktop");
+expectIncludes(rustRuntime, "set_resident_editor_native_state(window, 0.01, true)", "Prewarming and silent conversions must temporarily keep WebKit timers alive without making the resident editor interactive");
 expectIncludes(rustRuntime, "native_window.setAlphaValue(1.0)", "Hydration must restore the resident editor to full native opacity immediately after an Office request");
 expectIncludes(rustRuntime, "native_window.setIgnoresMouseEvents(true)", "A parked or hydrating resident editor must never intercept user input");
 expectIncludes(rustRuntime, "present_resident_editor_window", "A hydrated resident editor must restore native mouse and focus state before accepting input");

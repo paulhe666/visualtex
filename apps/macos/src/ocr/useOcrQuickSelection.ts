@@ -21,6 +21,7 @@ interface UseOcrQuickSelectionOptions {
   model: OcrModelName;
   busy: boolean;
   isEn: boolean;
+  enabled?: boolean;
   onModelChange: (model: OcrModelName) => void;
   onError: (message: string) => void;
 }
@@ -29,20 +30,49 @@ export function useOcrQuickSelection({
   model,
   busy,
   isEn,
+  enabled = true,
   onModelChange,
   onError,
 }: UseOcrQuickSelectionOptions) {
   const [configuration, setConfiguration] =
-    useState<OcrProviderConfiguration | null>(null);
+    useState<OcrProviderConfiguration>(LOCAL_OCR_QUICK_CONFIGURATION);
+  const [configurationLoaded, setConfigurationLoaded] = useState(false);
   const [changing, setChanging] = useState(false);
 
+  const loadConfiguration = useCallback(async () => {
+    if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
+      return configuration;
+    }
+    try {
+      const nextConfiguration = await getOcrProviderConfiguration();
+      setConfiguration(nextConfiguration);
+      setConfigurationLoaded(true);
+      return nextConfiguration;
+    } catch (reason) {
+      setConfiguration(LOCAL_OCR_QUICK_CONFIGURATION);
+      onError(
+        errorMessage(
+          reason,
+          isEn
+            ? "Unable to load the OCR provider"
+            : "无法读取 OCR 提供器设置",
+        ),
+      );
+      return LOCAL_OCR_QUICK_CONFIGURATION;
+    }
+  }, [configuration, isEn, onError]);
+
   useEffect(() => {
+    if (!enabled) return;
     if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
     void listenOcrProviderConfigurationChanged((nextConfiguration) => {
-      if (!disposed) setConfiguration(nextConfiguration);
+      if (!disposed) {
+        setConfiguration(nextConfiguration);
+        setConfigurationLoaded(true);
+      }
     })
       .then((stopListening) => {
         if (disposed) stopListening();
@@ -50,52 +80,37 @@ export function useOcrQuickSelection({
       })
       .catch(() => undefined);
 
-    void getOcrProviderConfiguration()
-      .then((nextConfiguration) => {
-        if (!disposed) setConfiguration(nextConfiguration);
-      })
-      .catch((reason) => {
-        if (disposed) return;
-        setConfiguration(LOCAL_OCR_QUICK_CONFIGURATION);
-        onError(
-          errorMessage(
-            reason,
-            isEn
-              ? "Unable to load the OCR provider"
-              : "无法读取 OCR 提供器设置",
-          ),
-        );
-      });
+    void loadConfiguration();
 
     return () => {
       disposed = true;
       unlisten?.();
     };
-  }, [isEn, onError]);
+  }, [enabled, loadConfiguration]);
 
   const options = useMemo(
-    () =>
-      configuration ? buildOcrQuickSelectionOptions(configuration) : [],
+    () => buildOcrQuickSelectionOptions(configuration),
     [configuration],
   );
-  const selection = configuration
-    ? activeOcrQuickSelectionId(configuration, model)
-    : "";
+  const selection = activeOcrQuickSelectionId(configuration, model);
   const activeOption = options.find((option) => option.id === selection) ?? null;
 
   const handleSelectionChange = useCallback(
     async (value: string) => {
       const parsed = parseOcrQuickSelection(value);
-      if (!configuration || !parsed || busy || changing || value === selection) {
+      if (!parsed || busy || changing || value === selection) {
         return;
       }
 
       setChanging(true);
       try {
+        const currentConfiguration = configurationLoaded
+          ? configuration
+          : await loadConfiguration();
         if (parsed.kind === "local") {
-          if (configuration.activeProvider !== "local") {
+          if (currentConfiguration.activeProvider !== "local") {
             const saved = await saveOcrProviderConfiguration(
-              createOcrProviderQuickUpdate(configuration, null),
+              createOcrProviderQuickUpdate(currentConfiguration, null),
             );
             setConfiguration(saved);
           }
@@ -104,7 +119,7 @@ export function useOcrQuickSelection({
         }
 
         const saved = await saveOcrProviderConfiguration(
-          createOcrProviderQuickUpdate(configuration, parsed),
+          createOcrProviderQuickUpdate(currentConfiguration, parsed),
         );
         setConfiguration(saved);
       } catch (reason) {
@@ -119,13 +134,22 @@ export function useOcrQuickSelection({
       } finally {
         setChanging(false);
       }
-    }, [busy, changing, configuration, isEn, onError, onModelChange, selection]);
+    }, [
+      busy,
+      changing,
+      configuration,
+      configurationLoaded,
+      loadConfiguration,
+      onModelChange,
+      selection,
+    ]);
 
   return {
     selection,
     options,
     activeOption,
     busy: busy || changing,
+    loadConfiguration,
     handleSelectionChange,
   };
 }

@@ -2042,6 +2042,8 @@ pub fn run() {
                         office::background::hide_main_window(app.handle())
                             .map_err(std::io::Error::other)?;
                     }
+                    #[cfg(target_os = "macos")]
+                    office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())
                     {
@@ -2049,8 +2051,6 @@ pub fn run() {
                         // the fixed host window lazily if WebKit was unavailable here.
                         eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
                     }
-                    #[cfg(target_os = "macos")]
-                    office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
                     #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
                     if let Some(url) = initial_office_url.as_deref() {

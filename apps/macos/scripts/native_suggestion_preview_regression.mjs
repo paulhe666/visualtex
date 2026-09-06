@@ -170,6 +170,29 @@ async function main() {
       };
       persisted.state.activeLineId = persisted.state.lines[0].id;
       delete persisted.state.inputBehavior;
+      const now = Date.now();
+      persisted.state.personalize = true;
+      persisted.state.usage = {
+        ...(persisted.state.usage || {}),
+        "legacy-bold": {
+          commandId: "legacy-bold",
+          useCount: 90,
+          lastUsedAt: now - 1_000,
+          recentUses: [now - 1_000],
+          acceptedPrefixes: { b: 1 },
+          contextCounts: {},
+          pinned: false,
+        },
+        "bm-bold-symbol": {
+          commandId: "bm-bold-symbol",
+          useCount: 10,
+          lastUsedAt: now - 2_000,
+          recentUses: [now - 2_000],
+          acceptedPrefixes: { b: 8 },
+          contextCounts: {},
+          pinned: false,
+        },
+      };
       localStorage.setItem(storageKey, JSON.stringify(persisted));
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
@@ -487,6 +510,22 @@ async function main() {
             `${entry.command} preview was not decorated`,
           );
         }
+      }
+      if (testCase.query === "\\b") {
+        const rankedCommands = await evaluate(`(() => {
+          const stablePanel = document.getElementById(
+            "visualtex-native-input-suggestion-popover",
+          );
+          return [...(stablePanel?.querySelectorAll("li[data-command]") ?? [])]
+            .map((item) => item.dataset.command ?? "");
+        })()`);
+        const bmIndex = rankedCommands.indexOf("\\bm");
+        const boldIndex = rankedCommands.indexOf("\\bold");
+        assert.ok(bmIndex >= 0 && boldIndex >= 0, "\\b ranking candidates exist");
+        assert.ok(
+          bmIndex < boldIndex,
+          `prefix-frequency ranking puts \\bm before globally-more-used \\bold: ${JSON.stringify(rankedCommands)}`,
+        );
       }
       if (testCase.query === "\\sq") {
         const sqint = entries.find((entry) => entry.command === "\\sqint");

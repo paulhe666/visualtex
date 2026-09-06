@@ -53,6 +53,7 @@ export interface EditorWorkspaceProps {
   ocrSelection?: string;
   ocrOptions?: readonly OcrQuickSelectionOption[];
   ocrBusy?: boolean;
+  onOcrOptionsRequest?: () => void;
   onOcrSelectionChange?: (selection: string) => void;
   onQuickOcr?: () => void;
   quickOcrCaptureMode?: QuickOcrCaptureMode;

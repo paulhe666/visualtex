@@ -84,8 +84,6 @@ import {
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
   recognizeFormulaImage,
-  resolveAvailableOcrModel,
-  prewarmOcrModel,
   type OcrModelName,
 } from "../../ocr/ocrService";
 import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
@@ -395,7 +393,6 @@ export function OfficeDialogApp() {
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
-  const ocrPrewarmStartedRef = useRef(false);
   const {
     sessionId,
     generation,
@@ -1403,31 +1400,6 @@ export function OfficeDialogApp() {
     }, delay);
   };
 
-  useEffect(() => {
-    if (!sessionHydrated) return;
-    let cancelled = false;
-    const delay = ocrPrewarmStartedRef.current ? 250 : 500;
-    const timer = window.setTimeout(() => {
-      ocrPrewarmStartedRef.current = true;
-      void getOcrProviderConfiguration()
-        .then((provider) => {
-          if (cancelled || provider.activeProvider !== "local") return null;
-          return getOcrRuntimeStatus();
-        })
-        .then((runtime) => {
-          if (cancelled || !runtime?.installed) return;
-          const availableModel = resolveAvailableOcrModel(runtime, ocrModel);
-          return prewarmOcrModel(availableModel);
-        })
-        .catch(() => undefined);
-    }, delay);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [ocrModel, sessionHydrated]);
-
   const handleOcrModelChange = useCallback(
     (nextModel: OcrModelName) => {
       if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
@@ -1441,6 +1413,7 @@ export function OfficeDialogApp() {
     model: ocrModel,
     busy: inlineOcrIsBusy,
     isEn,
+    enabled: false,
     onModelChange: handleOcrModelChange,
     onError: setToast,
   });
@@ -2155,6 +2128,9 @@ export function OfficeDialogApp() {
         ocrSelection={ocrQuickSelection.selection}
         ocrOptions={ocrQuickSelection.options}
         ocrBusy={ocrQuickSelection.busy}
+        onOcrOptionsRequest={() => {
+          void ocrQuickSelection.loadConfiguration();
+        }}
         onOcrSelectionChange={(selection) =>
           void ocrQuickSelection.handleSelectionChange(selection)
         }

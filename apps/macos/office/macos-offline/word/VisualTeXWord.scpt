@@ -296,42 +296,147 @@ on launchVisualTeXURL(visualTeXURL)
     set safeURL to visualTeXURL as text
     if safeURL does not start with "visualtex://office/open?session=" then error "VisualTeX launch URL is invalid" number 7127
     set executablePath to my runningVisualTeXExecutable()
-    -- Keep the detached forwarding helper from the stable cold-launch path so
-    -- Office never falls back to another foreground application while the
-    -- resident editor window is being raised.
-    do shell script "/usr/bin/nohup " & quoted form of executablePath & space & quoted form of safeURL & " >/dev/null 2>&1 &"
+    set diagnosticPath to my absoluteRuntimePath("Tests/word-launch-diagnostic.txt")
+    set diagnosticText to "executable=" & executablePath & linefeed
+    try
+        do shell script "/bin/test -x " & quoted form of executablePath
+        set diagnosticText to diagnosticText & "executableTest=ok" & linefeed
+    on error testMessage number testNumber
+        set diagnosticText to diagnosticText & "executableTest=fail:" & testNumber & ":" & testMessage & linefeed
+        my writeDiagnosticText(diagnosticPath, diagnosticText)
+        error "VisualTeX executable is not accessible from Word AppleScriptTask: " & executablePath number 7128
+    end try
+    try
+        set processIds to do shell script "/usr/bin/pgrep -x " & quoted form of "visualtex"
+        set diagnosticText to diagnosticText & "pgrep=" & processIds & linefeed
+    on error processMessage number processNumber
+        set diagnosticText to diagnosticText & "pgrep=fail:" & processNumber & ":" & processMessage & linefeed
+    end try
+    try
+        do shell script "/usr/bin/nohup " & quoted form of executablePath & space & quoted form of safeURL & " >/dev/null 2>" & quoted form of diagnosticPath & ".stderr &"
+        set diagnosticText to diagnosticText & "launchShell=ok" & linefeed
+        my writeDiagnosticText(diagnosticPath, diagnosticText)
+    on error launchMessage number launchNumber
+        set launchStderr to ""
+        try
+            set launchStderr to do shell script "/bin/cat " & quoted form of (diagnosticPath & ".stderr")
+        end try
+        set diagnosticText to diagnosticText & "launchShell=fail:" & launchNumber & ":" & launchMessage & linefeed & "stderr=" & launchStderr & linefeed
+        my writeDiagnosticText(diagnosticPath, diagnosticText)
+        error "VisualTeX resident URL forwarding failed: " & launchMessage & " [executable=" & executablePath & "; stderr=" & launchStderr & "]" number 7128
+    end try
 end launchVisualTeXURL
 
-on runningVisualTeXExecutable()
-    -- Prewarm resolves and caches the exact resident executable before the user
-    -- opens a formula. Do not re-run pgrep/ps/test on every hot editor launch.
-    if cachedVisualTeXExecutable is not "" then return cachedVisualTeXExecutable
+on writeDiagnosticText(targetPath, diagnosticText)
+    set diagnosticData to current application's NSString's stringWithString:(diagnosticText as text)
+    set writeSucceeded to diagnosticData's writeToFile:targetPath atomically:true encoding:(current application's NSUTF8StringEncoding) |error|:(missing value)
+    if not writeSucceeded then return false
+    try
+        do shell script "/bin/chmod 600 " & quoted form of targetPath
+    end try
+    return true
+end writeDiagnosticText
 
+on runningVisualTeXExecutable()
     set executableSuffix to "/VisualTeX.app/Contents/MacOS/visualtex"
+
+    -- The resident publishes its exact PID and executable path into Word's own
+    -- FastOpen heartbeat. Prefer that binding over process enumeration so a
+    -- development build and /Applications build can coexist without Office
+    -- forwarding the Session to whichever `pgrep` happens to list first.
+    set runningExecutable to my readyResidentVisualTeXExecutable(executableSuffix)
+    if runningExecutable is not "" then
+        set cachedVisualTeXExecutable to runningExecutable
+        return runningExecutable
+    end if
+
+    if cachedVisualTeXExecutable is not "" then
+        if my isRunningVisualTeXExecutable(cachedVisualTeXExecutable, executableSuffix) then return cachedVisualTeXExecutable
+        set cachedVisualTeXExecutable to ""
+    end if
+
+    -- Compatibility fallback for residents from before the PID/path heartbeat.
     set runningExecutable to my firstRunningVisualTeXExecutable(executableSuffix)
     if runningExecutable is not "" then
         set cachedVisualTeXExecutable to runningExecutable
         return runningExecutable
     end if
 
-    -- Cold launch retains the validated b201fde behavior: start VisualTeX in
-    -- background-only mode and wait until the real process is observable before
-    -- forwarding the first Session URL.
+    -- Cold launch retains the validated b201fde behavior. A current resident
+    -- will publish v2 readiness during this loop; older builds still resolve
+    -- through the process-enumeration fallback.
     do shell script "/usr/bin/open -gj -b " & quoted form of "com.visualtex.studio" & " --args --office-background"
     repeat with attemptIndex from 1 to 80
         delay 0.05
-        set runningExecutable to my firstRunningVisualTeXExecutable(executableSuffix)
+        set runningExecutable to my readyResidentVisualTeXExecutable(executableSuffix)
+        if runningExecutable is "" then set runningExecutable to my firstRunningVisualTeXExecutable(executableSuffix)
         if runningExecutable is not "" then
             delay 0.5
-            set runningExecutable to my firstRunningVisualTeXExecutable(executableSuffix)
-            if runningExecutable is not "" then
-                set cachedVisualTeXExecutable to runningExecutable
-                return runningExecutable
+            set verifiedExecutable to my readyResidentVisualTeXExecutable(executableSuffix)
+            if verifiedExecutable is "" then set verifiedExecutable to my firstRunningVisualTeXExecutable(executableSuffix)
+            if verifiedExecutable is not "" then
+                set cachedVisualTeXExecutable to verifiedExecutable
+                return verifiedExecutable
             end if
         end if
     end repeat
     error "The prewarmed VisualTeX executable is not running" number 7128
 end runningVisualTeXExecutable
+
+on readyResidentVisualTeXExecutable(executableSuffix)
+    set markerPath to my fastOpenReadyMarkerPath()
+    try
+        set markerText to do shell script "/bin/cat " & quoted form of markerPath
+    on error
+        return ""
+    end try
+    set previousDelimiters to AppleScript's text item delimiters
+    set AppleScript's text item delimiters to linefeed
+    set markerLines to text items of markerText
+    set AppleScript's text item delimiters to previousDelimiters
+    if (count of markerLines) < 4 then return ""
+    if item 1 of markerLines is not "visualtex-fast-open-ready-v2" then return ""
+    set processId to item 3 of markerLines as text
+    set candidatePath to item 4 of markerLines as text
+    if not my isDecimalProcessId(processId) then return ""
+    if candidatePath does not end with executableSuffix then return ""
+    try
+        do shell script "/bin/test -x " & quoted form of candidatePath
+        set actualPath to do shell script "/bin/ps -p " & quoted form of processId & " -o comm="
+        if actualPath is candidatePath then return candidatePath
+    end try
+    return ""
+end readyResidentVisualTeXExecutable
+
+on fastOpenReadyMarkerPath()
+    set homePath to POSIX path of (path to home folder)
+    return homePath & "Library/Containers/com.microsoft.Word/Data/Library/Application Support/VisualTeX/FastOpen/word/resident-ready"
+end fastOpenReadyMarkerPath
+
+on isRunningVisualTeXExecutable(candidatePath, executableSuffix)
+    if candidatePath is "" or candidatePath does not end with executableSuffix then return false
+    set processIds to ""
+    try
+        do shell script "/bin/test -x " & quoted form of candidatePath
+        set processIds to do shell script "/usr/bin/pgrep -x " & quoted form of "visualtex"
+    on error
+        return false
+    end try
+    set previousDelimiters to AppleScript's text item delimiters
+    set AppleScript's text item delimiters to linefeed
+    set processIdItems to text items of processIds
+    set AppleScript's text item delimiters to previousDelimiters
+    repeat with processIdItem in processIdItems
+        set processId to processIdItem as text
+        if my isDecimalProcessId(processId) then
+            try
+                set actualPath to do shell script "/bin/ps -p " & quoted form of processId & " -o comm="
+                if actualPath is candidatePath then return true
+            end try
+        end if
+    end repeat
+    return false
+end isRunningVisualTeXExecutable
 
 on firstRunningVisualTeXExecutable(executableSuffix)
     set processIds to ""

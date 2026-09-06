@@ -95,8 +95,6 @@ import {
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
   recognizeFormulaImage,
-  resolveAvailableOcrModel,
-  prewarmOcrModel,
   type OcrModelName,
 } from "./ocr/ocrService";
 import {
@@ -209,7 +207,6 @@ function App() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
-  const ocrPrewarmStartedRef = useRef(false);
   const macOfficeInstallStatusCheckedRef = useRef(false);
   const initialEditorFocusDoneRef = useRef(false);
   const pngClipboardBusyRef = useRef(false);
@@ -606,32 +603,6 @@ function App() {
   };
 
   useEffect(() => {
-    if (!isTauriEnvironment()) return;
-
-    let cancelled = false;
-    const delay = ocrPrewarmStartedRef.current ? 250 : 1200;
-    const timer = window.setTimeout(() => {
-      ocrPrewarmStartedRef.current = true;
-      void getOcrProviderConfiguration()
-        .then((provider) => {
-          if (cancelled || provider.activeProvider !== "local") return null;
-          return getOcrRuntimeStatus();
-        })
-        .then((runtime) => {
-          if (cancelled || !runtime?.installed) return;
-          const availableModel = resolveAvailableOcrModel(runtime, ocrModel);
-          return prewarmOcrModel(availableModel);
-        })
-        .catch(() => undefined);
-    }, delay);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [ocrModel]);
-
-  useEffect(() => {
     if (!isTauri()) return;
     let cancelled = false;
     void configureSilentOcr(silentOcrEnabled, ocrModel, latexCodeFormat).catch((error) => {
@@ -666,6 +637,7 @@ function App() {
     model: ocrModel,
     busy: inlineOcrIsBusy || quickOcrCaptureBusy,
     isEn,
+    enabled: false,
     onModelChange: handleOcrModelChange,
     onError: setToast,
   });
@@ -1674,6 +1646,9 @@ function App() {
         ocrSelection={ocrQuickSelection.selection}
         ocrOptions={ocrQuickSelection.options}
         ocrBusy={ocrQuickSelection.busy}
+        onOcrOptionsRequest={() => {
+          void ocrQuickSelection.loadConfiguration();
+        }}
         onOcrSelectionChange={(selection) =>
           void ocrQuickSelection.handleSelectionChange(selection)
         }

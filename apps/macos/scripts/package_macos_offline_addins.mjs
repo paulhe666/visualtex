@@ -144,6 +144,7 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTWordRibbonApplyImageFontSizePreset",
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
+            "VisualTeX_RunWordNumberedCopyIdentityRegression",
             "VTEnsureVisualTeXImageMacroButton",
             "VTAppendText",
             "VTWriteAndLaunchSession",

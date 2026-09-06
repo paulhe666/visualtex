@@ -15,6 +15,8 @@ Private Const VT_POWERPOINT_MAX_FONT_SIZE_PT As Double = 512#
 Private Const VT_POWERPOINT_FONT_CONTROL_ID As String = _
     "VisualTeX.Mac.PowerPoint.FormulaFontSize"
 Private Const VT_POWERPOINT_FONT_TAG As String = "VisualTeXFontSizePt"
+Private Const VT_POWERPOINT_DOCUMENT_TAG As String = "VisualTeXDocumentId"
+Private Const VT_POWERPOINT_OBJECT_TAG As String = "VisualTeXObjectId"
 Private Const VT_POWERPOINT_REFERENCE_WIDTH_TAG As String = _
     "VisualTeXReferenceWidthPt"
 Private Const VT_POWERPOINT_REFERENCE_HEIGHT_TAG As String = _
@@ -22,6 +24,13 @@ Private Const VT_POWERPOINT_REFERENCE_HEIGHT_TAG As String = _
 Private VT_POWERPOINT_EVENT_SINK As VTPowerPointEvents
 Private VT_POWERPOINT_RIBBON As IRibbonUI
 Private VT_POWERPOINT_SELECTION_SYNC_ACTIVE As Boolean
+Private VT_MOVED_COPY_TEST_SOURCE_ID As Long
+Private VT_MOVED_COPY_TEST_COPIED_ID As Long
+Private VT_MOVED_COPY_TEST_SOURCE_LEFT As Double
+Private VT_MOVED_COPY_TEST_SOURCE_TOP As Double
+Private VT_MOVED_COPY_TEST_COPIED_LEFT As Double
+Private VT_MOVED_COPY_TEST_COPIED_TOP As Double
+Private VT_MOVED_COPY_TEST_SOURCE_FORMULA_ID As String
 
 Public Sub Auto_Open()
     On Error Resume Next
@@ -91,6 +100,9 @@ Public Sub VisualTeX_NewFormula()
 
     failureStage = "attach placeholder metadata"
     VTSetShapeTag placeholder, "VisualTeXFormulaId", formulaId
+    VTSetShapeTag placeholder, VT_POWERPOINT_DOCUMENT_TAG, VTPresentationIdentity()
+    VTSetShapeTag placeholder, VT_POWERPOINT_OBJECT_TAG, _
+        VTPowerPointShapeObjectIdentity(currentSlide, placeholder)
     VTSetShapeTag placeholder, "VisualTeXSessionId", sessionId
     VTSetShapeTag placeholder, "VisualTeXPending", "1"
     VTSetShapeTag placeholder, VT_POWERPOINT_FONT_TAG, _
@@ -180,6 +192,111 @@ InvalidShape:
     VTIsVisualTeXPowerPointShape = False
 End Function
 
+Private Function VTPowerPointShapeObjectIdentity( _
+    ByVal currentSlide As Slide, _
+    ByVal target As Shape) As String
+
+    If currentSlide Is Nothing Or target Is Nothing Then Exit Function
+    VTPowerPointShapeObjectIdentity = _
+        CStr(currentSlide.SlideID) & ":" & CStr(target.Id)
+End Function
+
+Private Function VTPowerPointShapeCollectionIndex( _
+    ByVal currentSlide As Slide, _
+    ByVal target As Shape) As Long
+
+    Dim shapeIndex As Long
+
+    If currentSlide Is Nothing Or target Is Nothing Then Exit Function
+    For shapeIndex = 1 To currentSlide.Shapes.Count
+        If currentSlide.Shapes(shapeIndex).Id = target.Id Then
+            VTPowerPointShapeCollectionIndex = shapeIndex
+            Exit Function
+        End If
+    Next shapeIndex
+End Function
+
+Private Function VTFindPowerPointShapeById( _
+    ByVal currentSlide As Slide, _
+    ByVal shapeId As Long) As Shape
+
+    Dim candidate As Shape
+
+    If currentSlide Is Nothing Or shapeId <= 0 Then Exit Function
+    For Each candidate In currentSlide.Shapes
+        If candidate.Id = shapeId Then
+            Set VTFindPowerPointShapeById = candidate
+            Exit Function
+        End If
+    Next candidate
+End Function
+
+Private Function VTShouldForkPowerPointFormulaCopy( _
+    ByVal currentSlide As Slide, _
+    ByVal selectedShape As Shape, _
+    ByVal formulaId As String) As Boolean
+
+    Dim slideObject As Slide
+    Dim candidate As Shape
+    Dim canonicalSlide As Slide
+    Dim canonicalShape As Shape
+    Dim matchCount As Long
+    Dim ownerDocumentId As String
+    Dim ownerObjectId As String
+    Dim currentDocumentId As String
+    Dim currentObjectId As String
+
+    If currentSlide Is Nothing Or selectedShape Is Nothing Or _
+       Not VTIsCanonicalUuid(formulaId) Then Exit Function
+    currentDocumentId = VTPresentationIdentity()
+    currentObjectId = _
+        VTPowerPointShapeObjectIdentity(currentSlide, selectedShape)
+    On Error Resume Next
+    ownerDocumentId = selectedShape.Tags(VT_POWERPOINT_DOCUMENT_TAG)
+    ownerObjectId = selectedShape.Tags(VT_POWERPOINT_OBJECT_TAG)
+    On Error GoTo 0
+
+    ' Current formulas carry both the presentation identity and the physical
+    ' SlideID:Shape.ID that owned the formula when it was committed. Copy/paste
+    ' duplicates tags verbatim but PowerPoint gives the pasted Shape a new ID,
+    ' so only the physical copy fails this comparison.
+    If Len(ownerDocumentId) > 0 And ownerDocumentId <> currentDocumentId Then
+        VTShouldForkPowerPointFormulaCopy = True
+        Exit Function
+    End If
+    If Len(ownerObjectId) > 0 Then
+        VTShouldForkPowerPointFormulaCopy = _
+            (ownerDocumentId <> currentDocumentId) Or _
+            (ownerObjectId <> currentObjectId)
+        Exit Function
+    End If
+
+    ' Lazily migrate formulas created before the physical-owner tag existed.
+    ' Keep one deterministic original (first slide/order occurrence) and stamp
+    ' that Shape only. All other physical copies fork when edited.
+    For Each slideObject In ActivePresentation.Slides
+        For Each candidate In slideObject.Shapes
+            If VTShapeFormulaId(candidate) = formulaId Then
+                matchCount = matchCount + 1
+                If canonicalShape Is Nothing Then
+                    Set canonicalSlide = slideObject
+                    Set canonicalShape = candidate
+                End If
+            End If
+        Next candidate
+    Next slideObject
+    If canonicalShape Is Nothing Then
+        VTShouldForkPowerPointFormulaCopy = True
+        Exit Function
+    End If
+    VTSetShapeTag canonicalShape, VT_POWERPOINT_DOCUMENT_TAG, currentDocumentId
+    VTSetShapeTag canonicalShape, VT_POWERPOINT_OBJECT_TAG, _
+        VTPowerPointShapeObjectIdentity(canonicalSlide, canonicalShape)
+    VTShouldForkPowerPointFormulaCopy = _
+        VTPowerPointShapeObjectIdentity(canonicalSlide, canonicalShape) <> _
+        currentObjectId
+End Function
+
 Private Sub VTPowerPointEditShape(ByVal selectedShape As Shape)
     Dim formulaId As String
     Dim encodedMetadata As String
@@ -200,6 +317,7 @@ Private Sub VTPowerPointEditShape(ByVal selectedShape As Shape)
     Dim geometryReadyAt As Double
     Dim requestReadyAt As Double
     Dim launchFinishedAt As Double
+    Dim forkCopiedFormula As Boolean
 
     startedAt = Timer
     If selectedShape Is Nothing Then
@@ -218,6 +336,13 @@ Private Sub VTPowerPointEditShape(ByVal selectedShape As Shape)
         selectedShape, fontSizePt, referenceWidthPt, referenceHeightPt
     scaleReadyAt = Timer
 
+    forkCopiedFormula = _
+        VTShouldForkPowerPointFormulaCopy( _
+            ActiveWindow.View.Slide, selectedShape, formulaId)
+    If forkCopiedFormula Then
+        formulaId = VTNewUuidV4()
+        selectedShape.Name = VT_SHAPE_PREFIX & formulaId
+    End If
     sessionId = VTNewUuidV4()
     identifierReadyAt = Timer
     powerPointJson = VTPowerPointGeometryJson( _
@@ -235,7 +360,13 @@ Private Sub VTPowerPointEditShape(ByVal selectedShape As Shape)
         selectedShape.Name, _
         encodedMetadata, _
         "", _
-        powerPointJson)
+        powerPointJson, _
+        False, _
+        0#, _
+        0#, _
+        0#, _
+        "formula", _
+        forkCopiedFormula)
     requestReadyAt = Timer
     launchTiming = VTWriteAndLaunchSession( _
         VT_POWERPOINT_HOST, sessionId, requestJson)
@@ -293,6 +424,212 @@ TraceFinished:
     Err.Clear
 End Sub
 
+Public Sub VisualTeX_PreparePowerPointMovedCopyRegression()
+    Dim sourceShape As Shape
+    Dim copiedRange As ShapeRange
+    Dim copiedShape As Shape
+    Dim resultPath As String
+
+    VTRequireWritablePowerPointPresentation
+    Set sourceShape = VTSelectedSingleShape()
+    If Not VTIsVisualTeXPowerPointShape(sourceShape) Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "Select one committed VisualTeX PowerPoint formula."
+    End If
+
+    VT_MOVED_COPY_TEST_SOURCE_ID = sourceShape.Id
+    VT_MOVED_COPY_TEST_SOURCE_LEFT = sourceShape.Left
+    VT_MOVED_COPY_TEST_SOURCE_TOP = sourceShape.Top
+    VT_MOVED_COPY_TEST_SOURCE_FORMULA_ID = VTShapeFormulaId(sourceShape)
+
+    Set copiedRange = sourceShape.Duplicate
+    If copiedRange.Count <> 1 Then
+        Err.Raise vbObjectError + 7606, "VisualTeX regression", _
+            "PowerPoint did not create exactly one moved-copy test Shape."
+    End If
+    Set copiedShape = copiedRange(1)
+    copiedShape.Left = sourceShape.Left + 210!
+    copiedShape.Top = sourceShape.Top + 120!
+    VT_MOVED_COPY_TEST_COPIED_ID = copiedShape.Id
+    VT_MOVED_COPY_TEST_COPIED_LEFT = copiedShape.Left
+    VT_MOVED_COPY_TEST_COPIED_TOP = copiedShape.Top
+    copiedShape.Select
+
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/powerpoint-moved-copy-regression-result.txt"
+    VTWriteTextAtomic _
+        resultPath, _
+        "PREPARED" & vbLf & _
+        "sourceId=" & CStr(VT_MOVED_COPY_TEST_SOURCE_ID) & vbLf & _
+        "copiedId=" & CStr(VT_MOVED_COPY_TEST_COPIED_ID) & vbLf & _
+        "sourceName=" & sourceShape.Name & vbLf & _
+        "copiedName=" & copiedShape.Name & vbLf & _
+        "sourceLeft=" & VTJsonNumber(VT_MOVED_COPY_TEST_SOURCE_LEFT) & vbLf & _
+        "sourceTop=" & VTJsonNumber(VT_MOVED_COPY_TEST_SOURCE_TOP) & vbLf & _
+        "copiedLeft=" & VTJsonNumber(VT_MOVED_COPY_TEST_COPIED_LEFT) & vbLf & _
+        "copiedTop=" & VTJsonNumber(VT_MOVED_COPY_TEST_COPIED_TOP) & vbLf
+End Sub
+
+Public Sub VisualTeX_VerifyPowerPointMovedCopyRegression()
+    Const positionTolerance As Double = 0.1
+
+    Dim currentSlide As Slide
+    Dim sourceShape As Shape
+    Dim candidate As Shape
+    Dim movedCopy As Shape
+    Dim resultPath As String
+
+    VTRequireWritablePowerPointPresentation
+    Set currentSlide = ActiveWindow.View.Slide
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/powerpoint-moved-copy-regression-result.txt"
+
+    Set sourceShape = _
+        VTFindPowerPointShapeById(currentSlide, VT_MOVED_COPY_TEST_SOURCE_ID)
+    If sourceShape Is Nothing Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The source PowerPoint formula disappeared after editing its copy."
+    End If
+    If Abs(sourceShape.Left - VT_MOVED_COPY_TEST_SOURCE_LEFT) > _
+            positionTolerance Or _
+       Abs(sourceShape.Top - VT_MOVED_COPY_TEST_SOURCE_TOP) > _
+            positionTolerance Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "Editing the moved copy changed the source formula position."
+    End If
+
+    For Each candidate In currentSlide.Shapes
+        If candidate.Id <> sourceShape.Id Then
+            If Abs(candidate.Left - VT_MOVED_COPY_TEST_COPIED_LEFT) <= _
+                    positionTolerance And _
+               Abs(candidate.Top - VT_MOVED_COPY_TEST_COPIED_TOP) <= _
+                    positionTolerance Then
+                If movedCopy Is Nothing Then
+                    Set movedCopy = candidate
+                Else
+                    Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+                        "More than one Shape matched the moved-copy position."
+                End If
+            End If
+        End If
+    Next candidate
+    If movedCopy Is Nothing Then
+        Err.Raise vbObjectError + 7607, "VisualTeX regression", _
+            "The edited copy did not remain at its moved position."
+    End If
+
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "sourceId=" & CStr(sourceShape.Id) & vbLf & _
+        "movedCopyId=" & CStr(movedCopy.Id) & vbLf & _
+        "sourceLeft=" & VTJsonNumber(sourceShape.Left) & vbLf & _
+        "sourceTop=" & VTJsonNumber(sourceShape.Top) & vbLf & _
+        "movedCopyLeft=" & VTJsonNumber(movedCopy.Left) & vbLf & _
+        "movedCopyTop=" & VTJsonNumber(movedCopy.Top) & vbLf
+End Sub
+
+Public Sub VisualTeX_RunPowerPointCopyIdentityRegression()
+    Const formulaId As String = _
+        "68686868-6868-4868-8868-686868686868"
+
+    Dim sourcePresentation As Presentation
+    Dim testPresentation As Presentation
+    Dim testSlide As Slide
+    Dim sourceShape As Shape
+    Dim copiedShape As Shape
+    Dim copiedRange As ShapeRange
+    Dim encodedMetadata As String
+    Dim formulaReference As String
+    Dim sourceObjectId As String
+    Dim copiedStoredObjectId As String
+    Dim copiedActualObjectId As String
+    Dim resultPath As String
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    On Error GoTo RegressionFailed
+    If Presentations.Count > 0 Then Set sourcePresentation = ActivePresentation
+    resultPath = VTApplicationSupportRoot() & _
+        "/Tests/powerpoint-copy-identity-regression-result.txt"
+    encodedMetadata = VT_METADATA_PREFIX & "e30"
+    formulaReference = VTFormulaReference(formulaId, "block", False)
+
+    regressionStage = "create-source"
+    Set testPresentation = Presentations.Add(msoTrue)
+    Set testSlide = testPresentation.Slides.Add(1, ppLayoutBlank)
+    Set sourceShape = testSlide.Shapes.AddShape( _
+        msoShapeRectangle, 72!, 72!, 160!, 48!)
+    sourceShape.Name = VT_SHAPE_PREFIX & formulaId
+    sourceShape.Title = formulaReference
+    sourceShape.AlternativeText = encodedMetadata
+    VTSetShapeTag sourceShape, "VisualTeXFormulaId", formulaId
+    VTSetShapeTag sourceShape, VT_POWERPOINT_DOCUMENT_TAG, _
+        VTPresentationIdentity()
+    sourceObjectId = VTPowerPointShapeObjectIdentity(testSlide, sourceShape)
+    VTSetShapeTag sourceShape, VT_POWERPOINT_OBJECT_TAG, sourceObjectId
+
+    regressionStage = "duplicate"
+    Set copiedRange = sourceShape.Duplicate
+    If copiedRange.Count <> 1 Then
+        Err.Raise vbObjectError + 7605, "VisualTeX regression", _
+            "PowerPoint did not create exactly one duplicate Shape."
+    End If
+    Set copiedShape = copiedRange(1)
+    copiedStoredObjectId = copiedShape.Tags(VT_POWERPOINT_OBJECT_TAG)
+    copiedActualObjectId = _
+        VTPowerPointShapeObjectIdentity(testSlide, copiedShape)
+    If sourceShape.Id = copiedShape.Id Or _
+       copiedStoredObjectId <> sourceObjectId Or _
+       copiedActualObjectId = sourceObjectId Then
+        Err.Raise vbObjectError + 7605, "VisualTeX regression", _
+            "PowerPoint did not preserve copied tags with a distinct physical Shape.ID."
+    End If
+
+    regressionStage = "classify"
+    If VTShouldForkPowerPointFormulaCopy( _
+       testSlide, sourceShape, formulaId) Then
+        Err.Raise vbObjectError + 7605, "VisualTeX regression", _
+            "The original PowerPoint formula was incorrectly classified as a copy."
+    End If
+    If Not VTShouldForkPowerPointFormulaCopy( _
+       testSlide, copiedShape, formulaId) Then
+        Err.Raise vbObjectError + 7605, "VisualTeX regression", _
+            "The copied PowerPoint formula retained the source physical identity."
+    End If
+
+    VTWriteTextAtomic _
+        resultPath, _
+        "PASS" & vbLf & _
+        "revision=" & VT_POWERPOINT_SOURCE_REVISION & vbLf & _
+        "sourceObjectId=" & sourceObjectId & vbLf & _
+        "copiedStoredObjectId=" & copiedStoredObjectId & vbLf & _
+        "copiedActualObjectId=" & copiedActualObjectId & vbLf
+    testPresentation.Close
+    If Not sourcePresentation Is Nothing Then sourcePresentation.Windows(1).Activate
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic _
+        resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), _
+                vbLf, " ") & vbLf
+    If Not testPresentation Is Nothing Then testPresentation.Close
+    If Not sourcePresentation Is Nothing Then sourcePresentation.Windows(1).Activate
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX PowerPoint copy identity regression", _
+        regressionStage & ": " & regressionErrorDescription
+End Sub
+
 Public Sub VisualTeX_DeleteSelected()
     On Error GoTo Failed
     Dim selectedShape As Shape
@@ -347,6 +684,8 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     Dim formulaId As String
     Dim metadata As String
     Dim shapeName As String
+    Dim sourceShapeIndex As Long
+    Dim sourceShapeId As Long
     Dim sourceShapeName As String
     Dim imagePath As String
     Dim fallbackImagePath As String
@@ -470,7 +809,8 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     Set original = currentSlide.Shapes(sourceShapeName)
     On Error GoTo TransactionFailed
     If original Is Nothing Then
-        Err.Raise vbObjectError + 7519, "VisualTeX", "The original VisualTeX PowerPoint shape no longer exists."
+        Err.Raise vbObjectError + 7519, "VisualTeX", _
+            "The original VisualTeX PowerPoint shape no longer exists."
     End If
 
     candidateTemporaryName = "VisualTeXPendingResult_" & Replace$(Left$(sessionId, 13), "-", "")
@@ -478,6 +818,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     ' Modern PowerPoint for Mac preserves an imported SVG as vector artwork.
     ' Prefer SVG so formulas remain sharp at arbitrary zoom. Keep the PNG only
     ' as a compatibility fallback for Office builds that reject SVG AddPicture.
+    DoEvents
     On Error Resume Next
     Set candidate = currentSlide.Shapes.AddPicture( _
         FileName:=imagePath, _
@@ -490,6 +831,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     vectorInsertErrorNumber = Err.Number
     vectorInsertErrorDescription = Err.Description
     Err.Clear
+    DoEvents
     On Error GoTo TransactionFailed
     If candidate Is Nothing Then
         If Len(fallbackImagePath) = 0 Then
@@ -497,6 +839,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
                 "PowerPoint could not insert the VisualTeX SVG: " & _
                 CStr(vectorInsertErrorNumber) & " " & vectorInsertErrorDescription
         End If
+        DoEvents
         Set candidate = currentSlide.Shapes.AddPicture( _
             FileName:=fallbackImagePath, _
             LinkToFile:=msoFalse, _
@@ -505,6 +848,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
             Top:=CSng(targetTop), _
             Width:=CSng(targetWidth), _
             Height:=CSng(targetHeight))
+        DoEvents
     End If
     candidate.Name = candidateTemporaryName
     ' AddPicture already received the final bounds. Reassigning all four
@@ -516,6 +860,9 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     candidate.AlternativeText = metadata
     candidate.Title = formulaReference
     VTSetShapeTag candidate, "VisualTeXFormulaId", formulaId
+    VTSetShapeTag candidate, VT_POWERPOINT_DOCUMENT_TAG, expectedPresentation
+    VTSetShapeTag candidate, VT_POWERPOINT_OBJECT_TAG, _
+        VTPowerPointShapeObjectIdentity(currentSlide, candidate)
     VTSetShapeTag candidate, "VisualTeXSessionId", sessionId
     VTSetShapeTag candidate, "VisualTeXPending", "0"
     VTSetPowerPointFormulaScaleState _
@@ -524,14 +871,17 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
     VTSetShapeTag candidate, "VisualTeXMetadata", metadata
     Err.Clear
     On Error GoTo TransactionFailed
+    DoEvents
 
     ' The original still occupies targetZOrder. Put the candidate immediately
     ' above it; deleting the original as the final mutation shifts the candidate
     ' into the exact original z-order without any fallible operation afterwards.
     VTRestoreZOrder candidate, targetZOrder + 1
+    DoEvents
     original.Name = originalTemporaryName
     originalRenamed = True
     candidate.Name = shapeName
+    DoEvents
 
     ' Keep the synchronous transaction check focused on identity and rollback
     ' safety. The integration benchmark verifies geometry and scale metadata
@@ -547,6 +897,7 @@ Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispat
             "PowerPoint did not persist the VisualTeX formula identity."
     End If
 
+    DoEvents
     original.Delete
     Exit Sub
 
@@ -1133,10 +1484,20 @@ Private Function VTPowerPointGeometryJson( _
     Optional ByVal referenceWidthPt As Double = 0#, _
     Optional ByVal referenceHeightPt As Double = 0#) As String
 
+    Dim shapeIndex As Long
+
+    shapeIndex = VTPowerPointShapeCollectionIndex(currentSlide, target)
+    If shapeIndex <= 0 Then
+        Err.Raise vbObjectError + 7529, "VisualTeX", _
+            "The selected PowerPoint shape is no longer in its slide."
+    End If
+
     VTPowerPointGeometryJson = "{" & _
         """presentationIdentity"":" & VTJsonString(VTPresentationIdentity()) & "," & _
         """slideIndex"":" & CStr(currentSlide.SlideIndex) & "," & _
         """slideId"":" & CStr(currentSlide.SlideID) & "," & _
+        """shapeIndex"":" & CStr(shapeIndex) & "," & _
+        """shapeId"":" & CStr(target.Id) & "," & _
         """shapeName"":" & VTJsonString(target.Name) & "," & _
         """left"":" & VTJsonNumber(target.Left) & "," & _
         """top"":" & VTJsonNumber(target.Top) & "," & _
