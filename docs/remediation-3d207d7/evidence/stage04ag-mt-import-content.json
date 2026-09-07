@@ -1,0 +1,319 @@
+{
+    "equations":  [
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject1.bin",
+                          "semanticSignature":  "sqrt(mi[](E)o(-)mi[](u)fence((,),mi[](x)))o(=)frac(n(1),mi[](f)fence((,),mi[](ω))sub(mi[](v),mi[](p)mi[](h))fence((,),mi[](ω)o(,)mi[](x)))",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  427,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmsqrt\u003e\u003cmi\u003eE\u003c/mi\u003e\u003cmo\u003e−\u003c/mo\u003e\u003cmi\u003eu\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003ex\u003c/mi\u003e\u003c/mfenced\u003e\u003c/msqrt\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmfrac\u003e\u003cmn\u003e1\u003c/mn\u003e\u003cmrow\u003e\u003cmi\u003ef\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003cmsub\u003e\u003cmi\u003ev\u003c/mi\u003e\u003cmrow\u003e\u003cmi\u003ep\u003c/mi\u003e\u003cmi\u003eh\u003c/mi\u003e\u003c/mrow\u003e\u003c/msub\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmi\u003eω\u003c/mi\u003e\u003cmo\u003e,\u003c/mo\u003e\u003cmi\u003ex\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003c/math\u003e"
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject2.bin",
+                          "semanticSignature":  "fence({,,table(row(cell(frac(mi[normal](d),mi[normal](d)mi[](ω))fence((,),mi[](ω)mi[](f)fence((,),mi[](ω)))o(=)n(0)));row(cell(frac(mi[](ω)mi[](f)fence((,),mi[](ω)),n(2))frac(mi[normal](d)mi[](E)fence((,),mi[](ω)),mi[normal](d)mi[](ω))o(=)sqrt(frac(mi[](m),n(2)))))))",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  546,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmfenced open=\"{\" close=\"\"\u003e\u003cmtable\u003e\u003cmtr\u003e\u003cmtd\u003e\u003cmfrac\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmrow\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmi\u003eω\u003c/mi\u003e\u003cmi\u003ef\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmn\u003e0\u003c/mn\u003e\u003c/mtd\u003e\u003c/mtr\u003e\u003cmtr\u003e\u003cmtd\u003e\u003cmfrac\u003e\u003cmrow\u003e\u003cmi\u003eω\u003c/mi\u003e\u003cmi\u003ef\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003cmn\u003e2\u003c/mn\u003e\u003c/mfrac\u003e\u003cmfrac\u003e\u003cmrow\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmi\u003eE\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003cmrow\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmsqrt\u003e\u003cmfrac\u003e\u003cmi\u003em\u003c/mi\u003e\u003cmn\u003e2\u003c/mn\u003e\u003c/mfrac\u003e\u003c/msqrt\u003e\u003c/mtd\u003e\u003c/mtr\u003e\u003c/mtable\u003e\u003c/mfenced\u003e\u003c/math\u003e"
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject3.bin",
+                          "semanticSignature":  "sqrt(frac(mi[](m),n(2)fence((,),mi[](E)fence((,),mi[](ω))o(-)mi[](U))))o(=)frac(mi[normal](d),mi[normal](d)mi[](ω))fence((,),mi[](ω)o(⋅)mi[](f)fence((,),mi[](ω))sqrt(fence((,),mi[](E)fence((,),mi[](ω))o(-)mi[](U))))",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  527,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmsqrt\u003e\u003cmfrac\u003e\u003cmi\u003em\u003c/mi\u003e\u003cmrow\u003e\u003cmn\u003e2\u003c/mn\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmi\u003eE\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003cmo\u003e−\u003c/mo\u003e\u003cmi\u003eU\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003c/msqrt\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmfrac\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmrow\u003e\u003cmtext\u003ed\u003c/mtext\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmi\u003eω\u003c/mi\u003e\u003cmo\u003e⋅\u003c/mo\u003e\u003cmi\u003ef\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003cmsqrt\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmi\u003eE\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003eω\u003c/mi\u003e\u003c/mfenced\u003e\u003cmo\u003e−\u003c/mo\u003e\u003cmi\u003eU\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003c/msqrt\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003c/math\u003e"
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject4.bin",
+                          "semanticSignature":  "mi[](i)mi[](ℏ)frac(o(∂),o(∂)mi[](t))mi[](ψ)o(()mi[bold](r)o(,)mi[](t)o())o(=)fence([,],o(-)frac(sup(mi[](ℏ),n(2)),n(2)mi[](m))sup(o(∇),n(2))o(+)mi[](V)o(()mi[bold](r)o(,)mi[](t)o()))mi[](ψ)o(()mi[bold](r)o(,)mi[](t)o())",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  502,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmi\u003ei\u003c/mi\u003e\u003cmi\u003eℏ\u003c/mi\u003e\u003cmfrac\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmrow\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmo\u003e(\u003c/mo\u003e\u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\u003cmo\u003e,\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003cmo\u003e)\u003c/mo\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmfenced open=\"[\" close=\"]\"\u003e\u003cmrow\u003e\u003cmo\u003e−\u003c/mo\u003e\u003cmfrac\u003e\u003cmsup\u003e\u003cmi\u003eℏ\u003c/mi\u003e\u003cmn\u003e2\u003c/mn\u003e\u003c/msup\u003e\u003cmrow\u003e\u003cmn\u003e2\u003c/mn\u003e\u003cmi\u003em\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmsup\u003e\u003cmo\u003e∇\u003c/mo\u003e\u003cmn\u003e2\u003c/mn\u003e\u003c/msup\u003e\u003cmo\u003e+\u003c/mo\u003e\u003cmi\u003eV\u003c/mi\u003e\u003cmo\u003e(\u003c/mo\u003e\u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\u003cmo\u003e,\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003cmo\u003e)\u003c/mo\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmo\u003e(\u003c/mo\u003e\u003cmi mathvariant=\"bold\"\u003er\u003c/mi\u003e\u003cmo\u003e,\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003cmo\u003e)\u003c/mo\u003e\u003c/math\u003e"
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject5.bin",
+                          "semanticSignature":  "frac(o(∂),o(∂)mi[](t))sup(mi[](ψ),o(∗))fence((,),accent(→,mi[](r)))mi[](ψ)fence((,),accent(→,mi[](r)))o(=)frac(mi[](i)mi[](ℏ),n(2)mi[](m))o(∇)o(⋅)fence([,],sup(mi[](ψ),o(∗))fence((,),accent(→,mi[](r)))o(∇)mi[](ψ)fence((,),accent(→,mi[](r)))o(-)mi[](ψ)fence((,),accent(→,mi[](r)))o(∇)sup(mi[](ψ),o(∗))fence((,),mi[](r)))",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  640,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmfrac\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmrow\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmsup\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmo\u003e∗\u003c/mo\u003e\u003c/msup\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003c/mfenced\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003c/mfenced\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmfrac\u003e\u003cmrow\u003e\u003cmi\u003ei\u003c/mi\u003e\u003cmi\u003eℏ\u003c/mi\u003e\u003c/mrow\u003e\u003cmrow\u003e\u003cmn\u003e2\u003c/mn\u003e\u003cmi\u003em\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmo\u003e∇\u003c/mo\u003e\u003cmo\u003e⋅\u003c/mo\u003e\u003cmfenced open=\"[\" close=\"]\"\u003e\u003cmrow\u003e\u003cmsup\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmo\u003e∗\u003c/mo\u003e\u003c/msup\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003c/mfenced\u003e\u003cmo\u003e∇\u003c/mo\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003c/mfenced\u003e\u003cmo\u003e−\u003c/mo\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003c/mfenced\u003e\u003cmo\u003e∇\u003c/mo\u003e\u003cmsup\u003e\u003cmi\u003eψ\u003c/mi\u003e\u003cmo\u003e∗\u003c/mo\u003e\u003c/msup\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003c/mfenced\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003c/math\u003e"
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "10.5",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject6.bin",
+                          "semanticSignature":  "frac(o(∂),o(∂)mi[](t))mi[](ρ)fence((,),accent(→,mi[](r))o(,)mi[](t))o(+)o(∇)o(⋅)accent(→,mi[](j))o(=)n(0)",
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  217,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ],
+                          "nativeLength":  365,
+                          "nativeMathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\u003cmfrac\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmrow\u003e\u003cmo\u003e∂\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfrac\u003e\u003cmi\u003eρ\u003c/mi\u003e\u003cmfenced open=\"(\" close=\")\"\u003e\u003cmrow\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003er\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003cmo\u003e,\u003c/mo\u003e\u003cmi\u003et\u003c/mi\u003e\u003c/mrow\u003e\u003c/mfenced\u003e\u003cmo\u003e+\u003c/mo\u003e\u003cmo\u003e∇\u003c/mo\u003e\u003cmo\u003e⋅\u003c/mo\u003e\u003cmover accent=\"true\"\u003e\u003cmi\u003ej\u003c/mi\u003e\u003cmo\u003e→\u003c/mo\u003e\u003c/mover\u003e\u003cmo\u003e=\u003c/mo\u003e\u003cmn\u003e0\u003c/mn\u003e\u003c/math\u003e"
+                      }
+                  ],
+    "source":  "evidence\\stage04ag-mt-imported-__6.xml",
+    "formatReference":  "https://docs.wiris.com/en_US/mathtype-mtef-v5-mathtype-40-and-later",
+    "assemblySha256":  "8F63B42A61757E3A47ABDBE25BE459D963E3852364D5FD24017474A086BCA506"
+}

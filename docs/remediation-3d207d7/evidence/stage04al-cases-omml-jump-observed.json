@@ -1,0 +1,40 @@
+﻿{
+    "pid":  94656,
+    "time":  "2026-09-06T12:23:51.5799683Z",
+    "action":  "real mouse double-click",
+    "navigationBookmark":  "ZEqnNum100100",
+    "wordMacroButtonTarget":  null,
+    "visualReviewRequired":  true,
+    "after":  {
+                  "end":  126,
+                  "text":  "(0.0-1)",
+                  "start":  63
+              },
+    "before":  {
+                   "start":  1,
+                   "end":  1
+               },
+    "rectangle":  {
+                      "left":  1211,
+                      "width":  1,
+                      "top":  1746,
+                      "height":  1
+                  },
+    "selectionMatched":  true,
+    "passed":  true,
+    "target":  {
+                   "end":  126,
+                   "frames":  0,
+                   "text":  "(0.0-1)",
+                   "start":  63
+               },
+    "actualReferenceRectangle":  {
+                                     "left":  1152,
+                                     "width":  0,
+                                     "top":  1717,
+                                     "height":  59
+                                 },
+    "wordExpandedTargetField":  null,
+    "bookmark":  "ZEqnNum100100",
+    "document":  "文档8"
+}

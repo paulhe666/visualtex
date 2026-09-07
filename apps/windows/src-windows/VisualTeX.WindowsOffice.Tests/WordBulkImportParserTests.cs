@@ -4,6 +4,24 @@ namespace VisualTeX.WindowsOffice.Tests;
 
 public sealed class WordBulkImportParserTests
 {
+    public static IEnumerable<object[]> HeadingHierarchyCases()
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "document-import-heading-hierarchy.json")));
+        foreach (var item in fixture.RootElement.EnumerateArray())
+            yield return new object[] { item.GetProperty("source").GetString()!,
+                string.Join(",", item.GetProperty("levels").EnumerateArray().Select(level => level.GetInt32())) };
+    }
+
+    [Theory]
+    [MemberData(nameof(HeadingHierarchyCases))]
+    public void LatexHeadingHierarchyPreservesArticleAndBookStructure(string source, string expected)
+    {
+        var document = WordBulkImportParser.Parse(source, WordBulkSourceFormat.Latex, WordBulkFormulaObjectMode.Omml);
+        Assert.Equal(expected, string.Join(",", document.Blocks
+            .Where(block => block.Kind == WordBulkBlockKind.Heading).Select(block => block.Level)));
+    }
+
     [Fact]
     public void MarkdownProducesNativeTextAndIndependentInlineAndDisplayFormulas()
     {

@@ -1,0 +1,26 @@
+[
+    {
+        "handle":  943892,
+        "name":  "是(\u0026Y)",
+        "id":  6,
+        "class":  "Button"
+    },
+    {
+        "handle":  944004,
+        "name":  "否(\u0026N)",
+        "id":  7,
+        "class":  "Button"
+    },
+    {
+        "handle":  2123550,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  223012,
+        "name":  "将把全文 6 个 VisualTeX 公式重新绘制为 OMML。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

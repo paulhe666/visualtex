@@ -1,0 +1,481 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "active":  "文档37",
+    "documents":  [
+                      {
+                          "name":  "文档37",
+                          "key":  "repro01-after-close-__37",
+                          "saved":  false,
+                          "end":  238,
+                          "paragraphs":  15,
+                          "tables":  [
+                                         {
+                                             "index":  1,
+                                             "start":  0,
+                                             "end":  236,
+                                             "rows":  3,
+                                             "cols":  3,
+                                             "nesting":  1,
+                                             "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003e𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0-3)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                             "cells":  [
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  1,
+                                                               "row":  1,
+                                                               "start":  0,
+                                                               "end":  1
+                                                           },
+                                                           {
+                                                               "math":  1,
+                                                               "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  2,
+                                                               "row":  1,
+                                                               "start":  1,
+                                                               "end":  22
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  3,
+                                                               "row":  1,
+                                                               "start":  22,
+                                                               "end":  85
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  1,
+                                                               "row":  2,
+                                                               "start":  86,
+                                                               "end":  87
+                                                           },
+                                                           {
+                                                               "math":  2,
+                                                               "text":  "𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003e𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  2,
+                                                               "row":  2,
+                                                               "start":  87,
+                                                               "end":  156
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cTAB\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  3,
+                                                               "row":  2,
+                                                               "start":  156,
+                                                               "end":  158
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  1,
+                                                               "row":  3,
+                                                               "start":  159,
+                                                               "end":  160
+                                                           },
+                                                           {
+                                                               "math":  1,
+                                                               "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  2,
+                                                               "row":  3,
+                                                               "start":  160,
+                                                               "end":  172
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cTAB\u003e(0-3)\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  3,
+                                                               "row":  3,
+                                                               "start":  172,
+                                                               "end":  235
+                                                           }
+                                                       ]
+                                         }
+                                     ],
+                          "maths":  [
+                                        {
+                                            "controlTags":  [
+
+                                                            ],
+                                            "type":  0,
+                                            "size":  10.5,
+                                            "start":  1,
+                                            "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e",
+                                            "index":  1,
+                                            "tables":  1,
+                                            "font":  "Latin Modern Math",
+                                            "end":  21
+                                        },
+                                        {
+                                            "controlTags":  [
+
+                                                            ],
+                                            "type":  0,
+                                            "size":  10.5,
+                                            "start":  87,
+                                            "text":  "𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e",
+                                            "index":  2,
+                                            "tables":  1,
+                                            "font":  "Latin Modern Math",
+                                            "end":  115
+                                        },
+                                        {
+                                            "controlTags":  [
+
+                                                            ],
+                                            "type":  0,
+                                            "size":  10.5,
+                                            "start":  116,
+                                            "text":  "𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0",
+                                            "index":  3,
+                                            "tables":  1,
+                                            "font":  "Latin Modern Math",
+                                            "end":  155
+                                        },
+                                        {
+                                            "controlTags":  [
+
+                                                            ],
+                                            "type":  0,
+                                            "size":  10.5,
+                                            "start":  160,
+                                            "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0",
+                                            "index":  4,
+                                            "tables":  1,
+                                            "font":  "Latin Modern Math",
+                                            "end":  171
+                                        }
+                                    ],
+                          "shapes":  [
+
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  27,
+                                             "end":  82,
+                                             "index":  1
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+                                             "result":  "3",
+                                             "type":  12,
+                                             "start":  177,
+                                             "end":  232,
+                                             "index":  2
+                                         }
+                                     ],
+                          "bookmarks":  [
+                                            {
+                                                "end":  84,
+                                                "name":  "VTEq_5a10d21baef543058e7b70ed23fe779a",
+                                                "text":  "(0-1)",
+                                                "start":  23
+                                            },
+                                            {
+                                                "end":  234,
+                                                "name":  "VTEq_61ed1124951a4a2f990f3d4c98fdd07f",
+                                                "text":  "(0-3)",
+                                                "start":  173
+                                            },
+                                            {
+                                                "end":  83,
+                                                "name":  "VTEqCap_5a10d21baef543058e7b70ed23fe779a",
+                                                "text":  "0-1",
+                                                "start":  24
+                                            },
+                                            {
+                                                "end":  233,
+                                                "name":  "VTEqCap_61ed1124951a4a2f990f3d4c98fdd07f",
+                                                "text":  "0-3",
+                                                "start":  174
+                                            },
+                                            {
+                                                "end":  83,
+                                                "name":  "VTEqNum_5a10d21baef543058e7b70ed23fe779a",
+                                                "text":  "0-1",
+                                                "start":  24
+                                            },
+                                            {
+                                                "end":  233,
+                                                "name":  "VTEqNum_61ed1124951a4a2f990f3d4c98fdd07f",
+                                                "text":  "0-3",
+                                                "start":  174
+                                            },
+                                            {
+                                                "end":  1,
+                                                "name":  "VTOMML_5a10d21baef543058e7b70ed23fe779a",
+                                                "text":  "",
+                                                "start":  1
+                                            },
+                                            {
+                                                "end":  160,
+                                                "name":  "VTOMML_61ed1124951a4a2f990f3d4c98fdd07f",
+                                                "text":  "",
+                                                "start":  160
+                                            },
+                                            {
+                                                "end":  87,
+                                                "name":  "VTOMML_7f30b568f55c42e486d178d93d5496b3",
+                                                "text":  "",
+                                                "start":  87
+                                            }
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  1,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1,
+                                            "line":  12,
+                                            "alignment":  1,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "Latin Modern Math",
+                                            "inTable":  true,
+                                            "end":  22,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  22,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  85,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e(0-1)\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  85,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  4,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  86,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  86,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  5,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  87,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  87,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  6,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "Latin Modern Math",
+                                            "inTable":  true,
+                                            "end":  116,
+                                            "lineRule":  0,
+                                            "text":  "𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  116,
+                                            "line":  12,
+                                            "alignment":  1,
+                                            "index":  7,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "Latin Modern Math",
+                                            "inTable":  true,
+                                            "end":  156,
+                                            "lineRule":  0,
+                                            "text":  "𝑥=\u003cCR\u003e−𝑏±\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e−4𝑎𝑐\u003cCR\u003e\u003cCR\u003e2𝑎\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  156,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  8,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  158,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  158,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  9,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  159,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  159,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  10,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  160,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  160,
+                                            "line":  12,
+                                            "alignment":  1,
+                                            "index":  11,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "Latin Modern Math",
+                                            "inTable":  true,
+                                            "end":  172,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  172,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  12,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  235,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e(0-3)\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  235,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  13,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  236,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  236,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  14,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  237,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  237,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  15,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  238,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+                                           "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                                       ],
+                          "xmlMathCount":  4
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  20944,
+                          "start":  "2026-09-05T23:07:20.5116736+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T00:21:49.5147881+08:00"
+}

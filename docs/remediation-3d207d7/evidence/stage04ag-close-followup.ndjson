@@ -1,0 +1,6 @@
+{"oles":0,"action":"closing-without-save","document":"文档107","emptyStarter":false,"end":235,"maths":1,"time":"2026-09-06T10:28:15.8440082Z","fields":3,"pid":75288,"stage":"stage04e"}
+{"time":"2026-09-06T10:28:15.9187191Z","pid":75288,"action":"closed-without-save","document":"文档107"}
+{"time":"2026-09-06T10:28:15.9617214Z","pid":75288,"action":"quit-empty-owned-word"}
+{"oles":0,"action":"closing-without-save","document":"stage04l-identical.docx","emptyStarter":false,"end":297,"maths":2,"time":"2026-09-06T10:28:16.1608726Z","fields":4,"pid":88240,"stage":"stage04l"}
+{"time":"2026-09-06T10:28:16.2690730Z","pid":88240,"action":"closed-without-save","document":"stage04l-identical.docx"}
+{"time":"2026-09-06T10:28:16.3600629Z","pid":88240,"action":"quit-empty-owned-word"}

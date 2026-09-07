@@ -1,0 +1,165 @@
+﻿{
+    "pid":  55728,
+    "document":  "文档19",
+    "recording":  false,
+    "level":  0,
+    "controls":  [
+                     {
+                         "id":  128,
+                         "found":  true,
+                         "caption":  "VBA-Range.Delete",
+                         "type":  1,
+                         "listCount":  null,
+                         "items":  [
+
+                                   ]
+                     }
+                 ],
+    "standard":  [
+                     {
+                         "caption":  "新建​​空白文档(\u0026B)",
+                         "id":  2520,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打开​​(\u0026O)...",
+                         "id":  23,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "保存​​(\u0026S)",
+                         "id":  3,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "(自由访问) 的权限",
+                         "id":  9004,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "邮件收件人​​(\u0026M)",
+                         "id":  3738,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打印​​(\u0026P)",
+                         "id":  2521,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "打印预览​​(\u0026V)",
+                         "id":  109,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "简繁转换(\u0026R)...",
+                         "id":  4026,
+                         "type":  13
+                     },
+                     {
+                         "caption":  "拼写和语法​​(\u0026S)...",
+                         "id":  2566,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "信息检索(\u0026R)...",
+                         "id":  7343,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "剪切​​(\u0026T)",
+                         "id":  21,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "复制​​(\u0026C)",
+                         "id":  19,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "粘贴​​(\u0026P)",
+                         "id":  22,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "格式刷​​(\u0026F)",
+                         "id":  108,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "VBA-Range.Delete",
+                         "id":  128,
+                         "type":  6
+                     },
+                     {
+                         "caption":  "恢复VisualTeX Insert Word OMML Display Formula(\u0026R)",
+                         "id":  129,
+                         "type":  6
+                     },
+                     {
+                         "caption":  "插入墨迹注释(\u0026I)",
+                         "id":  9404,
+                         "type":  13
+                     },
+                     {
+                         "caption":  "超链接(\u0026I)...",
+                         "id":  1576,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "“表格和边框”工具栏(\u0026T)",
+                         "id":  916,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "插入表格​​(\u0026I)...",
+                         "id":  333,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "插入​​Excel 电子表格(\u0026I)",
+                         "id":  142,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "分栏​​(\u0026C)...",
+                         "id":  9,
+                         "type":  16
+                     },
+                     {
+                         "caption":  "更改​​文字方向(\u0026C)",
+                         "id":  2872,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "绘图​​(\u0026D)",
+                         "id":  204,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "文档结构图​​(\u0026D)",
+                         "id":  1714,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "显示/隐藏​​编辑标记(\u0026S)",
+                         "id":  3900,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "显示比例​​(\u0026Z):",
+                         "id":  1733,
+                         "type":  4
+                     },
+                     {
+                         "caption":  "帮助(\u0026H)",
+                         "id":  984,
+                         "type":  1
+                     },
+                     {
+                         "caption":  "阅读(\u0026R)",
+                         "id":  7226,
+                         "type":  1
+                     }
+                 ]
+}

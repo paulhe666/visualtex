@@ -10,7 +10,7 @@ namespace VisualTeX.WordVsto;
 /// MathType header, font definitions, equation preferences and initial size are
 /// preserved byte-for-byte; only the root equation object list is replaced.
 /// </summary>
-internal static class MathTypeMtefCodec
+internal static partial class MathTypeMtefCodec
 {
     private const byte MtefVersion5 = 5;
     private const byte RecordEnd = 0;
@@ -113,6 +113,12 @@ internal static class MathTypeMtefCodec
 
     internal static string ReadEquationNativeMathMl(byte[] equationNative)
     {
+        var mtef = ExtractNativeMtef(equationNative);
+        return ReadMtefMathMl(mtef);
+    }
+
+    private static byte[] ExtractNativeMtef(byte[] equationNative)
+    {
         if (equationNative is null || equationNative.Length < 40)
             throw new InvalidDataException("MathType Equation Native stream is too short.");
         var headerLength = BitConverter.ToUInt16(equationNative, 0);
@@ -129,6 +135,11 @@ internal static class MathTypeMtefCodec
             throw new InvalidDataException(
                 $"VisualTeX currently reads MathType OLE directly for MTEF v5 only, actual={mtef[0]}.");
 
+        return mtef;
+    }
+
+    private static string ReadMtefMathMl(byte[] mtef)
+    {
         var structureOffset = FindRootStructureOffset(mtef);
         var isEmptyEquation =
             structureOffset == mtef.Length - 1
@@ -1010,6 +1021,9 @@ internal static class MathTypeMtefCodec
     }
 
     internal static int FindRootStructureOffset(byte[] mtef)
+        => ReadPrefixLayout(mtef).Root;
+
+    private static (int Root, int Preferences, int Colors) ReadPrefixLayout(byte[] mtef)
     {
         if (mtef is null || mtef.Length < 16 || mtef[0] != MtefVersion5)
             throw new InvalidDataException("Invalid or unsupported MTEF stream.");
@@ -1017,6 +1031,7 @@ internal static class MathTypeMtefCodec
         var sawPreferences = false;
         var preferencesOffset = -1;
         var sawInitialSize = false;
+        var colorDefinitions = 0;
         while (position < mtef.Length)
         {
             var record = mtef[position];
@@ -1038,6 +1053,7 @@ internal static class MathTypeMtefCodec
                     break;
                 case RecordColorDef:
                     position = SkipColorDefinition(mtef, position);
+                    colorDefinitions++;
                     break;
                 case RecordEqnPrefs:
                     preferencesOffset = position;
@@ -1060,7 +1076,7 @@ internal static class MathTypeMtefCodec
                         if (!sawInitialSize)
                             WordDoubleClickHook.TraceMessage(
                                 $"mathtype-mtef-root-without-initial-size offset={position} record={record}");
-                        return position;
+                        return (position, preferencesOffset, colorDefinitions);
                     }
                     if (record == RecordSize
                         || record >= RecordFull && record <= RecordSubSym)
@@ -1090,7 +1106,7 @@ internal static class MathTypeMtefCodec
                             preferencesOffset >= 0 ? preferencesOffset + 2 : 0,
                             position,
                             out var recoveredRoot))
-                        return recoveredRoot;
+                        return (recoveredRoot, preferencesOffset, colorDefinitions);
                     // A genuine empty MathType equation is encoded as the normal
                     // prefix/initial-size state followed directly by the final
                     // equation END. MathType 7.8.x therefore legitimately has a
@@ -1101,7 +1117,7 @@ internal static class MathTypeMtefCodec
                     {
                         WordDoubleClickHook.TraceMessage(
                             $"mathtype-mtef-empty-equation endOffset={position}");
-                        return position;
+                        return (position, preferencesOffset, colorDefinitions);
                     }
                     throw new InvalidDataException(
                         $"Unsupported MathType root record {record} at offset {position}.");
@@ -1277,15 +1293,45 @@ internal static class MathTypeMtefCodec
         return expanded;
     }
 
+    internal static string PrepareMathMlForMathTypeInterop(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl))
+            throw new InvalidDataException("MathType conversion requires MathML.");
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var math = document.Root?.DescendantsAndSelf()
+            .FirstOrDefault(element => element.Name.LocalName == "math")
+            ?? throw new InvalidDataException("MathML has no <math> root.");
+        return PrepareMathForMathType(math)
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static XElement PrepareMathForMathType(XElement math)
+    {
+        var preparedMath = new XElement(math);
+        MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
+        NormalizeMathJaxFenceRows(preparedMath);
+        return preparedMath;
+    }
+
     private static byte[] BuildRootStructure(
         XElement math,
         byte[] sourceMtef,
         out byte[] prefixDefinitions)
     {
-        prefixDefinitions = Array.Empty<byte>();
-        var preparedMath = new XElement(math);
-        MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
-        NormalizeMathJaxFenceRows(preparedMath);
+        var rootFormatting = new List<byte>();
+        var retainedColors = ReadPrefixLayout(sourceMtef).Colors
+            + CopyRootLeadingFormattingRecords(sourceMtef, rootFormatting);
+        // The shared template writer emits COLOR 1 for matrix/pile slots. MTEF
+        // definition indices start at 1; the standalone seed has no color table.
+        // An undefined COLOR 1 lets MathPage omit the root polygon's fill brush,
+        // leaving only thin fragments in its WMF despite intact root semantics.
+        // Define black only when no retained palette exists. Never replace or
+        // renumber an existing source palette (including root-leading colors).
+        var requiredDefinitions = new List<byte>();
+        if (retainedColors == 0)
+            requiredDefinitions.AddRange(new byte[] { RecordColorDef, 0, 0, 0, 0, 0, 0, 0 });
+        prefixDefinitions = requiredDefinitions.ToArray();
+        var preparedMath = PrepareMathForMathType(math);
         var topLevelElements = SignificantChildren(preparedMath)
             .OfType<XElement>()
             .Where(element => element.Name.LocalName is not ("annotation" or "annotation-xml"))
@@ -1300,7 +1346,7 @@ internal static class MathTypeMtefCodec
             // emit any missing definitions into the global prefix instead, then
             // keep the PILE object list identical to MathType's native layout.
             var alignedTable = new XElement(topLevelElements[0]);
-            var alignedPrefixDefinitions = new List<byte>();
+            var alignedPrefixDefinitions = new List<byte>(requiredDefinitions);
             EmitExplicitFontDefinitions(
                 alignedTable,
                 sourceMtef,
@@ -1324,7 +1370,7 @@ internal static class MathTypeMtefCodec
         // when the visible formula is plain black; dropping them produced OLEs
         // that our own parser could read but the native MathType server could
         // reinterpret with the wrong expandable-fence family.
-        CopyRootLeadingFormattingRecords(sourceMtef, output);
+        output.AddRange(rootFormatting);
         EmitExplicitFontDefinitions(preparedMath, sourceMtef, output);
         EmitContainerChildren(preparedMath, output, inheritedMathVariant: null);
         output.Add(RecordEnd); // root line
@@ -1434,14 +1480,14 @@ internal static class MathTypeMtefCodec
         return rootOffset;
     }
 
-    private static void CopyRootLeadingFormattingRecords(
+    private static int CopyRootLeadingFormattingRecords(
         byte[] sourceMtef,
         List<byte> output)
     {
         var root = FindRootStructureOffset(sourceMtef);
         if (root >= sourceMtef.Length
             || sourceMtef[root] == RecordEnd)
-            return;
+            return 0;
         Require(sourceMtef, root, 2);
         var cursor = root + 1;
         var rootRecord = sourceMtef[root];
@@ -1462,22 +1508,26 @@ internal static class MathTypeMtefCodec
         }
         else
         {
-            return;
+            return 0;
         }
         if ((options & 0x02) != 0)
         {
             Require(sourceMtef, cursor, 2);
-            if (sourceMtef[cursor] != 7) return;
+            if (sourceMtef[cursor] != 7) return 0;
             var rulerCount = sourceMtef[cursor + 1];
             Require(sourceMtef, cursor + 2, rulerCount * 3);
             cursor += 2 + rulerCount * 3;
         }
+        var colorDefinitions = 0;
         while (cursor < sourceMtef.Length)
         {
             var start = cursor;
             var record = sourceMtef[cursor];
             if (record == RecordColorDef)
+            {
                 cursor = SkipColorDefinition(sourceMtef, cursor);
+                colorDefinitions++;
+            }
             else if (record == RecordColor)
             {
                 cursor++;
@@ -1488,6 +1538,7 @@ internal static class MathTypeMtefCodec
             for (var index = start; index < cursor; index++)
                 output.Add(sourceMtef[index]);
         }
+        return colorDefinitions;
     }
 
     private static void SkipMtefNudge(
@@ -1794,6 +1845,7 @@ internal static class MathTypeMtefCodec
         var scriptChildren = script.Elements().ToArray();
         if (scriptChildren.Length < 2) return false;
         if (!TryGetMathJaxFenceToken(scriptChildren[0], "CLOSE", out var close)) return false;
+        if (!AreMatchingFences(open, close)) return false;
 
         var inner = string.Concat(elements
             .Skip(1)
@@ -1823,6 +1875,13 @@ internal static class MathTypeMtefCodec
         if (elements.Length < 3) return false;
         if (!TryGetMathJaxFenceToken(elements[0], "OPEN", out open)) return false;
         if (!TryGetMathJaxFenceToken(elements[elements.Length - 1], "CLOSE", out close)) return false;
+        // MathJax represents \left\{ ... \right. with an explicit empty
+        // closing fence. It is a one-sided delimiter template, not an empty
+        // operator after an ordinary brace glyph. Use the same recognition for
+        // MTEF geometry and semantic comparison.
+        var oneSided = (open.Length == 0) != (close.Length == 0);
+        if (!AreMatchingFences(open, close)
+            && !(oneSided && SelectFenceTemplate(open, close).HasValue)) return false;
         children = elements.Skip(1).Take(elements.Length - 2).ToArray();
         return children.Length > 0;
     }
@@ -1848,9 +1907,22 @@ internal static class MathTypeMtefCodec
         var tokenClass = ((string?)token.Attribute("data-mjx-texclass") ?? string.Empty).Trim();
         var markerMatches = string.Equals(candidateClass, expectedClass, StringComparison.OrdinalIgnoreCase)
             || string.Equals(tokenClass, expectedClass, StringComparison.OrdinalIgnoreCase);
-        if (!markerMatches) return false;
-        fence = token.Value.Trim();
-        return true;
+        fence = NormalizeFence(token.Value.Trim());
+        if (markerMatches) return true;
+        if (fence.Length == 0
+            && string.Equals((string?)token.Attribute("fence"), "true", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Word's OMML->MathML transform emits structurally complete delimiter
+        // rows without MathJax's data-mjx-texclass markers. MathType 7 otherwise
+        // imports only the first opening delimiter into a big-operator main slot
+        // and leaves the remaining operand as root siblings. Accept an unmarked
+        // token only when its glyph unambiguously matches the requested side;
+        // the caller also verifies that the two delimiters form a valid pair.
+        return string.Equals(expectedClass, "OPEN", StringComparison.OrdinalIgnoreCase)
+            ? fence is "(" or "[" or "{" or "⟨" or "⌈" or "⌊" or "|" or "‖"
+            : string.Equals(expectedClass, "CLOSE", StringComparison.OrdinalIgnoreCase)
+                && fence is ")" or "]" or "}" or "⟩" or "⌉" or "⌋" or "|" or "‖";
     }
 
     private static void EmitExplicitFontDefinitions(

@@ -47,8 +47,6 @@ import type {
 } from "../../editor/MathEditor";
 import { readErrorMessage } from "../../errors/readErrorMessage";
 import {
-  DEFAULT_FORMULA_CHINESE_FONT,
-  DEFAULT_FORMULA_LETTER_FONT,
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
@@ -394,7 +392,6 @@ export function OfficeDialogApp() {
   const loadedSessionIdRef = useRef("");
   const skipAutosaveForSessionRef = useRef("");
   const originalFingerprintRef = useRef("");
-  const loadedUiFingerprintRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
@@ -452,7 +449,6 @@ export function OfficeDialogApp() {
     loadedSessionIdRef.current = "";
     skipAutosaveForSessionRef.current = "";
     originalFingerprintRef.current = "";
-    loadedUiFingerprintRef.current = "";
     lastSavedFingerprintRef.current = "";
     readyMessageSentRef.current = false;
     finalizingRef.current = false;
@@ -643,11 +639,10 @@ export function OfficeDialogApp() {
 
   useEffect(() => {
     if (!session || loadedSessionIdRef.current === session.id) return;
-    // Font/layout preferences now participate in the immutable Office formula
-    // fingerprint and rendered OLE/OMML output. Do not establish the Session
-    // baseline before companion preferences have been applied, otherwise a
-    // later preference sync looks like a half-loaded render and autosave can
-    // suppress the required font redraw indefinitely.
+    // Capture the complete state actually presented when editing starts, after
+    // preferences are ready. Opening a legacy/native formula with missing font
+    // metadata is not a font edit. Later source, number, size and font changes
+    // still differ from this immutable baseline and are persisted normally.
     if (!officePreferencesReady) return;
     loadedSessionIdRef.current = session.id;
     skipAutosaveForSessionRef.current = session.id;
@@ -703,23 +698,10 @@ export function OfficeDialogApp() {
       loadedNumbered,
       loadedMathTypeNumberPosition,
       loadedFontSizePt,
-      session.originalMetadata?.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
-      session.originalMetadata?.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
-    );
-    const loadedUiFingerprint = documentFingerprint(
-      session.title,
-      nextLines,
-      loadedCodeFormat,
-      session.displayMode,
-      session.objectMode,
-      loadedNumbered,
-      loadedMathTypeNumberPosition,
-      loadedFontSizePt,
       formulaLetterFont,
       formulaChineseFont,
     );
     originalFingerprintRef.current = loadedFingerprint;
-    loadedUiFingerprintRef.current = loadedUiFingerprint;
     lastSavedFingerprintRef.current = loadedFingerprint;
     latestCompleteExportRef.current = session.exportResult?.pngBase64
       ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
@@ -1275,16 +1257,10 @@ export function OfficeDialogApp() {
       // autosave suppressed until every field matches the immutable Session
       // fingerprint; otherwise the half-loaded render is briefly persisted as
       // a false dirty edit.
-      if (currentFingerprint !== loadedUiFingerprintRef.current) return;
+      if (currentFingerprint !== originalFingerprintRef.current) return;
       skipAutosaveForSessionRef.current = "";
-      if (currentFingerprint === originalFingerprintRef.current) {
-        lastSavedFingerprintRef.current = currentFingerprint;
-        return;
-      }
-      // The UI is fully loaded, but a persisted/global visual preference (for
-      // example formula fonts) differs from the formula's original metadata.
-      // Fall through so this stable difference is exported instead of being
-      // mistaken for a half-loaded Session.
+      lastSavedFingerprintRef.current = currentFingerprint;
+      return;
     }
     if (
       lastSavedFingerprintRef.current === currentFingerprint &&

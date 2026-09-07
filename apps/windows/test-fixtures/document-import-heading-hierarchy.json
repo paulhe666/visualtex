@@ -1,0 +1,8 @@
+[
+  {"source":"\\chapter{C}\n\\section{S}\n\\subsection{T}","levels":[1,2,3]},
+  {"source":"\\section{S}\n\\subsection{T}","levels":[1,2]},
+  {"source":"\\subsection{T}","levels":[2]},
+  {"source":"\\part{P}\n\\chapter{C}\n\\section{S}","levels":[1,2,3]},
+  {"source":"% \\chapter{example}\n\\section{S}","levels":[1]},
+  {"source":"\\begin{verbatim}\n\\chapter{example}\n\\end{verbatim}\n\\section{S}","levels":[1]}
+]

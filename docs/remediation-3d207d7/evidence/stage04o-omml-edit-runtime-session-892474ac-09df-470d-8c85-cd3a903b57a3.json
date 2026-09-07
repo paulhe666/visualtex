@@ -1,0 +1,65 @@
+{
+    "id":  "892474ac-09df-470d-8c85-cd3a903b57a3",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "e6fec41a-e904-40f0-b9ac-4b325303d8f3",
+    "sourceDocumentId":  "文档131",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "db368bd3-6160-485d-b6d3-62d36347363a",
+                      "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                  }
+              ],
+    "activeLineId":  "db368bd3-6160-485d-b6d3-62d36347363a",
+    "codeFormat":  "latex",
+    "displayMode":  "inline",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\n  \u003cmsqrt\u003e\n    \u003cmi\u003eE\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmi\u003eu\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003ex\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msqrt\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmn\u003e1\u003c/mn\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ef\u003c/mi\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n      \u003cmsub\u003e\n        \u003cmi\u003ev\u003c/mi\u003e\n        \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n          \u003cmi\u003ep\u003c/mi\u003e\n          \u003cmi\u003eh\u003c/mi\u003e\n        \u003c/mrow\u003e\n      \u003c/msub\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo\u003e,\u003c/mo\u003e\n        \u003cmi\u003ex\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "e6fec41a-e904-40f0-b9ac-4b325303d8f3",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}",
+                             "lines":  [
+                                           {
+                                               "id":  "db368bd3-6160-485d-b6d3-62d36347363a",
+                                               "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "inline",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T06:53:37.2815623+00:00",
+                             "updatedAt":  "2026-09-06T06:53:37.2815623+00:00"
+                         },
+    "dirty":  false,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788677617283,
+    "updatedAt":  1788677635003,
+    "expiresAt":  1788764035003
+}

@@ -329,6 +329,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _typingCaretNormalizationPending;
     private int _typingCaretNormalizationGeneration;
     private int _formulaFormatMutationDepth;
+    private int _formulaFontReadsDeferredDuringMutation;
     private bool _acceptanceSelectionDiagnostics;
     private int _acceptanceSelectionChangeCount;
     private int _acceptanceFormulaStateReadCount;
@@ -363,6 +364,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
 
         _application = (Application)application;
+        var loadedAssembly = typeof(ThisAddIn).Assembly;
+        WordDoubleClickHook.TraceMessage(
+            $"word-addin-loaded pid={Process.GetCurrentProcess().Id} assembly={loadedAssembly.Location} mvid={loadedAssembly.ManifestModule.ModuleVersionId}");
         _comAddIn = addInInstance as Office.COMAddIn;
         if (_comAddIn is not null)
         {
@@ -392,6 +396,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = new WordDoubleClickHook(
                 ShouldInterceptNativeOleDoubleClick,
                 OnNativeWordDoubleClick);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _doubleClickHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
             _doubleClickHook.Start();
         }
         catch (Exception error)
@@ -584,10 +596,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ?? throw new InvalidOperationException("Word formula service is unavailable."))
                 .SetSelectedFormulaFontSize(value);
             Volatile.Write(ref _cachedSelectedFormulaFontSize, applied);
+            WordDoubleClickHook.TraceMessage($"ribbon-font-size-completed requested={value} applied={applied}");
             SetStatus($"公式字号已设置为 {FormulaFontSize.Describe(applied)}。");
         }
         catch (Exception error)
         {
+            WordDoubleClickHook.TraceMessage($"ribbon-font-size-failed requested={value} error={error}");
             SetStatus($"无法设置公式字号：{error.Message}");
         }
         finally { InvalidateFormulaFontControls(); }
@@ -595,6 +609,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private float? GetCachedSelectedFormulaFontSize()
     {
+        // Ribbon can ask for its value while a COM call pumps Word events inside
+        // an edit. No selection/OMath inspection is safe until that write ends.
+        if (Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+        {
+            Interlocked.Increment(ref _formulaFontReadsDeferredDuringMutation);
+            return null;
+        }
+        // Keep the baseline positive-only Ribbon cache. Prose is now rejected
+        // by the service's local range probe, so it needs no persistent negative
+        // cache that could outlive Word's native selection notifications.
         var cached = Volatile.Read(ref _cachedSelectedFormulaFontSize);
         if (!double.IsNaN(cached)) return (float)cached;
         var size = _formulaService?.GetSelectedFormulaFontSize();
@@ -607,7 +631,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void ScheduleFormulaFontControlsInvalidation(Selection selection)
     {
         var dispatcher = _dispatcher;
-        if (dispatcher is null) return;
+        if (dispatcher is null || Volatile.Read(ref _formulaFormatMutationDepth) > 0) return;
+        var generation = Volatile.Read(ref _typingCaretNormalizationGeneration);
 
         if (!TryResolveFormulaRibbonOwnerBounds(selection, out var ownerStart, out var ownerEnd))
         {
@@ -633,7 +658,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return;
         dispatcher.Post(() =>
         {
+            using var perf = WordSelectionPerformance.Start("deferred-ribbon-font");
             Interlocked.Exchange(ref _formulaFontInvalidationPending, 0);
+            if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
+                || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+                return;
+            // A queued refresh may execute after the caret left the formula.
+            // The current owner sentinel is sufficient; no negative result cache.
+            if (_lastFormulaRibbonOwnerStart == int.MinValue) return;
             try
             {
                 if (_acceptanceSelectionDiagnostics)
@@ -843,6 +875,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Interlocked.Increment(ref _acceptanceDeferredCaretPassCount);
         dispatcher.Post(() =>
         {
+            using var perf = WordSelectionPerformance.Start("deferred-caret");
             Interlocked.Exchange(ref _typingCaretNormalizationPending, 0);
             if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
                 || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
@@ -884,12 +917,32 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void EndFormulaFormatMutation()
     {
-        if (Interlocked.Decrement(ref _formulaFormatMutationDepth) < 0)
+        var depth = Interlocked.Decrement(ref _formulaFormatMutationDepth);
+        if (depth < 0)
             Interlocked.Exchange(ref _formulaFormatMutationDepth, 0);
+        if (depth > 0) return;
+        var deferred = Interlocked.Exchange(ref _formulaFontReadsDeferredDuringMutation, 0);
+        if (deferred > 0)
+            WordDoubleClickHook.TraceMessage($"formula-mutation-ribbon-reads-deferred count={deferred}");
+        var generation = Volatile.Read(ref _typingCaretNormalizationGeneration);
+        // End can run on a continuation thread. Refresh once on Word's dispatcher
+        // after the completed write, cancelling it if another write has started.
+        _dispatcher?.Post(() =>
+        {
+            if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
+                || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+                return;
+            _lastFormulaRibbonOwnerStart = int.MinValue;
+            _lastFormulaRibbonOwnerEnd = int.MinValue;
+            Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
+            InvalidateFormulaFontControls();
+        });
     }
 
     private void OnWindowActivate(Document document, Window window)
     {
+        try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        ClearNativeOleTarget();
         _cachedEquationNumberFormatId = null;
         Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
         _lastFormulaRibbonOwnerStart = int.MinValue;
@@ -904,6 +957,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch { }
         finally { ReleaseComObject(selection); }
+
+        // Returning from the VisualTeX Office editor does not necessarily move
+        // Word's Selection, so WindowSelectionChange may never fire. Word can
+        // still rebuild the collapsed caret's character format from the adjacent
+        // MathType OLE field run when this window becomes active again. Reuse the
+        // existing deferred O(1) caret normalization after activation so the first
+        // real keystroke inherits nearby prose rather than Equation.DSMT4.
+        ScheduleTypingCaretNormalization();
     }
 
     private void OnDocumentOpen(Document document)
@@ -960,16 +1021,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void OnWindowSelectionChange(Selection selection)
     {
+        using var perf = WordSelectionPerformance.Start("selection-change");
+        if (Volatile.Read(ref _normalizingTypingCaret) != 0) return;
         if (_acceptanceSelectionDiagnostics)
             Interlocked.Increment(ref _acceptanceSelectionChangeCount);
-        // Defer Ribbon callbacks until Word finishes entering/leaving a native
-        // math zone. Synchronous OMML inspection here can disturb its caret.
-        ScheduleFormulaFontControlsInvalidation(selection);
         if (Volatile.Read(ref _formulaFormatMutationDepth) > 0)
         {
+            Interlocked.Increment(ref _formulaFontReadsDeferredDuringMutation);
             ClearNativeOleTarget();
             return;
         }
+        // The guard must precede the Ribbon owner probe as well as normalization:
+        // owner discovery itself reads OMaths/Cells and can reenter an incomplete
+        // table write. The deferred callback also checks the mutation generation.
+        ScheduleFormulaFontControlsInvalidation(selection);
+        perf?.Mark("ribbon-owner");
         var service = _formulaService;
         var application = _application;
         if (service is null || application is null)
@@ -1002,6 +1068,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 finally { Interlocked.Exchange(ref _normalizingTypingCaret, 0); }
             }
+            perf?.Mark("caret-normalization");
             if (redirectedNumberEndEnter)
             {
                 ClearNativeOleTarget();
@@ -1017,6 +1084,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // first physical click selects the Equation.DSMT4 OLE; defer any content
             // import until the actual double-click and retain only its range/rect.
             var isMathTypeOle = service.IsSelectedMathTypeOle();
+            perf?.Mark("ole-kind");
             OfficeSelection? selected = null;
             if (!isMathTypeOle)
             {
@@ -1025,16 +1093,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ClearNativeOleTarget();
                     return;
                 }
-                selected = service.ReadSelection(selection);
-                if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected)
-                    || !string.Equals(
-                        selected.ObjectMode,
-                        FormulaOleContract.NativeOleMode,
-                        StringComparison.Ordinal))
-                {
-                    ClearNativeOleTarget();
-                    return;
-                }
+                // A single click only caches the physical OLE rectangle, just
+                // like MathType. Metadata import and copy-identity repair still
+                // run in ReadSelection when an actual edit/double-click begins.
+                // Do not activate the companion OLE server merely to select it.
             }
 
             // The deferred caret retry exists only for Word's OLE selection→caret
@@ -2117,6 +2179,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(
             StringComparer.Ordinal);
+        var mathTypePreviews =
+            new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
+                StringComparer.Ordinal);
         var converterSessionIds = new List<string>();
         var renderFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         var skippedTargets = new List<(WordLatexRedrawTarget Target, string Error)>();
@@ -2146,7 +2211,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                 "1",
                 StringComparison.Ordinal);
-            var numberDisplayFormulas = acceptanceMode
+            var allowRedrawNumbering = !string.Equals(
+                objectMode,
+                FormulaOleContract.WordOmmlMode,
+                StringComparison.Ordinal);
+            var numberDisplayFormulas = allowRedrawNumbering
+                && acceptanceMode
                 && IsEnabledEnvironmentOption(
                     "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
             if (!acceptanceMode)
@@ -2158,7 +2228,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         plan.Targets.Count,
                         displayFormulaCount,
                         modeLabel,
-                        service.GetEquationNumberFormatDisplayName());
+                        service.GetEquationNumberFormatDisplayName(),
+                        allowRedrawNumbering);
                     var accepted = dialog.ShowDialog()
                         == System.Windows.Forms.DialogResult.OK;
                     return (
@@ -2176,7 +2247,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 numberDisplayFormulas = options.NumberDisplayFormulas;
             }
-            plan.NumberDisplayFormulas = numberDisplayFormulas;
+            plan.NumberDisplayFormulas = allowRedrawNumbering && numberDisplayFormulas;
             var mathTypeNumberPosition = string.Equals(
                     objectMode,
                     FormulaOleContract.MathTypeOleMode,
@@ -2320,6 +2391,66 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
             }
 
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                && rendered.Count > 0)
+            {
+                // Bulk import already prepares MathType's native WMF geometry in
+                // one MathPage batch before Word insertion. Redraw used to omit
+                // that phase, so InsertMathTypeOle synchronously invoked the native
+                // renderer once per formula on the Office UI thread (~0.35 s each).
+                // Prepare one native preview per unique rendered template instead;
+                // repeated formulas reuse the same immutable WMF/geometry payload.
+                SetStatus($"正在批量生成 {rendered.Count} 个 MathType 原生预览…");
+                var nativePreviewInputs =
+                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                foreach (var item in rendered)
+                {
+                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                        item.Value.MathMl
+                            ?? throw new InvalidDataException(
+                                $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
+                        string.Equals(
+                            item.Value.Session.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase),
+                        item.Value.Session.FontSizePt);
+                    nativePreviewInputs[item.Key] = generated.Mtef;
+                }
+
+                var nativePreviewRoot = rendered.Values
+                    .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
+                        ? null
+                        : Path.GetDirectoryName(template.EmfPath))
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                    ?? Path.GetTempPath();
+                var nativePreviewWatch = Stopwatch.StartNew();
+                var renderedAllNativePreviews =
+                    MathTypeNativePreviewRenderer.TryRenderBatch(
+                        nativePreviewInputs,
+                        nativePreviewRoot,
+                        out var nativePreviews);
+                var missingPreviewKeys = rendered.Keys
+                    .Where(key => !nativePreviews.ContainsKey(key))
+                    .ToArray();
+                if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
+                {
+                    foreach (var preview in nativePreviews.Values)
+                        preview.Dispose();
+                    throw new InvalidOperationException(
+                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{rendered.Count}）。"
+                        + "为避免重绘过程中混用前端几何，Word 文档尚未开始修改。");
+                }
+                foreach (var preview in nativePreviews)
+                    mathTypePreviews.Add(preview.Key, preview.Value);
+                nativePreviewWatch.Stop();
+                WriteRedrawAcceptanceLog(
+                    $"mathtype-native-preview-batch templates={nativePreviews.Count} "
+                    + $"formulas={plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+            }
+
             for (var index = 0; index < plan.Targets.Count; index++)
             {
                 var target = plan.Targets[index];
@@ -2349,6 +2480,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     target.FontSizePt,
                     objectMode,
                     mathTypeNumberPosition);
+                var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
+                    ? preview
+                    : null;
                 prepared.Add(target.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -2356,6 +2490,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     MathMl = template.MathMl,
                     PngPath = template.PngPath,
                     EmfPath = template.EmfPath,
+                    MathTypeNativePreview = mathTypePreview,
+                    MathTypeNativePreviewAttempted = string.Equals(
+                        objectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal),
                 });
             }
 
@@ -2441,6 +2580,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         finally
         {
+            foreach (var preview in mathTypePreviews.Values.Distinct())
+                preview.Dispose();
             foreach (var template in rendered.Values)
             {
                 TryDeleteFile(template.EmfPath);
@@ -2596,9 +2737,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var mathTypePreviews =
             new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
                 StringComparer.Ordinal);
-        var converterSessionIds = new List<string>();
+        var ownedSessionIds = new List<string>();
         var operationStopwatch = Stopwatch.StartNew();
-        string? bulkImportSessionId = null;
         var operationGateHeld = true;
         void ReleaseOperationGate()
         {
@@ -2622,9 +2762,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     sourceDocumentId,
                     selection.ObjectId,
                     fontSizePt,
+                    ownedSessionIds.Add,
                     lifetime.Token)
                 .ConfigureAwait(false);
-            bulkImportSessionId = resolvedImport.SessionId;
             var document = resolvedImport.Document;
             if (document is null)
             {
@@ -2693,7 +2833,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         lifetime.Token)
                     .ConfigureAwait(false);
                 pendingTemplates.Add((key, run, conversionSession));
-                converterSessionIds.Add(conversionSession.Id);
+                ownedSessionIds.Add(conversionSession.Id);
             }
 
             if (pendingTemplates.Count > 0)
@@ -2739,12 +2879,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 foreach (var item in rendered)
                 {
-                    var generated = MathTypeMtefCodec.CreateEquationNative(
+                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
                         item.Value.MathMl,
                         string.Equals(
                             item.Value.Session.DisplayMode,
                             "inline",
-                            StringComparison.OrdinalIgnoreCase));
+                            StringComparison.OrdinalIgnoreCase),
+                        item.Value.Session.FontSizePt);
                     nativePreviewInputs[item.Key] = generated.Mtef;
                 }
 
@@ -2834,48 +2975,32 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // A stalled local PATCH previously made every later Ribbon command
             // report that another Word operation was still running forever.
             ReleaseOperationGate();
-            QueueBulkSessionCleanup(
-                client,
-                converterSessionIds,
-                bulkImportSessionId,
-                completed: true,
-                error: null);
+            try
+            {
+                await FinalizeOfficeSessionsAsync(client, ownedSessionIds, completed: true, error: null)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception completionError)
+            {
+                var message = $"Word 批量导入已完成，但会话完成状态未能记录：{completionError.Message}";
+                WriteBulkAcceptanceLog("bulk-import-session-finalization-failed " + completionError);
+                SetStatus(message);
+                await ShowBulkImportMessageAsync(dispatcher, message, warning: true).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException error)
         {
-            WriteBulkAcceptanceLog("bulk-import-cancelled " + error);
-            SetStatus("VisualTeX 批量导入已取消。");
+            var reported = await RecordSessionFailureAsync(client, ownedSessionIds, error).ConfigureAwait(false);
+            WriteBulkAcceptanceLog("bulk-import-cancelled " + reported);
+            SetStatus(ReferenceEquals(reported, error) ? "VisualTeX 批量导入已取消。" : reported.Message);
         }
         catch (Exception error)
         {
-            WriteBulkAcceptanceLog("bulk-import-failed " + error);
-            SetStatus($"VisualTeX 批量导入失败：{error.Message}");
-            if (!string.Equals(
-                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-                    "1",
-                    StringComparison.Ordinal))
-            {
-                try
-                {
-                    await dispatcher.InvokeAsync(() =>
-                    {
-                        System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX 批量导入",
-                            System.Windows.Forms.MessageBoxButtons.OK,
-                            System.Windows.Forms.MessageBoxIcon.Error);
-                        return true;
-                    }).ConfigureAwait(false);
-                }
-                catch { }
-            }
+            var reported = await RecordSessionFailureAsync(client, ownedSessionIds, error).ConfigureAwait(false);
+            WriteBulkAcceptanceLog("bulk-import-failed " + reported);
+            SetStatus($"VisualTeX 批量导入失败：{reported.Message}");
             ReleaseOperationGate();
-            QueueBulkSessionCleanup(
-                client,
-                converterSessionIds,
-                bulkImportSessionId,
-                completed: false,
-                error: error.Message);
+            await ShowBulkImportMessageAsync(dispatcher, reported.Message, warning: false).ConfigureAwait(false);
         }
         finally
         {
@@ -2891,60 +3016,46 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
-    private static void QueueBulkSessionCleanup(
+    private static async Task FinalizeOfficeSessionsAsync(
         VisualTeXSessionClient client,
-        IEnumerable<string> converterSessionIds,
-        string? bulkImportSessionId,
+        IReadOnlyCollection<string> ownedSessionIds,
         bool completed,
         string? error)
     {
-        var sessionIds = converterSessionIds
-            .Concat(string.IsNullOrWhiteSpace(bulkImportSessionId)
-                ? Array.Empty<string>()
-                : new[] { bulkImportSessionId! })
+        var sessionIds = ownedSessionIds
             .Where(sessionId => !string.IsNullOrWhiteSpace(sessionId))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (sessionIds.Length == 0) return;
 
-        _ = CleanupAsync();
-        async Task CleanupAsync()
-        {
-            try
-            {
-                if (int.TryParse(
-                        Environment.GetEnvironmentVariable(
-                            "VISUALTEX_VSTO_BULK_CLEANUP_DELAY_MS"),
-                        out var delayMilliseconds)
-                    && delayMilliseconds > 0
-                    && string.Equals(
-                        Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-                        "1",
-                        StringComparison.Ordinal))
-                {
-                    await Task.Delay(Math.Min(delayMilliseconds, 30_000))
-                        .ConfigureAwait(false);
-                }
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var tasks = sessionIds.Select(sessionId => completed
+            ? client.CompleteAsync(sessionId, timeout.Token)
+            : client.FailAsync(sessionId, error ?? "Word operation failed.", timeout.Token));
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+        WordDoubleClickHook.TraceMessage(
+            $"office-session-finalization-complete sessions={sessionIds.Length} completed={completed}");
+    }
 
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var cleanupTasks = sessionIds.Select(sessionId => completed
-                    ? client.CompleteAsync(sessionId, timeout.Token)
-                    : client.FailAsync(
-                        sessionId,
-                        string.IsNullOrWhiteSpace(error)
-                            ? "VisualTeX bulk import failed."
-                            : error!,
-                        timeout.Token));
-                await Task.WhenAll(cleanupTasks).ConfigureAwait(false);
-                WriteBulkAcceptanceLog(
-                    $"bulk-session-cleanup-complete sessions={sessionIds.Length} completed={completed}");
-            }
-            catch (Exception cleanupError)
+    private static async Task ShowBulkImportMessageAsync(
+        OfficeUiDispatcher dispatcher,
+        string message,
+        bool warning)
+    {
+        if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE") == "1") return;
+        try
+        {
+            await dispatcher.InvokeAsync(() =>
             {
-                WriteBulkAcceptanceLog(
-                    $"bulk-session-cleanup-best-effort-failed sessions={sessionIds.Length} "
-                    + $"completed={completed} error={cleanupError.Message}");
-            }
+                System.Windows.Forms.MessageBox.Show(message, "VisualTeX 批量导入",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    warning ? System.Windows.Forms.MessageBoxIcon.Warning : System.Windows.Forms.MessageBoxIcon.Error);
+                return true;
+            }).ConfigureAwait(false);
+        }
+        catch (Exception displayError)
+        {
+            WriteBulkAcceptanceLog("bulk-import-error-display-failed " + displayError);
         }
     }
 
@@ -2954,6 +3065,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             string? sourceDocumentId,
             string? sourceObjectId,
             double fontSizePt,
+            Action<string> sessionCreated,
             CancellationToken cancellationToken)
     {
         if (string.Equals(
@@ -3025,6 +3137,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 AutoCommitOnClose = false,
             },
             cancellationToken).ConfigureAwait(false);
+        sessionCreated(session.Id);
         WriteBulkAcceptanceLog($"bulk-import-ui-created sessionId={session.Id}");
         GrantVisualTeXForegroundActivation();
         await client.OpenBulkImportAsync(session.Id, cancellationToken)
@@ -3321,6 +3434,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private static void WriteBulkAcceptanceLog(string message)
     {
+        WordDoubleClickHook.TraceMessage("bulk-import " + message);
         var path = Environment.GetEnvironmentVariable(
             "VISUALTEX_VSTO_BULK_ACCEPTANCE_LOG");
         if (string.IsNullOrWhiteSpace(path)) return;
@@ -3360,6 +3474,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             SetStatus($"更新 Word 公式编号失败：{error.Message}");
+            await ShowWordOperationErrorAsync(dispatcher, "更新公式编号", error).ConfigureAwait(false);
         }
     }
 
@@ -3369,10 +3484,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var service = _formulaService;
         if (dispatcher is null || service is null) return;
         var format = EquationNumberFormat.Resolve(requestedFormatId);
-        // A format selection is also the user's default for future documents.
-        // Persist it even when the active document already uses the same format,
-        // because that document-level setting may have come from an older file.
-        WordEquationNumbering.SetDefaultEquationNumberFormatPreference(format.Id);
         try
         {
             // Always apply an explicit selection. Older documents may already
@@ -3382,12 +3493,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var count = await dispatcher.InvokeAsync(
                     () => service.SetEquationNumberFormat(format.Id))
                 .ConfigureAwait(false);
+            // Publish the future-document default only after the actual document
+            // edit has committed. A failed rewrite must leave both unchanged.
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(format.Id);
             _cachedEquationNumberFormatId = format.Id;
             SetStatus($"公式编号格式已设置为“{format.DisplayName}”，并同步更新了 {count} 个 VisualTeX / MathType 带编号公式。");
         }
         catch (Exception error)
         {
             SetStatus($"设置公式编号格式失败：{error.Message}");
+            await ShowWordOperationErrorAsync(dispatcher, "编号格式", error).ConfigureAwait(false);
         }
         finally { InvalidateEquationNumberFormatControls(); }
     }
@@ -3396,7 +3511,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         var dispatcher = _dispatcher;
         var application = _application;
-        if (dispatcher is null || application is null) return;
+        var service = _formulaService;
+        if (dispatcher is null || application is null || service is null) return;
         try
         {
             var inserted = await dispatcher.InvokeAsync(() =>
@@ -3496,24 +3612,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (result != System.Windows.Forms.DialogResult.OK
                         || dialog.SelectedTarget is null)
                         return string.Empty;
-                    if (dialog.SelectedTarget.Source == EquationReferenceSource.MathType)
-                    {
-                        selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
-                        MathTypeEquationReferences.InsertReference(
-                            document,
-                            selection,
-                            dialog.SelectedTarget,
-                            referenceInsertionColor);
-                    }
-                    else
-                    {
-                        WordEquationNumbering.InsertEquationReference(
-                            document,
-                            selection,
-                            dialog.SelectedTarget,
-                            dialog.SelectedStyle,
-                            referenceInsertionColor);
-                    }
+                    selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
+                    service.InsertEquationReference(document, selection, dialog.SelectedTarget,
+                        dialog.SelectedStyle, referenceInsertionColor);
                     return DescribeReferenceTarget(dialog.SelectedTarget);
                 }
                 finally
@@ -3524,11 +3625,45 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
             }).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(inserted))
+            {
+                WordDoubleClickHook.TraceMessage($"reference-insertion-complete target={inserted}");
                 SetStatus($"已插入 {inserted} 的交叉引用；更新编号时引用会同步刷新。");
+            }
         }
         catch (Exception error)
         {
+            WordDoubleClickHook.TraceMessage($"reference-insertion-failed error={error}");
             SetStatus($"插入公式引用失败：{error.Message}");
+            await ShowWordOperationErrorAsync(dispatcher, "插入公式引用", error).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ShowWordOperationErrorAsync(OfficeUiDispatcher dispatcher, string operation, Exception error)
+    {
+        WordDoubleClickHook.TraceMessage($"word-operation-failed operation={operation} error={error}");
+        try
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                Window? window = null;
+                try
+                {
+                    window = _application?.ActiveWindow
+                        ?? throw new InvalidOperationException("Word's error-reporting window is unavailable.");
+                    System.Windows.Forms.MessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
+                        error.Message, "VisualTeX " + operation,
+                        System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                    return true;
+                }
+                finally { ReleaseComObject(window); }
+            }).ConfigureAwait(false);
+        }
+        catch (Exception displayError)
+        {
+            // Preserve both errors when Word is shutting down. This only reports
+            // an already-failed operation; it never converts that failure to success.
+            WordDoubleClickHook.TraceMessage(
+                $"word-operation-error-display-failed operation={operation} original={error} display={displayError}");
         }
     }
 

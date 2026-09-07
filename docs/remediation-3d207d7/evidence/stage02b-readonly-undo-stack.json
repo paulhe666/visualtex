@@ -1,0 +1,18 @@
+﻿{
+    "pid":  60152,
+    "document":  "文档17",
+    "recording":  false,
+    "level":  0,
+    "controls":  [
+                     {
+                         "id":  128,
+                         "found":  true,
+                         "caption":  "VBA-Range.Delete",
+                         "type":  1,
+                         "listCount":  null,
+                         "items":  [
+
+                                   ]
+                     }
+                 ]
+}

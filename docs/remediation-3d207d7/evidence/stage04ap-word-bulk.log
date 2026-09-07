@@ -1,0 +1,116 @@
+﻿2026-09-06T21:23:01.6926466+08:00 bulk-import-start
+2026-09-06T21:23:01.7511579+08:00 bulk-import-ui-created sessionId=36c74a9a-d089-4eed-a2f2-426477530a46
+2026-09-06T21:23:01.7551543+08:00 bulk-import-ui-opened sessionId=36c74a9a-d089-4eed-a2f2-426477530a46
+2026-09-06T21:23:11.3000918+08:00 bulk-import-ui-finished sessionId=36c74a9a-d089-4eed-a2f2-426477530a46 status=committing error=<null>
+2026-09-06T21:23:11.3070949+08:00 parsed blocks=15 formulas=6 mode=Omml fontSizePt=10.5
+2026-09-06T21:23:11.3185508+08:00 render-prepare index=1/6 display=inline latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T21:23:11.3216273+08:00 converter-create display=inline mode=wordOmml latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T21:23:11.3292299+08:00 converter-created sessionId=b1af1a32-4276-4208-a521-63b6a974a47f
+2026-09-06T21:23:11.3302378+08:00 render-prepare index=2/6 display=block latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T21:23:11.3312375+08:00 converter-create display=block mode=wordOmml latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T21:23:11.3342370+08:00 converter-created sessionId=0da90406-b559-4247-997b-88fa467c44f5
+2026-09-06T21:23:11.3352369+08:00 render-prepare index=3/6 display=block latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T21:23:11.3352369+08:00 converter-create display=block mode=wordOmml latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T21:23:11.3402375+08:00 converter-created sessionId=461b6eae-41f5-4155-8488-3cf5366f4cc2
+2026-09-06T21:23:11.3402375+08:00 render-prepare index=4/6 display=block latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T21:23:11.3412377+08:00 converter-create display=block mode=wordOmml latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T21:23:11.3442373+08:00 converter-created sessionId=ab1fe34d-694d-4cac-903d-a581677d54dd
+2026-09-06T21:23:11.3442373+08:00 render-prepare index=5/6 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:23:11.3452371+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:23:11.3482415+08:00 converter-created sessionId=dbe71dad-3c52-4f30-ae29-049aa0fa7bbd
+2026-09-06T21:23:11.3492388+08:00 render-prepare index=6/6 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:23:11.3492388+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:23:11.3522388+08:00 converter-created sessionId=d8d22dde-4150-4244-adc0-0675d7e4050b
+2026-09-06T21:23:11.3532371+08:00 render-batch-start unique=6 total=6
+2026-09-06T21:23:11.3952385+08:00 render-batch-item sessionId=b1af1a32-4276-4208-a521-63b6a974a47f status=committing display=inline
+2026-09-06T21:23:11.3972381+08:00 render-batch-item sessionId=0da90406-b559-4247-997b-88fa467c44f5 status=committing display=block
+2026-09-06T21:23:11.3982375+08:00 render-batch-item sessionId=461b6eae-41f5-4155-8488-3cf5366f4cc2 status=committing display=block
+2026-09-06T21:23:11.4012376+08:00 render-batch-item sessionId=ab1fe34d-694d-4cac-903d-a581677d54dd status=committing display=block
+2026-09-06T21:23:11.4052394+08:00 render-batch-item sessionId=dbe71dad-3c52-4f30-ae29-049aa0fa7bbd status=committing display=block
+2026-09-06T21:23:11.4384798+08:00 render-batch-item sessionId=d8d22dde-4150-4244-adc0-0675d7e4050b status=committing display=block
+2026-09-06T21:23:11.4394791+08:00 render-batch-complete unique=6 elapsedMs=85
+2026-09-06T21:23:18.0198655+08:00 bulk-insert-complete blocks=15 formulas=6 elapsedMs=6579
+2026-09-06T21:23:18.0208670+08:00 bulk-import-complete blocks=15 formulas=6 elapsedMs=16327
+2026-09-06T21:23:18.0208670+08:00 bulk-operation-gate-released
+2026-09-06T21:30:44.2096864+08:00 converter-create display=inline mode=nativeOle latex=\sqrt{E-u(x)}=\frac{1}{f(\omega )v_{ph}(\omega ,x)}
+2026-09-06T21:30:44.2144664+08:00 converter-created sessionId=b4049b6f-8765-4860-8e82-4dde270a1ed1
+2026-09-06T21:30:44.2154666+08:00 converter-create display=block mode=nativeOle latex=\left\{ \begin{matrix}\frac{\mathrm{d}}{\mathrm{d}\omega }(\omega f(\omega ))=0 \\ \frac{\omega f(\omega )}{2}\frac{\mathrm{d}E(\omega )}{\mathrm{d}\omega }=\sqrt{\frac{m}{2}}\end{matrix}\right.
+2026-09-06T21:30:44.2194682+08:00 converter-created sessionId=1ab2e553-0615-4f71-a9e2-5a3cee816818
+2026-09-06T21:30:44.2194682+08:00 converter-create display=block mode=nativeOle latex=F=ma
+2026-09-06T21:30:44.2244666+08:00 converter-created sessionId=63865f7a-631a-406a-af03-87aa0f30b859
+2026-09-06T21:30:44.2244666+08:00 converter-create display=block mode=nativeOle latex=i\hbar \frac{\partial }{\partial t}\psi (\mathbf{r},t)=[-\frac{\hbar^{2}}{2m}\nabla^{2}+V(\mathbf{r},t)]\psi (\mathbf{r},t)
+2026-09-06T21:30:44.2284662+08:00 converter-created sessionId=61a3c12d-1858-41d9-a8f4-b6d38a13528c
+2026-09-06T21:30:44.2284662+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial }{\partial t}\psi^{\ast}(\vec{r})\psi (\vec{r})=\frac{i\hbar }{2m}\nabla \cdot [\psi^{\ast}(\vec{r})\nabla \psi (\vec{r})-\psi (\vec{r})\nabla \psi^{\ast}(r)]
+2026-09-06T21:30:44.2324663+08:00 converter-created sessionId=8f592d18-ec20-47a4-b25b-72ba3fa1d1c2
+2026-09-06T21:30:44.2324663+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial }{\partial t}\rho (\vec{r},t)+\nabla \cdot \vec{j}=0
+2026-09-06T21:30:44.2364651+08:00 converter-created sessionId=cdd3d5a8-d687-40dc-8f9c-852c85c73c03
+2026-09-06T21:31:30.7338938+08:00 converter-create display=inline mode=wordOmml latex=\sqrt{E-u(x)}=\frac{1}{f(\omega )v_{ph}(\omega ,x)}
+2026-09-06T21:31:30.7388936+08:00 converter-created sessionId=0faecf77-bc17-4b1a-92de-6ef8c3231d60
+2026-09-06T21:31:30.7398954+08:00 converter-create display=block mode=wordOmml latex=\left\{ \begin{matrix}\frac{\mathrm{d}}{\mathrm{d}\omega }(\omega f(\omega ))=0 \\ \frac{\omega f(\omega )}{2}\frac{\mathrm{d}E(\omega )}{\mathrm{d}\omega }=\sqrt{\frac{m}{2}}\end{matrix}\right.
+2026-09-06T21:31:30.7438950+08:00 converter-created sessionId=e57fd92a-540e-4f24-99f0-aef88160e045
+2026-09-06T21:31:30.7438950+08:00 converter-create display=block mode=wordOmml latex=E=mc^2
+2026-09-06T21:31:30.7478939+08:00 converter-created sessionId=f8a6fe7a-5712-4a5e-ab76-6f124884656b
+2026-09-06T21:31:30.7478939+08:00 converter-create display=block mode=wordOmml latex=i\hbar \frac{\partial }{\partial t}\psi (\mathbf{r},t)=[-\frac{\hbar^{2}}{2m}\nabla^{2}+V(\mathbf{r},t)]\psi (\mathbf{r},t)
+2026-09-06T21:31:30.7528944+08:00 converter-created sessionId=448dad1e-f810-45fb-a745-c9ba93e4eabf
+2026-09-06T21:31:30.7528944+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial }{\partial t}\psi^{\ast}(\vec{r})\psi (\vec{r})=\frac{i\hbar }{2m}\nabla \cdot [\psi^{\ast}(\vec{r})\nabla \psi (\vec{r})-\psi (\vec{r})\nabla \psi^{\ast}(r)]
+2026-09-06T21:31:30.7558942+08:00 converter-created sessionId=45dfd4d6-6436-4caf-a8eb-6346a30d845a
+2026-09-06T21:31:30.7568946+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial }{\partial t}\rho (\vec{r},t)+\nabla \cdot \vec{j}=0
+2026-09-06T21:31:30.7598955+08:00 converter-created sessionId=1688b3a3-64e8-440d-b728-9ab8e9259f0a
+2026-09-06T21:32:58.8896116+08:00 converter-create display=inline mode=nativeOle latex=\sqrt{E-u(x)}=\frac{1}{f(\omega )v_{ph}(\omega ,x)}
+2026-09-06T21:32:58.8946118+08:00 converter-created sessionId=9d9a556c-b69a-4095-98ce-b1fb4c51413c
+2026-09-06T21:32:58.8946118+08:00 converter-create display=block mode=nativeOle latex=\left\{ \begin{matrix}\frac{\mathrm{d}}{\mathrm{d}\omega }(\omega f(\omega ))=0 \\ \frac{\omega f(\omega )}{2}\frac{\mathrm{d}E(\omega )}{\mathrm{d}\omega }=\sqrt{\frac{m}{2}}\end{matrix}\right.
+2026-09-06T21:32:58.8976116+08:00 converter-created sessionId=f9268474-23dd-4a0f-90e9-1da63d3c3dc2
+2026-09-06T21:32:58.8986114+08:00 converter-create display=block mode=nativeOle latex=E=mc^{2}
+2026-09-06T21:32:58.9016116+08:00 converter-created sessionId=fecdfef2-0e81-4eb5-aa38-f8539531c1df
+2026-09-06T21:32:58.9026115+08:00 converter-create display=block mode=nativeOle latex=i\hbar \frac{\partial }{\partial t}\psi (\mathbf{r},t)=[-\frac{\hbar^{2}}{2m}\nabla^{2}+V(\mathbf{r},t)]\psi (\mathbf{r},t)
+2026-09-06T21:32:58.9066117+08:00 converter-created sessionId=89a98634-e4a3-4b95-bbef-4e789a77bb6c
+2026-09-06T21:32:58.9076139+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial }{\partial t}\psi^{\ast}(\vec{r})\psi (\vec{r})=\frac{i\hbar }{2m}\nabla \cdot [\psi^{\ast}(\vec{r})\nabla \psi (\vec{r})-\psi (\vec{r})\nabla \psi^{\ast}(r)]
+2026-09-06T21:32:58.9116145+08:00 converter-created sessionId=103fe20b-79f5-4e7c-8c83-9f05d8faaba4
+2026-09-06T21:32:58.9116145+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial }{\partial t}\rho (\vec{r},t)+\nabla \cdot \vec{j}=0
+2026-09-06T21:32:58.9156118+08:00 converter-created sessionId=8eb6f109-64f2-444f-8746-29a52610c70c
+2026-09-06T21:33:28.9488940+08:00 converter-create display=inline mode=mathTypeOle latex=\sqrt{E-u(x)}=\frac{1}{f(\omega )v_{ph}(\omega ,x)}
+2026-09-06T21:33:28.9551996+08:00 converter-created sessionId=a5abc4c6-aabf-4ca0-aa52-c784eef1df07
+2026-09-06T21:33:28.9557416+08:00 converter-create display=block mode=mathTypeOle latex=\left\{ \begin{matrix}\frac{\mathrm{d}}{\mathrm{d}\omega }(\omega f(\omega ))=0 \\ \frac{\omega f(\omega )}{2}\frac{\mathrm{d}E(\omega )}{\mathrm{d}\omega }=\sqrt{\frac{m}{2}}\end{matrix}\right.
+2026-09-06T21:33:28.9594066+08:00 converter-created sessionId=3164a410-ff34-4a82-a828-87813a78a18b
+2026-09-06T21:33:28.9599775+08:00 converter-create display=block mode=mathTypeOle latex=E=mc^{2}
+2026-09-06T21:33:28.9640766+08:00 converter-created sessionId=810bfb43-23fa-41e1-8a47-77a8889d09c2
+2026-09-06T21:33:28.9650777+08:00 converter-create display=block mode=mathTypeOle latex=i\hbar \frac{\partial }{\partial t}\psi (\mathbf{r},t)=[-\frac{\hbar^{2}}{2m}\nabla^{2}+V(\mathbf{r},t)]\psi (\mathbf{r},t)
+2026-09-06T21:33:28.9696950+08:00 converter-created sessionId=3817d732-432c-4986-820b-56178d59e31c
+2026-09-06T21:33:28.9696950+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial }{\partial t}\psi^{\ast}(\vec{r})\psi (\vec{r})=\frac{i\hbar }{2m}\nabla \cdot [\psi^{\ast}(\vec{r})\nabla \psi (\vec{r})-\psi (\vec{r})\nabla \psi^{\ast}(r)]
+2026-09-06T21:33:28.9736968+08:00 converter-created sessionId=db8ae5db-2a4e-4e95-a386-e8fa42f0c0d9
+2026-09-06T21:33:28.9736968+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial }{\partial t}\rho (\vec{r},t)+\nabla \cdot \vec{j}=0
+2026-09-06T21:33:28.9775342+08:00 converter-created sessionId=d1445273-150d-4cf5-8241-89548174f076
+2026-09-06T21:37:44.1691120+08:00 bulk-import-start
+2026-09-06T21:37:44.2663592+08:00 bulk-import-ui-created sessionId=bbed8282-3a81-4e4e-8922-3bd6dd41b5ef
+2026-09-06T21:37:44.2723594+08:00 bulk-import-ui-opened sessionId=bbed8282-3a81-4e4e-8922-3bd6dd41b5ef
+2026-09-06T21:37:53.9728991+08:00 bulk-import-ui-finished sessionId=bbed8282-3a81-4e4e-8922-3bd6dd41b5ef status=committing error=<null>
+2026-09-06T21:37:53.9758976+08:00 parsed blocks=15 formulas=6 mode=Omml fontSizePt=10.5
+2026-09-06T21:37:53.9878980+08:00 render-prepare index=1/6 display=inline latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T21:37:53.9878980+08:00 converter-create display=inline mode=wordOmml latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T21:37:53.9928986+08:00 converter-created sessionId=ab7ee81f-9f5a-480f-bbec-1ec20818eca1
+2026-09-06T21:37:53.9928986+08:00 render-prepare index=2/6 display=block latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T21:37:53.9938980+08:00 converter-create display=block mode=wordOmml latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T21:37:53.9974904+08:00 converter-created sessionId=4c15f947-aea0-421d-b740-23193cf6665b
+2026-09-06T21:37:53.9984980+08:00 render-prepare index=3/6 display=block latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T21:37:53.9984980+08:00 converter-create display=block mode=wordOmml latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T21:37:54.0034974+08:00 converter-created sessionId=b6f350e7-f273-4213-bb4b-181c09d10ee5
+2026-09-06T21:37:54.0044984+08:00 render-prepare index=4/6 display=block latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T21:37:54.0044984+08:00 converter-create display=block mode=wordOmml latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T21:37:54.0084975+08:00 converter-created sessionId=a1f81d35-6aba-4f2d-b5dd-673f674b46b0
+2026-09-06T21:37:54.0094973+08:00 render-prepare index=5/6 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:37:54.0094973+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:37:54.0134403+08:00 converter-created sessionId=20bbb55c-bca8-4d95-8b00-d8b8d52ec332
+2026-09-06T21:37:54.0134403+08:00 render-prepare index=6/6 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:37:54.0144397+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:37:54.0174397+08:00 converter-created sessionId=95dfa687-befd-48b8-bfd2-bfef75790d0f
+2026-09-06T21:37:54.0184396+08:00 render-batch-start unique=6 total=6
+2026-09-06T21:37:54.1685005+08:00 render-batch-item sessionId=ab7ee81f-9f5a-480f-bbec-1ec20818eca1 status=committing display=inline
+2026-09-06T21:37:54.2082778+08:00 render-batch-item sessionId=4c15f947-aea0-421d-b740-23193cf6665b status=committing display=block
+2026-09-06T21:37:54.2092762+08:00 render-batch-item sessionId=b6f350e7-f273-4213-bb4b-181c09d10ee5 status=committing display=block
+2026-09-06T21:37:54.2112760+08:00 render-batch-item sessionId=a1f81d35-6aba-4f2d-b5dd-673f674b46b0 status=committing display=block
+2026-09-06T21:37:54.2122750+08:00 render-batch-item sessionId=20bbb55c-bca8-4d95-8b00-d8b8d52ec332 status=committing display=block
+2026-09-06T21:37:54.2539977+08:00 render-batch-item sessionId=95dfa687-befd-48b8-bfd2-bfef75790d0f status=committing display=block
+2026-09-06T21:37:54.2545038+08:00 render-batch-complete unique=6 elapsedMs=235
+2026-09-06T21:38:01.2086767+08:00 bulk-insert-complete blocks=15 formulas=6 elapsedMs=6953
+2026-09-06T21:38:01.2086767+08:00 bulk-import-complete blocks=15 formulas=6 elapsedMs=17038
+2026-09-06T21:38:01.2086767+08:00 bulk-operation-gate-released

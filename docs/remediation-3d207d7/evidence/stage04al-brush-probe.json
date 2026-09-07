@@ -1,0 +1,72 @@
+[
+  {
+    "file": "stage04al-native-1-defined-black.wmf",
+    "records": [
+      {
+        "offset": 306,
+        "function": "0x2fc",
+        "data": "0000000000020000"
+      },
+      {
+        "offset": 352,
+        "function": "0x324",
+        "data": "0b00df0920060b0ae505540af106a80af103f20bf103f20b0104b60a01045d0a32074d0a3207fa090c06e7092606"
+      },
+      {
+        "offset": 3332,
+        "function": "0x2fc",
+        "data": "0000000000000000"
+      }
+    ]
+  },
+  {
+    "file": "stage04al-native-1-original.wmf",
+    "records": [
+      {
+        "offset": 330,
+        "function": "0x324",
+        "data": "0b00df0920060b0ae505540af106a80af103f20bf103f20b0104b60a01045d0a32074d0a3207fa090c06e7092606"
+      }
+    ]
+  },
+  {
+    "file": "stage04al-native-2-defined-black.wmf",
+    "records": [
+      {
+        "offset": 1132,
+        "function": "0x2fc",
+        "data": "0000000000020000"
+      },
+      {
+        "offset": 1178,
+        "function": "0x324",
+        "data": "0b00410a20066d0ae505b60af1060a0bf103540cf103540c0104180b0104bf0a3207af0a32075c0a0c06490a2606"
+      },
+      {
+        "offset": 4386,
+        "function": "0x2fc",
+        "data": "0000000000000000"
+      }
+    ]
+  },
+  {
+    "file": "stage04al-native-2-original.wmf",
+    "records": [
+      {
+        "offset": 1132,
+        "function": "0x2fc",
+        "data": "0000000000020000"
+      },
+      {
+        "offset": 1178,
+        "function": "0x324",
+        "data": "0b00410a20066d0ae505b60af1060a0bf103540cf103540c0104180b0104bf0a3207af0a32075c0a0c06490a2606"
+      },
+      {
+        "offset": 4386,
+        "function": "0x2fc",
+        "data": "0000000000000000"
+      }
+    ]
+  }
+]

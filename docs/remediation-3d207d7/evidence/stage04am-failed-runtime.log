@@ -1,0 +1,13 @@
+SESSION|48b2c2e0-709d-4c17-8450-6067b2033901|doc=文档11|mode=edit|object=nativeOle|display=block|numbered=True|status=completed|error=
+SESSION|9972ac86-5c1e-4893-ac06-067b86a3db7d|doc=文档11|mode=edit|object=nativeOle|display=block|numbered=True|status=completed|error=
+SESSION|dff29dbd-d6b0-4d3d-80fe-174a56ca1d6d|doc=文档11|mode=edit|object=mathTypeOle|display=block|numbered=True|status=completed|error=
+SESSION|5f829a34-fbed-4b7f-854e-4f47fb98220f|doc=文档11|mode=edit|object=mathTypeOle|display=block|numbered=True|status=completed|error=
+SESSION|5e45620b-1ddc-4719-b373-24d3743f4c03|doc=文档11|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|de844b06-f7e8-49bd-b478-c38b145e5a7f|doc=文档11|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|0adad107-3fd6-47e2-849b-9ee1c56c0fe7|doc=文档11|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|2749e3f3-0cfa-4840-ae27-816672c042f5|doc=文档11|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "1A6BB6016CB33F22E19E3DEE7836E23DB13F775DC3D0B0B78E5B8EF0CA980FDD",
+    "process":  "visualtex"
+}

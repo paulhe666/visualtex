@@ -1,0 +1,10 @@
+{
+  "changedComKeys": [
+    "name",
+    "fullName",
+    "paras"
+  ],
+  "fontFieldsEqual": false,
+  "paragraphFontsEqual": true,
+  "bookmarkFontsEqual": true
+}

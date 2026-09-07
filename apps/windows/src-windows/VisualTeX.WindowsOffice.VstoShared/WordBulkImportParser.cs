@@ -632,6 +632,7 @@ internal static class WordBulkImportParser
         var listModes = new Stack<string>();
         var quote = new List<string>();
         var inLatexQuote = false;
+        var latexHeadings = new List<WordBulkBlock>();
 
         void FlushParagraph()
         {
@@ -890,20 +891,22 @@ internal static class WordBulkImportParser
                     FlushQuote();
                     var level = section.Groups["kind"].Value.ToLowerInvariant() switch
                     {
-                        "part" => 1,
-                        "chapter" => 1,
+                        "part" => -1,
+                        "chapter" => 0,
                         "section" => 1,
                         "subsection" => 2,
                         "subsubsection" => 3,
                         "paragraph" => 4,
                         _ => 5,
                     };
-                    blocks.Add(new WordBulkBlock
+                    var headingBlock = new WordBulkBlock
                     {
                         Kind = WordBulkBlockKind.Heading,
                         Level = level,
                         Runs = ParseInlineRuns(section.Groups["text"].Value, format, warnings),
-                    });
+                    };
+                    blocks.Add(headingBlock);
+                    latexHeadings.Add(headingBlock);
                     continue;
                 }
                 var item = LatexItem.Match(trimmed);
@@ -992,6 +995,14 @@ internal static class WordBulkImportParser
             warnings.Add("LaTeX quote/quotation 环境未闭合，已导入到文末。");
         if (listModes.Count > 0)
             warnings.Add($"LaTeX 文档有 {listModes.Count} 个列表环境未闭合，已导入其余内容。");
+        if (latexHeadings.Count > 0)
+        {
+            // Preserve article's section=1 and book's chapter=1/section=2.
+            // Use headings actually parsed outside comments/code/math; scanning
+            // raw source for a chapter token would misclassify literal examples.
+            var shift = 1 - Math.Min(1, latexHeadings.Min(block => block.Level));
+            foreach (var heading in latexHeadings) heading.Level += shift;
+        }
         return blocks;
     }
 

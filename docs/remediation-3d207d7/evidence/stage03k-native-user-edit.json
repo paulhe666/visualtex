@@ -1,0 +1,23 @@
+﻿{
+    "pid":  75740,
+    "to":  "x",
+    "action":  "Select exact native equation text and Selection.TypeText",
+    "after":  {
+                  "shapes":  0,
+                  "maths":  1,
+                  "fields":  1,
+                  "text":  "\r𝑥\r2\r+\r𝑏\r2\r=\r𝑐\r2\r"
+              },
+    "selection":  {
+                      "start":  2,
+                      "end":  4
+                  },
+    "from":  "𝑎",
+    "before":  {
+                   "shapes":  0,
+                   "maths":  1,
+                   "fields":  1,
+                   "text":  "\r𝑎\r2\r+\r𝑏\r2\r=\r𝑐\r2\r"
+               },
+    "document":  "文档89"
+}

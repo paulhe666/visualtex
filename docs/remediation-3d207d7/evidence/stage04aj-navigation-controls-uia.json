@@ -1,0 +1,20 @@
+[
+    {
+        "id":  "44",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "935,499,26,144",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "46",
+        "name":  "RichEdit Control",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "980,500,578,30",
+        "value":  "",
+        "enabled":  true
+    }
+]

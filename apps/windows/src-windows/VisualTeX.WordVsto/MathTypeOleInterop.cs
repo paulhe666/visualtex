@@ -371,8 +371,12 @@ internal static class MathTypeOleInterop
     internal static FormulaMetadata ReadMetadata(
         Microsoft.Office.Interop.Word.Application application,
         InlineShape shape,
-        string? knownMathMl = null)
+        string? knownMathMl = null,
+        byte[]? knownCompoundFile = null)
     {
+        var native = MathTypeOleStorage.ReadEquationNative(
+            knownCompoundFile ?? MathTypeOleStorage.CaptureCompoundFile(shape));
+        var fontSizePt = MathTypeMtefCodec.ReadEquationNativeFullFontSize(native);
         string mathMl;
         try
         {
@@ -381,7 +385,7 @@ internal static class MathTypeOleInterop
             // MathType object in a large document.
             mathMl = !string.IsNullOrWhiteSpace(knownMathMl)
                 ? knownMathMl!
-                : MathTypeOleStorage.ReadMathMl(shape);
+                : MathTypeMtefCodec.ReadEquationNativeMathMl(native);
         }
         catch (Exception directError)
         {
@@ -405,23 +409,16 @@ internal static class MathTypeOleInterop
             throw new InvalidDataException("MathType OLE returned MathML that VisualTeX could not convert to LaTeX.");
 
         Range? range = null;
-        Microsoft.Office.Interop.Word.Font? font = null;
         var displayMode = "inline";
         var numbered = false;
-        var fontSizePt = FormulaFontSize.DefaultPt;
         try
         {
             range = shape.Range;
             displayMode = InferDisplayMode(range);
             numbered = ContainsMathTypeDisplayNumberFieldAtRange(range);
-            font = range.Font;
-            if (font.Size > 0 && font.Size <= 200)
-                fontSizePt = FormulaFontSize.Normalize(font.Size);
         }
-        catch { }
         finally
         {
-            Release(font);
             Release(range);
         }
 
@@ -1425,7 +1422,8 @@ internal static class MathTypeOleInterop
         // same semantic equation rather than failing solely because one version
         // omitted a SET advertisement.
         var failures = new List<string>();
-        var asciiMathMl = ToAsciiMathMlPayload(mathMl);
+        var preparedMathMl = MathTypeMtefCodec.PrepareMathMlForMathTypeInterop(mathMl);
+        var asciiMathMl = ToAsciiMathMlPayload(preparedMathMl);
         foreach (var name in MathMlFormats)
         {
             var id = RegisterClipboardFormat(name);
@@ -1440,7 +1438,7 @@ internal static class MathTypeOleInterop
                 failures.Add($"{name}=0x{error.HResult:X8}");
         }
 
-        var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+        var latex = MathMlToLatexConverter.Convert(preparedMathMl).Trim();
         if (!string.IsNullOrWhiteSpace(latex))
         {
             var texId = RegisterClipboardFormat("TeX Input Language");

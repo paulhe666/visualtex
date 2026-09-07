@@ -1,0 +1,409 @@
+{
+    "name":  "文档103",
+    "fullName":  "文档103",
+    "saved":  false,
+    "end":  676,
+    "paragraphs":  12,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  8,
+                       "alternative":  "visualtex:v1:deflate:lZJNi9swEIb_StDZNtJY_oihh24hdKFlF7o0h36AbI1jsbKdyvJ2syH_vSPiZGkPLb0IMc_MvDOvdGRT02GvWMWezDQr6_E5bkfXz1axaIGf0U1mHFglIrawW00Va6F1m-k6Vg2qWAIdaq3aOM_qtm1FoSAvqYk33iKl38z2cWX6_eg86tV2dHr1qmQVKVPS8_cjnL7OnMPNIVzfvIQzJJgBJ1Z9OTITtIWua6VziIuUS9Lm61hlHGKBmUIpSmhE8e-2p28Ra0aNG5pDeco750dMm2lv1eEjMYrWdmweKTrMfY0OSd-7GSOGP2blyZkHtWPVMFsbMYeDRrc12nf3JCx4nkCZAk8FZBf6Hs2u8wGnRSIBJBcSSgDIszxitZowLMsqkAkByXkhRVYUQpbB_8F_Mi94T9MKuHTc_BFdfP2A3p8hLeFNTwZe2bsuGIoLnA6Tx57oT3qW2yHo31k8r-Evu_3GliWucCAnnvCu7-3GDDt0e2eGK2wckrF6a3x3_UxMJDwR4YPMe_0XutS-DWMChzymp-b5A5dVWlZkryjSPIPi_LicV5y_tvyfotMv",
+                       "width":  79.6,
+                       "index":  1,
+                       "type":  1,
+                       "height":  28.1,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  42
+                   },
+                   {
+                       "start":  189,
+                       "alternative":  "visualtex:v1:deflate:lZJRa9swFIX_StCzZSRZtiXDHtaxsMJGCyvLw7aCbN3EorKdyXK3LuS_95o4KRtlsBc_3O_ce3QOPpCxaaEzpCKPbpyMj_CLbofQTd6QZIFfIIxu6EnFE7Kwa4sbPFNGKZ3TbZErKtm2prUsNC2UYFJAXoIs8Uh00QPKryb_sHLdfggR7GozBLt6cfIGnVH0_k3X3B_EcR65HkZSfT0QN7sJZQoJpaKcmYzKrcyoKmpFbd00Vjdor9hrh47fE9IMFtboZSKSkyIh1o17b54-IcNp7YfmAaf91NUQAB1jmCAh8GMyEdPfmR2p-sn7hAToLYSNs7G9RSvF01zwXCuFH17qQp8lH8Dt2jhrsjyVucy05kwpVZQcNbUZYc5IKiFTLoVkrJQ8L0su1Vx0Hz-733CLT-bifHH913Qp8CPEeIKYJLoOe7uwd-3cIyxwfBojdEh_Yv_X_ex_4-GUJZ4D_sGWEBfYYx2PcNN1fu36HYR9cP0FNgGwXbtxsb38NYSnLOUKPae9_Qdddt_OzxRMFJRpyoo7JqtMVSxPdaa5ztm3iTFxxVjF2MvJ_1k6PgM",
+                       "width":  61.25,
+                       "index":  2,
+                       "type":  1,
+                       "height":  26.55,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  223
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  294,
+                          "name":  "VTEq_138a8895f65840fbb469682042e57e47",
+                          "text":  "\u003cTAB\u003e(2)",
+                          "start":  223
+                      },
+                      {
+                          "end":  113,
+                          "name":  "VTEq_91ddf5dbacea42eaa9af65bfff17a268",
+                          "text":  "\u003cTAB\u003e(1)",
+                          "start":  42
+                      },
+                      {
+                          "end":  348,
+                          "name":  "VTEqCap_138a8895f65840fbb469682042e57e47",
+                          "text":  "2\u003cCR\u003e",
+                          "start":  295
+                      },
+                      {
+                          "end":  167,
+                          "name":  "VTEqCap_91ddf5dbacea42eaa9af65bfff17a268",
+                          "text":  "1\u003cCR\u003e",
+                          "start":  114
+                      },
+                      {
+                          "end":  347,
+                          "name":  "VTEqNum_138a8895f65840fbb469682042e57e47",
+                          "text":  "2",
+                          "start":  295
+                      },
+                      {
+                          "end":  347,
+                          "name":  "VTEqNum_6a319116fb6a4df0af12bee279bcc8ee",
+                          "text":  "2",
+                          "start":  295
+                      },
+                      {
+                          "end":  166,
+                          "name":  "VTEqNum_91ddf5dbacea42eaa9af65bfff17a268",
+                          "text":  "1",
+                          "start":  114
+                      },
+                      {
+                          "end":  223,
+                          "name":  "VTO_138a8895f65840fbb469682042e57e47",
+                          "text":  "\u0001",
+                          "start":  189
+                      },
+                      {
+                          "end":  42,
+                          "name":  "VTO_91ddf5dbacea42eaa9af65bfff17a268",
+                          "text":  "\u0001",
+                          "start":  8
+                      },
+                      {
+                          "end":  294,
+                          "name":  "ZEqnNum100273",
+                          "text":  "(2)",
+                          "start":  224
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  9,
+                       "end":  41,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_91ddf5dbacea42eaa9af65bfff17a268 \\h \\* CHARFORMAT ",
+                       "result":  "1",
+                       "type":  3,
+                       "start":  45,
+                       "end":  111,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  115,
+                       "end":  165,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  190,
+                       "end":  222,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_138a8895f65840fbb469682042e57e47 \\h \\* CHARFORMAT ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  226,
+                       "end":  292,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  296,
+                       "end":  346,
+                       "index":  6
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \u0013 REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  357,
+                       "end":  478,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  411,
+                       "end":  476,
+                       "index":  8
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON ZEqnNum100273 \u0013 REF ZEqnNum100273 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  481,
+                       "end":  550,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF ZEqnNum100273 \\* CHARFORMAT \\! ",
+                       "result":  "(2)",
+                       "type":  3,
+                       "start":  508,
+                       "end":  548,
+                       "index":  10
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_138a8895f65840fbb469682042e57e47 \u0013 REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  553,
+                       "end":  674,
+                       "index":  11
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  607,
+                       "end":  672,
+                       "index":  12
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  7,
+                      "lineRule":  0,
+                      "text":  "第一段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  7,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  114,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(1)\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  114,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  167,
+                      "lineRule":  4,
+                      "text":  "1\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  167,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  181,
+                      "lineRule":  0,
+                      "text":  "这一段保留在第一公式之后。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  181,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  188,
+                      "lineRule":  0,
+                      "text":  "第二段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  188,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  295,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(2)\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  295,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  348,
+                      "lineRule":  4,
+                      "text":  "2\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  348,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  354,
+                      "lineRule":  0,
+                      "text":  "结尾正文。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  354,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  355,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  355,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  480,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  480,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  11,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  551,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  551,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  12,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  676,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "138a8895-f658-40fb-b469-682042e57e47",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

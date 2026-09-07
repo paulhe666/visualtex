@@ -1,0 +1,159 @@
+Using dotnet 8.0.423 from C:\Users\pojian_liao\AppData\Local\Microsoft\dotnet\dotnet.exe
+  正在确定要还原的项目…
+  已还原 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj (用时 1.35 秒)。
+  已还原 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOleBridge\VisualTeX.WindowsOleBridge.csproj (用时 1.35 秒)。
+  VisualTeX.WindowsOffice.Contracts -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\bin\Release\netstandard2.0\VisualTeX.WindowsOffice.Contracts.dll
+  VisualTeX.WindowsOleBridge -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOleBridge\bin\Release\net8.0-windows\win-x64\visualtex-windows-office-bridge.dll
+  VisualTeX.WindowsOleBridge -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\artifacts\windows-ole-bridge\
+Windows OLE Bridge sidecar: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\binaries\visualtex-windows-office-bridge-x86_64-pc-windows-msvc.exe
+Verified cached Latin Modern Math Office font: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\artifacts\office-fonts\latinmodern-math.otf
+Building native Office integration for x64 Office.
+适用于 .NET Framework MSBuild 版本 18.7.1+024f5b037
+生成启动时间为 2026/9/6 19:13:11。
+
+     1>节点 1 上的项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\VisualTeX.FormulaOleServer.vcxproj”(默认目标)。
+     1>PrepareForBuild:
+         已启用结构化输出。编译器诊断的格式设置将反映错误层次结构。有关详细信息，请参阅 https://aka.ms/cpp/structured-output。
+       InitializeBuildStatus:
+         正在创建“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTe.E36C5AC3.tlog\unsuccessfulbuild”，因为已指定“AlwaysCreate”。
+         正在对“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTe.E36C5AC3.tlog\unsuccessfulbuild”执行 Touch 任务。
+       Midl:
+         C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\midl.exe /W1 /nologo /char signed /env x64 /h "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer_i.h" /iid "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer_i.c" /proxy "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer_p.c" /tlb "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTeX.FormulaOleServer.tlb" /target "NT60" FormulaOleServer.idl 
+         64 bit Processing .\FormulaOleServer.idl
+         FormulaOleServer.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\oaidl.idl
+         oaidl.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\objidl.idl
+         objidl.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\unknwn.idl
+         unknwn.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\wtypes.idl
+         wtypes.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\wtypesbase.idl
+         wtypesbase.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\basetsd.h
+         basetsd.h
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\guiddef.h
+         guiddef.h
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\ocidl.idl
+         ocidl.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\oleidl.idl
+         oleidl.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\servprov.idl
+         servprov.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\urlmon.idl
+         urlmon.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\msxml.idl
+         msxml.idl
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\oaidl.acf
+         oaidl.acf
+         64 bit Processing C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\ocidl.acf
+         ocidl.acf
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _WINDOWS /D _UNICODE /D UNICODE /D WIN32_LEAN_AND_MEAN /D NOMINMAX /D _ATL_STATIC_REGISTRY /D NDEBUG /D _UNICODE /D UNICODE /Gm- /EHsc /MT /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++17 /permissive- /Fo"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\\" /Fd"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\vc143.pdb" /external:W4 /Gd /TP /FC /errorReport:queue FormulaOleObject.cpp FormulaOleServer.cpp
+         FormulaOleObject.cpp
+         FormulaOleServer.cpp
+       ResourceCompile:
+         C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\rc.exe /D _UNICODE /D UNICODE /l"0x0409" /I"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\\" /I"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\atlmfc\include" /nologo /fo"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer.res" FormulaOleServer.rc 
+       Link:
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\..\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.exe" /NOLOGO gdiplus.lib ole32.lib oleaut32.lib shell32.lib shlwapi.lib uuid.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\..\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.pdb" /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTeX.FormulaOleServer.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\..\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.lib" /MACHINE:X64 "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer.res"
+         "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleObject.obj"
+         "C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\FormulaOleServer.obj"
+         正在生成代码
+         0 of 901 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+           0 functions were new in current compilation
+           0 functions had inline decision re-evaluated but remain unchanged
+         已完成代码的生成
+         VisualTeX.FormulaOleServer.vcxproj -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.exe
+       FinalizeBuildStatus:
+         正在删除文件“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTe.E36C5AC3.tlog\unsuccessfulbuild”。
+         正在对“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\obj\x64\Release\VisualTe.E36C5AC3.tlog\VisualTeX.FormulaOleServer.lastbuildstate”执行 Touch 任务。
+     1>已完成生成项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.FormulaOleServer\VisualTeX.FormulaOleServer.vcxproj”(默认目标)的操作。
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:03.36
+  正在确定要还原的项目…
+  已还原 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj (用时 134 毫秒)。
+  已还原 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj (用时 142 毫秒)。
+适用于 .NET Framework MSBuild 版本 18.7.1+024f5b037
+生成启动时间为 2026/9/6 19:13:15。
+
+     1>节点 1 上的项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj”(默认目标)。
+     1>项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj”(1)正在节点 1 上生成“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj”(2:2) (默认目标)。
+     2>GenerateTargetFrameworkMonikerAttribute:
+       正在跳过目标“GenerateTargetFrameworkMonikerAttribute”，因为所有输出文件相对于输入文件而言都是最新的。
+       CoreGenerateAssemblyInfo:
+       正在跳过目标“CoreGenerateAssemblyInfo”，因为所有输出文件相对于输入文件而言都是最新的。
+       _GenerateSourceLinkFile:
+         Source Link 文件 "obj\x64\Release\netstandard2.0\VisualTeX.WindowsOffice.Contracts.sourcelink.json" 是最新的。
+       CoreCompile:
+       正在跳过目标“CoreCompile”，因为所有输出文件相对于输入文件而言都是最新的。
+       CopyFilesToOutputDirectory:
+         VisualTeX.WindowsOffice.Contracts -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\bin\x64\Release\netstandard2.0\VisualTeX.WindowsOffice.Contracts.dll
+     2>已完成生成项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj”(默认目标)的操作。
+     1>ResolveComReferences:
+         已从“C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\Microsoft.Build.dll”加载任务程序集，但所需位置为“C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\Microsoft.Build.Tasks.Core.dll”。
+       GenerateTargetFrameworkMonikerAttribute:
+       正在跳过目标“GenerateTargetFrameworkMonikerAttribute”，因为所有输出文件相对于输入文件而言都是最新的。
+       CoreGenerateAssemblyInfo:
+       正在跳过目标“CoreGenerateAssemblyInfo”，因为所有输出文件相对于输入文件而言都是最新的。
+       _GenerateSourceLinkFile:
+         Source Link 文件 "obj\x64\Release\net472\VisualTeX.WordVsto.sourcelink.json" 是最新的。
+       CoreCompile:
+       正在跳过目标“CoreCompile”，因为所有输出文件相对于输入文件而言都是最新的。
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       正在跳过目标“_CopyOutOfDateSourceItemsToOutputDirectory”，因为所有输出文件相对于输入文件而言都是最新的。
+       CopyFilesToOutputDirectory:
+         VisualTeX.WordVsto -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\bin\x64\Release\net472\VisualTeX.WordVsto.dll
+     1>已完成生成项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\VisualTeX.WordVsto.csproj”(默认目标)的操作。
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:00.75
+  正在确定要还原的项目…
+  已还原 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj (用时 151 毫秒)。
+  1 个项目(共 2 个)是最新的，无法还原。
+适用于 .NET Framework MSBuild 版本 18.7.1+024f5b037
+生成启动时间为 2026/9/6 19:13:17。
+
+     1>节点 1 上的项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj”(默认目标)。
+     1>项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj”(1)正在节点 1 上生成“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj”(2:2) (默认目标)。
+     2>GenerateTargetFrameworkMonikerAttribute:
+       正在跳过目标“GenerateTargetFrameworkMonikerAttribute”，因为所有输出文件相对于输入文件而言都是最新的。
+       CoreGenerateAssemblyInfo:
+       正在跳过目标“CoreGenerateAssemblyInfo”，因为所有输出文件相对于输入文件而言都是最新的。
+       _GenerateSourceLinkFile:
+         Source Link 文件 "obj\x64\Release\netstandard2.0\VisualTeX.WindowsOffice.Contracts.sourcelink.json" 是最新的。
+       CoreCompile:
+       正在跳过目标“CoreCompile”，因为所有输出文件相对于输入文件而言都是最新的。
+       GenerateBuildDependencyFile:
+       正在跳过目标“GenerateBuildDependencyFile”，因为所有输出文件相对于输入文件而言都是最新的。
+       CopyFilesToOutputDirectory:
+         VisualTeX.WindowsOffice.Contracts -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\bin\x64\Release\netstandard2.0\VisualTeX.WindowsOffice.Contracts.dll
+     2>已完成生成项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj”(默认目标)的操作。
+     1>ResolveComReferences:
+         已从“C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\Microsoft.Build.dll”加载任务程序集，但所需位置为“C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\Microsoft.Build.Tasks.Core.dll”。
+       GenerateTargetFrameworkMonikerAttribute:
+       正在跳过目标“GenerateTargetFrameworkMonikerAttribute”，因为所有输出文件相对于输入文件而言都是最新的。
+       CoreGenerateAssemblyInfo:
+       正在跳过目标“CoreGenerateAssemblyInfo”，因为所有输出文件相对于输入文件而言都是最新的。
+       _GenerateSourceLinkFile:
+         Source Link 文件 "obj\x64\Release\net472\VisualTeX.PowerPointVsto.sourcelink.json" 是最新的。
+       CoreCompile:
+       正在跳过目标“CoreCompile”，因为所有输出文件相对于输入文件而言都是最新的。
+       CopyFilesToOutputDirectory:
+         VisualTeX.PowerPointVsto -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.PowerPointVsto\bin\x64\Release\net472\VisualTeX.PowerPointVsto.dll
+     1>已完成生成项目“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.PowerPointVsto\VisualTeX.PowerPointVsto.csproj”(默认目标)的操作。
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:00.60
+VisualTeX.WordVsto.ThisAddIn independent Ribbon tab and COM callbacks passed (x64).
+VisualTeX.PowerPointVsto.ThisAddIn independent Ribbon tab and COM callbacks passed (x64).

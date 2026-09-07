@@ -1,0 +1,25 @@
+{
+  "ResultPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-response.json",
+  "Items": [
+    {
+      "Id": "stage04al-native-1-original",
+      "MtefPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-1-original.mtef",
+      "WmfPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-1-original.wmf"
+    },
+    {
+      "Id": "stage04al-native-1-defined-black",
+      "MtefPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-1-defined-black.mtef",
+      "WmfPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-1-defined-black.wmf"
+    },
+    {
+      "Id": "stage04al-native-2-original",
+      "MtefPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-2-original.mtef",
+      "WmfPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-2-original.wmf"
+    },
+    {
+      "Id": "stage04al-native-2-defined-black",
+      "MtefPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-2-defined-black.mtef",
+      "WmfPath": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04al-native-2-defined-black.wmf"
+    }
+  ]
+}

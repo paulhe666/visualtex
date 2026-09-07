@@ -1,0 +1,65 @@
+{
+    "id":  "7d09c111-3b60-4806-818b-b790f0a5369a",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "61d1dce5-615d-428e-9f2f-d2eafd41ddc5",
+    "sourceDocumentId":  "文档131",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "04dfcba0-721c-4318-9c0b-cc152c64fbcf",
+                      "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)"
+                  }
+              ],
+    "activeLineId":  "04dfcba0-721c-4318-9c0b-cc152c64fbcf",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmsqrt\u003e\n    \u003cmfrac\u003e\n      \u003cmi\u003em\u003c/mi\u003e\n      \u003cmrow\u003e\n        \u003cmn\u003e2\u003c/mn\u003e\n        \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n          \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n          \u003cmi\u003eE\u003c/mi\u003e\n          \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n            \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n            \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n            \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n          \u003c/mrow\u003e\n          \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n          \u003cmi\u003eU\u003c/mi\u003e\n          \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n        \u003c/mrow\u003e\n      \u003c/mrow\u003e\n    \u003c/mfrac\u003e\n  \u003c/msqrt\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmrow\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n      \u003c/mrow\u003e\n      \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n    \u003cmi\u003ef\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmsqrt\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003eE\u003c/mi\u003e\n        \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n          \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n          \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n          \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n        \u003c/mrow\u003e\n        \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n        \u003cmi\u003eU\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n    \u003c/msqrt\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "61d1dce5-615d-428e-9f2f-d2eafd41ddc5",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)",
+                             "lines":  [
+                                           {
+                                               "id":  "04dfcba0-721c-4318-9c0b-cc152c64fbcf",
+                                               "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T06:53:37.2915622+00:00",
+                             "updatedAt":  "2026-09-06T06:53:37.2915622+00:00"
+                         },
+    "dirty":  false,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788677617292,
+    "updatedAt":  1788677635007,
+    "expiresAt":  1788764035007
+}

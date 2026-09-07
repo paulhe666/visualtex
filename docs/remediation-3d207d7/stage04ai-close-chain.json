@@ -1,0 +1,12 @@
+[
+  ["edit-ole", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04ai-mt-new-ui-closed"],
+  ["number-format", "heading2-dash", "stage04ai-mt-heading-number"],
+  ["reference", "3", "stage04ai-mt-ref"],
+  ["snapshot", "stage04ai-mt-with-ref"],
+  ["convert", "mt-omml", "full", "stage04ai-mt-omml"],
+  ["snapshot", "stage04ai-omml-before-close"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ai-omml-visible\"}"],
+  ["edit", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04ai-omml-closed"]
+]

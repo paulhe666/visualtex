@@ -1,0 +1,17 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04t-vt-edited-__136.json",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04t-vt-to-omml-__136.json",
+  "count": 2,
+  "differences": [
+    {
+      "path": "/bookmarks/8/start",
+      "before": 887,
+      "after": 933
+    },
+    {
+      "path": "/bookmarks/8/text",
+      "before": "2.0-3<CR>",
+      "after": "<CR>"
+    }
+  ]
+}

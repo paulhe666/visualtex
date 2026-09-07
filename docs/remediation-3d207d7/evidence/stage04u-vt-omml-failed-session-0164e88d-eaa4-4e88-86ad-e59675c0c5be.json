@@ -1,0 +1,65 @@
+{
+    "id":  "0164e88d-eaa4-4e88-86ad-e59675c0c5be",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "c21109d7-fa14-4902-bf4c-bdfa09547936",
+    "sourceDocumentId":  "文档138",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "269f6d41-8c52-4881-b173-92a23c232149",
+                      "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0"
+                  }
+              ],
+    "activeLineId":  "269f6d41-8c52-4881-b173-92a23c232149",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi\u003e\u0026#x3C1;\u003c/mi\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo\u003e,\u003c/mo\u003e\n    \u003cmi\u003et\u003c/mi\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e+\u003c/mo\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003ej\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmn\u003e0\u003c/mn\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "c21109d7-fa14-4902-bf4c-bdfa09547936",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0",
+                             "lines":  [
+                                           {
+                                               "id":  "269f6d41-8c52-4881-b173-92a23c232149",
+                                               "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T08:46:28.3296286+00:00",
+                             "updatedAt":  "2026-09-06T08:46:28.3296286+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---\u003e System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   --- 内部异常堆栈跟踪的结尾 ---\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()\r\n---\u003e (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n\r\n---\u003e (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.\r\n   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n",
+    "createdAt":  1788684388330,
+    "updatedAt":  1788684407733,
+    "expiresAt":  1788770807733
+}

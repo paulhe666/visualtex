@@ -1,0 +1,20 @@
+[
+    {
+        "id":  "2",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "3812,372,26,1677",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "1",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "3,2048,3810,26",
+        "value":  "",
+        "enabled":  false
+    }
+]

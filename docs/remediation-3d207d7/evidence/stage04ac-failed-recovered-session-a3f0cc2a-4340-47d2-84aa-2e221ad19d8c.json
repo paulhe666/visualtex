@@ -1,0 +1,65 @@
+{
+    "id":  "a3f0cc2a-4340-47d2-84aa-2e221ad19d8c",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "ec6c0369-65c8-4818-837d-4cd311b1fbbc",
+    "sourceDocumentId":  "文档153",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "e3c47bce-e1c1-4146-a042-edc209a6055d",
+                      "latex":  "\\frac{\\partial }{\\partial t}\\psi^{\\ast}(\\vec{r})\\psi (\\vec{r})=\\frac{i\\hbar }{2m}\\nabla \\cdot [\\psi^{\\ast}(\\vec{r})\\nabla \\psi (\\vec{r})-\\psi (\\vec{r})\\nabla \\psi^{\\ast}(r)]"
+                  }
+              ],
+    "activeLineId":  "e3c47bce-e1c1-4146-a042-edc209a6055d",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msup\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ei\u003c/mi\u003e\n      \u003cmi data-mjx-alternate=\"1\"\u003e\u0026#x210F;\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmrow\u003e\n      \u003cmn\u003e2\u003c/mn\u003e\n      \u003cmi\u003em\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n  \u003cmo stretchy=\"false\"\u003e[\u003c/mo\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msup\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msup\u003e\n  \u003cmo stretchy=\"false\"\u003e(\u003c/mo\u003e\n  \u003cmi\u003er\u003c/mi\u003e\n  \u003cmo stretchy=\"false\"\u003e)\u003c/mo\u003e\n  \u003cmo stretchy=\"false\"\u003e]\u003c/mo\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "ec6c0369-65c8-4818-837d-4cd311b1fbbc",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\frac{\\partial }{\\partial t}\\psi^{\\ast}(\\vec{r})\\psi (\\vec{r})=\\frac{i\\hbar }{2m}\\nabla \\cdot [\\psi^{\\ast}(\\vec{r})\\nabla \\psi (\\vec{r})-\\psi (\\vec{r})\\nabla \\psi^{\\ast}(r)]",
+                             "lines":  [
+                                           {
+                                               "id":  "e3c47bce-e1c1-4146-a042-edc209a6055d",
+                                               "latex":  "\\frac{\\partial }{\\partial t}\\psi^{\\ast}(\\vec{r})\\psi (\\vec{r})=\\frac{i\\hbar }{2m}\\nabla \\cdot [\\psi^{\\ast}(\\vec{r})\\nabla \\psi (\\vec{r})-\\psi (\\vec{r})\\nabla \\psi^{\\ast}(r)]"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T10:03:43.4986950+00:00",
+                             "updatedAt":  "2026-09-06T10:03:43.4986950+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: Reference number bookmark \u0027VTEqNum_9c1479442a5d4b6089c88da72b17c73f\u0027 is missing.\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.ResolveNavigationBookmark(Document document, String numberBookmarkName)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateNavigationTarget(Document document, Field outerField, String numberBookmarkName)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateNavigableReferences(Document document, ISet`1 targetBookmarkNames)\r\n   在 VisualTeX.WordVsto.WordEquationReferenceFields.UpdateReferences(Document document, ISet`1 targetBookmarkNames)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()",
+    "createdAt":  1788689023500,
+    "updatedAt":  1788689061534,
+    "expiresAt":  1788775461534
+}

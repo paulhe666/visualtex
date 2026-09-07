@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  2427268,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  1509430,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  2034012,
+        "name":  "A numbered display OMML formula must occupy its own paragraph.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

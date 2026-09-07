@@ -22,14 +22,16 @@ internal static partial class WordEquationNumbering
         string? plannedPrefix = null,
         bool deferFieldUpdate = false,
         bool deferExternalShapeCreation = false,
-        bool deferMetadataPersistence = false)
+        bool deferMetadataPersistence = false,
+        Range? cleanTableTemplateRange = null,
+        bool replaceSourceParagraphFromTemplate = false)
     {
-        _ = reuseExistingScaffold;
         _ = deferFieldUpdate;
         _ = deferExternalShapeCreation;
 
         Range? activeRange = null;
         Range? replacementRange = null;
+        Range? followingBodyParagraphMark = null;
         Table? table = null;
         Bookmark? repairedBookmark = null;
         Microsoft.Office.Interop.Word.Application? application = null;
@@ -39,6 +41,49 @@ internal static partial class WordEquationNumbering
             activeRange = ResolveSingleNativeOmmlRange(formulaRange);
             EnsureNumberedOmmlIsDisplay(activeRange);
             traceStage("native-resolve-display");
+
+            if (reuseExistingScaffold
+                && HasReusableNumberedNativeOmmlDirectTableHost(document, activeRange, formulaId))
+            {
+                // The row and its identity are already complete. Content/size edits
+                // must retain the actual SEQ and reference bookmarks, including
+                // user references nested inside the number label.
+                Tables? tables = null;
+                Bookmarks? bookmarks = null;
+                Bookmark? labelBookmark = null;
+                Range? labelRange = null;
+                try
+                {
+                    tables = activeRange.Tables;
+                    table = tables[1];
+                    ConfigureNativeOmmlNumberTableGeometry(document, table, activeRange,
+                        TryMeasureNativeDisplayHeightPoints(document, activeRange));
+                    bookmarks = document.Bookmarks;
+                    labelBookmark = bookmarks[EquationBookmarkName(formulaId)];
+                    labelRange = labelBookmark.Range;
+                    ApplyParagraphEquationNumberFont(labelRange, formulaFontSizePoints, position: 0);
+                    if (metadata is not null)
+                    {
+                        repairedBookmark = WrapNativeOmmlTableFormulaIdentity(
+                            document, table, activeRange, metadata);
+                        if (!deferMetadataPersistence)
+                        {
+                            WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, activeRange);
+                            WordOmmlFormulaStore.Save(document, metadata);
+                        }
+                    }
+                    formulaRange.SetRange(activeRange.Start, activeRange.End);
+                    traceStage("native-reuse-row");
+                    return false;
+                }
+                finally
+                {
+                    Release(labelRange);
+                    Release(labelBookmark);
+                    Release(bookmarks);
+                    Release(tables);
+                }
+            }
 
             // A document created by the retired #(SEQ) route is valid migration
             // input, but its mathematical number must be stripped before the OMath
@@ -82,23 +127,44 @@ internal static partial class WordEquationNumbering
 
             float? nativeDisplayHeightPoints = null;
             var activeRangeAlreadyInTable = false;
+            Tables? activeTables = null;
             try
             {
-                activeRangeAlreadyInTable = (bool)activeRange.get_Information(
-                    WdInformation.wdWithInTable);
+                activeTables = activeRange.Tables;
+                activeRangeAlreadyInTable = activeTables.Count > 0;
             }
-            catch { }
+            finally { Release(activeTables); }
             if (!activeRangeAlreadyInTable)
                 nativeDisplayHeightPoints = TryMeasureNativeDisplayHeightPoints(
                     document,
                     activeRange);
             traceStage("native-measure-display");
 
-            table = EnsureNativeOmmlNumberTableHost(
-                document,
-                activeRange,
-                formulaId,
-                out var removeGeneratedPostTableParagraph);
+            string? followingBodyParagraphText;
+            bool usedPreformattedTemplate;
+            if (cleanTableTemplateRange is not null
+                && replaceSourceParagraphFromTemplate
+                && !activeRangeAlreadyInTable)
+            {
+                table = ReplaceNativeOmmlSourceParagraphWithPreformattedTable(
+                    document,
+                    activeRange,
+                    formulaId,
+                    cleanTableTemplateRange);
+                usedPreformattedTemplate = true;
+                followingBodyParagraphText = null;
+            }
+            else
+            {
+                table = EnsureNativeOmmlNumberTableHost(
+                    document,
+                    activeRange,
+                    formulaId,
+                    cleanTableTemplateRange,
+                    out usedPreformattedTemplate,
+                    out followingBodyParagraphMark,
+                    out followingBodyParagraphText);
+            }
             traceStage("native-ensure-table");
             var refreshedTableFormula = ResolveSingleNativeOmmlRange(activeRange);
             Release(activeRange);
@@ -106,34 +172,33 @@ internal static partial class WordEquationNumbering
             EnsureNumberedOmmlIsDisplay(activeRange);
             traceStage("native-resolve-table-formula");
             var needsHeightRepair = activeRangeAlreadyInTable
-                && NeedsNativeOmmlTableHeightRepair(table);
+                && NeedsNativeOmmlTableHeightRepair(table, activeRange);
             if (!nativeDisplayHeightPoints.HasValue
                 && needsHeightRepair)
             {
-                // Upgrade only legacy Auto-height 1x3 hosts. New hosts persist an
-                // AtLeast row height, so ordinary F9/open/layout refreshes never
-                // reopen a scratch document or pay this compatibility cost.
-                try
-                {
-                    nativeDisplayHeightPoints =
-                        WordOmmlConverter.MeasurePreparedDisplayHeightPoints(
-                            document.Application,
-                            document,
-                            activeRange.WordOpenXML ?? string.Empty,
-                            document.OMathFontName);
-                }
-                catch { }
+                // Measure only the existing equation. A measurement must never
+                // add scratch content to the user's story or change its undo stack.
+                // Off-screen formulas use the semantic height estimate below;
+                // AtLeast rows still grow with Word's actual native math layout.
+                nativeDisplayHeightPoints = TryMeasureNativeDisplayHeightPoints(
+                    document, activeRange);
             }
             traceStage("native-height-repair");
             var minimumDisplayHeightPoints = nativeDisplayHeightPoints
                 ?? (!activeRangeAlreadyInTable || needsHeightRepair
                     ? formulaHeightPoints
                     : (float?)null);
-            ConfigureNativeOmmlNumberTableGeometry(
-                document,
-                table,
-                activeRange,
-                minimumDisplayHeightPoints);
+            if (usedPreformattedTemplate)
+                ConfigurePreformattedNativeOmmlNumberTableHeightAndInk(
+                    table,
+                    activeRange,
+                    minimumDisplayHeightPoints);
+            else
+                ConfigureNativeOmmlNumberTableGeometry(
+                    document,
+                    table,
+                    activeRange,
+                    minimumDisplayHeightPoints);
             traceStage("native-geometry");
             traceStage("native-1x3-table");
 
@@ -154,11 +219,13 @@ internal static partial class WordEquationNumbering
                 numberPlan.Prefix);
             traceStage("direct-visible-seq");
 
-            if (removeGeneratedPostTableParagraph)
+            if (followingBodyParagraphMark is not null)
             {
                 RemoveGeneratedPostTableParagraphBeforeKnownContent(
                     document,
-                    table);
+                    table,
+                    followingBodyParagraphMark,
+                    followingBodyParagraphText!);
                 traceStage("native-post-table-spacing");
             }
 
@@ -184,6 +251,7 @@ internal static partial class WordEquationNumbering
         }
         finally
         {
+            Release(followingBodyParagraphMark);
             Release(application);
             Release(repairedBookmark);
             Release(table);
@@ -208,7 +276,8 @@ internal static partial class WordEquationNumbering
         Bookmark? bookmark = null;
         try
         {
-            centerCell = table.Cell(1, 2);
+            centerCell = table.Cell(
+                GetManagedNumberTableRowIndex(table, formulaRange, 2), 2);
             centerRange = centerCell.Range;
             paragraphs = centerRange.Paragraphs;
             if (paragraphs.Count != 1)
@@ -518,9 +587,14 @@ internal static partial class WordEquationNumbering
         Document document,
         Range formulaRange,
         string formulaId,
-        out bool removeGeneratedPostTableParagraph)
+        Range? cleanTableTemplateRange,
+        out bool usedPreformattedTemplate,
+        out Range? followingBodyParagraphMark,
+        out string? followingBodyParagraphText)
     {
-        removeGeneratedPostTableParagraph = false;
+        usedPreformattedTemplate = false;
+        followingBodyParagraphMark = null;
+        followingBodyParagraphText = null;
         if (IsNumberedEquationTable(formulaRange))
         {
             TrimBenignEmptyRowsFromNumberedTable(document, formulaRange, formulaId);
@@ -549,9 +623,10 @@ internal static partial class WordEquationNumbering
                     Release(existingRows);
                     existingRows = existing.Rows;
                 }
-                if (existingRows.Count != 1 || existingColumns.Count != 3)
+                if (existingRows.Count < 1 || existingColumns.Count != 3
+                    || !TryGetManagedNumberTableRowIndex(existing, formulaRange, 2, out _))
                     throw new InvalidOperationException(
-                        $"The managed numbered OMML table must converge to exactly 1x3, not {existingRows.Count}x{existingColumns.Count}.");
+                        "The managed numbered OMML table no longer owns the formula's row.");
                 NormalizeNativeOmmlCenterCellParagraphs(
                     document,
                     existing,
@@ -595,6 +670,8 @@ internal static partial class WordEquationNumbering
         Range? centerCellRange = null;
         Range? centerInsertion = null;
         Table? table = null;
+        Tables? templateTables = null;
+        Range? templateTableProbe = null;
         Rows? rows = null;
         Columns? columns = null;
         Range? copiedFormulaRange = null;
@@ -607,7 +684,7 @@ internal static partial class WordEquationNumbering
                     "VisualTeX cannot number native OMML spanning multiple paragraphs.");
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range.Duplicate;
-            if ((bool)paragraphRange.get_Information(WdInformation.wdWithInTable))
+            if (RangeIsWhollyWithinTable(paragraphRange))
                 throw new InvalidOperationException(
                     "VisualTeX refused to nest a numbered OMML table inside another table.");
 
@@ -618,6 +695,15 @@ internal static partial class WordEquationNumbering
                 || !IsNumberingParagraphAdornment(suffixRange.Text))
                 throw new InvalidOperationException(
                     "A numbered display OMML formula must occupy its own paragraph.");
+
+            WordCharacterFormatting bodyFormatting;
+            Range? sourceParagraphMark = null;
+            try
+            {
+                sourceParagraphMark = document.Range(paragraphRange.End - 1, paragraphRange.End);
+                bodyFormatting = WordCharacterFormatting.Capture(sourceParagraphMark);
+            }
+            finally { Release(sourceParagraphMark); }
 
             // Copy only the resolved professional OMath, never the surrounding
             // source paragraph adornments. OLE→OMML staging can legally contain
@@ -635,14 +721,12 @@ internal static partial class WordEquationNumbering
             var tablePosition = paragraphRange.End;
             documentContent = document.Content;
             var sourceFollowedByTable = false;
-            var sourceFollowedByNonEmptyBodyParagraph = false;
             if (tablePosition < documentContent.End)
             {
                 followingContentProbe = document.Range(
                     tablePosition,
                     Math.Min(documentContent.End, tablePosition + 1));
-                sourceFollowedByTable = (bool)followingContentProbe.get_Information(
-                    WdInformation.wdWithInTable);
+                sourceFollowedByTable = RangeIsWhollyWithinTable(followingContentProbe);
                 if (!sourceFollowedByTable)
                 {
                     followingParagraphs = followingContentProbe.Paragraphs;
@@ -650,15 +734,20 @@ internal static partial class WordEquationNumbering
                     {
                         followingParagraph = followingParagraphs[1];
                         followingParagraphRange = followingParagraph.Range.Duplicate;
-                        sourceFollowedByNonEmptyBodyParagraph =
-                            followingParagraphRange.Start == tablePosition
-                            && !IsNumberingParagraphAdornment(
-                                followingParagraphRange.Text);
+                        if (followingParagraphRange.Start == tablePosition)
+                        {
+                            // Track the existing paragraph's end through the local
+                            // insertion. Its start can expand over Tables.Add at an
+                            // adjacent boundary, while the surviving end mark still
+                            // identifies the original paragraph, including a blank.
+                            followingBodyParagraphText = followingParagraphRange.Text ?? string.Empty;
+                            followingBodyParagraphMark = document.Range(
+                                followingParagraphRange.End - 1,
+                                followingParagraphRange.End);
+                        }
                     }
                 }
             }
-            removeGeneratedPostTableParagraph =
-                sourceFollowedByNonEmptyBodyParagraph;
             Release(followingParagraphRange);
             followingParagraphRange = null;
             Release(followingParagraph);
@@ -758,12 +847,36 @@ internal static partial class WordEquationNumbering
             tableAnchor.SetRange(
                 anchorParagraphRange.Start,
                 anchorParagraphRange.Start);
-            table = document.Tables.Add(tableAnchor, 1, 3);
+            if (cleanTableTemplateRange is not null)
+            {
+                tableAnchor.FormattedText = cleanTableTemplateRange.FormattedText;
+                Release(documentContent);
+                documentContent = document.Content;
+                templateTableProbe = document.Range(
+                    tablePosition,
+                    Math.Min(documentContent.End, tablePosition + 1));
+                templateTables = templateTableProbe.Tables;
+                if (templateTables.Count != 1)
+                    throw new InvalidOperationException(
+                        "Word did not materialize exactly one preformatted OMML numbering table.");
+                table = templateTables[1];
+                usedPreformattedTemplate = true;
+            }
+            else
+            {
+                table = document.Tables.Add(tableAnchor, 1, 3);
+            }
             rows = table.Rows;
             columns = table.Columns;
             if (rows.Count != 1 || columns.Count != 3)
                 throw new InvalidOperationException(
                     "Word did not create the required 1x3 OMML numbering table.");
+
+            // Geometry is reset on our empty anchor, while the number and cell
+            // marks retain the source paragraph's body character appearance.
+            Range? newTableRange = null;
+            try { newTableRange = table.Range; bodyFormatting.Apply(newTableRange); }
+            finally { Release(newTableRange); }
 
             centerCell = table.Cell(1, 2);
             centerCellRange = centerCell.Range;
@@ -861,6 +974,8 @@ internal static partial class WordEquationNumbering
         {
             Release(copiedFormulaRange);
             Release(columns);
+            Release(templateTables);
+            Release(templateTableProbe);
             Release(rows);
             Release(table);
             Release(centerInsertion);
@@ -912,7 +1027,8 @@ internal static partial class WordEquationNumbering
         Range? refreshedRange = null;
         try
         {
-            centerCell = table.Cell(1, 2);
+            centerCell = table.Cell(
+                GetManagedNumberTableRowIndex(table, formulaRange, 2), 2);
             centerCellRange = centerCell.Range;
             paragraphs = centerCellRange.Paragraphs;
             if (paragraphs.Count <= 1) return;
@@ -1288,7 +1404,7 @@ internal static partial class WordEquationNumbering
             if (tableRange.Start <= document.Content.Start) return false;
 
             separatorProbe = document.Range(tableRange.Start - 1, tableRange.Start);
-            if ((bool)separatorProbe.get_Information(WdInformation.wdWithInTable))
+            if (RangeIsWhollyWithinTable(separatorProbe))
                 return false;
             paragraphs = separatorProbe.Paragraphs;
             if (paragraphs.Count != 1) return false;
@@ -1316,8 +1432,7 @@ internal static partial class WordEquationNumbering
             previousTableProbe = document.Range(
                 paragraphRange.Start - 1,
                 paragraphRange.Start);
-            if (!(bool)previousTableProbe.get_Information(
-                    WdInformation.wdWithInTable))
+            if (!RangeIsWhollyWithinTable(previousTableProbe))
                 return false;
             previousTables = previousTableProbe.Tables;
             if (previousTables.Count != 1) return false;
@@ -1353,7 +1468,9 @@ internal static partial class WordEquationNumbering
 
     private static void RemoveGeneratedPostTableParagraphBeforeKnownContent(
         Document document,
-        Table table)
+        Table table,
+        Range originalFollowingMark,
+        string originalFollowingText)
     {
         Range? tableRange = null;
         Range? emptyProbe = null;
@@ -1368,52 +1485,53 @@ internal static partial class WordEquationNumbering
         {
             tableRange = table.Range;
             var contentEnd = document.Content.End;
-            if (tableRange.End >= contentEnd) return;
+            if (originalFollowingMark.StoryType != tableRange.StoryType
+                || originalFollowingMark.End <= tableRange.End
+                || originalFollowingMark.End > contentEnd)
+                throw new InvalidDataException("The original paragraph following the OMML table lost its boundary.");
+
+            // Re-resolve from the surviving end, not the captured range's start:
+            // inserting exactly at that start can expand Word's live range. This
+            // also distinguishes the user's original blank line from our anchor.
+            nextProbe = document.Range(originalFollowingMark.End - 1, originalFollowingMark.End);
+            nextParagraphs = nextProbe.Paragraphs;
+            if (nextParagraphs.Count != 1
+                || RangeIsWhollyWithinTable(nextProbe))
+                throw new InvalidDataException("The original paragraph following the OMML table is no longer ordinary body content.");
+            nextParagraph = nextParagraphs[1];
+            nextRange = nextParagraph.Range.Duplicate;
+            if (nextRange.End != originalFollowingMark.End
+                || !string.Equals(nextRange.Text ?? string.Empty, originalFollowingText, StringComparison.Ordinal))
+                throw new InvalidDataException("The original paragraph following the OMML table changed during insertion.");
+            if (nextRange.Start == tableRange.End) return;
 
             emptyProbe = document.Range(
                 tableRange.End,
                 Math.Min(contentEnd, tableRange.End + 1));
-            if ((bool)emptyProbe.get_Information(WdInformation.wdWithInTable))
-                return;
+            if (RangeIsWhollyWithinTable(emptyProbe))
+                throw new InvalidDataException("The generated OMML table anchor is no longer a body paragraph.");
             emptyParagraphs = emptyProbe.Paragraphs;
-            if (emptyParagraphs.Count != 1) return;
+            if (emptyParagraphs.Count != 1)
+                throw new InvalidDataException("The generated OMML table anchor has an ambiguous paragraph owner.");
             emptyParagraph = emptyParagraphs[1];
             emptyRange = emptyParagraph.Range.Duplicate;
             if (emptyRange.Start != tableRange.End
+                || emptyRange.End != nextRange.Start
+                || !string.Equals(emptyRange.Text, "\r", StringComparison.Ordinal)
                 || !IsPlainNativeOmmlBodyParagraph(
                     document,
                     emptyRange,
-                    allowCompactTailBookmark: false)
-                || emptyRange.End >= contentEnd)
-                return;
+                    allowCompactTailBookmark: false))
+                throw new InvalidDataException("The generated OMML table anchor contains protected content or lost its original following paragraph.");
 
-            // The caller recorded that the source formula was immediately followed
-            // by a non-empty ordinary paragraph before Tables.Add. Therefore the
-            // empty paragraph now sitting between the new 1x3 host and that content
-            // is Word-generated insertion residue, not a user-authored blank line.
-            // Re-prove the surviving next paragraph is still ordinary non-empty
-            // content before deleting anything. A following table, another empty
-            // paragraph, or the terminal document paragraph keeps the conservative
-            // legacy behavior.
-            nextProbe = document.Range(
-                emptyRange.End,
-                Math.Min(contentEnd, emptyRange.End + 1));
-            if ((bool)nextProbe.get_Information(WdInformation.wdWithInTable))
-                return;
-            nextParagraphs = nextProbe.Paragraphs;
-            if (nextParagraphs.Count != 1) return;
-            nextParagraph = nextParagraphs[1];
-            nextRange = nextParagraph.Range.Duplicate;
-            if (nextRange.Start != emptyRange.End
-                || IsNumberingParagraphAdornment(nextRange.Text))
-                return;
-
+            // Only this newly inserted, content-free anchor is removed. The live
+            // original paragraph and all its formatting/bookmarks remain intact,
+            // even when it is empty or is the terminal body paragraph.
+            TraceNumberingPerformance($"[perf] remove-owned-post-table-anchor generated={emptyRange.Start}:{emptyRange.End} original={nextRange.Start}:{nextRange.End}");
             emptyRange.Delete();
-        }
-        catch
-        {
-            // Numbering is already durable. Spacing cleanup must never make an
-            // otherwise valid direct-SEQ formula fail.
+            if (nextRange.Start != tableRange.End
+                || !string.Equals(nextRange.Text ?? string.Empty, originalFollowingText, StringComparison.Ordinal))
+                throw new InvalidDataException("The original paragraph was not preserved after removing the generated OMML table anchor.");
         }
         finally
         {
@@ -1532,35 +1650,190 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static int MergeAdjacentManagedNativeOmmlNumberTableRows(
+        Document document,
+        IReadOnlyList<string> formulaIds)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (formulaIds is null) throw new ArgumentNullException(nameof(formulaIds));
+
+        var orderedIds = formulaIds
+            .Where(formulaId => !string.IsNullOrWhiteSpace(formulaId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var mergedBoundaries = 0;
+        for (var index = 1; index < orderedIds.Length; index++)
+        {
+            Table? previousTable = null;
+            Table? nextTable = null;
+            Range? previousTableRange = null;
+            Range? nextTableRange = null;
+            Range? separator = null;
+            Tables? separatorTables = null;
+            InlineShapes? separatorShapes = null;
+            OMaths? separatorMaths = null;
+            Fields? separatorFields = null;
+            Bookmarks? separatorBookmarks = null;
+            Frames? separatorFrames = null;
+            Paragraphs? separatorParagraphs = null;
+            Table? mergedPreviousTable = null;
+            Table? mergedNextTable = null;
+            Range? mergedPreviousRange = null;
+            Range? mergedNextRange = null;
+            try
+            {
+                previousTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index - 1]);
+                nextTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index]);
+                if (previousTable is null || nextTable is null)
+                    throw new InvalidOperationException(
+                        "A numbered OMML table disappeared before row grouping.");
+
+                previousTableRange = previousTable.Range;
+                nextTableRange = nextTable.Range;
+                if (previousTableRange.Start == nextTableRange.Start
+                    && previousTableRange.End == nextTableRange.End)
+                    continue;
+                if (previousTableRange.End > nextTableRange.Start)
+                    throw new InvalidOperationException(
+                        "Adjacent numbered OMML table ranges overlap before grouping.");
+                if (!IsManagedNativeOmmlDirectTable(previousTable)
+                    || !IsManagedNativeOmmlDirectTable(nextTable))
+                    throw new InvalidOperationException(
+                        "VisualTeX refused to group an unverified numbered OMML table.");
+
+                separator = document.Range(
+                    previousTableRange.End,
+                    nextTableRange.Start);
+                separatorTables = separator.Tables;
+                separatorShapes = separator.InlineShapes;
+                separatorMaths = separator.OMaths;
+                separatorFields = separator.Fields;
+                separatorBookmarks = separator.Bookmarks;
+                separatorFrames = separator.Frames;
+                separatorParagraphs = separator.Paragraphs;
+                if (separatorParagraphs.Count == 0
+                    || !ContainsOnlyStructuralWordText(separator.Text))
+                    continue;
+                if (separatorTables.Count != 0
+                    || separatorShapes.Count != 0
+                    || separatorMaths.Count != 0
+                    || separatorFields.Count != 0
+                    || separatorBookmarks.Count != 0
+                    || separatorFrames.Count != 0)
+                    throw new InvalidOperationException(
+                        "VisualTeX refused to remove a non-empty boundary between numbered OMML tables.");
+
+                var expectedRows =
+                    previousTable.Rows.Count + nextTable.Rows.Count;
+                separator.Delete();
+
+                mergedPreviousTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index - 1]);
+                mergedNextTable = FindNumberedEquationTable(
+                    document,
+                    orderedIds[index]);
+                if (mergedPreviousTable is null || mergedNextTable is null)
+                    throw new InvalidOperationException(
+                        "A numbered OMML identity disappeared while grouping table rows.");
+                mergedPreviousRange = mergedPreviousTable.Range;
+                mergedNextRange = mergedNextTable.Range;
+                if (mergedPreviousRange.Start != mergedNextRange.Start
+                    || mergedPreviousRange.End != mergedNextRange.End
+                    || mergedPreviousTable.Columns.Count != 3
+                    || mergedPreviousTable.Rows.Count != expectedRows
+                    || !IsManagedNativeOmmlDirectTable(mergedPreviousTable))
+                    throw new InvalidOperationException(
+                        "Word did not merge adjacent numbered OMML tables into one healthy row group.");
+                mergedBoundaries++;
+            }
+            finally
+            {
+                Release(mergedNextRange);
+                Release(mergedPreviousRange);
+                Release(mergedNextTable);
+                Release(mergedPreviousTable);
+                Release(separatorParagraphs);
+                Release(separatorFrames);
+                Release(separatorBookmarks);
+                Release(separatorFields);
+                Release(separatorMaths);
+                Release(separatorShapes);
+                Release(separatorTables);
+                Release(separator);
+                Release(nextTableRange);
+                Release(previousTableRange);
+                Release(nextTable);
+                Release(previousTable);
+            }
+        }
+        return mergedBoundaries;
+    }
+
     private static bool IsManagedNativeOmmlDirectTable(Table table)
     {
+        Cell? leftCell = null;
         Cell? centerCell = null;
         Cell? numberCell = null;
+        Range? leftRange = null;
         Range? centerRange = null;
         Range? numberRange = null;
+        Fields? centerFields = null;
         OMaths? centerMaths = null;
         OMath? centerMath = null;
+        OMaths? numberMaths = null;
         Fields? numberFields = null;
         Field? numberField = null;
         Range? numberCode = null;
         try
         {
-            if (table.Rows.Count != 1 || table.Columns.Count != 3) return false;
-            centerCell = table.Cell(1, 2);
-            numberCell = table.Cell(1, 3);
-            centerRange = centerCell.Range;
-            numberRange = numberCell.Range;
-            centerMaths = centerRange.OMaths;
-            if (centerMaths.Count != 1 || centerRange.Fields.Count != 0)
-                return false;
-            centerMath = centerMaths[1];
-            if (centerMath.Type != WdOMathType.wdOMathDisplay) return false;
-            if (numberRange.OMaths.Count != 0) return false;
-            numberFields = numberRange.Fields;
-            if (numberFields.Count != 1) return false;
-            numberField = numberFields[1];
-            numberCode = numberField.Code;
-            return IsVisualTeXSequenceFieldCode(numberCode.Text);
+            if (table.Rows.Count < 1 || table.Columns.Count != 3) return false;
+            var rowCount = table.Rows.Count;
+            for (var rowIndex = 1; rowIndex <= rowCount; rowIndex++)
+            {
+                Release(numberCode); numberCode = null;
+                Release(numberField); numberField = null;
+                Release(numberFields); numberFields = null;
+                Release(numberMaths); numberMaths = null;
+                Release(centerMath); centerMath = null;
+                Release(centerMaths); centerMaths = null;
+                Release(centerFields); centerFields = null;
+                Release(numberRange); numberRange = null;
+                Release(centerRange); centerRange = null;
+                Release(leftRange); leftRange = null;
+                Release(numberCell); numberCell = null;
+                Release(centerCell); centerCell = null;
+                Release(leftCell); leftCell = null;
+
+                leftCell = table.Cell(rowIndex, 1);
+                centerCell = table.Cell(rowIndex, 2);
+                numberCell = table.Cell(rowIndex, 3);
+                leftRange = leftCell.Range;
+                centerRange = centerCell.Range;
+                numberRange = numberCell.Range;
+                if (!ContainsOnlyStructuralWordText(leftRange.Text))
+                    return false;
+                centerMaths = centerRange.OMaths;
+                centerFields = centerRange.Fields;
+                if (centerMaths.Count != 1 || centerFields.Count != 0)
+                    return false;
+                centerMath = centerMaths[1];
+                if (centerMath.Type != WdOMathType.wdOMathDisplay)
+                    return false;
+                numberMaths = numberRange.OMaths;
+                if (numberMaths.Count != 0) return false;
+                numberFields = numberRange.Fields;
+                if (numberFields.Count != 1) return false;
+                numberField = numberFields[1];
+                numberCode = numberField.Code;
+                if (!IsVisualTeXSequenceFieldCode(numberCode.Text))
+                    return false;
+            }
+            return true;
         }
         catch
         {
@@ -1571,12 +1844,16 @@ internal static partial class WordEquationNumbering
             Release(numberCode);
             Release(numberField);
             Release(numberFields);
+            Release(numberMaths);
             Release(centerMath);
             Release(centerMaths);
+            Release(centerFields);
             Release(numberRange);
             Release(centerRange);
+            Release(leftRange);
             Release(numberCell);
             Release(centerCell);
+            Release(leftCell);
         }
     }
 
@@ -1618,7 +1895,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static float? TryMeasureNativeDisplayHeightPoints(
+    internal static float? TryMeasureNativeDisplayHeightPoints(
         Document document,
         Range formulaRange)
     {
@@ -1675,15 +1952,14 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool NeedsNativeOmmlTableHeightRepair(Table table)
+    private static bool NeedsNativeOmmlTableHeightRepair(Table table, Range formulaRange)
     {
         Rows? rows = null;
         Row? row = null;
         try
         {
             rows = table.Rows;
-            if (rows.Count != 1) return false;
-            row = rows[1];
+            row = rows[GetManagedNumberTableRowIndex(table, formulaRange, 2)];
             return row.HeightRule == WdRowHeightRule.wdRowHeightAuto
                 || row.Height <= 0f
                 || row.Height >= 1000000f;
@@ -1701,7 +1977,8 @@ internal static partial class WordEquationNumbering
 
     internal static void ApplyNativeOmmlTableMinimumDisplayHeight(
         Table table,
-        float minimumDisplayHeightPoints)
+        float minimumDisplayHeightPoints,
+        Range formulaRange)
     {
         Rows? rows = null;
         try
@@ -1709,14 +1986,17 @@ internal static partial class WordEquationNumbering
             rows = table.Rows;
             ApplyNativeOmmlTableMinimumDisplayHeight(
                 rows,
-                minimumDisplayHeightPoints);
+                minimumDisplayHeightPoints,
+                GetManagedNumberTableRowIndex(table, formulaRange, 2));
+            ApplyNativeOmmlDisplayInkClearance(formulaRange, minimumDisplayHeightPoints);
         }
         finally { Release(rows); }
     }
 
     private static void ApplyNativeOmmlTableMinimumDisplayHeight(
         Rows rows,
-        float? minimumDisplayHeightPoints)
+        float? minimumDisplayHeightPoints,
+        int? targetRowIndex = null)
     {
         if (!minimumDisplayHeightPoints.HasValue
             || float.IsNaN(minimumDisplayHeightPoints.Value)
@@ -1726,8 +2006,9 @@ internal static partial class WordEquationNumbering
         Row? row = null;
         try
         {
-            if (rows.Count != 1) return;
-            row = rows[1];
+            var rowIndex = targetRowIndex ?? (rows.Count == 1 ? 1 : 0);
+            if (rowIndex < 1 || rowIndex > rows.Count) return;
+            row = rows[rowIndex];
             row.HeightRule = WdRowHeightRule.wdRowHeightAtLeast;
             row.Height = Math.Max(
                 1f,
@@ -1735,6 +2016,451 @@ internal static partial class WordEquationNumbering
                 + NativeOmmlTableHeightSafetyPoints);
         }
         finally { Release(row); }
+    }
+
+    // A Word native matrix can lose its bottom ink even with a 60 pt AtLeast
+    // table row: the clipping surface is the center paragraph, not the row.
+    // Reserve a small, size-relative descent inside tall formula paragraphs.
+    // Never touch surrounding prose, the number cell, widths or OMath contents.
+    private static float NativeOmmlDisplayInkClearance(Range formulaRange, float? displayHeight)
+    {
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = formulaRange.Font;
+            var size = font.Size;
+            if (size <= 0f || size >= 1000f || float.IsNaN(size) || float.IsInfinity(size))
+                size = FormulaFontSize.DefaultPt;
+            var tall = displayHeight.HasValue && displayHeight.Value >= size * 1.7f;
+            if (!tall)
+            {
+                // A same-state edit may only have the cheap 1.5em height estimate;
+                // a number refresh/reopen has no measurement at all. Inspect just
+                // this formula's structure so those paths cannot clear the matrix
+                // descent allowance installed by insertion. No scratch document,
+                // activation, scrolling or whole-document metadata search is used.
+                try { tall = HasTallNativeOmmlStructure(formulaRange.WordOpenXML); }
+                catch { }
+            }
+            return tall ? Math.Max(1f, size * 0.2f) : 0f;
+        }
+        finally { Release(font); }
+    }
+
+    internal static bool HasTallNativeOmmlStructure(string wordOpenXml)
+    {
+        var xml = System.Xml.Linq.XDocument.Parse(wordOpenXml);
+        System.Xml.Linq.XNamespace math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        return xml.Descendants(math + "m").Any(matrix => matrix.Elements(math + "mr").Skip(1).Any())
+            || xml.Descendants(math + "eqArr").Any(array => array.Elements(math + "e").Skip(1).Any())
+            || xml.Descendants(math + "f").Any()
+            || xml.Descendants(math + "nary").Any();
+    }
+
+    private static void ApplyNativeOmmlDisplayInkClearance(Range formulaRange, float? displayHeight)
+    {
+        ParagraphFormat? format = null;
+        try
+        {
+            var clearance = NativeOmmlDisplayInkClearance(formulaRange, displayHeight);
+            format = formulaRange.ParagraphFormat;
+            if (Math.Abs(format.SpaceAfter - clearance) > 0.05f)
+                format.SpaceAfter = clearance;
+        }
+        finally { Release(format); }
+    }
+
+    private static void ConfigurePreformattedNativeOmmlNumberTableHeightAndInk(
+        Table table,
+        Range formulaRange,
+        float? minimumDisplayHeightPoints)
+    {
+        Rows? rows = null;
+        Columns? columns = null;
+        Cell? centerCell = null;
+        Range? centerRange = null;
+        ParagraphFormat? centerFormat = null;
+        try
+        {
+            rows = table.Rows;
+            columns = table.Columns;
+            if (columns.Count != 3
+                || rows.Count < 1
+                || !TryGetManagedNumberTableRowIndex(
+                    table,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
+                throw new InvalidOperationException(
+                    "The preformatted OMML number host no longer owns one row in a 3-column managed table.");
+            ApplyNativeOmmlTableMinimumDisplayHeight(
+                rows,
+                minimumDisplayHeightPoints,
+                rowIndex);
+            centerCell = table.Cell(rowIndex, 2);
+            centerCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
+            centerRange = centerCell.Range;
+            centerFormat = centerRange.ParagraphFormat;
+            centerFormat.SpaceBefore = 0f;
+            centerFormat.SpaceAfter = NativeOmmlDisplayInkClearance(
+                formulaRange,
+                minimumDisplayHeightPoints);
+            centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+            try { centerFormat.DisableLineHeightGrid = -1; } catch { }
+        }
+        finally
+        {
+            Release(centerFormat);
+            Release(centerRange);
+            Release(centerCell);
+            Release(columns);
+            Release(rows);
+        }
+    }
+
+    private static bool CanReplaceNativeOmmlSourceParagraphFromTemplate(
+        Document document,
+        Range formulaRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? prefix = null;
+        Range? suffix = null;
+        Range? content = null;
+        Range? neighbor = null;
+        OMaths? maths = null;
+        InlineShapes? shapes = null;
+        Fields? fields = null;
+        try
+        {
+            if (RangeIsWhollyWithinTable(formulaRange)) return false;
+            paragraphs = formulaRange.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            if (RangeIsWhollyWithinTable(paragraphRange)) return false;
+            var editableEnd = Math.Max(paragraphRange.Start, paragraphRange.End - 1);
+            prefix = document.Range(paragraphRange.Start, formulaRange.Start);
+            suffix = document.Range(formulaRange.End, editableEnd);
+            if (!IsNumberingParagraphAdornment(prefix.Text)
+                || !IsNumberingParagraphAdornment(suffix.Text))
+                return false;
+            maths = paragraphRange.OMaths;
+            shapes = paragraphRange.InlineShapes;
+            fields = paragraphRange.Fields;
+            if (maths.Count != 1 || shapes.Count != 0 || fields.Count != 0)
+                return false;
+
+            content = document.Content;
+            if (paragraphRange.Start > content.Start)
+            {
+                neighbor = document.Range(paragraphRange.Start - 1, paragraphRange.Start);
+                if (RangeIsWhollyWithinTable(neighbor)) return false;
+                Release(neighbor); neighbor = null;
+            }
+            if (paragraphRange.End < content.End)
+            {
+                neighbor = document.Range(
+                    paragraphRange.End,
+                    Math.Min(content.End, paragraphRange.End + 1));
+                if (RangeIsWhollyWithinTable(neighbor)) return false;
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(fields);
+            Release(shapes);
+            Release(maths);
+            Release(neighbor);
+            Release(content);
+            Release(suffix);
+            Release(prefix);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static Table ReplaceNativeOmmlSourceParagraphWithPreformattedTable(
+        Document document,
+        Range formulaRange,
+        string formulaId,
+        Range cleanTableTemplateRange)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? sourceParagraphMark = null;
+        Range? sourceContent = null;
+        Range? sourceFormatted = null;
+        Document? templateDocument = null;
+        Tables? templateTables = null;
+        Table? templateTable = null;
+        Cell? templateCenterCell = null;
+        Range? templateCenterRange = null;
+        Range? templateEditable = null;
+        OMaths? templateMaths = null;
+        Bookmarks? templateBookmarks = null;
+        Bookmark? templateBookmark = null;
+        Range? templateTableRange = null;
+        Range? templateFormatted = null;
+        Range? target = null;
+        Range? probe = null;
+        Tables? insertedTables = null;
+        Table? insertedTable = null;
+        Range? insertedTableRange = null;
+        Cell? centerCell = null;
+        Range? centerRange = null;
+        OMaths? centerMaths = null;
+        OMath? centerMath = null;
+        Range? centerMathRange = null;
+        var templateFormulaInserted = false;
+        try
+        {
+            if (!CanReplaceNativeOmmlSourceParagraphFromTemplate(document, formulaRange))
+                throw new InvalidOperationException(
+                    "The OMML source paragraph is not isolated enough for atomic table replacement.");
+
+            paragraphs = formulaRange.Paragraphs;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            var sourceStart = paragraphRange.Start;
+            sourceParagraphMark = document.Range(paragraphRange.End - 1, paragraphRange.End);
+            var bodyFormatting = WordCharacterFormatting.Capture(sourceParagraphMark);
+            sourceContent = formulaRange.Duplicate;
+            sourceFormatted = sourceContent.FormattedText;
+
+            templateDocument = cleanTableTemplateRange.Document;
+            templateTables = cleanTableTemplateRange.Tables;
+            if (templateTables.Count != 1)
+                throw new InvalidDataException("The clean OMML numbering template lost its single table.");
+            templateTable = templateTables[1];
+            templateTableRange = templateTable.Range.Duplicate;
+            bodyFormatting.Apply(templateTableRange);
+            Release(templateTableRange); templateTableRange = null;
+            templateCenterCell = templateTable.Cell(1, 2);
+            templateCenterRange = templateCenterCell.Range.Duplicate;
+            templateEditable = templateCenterRange.Duplicate;
+            templateEditable.End = Math.Max(templateEditable.Start, templateEditable.End - 1);
+            if (!string.IsNullOrEmpty(templateEditable.Text))
+                throw new InvalidDataException("The OMML numbering template center cell is not empty.");
+            templateEditable.Collapse(WdCollapseDirection.wdCollapseStart);
+            templateEditable.FormattedText = sourceFormatted;
+            templateFormulaInserted = true;
+
+            Release(templateCenterRange); templateCenterRange = templateCenterCell.Range.Duplicate;
+            templateMaths = templateCenterRange.OMaths;
+            if (templateMaths.Count != 1 || templateDocument.Fields.Count != 0)
+                throw new InvalidDataException("The OMML numbering template did not retain exactly one field-free OMath.");
+            templateBookmarks = templateDocument.Bookmarks;
+            while (templateBookmarks.Count > 0)
+            {
+                Release(templateBookmark); templateBookmark = templateBookmarks[1];
+                templateBookmark.Delete();
+            }
+            Release(templateBookmark); templateBookmark = null;
+
+            templateTableRange = templateTable.Range.Duplicate;
+            templateFormatted = templateTableRange.FormattedText;
+            target = paragraphRange.Duplicate;
+            target.FormattedText = templateFormatted;
+
+            var contentEnd = document.Content.End;
+            probe = document.Range(sourceStart, Math.Min(contentEnd, sourceStart + 1));
+            insertedTables = probe.Tables;
+            if (insertedTables.Count != 1)
+                throw new InvalidOperationException(
+                    "Word did not atomically replace the OMML source paragraph with one numbering table.");
+            insertedTable = insertedTables[1];
+            insertedTableRange = insertedTable.Range;
+            if (insertedTableRange.Start != sourceStart
+                || insertedTable.Rows.Count != 1
+                || insertedTable.Columns.Count != 3)
+                throw new InvalidDataException("The atomically replaced OMML numbering table has invalid geometry.");
+            centerCell = insertedTable.Cell(1, 2);
+            centerRange = centerCell.Range;
+            centerMaths = centerRange.OMaths;
+            if (centerMaths.Count != 1)
+                throw new InvalidDataException("The atomically replaced OMML table has no unique center equation.");
+            centerMath = centerMaths[1];
+            if (centerMath.Type != WdOMathType.wdOMathDisplay)
+                centerMath.Type = WdOMathType.wdOMathDisplay;
+            centerMathRange = centerMath.Range.Duplicate;
+            formulaRange.SetRange(centerMathRange.Start, centerMathRange.End);
+
+            var result = insertedTable;
+            insertedTable = null;
+            return result;
+        }
+        finally
+        {
+            if (templateFormulaInserted && templateTable is not null)
+            {
+                try
+                {
+                    Release(templateEditable); templateEditable = null;
+                    Release(templateCenterRange); templateCenterRange = null;
+                    Release(templateMaths); templateMaths = null;
+                    templateCenterCell ??= templateTable.Cell(1, 2);
+                    templateCenterRange = templateCenterCell.Range.Duplicate;
+                    templateEditable = templateCenterRange.Duplicate;
+                    templateEditable.End = Math.Max(templateEditable.Start, templateEditable.End - 1);
+                    templateEditable.Text = string.Empty;
+                    Release(templateBookmarks); templateBookmarks = templateDocument?.Bookmarks;
+                    if (templateBookmarks is not null)
+                    {
+                        while (templateBookmarks.Count > 0)
+                        {
+                            Release(templateBookmark); templateBookmark = templateBookmarks[1];
+                            templateBookmark.Delete();
+                        }
+                    }
+                }
+                catch { }
+            }
+            try { document.Activate(); } catch { }
+            Release(centerMathRange);
+            Release(centerMath);
+            Release(centerMaths);
+            Release(centerRange);
+            Release(centerCell);
+            Release(insertedTableRange);
+            Release(insertedTable);
+            Release(insertedTables);
+            Release(probe);
+            Release(target);
+            Release(templateFormatted);
+            Release(templateTableRange);
+            Release(templateBookmark);
+            Release(templateBookmarks);
+            Release(templateMaths);
+            Release(templateEditable);
+            Release(templateCenterRange);
+            Release(templateCenterCell);
+            Release(templateTable);
+            Release(templateTables);
+            Release(templateDocument);
+            Release(sourceFormatted);
+            Release(sourceContent);
+            Release(sourceParagraphMark);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private static Range CreateCleanNativeOmmlNumberTableTemplate(
+        Document targetDocument,
+        Table sourceTable,
+        out Document templateDocument)
+    {
+        templateDocument = null!;
+        Microsoft.Office.Interop.Word.Application? application = null;
+        Range? sourceRange = null;
+        Range? insertion = null;
+        Table? templateTable = null;
+        Rows? templateRows = null;
+        Row? templateRow = null;
+        Cell? cell = null;
+        Range? editable = null;
+        Cell? centerCell = null;
+        Range? centerRange = null;
+        ParagraphFormat? centerFormat = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? result = null;
+        try
+        {
+            application = targetDocument.Application;
+            sourceRange = sourceTable.Range.Duplicate;
+            templateDocument = application.Documents.Add(Visible: false);
+            insertion = templateDocument.Range(0, 0);
+            insertion.FormattedText = sourceRange.FormattedText;
+            if (templateDocument.Tables.Count != 1)
+                throw new InvalidOperationException(
+                    "Word did not create one OMML numbering template table.");
+
+            bookmarks = templateDocument.Bookmarks;
+            while (bookmarks.Count > 0)
+            {
+                Release(bookmark);
+                bookmark = bookmarks[1];
+                bookmark.Delete();
+            }
+            Release(bookmark);
+            bookmark = null;
+
+            templateTable = templateDocument.Tables[1];
+            for (var columnIndex = 1; columnIndex <= 3; columnIndex++)
+            {
+                Release(editable);
+                editable = null;
+                Release(cell);
+                cell = templateTable.Cell(1, columnIndex);
+                editable = cell.Range.Duplicate;
+                editable.End = Math.Max(editable.Start, editable.End - 1);
+                editable.Text = string.Empty;
+            }
+            Release(editable);
+            editable = null;
+            Release(cell);
+            cell = null;
+
+            templateRows = templateTable.Rows;
+            templateRow = templateRows[1];
+            try { templateRow.HeightRule = WdRowHeightRule.wdRowHeightAuto; } catch { }
+            centerCell = templateTable.Cell(1, 2);
+            centerRange = centerCell.Range;
+            centerFormat = centerRange.ParagraphFormat;
+            centerFormat.SpaceBefore = 0f;
+            centerFormat.SpaceAfter = 0f;
+
+            if (templateDocument.Fields.Count != 0
+                || templateDocument.Bookmarks.Count != 0
+                || templateDocument.OMaths.Count != 0
+                || templateDocument.InlineShapes.Count != 0)
+                throw new InvalidDataException(
+                    "The OMML numbering table template still carries formula identity or content.");
+
+            result = templateTable.Range.Duplicate;
+            try { targetDocument.Activate(); } catch { }
+            var returned = result;
+            result = null;
+            return returned;
+        }
+        catch
+        {
+            if (templateDocument is not null)
+            {
+                try { templateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                Release(templateDocument);
+                templateDocument = null!;
+            }
+            throw;
+        }
+        finally
+        {
+            Release(result);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(centerFormat);
+            Release(centerRange);
+            Release(centerCell);
+            Release(editable);
+            Release(cell);
+            Release(templateRow);
+            Release(templateRows);
+            Release(templateTable);
+            Release(insertion);
+            Release(sourceRange);
+            Release(application);
+        }
     }
 
     private static void ConfigureNativeOmmlNumberTableGeometry(
@@ -1793,14 +2519,21 @@ internal static partial class WordEquationNumbering
             try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch { }
             try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch { }
             try { rows.AllowBreakAcrossPages = 0; } catch { }
-            ApplyNativeOmmlTableMinimumDisplayHeight(
-                rows,
-                minimumDisplayHeightPoints);
 
             columns = table.Columns;
-            if (columns.Count != 3 || rows.Count != 1)
+            if (columns.Count != 3
+                || rows.Count < 1
+                || !TryGetManagedNumberTableRowIndex(
+                    table,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
                 throw new InvalidOperationException(
-                    "The native OMML number host is no longer exactly 1x3.");
+                    "The native OMML number host no longer owns one row in a 3-column managed table.");
+            ApplyNativeOmmlTableMinimumDisplayHeight(
+                rows,
+                minimumDisplayHeightPoints,
+                rowIndex);
             leftColumn = columns[1];
             centerColumn = columns[2];
             rightColumn = columns[3];
@@ -1808,9 +2541,9 @@ internal static partial class WordEquationNumbering
             centerColumn.SetWidth(centerWidth, WdRulerStyle.wdAdjustNone);
             rightColumn.SetWidth(sideWidth, WdRulerStyle.wdAdjustNone);
 
-            leftCell = table.Cell(1, 1);
-            centerCell = table.Cell(1, 2);
-            rightCell = table.Cell(1, 3);
+            leftCell = table.Cell(rowIndex, 1);
+            centerCell = table.Cell(rowIndex, 2);
+            rightCell = table.Cell(rowIndex, 3);
             leftCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
             centerCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
             rightCell.VerticalAlignment = WdCellVerticalAlignment.wdCellAlignVerticalCenter;
@@ -1825,7 +2558,9 @@ internal static partial class WordEquationNumbering
             centerFormat.FirstLineIndent = 0f;
             rightFormat.LeftIndent = rightFormat.RightIndent = 0f;
             rightFormat.FirstLineIndent = 0f;
-            centerFormat.SpaceBefore = centerFormat.SpaceAfter = 0f;
+            centerFormat.SpaceBefore = 0f;
+            centerFormat.SpaceAfter = NativeOmmlDisplayInkClearance(
+                formulaRange, minimumDisplayHeightPoints);
             rightFormat.SpaceBefore = rightFormat.SpaceAfter = 0f;
             centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             rightFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
@@ -1911,18 +2646,24 @@ internal static partial class WordEquationNumbering
         Bookmark? bookmark = null;
         try
         {
-            numberCell = table.Cell(1, 3);
+            var rowIndex = GetManagedNumberTableRowIndex(table, formulaRange, 2);
+            numberCell = table.Cell(rowIndex, 3);
             cellRange = numberCell.Range.Duplicate;
             editableRange = cellRange.Duplicate;
             editableRange.End = Math.Max(editableRange.Start, editableRange.End - 1);
-            editableRange.Text = string.Empty;
-
-            scaffoldRange = document.Range(editableRange.Start, editableRange.Start);
-            scaffoldRange.Text = "\t(" + prefix;
-            var labelStart = editableRange.Start + 1;
+            // Seed the entire ordinary label first, including a one-character
+            // field placeholder and closing parenthesis. Inserting a field at
+            // the cell's collapsed end can lose its cell affinity after a batch
+            // table conversion. A nonempty range inside this cell is unambiguous.
+            var numberStart = editableRange.Start;
+            editableRange.Text = "\t(" + prefix + "0)";
+            var labelStart = numberStart + 1;
             var prefixStart = labelStart + 1;
-            var fieldStart = editableRange.Start + scaffoldRange.Text!.Length;
-            fieldRange = document.Range(fieldStart, fieldStart);
+            var fieldStart = prefixStart + prefix.Length;
+            fieldRange = numberCell.Range.Duplicate;
+            fieldRange.SetRange(fieldStart, fieldStart + 1);
+            if (fieldRange.Text != "0")
+                throw new InvalidDataException("The number field placeholder escaped its cell.");
             fields = fieldRange.Fields;
             object fieldType = WdFieldType.wdFieldEmpty;
             object fieldText = $"SEQ {LegacyEquationSequenceName} \\r {Math.Max(1, ordinal)} \\* ARABIC";
@@ -1933,26 +2674,24 @@ internal static partial class WordEquationNumbering
                 ref fieldText,
                 ref preserveFormatting);
             field.Update();
-            fieldResult = field.Result;
-            var closingPosition = Math.Min(
-                Math.Max(fieldResult.End + 1, fieldStart + 1),
-                Math.Max(editableRange.Start, numberCell.Range.End - 1));
-            closingRange = document.Range(closingPosition, closingPosition);
-            closingRange.Text = ")";
-
-            Release(fieldCode);
             fieldCode = field.Code;
-            Release(fieldResult);
             fieldResult = field.Result;
             Release(cellRange);
             cellRange = numberCell.Range.Duplicate;
             var cellEditableEnd = Math.Max(cellRange.Start, cellRange.End - 1);
-            var fieldBegin = Math.Max(prefixStart, fieldCode.Start - 1);
-            var fieldEnd = Math.Min(cellEditableEnd, fieldResult.End + 1);
-            var labelEnd = Math.Min(cellEditableEnd, fieldEnd + 1);
-            captionRange = document.Range(prefixStart, fieldEnd);
-            numberRange = document.Range(prefixStart, fieldResult.End);
-            labelRange = document.Range(labelStart, labelEnd);
+            var fieldBegin = fieldCode.Start - 1;
+            var fieldEnd = fieldResult.End + 1;
+            var labelEnd = fieldEnd + 1;
+            if (fieldBegin != fieldStart || fieldEnd < fieldStart
+                || labelEnd != cellEditableEnd
+                || fieldResult.Text.Trim() != Math.Max(1, ordinal).ToString(System.Globalization.CultureInfo.InvariantCulture))
+                throw new InvalidDataException("Word did not retain the exact field/result in its number cell.");
+            captionRange = cellRange.Duplicate;
+            captionRange.SetRange(prefixStart, fieldEnd);
+            numberRange = cellRange.Duplicate;
+            numberRange.SetRange(prefixStart, fieldResult.End);
+            labelRange = cellRange.Duplicate;
+            labelRange.SetRange(labelStart, labelEnd);
             if (!(labelRange.Text ?? string.Empty).StartsWith("(", StringComparison.Ordinal)
                 || !(labelRange.Text ?? string.Empty).EndsWith(")", StringComparison.Ordinal))
                 throw new InvalidOperationException(
@@ -2099,9 +2838,9 @@ internal static partial class WordEquationNumbering
                     || visibleRange.Tables.Count == 0)
                     return false;
                 table = visibleRange.Tables[1];
-                if (table.Rows.Count != 1 || table.Columns.Count != 3)
+                if (!TryGetManagedNumberTableRowIndex(table, visibleRange, 3, out var rowIndex))
                     return false;
-                numberCell = table.Cell(1, 3);
+                numberCell = table.Cell(rowIndex, 3);
                 cellRange = numberCell.Range.Duplicate;
                 if (visibleRange.Start < cellRange.Start || visibleRange.End > cellRange.End)
                     return false;
@@ -2292,19 +3031,22 @@ internal static partial class WordEquationNumbering
                 return false;
             }
 
-            // A same-numbering content edit mutates only cell (1,2). The direct
-            // VTEq_ lookup already resolved the owning table through the right-cell
-            // visible-number bookmark, so re-walking VTEq_/VTEqCap_/VTEqNum_, the
-            // SEQ field and right-cell text is redundant and costs ~150-200ms in a
-            // 100-OMML document. Prove exactly the part we are about to replace:
-            // genuine 1x3 topology, one field-free Display OMath, and no prefix or
-            // suffix content between that OMath and the center cell markers.
+            // A same-numbering content edit mutates only the managed row that
+            // owns formulaRange. Bulk OMML insertion may compact adjacent numbered
+            // equations into one N x 3 table, so validate that exact row rather than
+            // rejecting healthy sibling equations.
             rows = knownTable.Rows;
             columns = knownTable.Columns;
-            if (rows.Count != 1 || columns.Count != 3)
+            if (rows.Count < 1 || columns.Count != 3)
                 return Fail($"shape={rows.Count}x{columns.Count}");
+            if (!TryGetManagedNumberTableRowIndex(
+                    knownTable,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
+                return Fail("formula-row-not-resolved");
 
-            centerCell = knownTable.Cell(1, 2);
+            centerCell = knownTable.Cell(rowIndex, 2);
             centerRange = centerCell.Range;
             // Word exposes the textual cell terminator as "\r\a", but those two
             // control glyphs occupy one story position. A formula that exactly
@@ -2373,26 +3115,39 @@ internal static partial class WordEquationNumbering
         Range? visibleRange = null;
         Range? identityRange = null;
         Range? captionRange = null;
+        var check = "table-membership";
         try
         {
-            if (!(bool)formulaRange.get_Information(WdInformation.wdWithInTable))
+            bool Fail(string reason)
+            {
+                TraceNumberingPerformance($"[perf] direct-row-health-fail formulaId={formulaId} check={check} reason={reason}");
                 return false;
+            }
+            // Exact row/cell containment below is the membership proof. Avoid
+            // the layout query here; it scales with unrelated document pages.
             tables = formulaRange.Tables;
-            if (tables.Count != 1) return false;
+            if (tables.Count != 1) return Fail($"tables={tables.Count}");
             table = tables[1];
-            if (table.Rows.Count != 1 || table.Columns.Count != 3) return false;
-            centerCell = table.Cell(1, 2);
-            numberCell = table.Cell(1, 3);
+            if (table.Rows.Count < 1 || table.Columns.Count != 3) return Fail($"shape={table.Rows.Count}x{table.Columns.Count}");
+            if (!TryGetManagedNumberTableRowIndex(
+                    table,
+                    formulaRange,
+                    expectedColumnIndex: 2,
+                    out var rowIndex))
+                return Fail($"formula-row-not-resolved range={formulaRange.Start}:{formulaRange.End}");
+            check = "center-cell";
+            centerCell = table.Cell(rowIndex, 2);
+            numberCell = table.Cell(rowIndex, 3);
             centerRange = centerCell.Range;
             numberRange = numberCell.Range;
             centerMaths = centerRange.OMaths;
-            if (centerMaths.Count != 1 || centerRange.Fields.Count != 0) return false;
+            if (centerMaths.Count != 1 || centerRange.Fields.Count != 0) return Fail($"maths={centerMaths.Count} fields={centerRange.Fields.Count}");
             centerMath = centerMaths[1];
-            if (centerMath.Type != WdOMathType.wdOMathDisplay) return false;
+            if (centerMath.Type != WdOMathType.wdOMathDisplay) return Fail($"type={centerMath.Type}");
             centerMathRange = centerMath.Range.Duplicate;
             if (formulaRange.Start != centerMathRange.Start
                 || formulaRange.End != centerMathRange.End)
-                return false;
+                return Fail($"formula={formulaRange.Start}:{formulaRange.End} math={centerMathRange.Start}:{centerMathRange.End}");
             centerPrefix = document.Range(centerRange.Start, centerMathRange.Start);
             centerSuffix = document.Range(centerMathRange.End, centerRange.End);
             if (!string.IsNullOrEmpty(centerPrefix.Text)
@@ -2400,14 +3155,16 @@ internal static partial class WordEquationNumbering
                     centerSuffix.Text,
                     "\r\a",
                     StringComparison.Ordinal))
-                return false;
-            if (numberRange.OMaths.Count != 0) return false;
+                return Fail($"center-adornment prefixLength={centerPrefix.Text?.Length} suffix={string.Join(",", (centerSuffix.Text ?? string.Empty).Select(character => (int)character))}");
+            check = "number-cell";
+            if (numberRange.OMaths.Count != 0) return Fail($"maths={numberRange.OMaths.Count}");
             numberFields = numberRange.Fields;
-            if (numberFields.Count != 1) return false;
+            if (numberFields.Count != 1) return Fail($"fields={numberFields.Count}");
             sequenceField = numberFields[1];
             sequenceCode = sequenceField.Code;
-            if (!IsVisualTeXSequenceFieldCode(sequenceCode.Text)) return false;
+            if (!IsVisualTeXSequenceFieldCode(sequenceCode.Text)) return Fail($"field-code={sequenceCode.Text}");
 
+            check = "number-bookmarks";
             bookmarks = document.Bookmarks;
             var visibleName = EquationBookmarkName(formulaId);
             var numberName = NativeNumberBookmarkName(formulaId);
@@ -2415,7 +3172,7 @@ internal static partial class WordEquationNumbering
             if (!bookmarks.Exists(visibleName)
                 || !bookmarks.Exists(numberName)
                 || !bookmarks.Exists(captionName))
-                return false;
+                return Fail($"visible={bookmarks.Exists(visibleName)} number={bookmarks.Exists(numberName)} caption={bookmarks.Exists(captionName)}");
             visibleBookmark = bookmarks[visibleName];
             numberBookmark = bookmarks[numberName];
             captionBookmark = bookmarks[captionName];
@@ -2424,17 +3181,22 @@ internal static partial class WordEquationNumbering
             captionRange = captionBookmark.Range;
             foreach (var owned in new[] { visibleRange, identityRange, captionRange })
             {
-                if (!(bool)owned.get_Information(WdInformation.wdWithInTable)) return false;
-                if (owned.Start < numberRange.Start || owned.End > numberRange.End) return false;
+                // Information(wdWithInTable) is a layout answer and can briefly
+                // be false after a preceding conversion even for a range that is
+                // structurally inside this exact number cell. The same-story
+                // containment in the already-proven row is the stronger proof.
+                if (owned.StoryType != numberRange.StoryType
+                    || owned.Start < numberRange.Start || owned.End > numberRange.End)
+                    return Fail($"bookmark={owned.StoryType}/{owned.Start}:{owned.End} cell={numberRange.StoryType}/{numberRange.Start}:{numberRange.End}");
             }
             var visibleText = visibleRange.Text ?? string.Empty;
             if (!visibleText.StartsWith("(", StringComparison.Ordinal)
                 || !visibleText.EndsWith(")", StringComparison.Ordinal))
-                return false;
+                return Fail($"visible-text={visibleText}");
             var cellText = numberRange.Text ?? string.Empty;
             if (!cellText.StartsWith("\t", StringComparison.Ordinal)
                 || !cellText.EndsWith("\r\a", StringComparison.Ordinal))
-                return false;
+                return Fail($"cell-text-length={cellText.Length}");
             if (updateField)
             {
                 // MathType→OMML can retain the source paragraph's live layout
@@ -2451,8 +3213,9 @@ internal static partial class WordEquationNumbering
             }
             return true;
         }
-        catch
+        catch (Exception exception)
         {
+            TraceNumberingPerformance($"[perf] direct-row-health-error formulaId={formulaId} check={check} error={exception}");
             return false;
         }
         finally
@@ -2614,7 +3377,8 @@ internal static partial class WordEquationNumbering
             stage = "create-body-typing-paragraph";
             typingRange = EnsureDeletableTypingParagraphAfterNativeOmmlTable(
                 document,
-                table);
+                table,
+                CaptureNumberedBodyCharacterFormatting(document, formulaId));
             if (typingRange is null)
                 throw new InvalidOperationException(
                     "Word did not expose an ordinary typing paragraph after the numbered OMML table.");
@@ -2719,7 +3483,8 @@ internal static partial class WordEquationNumbering
 
     private static Range? EnsureDeletableTypingParagraphAfterNativeOmmlTable(
         Document document,
-        Table table)
+        Table table,
+        WordCharacterFormatting bodyFormatting)
     {
         Range? tableRange = null;
         Range? immediateProbe = null;
@@ -2771,7 +3536,7 @@ internal static partial class WordEquationNumbering
                 // later therefore cannot merge the two 1x3 tables into a 2x3 host.
                 return SplitNativeOmmlBodySeparatorForTyping(
                     document,
-                    paragraphRange);
+                    paragraphRange, bodyFormatting);
             }
 
             if (immediateIsCompact)
@@ -2798,30 +3563,30 @@ internal static partial class WordEquationNumbering
                                     document,
                                     followingRange,
                                     allowCompactTailBookmark: true))
-                                return NormalizeNativeOmmlTypingParagraph(
+                                return NormalizeBodyTypingParagraph(
                                     document,
-                                    followingRange);
+                                    followingRange, bodyFormatting);
                         }
                     }
                 }
 
                 if (paragraphRange.End >= contentEnd)
-                    return NormalizeNativeOmmlTypingParagraph(
+                    return NormalizeBodyTypingParagraph(
                         document,
-                        paragraphRange);
+                        paragraphRange, bodyFormatting);
                 return SplitNativeOmmlBodySeparatorForTyping(
                     document,
-                    paragraphRange);
+                    paragraphRange, bodyFormatting);
             }
 
             if (immediateIsEmpty)
-                return NormalizeNativeOmmlTypingParagraph(
+                return NormalizeBodyTypingParagraph(
                     document,
-                    paragraphRange);
+                    paragraphRange, bodyFormatting);
 
             // Preserve existing text/content after the formula. Insert a new normal
             // paragraph before it rather than moving the user's caret into that text.
-            return CreateNormalBodyParagraphAt(document, paragraphStart);
+            return CreateNormalBodyParagraphAt(document, paragraphStart, bodyFormatting);
         }
         finally
         {
@@ -2839,7 +3604,8 @@ internal static partial class WordEquationNumbering
 
     private static Range? SplitNativeOmmlBodySeparatorForTyping(
         Document document,
-        Range separatorParagraphRange)
+        Range separatorParagraphRange,
+        WordCharacterFormatting bodyFormatting)
     {
         Range? source = null;
         Range? typingProbe = null;
@@ -2881,9 +3647,9 @@ internal static partial class WordEquationNumbering
                     typingRange,
                     allowCompactTailBookmark: true))
                 return null;
-            var normalizedTyping = NormalizeNativeOmmlTypingParagraph(
+            var normalizedTyping = NormalizeBodyTypingParagraph(
                 document,
-                typingRange);
+                typingRange, bodyFormatting);
 
             compactProbe = document.Range(start + 1, start + 2);
             if ((bool)compactProbe.get_Information(WdInformation.wdWithInTable))
@@ -2924,7 +3690,8 @@ internal static partial class WordEquationNumbering
 
     private static Range? CreateNormalBodyParagraphAt(
         Document document,
-        int position)
+        int position,
+        WordCharacterFormatting bodyFormatting)
     {
         Range? insertion = null;
         Range? probe = null;
@@ -2957,7 +3724,7 @@ internal static partial class WordEquationNumbering
                     paragraphRange,
                     allowCompactTailBookmark: true))
                 return null;
-            return NormalizeNativeOmmlTypingParagraph(document, paragraphRange);
+            return NormalizeBodyTypingParagraph(document, paragraphRange, bodyFormatting);
         }
         finally
         {
@@ -2969,21 +3736,98 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static Range EnsureBodyTypingParagraphAfterDisplay(
+        Document document,
+        Range formula,
+        WordCharacterFormatting bodyFormatting)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? owner = null;
+        Range? probe = null;
+        Range? typing = null;
+        Range? insertion = null;
+        Range? content = null;
+        try
+        {
+            paragraphs = formula.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException("A display formula must have one complete paragraph owner.");
+            paragraph = paragraphs[1];
+            owner = paragraph.Range;
+            var inTable = RangeIsWhollyWithinTable(owner);
+            content = document.Content;
+            // Only an empty, unowned paragraph immediately after the complete
+            // formula/number paragraph can be reused. Never cross into a new cell.
+            if (!inTable && owner.End < content.End)
+            {
+                probe = document.Range(owner.End, owner.End + 1);
+                var nextParagraphs = probe.Paragraphs;
+                Paragraph? next = null;
+                try
+                {
+                    if (nextParagraphs.Count == 1)
+                    {
+                        next = nextParagraphs[1];
+                        typing = next.Range;
+                        if (typing.Start == owner.End
+                            && IsPlainNativeOmmlBodyParagraph(document, typing, allowCompactTailBookmark: false))
+                            return NormalizeBodyTypingParagraph(document, typing, bodyFormatting);
+                    }
+                }
+                finally { Release(next); Release(nextParagraphs); }
+                Release(typing); typing = null;
+            }
+            // Split the complete row's terminal paragraph mark, after either a
+            // left or a right number. The OLE end alone lies before a right number.
+            var terminalLength = (owner.Text ?? string.Empty).EndsWith("\r\a", StringComparison.Ordinal) ? 2 : 1;
+            var position = owner.End - terminalLength;
+            if (position < formula.End)
+                throw new InvalidDataException("The formula has no writable terminal paragraph boundary.");
+            insertion = document.Range(position, position);
+            Release(probe);
+            probe = document.Range(position, position + 1);
+            if (probe.Text != "\r")
+                throw new InvalidDataException("The display continuation boundary is not a paragraph mark.");
+            insertion.InsertAfter("\r");
+            Release(probe);
+            probe = document.Range(position + 1, position + 2);
+            Release(paragraph); paragraph = null;
+            Release(paragraphs);
+            paragraphs = probe.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException("Word did not create one local continuation paragraph.");
+            paragraph = paragraphs[1];
+            typing = paragraph.Range;
+            if (typing.Start != position + 1)
+                throw new InvalidDataException("Word moved the display continuation outside its captured boundary.");
+            return NormalizeBodyTypingParagraph(document, typing, bodyFormatting, allowInsideTable: inTable);
+        }
+        finally
+        {
+            Release(content); Release(insertion); Release(typing); Release(probe);
+            Release(owner); Release(paragraph); Release(paragraphs);
+        }
+    }
+
     private static bool IsPlainNativeOmmlBodyParagraph(
         Document document,
         Range paragraphRange,
-        bool allowCompactTailBookmark)
+        bool allowCompactTailBookmark,
+        bool allowInsideTable = false)
     {
         Tables? tables = null;
         InlineShapes? shapes = null;
         OMaths? maths = null;
         Fields? fields = null;
         Frames? frames = null;
+        ContentControls? controls = null;
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
         try
         {
-            if ((bool)paragraphRange.get_Information(WdInformation.wdWithInTable)
+            var inTable = RangeIsWhollyWithinTable(paragraphRange);
+            if ((inTable && !allowInsideTable)
                 || !IsNumberingParagraphAdornment(paragraphRange.Text))
                 return false;
             tables = paragraphRange.Tables;
@@ -2991,11 +3835,13 @@ internal static partial class WordEquationNumbering
             maths = paragraphRange.OMaths;
             fields = paragraphRange.Fields;
             frames = paragraphRange.Frames;
-            if (tables.Count != 0
+            controls = paragraphRange.ContentControls;
+            if (tables.Count != (inTable ? 1 : 0)
                 || shapes.Count != 0
                 || maths.Count != 0
                 || fields.Count != 0
-                || frames.Count != 0)
+                || frames.Count != 0
+                || controls.Count != 0)
                 return false;
             bookmarks = paragraphRange.Bookmarks;
             for (var index = 1; index <= bookmarks.Count; index++)
@@ -3010,12 +3856,9 @@ internal static partial class WordEquationNumbering
             }
             return true;
         }
-        catch
-        {
-            return false;
-        }
         finally
         {
+            Release(controls);
             Release(bookmark);
             Release(bookmarks);
             Release(frames);
@@ -3052,9 +3895,11 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range NormalizeNativeOmmlTypingParagraph(
+    private static Range NormalizeBodyTypingParagraph(
         Document document,
-        Range paragraphRange)
+        Range paragraphRange,
+        WordCharacterFormatting bodyFormatting,
+        bool allowInsideTable = false)
     {
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
@@ -3063,6 +3908,9 @@ internal static partial class WordEquationNumbering
         Range? result = null;
         try
         {
+            if (!IsPlainNativeOmmlBodyParagraph(document, paragraphRange, allowCompactTailBookmark: true,
+                    allowInsideTable: allowInsideTable))
+                throw new InvalidDataException("The typing continuation is not an empty, unowned body paragraph.");
             bookmarks = document.Bookmarks;
             if (bookmarks.Exists(CompactTypingTailBookmarkName))
             {
@@ -3076,19 +3924,15 @@ internal static partial class WordEquationNumbering
                 }
                 finally { Release(bookmarkRange); }
             }
-            try
-            {
-                object normalStyle = WdBuiltinStyle.wdStyleNormal;
-                paragraphRange.set_Style(ref normalStyle);
-            }
-            catch { }
+            object normalStyle = WdBuiltinStyle.wdStyleNormal;
+            paragraphRange.set_Style(ref normalStyle);
+            bodyFormatting.Apply(paragraphRange);
             font = paragraphRange.Font;
-            try { font.Reset(); } catch { }
             font.Hidden = 0;
             font.Position = 0;
             font.Color = WdColor.wdColorAutomatic;
             format = paragraphRange.ParagraphFormat;
-            try { format.Reset(); } catch { }
+            format.Reset();
             format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
@@ -3114,6 +3958,7 @@ internal static partial class WordEquationNumbering
     private static Range? EnsureNormalTypingParagraphAfterNativeOmmlTable(
         Document document,
         string formulaId,
+        WordCharacterFormatting bodyFormatting,
         out bool directTableMatched)
     {
         directTableMatched = false;
@@ -3126,15 +3971,8 @@ internal static partial class WordEquationNumbering
             directTableMatched = true;
             return EnsureDeletableTypingParagraphAfterNativeOmmlTable(
                 document,
-                table);
-        }
-        catch
-        {
-            // Once an exact direct-SEQ 1x3 host has been recognized, its typing
-            // boundary must never fall through to the retired caption/Frame path.
-            // Returning null lets the caller stop safely without mutating legacy
-            // artifacts that do not exist for this formula.
-            return null;
+                table,
+                bodyFormatting);
         }
         finally
         {

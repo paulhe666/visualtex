@@ -1,0 +1,16 @@
+SESSION|82796380-c160-4f4b-a93b-5ab09dfd1d90|doc=文档131|mode=edit|object=mathTypeOle|display=block|numbered=True|status=completed|error=
+SESSION|62eba754-2144-4da0-be3c-e3e2445d3b55|doc=文档131|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|e8df48a6-3b42-4a84-9fa4-fd540c539f6b|doc=文档131|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|81e58391-e6eb-4cac-aa18-cd56e784602c|doc=文档131|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|255d1182-60c1-4ed0-b5a3-adfa35a7cd22|doc=文档131|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|d2664d5f-38e9-440c-bbc4-e259a32fbce6|doc=文档131|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|100bf935-2503-4cd5-a618-8b40efc4a040|doc=文档131|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|7d09c111-3b60-4806-818b-b790f0a5369a|doc=文档131|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|892474ac-09df-470d-8c85-cd3a903b57a3|doc=文档131|mode=create|object=wordOmml|display=inline|numbered=False|status=completed|error=
+SESSION|9dd1f666-e8df-4c62-b6df-4ca766759ff7|doc=文档131|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|dd0d1a0d-e93f-4ddb-abb5-0d04a20c993c|doc=文档131|mode=create|object=wordOmml|display=block|numbered=True|status=completed|error=
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "process":  "visualtex"
+}

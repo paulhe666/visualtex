@@ -1,0 +1,26 @@
+[
+    {
+        "handle":  614270,
+        "name":  "是(\u0026Y)",
+        "id":  6,
+        "class":  "Button"
+    },
+    {
+        "handle":  548656,
+        "name":  "否(\u0026N)",
+        "id":  7,
+        "class":  "Button"
+    },
+    {
+        "handle":  1073016,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1074912,
+        "name":  "将把全文 7 个 MathType 公式重新绘制为 OMML。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

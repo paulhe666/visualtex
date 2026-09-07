@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  4484594,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  1928676,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1601338,
+        "name":  "Converted target finalization failed: Reference number bookmark \u0027VTEqNum_11a403ef5d594ad8b46da98ca12e953a\u0027 is missing.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

@@ -1,0 +1,42 @@
+﻿[
+    {
+        "start":  1613,
+        "width":  0,
+        "height":  60,
+        "left":  297,
+        "end":  1613,
+        "top":  681,
+        "text":  null,
+        "range":  "outerResult"
+    },
+    {
+        "start":  1488,
+        "width":  0,
+        "height":  60,
+        "left":  205,
+        "end":  1612,
+        "top":  681,
+        "text":  " GOTOBUTTON VTEqNum_b73f44ea22c446eea52412013c0586ef \u0013 REF VTEqNum_b73f44ea22c446eea52412013c0586ef \\* CHARFORMAT \\! \u0015",
+        "range":  "outerCode"
+    },
+    {
+        "start":  1606,
+        "width":  0,
+        "height":  60,
+        "left":  205,
+        "end":  1611,
+        "top":  681,
+        "text":  "0.0-2",
+        "range":  "nestedResult"
+    },
+    {
+        "start":  1487,
+        "width":  103,
+        "height":  60,
+        "left":  205,
+        "end":  1614,
+        "top":  681,
+        "text":  "\u0015)",
+        "range":  "complete"
+    }
+]

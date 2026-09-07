@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="7c606105-e2a1-4dbf-b363-2f61a0fcf760" name="pojian_liao@DESKTOP-VM8VUAQ 2026-09-06 03:55:28" runUser="DESKTOP-VM8VUAQ\CodexSandboxOffline" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-06T03:55:28.2922330+08:00" queuing="2026-09-06T03:55:28.2922331+08:00" start="2026-09-06T03:55:27.8759025+08:00" finish="2026-09-06T03:55:28.2969995+08:00" />
+  <TestSettings name="default" id="3f69931b-5315-4354-8291-995afbb82cd0">
+    <Deployment runDeploymentRoot="pojian_liao_DESKTOP-VM8VUAQ_2026-09-06_03_55_28" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="19fa618a-7c82-450e-a2b6-5d2cf2405063" testId="8dd6d9f2-c273-4820-bdd9-49984e724f23" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;(&quot;, close: &quot;&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0174854" startTime="2026-09-06T03:55:28.2346936+08:00" endTime="2026-09-06T03:55:28.2347011+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="19fa618a-7c82-450e-a2b6-5d2cf2405063" />
+    <UnitTestResult executionId="9502af67-10bc-4175-9268-59384fc3a52f" testId="169ece5d-3e37-0c89-b2ff-043705a52cb2" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;{&quot;, close: &quot;&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0000843" startTime="2026-09-06T03:55:28.2361613+08:00" endTime="2026-09-06T03:55:28.2361614+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9502af67-10bc-4175-9268-59384fc3a52f" />
+    <UnitTestResult executionId="aca5373b-b90e-4bad-a7ee-c4c7db0f896f" testId="bf411095-a8fd-531e-2928-85917f50074b" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ARealClosingFenceIsNotEquivalentToAnEmptyOne" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0015011" startTime="2026-09-06T03:55:28.2366768+08:00" endTime="2026-09-06T03:55:28.2366769+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aca5373b-b90e-4bad-a7ee-c4c7db0f896f" />
+    <UnitTestResult executionId="7b8535b0-b64e-49fd-814b-c651d093a315" testId="6f7fb5ae-e0b5-bf96-29eb-cdf69b8e0c8e" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;&quot;, close: &quot;}&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0000857" startTime="2026-09-06T03:55:28.2361413+08:00" endTime="2026-09-06T03:55:28.2361413+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7b8535b0-b64e-49fd-814b-c651d093a315" />
+    <UnitTestResult executionId="759b17d8-a5fe-49a1-8f06-a8ff4dd672e8" testId="3a9ce051-9215-94a9-9140-a21af3c5c4ee" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;{&quot;, close: &quot;}&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0001100" startTime="2026-09-06T03:55:28.2361116+08:00" endTime="2026-09-06T03:55:28.2361116+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="759b17d8-a5fe-49a1-8f06-a8ff4dd672e8" />
+    <UnitTestResult executionId="87292de7-9e2f-4bc5-9c9e-a0218b213a52" testId="66ba76d2-903d-d72f-22c6-0dc00248ed60" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;|&quot;, close: &quot;&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0000886" startTime="2026-09-06T03:55:28.2361280+08:00" endTime="2026-09-06T03:55:28.2361280+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="87292de7-9e2f-4bc5-9c9e-a0218b213a52" />
+    <UnitTestResult executionId="228c3fd4-a724-4691-aaa6-760a33cbd129" testId="5f983f86-bbac-67f6-5527-c28413c6be0d" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;&quot;, close: &quot;]&quot;)" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0004115" startTime="2026-09-06T03:55:28.2359850+08:00" endTime="2026-09-06T03:55:28.2359851+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="228c3fd4-a724-4691-aaa6-760a33cbd129" />
+    <UnitTestResult executionId="9f217bb6-718d-448c-b23c-a8e1698d1026" testId="c3bed33c-fa92-4ce7-6437-2eeb4b5ac3b6" testName="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.UnmarkedEmptyOperatorIsNotSilentlyDiscarded" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0000859" startTime="2026-09-06T03:55:28.2367868+08:00" endTime="2026-09-06T03:55:28.2367869+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f217bb6-718d-448c-b23c-a8e1698d1026" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;|&quot;, close: &quot;&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="66ba76d2-903d-d72f-22c6-0dc00248ed60">
+      <Execution id="87292de7-9e2f-4bc5-9c9e-a0218b213a52" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;(&quot;, close: &quot;&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="8dd6d9f2-c273-4820-bdd9-49984e724f23">
+      <Execution id="19fa618a-7c82-450e-a2b6-5d2cf2405063" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ARealClosingFenceIsNotEquivalentToAnEmptyOne" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="bf411095-a8fd-531e-2928-85917f50074b">
+      <Execution id="aca5373b-b90e-4bad-a7ee-c4c7db0f896f" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ARealClosingFenceIsNotEquivalentToAnEmptyOne" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;{&quot;, close: &quot;&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="169ece5d-3e37-0c89-b2ff-043705a52cb2">
+      <Execution id="9502af67-10bc-4175-9268-59384fc3a52f" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.UnmarkedEmptyOperatorIsNotSilentlyDiscarded" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="c3bed33c-fa92-4ce7-6437-2eeb4b5ac3b6">
+      <Execution id="9f217bb6-718d-448c-b23c-a8e1698d1026" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="UnmarkedEmptyOperatorIsNotSilentlyDiscarded" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;{&quot;, close: &quot;}&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="3a9ce051-9215-94a9-9140-a21af3c5c4ee">
+      <Execution id="759b17d8-a5fe-49a1-8f06-a8ff4dd672e8" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;&quot;, close: &quot;}&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="6f7fb5ae-e0b5-bf96-29eb-cdf69b8e0c8e">
+      <Execution id="7b8535b0-b64e-49fd-814b-c651d093a315" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests.ExplicitFencesPreserveSemanticsAndExpandableTemplate(open: &quot;&quot;, close: &quot;]&quot;)" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="5f983f86-bbac-67f6-5527-c28413c6be0d">
+      <Execution id="228c3fd4-a724-4691-aaa6-760a33cbd129" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.MathTypeFenceRoundTripTests" name="ExplicitFencesPreserveSemanticsAndExpandableTemplate" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="8dd6d9f2-c273-4820-bdd9-49984e724f23" executionId="19fa618a-7c82-450e-a2b6-5d2cf2405063" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="169ece5d-3e37-0c89-b2ff-043705a52cb2" executionId="9502af67-10bc-4175-9268-59384fc3a52f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bf411095-a8fd-531e-2928-85917f50074b" executionId="aca5373b-b90e-4bad-a7ee-c4c7db0f896f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6f7fb5ae-e0b5-bf96-29eb-cdf69b8e0c8e" executionId="7b8535b0-b64e-49fd-814b-c651d093a315" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3a9ce051-9215-94a9-9140-a21af3c5c4ee" executionId="759b17d8-a5fe-49a1-8f06-a8ff4dd672e8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="66ba76d2-903d-d72f-22c6-0dc00248ed60" executionId="87292de7-9e2f-4bc5-9c9e-a0218b213a52" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5f983f86-bbac-67f6-5527-c28413c6be0d" executionId="228c3fd4-a724-4691-aaa6-760a33cbd129" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c3bed33c-fa92-4ce7-6437-2eeb4b5ac3b6" executionId="9f217bb6-718d-448c-b23c-a8e1698d1026" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="8" executed="8" passed="8" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.29)&#xD;
+[xUnit.net 00:00:00.04]   Discovering: VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.09]   Discovered:  VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.09]   Starting:    VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.13]   Finished:    VisualTeX.WindowsOffice.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

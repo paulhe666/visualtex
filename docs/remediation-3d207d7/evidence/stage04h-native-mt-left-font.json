@@ -1,0 +1,38 @@
+{
+    "fields":  [
+
+               ],
+    "paragraphs":  [
+
+                   ],
+    "selection":  {
+                      "start":  605,
+                      "end":  605,
+                      "text":  null,
+                      "style":  "正文",
+                      "Name":  "Times New Roman",
+                      "NameAscii":  "Times New Roman",
+                      "NameOther":  "Times New Roman",
+                      "NameFarEast":  "宋体",
+                      "NameBi":  "+正文 CS 字体",
+                      "Size":  12,
+                      "SizeBi":  11,
+                      "Bold":  0,
+                      "BoldBi":  0,
+                      "Italic":  0,
+                      "ItalicBi":  0,
+                      "Underline":  0,
+                      "Color":  -16777216,
+                      "Hidden":  0,
+                      "Position":  0,
+                      "Spacing":  0,
+                      "Scaling":  100,
+                      "Subscript":  0,
+                      "Superscript":  0
+                  },
+    "pid":  70976,
+    "bookmarks":  [
+
+                  ],
+    "document":  null
+}

@@ -441,7 +441,8 @@ internal static class MathTypeOleStorage
     internal static RewriteResult RewriteMathTypeCompoundFile(
         byte[] compoundFile,
         string mathMl,
-        bool inline)
+        bool inline,
+        double? fullFontSizePt = null)
     {
         ValidateCompoundFile(compoundFile);
         if (string.IsNullOrWhiteSpace(mathMl))
@@ -456,10 +457,9 @@ internal static class MathTypeOleStorage
             {
                 ValidateMathTypeStorage(storage);
                 var sourceNative = ReadStream(storage, "Equation Native");
-                rewritten = MathTypeMtefCodec.RewriteEquationNative(
-                    sourceNative,
-                    mathMl,
-                    inline);
+                rewritten = fullFontSizePt.HasValue
+                    ? MathTypeMtefCodec.RewriteEquationNativeAtFontSize(sourceNative, mathMl, inline, fullFontSizePt.Value)
+                    : MathTypeMtefCodec.RewriteEquationNative(sourceNative, mathMl, inline);
                 WriteStream(storage, "Equation Native", rewritten.EquationNative);
                 storage.Commit(0);
             }

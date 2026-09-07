@@ -1,0 +1,29 @@
+{
+  "closeEqual": true,
+  "updatedMath": {
+    "controlTags": [],
+    "type": 0,
+    "size": 10.5,
+    "start": 218,
+    "text": "<CR><CR>𝑚<CR>2(𝐸(𝜔)−𝑈)<CR><CR>=<CR>d<CR>d𝜔<CR>(𝜔⋅𝑓(𝜔)<CR>(𝐸(𝜔)−𝑈)<CR>)<CR>𝑎<CR>2<CR>+<CR>𝑏<CR>2<CR>=<CR>𝑐<CR>2<CR>",
+    "index": 3,
+    "tables": 1,
+    "font": "Latin Modern Math",
+    "end": 291
+  },
+  "otherMathTextsSame": true,
+  "numbers": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "reference": [
+    "2"
+  ],
+  "counts": {
+    "before": 6,
+    "after": 6
+  }
+}

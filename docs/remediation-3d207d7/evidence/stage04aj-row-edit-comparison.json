@@ -1,0 +1,119 @@
+{
+  "before": "stage04aj-omml-closed-__13",
+  "after": "stage04aj-omml-edited-__13",
+  "changedFormulaIndexes": [
+    4
+  ],
+  "beforeTables": [
+    [
+      1,
+      3
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      1,
+      3
+    ]
+  ],
+  "afterTables": [
+    [
+      1,
+      3
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      1,
+      3
+    ]
+  ],
+  "beforeNumbers": [
+    [
+      " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+      "1"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+      "2"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+      "3"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 4 \\* ARABIC \\* MERGEFORMAT ",
+      "4"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 5 \\* ARABIC \\* MERGEFORMAT ",
+      "5"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 6 \\* ARABIC \\* MERGEFORMAT ",
+      "6"
+    ],
+    [
+      " GOTOBUTTON VTEqNum_b595e5b940e04dee96d941963d9eec5c \u0013 REF VTEqNum_b595e5b940e04dee96d941963d9eec5c \\* CHARFORMAT \\! \u0015",
+      ""
+    ],
+    [
+      " REF VTEqNum_b595e5b940e04dee96d941963d9eec5c \\* CHARFORMAT \\! ",
+      "3"
+    ]
+  ],
+  "afterNumbers": [
+    [
+      " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+      "1"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+      "2"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+      "3"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 4 \\* ARABIC \\* MERGEFORMAT ",
+      "4"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 5 \\* ARABIC \\* MERGEFORMAT ",
+      "5"
+    ],
+    [
+      " SEQ VisualTeXEquation \\r 6 \\* ARABIC \\* MERGEFORMAT ",
+      "6"
+    ],
+    [
+      " GOTOBUTTON VTEqNum_b595e5b940e04dee96d941963d9eec5c \u0013 REF VTEqNum_b595e5b940e04dee96d941963d9eec5c \\* CHARFORMAT \\! \u0015",
+      ""
+    ],
+    [
+      " REF VTEqNum_b595e5b940e04dee96d941963d9eec5c \\* CHARFORMAT \\! ",
+      "3"
+    ]
+  ]
+}

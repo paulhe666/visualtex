@@ -1,0 +1,172 @@
+{
+  "beforeBody": [
+    {
+      "start": 291,
+      "line": 12,
+      "alignment": 3,
+      "index": 3,
+      "hidden": 0,
+      "before": 0,
+      "after": 0,
+      "font": "",
+      "inTable": false,
+      "end": 339,
+      "lineRule": 0,
+      "text": "\u0001公式后的正文保持行内状态。<CR>",
+      "size": 9999999
+    }
+  ],
+  "tailPayloadEqual": true,
+  "maths": [
+    {
+      "controlTags": [],
+      "type": 0,
+      "size": 10.5,
+      "start": 2,
+      "text": "<CR>𝑎<CR>2<CR>+<CR>𝑏<CR>2<CR>=<CR>𝑐<CR>2<CR>",
+      "index": 1,
+      "tables": 1,
+      "font": "Latin Modern Math",
+      "end": 22
+    },
+    {
+      "controlTags": [],
+      "type": 0,
+      "size": 10.5,
+      "start": 86,
+      "text": "<CR>e<CR>i𝜋<CR>+1=0",
+      "index": 2,
+      "tables": 1,
+      "font": "",
+      "end": 97
+    }
+  ],
+  "bookmarks": [
+    {
+      "end": 83,
+      "name": "VTEq_a1c5c589debb4f8b9d4fc07a1855f520",
+      "text": "(1)",
+      "start": 24
+    },
+    {
+      "end": 158,
+      "name": "VTEq_f11761a0fdb641a692c55a46b7d695de",
+      "text": "(2)",
+      "start": 99
+    },
+    {
+      "end": 82,
+      "name": "VTEqCap_a1c5c589debb4f8b9d4fc07a1855f520",
+      "text": "1",
+      "start": 25
+    },
+    {
+      "end": 157,
+      "name": "VTEqCap_f11761a0fdb641a692c55a46b7d695de",
+      "text": "2",
+      "start": 100
+    },
+    {
+      "end": 82,
+      "name": "VTEqNum_a1c5c589debb4f8b9d4fc07a1855f520",
+      "text": "1",
+      "start": 25
+    },
+    {
+      "end": 157,
+      "name": "VTEqNum_f11761a0fdb641a692c55a46b7d695de",
+      "text": "2",
+      "start": 100
+    },
+    {
+      "end": 195,
+      "name": "VTO_ad4d5119817d49399e0d57d8a412a8a4",
+      "text": "\u0001",
+      "start": 161
+    },
+    {
+      "end": 2,
+      "name": "VTOMML_a1c5c589debb4f8b9d4fc07a1855f520",
+      "text": "",
+      "start": 2
+    },
+    {
+      "end": 86,
+      "name": "VTOMML_f11761a0fdb641a692c55a46b7d695de",
+      "text": "",
+      "start": 86
+    },
+    {
+      "end": 158,
+      "name": "ZEqnNum100244",
+      "text": "(2)",
+      "start": 99
+    }
+  ],
+  "afterBody": [
+    {
+      "start": 161,
+      "line": 12,
+      "alignment": 3,
+      "index": 11,
+      "hidden": 0,
+      "before": 0,
+      "after": 0,
+      "font": "",
+      "inTable": false,
+      "end": 209,
+      "lineRule": 0,
+      "text": "\u0001公式后的正文保持行内状态。<CR>",
+      "size": 9999999
+    }
+  ],
+  "fields": [
+    {
+      "nested": 0,
+      "code": " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+      "result": "1",
+      "type": 12,
+      "start": 26,
+      "end": 81,
+      "index": 1
+    },
+    {
+      "nested": 0,
+      "code": " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+      "result": "2",
+      "type": 12,
+      "start": 101,
+      "end": 156,
+      "index": 2
+    },
+    {
+      "nested": 0,
+      "code": " EMBED VisualTeX.Formula.1 \\s ",
+      "result": "\u0001",
+      "type": 58,
+      "start": 162,
+      "end": 194,
+      "index": 3
+    },
+    {
+      "nested": 1,
+      "code": " GOTOBUTTON ZEqnNum100244 \u0013 REF ZEqnNum100244 \\* CHARFORMAT \\! \u0015",
+      "result": "",
+      "type": 50,
+      "start": 210,
+      "end": 279,
+      "index": 4
+    },
+    {
+      "nested": 0,
+      "code": " REF ZEqnNum100244 \\* CHARFORMAT \\! ",
+      "result": "(2)",
+      "type": 3,
+      "start": 237,
+      "end": 277,
+      "index": 5
+    }
+  ],
+  "tailHeightEqual": true,
+  "tailWidthEqual": true
+}

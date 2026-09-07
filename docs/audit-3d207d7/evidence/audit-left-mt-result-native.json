@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  136218,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  136212,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  136214,
+        "name":  "已成功转换 0 个公式，随后停止。\r\n\r\nOMML fingerprint finalization failed: Word document XML exposed 2/3 converted OMML formulas while finalizing fingerprints. Missing: bc5fcc45-5f37-425c-9d8c-f894a1a2124b",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

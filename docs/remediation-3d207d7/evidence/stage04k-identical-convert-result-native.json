@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  414038,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  1134458,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1724720,
+        "name":  "Converted target finalization failed: The VisualTeX OMML identity for 45acd661-a077-46ca-9ced-7621670b2e31 drifted and its equation could not be recovered uniquely.\nEquation-reference compatibility finalization failed: Converted VisualTeX formula 45acd661-a077-46ca-9ced-7621670b2e31 has no durable number bookmark VTEqNum_45acd661a07746ca9ced7621670b2e31.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

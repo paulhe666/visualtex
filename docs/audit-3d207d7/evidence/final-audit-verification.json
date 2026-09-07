@@ -1,0 +1,437 @@
+{
+  "scope": "Audit evidence consistency, not repaired-product acceptance",
+  "time": "2026-09-05T17:49:18.405Z",
+  "head": "3d207d7a81ff40014fd861b242cff96ea77060a2",
+  "checks": [
+    {
+      "name": "original document count",
+      "ok": true,
+      "detail": [
+        "文档36",
+        "文档35",
+        "文档33",
+        "文档29",
+        "文档28",
+        "文档26",
+        "文档22",
+        "文档1"
+      ]
+    },
+    {
+      "name": "original preserved 文档36",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档35",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档33",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档29",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档28",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档26",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档22",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "original preserved 文档1",
+      "ok": true,
+      "detail": {
+        "changed": [],
+        "saved": false
+      }
+    },
+    {
+      "name": "snapshot repro01-converted",
+      "ok": true,
+      "detail": {
+        "document": "文档37",
+        "observed": [
+          3,
+          0,
+          3
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro01-edit-failed",
+      "ok": true,
+      "detail": {
+        "document": "文档37",
+        "observed": [
+          4,
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-close-before",
+      "ok": true,
+      "detail": {
+        "document": "文档59",
+        "observed": [
+          3,
+          0,
+          3
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-close-after",
+      "ok": true,
+      "detail": {
+        "document": "文档59",
+        "observed": [
+          4,
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-single-omml-control-after",
+      "ok": true,
+      "detail": {
+        "document": "文档69",
+        "observed": [
+          1,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro02-after-format",
+      "ok": true,
+      "detail": {
+        "document": "文档40",
+        "observed": [
+          0,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-ref-final-after",
+      "ok": true,
+      "detail": {
+        "document": "文档70",
+        "observed": [
+          0,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro03-left-vt-after",
+      "ok": true,
+      "detail": {
+        "document": "文档43",
+        "observed": [
+          0,
+          3,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro03-right-mt-after",
+      "ok": true,
+      "detail": {
+        "document": "文档45",
+        "observed": [
+          0,
+          3,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-left-mt-after",
+      "ok": true,
+      "detail": {
+        "document": "文档66",
+        "observed": [
+          0,
+          3,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro03-control-after",
+      "ok": true,
+      "detail": {
+        "document": "文档47",
+        "observed": [
+          2,
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04-omml-import-unumbered",
+      "ok": true,
+      "detail": {
+        "document": "文档49",
+        "observed": [
+          6,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04b-omml-numbered-after",
+      "ok": true,
+      "detail": {
+        "document": "文档50",
+        "observed": [
+          6,
+          0,
+          5
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04c-native-numbered-after",
+      "ok": true,
+      "detail": {
+        "document": "文档51",
+        "observed": [
+          0,
+          6,
+          5
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04d-mathtype-cases-after",
+      "ok": true,
+      "detail": {
+        "document": "文档52",
+        "observed": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04e-seeded-omml-after",
+      "ok": true,
+      "detail": {
+        "document": "文档57",
+        "observed": [
+          1,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04f-seeded-native-after",
+      "ok": true,
+      "detail": {
+        "document": "文档58",
+        "observed": [
+          0,
+          7,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro04f-after-edit",
+      "ok": true,
+      "detail": {
+        "document": "文档58",
+        "observed": [
+          0,
+          7,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot repro05-omml-after",
+      "ok": true,
+      "detail": {
+        "document": "文档53",
+        "observed": [
+          2,
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-omml-soft-clean-after",
+      "ok": true,
+      "detail": {
+        "document": "文档63",
+        "observed": [
+          2,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-vt-soft-clean-after",
+      "ok": true,
+      "detail": {
+        "document": "文档64",
+        "observed": [
+          0,
+          2,
+          2
+        ]
+      }
+    },
+    {
+      "name": "snapshot audit-mt-soft-clean-after",
+      "ok": true,
+      "detail": {
+        "document": "文档65",
+        "observed": [
+          0,
+          2,
+          2
+        ]
+      }
+    },
+    {
+      "name": "recorded dialog repro03-left-vt-result-native.json",
+      "ok": true,
+      "detail": "non-empty boundary"
+    },
+    {
+      "name": "recorded dialog repro03-right-mt-result-native.json",
+      "ok": true,
+      "detail": "exposed 2/3"
+    },
+    {
+      "name": "recorded dialog audit-left-mt-result-native.json",
+      "ok": true,
+      "detail": "exposed 2/3"
+    },
+    {
+      "name": "recorded dialog repro04e-seeded-omml-result-native.json",
+      "ok": true,
+      "detail": "disappeared before row grouping"
+    },
+    {
+      "name": "recorded dialog repro04d-mathtype-cases-result-native.json",
+      "ok": true,
+      "detail": "invalid standalone MathType MTEF"
+    },
+    {
+      "name": "cases signature difference",
+      "ok": true,
+      "detail": "only trailing empty operator differs"
+    },
+    {
+      "name": "cases pure-data control",
+      "ok": true,
+      "detail": "not a missing second-column fix"
+    },
+    {
+      "name": "import font evidence",
+      "ok": true,
+      "detail": [
+        "Cambria Math",
+        "Cambria Math",
+        "Cambria Math",
+        "Cambria Math",
+        "Cambria Math",
+        "Cambria Math"
+      ]
+    },
+    {
+      "name": "baseline HEAD",
+      "ok": true,
+      "detail": "3d207d7a81ff40014fd861b242cff96ea77060a2"
+    },
+    {
+      "name": "no tracked logical changes",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "installed/NSIS payload hash desktop",
+      "ok": true,
+      "detail": {
+        "installed": "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+        "installer": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\src-tauri\\target\\release\\bundle\\nsis\\VisualTeX_1.2.6_x64-setup.exe",
+        "installedSha256": "3029a2fc92f646fabeae17b4b7a2cf8820da63de926089f294a1086ad167f729",
+        "packagedSha256": "3029a2fc92f646fabeae17b4b7a2cf8820da63de926089f294a1086ad167f729",
+        "rawBuildSha256": "31aad65737ee324dda48bc3883d19385ee709b3d2863c1f9548543d740ed3fe8",
+        "rawBuildDifferentBytes": 3,
+        "rawBuildDifferenceOffsets": [
+          18350656,
+          18350657,
+          18350658
+        ]
+      }
+    },
+    {
+      "name": "installed/build hash Word VSTO",
+      "ok": true,
+      "detail": {
+        "installed": "C:\\Program Files\\VisualTeX\\WindowsOffice\\VSTO\\VisualTeX.WordVsto.dll",
+        "built": "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\src-windows\\VisualTeX.WordVsto\\bin\\x64\\Release\\net472\\VisualTeX.WordVsto.dll",
+        "installedSha256": "97841ac0f5ab7edf557c833d7182c71b27ed137b04846ab0776f658cf091a01a",
+        "buildSha256": "97841ac0f5ab7edf557c833d7182c71b27ed137b04846ab0776f658cf091a01a"
+      }
+    }
+  ],
+  "recordedUiActions": 575,
+  "failedAutomationActions": 12,
+  "evidenceFiles": 311,
+  "allChecksPassed": true
+}

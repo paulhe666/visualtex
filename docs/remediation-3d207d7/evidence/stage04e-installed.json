@@ -1,0 +1,232 @@
+﻿{
+    "source":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\src-windows\\VisualTeX.WordVsto\\bin\\x64\\Release\\net472",
+    "wordSha256":  "F00AB7641AEC82EBEFDDF31D25FC0F6947DE463900FB1FCB5CCFAA9D3BF9ED90",
+    "existingWordProcesses":  [
+                                  {
+                                      "Id":  20052,
+                                      "StartTime":  "\/Date(1788663006768)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  20148,
+                                      "StartTime":  "\/Date(1788637322014)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  27256,
+                                      "StartTime":  "\/Date(1788636625656)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  27664,
+                                      "StartTime":  "\/Date(1788620861263)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  27668,
+                                      "StartTime":  "\/Date(1788661239439)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  27764,
+                                      "StartTime":  "\/Date(1788663127675)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  31292,
+                                      "StartTime":  "\/Date(1788637971509)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  31432,
+                                      "StartTime":  "\/Date(1788663386947)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  43732,
+                                      "StartTime":  "\/Date(1788662122079)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  45060,
+                                      "StartTime":  "\/Date(1788637619209)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  48952,
+                                      "StartTime":  "\/Date(1788634910267)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  55728,
+                                      "StartTime":  "\/Date(1788658460549)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  59000,
+                                      "StartTime":  "\/Date(1788633312417)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  59088,
+                                      "StartTime":  "\/Date(1788667694391)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  60152,
+                                      "StartTime":  "\/Date(1788657568388)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  61960,
+                                      "StartTime":  "\/Date(1788659280627)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  62856,
+                                      "StartTime":  "\/Date(1788661022521)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  63424,
+                                      "StartTime":  "\/Date(1788660037375)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  63624,
+                                      "StartTime":  "\/Date(1788660418776)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  65336,
+                                      "StartTime":  "\/Date(1788661440132)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  67744,
+                                      "StartTime":  "\/Date(1788663269739)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  67956,
+                                      "StartTime":  "\/Date(1788662491952)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  68776,
+                                      "StartTime":  "\/Date(1788663745327)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  68872,
+                                      "StartTime":  "\/Date(1788662624646)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  69024,
+                                      "StartTime":  "\/Date(1788666808320)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  71660,
+                                      "StartTime":  "\/Date(1788664892679)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  71976,
+                                      "StartTime":  "\/Date(1788664394062)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  75740,
+                                      "StartTime":  "\/Date(1788665604166)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  78632,
+                                      "StartTime":  "\/Date(1788666333682)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  },
+                                  {
+                                      "Id":  81992,
+                                      "StartTime":  "\/Date(1788668282340)\/",
+                                      "Path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+                                  }
+                              ],
+    "label":  "stage04e",
+    "files":  [
+                  {
+                      "sha256":  "2BD69AFFC3DA00715116F713F57EAB9707E96DAF3562AD0215987B15B9C16F73",
+                      "file":  "GUST-FONT-LICENSE.txt"
+                  },
+                  {
+                      "sha256":  "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F",
+                      "file":  "latinmodern-math.otf"
+                  },
+                  {
+                      "sha256":  "80678203BD0203A6594F4E330B22543C0DE5059382BB1C9334B7868B8F31B1BC",
+                      "file":  "Microsoft.Bcl.AsyncInterfaces.dll"
+                  },
+                  {
+                      "sha256":  "DAD6C302A2025BAF6F96AE12825A0FB7ABAAD0F9CD4AE84F374899E8E729D97D",
+                      "file":  "Microsoft.Office.Interop.Word.dll"
+                  },
+                  {
+                      "sha256":  "E6FDD5FB44B656146FA988D191F58901C09A347D3F4FBAA3B45B24A6AD7EC30B",
+                      "file":  "README-Latin-Modern-Math.txt"
+                  },
+                  {
+                      "sha256":  "ACCCCFBE45D9F08FFEED9916E37B33E98C65BE012CFFF6E7FA7B67210CE1FEFB",
+                      "file":  "System.Buffers.dll"
+                  },
+                  {
+                      "sha256":  "BF3FB84664F4097F1A8A9BC71A51DCF8CF1A905D4080A4D290DA1730866E856F",
+                      "file":  "System.Memory.dll"
+                  },
+                  {
+                      "sha256":  "1D3EF8698281E7CF7371D1554AFEF5872B39F96C26DA772210A33DA041BA1183",
+                      "file":  "System.Numerics.Vectors.dll"
+                  },
+                  {
+                      "sha256":  "37768488E8EF45729BC7D9A2677633C6450042975BB96516E186DA6CB9CD0DCF",
+                      "file":  "System.Runtime.CompilerServices.Unsafe.dll"
+                  },
+                  {
+                      "sha256":  "E9C4F5EED186CB129C527C4B8D67D163EA2F2396E9D8B96E30B5E7C12203CE84",
+                      "file":  "System.Text.Encodings.Web.dll"
+                  },
+                  {
+                      "sha256":  "86C3F263AE9B4469AB1266C80471087082447EB4A38E6B97BF5E84DE15C07A1D",
+                      "file":  "System.Text.Json.dll"
+                  },
+                  {
+                      "sha256":  "4F81FFD0DC7204DB75AFC35EA4291769B07C440592F28894260EEA76626A23C6",
+                      "file":  "System.Threading.Tasks.Extensions.dll"
+                  },
+                  {
+                      "sha256":  "E905D102585B22C6DF04F219AF5CBDBFA7BC165979E9788B62DF6DCC165E10F4",
+                      "file":  "System.ValueTuple.dll"
+                  },
+                  {
+                      "sha256":  "A1E18C6AB9108577F67A0B6FB2C9E4E09D46A1F7E5ED4A20873E8C46B96FC6AB",
+                      "file":  "VisualTeX.WindowsOffice.Contracts.dll"
+                  },
+                  {
+                      "sha256":  "E8221DA70695C57A499BC6E9A0EE288021BF873ED206E06E7D4745F35E051647",
+                      "file":  "VisualTeX.WindowsOffice.Contracts.pdb"
+                  },
+                  {
+                      "sha256":  "F00AB7641AEC82EBEFDDF31D25FC0F6947DE463900FB1FCB5CCFAA9D3BF9ED90",
+                      "file":  "VisualTeX.WordVsto.dll"
+                  },
+                  {
+                      "sha256":  "E85BF81EABC4CB667181B11C29CF67454AA96210B20ECE716D6798E35B947C49",
+                      "file":  "VisualTeX.WordVsto.pdb"
+                  }
+              ],
+    "registryKey":  "Software\\Classes\\CLSID\\{F1B68342-F9C6-4E7D-A9C6-A2F64C3558A1}",
+    "time":  "2026-09-06T04:28:46.2552895Z",
+    "previousUserCodeBase":  "file:///C:/Users/pojian_liao/AppData/Local/VisualTeX/office/remediation-builds/AF14308984C8B6D4EFE35D32063FC71F8E8ECF8723159185A295FE70580E7398/VisualTeX.WordVsto.dll",
+    "directory":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\office\\remediation-builds\\F00AB7641AEC82EBEFDDF31D25FC0F6947DE463900FB1FCB5CCFAA9D3BF9ED90",
+    "manualServiceAcceptance":  false
+}

@@ -1,0 +1,48 @@
+﻿2026-09-06T14:30:49.8431508+08:00 bulk-import-start
+2026-09-06T14:30:49.9253170+08:00 bulk-import-ui-created sessionId=57d5fea5-f449-45b4-8dda-dc8bcbc8c192
+2026-09-06T14:30:49.9283182+08:00 bulk-import-ui-opened sessionId=57d5fea5-f449-45b4-8dda-dc8bcbc8c192
+2026-09-06T14:32:58.6721116+08:00 bulk-import-ui-finished sessionId=57d5fea5-f449-45b4-8dda-dc8bcbc8c192 status=committing error=<null>
+2026-09-06T14:32:58.6791111+08:00 parsed blocks=15 formulas=6 mode=MathType fontSizePt=10.5
+2026-09-06T14:32:58.6941087+08:00 render-prepare index=1/6 display=inline latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T14:32:58.6958326+08:00 converter-create display=inline mode=mathTypeOle latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T14:32:58.7034571+08:00 converter-created sessionId=7b16240d-b732-4a42-94a0-4ed6ca6d5fa8
+2026-09-06T14:32:58.7044644+08:00 render-prepare index=2/6 display=block latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T14:32:58.7044644+08:00 converter-create display=block mode=mathTypeOle latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T14:32:58.7084646+08:00 converter-created sessionId=4029af23-c895-4acc-b91e-dcf5af7d1040
+2026-09-06T14:32:58.7084646+08:00 render-prepare index=3/6 display=block latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T14:32:58.7084646+08:00 converter-create display=block mode=mathTypeOle latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T14:32:58.7124643+08:00 converter-created sessionId=8cf313fd-1457-4064-a19d-7a42ee813528
+2026-09-06T14:32:58.7124643+08:00 render-prepare index=4/6 display=block latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T14:32:58.7124643+08:00 converter-create display=block mode=mathTypeOle latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T14:32:58.7154649+08:00 converter-created sessionId=a6719408-73f9-42aa-a440-c0cd1e881e9b
+2026-09-06T14:32:58.7154649+08:00 render-prepare index=5/6 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T14:32:58.7154649+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T14:32:58.7187496+08:00 converter-created sessionId=4e303c9a-a4a9-4492-b9fd-5aeb7176d721
+2026-09-06T14:32:58.7187496+08:00 render-prepare index=6/6 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T14:32:58.7187496+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T14:32:58.7227585+08:00 converter-created sessionId=18f840e2-9100-48dd-a87e-4fedfb78d99b
+2026-09-06T14:32:58.7227585+08:00 render-batch-start unique=6 total=6
+2026-09-06T14:32:58.8151000+08:00 render-batch-item sessionId=7b16240d-b732-4a42-94a0-4ed6ca6d5fa8 status=committing display=inline
+2026-09-06T14:32:58.8324479+08:00 render-batch-item sessionId=4029af23-c895-4acc-b91e-dcf5af7d1040 status=committing display=block
+2026-09-06T14:32:58.8547627+08:00 render-batch-item sessionId=8cf313fd-1457-4064-a19d-7a42ee813528 status=committing display=block
+2026-09-06T14:32:58.8917653+08:00 render-batch-item sessionId=a6719408-73f9-42aa-a440-c0cd1e881e9b status=committing display=block
+2026-09-06T14:32:58.9137636+08:00 render-batch-item sessionId=4e303c9a-a4a9-4492-b9fd-5aeb7176d721 status=committing display=block
+2026-09-06T14:32:58.9306643+08:00 render-batch-item sessionId=18f840e2-9100-48dd-a87e-4fedfb78d99b status=committing display=block
+2026-09-06T14:32:58.9311809+08:00 render-batch-complete unique=6 elapsedMs=207
+2026-09-06T14:32:59.8404862+08:00 mathtype-native-preview-batch templates=6 formulas=6 elapsedMs=893
+2026-09-06T14:32:59.9064885+08:00 bulk-import-failed System.Runtime.InteropServices.COMException (0x80004005): 对 COM 组件的调用返回了错误 HRESULT E_FAIL。
+   在 Microsoft.Office.Core._CommandBarComboBox.get_ListCount()
+   在 VisualTeX.WordVsto.WordUndoHistorySnapshot.ReadRecords(Document document)
+   在 VisualTeX.WordVsto.WordUndoHistorySnapshot..ctor(Document document)
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot..ctor(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ExecuteDocumentEdit[T](Document document, String name, Func`1 edit)
+   在 VisualTeX.WordVsto.WordFormulaService.InsertBulkDocument(WordBulkImportDocument source, IReadOnlyDictionary`2 prepared, String expectedDocumentId, String sourceObjectId)
+   在 VisualTeX.WordVsto.ThisAddIn.<>c__DisplayClass131_2.<BulkImportAsync>b__7()
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<BulkImportAsync>d__131.MoveNext()
+2026-09-06T14:33:52.6127382+08:00 bulk-operation-gate-released
+2026-09-06T14:33:52.6531617+08:00 bulk-session-cleanup-complete sessions=7 completed=False

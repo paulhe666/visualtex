@@ -1,0 +1,13 @@
+[
+  ["new", "stage04al-cases-ab"],
+  ["number-format", "continuous", "stage04al-continuous"],
+  ["import", "omml", "true", "stage04al-cases-omml", "cases-render-source.tex"],
+  ["snapshot", "stage04al-cases-omml"],
+  ["convert", "omml-mt", "full", "stage04al-cases-converted"],
+  ["snapshot", "stage04al-cases-converted"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04al-cases-converted-visible\"}"],
+  ["next"],
+  ["import", "mathType", "true", "stage04al-cases-direct", "cases-render-source.tex"],
+  ["snapshot", "stage04al-cases-ab"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04al-cases-ab-visible\"}"]
+]

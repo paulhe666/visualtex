@@ -17,6 +17,14 @@ internal static class WordDoubleClickRouting
         return true;
     }
 
+    internal static bool ForegroundProcessBelongsToOwner(
+        uint foregroundProcessId,
+        int ownerProcessId)
+    {
+        if (foregroundProcessId == 0 || ownerProcessId <= 0) return false;
+        return foregroundProcessId == unchecked((uint)ownerProcessId);
+    }
+
     internal static bool ScreenPointHitsFormulaRectangle(
         int screenX,
         int screenY,

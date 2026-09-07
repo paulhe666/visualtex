@@ -940,6 +940,200 @@ internal static partial class Program
         }
     }
 
+    private static void RunActiveMathTypeOmmlLiveDiagnostic(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var tracePath = Path.Combine(artifactRoot, "active-mathtype-omml-live.trace.log");
+        var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousPerfTrace = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF");
+        var previousCountTrace = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS");
+        var previousNumberPerfTrace = Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE");
+        Word.Application? application = null;
+        Word.Documents? documents = null;
+        Word.Document? document = null;
+        try
+        {
+            try { File.Delete(tracePath); } catch { }
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF", "1");
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS", "1");
+            Environment.SetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE", "1");
+
+            application = (Word.Application)Marshal.GetActiveObject("Word.Application");
+            var requestedName = Environment.GetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_LIVE_SOURCE_NAME");
+            if (!string.IsNullOrWhiteSpace(requestedName))
+            {
+                documents = application.Documents;
+                for (var index = 1; index <= documents.Count; index++)
+                {
+                    Word.Document? candidate = null;
+                    try
+                    {
+                        candidate = documents[index];
+                        if (!string.Equals(candidate.Name, requestedName, StringComparison.Ordinal))
+                            continue;
+                        document = candidate;
+                        candidate = null;
+                        break;
+                    }
+                    finally { Release(candidate); }
+                }
+                if (document is null)
+                    throw new FileNotFoundException(
+                        $"The running Word instance does not contain '{requestedName}'.");
+                document.Activate();
+                System.Windows.Forms.Application.DoEvents();
+            }
+            else
+            {
+                document = application.ActiveDocument
+                    ?? throw new InvalidOperationException(
+                        "No active Word document is available for live MathType→OMML diagnostics.");
+            }
+            var sourceName = document.Name;
+            var sourceWasSaved = document.Saved;
+            var mathTypeBefore = CountMathTypeOleShapes(document);
+            var ommlBefore = document.OMaths.Count;
+            var fieldsBefore = document.Fields.Count;
+            var bookmarksBefore = document.Bookmarks.Count;
+            var paragraphsBefore = document.Paragraphs.Count;
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML LIVE BEFORE] document={sourceName}; saved={sourceWasSaved}; "
+                + $"mathType={mathTypeBefore}; omml={ommlBefore}; fields={fieldsBefore}; "
+                + $"bookmarks={bookmarksBefore}; paragraphs={paragraphsBefore}");
+
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML LIVE PLAN] targets={plan.Targets.Count}; "
+                + $"numbered={plan.Targets.Count(target => target.Numbered)}; "
+                + $"display={plan.Targets.Count(target => string.Equals(target.DisplayMode, "block", StringComparison.Ordinal))}; "
+                + $"inline={plan.Targets.Count(target => string.Equals(target.DisplayMode, "inline", StringComparison.Ordinal))}; "
+                + $"format={plan.NumberFormatId}");
+            foreach (var pair in plan.Targets
+                         .OrderBy(target => target.SourceStart)
+                         .Select((target, index) => (Target: target, Index: index + 1)))
+            {
+                Console.WriteLine(
+                    $"  LIVE-TARGET|{pair.Index}|start={pair.Target.SourceStart}|range={pair.Target.SourceObjectId}|"
+                    + $"display={pair.Target.DisplayMode}|numbered={pair.Target.Numbered}|side={pair.Target.MathTypeNumberPosition}|"
+                    + $"latex={pair.Target.Latex}");
+            }
+            if (plan.Targets.Count != mathTypeBefore)
+                throw new InvalidDataException(
+                    $"Live capture found {plan.Targets.Count}/{mathTypeBefore} MathType sources before mutation.");
+
+            var prepared = PrepareOmmlMathTypeTargets(plan, string.Empty);
+            var watch = Stopwatch.StartNew();
+            WordFormulaFormatConversionResult result;
+            try
+            {
+                result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            }
+            catch (Exception error)
+            {
+                watch.Stop();
+                Console.WriteLine(
+                    $"[ACTIVE MT→OMML LIVE THROW] elapsedMs={watch.ElapsedMilliseconds}; "
+                    + $"{error.GetType().FullName}: {error.Message}\n{error}");
+                DumpLiveMathTypeOmmlMutationState(document, "throw");
+                throw;
+            }
+            watch.Stop();
+
+            var mathTypeAfter = CountMathTypeOleShapes(document);
+            var ommlAfter = document.OMaths.Count;
+            Console.WriteLine(
+                $"[ACTIVE MT→OMML LIVE RESULT] converted={result.FormulaCount}; failed={result.FailedFormulaCount}; "
+                + $"mathType={mathTypeBefore}->{mathTypeAfter}; omml={ommlBefore}->{ommlAfter}; "
+                + $"elapsedMs={watch.ElapsedMilliseconds}; failures={string.Join(" || ", result.Failures)}");
+            DumpLiveMathTypeOmmlMutationState(document, "result");
+
+            if (result.FailedFormulaCount != 0)
+                throw new InvalidDataException(
+                    $"Live MathType→OMML conversion stopped after {result.FormulaCount} formulas: "
+                    + (result.Failures.FirstOrDefault() ?? "unknown failure"));
+            if (mathTypeAfter != 0)
+                throw new InvalidDataException(
+                    $"Live MathType→OMML conversion reported success but retained {mathTypeAfter} MathType sources.");
+            if (ommlAfter != ommlBefore + mathTypeBefore)
+                throw new InvalidDataException(
+                    $"Live MathType→OMML conversion changed OMML count unexpectedly: expected {ommlBefore + mathTypeBefore}, actual {ommlAfter}.");
+            Console.WriteLine(
+                "[ACTIVE MT→OMML LIVE PASS] Current active document converted without saving or closing Word.");
+        }
+        finally
+        {
+            try { document?.Activate(); } catch { }
+            Release(document);
+            Release(documents);
+            Release(application);
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", previousTracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF", previousPerfTrace);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_COUNTS", previousCountTrace);
+            Environment.SetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE", previousNumberPerfTrace);
+            ForceComCleanup();
+        }
+    }
+
+    private static void DumpLiveMathTypeOmmlMutationState(Word.Document document, string stage)
+    {
+        var vtOmmlBookmarks = 0;
+        var vtEqBookmarks = 0;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? bookmark = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                if (bookmark.Name.StartsWith("VTOMML_", StringComparison.OrdinalIgnoreCase))
+                    vtOmmlBookmarks++;
+                if (bookmark.Name.StartsWith("VTEq_", StringComparison.OrdinalIgnoreCase))
+                    vtEqBookmarks++;
+            }
+        }
+        finally
+        {
+            Release(bookmark);
+            Release(bookmarks);
+        }
+        Console.WriteLine(
+            $"[ACTIVE MT→OMML LIVE STATE {stage}] mathType={CountMathTypeOleShapes(document)}; "
+            + $"omml={document.OMaths.Count}; fields={document.Fields.Count}; bookmarks={document.Bookmarks.Count}; "
+            + $"vtOmml={vtOmmlBookmarks}; vtEq={vtEqBookmarks}; paragraphs={document.Paragraphs.Count}; saved={document.Saved}");
+        for (var index = 1; index <= document.Paragraphs.Count; index++)
+        {
+            Word.Paragraph? paragraph = null;
+            Word.Range? range = null;
+            try
+            {
+                paragraph = document.Paragraphs[index];
+                range = paragraph.Range;
+                if (range.InlineShapes.Count == 0 && range.OMaths.Count == 0)
+                    continue;
+                string style;
+                try { style = ((Word.Style)range.get_Style()).NameLocal; }
+                catch { style = string.Empty; }
+                Console.WriteLine(
+                    $"  LIVE-PARA|{index}|range={range.Start}:{range.End}|style={style}|"
+                    + $"fields={range.Fields.Count}|shapes={range.InlineShapes.Count}|omaths={range.OMaths.Count}|"
+                    + $"table={(bool)range.get_Information(Word.WdInformation.wdWithInTable)}");
+            }
+            finally
+            {
+                Release(range);
+                Release(paragraph);
+            }
+        }
+    }
+
     private static void RunActiveMathTypeOmmlCopyDiagnostic(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);

@@ -1,0 +1,44 @@
+[
+    {
+        "handle":  419540,
+        "name":  "",
+        "id":  419540,
+        "class":  "WindowsForms10.Window.8.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  812460,
+        "name":  "将在整个文档中原位重绘 2 个 LaTeX 公式为 VisualTeX OLE。",
+        "id":  812460,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  157424,
+        "name":  "为全部 2 个行间公式添加编号",
+        "id":  157424,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  1337428,
+        "name":  "编号格式：全文连续编号（1）。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
+        "id":  1337428,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  288490,
+        "name":  "",
+        "id":  288490,
+        "class":  "WindowsForms10.Window.8.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  157454,
+        "name":  "取消",
+        "id":  157454,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r137_ad1"
+    },
+    {
+        "handle":  3563946,
+        "name":  "开始重绘",
+        "id":  3563946,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r137_ad1"
+    }
+]

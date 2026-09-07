@@ -1,0 +1,40 @@
+{
+  "scope": "All top-level mixed formula and prose paragraphs; original XML pPr and ordinary text run rPr",
+  "before": [
+    {
+      "paragraph": null,
+      "runs": [
+        {
+          "text": "这几个公式不知道对不对：",
+          "format": null
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "paragraph": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}snapToGrid",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "0"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        {
+          "text": "这几个公式不知道对不对：",
+          "format": null
+        }
+      ]
+    }
+  ],
+  "equal": false
+}

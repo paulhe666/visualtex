@@ -1,0 +1,42 @@
+﻿{
+    "pid":  75288,
+    "time":  "2026-09-06T04:41:34.1541861Z",
+    "action":  "real mouse double-click",
+    "wordMacroButtonTarget":  {
+                                  "nativeSelectionType":  1,
+                                  "codeStart":  292,
+                                  "codeEnd":  496,
+                                  "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                  "type":  51
+                              },
+    "after":  {
+                  "end":  291,
+                  "text":  "\u0015",
+                  "start":  291
+              },
+    "before":  {
+                   "start":  8,
+                   "end":  34
+               },
+    "rectangle":  {
+                      "left":  1183,
+                      "width":  1,
+                      "top":  1627,
+                      "height":  1
+                  },
+    "passed":  true,
+    "target":  {
+                   "end":  495,
+                   "text":  "0.0-2",
+                   "start":  363
+               },
+    "actualReferenceRectangle":  {
+                                     "left":  1133,
+                                     "width":  0,
+                                     "top":  1596,
+                                     "height":  60
+                                 },
+    "wordExpandedTargetField":  null,
+    "bookmark":  "VTEqNum_6a319116fb6a4df0af12bee279bcc8ee",
+    "document":  "文档103"
+}

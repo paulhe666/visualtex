@@ -1,0 +1,627 @@
+2026-09-06T10:17:03.3375413+08:00 pid=62856 tid=1 word-addin-loaded pid=62856 assembly=C:\Users\pojian_liao\AppData\Local\VisualTeX\office\remediation-builds\7DB245652E9EFBC0D6886511BE6606D0E4D2C18CD11269CD937172D7FF796518\VisualTeX.WordVsto.dll mvid=25557806-87cc-4b2c-997f-c5485b319fa9
+2026-09-06T10:17:03.7129606+08:00 pid=62856 tid=1 hook-started handle=0xFFFFFFFF861118D7
+2026-09-06T10:17:03.9081154+08:00 pid=62856 tid=10 mathtype-native-preview-shared-prewarm-complete
+2026-09-06T10:17:39.4286692+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:17:44.3169707+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Native OLE Display Formula recording=False level=0
+2026-09-06T10:17:44.3169707+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Insert Native OLE Display Formula recording=True level=1
+2026-09-06T10:17:44.7746632+08:00 pid=62856 tid=1 word-undo-end recording=False level=0
+2026-09-06T10:17:44.7876612+08:00 pid=62856 tid=16 ribbon-session-operation-released sessionId=989fd09c-f8b1-4dd0-9f4a-21f01f9b69b2
+2026-09-06T10:17:54.0255627+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:17:58.8296529+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Native OLE Display Formula recording=False level=0
+2026-09-06T10:17:58.8306534+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Insert Native OLE Display Formula recording=True level=1
+2026-09-06T10:17:59.0543196+08:00 pid=62856 tid=1 word-undo-end recording=True level=1
+2026-09-06T10:17:59.0593198+08:00 pid=62856 tid=18 ribbon-session-operation-released sessionId=d61d4474-c79c-4b9c-a95b-785224f104ab
+2026-09-06T10:18:08.5498663+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:18:12.4229610+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Native OLE Inline Formula recording=False level=0
+2026-09-06T10:18:12.4229610+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Insert Native OLE Inline Formula recording=True level=1
+2026-09-06T10:18:12.4849600+08:00 pid=62856 tid=1 word-undo-end recording=True level=1
+2026-09-06T10:18:12.4889588+08:00 pid=62856 tid=16 ribbon-session-operation-released sessionId=e62c4850-55f8-4f54-abb9-45b4e9103bf8
+2026-09-06T10:18:20.8899505+08:00 pid=62856 tid=1 format-conversion-start sourceMode=nativeOle targetMode=wordOmml wholeDocument=True
+2026-09-06T10:18:20.9019493+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-access source=nativeOle index=1/3 deltaMs=0 totalMs=0
+2026-09-06T10:18:20.9129503+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-range source=nativeOle index=1/3 deltaMs=11 totalMs=11
+2026-09-06T10:18:20.9309496+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=target-added source=nativeOle index=1/3 deltaMs=18 totalMs=29
+2026-09-06T10:18:20.9309496+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-access source=nativeOle index=2/3 deltaMs=0 totalMs=0
+2026-09-06T10:18:20.9319529+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-range source=nativeOle index=2/3 deltaMs=0 totalMs=0
+2026-09-06T10:18:20.9519508+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=target-added source=nativeOle index=2/3 deltaMs=20 totalMs=20
+2026-09-06T10:18:20.9519508+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-access source=nativeOle index=3/3 deltaMs=0 totalMs=0
+2026-09-06T10:18:20.9529500+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=shape-range source=nativeOle index=3/3 deltaMs=0 totalMs=0
+2026-09-06T10:18:20.9685871+08:00 pid=62856 tid=1 format-conversion-plan-perf stage=target-added source=nativeOle index=3/3 deltaMs=16 totalMs=16
+2026-09-06T10:18:20.9685871+08:00 pid=62856 tid=1 format-conversion-plan sourceMode=nativeOle targetMode=wordOmml targets=3
+2026-09-06T10:18:24.2128266+08:00 pid=62856 tid=18 format-conversion-render-start sourceMode=nativeOle targetMode=wordOmml sessions=3
+2026-09-06T10:18:24.2438262+08:00 pid=62856 tid=18 format-conversion-rendered sourceMode=nativeOle targetMode=wordOmml sessionId=5be62440-834b-4e1d-bba6-768dce56e0ab status=committing
+2026-09-06T10:18:24.2458252+08:00 pid=62856 tid=17 format-conversion-rendered sourceMode=nativeOle targetMode=wordOmml sessionId=31f68d76-6488-471f-ada7-7fa7cc3f6671 status=committing
+2026-09-06T10:18:24.2498225+08:00 pid=62856 tid=18 format-conversion-rendered sourceMode=nativeOle targetMode=wordOmml sessionId=47bd76a7-63c5-4f94-a085-4208df95884b status=committing
+2026-09-06T10:18:24.2518224+08:00 pid=62856 tid=18 format-conversion-word-apply-start sourceMode=nativeOle targetMode=wordOmml targets=3
+2026-09-06T10:18:24.3506766+08:00 pid=62856 tid=1 format-conversion-runtime assembly=C:\Users\pojian_liao\AppData\Local\VisualTeX\office\remediation-builds\7DB245652E9EFBC0D6886511BE6606D0E4D2C18CD11269CD937172D7FF796518\VisualTeX.WordVsto.dll source=nativeOle target=wordOmml targetIsVisualTeX=False targetIsMathType=False
+2026-09-06T10:18:24.7386139+08:00 pid=62856 tid=1 format-conversion-omml-batch-source-created formulas=3 elapsedMs=338
+2026-09-06T10:18:24.7732664+08:00 pid=62856 tid=1 format-conversion-reference-counts-fast-path source=nativeOle formulas=2
+2026-09-06T10:18:24.8277769+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Convert Formula Format recording=False level=0
+2026-09-06T10:18:24.8277769+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Convert Formula Format recording=True level=1
+2026-09-06T10:18:24.8277769+08:00 pid=62856 tid=1 format-conversion-undo-state stage=before-preferences document=文档31 recording=True level=1
+2026-09-06T10:18:24.9050494+08:00 pid=62856 tid=1 format-conversion-transaction-start targets=3
+2026-09-06T10:18:24.9050494+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-preferences document=文档31 recording=True level=1
+2026-09-06T10:18:24.9060497+08:00 pid=62856 tid=1 format-conversion-undo-state stage=before-source-delete document=文档31 recording=True level=1
+2026-09-06T10:18:24.9220500+08:00 pid=62856 tid=1 format-conversion-perf stage=delete-source-host formulaId=dfb9c80c-04fc-4585-a7b4-09512d38dc90 numbered=False deltaMs=16 totalMs=16
+2026-09-06T10:18:24.9220500+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-source-delete document=文档31 recording=True level=1
+2026-09-06T10:18:24.9320469+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Word OMML Inline Formula recording=True level=1
+2026-09-06T10:18:24.9470496+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.insert-native-omml: +15ms (15ms total)
+2026-09-06T10:18:25.0964023+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.post-reconcile-layout: +149ms (164ms total)
+2026-09-06T10:18:25.0974026+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-fingerprint: +1ms (165ms total)
+2026-09-06T10:18:25.0974026+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-anchor: +0ms (165ms total)
+2026-09-06T10:18:25.1060127+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-metadata: +9ms (174ms total)
+2026-09-06T10:18:25.1070121+08:00 pid=62856 tid=1 format-conversion-perf stage=insert-target formulaId=dfb9c80c-04fc-4585-a7b4-09512d38dc90 numbered=False deltaMs=185 totalMs=201
+2026-09-06T10:18:25.1070121+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-target-insert document=文档31 recording=False level=0
+2026-09-06T10:18:25.1340153+08:00 pid=62856 tid=1 format-conversion-target-stable formulaId=dfb9c80c-04fc-4585-a7b4-09512d38dc90 targetMode=wordOmml count=1 elapsedMs=26
+2026-09-06T10:18:25.1340153+08:00 pid=62856 tid=1 format-conversion-perf stage=verify-target formulaId=dfb9c80c-04fc-4585-a7b4-09512d38dc90 numbered=False deltaMs=27 totalMs=228
+2026-09-06T10:18:25.1350151+08:00 pid=62856 tid=1 format-conversion-undo-state stage=before-source-delete document=文档31 recording=False level=0
+2026-09-06T10:18:25.2619903+08:00 pid=62856 tid=1 format-conversion-perf stage=delete-source-host formulaId=deb3975b-9353-439d-b2f1-475d2f8a6391 numbered=True deltaMs=126 totalMs=126
+2026-09-06T10:18:25.2619903+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-source-delete document=文档31 recording=False level=0
+2026-09-06T10:18:25.2649894+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Word OMML Display Formula recording=False level=0
+2026-09-06T10:18:25.2649894+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Insert Word OMML Display Formula recording=True level=1
+2026-09-06T10:18:25.2779898+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.insert-native-omml: +13ms (13ms total)
+2026-09-06T10:18:25.3289892+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.post-reconcile-layout: +50ms (63ms total)
+2026-09-06T10:18:25.3289892+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-fingerprint: +1ms (64ms total)
+2026-09-06T10:18:25.3289892+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-anchor: +0ms (64ms total)
+2026-09-06T10:18:25.3299916+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-metadata: +1ms (65ms total)
+2026-09-06T10:18:25.3309924+08:00 pid=62856 tid=1 word-undo-end recording=True level=1
+2026-09-06T10:18:25.3309924+08:00 pid=62856 tid=1 format-conversion-perf stage=insert-target formulaId=deb3975b-9353-439d-b2f1-475d2f8a6391 numbered=True deltaMs=69 totalMs=195
+2026-09-06T10:18:25.3309924+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-target-insert document=文档31 recording=False level=0
+2026-09-06T10:18:25.3715101+08:00 pid=62856 tid=1 format-conversion-target-stable formulaId=deb3975b-9353-439d-b2f1-475d2f8a6391 targetMode=wordOmml count=2 elapsedMs=40
+2026-09-06T10:18:25.3725110+08:00 pid=62856 tid=1 format-conversion-perf stage=verify-target formulaId=deb3975b-9353-439d-b2f1-475d2f8a6391 numbered=True deltaMs=42 totalMs=237
+2026-09-06T10:18:25.3725110+08:00 pid=62856 tid=1 format-conversion-undo-state stage=before-source-delete document=文档31 recording=False level=0
+2026-09-06T10:18:25.4991327+08:00 pid=62856 tid=1 format-conversion-perf stage=delete-source-host formulaId=b525c7de-048f-46d7-85c8-4a63119d12da numbered=True deltaMs=126 totalMs=126
+2026-09-06T10:18:25.4991327+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-source-delete document=文档31 recording=False level=0
+2026-09-06T10:18:25.5001328+08:00 pid=62856 tid=1 word-undo-begin name=VisualTeX Insert Word OMML Display Formula recording=False level=0
+2026-09-06T10:18:25.5001328+08:00 pid=62856 tid=1 word-undo-started name=VisualTeX Insert Word OMML Display Formula recording=True level=1
+2026-09-06T10:18:25.5161346+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.insert-native-omml: +15ms (15ms total)
+2026-09-06T10:18:25.5671549+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.post-reconcile-layout: +51ms (66ms total)
+2026-09-06T10:18:25.5671549+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-fingerprint: +1ms (67ms total)
+2026-09-06T10:18:25.5671549+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-anchor: +0ms (67ms total)
+2026-09-06T10:18:25.5681561+08:00 pid=62856 tid=1 format-conversion-subperf [perf] InsertOmml.final-metadata: +1ms (68ms total)
+2026-09-06T10:18:25.5691568+08:00 pid=62856 tid=1 word-undo-end recording=True level=1
+2026-09-06T10:18:25.5691568+08:00 pid=62856 tid=1 format-conversion-perf stage=insert-target formulaId=b525c7de-048f-46d7-85c8-4a63119d12da numbered=True deltaMs=70 totalMs=196
+2026-09-06T10:18:25.5691568+08:00 pid=62856 tid=1 format-conversion-undo-state stage=after-target-insert document=文档31 recording=False level=0
+2026-09-06T10:18:25.6091574+08:00 pid=62856 tid=1 format-conversion-target-stable formulaId=b525c7de-048f-46d7-85c8-4a63119d12da targetMode=wordOmml count=3 elapsedMs=39
+2026-09-06T10:18:25.6091574+08:00 pid=62856 tid=1 format-conversion-perf stage=verify-target formulaId=b525c7de-048f-46d7-85c8-4a63119d12da numbered=True deltaMs=40 totalMs=236
+2026-09-06T10:18:25.6101593+08:00 pid=62856 tid=1 format-conversion-finalize-perf stage=source-residual-check sourceMode=nativeOle targetMode=wordOmml deltaMs=0 totalMs=0
+2026-09-06T10:18:25.6111569+08:00 pid=62856 tid=1 format-conversion-finalize-perf stage=target-count-check sourceMode=nativeOle targetMode=wordOmml deltaMs=1 totalMs=1
+2026-09-06T10:18:25.9598295+08:00 pid=62856 tid=1 omml-document-export-mismatch document=文档31 range=0:63 com=3 xml=0
+2026-09-06T10:18:25.9900004+08:00 pid=62856 tid=1 format-conversion-undo-state stage=failure-before-end document=文档31 recording=False level=0
+2026-09-06T10:18:25.9900004+08:00 pid=62856 tid=1 format-conversion-undo-state stage=failure-after-end document=文档31 recording=False level=0
+2026-09-06T10:18:26.0078424+08:00 pid=62856 tid=1 word-undo-history-recovery original=84 current=126 owned=42
+2026-09-06T10:18:26.4533691+08:00 pid=62856 tid=1 format-conversion-recovery afterUndoBodyMatches=True
+2026-09-06T10:18:26.4943903+08:00 pid=62856 tid=1 format-conversion-recovery-verified body=True mathFont=True metadata=True variables=True
+2026-09-06T10:18:26.5013885+08:00 pid=62856 tid=1 format-conversion-rollback-verified targets=3 error=System.IO.InvalidDataException: COM and Word XML disagree on the complete equation inventory.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+2026-09-06T10:18:26.5023887+08:00 pid=62856 tid=15 format-conversion-failed sourceMode=nativeOle targetMode=wordOmml error=System.IO.InvalidDataException: COM and Word XML disagree on the complete equation inventory.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__163.MoveNext()
+2026-09-06T10:20:29.4053617+08:00 pid=62856 tid=12 left-down x=784 y=903 wordForeground=True
+2026-09-06T10:21:09.0104732+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:21:23.6864087+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:21:38.4782936+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:24:30.7144773+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:24:45.5581289+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:25:00.4860518+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:29:30.4506825+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:29:45.1892207+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:29:59.9440891+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:30:16.0186620+08:00 pid=62856 tid=12 left-down x=2058 y=1221 wordForeground=True
+2026-09-06T10:31:35.7540894+08:00 pid=62856 tid=12 left-down x=1225 y=1553 wordForeground=True
+2026-09-06T10:31:36.2554246+08:00 pid=62856 tid=12 left-down x=1225 y=1553 wordForeground=True
+2026-09-06T10:33:00.8027285+08:00 pid=62856 tid=12 left-down x=1225 y=1553 wordForeground=True
+2026-09-06T10:33:01.1644305+08:00 pid=62856 tid=12 left-down x=1225 y=1553 wordForeground=True
+2026-09-06T10:33:01.1654323+08:00 pid=62856 tid=12 double-click elapsedMs=361.545 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T10:33:01.2639796+08:00 pid=62856 tid=11 callback-begin interceptedNativeOle=False x=1225 y=1553
+2026-09-06T10:33:01.2647302+08:00 pid=62856 tid=11 addin-callback-received interceptedNativeOle=False x=1225 y=1553
+2026-09-06T10:33:01.2647302+08:00 pid=62856 tid=11 callback-end
+2026-09-06T10:33:01.2672459+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T10:35:54.7907096+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:36:08.9620988+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:37:17.2676805+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T10:40:11.6791086+08:00 pid=62856 tid=12 left-down x=843 y=1255 wordForeground=True
+2026-09-06T10:40:17.5173645+08:00 pid=62856 tid=12 left-down x=2308 y=1243 wordForeground=False
+2026-09-06T10:40:18.6464768+08:00 pid=62856 tid=12 left-down x=2215 y=1257 wordForeground=True
+2026-09-06T10:42:02.8989286+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:42:17.2077597+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:44:29.3470546+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:44:43.7034192+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:48:05.2557260+08:00 pid=62856 tid=12 left-down x=791 y=1268 wordForeground=True
+2026-09-06T10:48:10.8787951+08:00 pid=62856 tid=12 left-down x=2071 y=1230 wordForeground=False
+2026-09-06T10:48:32.1076417+08:00 pid=62856 tid=12 left-down x=111 y=1474 wordForeground=True
+2026-09-06T10:48:47.7800338+08:00 pid=62856 tid=12 left-down x=2025 y=1235 wordForeground=False
+2026-09-06T10:48:48.8120012+08:00 pid=62856 tid=12 left-down x=1893 y=1130 wordForeground=True
+2026-09-06T10:48:49.6023314+08:00 pid=62856 tid=12 left-down x=1897 y=1126 wordForeground=True
+2026-09-06T10:48:50.0290599+08:00 pid=62856 tid=12 left-down x=1897 y=1126 wordForeground=True
+2026-09-06T10:48:50.0290599+08:00 pid=62856 tid=12 double-click elapsedMs=426.556 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T10:48:50.1302809+08:00 pid=62856 tid=17 callback-begin interceptedNativeOle=False x=1897 y=1126
+2026-09-06T10:48:50.1302809+08:00 pid=62856 tid=17 addin-callback-received interceptedNativeOle=False x=1897 y=1126
+2026-09-06T10:48:50.1302809+08:00 pid=62856 tid=17 callback-end
+2026-09-06T10:48:50.1312819+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T10:48:53.8912776+08:00 pid=62856 tid=12 left-down x=1156 y=742 wordForeground=False
+2026-09-06T10:48:55.5426626+08:00 pid=62856 tid=12 left-down x=2609 y=687 wordForeground=False
+2026-09-06T10:48:57.1775247+08:00 pid=62856 tid=12 left-down x=1819 y=1111 wordForeground=True
+2026-09-06T10:48:57.6531266+08:00 pid=62856 tid=12 left-down x=1819 y=1111 wordForeground=True
+2026-09-06T10:48:57.6541265+08:00 pid=62856 tid=12 double-click elapsedMs=475.546 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T10:48:57.7537533+08:00 pid=62856 tid=17 callback-begin interceptedNativeOle=False x=1819 y=1111
+2026-09-06T10:48:57.7537533+08:00 pid=62856 tid=17 addin-callback-received interceptedNativeOle=False x=1819 y=1111
+2026-09-06T10:48:57.7537533+08:00 pid=62856 tid=17 callback-end
+2026-09-06T10:48:57.7547567+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T10:48:59.9557879+08:00 pid=62856 tid=12 left-down x=1153 y=749 wordForeground=False
+2026-09-06T10:49:01.4102395+08:00 pid=62856 tid=12 left-down x=1173 y=746 wordForeground=False
+2026-09-06T10:49:02.7210966+08:00 pid=62856 tid=12 left-down x=1173 y=746 wordForeground=False
+2026-09-06T10:49:04.4795638+08:00 pid=62856 tid=12 left-down x=2602 y=698 wordForeground=False
+2026-09-06T10:49:06.0712967+08:00 pid=62856 tid=12 left-down x=1483 y=1251 wordForeground=True
+2026-09-06T10:49:08.4118989+08:00 pid=62856 tid=12 left-down x=1883 y=1126 wordForeground=True
+2026-09-06T10:49:09.5376879+08:00 pid=62856 tid=12 left-down x=1243 y=1261 wordForeground=True
+2026-09-06T10:49:14.6406807+08:00 pid=62856 tid=12 left-down x=883 y=1241 wordForeground=True
+2026-09-06T10:49:17.1257847+08:00 pid=62856 tid=12 left-down x=2108 y=1267 wordForeground=False
+2026-09-06T10:49:19.3589705+08:00 pid=62856 tid=12 left-down x=1773 y=689 wordForeground=True
+2026-09-06T10:49:21.1576792+08:00 pid=62856 tid=12 left-down x=2148 y=1488 wordForeground=True
+2026-09-06T10:49:23.9039542+08:00 pid=62856 tid=12 left-down x=1764 y=686 wordForeground=True
+2026-09-06T10:49:26.2327553+08:00 pid=62856 tid=12 left-down x=1903 y=1084 wordForeground=True
+2026-09-06T10:49:27.9714759+08:00 pid=62856 tid=12 left-down x=2182 y=1500 wordForeground=True
+2026-09-06T10:49:29.3308834+08:00 pid=62856 tid=12 left-down x=2182 y=1500 wordForeground=True
+2026-09-06T10:49:32.2764935+08:00 pid=62856 tid=12 left-down x=1852 y=1134 wordForeground=True
+2026-09-06T10:49:34.7393060+08:00 pid=62856 tid=12 left-down x=1270 y=663 wordForeground=True
+2026-09-06T10:49:37.3289439+08:00 pid=62856 tid=12 left-down x=1252 y=659 wordForeground=False
+2026-09-06T10:49:39.4786743+08:00 pid=62856 tid=12 left-down x=1352 y=2123 wordForeground=True
+2026-09-06T10:49:40.3667696+08:00 pid=62856 tid=12 left-down x=1440 y=2033 wordForeground=False
+2026-09-06T10:49:43.1537791+08:00 pid=62856 tid=12 left-down x=2607 y=696 wordForeground=False
+2026-09-06T10:49:44.7971747+08:00 pid=62856 tid=12 left-down x=1324 y=1255 wordForeground=True
+2026-09-06T10:49:46.8541871+08:00 pid=62856 tid=12 left-down x=727 y=1092 wordForeground=True
+2026-09-06T10:49:48.1869901+08:00 pid=62856 tid=12 left-down x=682 y=1050 wordForeground=False
+2026-09-06T10:49:50.2133415+08:00 pid=62856 tid=12 left-down x=1899 y=397 wordForeground=False
+2026-09-06T10:49:52.1363184+08:00 pid=62856 tid=12 left-down x=2093 y=1262 wordForeground=False
+2026-09-06T10:50:38.9784559+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:50:53.1220818+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:51:40.5361712+08:00 pid=62856 tid=12 left-down x=779 y=1223 wordForeground=True
+2026-09-06T10:51:49.2910405+08:00 pid=62856 tid=12 left-down x=2076 y=1278 wordForeground=False
+2026-09-06T10:52:35.5202403+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:52:49.9266630+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:54:55.5827238+08:00 pid=62856 tid=12 left-down x=736 y=1258 wordForeground=False
+2026-09-06T10:54:58.2740226+08:00 pid=62856 tid=12 left-down x=2120 y=899 wordForeground=False
+2026-09-06T10:54:58.8023694+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:55:13.8626617+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:56:55.3997506+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T10:57:09.8544235+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T10:58:00.7731408+08:00 pid=62856 tid=12 left-down x=1140 y=1210 wordForeground=True
+2026-09-06T10:58:01.3765109+08:00 pid=62856 tid=12 left-down x=1140 y=1210 wordForeground=True
+2026-09-06T10:59:31.6588581+08:00 pid=62856 tid=12 left-down x=846 y=1203 wordForeground=True
+2026-09-06T10:59:34.7734710+08:00 pid=62856 tid=12 left-down x=2211 y=1232 wordForeground=False
+2026-09-06T10:59:37.4672252+08:00 pid=62856 tid=12 left-down x=1718 y=1090 wordForeground=True
+2026-09-06T10:59:38.6033713+08:00 pid=62856 tid=12 left-down x=1634 y=1069 wordForeground=True
+2026-09-06T10:59:43.1108154+08:00 pid=62856 tid=12 left-down x=1838 y=818 wordForeground=True
+2026-09-06T11:00:21.9674602+08:00 pid=62856 tid=12 left-down x=1155 y=1210 wordForeground=True
+2026-09-06T11:00:22.5830780+08:00 pid=62856 tid=12 left-down x=1155 y=1210 wordForeground=True
+2026-09-06T11:01:25.8473961+08:00 pid=62856 tid=12 left-down x=1155 y=1060 wordForeground=True
+2026-09-06T11:01:26.4812606+08:00 pid=62856 tid=12 left-down x=1155 y=1060 wordForeground=True
+2026-09-06T11:03:20.0505023+08:00 pid=62856 tid=12 left-down x=872 y=865 wordForeground=False
+2026-09-06T11:03:29.4343093+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:03:44.1359476+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T11:04:28.5502819+08:00 pid=62856 tid=12 left-down x=1155 y=1210 wordForeground=True
+2026-09-06T11:04:29.2026882+08:00 pid=62856 tid=12 left-down x=1155 y=1210 wordForeground=True
+2026-09-06T11:04:48.8663541+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T11:05:33.2088775+08:00 pid=62856 tid=12 left-down x=1140 y=1207 wordForeground=True
+2026-09-06T11:05:33.8350025+08:00 pid=62856 tid=12 left-down x=1140 y=1207 wordForeground=True
+2026-09-06T11:06:57.3635822+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T11:07:00.2048735+08:00 pid=62856 tid=12 left-down x=2178 y=458 wordForeground=False
+2026-09-06T11:07:02.5339262+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T11:07:52.9042081+08:00 pid=62856 tid=12 left-down x=795 y=1222 wordForeground=True
+2026-09-06T11:07:57.7090208+08:00 pid=62856 tid=12 left-down x=2315 y=1180 wordForeground=True
+2026-09-06T11:09:30.1839192+08:00 pid=62856 tid=12 left-down x=2178 y=458 wordForeground=False
+2026-09-06T11:10:07.3564458+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T11:10:10.1276570+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T11:14:03.5245936+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:14:06.9358025+08:00 pid=62856 tid=12 left-down x=1665 y=747 wordForeground=False
+2026-09-06T11:14:21.4681547+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:14:24.8051239+08:00 pid=62856 tid=12 left-down x=1665 y=747 wordForeground=False
+2026-09-06T11:14:39.0029604+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:15:52.0470393+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T11:17:35.0712796+08:00 pid=62856 tid=12 left-down x=1838 y=774 wordForeground=True
+2026-09-06T11:20:19.2156728+08:00 pid=62856 tid=12 left-down x=1072 y=2130 wordForeground=False
+2026-09-06T11:20:22.6151215+08:00 pid=62856 tid=12 left-down x=2255 y=1372 wordForeground=True
+2026-09-06T11:20:23.8164004+08:00 pid=62856 tid=12 left-down x=2198 y=1441 wordForeground=True
+2026-09-06T11:21:15.5360724+08:00 pid=62856 tid=12 left-down x=795 y=1238 wordForeground=False
+2026-09-06T11:21:17.8441743+08:00 pid=62856 tid=12 left-down x=2192 y=1367 wordForeground=True
+2026-09-06T11:21:18.9307505+08:00 pid=62856 tid=12 left-down x=740 y=1215 wordForeground=False
+2026-09-06T11:22:20.1358784+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:22:23.4145318+08:00 pid=62856 tid=12 left-down x=1665 y=747 wordForeground=False
+2026-09-06T11:22:37.3644375+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:22:41.0949677+08:00 pid=62856 tid=12 left-down x=1665 y=747 wordForeground=False
+2026-09-06T11:22:54.9187975+08:00 pid=62856 tid=12 left-down x=1190 y=747 wordForeground=False
+2026-09-06T11:23:11.4831023+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T11:24:09.4649757+08:00 pid=62856 tid=12 left-down x=809 y=1245 wordForeground=False
+2026-09-06T11:24:16.3209681+08:00 pid=62856 tid=12 left-down x=199 y=1498 wordForeground=False
+2026-09-06T11:24:17.0981301+08:00 pid=62856 tid=12 left-down x=206 y=1485 wordForeground=False
+2026-09-06T11:24:19.0608948+08:00 pid=62856 tid=12 left-down x=2049 y=1405 wordForeground=True
+2026-09-06T11:30:08.7413950+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T11:30:56.5838781+08:00 pid=62856 tid=12 left-down x=1155 y=1337 wordForeground=True
+2026-09-06T11:30:57.2391528+08:00 pid=62856 tid=12 left-down x=1155 y=1337 wordForeground=True
+2026-09-06T11:42:00.2884547+08:00 pid=62856 tid=12 left-down x=806 y=1112 wordForeground=False
+2026-09-06T11:42:44.3504609+08:00 pid=62856 tid=12 left-down x=239 y=1463 wordForeground=False
+2026-09-06T11:42:48.1974404+08:00 pid=62856 tid=12 left-down x=1500 y=1569 wordForeground=True
+2026-09-06T11:42:49.5580758+08:00 pid=62856 tid=12 left-down x=661 y=1211 wordForeground=False
+2026-09-06T11:42:51.6937140+08:00 pid=62856 tid=12 left-down x=1925 y=1462 wordForeground=False
+2026-09-06T11:42:57.5841939+08:00 pid=62856 tid=12 left-down x=1927 y=477 wordForeground=False
+2026-09-06T11:43:13.4900031+08:00 pid=62856 tid=12 left-down x=2392 y=184 wordForeground=False
+2026-09-06T11:43:16.2072738+08:00 pid=62856 tid=12 left-down x=145 y=94 wordForeground=False
+2026-09-06T11:43:19.7339728+08:00 pid=62856 tid=12 left-down x=343 y=307 wordForeground=False
+2026-09-06T11:43:22.6147691+08:00 pid=62856 tid=12 left-down x=1441 y=2145 wordForeground=False
+2026-09-06T11:43:24.9672313+08:00 pid=62856 tid=12 left-down x=1057 y=2123 wordForeground=False
+2026-09-06T11:43:26.1958139+08:00 pid=62856 tid=12 left-down x=1355 y=2138 wordForeground=False
+2026-09-06T11:43:40.8905746+08:00 pid=62856 tid=12 left-down x=1076 y=1158 wordForeground=False
+2026-09-06T11:43:49.1451351+08:00 pid=62856 tid=12 left-down x=1360 y=2079 wordForeground=False
+2026-09-06T11:44:01.7528505+08:00 pid=62856 tid=12 left-down x=1353 y=2049 wordForeground=False
+2026-09-06T11:44:04.0778803+08:00 pid=62856 tid=12 left-down x=1902 y=1224 wordForeground=True
+2026-09-06T11:44:05.6851147+08:00 pid=62856 tid=12 left-down x=1620 y=1535 wordForeground=True
+2026-09-06T11:44:07.7903407+08:00 pid=62856 tid=12 left-down x=880 y=1260 wordForeground=True
+2026-09-06T11:48:43.6324361+08:00 pid=62856 tid=12 left-down x=1618 y=1245 wordForeground=True
+2026-09-06T11:48:45.8755093+08:00 pid=62856 tid=12 left-down x=788 y=1222 wordForeground=False
+2026-09-06T11:48:50.4256394+08:00 pid=62856 tid=12 left-down x=1329 y=1606 wordForeground=True
+2026-09-06T11:48:55.2869531+08:00 pid=62856 tid=12 left-down x=780 y=1237 wordForeground=False
+2026-09-06T11:48:59.3078983+08:00 pid=62856 tid=12 left-down x=1347 y=1604 wordForeground=False
+2026-09-06T11:53:50.6084150+08:00 pid=62856 tid=12 left-down x=1083 y=2146 wordForeground=False
+2026-09-06T11:54:07.1633035+08:00 pid=62856 tid=12 left-down x=1984 y=1086 wordForeground=False
+2026-09-06T11:56:54.0683750+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T11:57:01.8334585+08:00 pid=62856 tid=12 left-down x=1838 y=818 wordForeground=True
+2026-09-06T12:09:32.3825092+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T12:10:06.7379090+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T12:10:48.8905549+08:00 pid=62856 tid=12 left-down x=1151 y=1515 wordForeground=True
+2026-09-06T12:10:49.4050507+08:00 pid=62856 tid=12 left-down x=1151 y=1515 wordForeground=True
+2026-09-06T12:12:07.4732113+08:00 pid=62856 tid=12 left-down x=1838 y=774 wordForeground=True
+2026-09-06T12:12:58.8104568+08:00 pid=62856 tid=12 left-down x=1170 y=1320 wordForeground=True
+2026-09-06T12:12:59.4117124+08:00 pid=62856 tid=12 left-down x=1170 y=1320 wordForeground=True
+2026-09-06T12:16:38.3568457+08:00 pid=62856 tid=12 left-down x=801 y=814 wordForeground=False
+2026-09-06T12:16:40.0686792+08:00 pid=62856 tid=12 left-down x=1006 y=849 wordForeground=False
+2026-09-06T12:19:29.7672272+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T12:19:37.6644981+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T12:30:33.0186277+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T12:36:36.7536515+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T12:38:56.2702586+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T12:40:48.7487914+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T12:41:32.6112882+08:00 pid=62856 tid=12 left-down x=1183 y=1627 wordForeground=True
+2026-09-06T12:41:33.3157972+08:00 pid=62856 tid=12 left-down x=1183 y=1627 wordForeground=True
+2026-09-06T12:42:48.7209599+08:00 pid=62856 tid=12 left-down x=1838 y=732 wordForeground=True
+2026-09-06T12:44:29.2981345+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T12:51:11.6544088+08:00 pid=62856 tid=12 left-down x=1302 y=747 wordForeground=False
+2026-09-06T12:52:22.0461914+08:00 pid=62856 tid=12 left-down x=2058 y=1197 wordForeground=True
+2026-09-06T12:59:17.1475160+08:00 pid=62856 tid=12 left-down x=1302 y=747 wordForeground=False
+2026-09-06T13:00:33.8234383+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T13:03:49.9384152+08:00 pid=62856 tid=12 left-down x=846 y=1216 wordForeground=False
+2026-09-06T13:04:06.7511756+08:00 pid=62856 tid=12 left-down x=1992 y=1336 wordForeground=True
+2026-09-06T13:04:08.7705472+08:00 pid=62856 tid=12 left-down x=1947 y=1234 wordForeground=True
+2026-09-06T13:04:10.5247567+08:00 pid=62856 tid=12 left-down x=1796 y=1396 wordForeground=True
+2026-09-06T13:04:11.6686126+08:00 pid=62856 tid=12 left-down x=1602 y=1458 wordForeground=True
+2026-09-06T13:05:18.5915716+08:00 pid=62856 tid=12 left-down x=851 y=1174 wordForeground=False
+2026-09-06T13:06:17.7731106+08:00 pid=62856 tid=12 left-down x=1302 y=747 wordForeground=False
+2026-09-06T13:08:48.3427805+08:00 pid=62856 tid=12 left-down x=1302 y=747 wordForeground=True
+2026-09-06T13:09:21.7368322+08:00 pid=62856 tid=12 left-down x=807 y=1221 wordForeground=False
+2026-09-06T13:09:26.8018500+08:00 pid=62856 tid=12 left-down x=2025 y=1437 wordForeground=True
+2026-09-06T13:09:28.2705229+08:00 pid=62856 tid=12 left-down x=1854 y=1262 wordForeground=True
+2026-09-06T13:09:29.3969751+08:00 pid=62856 tid=12 left-down x=1605 y=1330 wordForeground=True
+2026-09-06T13:11:25.6274142+08:00 pid=62856 tid=12 left-down x=2024 y=1163 wordForeground=True
+2026-09-06T13:14:21.8366230+08:00 pid=62856 tid=12 left-down x=801 y=1230 wordForeground=False
+2026-09-06T13:14:41.9814381+08:00 pid=62856 tid=12 left-down x=909 y=1354 wordForeground=False
+2026-09-06T13:16:13.1424040+08:00 pid=62856 tid=12 left-down x=854 y=1380 wordForeground=False
+2026-09-06T13:16:15.3243648+08:00 pid=62856 tid=12 left-down x=1838 y=1436 wordForeground=False
+2026-09-06T13:20:48.4144768+08:00 pid=62856 tid=12 left-down x=897 y=1337 wordForeground=False
+2026-09-06T13:22:16.6360641+08:00 pid=62856 tid=12 left-down x=1079 y=2134 wordForeground=False
+2026-09-06T13:23:31.2345705+08:00 pid=62856 tid=12 left-down x=912 y=1198 wordForeground=False
+2026-09-06T13:23:56.5162575+08:00 pid=62856 tid=12 left-down x=300 y=15 wordForeground=False
+2026-09-06T13:25:29.4849370+08:00 pid=62856 tid=12 left-down x=832 y=1274 wordForeground=False
+2026-09-06T13:28:26.5750019+08:00 pid=62856 tid=12 left-down x=663 y=1262 wordForeground=False
+2026-09-06T13:28:53.2290771+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:28:56.6483127+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:29:59.0673998+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:30:02.5218704+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:31:56.9528399+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T13:33:21.6761708+08:00 pid=62856 tid=12 left-down x=895 y=904 wordForeground=False
+2026-09-06T13:34:33.8356053+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T13:35:09.0873428+08:00 pid=62856 tid=12 left-down x=766 y=1265 wordForeground=False
+2026-09-06T13:40:46.4410668+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:40:49.8569367+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:41:58.2773901+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:42:01.5724544+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:43:10.7131915+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T13:51:23.4413324+08:00 pid=62856 tid=12 left-down x=1172 y=1508 wordForeground=True
+2026-09-06T13:51:24.1533109+08:00 pid=62856 tid=12 left-down x=1172 y=1508 wordForeground=True
+2026-09-06T13:52:14.7709892+08:00 pid=62856 tid=12 left-down x=1172 y=1088 wordForeground=True
+2026-09-06T13:52:15.4593079+08:00 pid=62856 tid=12 left-down x=1172 y=1088 wordForeground=True
+2026-09-06T13:56:10.9784300+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:56:14.2883832+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:57:06.5938828+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T13:57:10.0428729+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T13:58:06.4711808+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T14:03:33.3310261+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T14:03:36.5001097+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T14:04:16.9852028+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T14:04:20.3830258+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T14:05:25.3741461+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T14:07:17.3343525+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T14:08:17.0835210+08:00 pid=62856 tid=12 left-down x=1141 y=1508 wordForeground=True
+2026-09-06T14:08:17.6094761+08:00 pid=62856 tid=12 left-down x=1141 y=1508 wordForeground=True
+2026-09-06T14:13:47.1305092+08:00 pid=62856 tid=12 left-down x=1141 y=1508 wordForeground=True
+2026-09-06T14:13:47.6329085+08:00 pid=62856 tid=12 left-down x=1141 y=1508 wordForeground=True
+2026-09-06T14:16:20.8667307+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T14:16:24.1409568+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T14:17:35.8135540+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T14:17:39.3313053+08:00 pid=62856 tid=12 left-down x=1792 y=747 wordForeground=False
+2026-09-06T14:18:31.7627791+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T14:20:28.8693134+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T14:21:51.5486923+08:00 pid=62856 tid=12 left-down x=1172 y=1568 wordForeground=True
+2026-09-06T14:21:52.0762626+08:00 pid=62856 tid=12 left-down x=1172 y=1568 wordForeground=True
+2026-09-06T14:22:33.4761802+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T14:22:35.8459765+08:00 pid=62856 tid=12 left-down x=2178 y=458 wordForeground=False
+2026-09-06T14:22:38.4035603+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T14:30:55.0680617+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T14:30:57.3540142+08:00 pid=62856 tid=12 left-down x=2178 y=458 wordForeground=False
+2026-09-06T14:30:59.5813303+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T14:32:40.5982008+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T14:37:41.1631523+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T14:37:43.7285466+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T14:37:46.1360106+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T14:39:06.8397904+08:00 pid=62856 tid=12 left-down x=2024 y=1259 wordForeground=True
+2026-09-06T14:39:15.5096368+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T14:46:03.1622137+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T14:46:11.4993299+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T14:47:28.0810648+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T14:47:30.8675126+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T14:48:36.1715080+08:00 pid=62856 tid=12 left-down x=2024 y=1259 wordForeground=True
+2026-09-06T14:48:44.4446210+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T14:49:32.8026970+08:00 pid=62856 tid=12 left-down x=1136 y=1941 wordForeground=True
+2026-09-06T14:49:33.3823940+08:00 pid=62856 tid=12 left-down x=1136 y=1941 wordForeground=True
+2026-09-06T14:50:12.8956437+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T14:53:21.3493673+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T14:53:30.2460916+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T14:53:33.0161409+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T14:53:35.2414307+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T14:55:35.5811569+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T14:59:40.1829303+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:07:01.6966731+08:00 pid=62856 tid=12 left-down x=1140 y=1245 wordForeground=True
+2026-09-06T15:07:02.1725885+08:00 pid=62856 tid=12 left-down x=1140 y=1245 wordForeground=True
+2026-09-06T15:07:02.1735889+08:00 pid=62856 tid=12 double-click elapsedMs=476.262 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T15:07:02.2785068+08:00 pid=62856 tid=17 callback-begin interceptedNativeOle=False x=1140 y=1245
+2026-09-06T15:07:02.2785068+08:00 pid=62856 tid=17 addin-callback-received interceptedNativeOle=False x=1140 y=1245
+2026-09-06T15:07:02.2785068+08:00 pid=62856 tid=17 callback-end
+2026-09-06T15:07:02.2795066+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T15:09:35.5665646+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:21:10.8903164+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T15:21:35.1689434+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T15:21:37.9857047+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T15:21:40.3712264+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T15:22:32.6176727+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T15:26:36.7962962+08:00 pid=62856 tid=12 left-down x=1140 y=1088 wordForeground=True
+2026-09-06T15:26:37.4029093+08:00 pid=62856 tid=12 left-down x=1140 y=1088 wordForeground=True
+2026-09-06T15:27:09.4059237+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T15:27:51.8641567+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T15:27:54.7288400+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T15:27:57.1446576+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T15:29:57.4445327+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:30:43.4796417+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T15:31:48.7045698+08:00 pid=62856 tid=12 left-down x=698 y=1234 wordForeground=False
+2026-09-06T15:31:52.3674050+08:00 pid=62856 tid=12 left-down x=1685 y=1610 wordForeground=True
+2026-09-06T15:33:03.5791140+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T15:33:48.6098648+08:00 pid=62856 tid=12 left-down x=219 y=1479 wordForeground=False
+2026-09-06T15:33:54.3578696+08:00 pid=62856 tid=12 left-down x=1323 y=1598 wordForeground=False
+2026-09-06T15:35:00.7274210+08:00 pid=62856 tid=12 left-down x=1170 y=1088 wordForeground=True
+2026-09-06T15:35:01.3144819+08:00 pid=62856 tid=12 left-down x=1170 y=1088 wordForeground=True
+2026-09-06T15:35:43.5055170+08:00 pid=62856 tid=12 left-down x=837 y=1166 wordForeground=False
+2026-09-06T15:36:00.3545657+08:00 pid=62856 tid=12 left-down x=2078 y=1366 wordForeground=True
+2026-09-06T15:37:05.6150900+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:46:37.2643127+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T15:46:45.9584340+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T15:46:49.1997778+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T15:46:51.2053672+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T15:49:13.0168113+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:50:01.0574611+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T15:50:10.0562156+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T15:54:09.5489007+08:00 pid=62856 tid=12 left-down x=1170 y=1118 wordForeground=True
+2026-09-06T15:54:10.0951756+08:00 pid=62856 tid=12 left-down x=1170 y=1118 wordForeground=True
+2026-09-06T15:54:20.5785132+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T15:55:19.3525589+08:00 pid=62856 tid=12 left-down x=758 y=1250 wordForeground=False
+2026-09-06T15:55:45.4150194+08:00 pid=62856 tid=12 left-down x=820 y=1253 wordForeground=False
+2026-09-06T15:55:56.9678495+08:00 pid=62856 tid=12 left-down x=2051 y=1093 wordForeground=True
+2026-09-06T15:57:04.9708451+08:00 pid=62856 tid=12 left-down x=763 y=1216 wordForeground=False
+2026-09-06T15:57:07.1226599+08:00 pid=62856 tid=12 left-down x=2028 y=1110 wordForeground=True
+2026-09-06T15:57:10.1193437+08:00 pid=62856 tid=12 left-down x=770 y=1090 wordForeground=False
+2026-09-06T15:57:11.8912987+08:00 pid=62856 tid=12 left-down x=618 y=1046 wordForeground=False
+2026-09-06T15:57:16.0398717+08:00 pid=62856 tid=12 left-down x=1892 y=402 wordForeground=False
+2026-09-06T15:57:20.9678639+08:00 pid=62856 tid=12 left-down x=1965 y=1091 wordForeground=True
+2026-09-06T15:57:24.4027815+08:00 pid=62856 tid=12 left-down x=717 y=1085 wordForeground=False
+2026-09-06T15:57:26.6562935+08:00 pid=62856 tid=12 left-down x=620 y=1012 wordForeground=False
+2026-09-06T15:57:29.3127823+08:00 pid=62856 tid=12 left-down x=1896 y=398 wordForeground=False
+2026-09-06T15:57:33.9265360+08:00 pid=62856 tid=12 left-down x=1979 y=1077 wordForeground=True
+2026-09-06T16:04:19.6681782+08:00 pid=62856 tid=12 left-down x=153 y=1448 wordForeground=False
+2026-09-06T16:04:22.9301436+08:00 pid=62856 tid=12 left-down x=963 y=1227 wordForeground=False
+2026-09-06T16:05:05.5768686+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T16:05:14.2605568+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T16:05:16.9394019+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T16:05:19.5470932+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T16:06:52.4740804+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T16:08:00.4891728+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T16:08:21.1666238+08:00 pid=62856 tid=12 left-down x=1838 y=860 wordForeground=True
+2026-09-06T16:12:08.3421990+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T16:15:16.2325336+08:00 pid=62856 tid=12 left-down x=772 y=1266 wordForeground=False
+2026-09-06T16:15:25.1551540+08:00 pid=62856 tid=12 left-down x=1844 y=1725 wordForeground=True
+2026-09-06T16:18:11.9115190+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T16:26:34.2649932+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T16:26:36.8467297+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T16:26:39.1974937+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T16:27:41.4871151+08:00 pid=62856 tid=12 left-down x=713 y=1227 wordForeground=False
+2026-09-06T16:27:47.1565700+08:00 pid=62856 tid=12 left-down x=1874 y=1436 wordForeground=True
+2026-09-06T16:27:57.8965055+08:00 pid=62856 tid=12 left-down x=700 y=1238 wordForeground=False
+2026-09-06T16:28:03.0272904+08:00 pid=62856 tid=12 left-down x=1742 y=1814 wordForeground=True
+2026-09-06T16:28:20.5286710+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T16:29:40.3820021+08:00 pid=62856 tid=12 left-down x=1172 y=1836 wordForeground=True
+2026-09-06T16:29:41.0787385+08:00 pid=62856 tid=12 left-down x=1172 y=1836 wordForeground=True
+2026-09-06T16:30:25.0174009+08:00 pid=62856 tid=12 left-down x=739 y=1231 wordForeground=False
+2026-09-06T16:30:36.4521030+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T16:40:50.6786491+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T16:40:53.2164139+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T16:40:55.6464878+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T16:43:15.8805033+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T16:44:46.7199662+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T16:45:51.6376996+08:00 pid=62856 tid=12 left-down x=691 y=1252 wordForeground=False
+2026-09-06T16:46:01.2246940+08:00 pid=62856 tid=12 left-down x=191 y=1485 wordForeground=False
+2026-09-06T16:46:04.2302651+08:00 pid=62856 tid=12 left-down x=2508 y=1121 wordForeground=True
+2026-09-06T16:47:31.9237122+08:00 pid=62856 tid=12 left-down x=776 y=1255 wordForeground=False
+2026-09-06T16:47:45.2333004+08:00 pid=62856 tid=12 left-down x=710 y=994 wordForeground=False
+2026-09-06T16:47:46.9495925+08:00 pid=62856 tid=12 left-down x=699 y=1023 wordForeground=False
+2026-09-06T16:47:48.6552314+08:00 pid=62856 tid=12 left-down x=743 y=1042 wordForeground=False
+2026-09-06T16:47:51.1825054+08:00 pid=62856 tid=12 left-down x=764 y=1021 wordForeground=False
+2026-09-06T16:47:55.1281970+08:00 pid=62856 tid=12 left-down x=831 y=1077 wordForeground=False
+2026-09-06T16:48:05.4552851+08:00 pid=62856 tid=12 left-down x=1046 y=1329 wordForeground=False
+2026-09-06T16:48:39.5620491+08:00 pid=62856 tid=12 left-down x=271 y=1440 wordForeground=False
+2026-09-06T16:48:41.3503814+08:00 pid=62856 tid=12 left-down x=253 y=1462 wordForeground=False
+2026-09-06T16:48:45.2721906+08:00 pid=62856 tid=12 left-down x=270 y=1333 wordForeground=False
+2026-09-06T16:48:47.3182142+08:00 pid=62856 tid=12 left-down x=196 y=705 wordForeground=False
+2026-09-06T16:48:52.1512264+08:00 pid=62856 tid=12 left-down x=135 y=384 wordForeground=False
+2026-09-06T16:58:19.6845842+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T16:58:22.5973021+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T16:58:25.2045700+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T16:59:24.9661503+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:00:19.3953621+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T17:03:55.1919809+08:00 pid=62856 tid=12 left-down x=711 y=1181 wordForeground=False
+2026-09-06T17:04:03.0769375+08:00 pid=62856 tid=12 left-down x=2039 y=1034 wordForeground=True
+2026-09-06T17:04:12.7154793+08:00 pid=62856 tid=12 left-down x=759 y=1233 wordForeground=False
+2026-09-06T17:06:41.6725681+08:00 pid=62856 tid=12 left-down x=672 y=1256 wordForeground=False
+2026-09-06T17:06:50.3822180+08:00 pid=62856 tid=12 left-down x=250 y=1460 wordForeground=False
+2026-09-06T17:06:53.3797135+08:00 pid=62856 tid=12 left-down x=902 y=1143 wordForeground=False
+2026-09-06T17:08:07.9400543+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:08:10.4551791+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:08:12.9905889+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:08:28.4927998+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:08:41.4959969+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T17:09:36.8664928+08:00 pid=62856 tid=12 left-down x=841 y=1058 wordForeground=True
+2026-09-06T17:10:30.5513508+08:00 pid=62856 tid=12 left-down x=1945 y=1414 wordForeground=True
+2026-09-06T17:10:34.8964673+08:00 pid=62856 tid=12 left-down x=782 y=1229 wordForeground=False
+2026-09-06T17:10:37.9771981+08:00 pid=62856 tid=12 left-down x=720 y=1078 wordForeground=False
+2026-09-06T17:10:41.1343294+08:00 pid=62856 tid=12 left-down x=607 y=974 wordForeground=False
+2026-09-06T17:10:44.6331989+08:00 pid=62856 tid=12 left-down x=1871 y=407 wordForeground=False
+2026-09-06T17:10:48.8369138+08:00 pid=62856 tid=12 left-down x=2301 y=1453 wordForeground=True
+2026-09-06T17:11:37.3701134+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:13:19.3835351+08:00 pid=62856 tid=12 left-down x=837 y=1224 wordForeground=False
+2026-09-06T17:14:16.0350612+08:00 pid=62856 tid=12 left-down x=1838 y=688 wordForeground=True
+2026-09-06T17:15:24.5493504+08:00 pid=62856 tid=12 left-down x=1141 y=1087 wordForeground=True
+2026-09-06T17:15:25.0321508+08:00 pid=62856 tid=12 left-down x=1141 y=1087 wordForeground=True
+2026-09-06T17:15:25.0331492+08:00 pid=62856 tid=12 double-click elapsedMs=482.208 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T17:15:25.1424632+08:00 pid=62856 tid=17 callback-begin interceptedNativeOle=False x=1141 y=1087
+2026-09-06T17:15:25.1424632+08:00 pid=62856 tid=17 addin-callback-received interceptedNativeOle=False x=1141 y=1087
+2026-09-06T17:15:25.1454618+08:00 pid=62856 tid=17 callback-end
+2026-09-06T17:15:25.1634612+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T17:16:50.4418200+08:00 pid=62856 tid=12 left-down x=779 y=1278 wordForeground=False
+2026-09-06T17:18:49.1081954+08:00 pid=62856 tid=12 left-down x=770 y=1201 wordForeground=False
+2026-09-06T17:18:56.2435354+08:00 pid=62856 tid=12 left-down x=2258 y=1350 wordForeground=True
+2026-09-06T17:20:34.6000063+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:20:36.8585085+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:20:39.5320524+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:22:10.7346636+08:00 pid=62856 tid=12 left-down x=1935 y=1345 wordForeground=True
+2026-09-06T17:22:14.0166656+08:00 pid=62856 tid=12 left-down x=1808 y=1615 wordForeground=True
+2026-09-06T17:23:05.5404769+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:23:33.5972544+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T17:32:01.3899271+08:00 pid=62856 tid=12 left-down x=868 y=930 wordForeground=False
+2026-09-06T17:32:13.1438363+08:00 pid=62856 tid=12 left-down x=716 y=707 wordForeground=False
+2026-09-06T17:32:15.7455056+08:00 pid=62856 tid=12 left-down x=653 y=533 wordForeground=False
+2026-09-06T17:32:19.1186113+08:00 pid=62856 tid=12 left-down x=1891 y=416 wordForeground=False
+2026-09-06T17:34:02.3951663+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:34:05.1765411+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:34:07.8645516+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:35:40.2855048+08:00 pid=62856 tid=12 left-down x=675 y=1190 wordForeground=False
+2026-09-06T17:35:46.8407489+08:00 pid=62856 tid=12 left-down x=1961 y=1652 wordForeground=True
+2026-09-06T17:35:49.9139037+08:00 pid=62856 tid=12 left-down x=1986 y=1555 wordForeground=True
+2026-09-06T17:36:01.9818877+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:36:04.6773361+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:36:07.3659297+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:38:54.8602622+08:00 pid=62856 tid=12 left-down x=813 y=1058 wordForeground=False
+2026-09-06T17:39:06.7419261+08:00 pid=62856 tid=12 left-down x=2050 y=1012 wordForeground=True
+2026-09-06T17:39:10.2873433+08:00 pid=62856 tid=12 left-down x=255 y=1492 wordForeground=False
+2026-09-06T17:39:13.2487967+08:00 pid=62856 tid=12 left-down x=961 y=1043 wordForeground=False
+2026-09-06T17:40:58.0631087+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:41:00.5599028+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:41:02.5421062+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:41:59.4211297+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:42:17.6687293+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T17:44:01.5065064+08:00 pid=62856 tid=12 left-down x=596 y=1205 wordForeground=False
+2026-09-06T17:44:22.2592784+08:00 pid=62856 tid=12 left-down x=2094 y=1018 wordForeground=True
+2026-09-06T17:44:25.5294582+08:00 pid=62856 tid=12 left-down x=763 y=1215 wordForeground=False
+2026-09-06T17:45:10.0206060+08:00 pid=62856 tid=12 left-down x=737 y=1273 wordForeground=False
+2026-09-06T17:45:13.0054248+08:00 pid=62856 tid=12 left-down x=2357 y=1096 wordForeground=False
+2026-09-06T17:47:34.5167244+08:00 pid=62856 tid=12 left-down x=894 y=1217 wordForeground=False
+2026-09-06T17:47:54.0475061+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:47:56.4983222+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:47:59.2720056+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:48:44.4861494+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:48:59.9139798+08:00 pid=62856 tid=12 left-down x=2024 y=1187 wordForeground=True
+2026-09-06T17:50:39.8821181+08:00 pid=62856 tid=12 left-down x=836 y=1237 wordForeground=False
+2026-09-06T17:50:43.5538251+08:00 pid=62856 tid=12 left-down x=2059 y=1068 wordForeground=True
+2026-09-06T17:51:49.0939039+08:00 pid=62856 tid=12 left-down x=607 y=1205 wordForeground=False
+2026-09-06T17:51:52.3706919+08:00 pid=62856 tid=12 left-down x=1466 y=1103 wordForeground=False
+2026-09-06T17:54:24.1043816+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T17:54:27.2221683+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T17:54:30.1277956+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T17:55:24.7560834+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T17:55:40.3046235+08:00 pid=62856 tid=12 left-down x=2024 y=1211 wordForeground=True
+2026-09-06T17:57:00.9930507+08:00 pid=62856 tid=12 left-down x=808 y=1255 wordForeground=False
+2026-09-06T17:57:10.0562040+08:00 pid=62856 tid=12 left-down x=1866 y=1723 wordForeground=True
+2026-09-06T17:57:19.7850321+08:00 pid=62856 tid=12 left-down x=1905 y=1516 wordForeground=True
+2026-09-06T17:58:43.6555433+08:00 pid=62856 tid=12 left-down x=1948 y=1269 wordForeground=True
+2026-09-06T17:58:47.3854180+08:00 pid=62856 tid=12 left-down x=1778 y=1476 wordForeground=True
+2026-09-06T17:58:51.9344666+08:00 pid=62856 tid=12 left-down x=1141 y=1482 wordForeground=True
+2026-09-06T17:58:52.5637173+08:00 pid=62856 tid=12 left-down x=1141 y=1482 wordForeground=True
+2026-09-06T17:59:19.5024536+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T18:00:01.9558048+08:00 pid=62856 tid=12 left-down x=853 y=1268 wordForeground=False
+2026-09-06T18:00:05.3896741+08:00 pid=62856 tid=12 left-down x=2132 y=1445 wordForeground=True
+2026-09-06T18:02:53.8100526+08:00 pid=62856 tid=12 left-down x=705 y=1242 wordForeground=False
+2026-09-06T18:02:58.6037320+08:00 pid=62856 tid=12 left-down x=2064 y=1539 wordForeground=True
+2026-09-06T18:03:24.0463812+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T18:08:48.6302749+08:00 pid=62856 tid=12 left-down x=765 y=1027 wordForeground=False
+2026-09-06T18:08:52.5078108+08:00 pid=62856 tid=12 left-down x=247 y=1478 wordForeground=False
+2026-09-06T18:08:56.2812483+08:00 pid=62856 tid=12 left-down x=664 y=936 wordForeground=False
+2026-09-06T18:09:00.3657406+08:00 pid=62856 tid=12 left-down x=1877 y=399 wordForeground=False
+2026-09-06T18:11:22.0897088+08:00 pid=62856 tid=12 left-down x=822 y=1270 wordForeground=False
+2026-09-06T18:11:31.7871846+08:00 pid=62856 tid=12 left-down x=1265 y=1795 wordForeground=True
+2026-09-06T18:13:09.4749547+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T18:13:11.6650498+08:00 pid=62856 tid=12 left-down x=1602 y=747 wordForeground=False
+2026-09-06T18:13:28.3019176+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T18:13:31.1462095+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T18:13:33.7801331+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T18:14:35.2751003+08:00 pid=62856 tid=12 left-down x=806 y=1212 wordForeground=False
+2026-09-06T18:14:52.5000805+08:00 pid=62856 tid=12 left-down x=815 y=1228 wordForeground=False
+2026-09-06T18:14:59.3747898+08:00 pid=62856 tid=12 left-down x=2177 y=1494 wordForeground=True
+2026-09-06T18:15:03.4422711+08:00 pid=62856 tid=12 left-down x=2100 y=1471 wordForeground=True
+2026-09-06T18:15:05.0022158+08:00 pid=62856 tid=12 left-down x=2019 y=1474 wordForeground=True
+2026-09-06T18:15:05.3650995+08:00 pid=62856 tid=12 left-down x=2019 y=1475 wordForeground=True
+2026-09-06T18:15:05.3660994+08:00 pid=62856 tid=12 double-click elapsedMs=362.527 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T18:15:05.4694957+08:00 pid=62856 tid=17 callback-begin interceptedNativeOle=False x=2019 y=1475
+2026-09-06T18:15:05.4701304+08:00 pid=62856 tid=17 addin-callback-received interceptedNativeOle=False x=2019 y=1475
+2026-09-06T18:15:05.4706432+08:00 pid=62856 tid=17 callback-end
+2026-09-06T18:15:05.4736579+08:00 pid=62856 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T18:15:13.8668840+08:00 pid=62856 tid=12 left-down x=2639 y=748 wordForeground=True
+2026-09-06T18:15:18.4806961+08:00 pid=62856 tid=12 left-down x=835 y=1292 wordForeground=False
+2026-09-06T18:15:20.3678985+08:00 pid=62856 tid=12 left-down x=848 y=1359 wordForeground=False
+2026-09-06T18:15:22.4334849+08:00 pid=62856 tid=12 left-down x=863 y=1433 wordForeground=False
+2026-09-06T18:15:57.7459149+08:00 pid=62856 tid=12 left-down x=218 y=1472 wordForeground=False
+2026-09-06T18:18:01.6108714+08:00 pid=62856 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T18:18:19.6641695+08:00 pid=62856 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T18:18:22.9001808+08:00 pid=62856 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T18:18:25.6378162+08:00 pid=62856 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T18:19:42.6666239+08:00 pid=62856 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T18:19:56.2730381+08:00 pid=62856 tid=12 left-down x=2024 y=1211 wordForeground=True
+2026-09-06T18:22:20.0262943+08:00 pid=62856 tid=12 left-down x=2067 y=1076 wordForeground=True
+2026-09-06T18:22:26.1564623+08:00 pid=62856 tid=12 left-down x=1136 y=1362 wordForeground=False
+2026-09-06T18:22:56.0585591+08:00 pid=62856 tid=12 left-down x=2228 y=1331 wordForeground=False
+2026-09-06T18:23:01.7096292+08:00 pid=62856 tid=12 left-down x=684 y=811 wordForeground=False
+2026-09-06T18:23:04.5924074+08:00 pid=62856 tid=12 left-down x=677 y=753 wordForeground=False
+2026-09-06T18:23:10.9718620+08:00 pid=62856 tid=12 left-down x=1890 y=411 wordForeground=False
+2026-09-06T18:23:16.2628141+08:00 pid=62856 tid=12 left-down x=1381 y=2159 wordForeground=False
+2026-09-06T18:23:25.6440572+08:00 pid=62856 tid=12 left-down x=803 y=1363 wordForeground=False
+2026-09-06T18:25:28.6113855+08:00 pid=62856 tid=12 left-down x=1245 y=1142 wordForeground=False
+2026-09-06T18:25:34.0921287+08:00 pid=62856 tid=12 left-down x=227 y=1461 wordForeground=False
+2026-09-06T18:25:39.5690198+08:00 pid=62856 tid=12 left-down x=830 y=1233 wordForeground=False

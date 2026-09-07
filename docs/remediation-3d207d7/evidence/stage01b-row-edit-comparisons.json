@@ -1,0 +1,67 @@
+[
+  {
+    "before": "number-on",
+    "after": "first-edit",
+    "targetRow": 1,
+    "mathCount": 3,
+    "nonTargetXmlUnchanged": true,
+    "targetXmlChanged": true,
+    "fieldsUnchanged": true,
+    "allDisplay": true,
+    "referenceResults": [
+      "0.0.2"
+    ]
+  },
+  {
+    "before": "first-edit",
+    "after": "last-edit",
+    "targetRow": 3,
+    "mathCount": 3,
+    "nonTargetXmlUnchanged": true,
+    "targetXmlChanged": true,
+    "fieldsUnchanged": true,
+    "allDisplay": true,
+    "referenceResults": [
+      "0.0.2"
+    ]
+  },
+  {
+    "before": "last-edit",
+    "after": "middle-round1",
+    "targetRow": 2,
+    "mathCount": 3,
+    "nonTargetXmlUnchanged": true,
+    "targetXmlChanged": true,
+    "fieldsUnchanged": true,
+    "allDisplay": true,
+    "referenceResults": [
+      "0.0.2"
+    ]
+  },
+  {
+    "before": "middle-round1",
+    "after": "middle-round2",
+    "targetRow": 2,
+    "mathCount": 3,
+    "nonTargetXmlUnchanged": true,
+    "targetXmlChanged": true,
+    "fieldsUnchanged": true,
+    "allDisplay": true,
+    "referenceResults": [
+      "0.0.2"
+    ]
+  },
+  {
+    "before": "middle-round2",
+    "after": "middle-round3-close",
+    "targetRow": 2,
+    "mathCount": 3,
+    "nonTargetXmlUnchanged": true,
+    "targetXmlChanged": true,
+    "fieldsUnchanged": true,
+    "allDisplay": true,
+    "referenceResults": [
+      "0.0.2"
+    ]
+  }
+]

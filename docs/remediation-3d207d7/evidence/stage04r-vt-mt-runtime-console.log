@@ -1,0 +1,77 @@
+SESSION|a499456c-386e-4ce1-95a6-e2188cf45314|doc=文档132|mode=create|object=mathTypeOle|display=block|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+SESSION|e8cdca0d-6258-4743-b72b-0a3869e74478|doc=文档132|mode=create|object=mathTypeOle|display=block|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+SESSION|777cb35a-88f7-4f36-b598-f06561ef18a6|doc=文档132|mode=create|object=mathTypeOle|display=block|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+SESSION|adc407c2-2a1b-42ac-ac38-adacadab1977|doc=文档132|mode=create|object=mathTypeOle|display=block|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+SESSION|f935edb8-9bea-4307-9c75-5f18f9eae79c|doc=文档132|mode=create|object=mathTypeOle|display=block|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+SESSION|1348f284-cd81-44d7-b90b-1bfa366bb9f9|doc=文档132|mode=create|object=mathTypeOle|display=inline|numbered=False|status=failed|error=System.Runtime.InteropServices.COMException (0x800A1710): 无法编辑 Range。
+   在 Microsoft.Office.Interop.Word.Range.Delete(Object& Unit, Object& Count)
+   在 VisualTeX.WordVsto.WordFormulaService.NormalizeFormerNumberedFormulaParagraph(Document document, Range latexRange)
+   在 VisualTeX.WordVsto.WordFormulaService.ConvertFormulaTargetToLatex(Document document, FormulaToLatexTarget target, Boolean& documentMutationStarted, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.DeleteSimpleSourceHost(Document document, String sourceMode, WordFormulaFormatConversionTarget target, IReadOnlyDictionary`2 knownReferenceCounts, Boolean preserveCrossReferences)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__164.MoveNext()
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "process":  "visualtex"
+}

@@ -1,0 +1,19 @@
+[
+  ["new", "stage04ap-omml-empty"],
+  ["number-format", "continuous", "stage04ap-continuous"],
+  ["import", "omml", "true", "stage04ap-omml-import", "import-source.tex"],
+  ["snapshot", "stage04ap-omml-imported"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ap-omml-imported-visible\"}"],
+  ["edit-size", "math", "3", "小四（12 磅）", "stage04ap-size-only-edit"],
+  ["snapshot", "stage04ap-omml-size12"],
+  ["ui", "{\"Action\":\"ribbon\",\"Label\":\"stage04ap-ribbon-size12\"}"],
+  ["edit", "3", "keep", "keep", "close"],
+  ["snapshot", "stage04ap-omml-closed"],
+  ["edit-source", "math", "3", "E=mc^2", "stage04ap-omml-edit"],
+  ["reference", "2", "stage04ap-omml-ref"],
+  ["number-format", "heading2-dash", "stage04ap-omml-format"],
+  ["snapshot", "stage04ap-omml-ready"],
+  ["convert", "omml-mt", "full", "stage04ap-omml-mt"],
+  ["snapshot", "stage04ap-mt-converted"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ap-mt-converted-visible\"}"]
+]

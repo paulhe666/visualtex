@@ -1,0 +1,1108 @@
+
+7-Zip 25.01 (x64) : Copyright (c) 1999-2025 Igor Pavlov : 2025-08-03
+
+Scanning the drive for archives:
+1 file, 323777910 bytes (309 MiB)
+
+Listing archive: apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+
+--
+Path = apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+Type = Nsis
+Physical Size = 323777910
+Method = LZMA:23
+Solid = +
+Headers Size = 160794
+Embedded Stub Size = 62976
+SubType = NSIS-3 Unicode BadCmd=13
+
+----------
+Path = $PLUGINSDIR\System.dll
+Size = 12288
+Packed Size = 323714930
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 0
+
+Path = $PLUGINSDIR\nsDialogs.dll
+Size = 9728
+Packed Size = 
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 12292
+
+Path = $PLUGINSDIR\nsExec.dll
+Size = 7168
+Packed Size = 
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 22024
+
+Path = $PLUGINSDIR\modern-wizard.bmp
+Size = 26494
+Packed Size = 
+Modified = 2026-06-22 13:06:22.0000000
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 29196
+
+Path = $PLUGINSDIR\nsis_tauri_utils.dll
+Size = 34304
+Packed Size = 
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 55694
+
+Path = $PLUGINSDIR\StartMenu.dll
+Size = 13316
+Packed Size = 
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 90002
+
+Path = $PLUGINSDIR\NSISdl.dll
+Size = 15360
+Packed Size = 
+Modified = 
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 103322
+
+Path = visualtex.exe
+Size = 22891008
+Packed Size = 
+Modified = 2026-09-06 21:53:30.0000000
+Attributes = 
+Method = LZMA:23
+Solid = +
+Offset = 118686
+
+Path = office\assets\CustomSymbolDesignerDialog-KKzM6a4z.js
+Size = 89558
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23009698
+
+Path = office\assets\KaTeX_AMS-Regular-BQhdFMY1.woff2
+Size = 28076
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23099260
+
+Path = office\assets\KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2
+Size = 6912
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23127340
+
+Path = office\assets\KaTeX_Caligraphic-Regular-Di6jR-x-.woff2
+Size = 6908
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23134256
+
+Path = office\assets\KaTeX_Fraktur-Bold-CL6g_b3V.woff2
+Size = 11348
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23141168
+
+Path = office\assets\KaTeX_Fraktur-Regular-CTYiF6lA.woff2
+Size = 11316
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23152520
+
+Path = office\assets\KaTeX_Main-Bold-Cx986IdX.woff2
+Size = 25324
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23163840
+
+Path = office\assets\KaTeX_Main-BoldItalic-DxDJ3AOS.woff2
+Size = 16780
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23189168
+
+Path = office\assets\KaTeX_Main-Italic-NWA7e6Wa.woff2
+Size = 16988
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23205952
+
+Path = office\assets\KaTeX_Main-Regular-B22Nviop.woff2
+Size = 26272
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23222944
+
+Path = office\assets\KaTeX_Math-BoldItalic-CZnvNsCZ.woff2
+Size = 16400
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23249220
+
+Path = office\assets\KaTeX_Math-Italic-t53AETM-.woff2
+Size = 16440
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23265624
+
+Path = office\assets\KaTeX_SansSerif-Bold-D1sUS0GD.woff2
+Size = 12216
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23282068
+
+Path = office\assets\KaTeX_SansSerif-Italic-C3H0VqGB.woff2
+Size = 12028
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23294288
+
+Path = office\assets\KaTeX_SansSerif-Regular-DDBCnlJ7.woff2
+Size = 10344
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23306320
+
+Path = office\assets\KaTeX_Script-Regular-D3wIWfF6.woff2
+Size = 9644
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23316668
+
+Path = office\assets\KaTeX_Size1-Regular-mCD8mA8B.woff2
+Size = 5468
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23326316
+
+Path = office\assets\KaTeX_Size2-Regular-Dy4dx90m.woff2
+Size = 5208
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23331788
+
+Path = office\assets\KaTeX_Size4-Regular-Dl5lxZxV.woff2
+Size = 4928
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23337000
+
+Path = office\assets\KaTeX_Typewriter-Regular-CO6r4hn1.woff2
+Size = 13568
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23341932
+
+Path = office\assets\dialog-BkcOVQJV.css
+Size = 378684
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23355504
+
+Path = office\assets\dialog-HL1bHzsS.js
+Size = 4391151
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 23734192
+
+Path = office\dialog\index.html
+Size = 887
+Packed Size = 
+Modified = 2026-09-06 21:49:42.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28125347
+
+Path = scripts\ensure_windows_office_certificate.ps1
+Size = 12411
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28126238
+
+Path = scripts\install_windows_vsto.ps1
+Size = 54767
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28138653
+
+Path = scripts\install_windows_vsto_runtime.ps1
+Size = 6844
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28193424
+
+Path = scripts\remove_windows_office_certificate.ps1
+Size = 4751
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28200272
+
+Path = scripts\test_windows_office_runtime.ps1
+Size = 74856
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28205027
+
+Path = scripts\uninstall_windows_vsto.ps1
+Size = 14378
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28279887
+
+Path = licenses\STIXTwoMath-OFL-1.1.txt
+Size = 4610
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28294269
+
+Path = ocr\worker.py
+Size = 18374
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28298883
+
+Path = ocr-models\windows-x64\catalog.json
+Size = 1340
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28317261
+
+Path = ocr-python\windows-x64\manifest.json
+Size = 27310
+Packed Size = 
+Modified = 2026-09-05 23:00:32.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28318605
+
+Path = ocr-python\windows-x64\requirements-windows-x64-py312.lock
+Size = 6955
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28345919
+
+Path = ocr-python\windows-x64\visualtex-python-3.12.10-windows-x64.zip
+Size = 14856169
+Packed Size = 
+Modified = 2026-09-05 23:00:16.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 28352878
+
+Path = ocr-python\windows-x64\wheelhouse\PyYAML-6.0.2-cp312-cp312-win_amd64.whl
+Size = 156338
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43209051
+
+Path = ocr-python\windows-x64\wheelhouse\aiohappyeyeballs-2.7.1-py3-none-any.whl
+Size = 15038
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43365393
+
+Path = ocr-python\windows-x64\wheelhouse\aiohttp-3.14.3-cp312-cp312-win_amd64.whl
+Size = 476845
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43380435
+
+Path = ocr-python\windows-x64\wheelhouse\aiosignal-1.4.0-py3-none-any.whl
+Size = 7490
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43857284
+
+Path = ocr-python\windows-x64\wheelhouse\aistudio_sdk-0.3.9-py3-none-any.whl
+Size = 67186
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43864778
+
+Path = ocr-python\windows-x64\wheelhouse\annotated_types-0.8.0-py3-none-any.whl
+Size = 13427
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43931968
+
+Path = ocr-python\windows-x64\wheelhouse\anyio-4.15.1-py3-none-any.whl
+Size = 132079
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 43945399
+
+Path = ocr-python\windows-x64\wheelhouse\attrs-26.1.0-py3-none-any.whl
+Size = 67548
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 44077482
+
+Path = ocr-python\windows-x64\wheelhouse\bce_python_sdk-0.9.79-py3-none-any.whl
+Size = 440268
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 44145034
+
+Path = ocr-python\windows-x64\wheelhouse\certifi-2026.7.22-py3-none-any.whl
+Size = 136983
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 44585306
+
+Path = ocr-python\windows-x64\wheelhouse\cffi-2.1.1-cp312-cp312-win_amd64.whl
+Size = 185919
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 44722293
+
+Path = ocr-python\windows-x64\wheelhouse\chardet-7.6.0-cp312-cp312-win_amd64.whl
+Size = 1160778
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 44908216
+
+Path = ocr-python\windows-x64\wheelhouse\charset_normalizer-3.5.1-cp312-cp312-win_amd64.whl
+Size = 200551
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46068998
+
+Path = ocr-python\windows-x64\wheelhouse\click-8.5.0-py3-none-any.whl
+Size = 125251
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46269553
+
+Path = ocr-python\windows-x64\wheelhouse\colorama-0.4.6-py2.py3-none-any.whl
+Size = 25335
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46394808
+
+Path = ocr-python\windows-x64\wheelhouse\colorlog-6.12.0-py3-none-any.whl
+Size = 12239
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46420147
+
+Path = ocr-python\windows-x64\wheelhouse\crc32c-2.9-cp312-cp312-win_amd64.whl
+Size = 65792
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46432390
+
+Path = ocr-python\windows-x64\wheelhouse\cryptography-50.0.1-cp311-abi3-win_amd64.whl
+Size = 3842826
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 46498186
+
+Path = ocr-python\windows-x64\wheelhouse\filelock-3.32.5-py3-none-any.whl
+Size = 100003
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 50341016
+
+Path = ocr-python\windows-x64\wheelhouse\frozenlist-1.8.0-cp312-cp312-win_amd64.whl
+Size = 44591
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 50441023
+
+Path = ocr-python\windows-x64\wheelhouse\fsspec-2026.7.0-py3-none-any.whl
+Size = 206583
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 50485618
+
+Path = ocr-python\windows-x64\wheelhouse\ftfy-6.3.1-py3-none-any.whl
+Size = 44821
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 50692205
+
+Path = ocr-python\windows-x64\wheelhouse\future-1.0.0-py3-none-any.whl
+Size = 491326
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 50737030
+
+Path = ocr-python\windows-x64\wheelhouse\h11-0.16.0-py3-none-any.whl
+Size = 37515
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 51228360
+
+Path = ocr-python\windows-x64\wheelhouse\httpcore-1.0.9-py3-none-any.whl
+Size = 78784
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 51265879
+
+Path = ocr-python\windows-x64\wheelhouse\httpx-0.28.1-py3-none-any.whl
+Size = 73517
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 51344667
+
+Path = ocr-python\windows-x64\wheelhouse\huggingface_hub-0.36.2-py3-none-any.whl
+Size = 566395
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 51418188
+
+Path = ocr-python\windows-x64\wheelhouse\idna-3.19-py3-none-any.whl
+Size = 68550
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 51984587
+
+Path = ocr-python\windows-x64\wheelhouse\imagesize-2.0.1-py3-none-any.whl
+Size = 14794
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 52053141
+
+Path = ocr-python\windows-x64\wheelhouse\modelscope-1.39.1-py3-none-any.whl
+Size = 6038125
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 52067939
+
+Path = ocr-python\windows-x64\wheelhouse\modelscope_hub-0.4.0-py3-none-any.whl
+Size = 200414
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 58106068
+
+Path = ocr-python\windows-x64\wheelhouse\multidict-6.7.1-cp312-cp312-win_amd64.whl
+Size = 46053
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 58306486
+
+Path = ocr-python\windows-x64\wheelhouse\networkx-3.6.1-py3-none-any.whl
+Size = 2068504
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 58352543
+
+Path = ocr-python\windows-x64\wheelhouse\numpy-2.3.5-cp312-cp312-win_amd64.whl
+Size = 12782922
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 60421051
+
+Path = ocr-python\windows-x64\wheelhouse\opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl
+Size = 45541421
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 73203977
+
+Path = ocr-python\windows-x64\wheelhouse\opt_einsum-3.3.0-py3-none-any.whl
+Size = 65486
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 118745402
+
+Path = ocr-python\windows-x64\wheelhouse\packaging-26.3-py3-none-any.whl
+Size = 129956
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 118810892
+
+Path = ocr-python\windows-x64\wheelhouse\paddleocr-3.7.0-py3-none-any.whl
+Size = 146750
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 118940852
+
+Path = ocr-python\windows-x64\wheelhouse\paddlepaddle-3.3.1-cp312-cp312-win_amd64.whl
+Size = 104794793
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 119087606
+
+Path = ocr-python\windows-x64\wheelhouse\paddlex-3.7.2-py3-none-any.whl
+Size = 2239708
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 223882403
+
+Path = ocr-python\windows-x64\wheelhouse\pandas-3.0.5-cp312-cp312-win_amd64.whl
+Size = 9831691
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 226122115
+
+Path = ocr-python\windows-x64\wheelhouse\pillow-11.3.0-cp312-cp312-win_amd64.whl
+Size = 6986324
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 235953810
+
+Path = ocr-python\windows-x64\wheelhouse\prettytable-3.18.0-py3-none-any.whl
+Size = 37357
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 242940138
+
+Path = ocr-python\windows-x64\wheelhouse\propcache-0.5.2-cp312-cp312-win_amd64.whl
+Size = 42322
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 242977499
+
+Path = ocr-python\windows-x64\wheelhouse\protobuf-7.36.1-cp310-abi3-win_amd64.whl
+Size = 456518
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243019825
+
+Path = ocr-python\windows-x64\wheelhouse\psutil-7.2.2-cp37-abi3-win_amd64.whl
+Size = 137737
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243476347
+
+Path = ocr-python\windows-x64\wheelhouse\py_cpuinfo-9.0.0-py3-none-any.whl
+Size = 22335
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243614088
+
+Path = ocr-python\windows-x64\wheelhouse\pyclipper-1.4.0-cp312-cp312-win_amd64.whl
+Size = 104619
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243636427
+
+Path = ocr-python\windows-x64\wheelhouse\pycparser-3.0-py3-none-any.whl
+Size = 48172
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243741050
+
+Path = ocr-python\windows-x64\wheelhouse\pycryptodome-3.23.0-cp37-abi3-win_amd64.whl
+Size = 1799636
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 243789226
+
+Path = ocr-python\windows-x64\wheelhouse\pydantic-2.13.5-py3-none-any.whl
+Size = 472589
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 245588866
+
+Path = ocr-python\windows-x64\wheelhouse\pydantic_core-2.46.5-cp312-cp312-win_amd64.whl
+Size = 2043140
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 246061459
+
+Path = ocr-python\windows-x64\wheelhouse\pypdfium2-5.13.0-py3-none-win_amd64.whl
+Size = 3885553
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 248104603
+
+Path = ocr-python\windows-x64\wheelhouse\python_bidi-0.6.11-cp312-cp312-win_amd64.whl
+Size = 161243
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 251990160
+
+Path = ocr-python\windows-x64\wheelhouse\python_dateutil-2.9.0.post0-py2.py3-none-any.whl
+Size = 229892
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 252151407
+
+Path = ocr-python\windows-x64\wheelhouse\requests-2.34.2-py3-none-any.whl
+Size = 73075
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 252381303
+
+Path = ocr-python\windows-x64\wheelhouse\ruamel_yaml-0.19.1-py3-none-any.whl
+Size = 118102
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 252454382
+
+Path = ocr-python\windows-x64\wheelhouse\safetensors-0.8.0-cp310-abi3-win_amd64.whl
+Size = 355540
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 252572488
+
+Path = ocr-python\windows-x64\wheelhouse\setuptools-84.0.0-py3-none-any.whl
+Size = 818216
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 252928032
+
+Path = ocr-python\windows-x64\wheelhouse\shapely-2.1.2-cp312-cp312-win_amd64.whl
+Size = 1722861
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 253746252
+
+Path = ocr-python\windows-x64\wheelhouse\six-1.17.0-py2.py3-none-any.whl
+Size = 11050
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 255469117
+
+Path = ocr-python\windows-x64\wheelhouse\tokenizers-0.19.1-cp312-none-win_amd64.whl
+Size = 2214527
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 255480171
+
+Path = ocr-python\windows-x64\wheelhouse\tqdm-4.70.0-py3-none-any.whl
+Size = 80184
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 257694702
+
+Path = ocr-python\windows-x64\wheelhouse\typing_extensions-4.16.0-py3-none-any.whl
+Size = 45571
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 257774890
+
+Path = ocr-python\windows-x64\wheelhouse\typing_inspection-0.4.4-py3-none-any.whl
+Size = 14750
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 257820465
+
+Path = ocr-python\windows-x64\wheelhouse\tzdata-2026.3-py2.py3-none-any.whl
+Size = 348168
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 257835219
+
+Path = ocr-python\windows-x64\wheelhouse\ujson-6.0.0-cp312-cp312-win_amd64.whl
+Size = 227516
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 258183391
+
+Path = ocr-python\windows-x64\wheelhouse\urllib3-2.7.0-py3-none-any.whl
+Size = 131087
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 258410911
+
+Path = ocr-python\windows-x64\wheelhouse\wand-0.7.2-py3-none-any.whl
+Size = 145045
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 258542002
+
+Path = ocr-python\windows-x64\wheelhouse\wcwidth-0.8.3-py3-none-any.whl
+Size = 331669
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 258687051
+
+Path = ocr-python\windows-x64\wheelhouse\yarl-1.24.5-cp312-cp312-win_amd64.whl
+Size = 97618
+Packed Size = 
+Modified = 2026-09-05 22:58:30.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 259018724
+
+Path = windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi
+Size = 1896448
+Packed Size = 
+Modified = 2026-09-06 21:49:36.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 259116346
+
+Path = windows-office\VisualTeX-WindowsOffice-VSTO-x64.sha256.json
+Size = 3877
+Packed Size = 
+Modified = 2026-09-06 21:49:36.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 261012798
+
+Path = windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi
+Size = 1880064
+Packed Size = 
+Modified = 2026-09-06 21:49:44.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 261016679
+
+Path = windows-office\VisualTeX-WindowsOffice-VSTO-x86.sha256.json
+Size = 3877
+Packed Size = 
+Modified = 2026-09-06 21:49:44.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 262896747
+
+Path = windows-office\vstor_redist.exe
+Size = 41828424
+Packed Size = 
+Modified = 2026-09-05 18:25:50.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 262900628
+
+Path = windows-office\vstor_redist.sha256.json
+Size = 915
+Packed Size = 
+Modified = 2026-09-05 23:00:38.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 304729056
+
+Path = visualtex-windows-office-bridge.exe
+Size = 
+Packed Size = 
+Modified = 2026-09-06 21:49:28.0000000
+Attributes = A
+Method = LZMA:23
+Solid = +
+Offset = 304729975
+

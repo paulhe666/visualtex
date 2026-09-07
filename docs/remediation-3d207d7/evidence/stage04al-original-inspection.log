@@ -1,0 +1,28 @@
+DOCUMENT|文档36|OMML=0|OLE=4|tables=0|fields=16|end=744
+DOCUMENT|文档35|OMML=4|OLE=0|tables=2|fields=2|end=417
+TABLE|111:206|1x3
+TABLE|318:413|1x3
+MATH|1|8:92|Latin Modern Math|12
+MATH|2|112:141|Latin Modern Math|12
+MATH|3|215:299|Latin Modern Math|12
+MATH|4|319:348|Latin Modern Math|12
+DOCUMENT|文档33|OMML=7|OLE=17|tables=1|fields=44|end=2556
+TABLE|461:611|1x3
+MATH|1|54:92|Cambria Math|10.5
+MATH|2|93:163|Latin Modern Math|10.5
+MATH|3|164:217|Cambria Math|10.5
+MATH|4|247:307|Cambria Math|10.5
+MATH|5|316:400|Cambria Math|10.5
+MATH|6|419:448|Cambria Math|10.5
+MATH|7|462:546|Latin Modern Math|10.5
+DOCUMENT|文档29|OMML=0|OLE=3|tables=0|fields=11|end=416
+DOCUMENT|文档28|OMML=0|OLE=1|tables=0|fields=7|end=349
+DOCUMENT|文档26|OMML=0|OLE=1|tables=0|fields=7|end=349
+DOCUMENT|文档22|OMML=4|OLE=0|tables=1|fields=2|end=283
+TABLE|1:281|3x3
+MATH|1|2:22|Latin Modern Math|10.5
+MATH|2|88:115|Latin Modern Math|10.5
+MATH|3|116:192|Latin Modern Math|10.5
+MATH|4|197:216|Latin Modern Math|10.5
+DOCUMENT|文档1|OMML=0|OLE=3|tables=0|fields=11|end=409
+INVENTORY|C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\stage04al-original-inventory.json

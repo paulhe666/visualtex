@@ -1,0 +1,5 @@
+
+> visualtex-windows@1.2.6 test:office-formula-document
+> tsx scripts/office_formula_document_regression.mts
+
+Windows Office canonical formula-document regression passed

@@ -1,0 +1,22 @@
+﻿{
+    "before":  {
+                   "fields":  4,
+                   "name":  "文档119",
+                   "shapes":  0,
+                   "bookmarks":  9,
+                   "maths":  2,
+                   "end":  297
+               },
+    "time":  "2026-09-06T06:09:46.1101952Z",
+    "pid":  88240,
+    "path":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04l-identical.docx",
+    "after":  {
+                  "fields":  4,
+                  "name":  "stage04l-identical.docx",
+                  "saved":  false,
+                  "shapes":  0,
+                  "bookmarks":  9,
+                  "maths":  2,
+                  "end":  297
+              }
+}
