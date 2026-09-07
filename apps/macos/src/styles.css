@@ -7913,10 +7913,19 @@ textarea:disabled {
 }
 
 .update-community-copy p {
-  margin: 5px 0 9px;
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.update-community-copy .update-community-disclaimer {
+  margin: 6px 0 5px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.update-community-copy .update-community-hint {
+  margin: 0 0 9px;
 }
 
 .update-community-number {
@@ -7941,32 +7950,38 @@ textarea:disabled {
 .update-community-qr-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
   gap: 9px;
   min-width: 0;
 }
 
-.update-community-qr-row figure {
+.update-community-qr-card {
   min-width: 0;
   display: grid;
-  gap: 5px;
-  justify-items: center;
+  grid-template-rows: auto 1fr;
+  gap: 7px;
+  justify-items: stretch;
   margin: 0;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
 .update-community-qr-row img {
   width: 100%;
-  height: 148px;
+  height: 142px;
   display: block;
   object-fit: contain;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: white;
 }
 
 .update-community-qr-row figcaption {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.3;
   text-align: center;
 }
@@ -8033,8 +8048,12 @@ textarea:disabled {
     gap: 6px;
   }
 
+  .update-community-qr-card {
+    padding: 6px;
+  }
+
   .update-community-qr-row img {
-    height: 116px;
+    height: 108px;
   }
 }
 

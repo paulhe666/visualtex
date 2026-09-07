@@ -79,10 +79,14 @@ assert(updateDialogSource.includes('className="update-community-qr-row"'));
 assert(updateDialogSource.includes("支持与交流"));
 assert(updateDialogSource.includes("微信打赏"));
 assert(updateDialogSource.includes("支付宝打赏"));
-assert(updateDialogSource.includes("自愿打赏通道"));
-assert(updateDialogSource.includes("是否打赏完全不影响 VisualTeX 的任何功能和正常使用"));
+assert(updateDialogSource.includes("打赏完全自愿，不影响 VisualTeX 的任何功能和正常使用"));
+assert(updateDialogSource.includes("QQ群二维码用于加入交流群"));
+assert(updateDialogSource.includes("loading=\"eager\""));
+assert(updateDialogSource.includes("wechatPayImageUrl"));
+assert(updateDialogSource.includes("alipayImageUrl"));
 assert(updateDialogSource.includes("QQ群"));
 assert(updateDialogStyles.includes(".update-community-qr-row"));
+assert(updateDialogStyles.includes(".update-community-qr-card"));
 assert(updateDialogStyles.includes("grid-template-columns: repeat(3, minmax(0, 1fr))"));
 assert(!updateDialogSource.includes(privateChineseName));
 assert(

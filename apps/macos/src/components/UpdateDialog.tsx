@@ -13,17 +13,11 @@ import {
 import type { Language } from "../stores/editorStore";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
+import wechatPayImageUrl from "../../../../docs/images/wechat-pay.jpg";
+import alipayImageUrl from "../../../../docs/images/alipay.jpg";
 
 const QQ_GROUP_NUMBER = "1045801770";
 const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg";
-const WECHAT_PAY_IMAGE_URL = new URL(
-  "../../../../docs/images/wechat-pay.jpg",
-  import.meta.url,
-).href;
-const ALIPAY_IMAGE_URL = new URL(
-  "../../../../docs/images/alipay.jpg",
-  import.meta.url,
-).href;
 
 interface Props {
   open: boolean;
@@ -267,10 +261,15 @@ export function UpdateDialog({
                       </span>
                       <div>
                         <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
-                        <p>
+                        <p className="update-community-disclaimer">
                           {isEn
-                            ? "WeChat Pay and Alipay are optional tip channels. Tipping is entirely voluntary and never affects access to any VisualTeX feature. The QQ code is for community discussion."
-                            : "微信和支付宝为自愿打赏通道，是否打赏完全不影响 VisualTeX 的任何功能和正常使用；QQ群二维码用于交流讨论。"}
+                            ? "Tipping is completely optional and never affects any VisualTeX feature or normal use."
+                            : "打赏完全自愿，不影响 VisualTeX 的任何功能和正常使用。"}
+                        </p>
+                        <p className="update-community-hint">
+                          {isEn
+                            ? "Use WeChat Pay or Alipay only if you would like to support development. Scan the QQ code to join the community."
+                            : "如愿意支持开发，可使用微信或支付宝打赏；QQ群二维码用于加入交流群。"}
                         </p>
                         <span className="update-community-number">
                           {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
@@ -278,29 +277,29 @@ export function UpdateDialog({
                       </div>
                     </div>
                     <div className="update-community-qr-row">
-                      <figure>
-                        <img
-                          src={WECHAT_PAY_IMAGE_URL}
-                          alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
-                          loading="lazy"
-                        />
+                      <figure className="update-community-qr-card">
                         <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
-                      </figure>
-                      <figure>
                         <img
-                          src={ALIPAY_IMAGE_URL}
-                          alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
-                          loading="lazy"
+                          src={wechatPayImageUrl}
+                          alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
+                          loading="eager"
                         />
-                        <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
                       </figure>
-                      <figure>
+                      <figure className="update-community-qr-card">
+                        <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
+                        <img
+                          src={alipayImageUrl}
+                          alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
+                          loading="eager"
+                        />
+                      </figure>
+                      <figure className="update-community-qr-card">
+                        <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
                         <img
                           src={QQ_GROUP_IMAGE_URL}
                           alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${QQ_GROUP_NUMBER} QR code`}
-                          loading="lazy"
+                          loading="eager"
                         />
-                        <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
                       </figure>
                     </div>
                   </section>
