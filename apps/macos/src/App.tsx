@@ -103,6 +103,11 @@ import {
   type UpdateCheckResult,
 } from "./update/updateService";
 import {
+  RELEASE_WELCOME_STORAGE_KEY,
+  releaseWelcomeResult,
+  shouldShowReleaseWelcome,
+} from "./update/releaseWelcome";
+import {
   detectDesktopPlatform,
   onboardingStorageKey,
   shouldOpenOnboardingInitially,
@@ -158,6 +163,16 @@ function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
   const isMacDesktop = DESKTOP_PLATFORM === "macos" && isTauriEnvironment();
+  const [macStartupPromptResolved, setMacStartupPromptResolved] = useState(
+    () => !isMacDesktop,
+  );
+  const [releaseWelcomePending, setReleaseWelcomePending] = useState(
+    () =>
+      isMacDesktop &&
+      shouldShowReleaseWelcome() &&
+      readLocalStorage(RELEASE_WELCOME_STORAGE_KEY) !== "true",
+  );
+  const [releaseWelcomeOpen, setReleaseWelcomeOpen] = useState(false);
   // macOS Office setup/update mode must be chosen from the real DOTM/PPAM
   // status first. Opening the legacy first-run UI before that check can turn a
   // repair/update into a false "register PowerPoint again" prompt.
@@ -353,6 +368,7 @@ function App() {
     if (
       onboardingOpen ||
       macOfficeFirstRunOpen ||
+      releaseWelcomeOpen ||
       initialEditorFocusDoneRef.current
     ) {
       return;
@@ -369,7 +385,7 @@ function App() {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(repairTimer);
     };
-  }, [macOfficeFirstRunOpen, onboardingOpen]);
+  }, [macOfficeFirstRunOpen, onboardingOpen, releaseWelcomeOpen]);
 
   useEffect(() => {
     historyManager.configure({
@@ -469,6 +485,9 @@ function App() {
         setMacOfficePromptMode("repair");
         setOnboardingOpen(false);
         setMacOfficeFirstRunOpen(true);
+      })
+      .finally(() => {
+        if (!cancelled) setMacStartupPromptResolved(true);
       });
 
     return () => {
@@ -1134,6 +1153,8 @@ function App() {
       !checkUpdatesOnStartup ||
       macOfficeFirstRunOpen ||
       onboardingOpen ||
+      releaseWelcomePending ||
+      releaseWelcomeOpen ||
       automaticUpdateCheckRef.current
     ) {
       return;
@@ -1158,7 +1179,37 @@ function App() {
       window.clearTimeout(timer);
       window.removeEventListener("online", runWhenOnline);
     };
-  }, [checkUpdatesOnStartup, macOfficeFirstRunOpen, onboardingOpen, runUpdateCheck]);
+  }, [
+    checkUpdatesOnStartup,
+    macOfficeFirstRunOpen,
+    onboardingOpen,
+    releaseWelcomeOpen,
+    releaseWelcomePending,
+    runUpdateCheck,
+  ]);
+
+  useEffect(() => {
+    if (
+      !releaseWelcomePending ||
+      !macStartupPromptResolved ||
+      macOfficeFirstRunOpen ||
+      onboardingOpen ||
+      updateOpen
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setReleaseWelcomePending(false);
+      setReleaseWelcomeOpen(true);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    macOfficeFirstRunOpen,
+    macStartupPromptResolved,
+    onboardingOpen,
+    releaseWelcomePending,
+    updateOpen,
+  ]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -1168,7 +1219,7 @@ function App() {
         return;
       }
 
-      if (settingsOpen || formulaHotkeyManagerOpen || helpManualOpen || ocrOpen || historyOpen || exportOpen || macOfficeFirstRunOpen || onboardingOpen || updateOpen) {
+      if (settingsOpen || formulaHotkeyManagerOpen || helpManualOpen || ocrOpen || historyOpen || exportOpen || macOfficeFirstRunOpen || onboardingOpen || releaseWelcomeOpen || updateOpen) {
         return;
       }
 
@@ -1218,7 +1269,7 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, keypadMode, keypadMinimizeOnCopy, latexCodeFormat, settingsOpen, formulaHotkeyManagerOpen, helpManualOpen, ocrOpen, historyOpen, exportOpen, macOfficeFirstRunOpen, onboardingOpen, updateOpen]);
+  }, [latex, title, isEn, zoom, keypadMode, keypadMinimizeOnCopy, latexCodeFormat, settingsOpen, formulaHotkeyManagerOpen, helpManualOpen, ocrOpen, historyOpen, exportOpen, macOfficeFirstRunOpen, onboardingOpen, releaseWelcomeOpen, updateOpen]);
 
   const codeFormatControl = (
       <div
@@ -1805,6 +1856,23 @@ function App() {
         language={language}
         platform={DESKTOP_PLATFORM}
         onFinish={finishOnboarding}
+      />
+      <UpdateDialog
+        open={releaseWelcomeOpen}
+        language={language}
+        checking={false}
+        error=""
+        result={releaseWelcomeResult()}
+        checkOnStartup={checkUpdatesOnStartup}
+        automaticPrompt={false}
+        releaseWelcome
+        onCheckOnStartupChange={setCheckUpdatesOnStartup}
+        onRetry={() => undefined}
+        onOpenRelease={() => undefined}
+        onClose={() => {
+          writeLocalStorage(RELEASE_WELCOME_STORAGE_KEY, "true");
+          setReleaseWelcomeOpen(false);
+        }}
       />
       <UpdateDialog
         open={updateOpen}
