@@ -21,6 +21,16 @@ internal sealed class WordLocalEditSnapshot
 
     internal WordLocalEditSnapshot(Document document, Range formulaRange, string formulaId)
     {
+        var watch = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF") == "1"
+            ? System.Diagnostics.Stopwatch.StartNew() : null;
+        long checkpoint = 0;
+        void Trace(string stage)
+        {
+            if (watch is null) return;
+            var elapsed = watch.ElapsedMilliseconds;
+            WordDoubleClickHook.TraceMessage($"local-checkpoint-perf stage={stage} deltaMs={elapsed - checkpoint} totalMs={elapsed}");
+            checkpoint = elapsed;
+        }
         Range? scope = null;
         Range? content = null;
         Tables? tables = null;
@@ -31,9 +41,9 @@ internal sealed class WordLocalEditSnapshot
         Paragraph? paragraph = null;
         try
         {
-            if ((bool)formulaRange.get_Information(WdInformation.wdWithInTable))
+            tables = formulaRange.Tables;
+            if (tables.Count == 1)
             {
-                tables = formulaRange.Tables;
                 table = tables[1];
                 if (WordEquationNumbering.TryGetManagedNumberTableRowIndex(table, formulaRange, 2, out var rowIndex))
                 {
@@ -55,12 +65,17 @@ internal sealed class WordLocalEditSnapshot
             content = document.Content;
             documentEnd = content.End;
             mathFont = document.OMathFontName;
+            Trace("scope");
             var originalXml = scope.WordOpenXML;
+            Trace("xml");
             var geometry = WordInlineObjectGeometry.Capture(scope);
             bodySignature = Signature(originalXml, geometry);
+            Trace("signature");
             bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, scope,
                 NormalizedBody(originalXml, geometry), WordBookmarkRecoverySnapshot.NamesForFormula(formulaId));
+            Trace("bookmarks");
             undoHistory = new WordUndoHistorySnapshot(document);
+            Trace("undo-history");
         }
         finally
         {

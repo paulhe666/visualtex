@@ -633,9 +633,11 @@ internal static class WordOmmlFormulaStore
             var anchoredInCenterCell = false;
             try
             {
-                if ((bool)equationRange.get_Information(WdInformation.wdWithInTable))
+                // The exact cell/table ownership checks below are structural;
+                // Information(wdWithInTable) unnecessarily requests page layout.
+                equationTables = equationRange.Tables;
+                if (equationTables.Count > 0)
                 {
-                    equationTables = equationRange.Tables;
                     if (equationTables.Count > 0)
                     {
                         equationTable = equationTables[1];
@@ -771,11 +773,12 @@ internal static class WordOmmlFormulaStore
             Range? numberTableRange = null;
             try
             {
-                if ((bool)equationRange.get_Information(WdInformation.wdWithInTable)
-                    && (bool)numberRange.get_Information(WdInformation.wdWithInTable))
+                equationTables = equationRange.Tables;
+                numberTables = numberRange.Tables;
+                // Exact same-table/cell/row containment below is the ownership
+                // proof; no layout-dependent Information() preflight is needed.
+                if (equationTables.Count > 0 && numberTables.Count > 0)
                 {
-                    equationTables = equationRange.Tables;
-                    numberTables = numberRange.Tables;
                     if (equationTables.Count > 0 && numberTables.Count > 0)
                     {
                         equationTable = equationTables[1];
@@ -979,7 +982,7 @@ internal static class WordOmmlFormulaStore
         {
             bookmarks = document.Bookmarks;
             if (bookmarks.Exists(WordEquationNumbering.NativeNumberBookmarkName(formulaId))
-                || (bool)equation.get_Information(WdInformation.wdWithInTable)) return false;
+                || WordEquationNumbering.RangeIsWhollyWithinTable(equation)) return false;
             paragraphs = equation.Paragraphs;
             if (paragraphs.Count != 1) return false;
             paragraph = paragraphs[1];
@@ -1036,9 +1039,9 @@ internal static class WordOmmlFormulaStore
             Range? tableMathRange = null;
             try
             {
-                if ((bool)numberRange.get_Information(WdInformation.wdWithInTable))
+                numberTables = numberRange.Tables;
+                if (numberTables.Count > 0)
                 {
-                    numberTables = numberRange.Tables;
                     if (numberTables.Count > 0)
                     {
                         numberTable = numberTables[1];

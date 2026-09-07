@@ -36,6 +36,15 @@ public sealed class WordDoubleClickRoutingTests
         Assert.False(WordDoubleClickRouting.ShouldOpenVisualTeX(new OfficeSelection()));
     }
 
+    [Fact]
+    public void DesktopHookAcceptsOnlyItsOwningWordProcess()
+    {
+        Assert.True(WordDoubleClickRouting.ForegroundProcessBelongsToOwner(105516u, 105516));
+        Assert.False(WordDoubleClickRouting.ForegroundProcessBelongsToOwner(45744u, 105516));
+        Assert.False(WordDoubleClickRouting.ForegroundProcessBelongsToOwner(0u, 105516));
+        Assert.False(WordDoubleClickRouting.ForegroundProcessBelongsToOwner(105516u, 0));
+    }
+
     [Theory]
     [InlineData(100, 200)]
     [InlineData(150, 230)]

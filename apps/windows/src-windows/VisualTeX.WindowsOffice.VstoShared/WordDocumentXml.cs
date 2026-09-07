@@ -7,7 +7,57 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordDocumentXml
 {
-    internal static string Read(Document document)
+    internal static bool CanProveNoMathTypePlaceRefFields(string wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return false;
+        try
+        {
+            var package = XDocument.Parse(wordOpenXml);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            var body = package.Descendants(word + "body").SingleOrDefault();
+            if (body is null) return false;
+            // Word may split one field instruction across several instrText runs.
+            // Concatenate without separators so MTPlace|Ref remains detectable.
+            // A false positive merely triggers the exact COM fallback; only full
+            // absence is accepted as proof that no MathType number field exists.
+            var instructions = string.Concat(
+                body.Descendants(word + "instrText").Select(node => node.Value));
+            return instructions.IndexOf("MTPlaceRef", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static bool CanProveNoVisualTeXEquationNumberFields(string wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return false;
+        try
+        {
+            var package = XDocument.Parse(wordOpenXml);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            var body = package.Descendants(word + "body").SingleOrDefault();
+            if (body is null) return false;
+            // VisualTeX-owned OMML/OLE numbering always carries the fixed,
+            // locale-neutral SEQ VisualTeXEquation field. MathType's native
+            // MTPlaceRef/MTEqn/MTChap/MTSec fields are deliberately excluded.
+            // Concatenate instruction runs because Word may split a field code
+            // across several w:instrText nodes. Any ambiguity falls back to the
+            // conservative path that still runs the VisualTeX updater.
+            var instructions = string.Concat(
+                body.Descendants(word + "instrText").Select(node => node.Value));
+            return instructions.IndexOf(
+                "SEQ VisualTeXEquation",
+                StringComparison.OrdinalIgnoreCase) < 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static string Read(Document document, Range? ownedScope = null)
     {
         Range? content = null;
         Range? export = null;
@@ -15,7 +65,9 @@ internal static class WordDocumentXml
         InlineShapes? shapes = null;
         try
         {
-            content = document.Content;
+            content = ownedScope?.Duplicate ?? document.Content;
+            if (content.StoryType != WdStoryType.wdMainTextStory)
+                throw new InvalidDataException("Recovery XML must belong to the main Word story.");
             var start = content.Start;
             var end = content.End;
             maths = content.OMaths;

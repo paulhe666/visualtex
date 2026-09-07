@@ -16,7 +16,7 @@ internal static class MathTypeEquationNumbering
     private const string SectionBreakMarker = "MACROBUTTON MTEditEquationSection2";
     private const string ReferenceBookmarkPrefix = "ZEqnNum";
 
-    private sealed class PlaceRefRewritePlan
+    internal sealed class PlaceRefRewritePlan
     {
         internal int FieldStart { get; set; }
         internal int ParagraphStart { get; set; }
@@ -25,6 +25,26 @@ internal static class MathTypeEquationNumbering
         internal string OleProgId { get; set; } = string.Empty;
         internal string RewrittenFlatOpc { get; set; } = string.Empty;
         internal string[] BookmarkNames { get; set; } = Array.Empty<string>();
+    }
+
+    internal sealed class PreparedNumberFormatRewrite
+    {
+        internal PreparedNumberFormatRewrite(
+            string formatId,
+            IReadOnlyList<PlaceRefRewritePlan> placeRefPlans)
+        {
+            FormatId = formatId;
+            PlaceRefPlans = placeRefPlans;
+            ParagraphStarts = placeRefPlans
+                .Select(plan => plan.ParagraphStart)
+                .Distinct()
+                .ToArray();
+        }
+
+        internal string FormatId { get; }
+        internal IReadOnlyList<PlaceRefRewritePlan> PlaceRefPlans { get; }
+        internal IReadOnlyList<int> ParagraphStarts { get; }
+        internal int Count => PlaceRefPlans.Count;
     }
 
     internal static int UpdateEquationNumbers(Document document)
@@ -74,34 +94,59 @@ internal static class MathTypeEquationNumbering
         return numberedEquationCount;
     }
 
-    internal static IReadOnlyList<int> ValidateEquationNumberFormat(
+    internal static PreparedNumberFormatRewrite PrepareEquationNumberFormat(
         Document document,
         string? formatId)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
-        var plans = CreatePlaceRefRewritePlans(document, formatId);
-        if (plans.Count > 0) _ = CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(formatId));
-        return plans.Select(plan => plan.ParagraphStart).Distinct().ToArray();
+        var resolvedFormatId = EquationNumberFormat.Resolve(formatId).Id;
+        var plans = CreatePlaceRefRewritePlans(document, resolvedFormatId);
+        if (plans.Count > 0)
+            _ = CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(resolvedFormatId));
+        return new PreparedNumberFormatRewrite(resolvedFormatId, plans);
     }
 
-    internal static int SetEquationNumberFormat(Document document, string? formatId)
+    internal static IReadOnlyList<int> ValidateEquationNumberFormat(
+        Document document,
+        string? formatId) =>
+        PrepareEquationNumberFormat(document, formatId).ParagraphStarts;
+
+    internal static int SetEquationNumberFormat(Document document, string? formatId) =>
+        SetEquationNumberFormat(
+            document,
+            PrepareEquationNumberFormat(document, formatId));
+
+    internal static int SetEquationNumberFormat(
+        Document document,
+        PreparedNumberFormatRewrite prepared,
+        Action<IReadOnlyList<int>>? beforeCounterRefresh = null)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
-        var plans = CreatePlaceRefRewritePlans(document, formatId);
-        if (plans.Count == 0) return 0;
-        var paragraphCountBefore = ReadDocumentParagraphCount(document);
+        if (prepared is null) throw new ArgumentNullException(nameof(prepared));
+        if (prepared.Count == 0) return 0;
         var inlineShapeCountBefore = ReadDocumentInlineShapeCount(document);
         Document? stagingDocument = null;
         try
         {
             stagingDocument = document.Application.Documents.Add(Visible: false);
-            // The service owns the document transaction. Any failure, including
-            // reference refresh, is recovered by its verified native Word undo.
-            // Re-inserting old field XML here would compete with that recovery.
-            foreach (var plan in plans)
+            // Flat OPC for every MTPlaceRef was captured before the Word custom
+            // undo record opened. Applying from the end toward the start keeps all
+            // earlier field starts stable while avoiding WordOpenXML serialization
+            // of large MathType field trees inside CustomUndoRecord.
+            foreach (var plan in prepared.PlaceRefPlans)
                 ApplyPlaceRefRewritePlan(document, stagingDocument, plan);
-            foreach (var counter in CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(formatId))
-                         .OrderByDescending(item => item.Start))
+
+            // A heading-aware switch may need MathType section state inserted after
+            // the visible MTPlaceRef templates have been rewritten. Re-read only
+            // lightweight paragraph positions; no Flat OPC is exported here.
+            beforeCounterRefresh?.Invoke(
+                CollectPlaceRefParagraphStartsForValidation(document));
+
+            var paragraphCountBefore = ReadDocumentParagraphCount(document);
+            foreach (var counter in CreateSectionCounterPlans(
+                         document,
+                         EquationNumberFormat.Resolve(prepared.FormatId))
+                     .OrderByDescending(item => item.Start))
             {
                 Range? range = null;
                 try
@@ -120,7 +165,7 @@ internal static class MathTypeEquationNumbering
                 throw new InvalidDataException("MathType number-format rewrite changed the document paragraph count.");
             if (ReadDocumentInlineShapeCount(document) != inlineShapeCountBefore)
                 throw new InvalidDataException("MathType number-format rewrite changed the Equation.DSMT4 object count.");
-            return plans.Count;
+            return prepared.Count;
         }
         finally
         {
@@ -258,6 +303,22 @@ internal static class MathTypeEquationNumbering
         return plans;
     }
 
+    internal static bool CanProveNoPlaceRefFields(Document document)
+    {
+        if (document is null) return false;
+        try
+        {
+            return WordDocumentXml.CanProveNoMathTypePlaceRefFields(
+                WordDocumentXml.Read(document));
+        }
+        catch
+        {
+            // This is only a negative fast path. Any incomplete export, XML error
+            // or ambiguous field representation falls back to exact COM scanning.
+            return false;
+        }
+    }
+
     internal static int CountPlaceRefFields(Document document)
     {
         if (document is null) return 0;
@@ -274,6 +335,7 @@ internal static class MathTypeEquationNumbering
                 code = null;
                 Release(field);
                 field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
                 code = field.Code;
                 if (MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
                     count++;
@@ -282,6 +344,67 @@ internal static class MathTypeEquationNumbering
         }
         finally
         {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static IReadOnlyList<int> CollectPlaceRefParagraphStartsForValidation(Document document)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        Range? fieldRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        var starts = new List<int>();
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = null;
+                Release(paragraphs);
+                paragraphs = null;
+                Release(fieldRange);
+                fieldRange = null;
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
+                code = field.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    continue;
+                result = field.Result;
+                var fieldStart = code.Start - 1;
+                var fieldEnd = ResolvePlaceRefFieldEndExclusive(document, code, result);
+                fieldRange = document.Range(fieldStart, fieldEnd);
+                paragraphs = fieldRange.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidDataException(
+                        "MathType MTPlaceRef validation requires one owner paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range;
+                starts.Add(paragraphRange.Start);
+            }
+            return starts.Distinct().ToArray();
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(fieldRange);
+            Release(result);
             Release(code);
             Release(field);
             Release(fields);
@@ -303,6 +426,7 @@ internal static class MathTypeEquationNumbering
                 code = null;
                 Release(field);
                 field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
                 code = field.Code;
                 if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
                     continue;
@@ -320,10 +444,55 @@ internal static class MathTypeEquationNumbering
 
     private static Field? ResolvePlaceRefAtCodeStart(Document document, int codeStart)
     {
-        Fields? fields = null;
+        Range? probe = null;
+        Fields? localFields = null;
         Field? field = null;
         Range? code = null;
         Field? result = null;
+        try
+        {
+            // The character immediately before Field.Code.Start is the outer field
+            // begin marker. A one-character Range there exposes the containing
+            // MTPlaceRef plus its nested SEQ fields, so exact Code.Start matching
+            // resolves this field without repeatedly enumerating document.Fields.
+            if (codeStart > 0)
+            {
+                probe = document.Range(codeStart - 1, codeStart);
+                localFields = probe.Fields;
+                for (var index = 1; index <= localFields.Count; index++)
+                {
+                    Release(code);
+                    code = null;
+                    Release(field);
+                    field = localFields[index];
+                    code = field.Code;
+                    if (code.Start != codeStart
+                        || !MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                        continue;
+                    result = field;
+                    field = null;
+                    return result;
+                }
+            }
+        }
+        catch
+        {
+            // Local field discovery is only a performance path. Preserve the exact
+            // whole-document lookup below for unusual Word range/field ownership.
+        }
+        finally
+        {
+            Release(code);
+            code = null;
+            Release(field);
+            field = null;
+            Release(localFields);
+            localFields = null;
+            Release(probe);
+            probe = null;
+        }
+
+        Fields? fields = null;
         try
         {
             fields = document.Fields;
@@ -453,10 +622,12 @@ internal static class MathTypeEquationNumbering
             }
 
             var sourceFlatOpc = fieldRange.WordOpenXML;
-            var rewrittenFlatOpc =
-                MathTypeWordOpenXml.RewriteMathTypePlaceRefFieldFlatOpc(
-                    sourceFlatOpc,
-                    template);
+            var rewrittenFlatOpc = RewritePlaceRefFlatOpcWithTransientRetry(
+                document,
+                fieldStart,
+                fieldEnd,
+                sourceFlatOpc,
+                template);
             return new PlaceRefRewritePlan
             {
                 FieldStart = fieldStart,
@@ -489,6 +660,66 @@ internal static class MathTypeEquationNumbering
             Release(fieldRange);
             Release(result);
             Release(code);
+        }
+    }
+
+    private static string RewritePlaceRefFlatOpcWithTransientRetry(
+        Document document,
+        int fieldStart,
+        int fieldEnd,
+        string sourceFlatOpc,
+        MathTypeWordOpenXml.NumberTemplate template)
+    {
+        try
+        {
+            return MathTypeWordOpenXml.RewriteMathTypePlaceRefFieldFlatOpc(
+                sourceFlatOpc,
+                template);
+        }
+        catch (InvalidDataException error) when (string.Equals(
+                   error.Message,
+                   "MathType MTPlaceRef field package must contain exactly one owner paragraph; found 0.",
+                   StringComparison.Ordinal))
+        {
+            Field? rebound = null;
+            Range? code = null;
+            Range? result = null;
+            Range? retryRange = null;
+            try
+            {
+                rebound = ResolvePlaceRefAtCodeStart(document, fieldStart + 1)
+                    ?? throw new InvalidDataException(
+                        $"MathType MTPlaceRef at {fieldStart} disappeared before its Flat OPC retry.",
+                        error);
+                code = rebound.Code;
+                result = rebound.Result;
+                var retryEnd = ResolvePlaceRefFieldEndExclusive(document, code, result);
+                if (code.Start - 1 != fieldStart || retryEnd != fieldEnd)
+                    throw new InvalidDataException(
+                        $"MathType MTPlaceRef at {fieldStart} moved before its Flat OPC retry.",
+                        error);
+                retryRange = document.Range(fieldStart, retryEnd);
+                var retryFlatOpc = retryRange.WordOpenXML;
+                var rewritten = MathTypeWordOpenXml.RewriteMathTypePlaceRefFieldFlatOpc(
+                    retryFlatOpc,
+                    template);
+                WordDoubleClickHook.TraceMessage(
+                    $"number-format-mathtype-flatopc-retry-success field={fieldStart}:{fieldEnd}");
+                return rewritten;
+            }
+            catch (Exception retryError) when (!ReferenceEquals(retryError, error))
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"number-format-mathtype-flatopc-retry-failed field={fieldStart}:{fieldEnd} error={retryError.GetType().Name}:{retryError.Message}");
+                throw;
+            }
+            finally
+            {
+                Release(retryRange);
+                Release(result);
+                Release(code);
+                Release(rebound);
+            }
         }
     }
 

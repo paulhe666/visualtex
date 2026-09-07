@@ -1963,6 +1963,38 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static IReadOnlyDictionary<string, int> ReadSingleFormulaReferenceCounts(
+        Document document, string formulaId)
+    {
+        // Source-host validation has already established this formula's number
+        // identity. Reference discovery must not revalidate every other numbered
+        // host or export their OLE payloads just to count references to this one.
+        var names = new[] { EquationBookmarkName(formulaId), NativeNumberBookmarkName(formulaId) };
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var count = 0;
+        try
+        {
+            fields = document.Fields;
+            var fieldCount = fields.Count;
+            for (var index = 1; index <= fieldCount; index++)
+            {
+                Release(code); code = null;
+                Release(field); field = fields[index];
+                var type = field.Type;
+                if (type != WdFieldType.wdFieldRef && type != WdFieldType.wdFieldGoToButton) continue;
+                code = field.Code;
+                var text = code.Text ?? string.Empty;
+                if (names.Any(name => System.Text.RegularExpressions.Regex.IsMatch(text,
+                        @"(?i)\bREF\s+" + System.Text.RegularExpressions.Regex.Escape(name) + @"(?=\s|\\|$)")))
+                    count++;
+            }
+            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [formulaId] = count };
+        }
+        finally { Release(code); Release(field); Release(fields); }
+    }
+
     internal static bool TryGetHealthyEquationReferenceCounts(
         Document document,
         out IReadOnlyDictionary<string, int> referenceCounts)
@@ -2305,7 +2337,8 @@ internal static partial class WordEquationNumbering
         FormulaMetadata metadata,
         Table? knownNumberedTable = null,
         int? plannedOrdinal = null,
-        string? plannedPrefix = null)
+        string? plannedPrefix = null,
+        bool deferFieldUpdate = false)
     {
         if (!metadata.Numbered
             || !string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
@@ -2344,15 +2377,129 @@ internal static partial class WordEquationNumbering
             reuseExistingScaffold: false,
             knownNumberedTable: null,
             useConversionSafeVisibleNumber: true,
-            metadata: metadata);
+            metadata: metadata,
+            plannedOrdinal: plannedOrdinal,
+            plannedPrefix: plannedPrefix,
+            deferFieldUpdate: deferFieldUpdate);
+    }
+
+    internal static IReadOnlyDictionary<string, (int Ordinal, string Prefix)> PlanNewEquationNumberBatch(
+        Document document,
+        IReadOnlyCollection<(string FormulaId, int Position)> newFormulaPositions,
+        out bool hasExistingManagedCaptions)
+    {
+        var distinctNew = newFormulaPositions
+            .Where(item => !string.IsNullOrWhiteSpace(item.FormulaId))
+            .GroupBy(item => item.FormulaId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderBy(item => item.Position).First())
+            .OrderBy(item => item.Position)
+            .ToArray();
+        var result = new Dictionary<string, (int Ordinal, string Prefix)>(
+            StringComparer.OrdinalIgnoreCase);
+        if (distinctNew.Length == 0)
+        {
+            hasExistingManagedCaptions = false;
+            return result;
+        }
+
+        var newIds = distinctNew
+            .Select(item => item.FormulaId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingCaptions = GetNativeEquationCaptionEntries(
+                document,
+                GetNativeEquationSequenceName(document))
+            .Where(item => !newIds.Contains(item.FormulaId))
+            .ToArray();
+        hasExistingManagedCaptions = existingCaptions.Length > 0;
+
+        var syntheticCaptions = existingCaptions
+            .Concat(distinctNew.Select(item => new NativeEquationCaptionEntry(
+                item.FormulaId,
+                item.Position,
+                string.Empty)))
+            .OrderBy(item => item.Position)
+            .ToArray();
+        var format = ReadEquationNumberFormat(document);
+        var headingAnchors = format.UsesHeading
+            ? GetHeadingNumberAnchorsForFormatBatch(
+                document,
+                format.HeadingLevel,
+                syntheticCaptions)
+            : Array.Empty<HeadingNumberAnchor>();
+        var ordinalByScope = new Dictionary<int, int>();
+        foreach (var item in syntheticCaptions)
+        {
+            var scope = ResolveEquationNumberScope(
+                item.Position,
+                format,
+                headingAnchors);
+            ordinalByScope.TryGetValue(scope.ScopePosition, out var ordinal);
+            ordinalByScope[scope.ScopePosition] = ++ordinal;
+            if (newIds.Contains(item.FormulaId))
+                result[item.FormulaId] = (ordinal, scope.Prefix);
+        }
+        return result;
+    }
+
+    internal static bool VerifyFreshPlannedEquationNumberBatch(
+        Document document,
+        IReadOnlyDictionary<string, (int Ordinal, string Prefix)> plannedNumbers)
+    {
+        if (plannedNumbers.Count == 0) return true;
+        if (!TryReadHealthyEquationNumberArtifactsFromOpenXml(
+                document,
+                out var captions,
+                out var referenceCounts))
+            return false;
+        if (captions.Count != plannedNumbers.Count
+            || referenceCounts.Count != plannedNumbers.Count)
+            return false;
+        var byId = captions.ToDictionary(
+            item => item.FormulaId,
+            item => item.NumberText,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var item in plannedNumbers)
+        {
+            var expected = item.Value.Prefix
+                + item.Value.Ordinal.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+            if (!byId.TryGetValue(item.Key, out var actual)
+                || !string.Equals(actual, expected, StringComparison.Ordinal))
+                return false;
+            if (!referenceCounts.TryGetValue(item.Key, out var count)
+                || count != 1)
+                return false;
+        }
+        WriteNativeEquationTailFormulaId(
+            document,
+            captions.OrderBy(item => item.Position).LastOrDefault()?.FormulaId);
+        return true;
     }
 
     internal static int BuildNewOmmlNumberingBatch(
         Document document,
-        IReadOnlyCollection<string> formulaIds)
+        IReadOnlyCollection<string> formulaIds,
+        bool deferFinalIdentityPersistence = false,
+        bool cleanupCommittedSourceSpacing = false)
     {
         var built = 0;
         var entries = new List<(string FormulaId, FormulaMetadata Metadata, int Position, int SourceParagraphStart)>();
+        var committedTableStarts = cleanupCommittedSourceSpacing
+            ? new List<(string FormulaId, int TableStart)>()
+            : null;
+        Document? cleanTableTemplateDocument = null;
+        Range? cleanTableTemplateRange = null;
+        var allowCleanTableTemplate = false;
+        Sections? batchSections = null;
+        try
+        {
+            if (cleanupCommittedSourceSpacing)
+            {
+                batchSections = document.Sections;
+                allowCleanTableTemplate = batchSections.Count == 1;
+            }
+        }
+        finally { Release(batchSections); }
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
             "1",
@@ -2416,44 +2563,57 @@ internal static partial class WordEquationNumbering
             // principle used for large numbered documents: discover heading scope
             // once, then carry known local ordinals through the mutation phase.
             var orderedEntries = entries.OrderBy(item => item.Position).ToArray();
-            var format = ReadEquationNumberFormat(document);
-            var newIds = new HashSet<string>(orderedEntries.Select(item => item.FormulaId), StringComparer.OrdinalIgnoreCase);
-            var syntheticCaptions = GetNativeEquationCaptionEntries(
-                    document, GetNativeEquationSequenceName(document))
-                .Where(item => !newIds.Contains(item.FormulaId))
-                .Concat(orderedEntries
-                .Select(item => new NativeEquationCaptionEntry(
-                    item.FormulaId,
-                    item.Position,
-                    string.Empty)))
-                .OrderBy(item => item.Position)
-                .ToArray();
-            var headingAnchors = format.UsesHeading
-                ? GetHeadingNumberAnchorsForFormatBatch(
-                    document,
-                    format.HeadingLevel,
-                    syntheticCaptions)
-                : Array.Empty<HeadingNumberAnchor>();
-            var ordinalByScope = new Dictionary<int, int>();
             var plannedNumbers = new Dictionary<string, (int Ordinal, string Prefix)>(
                 StringComparer.OrdinalIgnoreCase);
-            foreach (var item in syntheticCaptions)
+            if (orderedEntries.Length == 1)
             {
-                var scope = ResolveEquationNumberScope(
-                    item.Position,
-                    format,
-                    headingAnchors);
-                ordinalByScope.TryGetValue(scope.ScopePosition, out var ordinal);
-                ordinal++;
-                ordinalByScope[scope.ScopePosition] = ordinal;
-                plannedNumbers[item.FormulaId] = (ordinal, scope.Prefix);
+                Range? source = null;
+                try
+                {
+                    var entry = orderedEntries[0];
+                    source = document.Range(entry.Position, entry.Position);
+                    // Use the same positional planner as ordinary insertion.
+                    // A single new row needs no whole-document caption XML map.
+                    plannedNumbers[entry.FormulaId] = ResolveDirectTableNumberPlan(
+                        document, source, entry.FormulaId, null, null);
+                }
+                finally { Release(source); }
+            }
+            else
+            {
+                var format = ReadEquationNumberFormat(document);
+                var newIds = new HashSet<string>(orderedEntries.Select(item => item.FormulaId), StringComparer.OrdinalIgnoreCase);
+                var syntheticCaptions = GetNativeEquationCaptionEntries(
+                        document, GetNativeEquationSequenceName(document))
+                    .Where(item => !newIds.Contains(item.FormulaId))
+                    .Concat(orderedEntries.Select(item => new NativeEquationCaptionEntry(
+                        item.FormulaId, item.Position, string.Empty)))
+                    .OrderBy(item => item.Position).ToArray();
+                var headingAnchors = format.UsesHeading
+                    ? GetHeadingNumberAnchorsForFormatBatch(document, format.HeadingLevel, syntheticCaptions)
+                    : Array.Empty<HeadingNumberAnchor>();
+                var ordinalByScope = new Dictionary<int, int>();
+                foreach (var item in syntheticCaptions)
+                {
+                    var scope = ResolveEquationNumberScope(item.Position, format, headingAnchors);
+                    ordinalByScope.TryGetValue(scope.ScopePosition, out var ordinal);
+                    ordinalByScope[scope.ScopePosition] = ++ordinal;
+                    plannedNumbers[item.FormulaId] = (ordinal, scope.Prefix);
+                }
             }
             TraceStage("number-plan");
 
             // Use the same managed row as normal insertion: pure mathematical
             // content in the center cell, ordinary Word numbering in the last
             // cell. Resolve each identity again after every structural change.
-            foreach (var entry in entries.OrderByDescending(item => item.Position))
+            // Every fresh formula is re-resolved through its durable FormulaId before
+            // mutation, so the captured numeric position is needed only for ordering
+            // and the already-computed number plan. Build rows from start to end: a
+            // later table insertion then leaves all previously materialized 1x3 rows
+            // before the mutation point. The old end-to-start order repeatedly shifted
+            // and repaginated an ever-growing suffix of complex tables, making a 100
+            // row batch effectively O(N²) in Word's layout engine.
+            foreach (var entry in entries.OrderBy(item => item.Position))
             {
                 Range? range = null;
                 Range? refreshedRange = null;
@@ -2466,6 +2626,10 @@ internal static partial class WordEquationNumbering
                     TraceStage("locate-target");
 
                     var plannedNumber = plannedNumbers[entry.FormulaId];
+                    var replaceSourceParagraphFromTemplate =
+                        allowCleanTableTemplate
+                        && cleanTableTemplateRange is not null
+                        && CanReplaceNativeOmmlSourceParagraphFromTemplate(document, range);
                     ConfigureNumberedNativeOmmlDisplay(
                         document,
                         range,
@@ -2478,20 +2642,79 @@ internal static partial class WordEquationNumbering
                         plannedNumber.Ordinal,
                         plannedNumber.Prefix,
                         deferFieldUpdate: true,
-                        deferMetadataPersistence: true);
+                        deferMetadataPersistence: true,
+                        cleanTableTemplateRange: cleanTableTemplateRange,
+                        replaceSourceParagraphFromTemplate:
+                            replaceSourceParagraphFromTemplate);
                     TraceStage("true-display-host");
 
-                    refreshedRange = ResolveSingleNativeOmmlRange(range);
-                    repairedBookmark = WordOmmlFormulaStore.Wrap(
-                        document,
-                        refreshedRange,
-                        metadata,
-                        replaceExisting: true);
-                    WordOmmlNativeSource.StampFingerprintFromResolvedRange(
-                        metadata,
-                        refreshedRange);
-                    WordOmmlFormulaStore.Save(document, metadata);
-                    TraceStage("repair-identity");
+                    if (committedTableStarts is not null)
+                    {
+                        Tables? committedTables = null;
+                        Table? committedTable = null;
+                        Range? committedTableRange = null;
+                        try
+                        {
+                            committedTables = range.Tables;
+                            if (committedTables.Count != 1)
+                                throw new InvalidDataException(
+                                    $"The newly numbered OMML {entry.FormulaId} does not own exactly one committed table.");
+                            committedTable = committedTables[1];
+                            committedTableRange = committedTable.Range;
+                            if (!replaceSourceParagraphFromTemplate)
+                                committedTableStarts.Add((entry.FormulaId, committedTableRange.Start));
+                            else
+                                TraceStage("atomic-source-paragraph-replaced");
+                            if (allowCleanTableTemplate && cleanTableTemplateRange is null)
+                            {
+                                try
+                                {
+                                    cleanTableTemplateRange = CreateCleanNativeOmmlNumberTableTemplate(
+                                        document,
+                                        committedTable,
+                                        out cleanTableTemplateDocument);
+                                    TraceStage("clean-table-template-created");
+                                }
+                                catch (Exception templateError)
+                                {
+                                    allowCleanTableTemplate = false;
+                                    TraceNumberingPerformance(
+                                        $"[perf] ConvertedOmmlBatch.clean-table-template-fallback error={templateError.GetType().Name}:{templateError.Message}");
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            Release(committedTableRange);
+                            Release(committedTable);
+                            Release(committedTables);
+                        }
+                        TraceStage("capture-committed-table");
+                    }
+
+                    if (!deferFinalIdentityPersistence)
+                    {
+                        refreshedRange = ResolveSingleNativeOmmlRange(range);
+                        repairedBookmark = WordOmmlFormulaStore.Wrap(
+                            document,
+                            refreshedRange,
+                            metadata,
+                            replaceExisting: true);
+                        WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                            metadata,
+                            refreshedRange);
+                        WordOmmlFormulaStore.Save(document, metadata);
+                        TraceStage("repair-identity");
+                    }
+                    else
+                    {
+                        // ConfigureNumberedNativeOmmlDisplay already rebound the
+                        // FormulaId to the center cell. Defer the expensive per-row
+                        // WordOpenXML fingerprint and CustomXML write until every
+                        // new table exists; the caller verifies the complete batch
+                        // against one document XML snapshot before commit.
+                        TraceStage("repair-identity-deferred");
+                    }
                     built++;
                 }
                 finally
@@ -2501,6 +2724,51 @@ internal static partial class WordEquationNumbering
                     Release(range);
                 }
             }
+
+            if (committedTableStarts is not null)
+            {
+                foreach (var committed in committedTableStarts
+                             .OrderByDescending(item => item.TableStart))
+                {
+                    Range? probe = null;
+                    Tables? tables = null;
+                    Table? table = null;
+                    Range? tableRange = null;
+                    try
+                    {
+                        var contentEnd = document.Content.End;
+                        if (committed.TableStart < document.Content.Start
+                            || committed.TableStart >= contentEnd)
+                            throw new InvalidDataException(
+                                $"The committed numbered OMML table {committed.FormulaId} moved outside the document.");
+                        probe = document.Range(
+                            committed.TableStart,
+                            Math.Min(contentEnd, committed.TableStart + 1));
+                        tables = probe.Tables;
+                        if (tables.Count != 1)
+                            throw new InvalidDataException(
+                                $"The committed numbered OMML table {committed.FormulaId} cannot be re-resolved by its stable start.");
+                        table = tables[1];
+                        tableRange = table.Range;
+                        if (tableRange.Start != committed.TableStart
+                            || !IsManagedNativeOmmlDirectTable(table))
+                            throw new InvalidDataException(
+                                $"The committed numbered OMML table {committed.FormulaId} changed before batch cleanup.");
+                        CleanupNumberedDisplayInsertionSpacing(
+                            document,
+                            committed.FormulaId,
+                            knownDirectTable: table);
+                    }
+                    finally
+                    {
+                        Release(tableRange);
+                        Release(table);
+                        Release(tables);
+                        Release(probe);
+                    }
+                }
+                TraceStage("cleanup-committed-source-spacing");
+            }
             return built;
         }
         catch (Exception error)
@@ -2509,6 +2777,16 @@ internal static partial class WordEquationNumbering
                 $"[perf] converted-omml-numbering-batch.failed built={built}/{entries.Count} error={error}");
             throw new InvalidDataException(
                 $"Converted OMML numbering failed after {built}/{entries.Count} rows: {error.Message}", error);
+        }
+        finally
+        {
+            Release(cleanTableTemplateRange);
+            if (cleanTableTemplateDocument is not null)
+            {
+                try { cleanTableTemplateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(cleanTableTemplateDocument);
+            try { document.Activate(); } catch { }
         }
     }
 
@@ -3057,7 +3335,7 @@ internal static partial class WordEquationNumbering
             }
             try
             {
-                if ((bool)visibleRange.get_Information(WdInformation.wdWithInTable))
+                if (RangeIsWhollyWithinTable(visibleRange))
                 {
                     tables = visibleRange.Tables;
                     if (tables.Count > 0)
@@ -4752,7 +5030,10 @@ internal static partial class WordEquationNumbering
         bool useConversionSafeVisibleNumber = false,
         FormulaMetadata? metadata = null,
         bool deferNativeOmmlShapeCreation = false,
-        bool deferNativeOmmlMetadataPersistence = false)
+        bool deferNativeOmmlMetadataPersistence = false,
+        int? plannedOrdinal = null,
+        string? plannedPrefix = null,
+        bool deferFieldUpdate = false)
     {
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
@@ -4829,7 +5110,10 @@ internal static partial class WordEquationNumbering
                 formulaId,
                 sequenceName,
                 restyleExisting: !reuseExistingScaffold,
-                knownNumberedTable: null);
+                knownNumberedTable: null,
+                deferFieldUpdate: deferFieldUpdate,
+                plannedOrdinal: plannedOrdinal,
+                plannedPrefix: plannedPrefix);
             TraceStage("native-caption");
             var visibleNumberCreated = EnsureVisibleEquationNumber(
                 document,
@@ -4839,7 +5123,8 @@ internal static partial class WordEquationNumbering
                 formulaId,
                 adoptExistingTableReference: false,
                 knownNumberedTable: null,
-                useConversionSafeVisibleNumber);
+                useConversionSafeVisibleNumber,
+                deferFieldUpdate);
             TraceStage("visible-ref");
             if (metadata is not null && !ContainsNativeOmml(activeFormulaRange))
             {
@@ -5146,15 +5431,47 @@ internal static partial class WordEquationNumbering
         finally { Release(maths); }
     }
 
-    private static bool IsNumberedEquationTable(Range formulaRange)
+    internal static bool RangeIsWhollyWithinTable(Range range)
     {
+        Tables? tables = null;
+        Table? table = null;
+        Range? owner = null;
         try
         {
-            return (bool)formulaRange.get_Information(WdInformation.wdWithInTable)
-                && formulaRange.Tables.Count > 0
-                && formulaRange.Tables[1].Columns.Count >= 3;
+            tables = range.Tables;
+            var start = range.Start;
+            var end = range.End;
+            var story = range.StoryType;
+            for (var index = 1; index <= tables.Count; index++)
+            {
+                Release(owner); owner = null;
+                Release(table); table = tables[index];
+                owner = table.Range;
+                if (story == owner.StoryType && start >= owner.Start
+                    && start < owner.End && end <= owner.End)
+                    return true;
+            }
+            return false;
+        }
+        finally { Release(owner); Release(table); Release(tables); }
+    }
+
+    private static bool IsNumberedEquationTable(Range formulaRange)
+    {
+        Tables? tables = null;
+        Table? table = null;
+        Columns? columns = null;
+        try
+        {
+            if (!RangeIsWhollyWithinTable(formulaRange)) return false;
+            tables = formulaRange.Tables;
+            if (tables.Count == 0) return false;
+            table = tables[1];
+            columns = table.Columns;
+            return columns.Count >= 3;
         }
         catch { return false; }
+        finally { Release(columns); Release(table); Release(tables); }
     }
 
     internal static int GetManagedNumberTableRowIndex(
@@ -5180,6 +5497,8 @@ internal static partial class WordEquationNumbering
         Tables? cellTables = null;
         Table? cellTable = null;
         Range? cellTableRange = null;
+        Rows? ownershipRows = null;
+        Columns? ownershipColumns = null;
         var ownershipCheck = "initial";
         bool RejectOwnership(string reason)
         {
@@ -5190,11 +5509,15 @@ internal static partial class WordEquationNumbering
         {
             if (table is null || ownedRange is null)
                 return RejectOwnership("missing-table-or-range");
-            var columnCount = table.Columns.Count;
-            var rowCount = table.Rows.Count;
-            var withinTable = (bool)ownedRange.get_Information(WdInformation.wdWithInTable);
-            if (columnCount != 3 || rowCount < 1 || !withinTable)
-                return RejectOwnership($"columns={columnCount} rows={rowCount} withinTable={withinTable} range={ownedRange.StoryType}/{ownedRange.Start}:{ownedRange.End}");
+            ownershipColumns = table.Columns;
+            ownershipRows = table.Rows;
+            var columnCount = ownershipColumns.Count;
+            var rowCount = ownershipRows.Count;
+            // Cells, column, containment and exact owning table below prove
+            // membership without Information(wdWithInTable), a layout query that
+            // repaginates long formula documents even on a read-only fast path.
+            if (columnCount != 3 || rowCount < 1)
+                return RejectOwnership($"columns={columnCount} rows={rowCount} range={ownedRange.StoryType}/{ownedRange.Start}:{ownedRange.End}");
 
             ownershipCheck = "range-cells";
             cells = ownedRange.Cells;
@@ -5202,8 +5525,8 @@ internal static partial class WordEquationNumbering
             cell = cells[1];
             if (cell.ColumnIndex != expectedColumnIndex
                 || cell.RowIndex < 1
-                || cell.RowIndex > table.Rows.Count)
-                return RejectOwnership($"cell={cell.RowIndex},{cell.ColumnIndex} expectedColumn={expectedColumnIndex} rows={table.Rows.Count}");
+                || cell.RowIndex > rowCount)
+                return RejectOwnership($"cell={cell.RowIndex},{cell.ColumnIndex} expectedColumn={expectedColumnIndex} rows={rowCount}");
 
             ownershipCheck = "cell-containment";
             cellRange = cell.Range;
@@ -5238,6 +5561,8 @@ internal static partial class WordEquationNumbering
             Release(cellRange);
             Release(cell);
             Release(cells);
+            Release(ownershipColumns);
+            Release(ownershipRows);
         }
     }
 
@@ -6817,7 +7142,10 @@ internal static partial class WordEquationNumbering
         string formulaId,
         string nativeSequenceName,
         bool restyleExisting = true,
-        Table? knownNumberedTable = null)
+        Table? knownNumberedTable = null,
+        bool deferFieldUpdate = false,
+        int? plannedOrdinal = null,
+        string? plannedPrefix = null)
     {
         if (ContainsNativeOmml(formulaRange))
         {
@@ -6857,7 +7185,10 @@ internal static partial class WordEquationNumbering
             formulaRange,
             formulaId,
             nativeSequenceName,
-            knownNumberedTable);
+            knownNumberedTable,
+            deferFieldUpdate,
+            plannedOrdinal,
+            plannedPrefix);
     }
 
     private static bool CanReuseEmptyNativeCaptionParagraph(
@@ -7078,7 +7409,8 @@ internal static partial class WordEquationNumbering
             }
             bookmarks.Add(NativeCaptionBookmarkName(formulaId), captionRange);
             TraceStage("bookmarks");
-            if (deferFieldUpdate && knownNumberedTable is not null)
+            if (deferFieldUpdate
+                && (knownNumberedTable is not null || plannedOrdinal.HasValue))
                 StyleFreshConversionNativeCaption(captionRange, numberRange);
             else
                 StyleNativeCaption(
@@ -7496,7 +7828,8 @@ internal static partial class WordEquationNumbering
         string formulaId,
         bool adoptExistingTableReference = false,
         Table? knownNumberedTable = null,
-        bool useConversionSafeVisibleNumber = false)
+        bool useConversionSafeVisibleNumber = false,
+        bool deferFieldUpdate = false)
     {
         var targetBookmarkName = NativeNumberBookmarkName(formulaId);
         if (HasVisibleEquationNumber(
@@ -7522,7 +7855,8 @@ internal static partial class WordEquationNumbering
             formulaId,
             targetBookmarkName,
             knownNumberedTable,
-            useConversionSafeVisibleNumber);
+            useConversionSafeVisibleNumber,
+            deferFieldUpdate);
         return true;
     }
 
@@ -10259,6 +10593,18 @@ internal static partial class WordEquationNumbering
         try
         {
             content = document.Content;
+            ParagraphFormat? aggregateFormat = null;
+            try
+            {
+                aggregateFormat = content.ParagraphFormat;
+                var level = (int)aggregateFormat.OutlineLevel;
+                // A defined aggregate value applies to every paragraph. If all
+                // are body text (or deeper than the requested level), there can
+                // be no heading anchor. Mixed values still use native Find.
+                if (level > targetLevel && level <= (int)WdOutlineLevel.wdOutlineLevelBodyText)
+                    return Array.Empty<HeadingNumberAnchor>();
+            }
+            finally { Release(aggregateFormat); }
             for (var outlineLevel = 1; outlineLevel <= targetLevel; outlineLevel++)
             {
                 var cursor = content.Start;
@@ -10278,6 +10624,11 @@ internal static partial class WordEquationNumbering
                         find = searchRange.Find;
                         find.ClearFormatting();
                         find.Text = "^p";
+                        find.MatchWildcards = false;
+                        find.MatchCase = false;
+                        find.MatchWholeWord = false;
+                        find.MatchSoundsLike = false;
+                        find.MatchAllWordForms = false;
                         find.Forward = true;
                         find.Wrap = WdFindWrap.wdFindStop;
                         find.Format = true;
@@ -10341,7 +10692,7 @@ internal static partial class WordEquationNumbering
         {
             // Formatting-only Find is unavailable on a few compatibility-mode
             // builds. Preserve the existing exhaustive paragraph scan there.
-            return GetHeadingNumberAnchors(document, targetLevel);
+            return GetHeadingNumberAnchorsExhaustive(document, targetLevel);
         }
         finally { Release(content); }
 
@@ -10379,6 +10730,10 @@ internal static partial class WordEquationNumbering
     }
 
     private static IReadOnlyList<HeadingNumberAnchor> GetHeadingNumberAnchors(
+        Document document, int targetLevel) =>
+        GetHeadingNumberAnchorsForFormatBatch(document, targetLevel, Array.Empty<NativeEquationCaptionEntry>());
+
+    private static IReadOnlyList<HeadingNumberAnchor> GetHeadingNumberAnchorsExhaustive(
         Document document,
         int targetLevel)
     {

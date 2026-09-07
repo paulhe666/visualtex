@@ -1,4 +1,4 @@
-﻿param([int]$WordProcessId=0,[string]$Action='probe',[string]$Name='',[string]$Target='word',[string]$Doc='',[int]$Index=1,[int]$Position=-1,[string]$Value='',[string]$Choice='',[string]$InputFile='',[string]$LatinFont='',[single]$FontSize=0,[string]$Label='ui',[long]$WindowHandle=0,[switch]$Checked,[switch]$KeyClick)
+﻿param([int]$WordProcessId=0,[string]$Action='probe',[string]$Name='',[string]$Target='word',[string]$ExpectedDocument='',[string]$Doc='',[int]$Index=1,[int]$Position=-1,[string]$Value='',[string]$Choice='',[string]$InputFile='',[string]$LatinFont='',[single]$FontSize=0,[string]$Label='ui',[long]$WindowHandle=0,[switch]$Checked,[switch]$KeyClick)
 $ErrorActionPreference='Stop'
 if(!$WordProcessId){
  $recordedTarget=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'evidence\target-word.json') -Raw | ConvertFrom-Json
@@ -60,7 +60,7 @@ return $result
 if($Action -eq 'windows') { @($script:windows|Where-Object {$_.title})|ConvertTo-Json -Depth 4;exit }
 $stageTargetPath=Join-Path $out 'target-word.json'
 $stageTarget=if(Test-Path -LiteralPath $stageTargetPath){Get-Content -LiteralPath $stageTargetPath -Raw | ConvertFrom-Json}else{$null}
-$expectedStageDocument=if($stageTarget -and $stageTarget.pid -eq $WordProcessId){$stageTarget.document}else{''}
+$expectedStageDocument=if($ExpectedDocument){$ExpectedDocument}elseif($stageTarget -and $stageTarget.pid -eq $WordProcessId){$stageTarget.document}else{''}
 if($WindowHandle -eq -1) {
  $matches=@($script:windows|Where-Object {$_.process -eq 'WINWORD' -and $_.title -like '* - Word' -and ($WordProcessId -eq 0 -or $_.pid -eq $WordProcessId) -and (!$expectedStageDocument -or $_.title -eq ($expectedStageDocument+' - Word'))})
  if(!$matches.Count){throw 'The explicitly recorded test document window is unavailable.'}
@@ -125,9 +125,16 @@ Start-Sleep -Milliseconds 200
 $actual=[AuditUi]::SendMessage([IntPtr]$list.handle,0x0188,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32()
 if($actual -ne ($Index-1)){throw "Native listbox selection did not match: actual=$actual expected=$($Index-1)"}
 Write-Output ('NATIVE_LIST_SELECTED|'+$Index+'|count='+$count);exit
-};if($Action -eq 'native'){[IO.File]::WriteAllText((Join-Path $out ($Label+'-native.json')),($script:children|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false));$script:children|ConvertTo-Json -Depth 4;exit};$b=$script:children|Where-Object {$_.class -like '*BUTTON*' -and $_.name -like ('*'+$Name+'*')}|Select-Object -First 1;if(!$b){throw "Native button missing: $Name"};if($Action -eq 'dlgcheck') {$state=[AuditUi]::SendMessage([IntPtr]$b.handle,0x00F0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32();if(($state -eq 1) -eq [bool]$Checked){Write-Output ('NATIVE_CHECK_ALREADY|'+$b.name+'|'+$state);exit}};[void][AuditUi]::PostMessage([IntPtr]$b.handle,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 600;Write-Output ('NATIVE_CLICK|'+$b.name);exit }
+};if($Action -eq 'native'){[IO.File]::WriteAllText((Join-Path $out ($Label+'-native.json')),($script:children|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false));$script:children|ConvertTo-Json -Depth 4;exit};$b=$script:children|Where-Object {$_.class -like '*BUTTON*' -and $_.name -like ('*'+$Name+'*')}|Select-Object -First 1;if(!$b){throw "Native button missing: $Name"};if($Action -eq 'dlgcheck') {$state=[AuditUi]::SendMessage([IntPtr]$b.handle,0x00F0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32();if(($state -eq 1) -eq [bool]$Checked){Write-Output ('NATIVE_CHECK_ALREADY|'+$b.name+'|'+$state);exit}};Write-Output ('UI_NATIVE_BEGIN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);[void][AuditUi]::PostMessage([IntPtr]$b.handle,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero);Write-Output ('UI_NATIVE_POSTED|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);Start-Sleep -Milliseconds 600;Write-Output ('NATIVE_CLICK|'+$b.name);exit }
 [void][AuditUi]::SetForegroundWindow($hwnd);Start-Sleep -Milliseconds 250
 $r=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+if($Action -eq 'activate') {
+ $titleCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TitleBar)
+ $titleBar=$r.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$titleCondition)
+ if($null -ne $titleBar){ClickEl $titleBar;Start-Sleep -Milliseconds 300}
+ if([AuditUi]::GetForegroundWindow() -ne $hwnd){throw 'Requested Word window did not obtain foreground; Selection was not changed.'}
+ Write-Output ('ACTIVATED|'+$WordProcessId+'|'+$hwnd.ToInt64());exit
+}
 if($Action -eq 'ribbon') {
  $tabs=$r.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TabItem))
  $matches=@($tabs | Where-Object {$_.Current.Name -eq 'VisualTeX' -and !$_.Current.IsOffscreen -and $_.Current.IsEnabled})
@@ -137,7 +144,7 @@ if($Action -eq 'ribbon') {
  Start-Sleep -Milliseconds 400;$r=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
 }
 if($Action -in @('probe','ribbon')) {if($Target -eq 'word') {$ribbonRoot=FindEl $r 'Ribbon';if($null -ne $ribbonRoot){$r=$ribbonRoot}};$tree=Tree $r;[IO.File]::WriteAllText((Join-Path $out ($Label+'-uia.json')),($tree|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false));$tree | Where-Object {$_.name -and $_.type -notin @('ControlType.Pane','ControlType.Group','ControlType.Image')} | ForEach-Object {Write-Output ($_.type+'|'+$_.name+'|'+$_.value+'|enabled='+$_.enabled+'|offscreen='+$_.offscreen)};exit}
-if($Action -eq 'click') {ClickEl (FindEl $r $Name);Start-Sleep -Milliseconds 600;Write-Output ('CLICK|'+$Target+'|'+$Name);exit}
+if($Action -eq 'click') {$button=FindEl $r $Name;$started=[DateTimeOffset]::UtcNow;Write-Output ('UI_INVOKE_BEGIN|'+$started.ToString('o')+'|'+$Target+'|'+$Name);ClickEl $button;Write-Output ('UI_INVOKE_RETURN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$Name);Start-Sleep -Milliseconds 600;Write-Output ('CLICK|'+$Target+'|'+$Name);exit}
 if($Action -eq 'combo') {
  $condition=[System.Windows.Automation.AndCondition]::new([System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty,$Name),[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::ComboBox))
  $el=$r.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)

@@ -12,7 +12,8 @@ internal sealed class LatexRedrawDialog : Form
         int formulaCount,
         int displayFormulaCount,
         string objectModeLabel,
-        string equationNumberFormatDisplayName)
+        string equationNumberFormatDisplayName,
+        bool allowNumbering)
     {
         Text = "VisualTeX LaTeX 重绘";
         StartPosition = FormStartPosition.CenterParent;
@@ -56,23 +57,26 @@ internal sealed class LatexRedrawDialog : Form
         };
         root.Controls.Add(description, 0, 0);
 
-        _numberDisplayFormulas.AutoSize = true;
-        _numberDisplayFormulas.Enabled = displayFormulaCount > 0;
-        _numberDisplayFormulas.Text = displayFormulaCount > 0
-            ? $"为全部 {displayFormulaCount} 个行间公式添加编号"
-            : "为所有行间公式添加编号（本次未检测到行间公式）";
-        _numberDisplayFormulas.Margin = new Padding(0, 0, 0, 5);
-        root.Controls.Add(_numberDisplayFormulas, 0, 1);
-
-        var detail = new Label
+        if (allowNumbering)
         {
-            AutoSize = true,
-            MaximumSize = new Size(500, 0),
-            Text = $"编号格式：{equationNumberFormatDisplayName}。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
-            ForeColor = Color.FromArgb(88, 88, 88),
-            Margin = new Padding(22, 0, 0, 12),
-        };
-        root.Controls.Add(detail, 0, 2);
+            _numberDisplayFormulas.AutoSize = true;
+            _numberDisplayFormulas.Enabled = displayFormulaCount > 0;
+            _numberDisplayFormulas.Text = displayFormulaCount > 0
+                ? $"为全部 {displayFormulaCount} 个行间公式添加编号"
+                : "为所有行间公式添加编号（本次未检测到行间公式）";
+            _numberDisplayFormulas.Margin = new Padding(0, 0, 0, 5);
+            root.Controls.Add(_numberDisplayFormulas, 0, 1);
+
+            var detail = new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(500, 0),
+                Text = $"编号格式：{equationNumberFormatDisplayName}。正文和公式定界符以外的内容不会改变；本次操作可通过一次 Ctrl+Z 整体撤销。",
+                ForeColor = Color.FromArgb(88, 88, 88),
+                Margin = new Padding(22, 0, 0, 12),
+            };
+            root.Controls.Add(detail, 0, 2);
+        }
 
         var actions = new FlowLayoutPanel
         {

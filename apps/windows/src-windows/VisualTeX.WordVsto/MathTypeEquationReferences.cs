@@ -276,6 +276,16 @@ internal static class MathTypeEquationReferences
         if (string.IsNullOrWhiteSpace(formulaId))
             throw new ArgumentException("FormulaId is required.", nameof(formulaId));
 
+        var aliasWatch = System.Diagnostics.Stopwatch.StartNew();
+        var aliasTrace = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF") == "1";
+        long aliasCheckpoint = 0;
+        void TraceAlias(string stage)
+        {
+            if (!aliasTrace) return;
+            var elapsed = aliasWatch.ElapsedMilliseconds;
+            WordDoubleClickHook.TraceMessage($"conversion-alias-perf stage={stage} deltaMs={elapsed - aliasCheckpoint} totalMs={elapsed}");
+            aliasCheckpoint = elapsed;
+        }
         Range? ownerRange = null;
         Range? visibleNumberRange = null;
         Bookmarks? bookmarks = null;
@@ -284,6 +294,7 @@ internal static class MathTypeEquationReferences
         try
         {
             ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId);
+            TraceAlias("owner");
             visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
                 document,
                 formulaId);
@@ -296,7 +307,10 @@ internal static class MathTypeEquationReferences
                 throw new InvalidDataException($"The numbered formula {formulaId} has no number identity.");
             bookmark = bookmarks[nativeName];
             bookmarkRange = bookmark.Range.Duplicate;
-            return CaptureNumberAliases(document, ownerRange, visibleNumberRange, bookmarkRange);
+            TraceAlias("number-ranges");
+            var result = CaptureNumberAliases(document, ownerRange, visibleNumberRange, bookmarkRange);
+            TraceAlias("local-aliases-and-references");
+            return result;
         }
         finally
         {
@@ -312,10 +326,17 @@ internal static class MathTypeEquationReferences
         Document document, Range ownerRange, Range visibleRange, Range numberOnlyRange)
     {
         var aliases = new List<EquationReferenceBookmarkAlias>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Bookmarks? bookmarks = null;
         try
         {
-            bookmarks = document.Bookmarks;
+            // An alias must be fully contained in one of these two number spans
+            // to be transferable. Enumerating all document bookmarks only to
+            // reject unrelated ranges made one conversion O(total formulas).
+            foreach (var numberSpan in new[] { visibleRange, numberOnlyRange })
+            {
+            Release(bookmarks); bookmarks = null;
+            bookmarks = numberSpan.Bookmarks;
             for (var index = 1; index <= bookmarks.Count; index++)
             {
                 Bookmark? bookmark = null;
@@ -324,6 +345,7 @@ internal static class MathTypeEquationReferences
                 {
                     bookmark = bookmarks[index];
                     var name = bookmark.Name;
+                    if (!visited.Add(name)) continue;
                     var numberOnly = MathTypeWordOpenXml.IsVisualTeXNumberAlias(name);
                     if (!numberOnly && !name.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase))
                         continue;
@@ -343,6 +365,7 @@ internal static class MathTypeEquationReferences
                     });
                 }
                 finally { Release(range); Release(bookmark); }
+            }
             }
             return aliases.OrderBy(alias => alias.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         }
@@ -859,6 +882,8 @@ internal static class MathTypeEquationReferences
                 code = null;
                 Release(field);
                 field = fields[index];
+                var type = field.Type;
+                if (type != WdFieldType.wdFieldRef && type != WdFieldType.wdFieldGoToButton) continue;
                 code = field.Code;
                 if (code.Start >= ownerRange.Start && code.Start < ownerRange.End)
                     continue;

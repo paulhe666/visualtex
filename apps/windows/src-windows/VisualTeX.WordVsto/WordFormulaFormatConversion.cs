@@ -5,6 +5,7 @@ namespace VisualTeX.WordVsto;
 internal sealed class WordFormulaFormatConversionPlan
 {
     internal string DocumentId { get; set; } = string.Empty;
+    internal bool WritableValidated { get; set; }
     internal string SourceMode { get; set; } = string.Empty;
     internal string TargetMode { get; set; } = string.Empty;
     internal bool WholeDocument { get; set; }

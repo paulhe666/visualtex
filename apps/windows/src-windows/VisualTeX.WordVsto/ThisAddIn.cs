@@ -396,6 +396,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = new WordDoubleClickHook(
                 ShouldInterceptNativeOleDoubleClick,
                 OnNativeWordDoubleClick);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _doubleClickHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
             _doubleClickHook.Start();
         }
         catch (Exception error)
@@ -608,6 +616,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Interlocked.Increment(ref _formulaFontReadsDeferredDuringMutation);
             return null;
         }
+        // Keep the baseline positive-only Ribbon cache. Prose is now rejected
+        // by the service's local range probe, so it needs no persistent negative
+        // cache that could outlive Word's native selection notifications.
         var cached = Volatile.Read(ref _cachedSelectedFormulaFontSize);
         if (!double.IsNaN(cached)) return (float)cached;
         var size = _formulaService?.GetSelectedFormulaFontSize();
@@ -647,10 +658,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return;
         dispatcher.Post(() =>
         {
+            using var perf = WordSelectionPerformance.Start("deferred-ribbon-font");
             Interlocked.Exchange(ref _formulaFontInvalidationPending, 0);
             if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
                 || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
                 return;
+            // A queued refresh may execute after the caret left the formula.
+            // The current owner sentinel is sufficient; no negative result cache.
+            if (_lastFormulaRibbonOwnerStart == int.MinValue) return;
             try
             {
                 if (_acceptanceSelectionDiagnostics)
@@ -860,6 +875,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Interlocked.Increment(ref _acceptanceDeferredCaretPassCount);
         dispatcher.Post(() =>
         {
+            using var perf = WordSelectionPerformance.Start("deferred-caret");
             Interlocked.Exchange(ref _typingCaretNormalizationPending, 0);
             if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
                 || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
@@ -925,6 +941,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void OnWindowActivate(Document document, Window window)
     {
+        try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        ClearNativeOleTarget();
         _cachedEquationNumberFormatId = null;
         Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
         _lastFormulaRibbonOwnerStart = int.MinValue;
@@ -939,6 +957,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch { }
         finally { ReleaseComObject(selection); }
+
+        // Returning from the VisualTeX Office editor does not necessarily move
+        // Word's Selection, so WindowSelectionChange may never fire. Word can
+        // still rebuild the collapsed caret's character format from the adjacent
+        // MathType OLE field run when this window becomes active again. Reuse the
+        // existing deferred O(1) caret normalization after activation so the first
+        // real keystroke inherits nearby prose rather than Equation.DSMT4.
+        ScheduleTypingCaretNormalization();
     }
 
     private void OnDocumentOpen(Document document)
@@ -995,6 +1021,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void OnWindowSelectionChange(Selection selection)
     {
+        using var perf = WordSelectionPerformance.Start("selection-change");
+        if (Volatile.Read(ref _normalizingTypingCaret) != 0) return;
         if (_acceptanceSelectionDiagnostics)
             Interlocked.Increment(ref _acceptanceSelectionChangeCount);
         if (Volatile.Read(ref _formulaFormatMutationDepth) > 0)
@@ -1007,6 +1035,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         // owner discovery itself reads OMaths/Cells and can reenter an incomplete
         // table write. The deferred callback also checks the mutation generation.
         ScheduleFormulaFontControlsInvalidation(selection);
+        perf?.Mark("ribbon-owner");
         var service = _formulaService;
         var application = _application;
         if (service is null || application is null)
@@ -1039,6 +1068,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 finally { Interlocked.Exchange(ref _normalizingTypingCaret, 0); }
             }
+            perf?.Mark("caret-normalization");
             if (redirectedNumberEndEnter)
             {
                 ClearNativeOleTarget();
@@ -1054,6 +1084,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // first physical click selects the Equation.DSMT4 OLE; defer any content
             // import until the actual double-click and retain only its range/rect.
             var isMathTypeOle = service.IsSelectedMathTypeOle();
+            perf?.Mark("ole-kind");
             OfficeSelection? selected = null;
             if (!isMathTypeOle)
             {
@@ -1062,16 +1093,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ClearNativeOleTarget();
                     return;
                 }
-                selected = service.ReadSelection(selection);
-                if (!WordDoubleClickRouting.ShouldOpenVisualTeX(selected)
-                    || !string.Equals(
-                        selected.ObjectMode,
-                        FormulaOleContract.NativeOleMode,
-                        StringComparison.Ordinal))
-                {
-                    ClearNativeOleTarget();
-                    return;
-                }
+                // A single click only caches the physical OLE rectangle, just
+                // like MathType. Metadata import and copy-identity repair still
+                // run in ReadSelection when an actual edit/double-click begins.
+                // Do not activate the companion OLE server merely to select it.
             }
 
             // The deferred caret retry exists only for Word's OLE selection→caret
@@ -2154,6 +2179,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(
             StringComparer.Ordinal);
+        var mathTypePreviews =
+            new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
+                StringComparer.Ordinal);
         var converterSessionIds = new List<string>();
         var renderFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         var skippedTargets = new List<(WordLatexRedrawTarget Target, string Error)>();
@@ -2183,7 +2211,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                 "1",
                 StringComparison.Ordinal);
-            var numberDisplayFormulas = acceptanceMode
+            var allowRedrawNumbering = !string.Equals(
+                objectMode,
+                FormulaOleContract.WordOmmlMode,
+                StringComparison.Ordinal);
+            var numberDisplayFormulas = allowRedrawNumbering
+                && acceptanceMode
                 && IsEnabledEnvironmentOption(
                     "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
             if (!acceptanceMode)
@@ -2195,7 +2228,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         plan.Targets.Count,
                         displayFormulaCount,
                         modeLabel,
-                        service.GetEquationNumberFormatDisplayName());
+                        service.GetEquationNumberFormatDisplayName(),
+                        allowRedrawNumbering);
                     var accepted = dialog.ShowDialog()
                         == System.Windows.Forms.DialogResult.OK;
                     return (
@@ -2213,7 +2247,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 numberDisplayFormulas = options.NumberDisplayFormulas;
             }
-            plan.NumberDisplayFormulas = numberDisplayFormulas;
+            plan.NumberDisplayFormulas = allowRedrawNumbering && numberDisplayFormulas;
             var mathTypeNumberPosition = string.Equals(
                     objectMode,
                     FormulaOleContract.MathTypeOleMode,
@@ -2357,6 +2391,66 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
             }
 
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal)
+                && rendered.Count > 0)
+            {
+                // Bulk import already prepares MathType's native WMF geometry in
+                // one MathPage batch before Word insertion. Redraw used to omit
+                // that phase, so InsertMathTypeOle synchronously invoked the native
+                // renderer once per formula on the Office UI thread (~0.35 s each).
+                // Prepare one native preview per unique rendered template instead;
+                // repeated formulas reuse the same immutable WMF/geometry payload.
+                SetStatus($"正在批量生成 {rendered.Count} 个 MathType 原生预览…");
+                var nativePreviewInputs =
+                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                foreach (var item in rendered)
+                {
+                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                        item.Value.MathMl
+                            ?? throw new InvalidDataException(
+                                $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
+                        string.Equals(
+                            item.Value.Session.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase),
+                        item.Value.Session.FontSizePt);
+                    nativePreviewInputs[item.Key] = generated.Mtef;
+                }
+
+                var nativePreviewRoot = rendered.Values
+                    .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
+                        ? null
+                        : Path.GetDirectoryName(template.EmfPath))
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                    ?? Path.GetTempPath();
+                var nativePreviewWatch = Stopwatch.StartNew();
+                var renderedAllNativePreviews =
+                    MathTypeNativePreviewRenderer.TryRenderBatch(
+                        nativePreviewInputs,
+                        nativePreviewRoot,
+                        out var nativePreviews);
+                var missingPreviewKeys = rendered.Keys
+                    .Where(key => !nativePreviews.ContainsKey(key))
+                    .ToArray();
+                if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
+                {
+                    foreach (var preview in nativePreviews.Values)
+                        preview.Dispose();
+                    throw new InvalidOperationException(
+                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{rendered.Count}）。"
+                        + "为避免重绘过程中混用前端几何，Word 文档尚未开始修改。");
+                }
+                foreach (var preview in nativePreviews)
+                    mathTypePreviews.Add(preview.Key, preview.Value);
+                nativePreviewWatch.Stop();
+                WriteRedrawAcceptanceLog(
+                    $"mathtype-native-preview-batch templates={nativePreviews.Count} "
+                    + $"formulas={plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+            }
+
             for (var index = 0; index < plan.Targets.Count; index++)
             {
                 var target = plan.Targets[index];
@@ -2386,6 +2480,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     target.FontSizePt,
                     objectMode,
                     mathTypeNumberPosition);
+                var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
+                    ? preview
+                    : null;
                 prepared.Add(target.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -2393,6 +2490,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     MathMl = template.MathMl,
                     PngPath = template.PngPath,
                     EmfPath = template.EmfPath,
+                    MathTypeNativePreview = mathTypePreview,
+                    MathTypeNativePreviewAttempted = string.Equals(
+                        objectMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal),
                 });
             }
 
@@ -2478,6 +2580,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         finally
         {
+            foreach (var preview in mathTypePreviews.Values.Distinct())
+                preview.Dispose();
             foreach (var template in rendered.Values)
             {
                 TryDeleteFile(template.EmfPath);

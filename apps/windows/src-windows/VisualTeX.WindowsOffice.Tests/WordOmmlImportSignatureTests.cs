@@ -37,6 +37,47 @@ public sealed class WordOmmlImportSignatureTests
         => Assert.Throws<System.IO.InvalidDataException>(() =>
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(Sup), Math(Sup.Replace(from, to))));
 
+    [Theory]
+    [InlineData("\u2032", "'")]
+    [InlineData("\u2033", "''")]
+    [InlineData("\u2034", "'''")]
+    [InlineData("\u2057", "''''")]
+    public void WordPrimeSpellingsHaveTheSameImportedContentSignature(
+        string unicodePrime,
+        string asciiPrime)
+    {
+        var unicode = $"<m:sSup><m:e><m:r><m:t>F</m:t></m:r></m:e><m:sup><m:r><m:t>{unicodePrime}</m:t></m:r></m:sup></m:sSup>";
+        var ascii = $"<m:sSup><m:e><m:r><m:t>F</m:t></m:r></m:e><m:sup><m:r><m:t>{asciiPrime}</m:t></m:r></m:sup></m:sSup>";
+        Assert.Equal(Signature(unicode), Signature(ascii));
+    }
+
+    [Fact]
+    public void DefaultHatAccentMatchesWordsOmittedAccentCharacter()
+    {
+        const string explicitHat =
+            "<m:acc><m:accPr><m:chr m:val=\"\u0302\"/></m:accPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:acc>";
+        const string omittedHat =
+            "<m:acc><m:accPr/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:acc>";
+        const string tilde =
+            "<m:acc><m:accPr><m:chr m:val=\"\u0303\"/></m:accPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:acc>";
+
+        Assert.Equal(Signature(explicitHat), Signature(omittedHat));
+        Assert.NotEqual(Signature(explicitHat), Signature(tilde));
+    }
+
+    [Fact]
+    public void InsertedMathLocatorPrefersNearestEquationBeforeLargestSpan()
+    {
+        Assert.True(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+            distance: 1, span: 12, bestDistance: 4, bestSpan: 80));
+        Assert.False(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+            distance: 4, span: 80, bestDistance: 1, bestSpan: 12));
+        Assert.True(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+            distance: 1, span: 80, bestDistance: 1, bestSpan: 12));
+        Assert.False(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+            distance: 17, span: 800, bestDistance: int.MaxValue, bestSpan: -1));
+    }
+
     private static string Integral(string glyph, string lower = "−1") =>
         "<m:nary><m:naryPr>" + glyph + "<m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>" + lower
         + "</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup><m:e>" + Sup + "</m:e></m:nary>";
@@ -105,6 +146,28 @@ public sealed class WordOmmlImportSignatureTests
         Assert.NotEqual(Signature(delimiter), Signature(delimiter.Replace("<m:endChr m:val=\"\"/>", "<m:endChr m:val=\"}\"/>")));
         var multiple = delimiter.Replace("</m:d>", "<m:e>" + Sup + "</m:e></m:d>");
         Assert.NotEqual(Signature(multiple), Signature(multiple.Replace("<m:sepChr m:val=\",\"/>", "")));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<m:mPr/>")]
+    [InlineData("<m:mPr><m:baseJc/></m:mPr>")]
+    public void MatrixDefaultCenterOmissionIsEquivalent(string actualProperties)
+    {
+        const string row = "<m:mr><m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e></m:mr>";
+        var expected = "<m:m><m:mPr><m:baseJc m:val=\"center\"/></m:mPr>" + row + "</m:m>";
+        var actual = "<m:m>" + actualProperties + row + "</m:m>";
+        Assert.Equal(Signature(expected), Signature(actual));
+        Assert.NotEqual(Signature(expected), Signature(actual.Replace("<m:t>b</m:t>", "<m:t>c</m:t>")));
+    }
+
+    [Theory]
+    [InlineData("top")]
+    [InlineData("bot")]
+    public void MatrixNondefaultVerticalAlignmentRemainsDistinct(string alignment)
+    {
+        var matrix = "<m:m><m:mPr><m:baseJc m:val=\"center\"/></m:mPr><m:mr><m:e>" + Sup + "</m:e></m:mr></m:m>";
+        Assert.NotEqual(Signature(matrix), Signature(matrix.Replace("\"center\"", "\"" + alignment + "\"")));
     }
 
     [Fact]

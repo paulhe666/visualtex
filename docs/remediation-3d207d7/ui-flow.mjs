@@ -6,8 +6,12 @@ const dir=dirname(fileURLToPath(import.meta.url));
 const root=resolve(dir,'../..');const output=join(dir,'evidence');mkdirSync(output,{recursive:true});
 const ps=join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
 const targetFile=join(output,'target-word.json');
-const targetWordPid=existsSync(targetFile)?JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')).pid:0;
-function exec(script,params={},quiet=false){if(targetWordPid && ['word-ui.ps1','inspect-word.ps1'].includes(script))params={WordProcessId:targetWordPid,...params};const args=['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',join(dir,script)];for(const[k,v]of Object.entries(params)){if(v===false||v===undefined)continue;args.push('-'+k);if(v!==true)args.push(String(v));}const t=Date.now();const r=spawnSync(ps,args,{cwd:root,encoding:'utf8',timeout:40000,maxBuffer:4*1024*1024});const record={time:new Date().toISOString(),script,params,elapsed:Date.now()-t,status:r.status,stdout:r.stdout,stderr:r.stderr,error:r.error?.message};appendFileSync(join(output,'ui-actions.ndjson'),JSON.stringify(record)+'\n');if(!quiet)process.stdout.write((r.stdout??'')+(r.stderr??''));if(r.error||r.status!==0)throw new Error(r.error?.message??r.stderr??`PowerShell exit ${r.status}`);return r.stdout;}
+const recordedTarget=existsSync(targetFile)?JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')):{};
+const targetWordPid=Number(process.env.VISUALTEX_PERF_WORD_PID??recordedTarget.pid??0);
+const pinnedDocument=process.env.VISUALTEX_PERF_DOCUMENT;
+const pinnedStage=process.env.VISUALTEX_PERF_STAGE??recordedTarget.stage;
+if(process.env.VISUALTEX_PERF_WORD_PID&&(!pinnedDocument||!process.env.VISUALTEX_PERF_STAGE))throw new Error('Pinned performance runs require the exact PID, document and stage.');
+function exec(script,params={},quiet=false){if(script==='word-ui.ps1'&&pinnedDocument)params={ExpectedDocument:pinnedDocument,...params};if(targetWordPid && ['word-ui.ps1','inspect-word.ps1'].includes(script))params={WordProcessId:targetWordPid,...params};const args=['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',join(dir,script)];for(const[k,v]of Object.entries(params)){if(v===false||v===undefined)continue;args.push('-'+k);if(v!==true)args.push(String(v));}const t=Date.now();const r=spawnSync(ps,args,{cwd:root,encoding:'utf8',timeout:40000,maxBuffer:4*1024*1024});const record={time:new Date().toISOString(),script,params,elapsed:Date.now()-t,status:r.status,stdout:r.stdout,stderr:r.stderr,error:r.error?.message};appendFileSync(join(output,'ui-actions.ndjson'),JSON.stringify(record)+'\n');if(!quiet)process.stdout.write((r.stdout??'')+(r.stderr??''));if(r.error||r.status!==0)throw new Error(r.error?.message??r.stderr??`PowerShell exit ${r.status}`);return r.stdout;}
 function ui(Action,params={},quiet=false){return exec('word-ui.ps1',{WindowHandle:-1,Action,...params},quiet)}
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function readReadySourceEditor(label) {
@@ -34,13 +38,11 @@ async function waitForWordDialog() {
  throw new Error('The real Word dialog did not appear within 30 seconds; inspect Word before continuing.');
 }
 function operationLog() {
- const stage=JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')).stage;
- const file=join(output,stage+'-word-hook.log');
+ const file=join(output,pinnedStage+'-word-hook.log');
  return existsSync(file)?readFileSync(file,'utf8'):'';
 }
 function redrawLog() {
- const stage=JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')).stage;
- const file=join(output,stage+'-word-redraw.log');
+ const file=join(output,pinnedStage+'-word-redraw.log');
  return existsSync(file)?readFileSync(file,'utf8'):'';
 }
 async function waitForRedraw(label,start,startedAt) {
@@ -94,7 +96,7 @@ async function waitForEditorRelease(label,start) {
 }
 function snapshot(label) {
  const windows=JSON.parse(ui('windows',{},true));
- const expectedDocument=JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')).document;
+ const expectedDocument=pinnedDocument??JSON.parse(readFileSync(targetFile,'utf8').replace(/^\uFEFF/, '')).document;
  const win=windows.find(w=>w.process==='WINWORD'&&w.title.endsWith(' - Word')&&(!targetWordPid||w.pid===targetWordPid)&&(!expectedDocument||w.title===expectedDocument+' - Word'));
  const number=win?.title.match(/(\d+) - Word$/)?.[1];
  if(!win || !expectedDocument)throw new Error('The recorded live test document is unavailable');
@@ -136,7 +138,8 @@ if(action==='insert'||action==='resume-insert'){
  assertNoWordErrorDialog('edit-result');
 }else if(action==='edit-source'||action==='resume-edit-source'){
  const logStart=operationLog().length;
- const [kind='ole',index='3',source='E=mc^2',label='edit-source']=argv;
+ const [kind='ole',index='3',sourceArgument='E=mc^2',label='edit-source']=argv;
+ const source=sourceArgument.startsWith('@')?readFileSync(resolve(dir,sourceArgument.slice(1)),'utf8').replace(/^\uFEFF/,'').trim():sourceArgument;
  if(!['ole','math'].includes(kind))throw new Error('Expected ole or math editor target');
  if(action==='edit-source'){
   ui(kind==='ole'?'select-ole':'select-math',{WindowHandle:0,Index:index});
@@ -148,6 +151,21 @@ if(action==='insert'||action==='resume-insert'){
  const actual=JSON.parse(readFileSync(join(output,label+'-prepared-uia.json'),'utf8'))
    .filter(c=>c.type==='ControlType.Edit'&&!c.name&&c.enabled&&!c.offscreen&&c.rect!=='Empty');
  if(actual.length!==1||actual[0].value!==source)throw new Error('Real source editor did not retain the requested text');
+ if(process.env.VISUALTEX_PERF_REQUIRE_CHANGE==='1'){
+  const controls=JSON.parse(readFileSync(join(output,label+'-prepared-uia.json'),'utf8'));
+  const id=controls.map(c=>c.value??'').join('\n').match(/sessionId=([0-9a-f-]+)/i)?.[1];
+  if(!id)throw new Error('No exact editor session identity for the changed-content measurement.');
+  const path=join(process.env.APPDATA,'com.visualtex.studio','office','sessions',id,'session.json');
+  const deadline=Date.now()+7000;let ready=false;
+  while(Date.now()<deadline){
+   const draft=JSON.parse(readFileSync(path,'utf8').replace(/^\uFEFF/,''));
+   const text=draft.lines?.map(line=>line.latex).join('\n')??'';
+   const original=draft.originalMetadata?.lines?.map(line=>line.latex).join('\n')??draft.originalMetadata?.latex??'';
+   if(draft.status==='editing'&&draft.dirty&&text&&text!==original&&draft.exportResult?.mathMl){ready=true;break;}
+   await pause(100);
+  }
+  if(!ready)throw new Error('The source remains an unchanged/incomplete draft; refusing to count a no-op as a fast edit.');
+ }
  ui('click',{Target:'editor',Name:'更新公式'});
  await waitForEditorRelease(label,logStart);
  assertNoWordErrorDialog(label);
@@ -188,15 +206,17 @@ if(action==='insert'||action==='resume-insert'){
  if(scope==='full'){await waitForWordDialog();ui('native',{Target:'dialog',Label:label+'-confirm'});ui('dlgclick',{Target:'dialog',Name:'是'});} await pause(800);
  await waitForWordOperation('conversion',label,logStart);
  assertNoWordErrorDialog(label);console.log('CONVERSION_NO_ERROR_DIALOG');
-}else if(action==='redraw'){
- const [format='omml',breaks='soft-breaks',label='redraw',input='redraw-source.tex',latinFont='']=argv;
+}else if(action==='redraw'||action==='redraw-existing'){
+ const [format='omml',breaks='soft-breaks',label='redraw',input='redraw-source.tex',latinFont='',numbered='true']=argv;
  const redrawStart=redrawLog().length;
- exec('word-ui.ps1',{Action:'text',InputFile:input,Name:breaks,Index:12,LatinFont:latinFont});
- snapshot(label+'-source');
+ if(action==='redraw') {
+  exec('word-ui.ps1',{Action:'text',InputFile:input,Name:breaks,Index:12,LatinFont:latinFont});
+  snapshot(label+'-source');
+ }
  ui('ribbon',{},true);ui('click',{Name:'重绘全文'});
  ui('click',{Name:'全文 LaTeX 重绘为 '+(format==='omml'?'Word OMML':format==='native'?'VisualTeX OLE':'MathType')});
  ui('native',{Target:'dialog',Label:label+'-confirm'});
- ui('dlgcheck',{Target:'dialog',Name:'为全部',Checked:true});
+ ui('dlgcheck',{Target:'dialog',Name:'为全部',Checked:numbered==='true'});
  const startedAt=Date.now();ui('dlgclick',{Target:'dialog',Name:'开始重绘'});
  await waitForRedraw(label,redrawStart,startedAt);
  assertNoWordErrorDialog(label);console.log('REDRAW_NO_ERROR_DIALOG');

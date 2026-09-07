@@ -128,6 +128,55 @@ public sealed class WordOmmlConversionIdentityTests
     }
 
     [Fact]
+    public void RetainedFreshOwnersRepairMultipleDriftedAnchorsByPhysicalOwnership()
+    {
+        var body = new XElement(W + "body",
+            Anchor(First, "1"), Anchor(Second, "2"),
+            new XElement(W + "p", Math("a")),
+            new XElement(W + "p", Math("b")));
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+            new Dictionary<string, string>
+            {
+                [First] = Fingerprint("a"),
+                [Second] = Fingerprint("b"),
+            },
+            exactAnchorOwners: new Dictionary<string, int>
+            {
+                [First] = 1,
+                [Second] = 0,
+            },
+            liveInsertedOwners: new Dictionary<string, int>
+            {
+                [First] = 0,
+                [Second] = 1,
+            });
+        Assert.Equal((0, false), result[First]);
+        Assert.Equal((1, false), result[Second]);
+    }
+
+    [Fact]
+    public void RetainedFreshOwnersDisambiguateIdenticalRedrawContents()
+    {
+        var body = new XElement(W + "body",
+            Anchor(First, "1"), Anchor(Second, "2"),
+            new XElement(W + "p", Math("a")),
+            new XElement(W + "p", Math("a")));
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+            new Dictionary<string, string>
+            {
+                [First] = Fingerprint("a"),
+                [Second] = Fingerprint("a"),
+            },
+            liveInsertedOwners: new Dictionary<string, int>
+            {
+                [First] = 0,
+                [Second] = 1,
+            });
+        Assert.Equal((0, false), result[First]);
+        Assert.Equal((1, false), result[Second]);
+    }
+
+    [Fact]
     public void RetainedFreshObjectStillRequiresItsPreparedContent()
     {
         var body = new XElement(W + "body", Anchor(First, "1"),

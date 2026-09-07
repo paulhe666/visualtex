@@ -10,6 +10,8 @@ internal sealed class WordDocumentEditSnapshot
 {
     private readonly string bodySignature;
     private readonly int documentEnd;
+    private readonly int evidenceStart = -1;
+    private readonly int evidenceEnd;
     private readonly string mathFont;
     private readonly IReadOnlyList<string> metadata;
     private readonly IReadOnlyDictionary<string, string> variables;
@@ -17,19 +19,43 @@ internal sealed class WordDocumentEditSnapshot
     private readonly string? diagnosticPath;
     private readonly WordBookmarkRecoverySnapshot? bookmarkRecovery;
 
-    internal WordDocumentEditSnapshot(Document document, IEnumerable<string>? ownedBookmarkNames = null)
+    internal WordDocumentEditSnapshot(Document document, IEnumerable<string>? ownedBookmarkNames = null,
+        Range? isolatedMutationScope = null)
     {
+        var watch = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF") == "1"
+            ? System.Diagnostics.Stopwatch.StartNew() : null;
+        long checkpoint = 0;
+        void Trace(string stage)
+        {
+            if (watch is null) return;
+            var elapsed = watch.ElapsedMilliseconds;
+            WordDoubleClickHook.TraceMessage($"document-checkpoint-perf stage={stage} deltaMs={elapsed - checkpoint} totalMs={elapsed}");
+            checkpoint = elapsed;
+        }
         Range? content = null;
         try
         {
             content = document.Content;
             documentEnd = content.End;
-            var originalXml = WordDocumentXml.Read(document);
+            if (isolatedMutationScope is not null)
+            {
+                if (isolatedMutationScope.StoryType != WdStoryType.wdMainTextStory
+                    || isolatedMutationScope.Start < content.Start || isolatedMutationScope.End > content.End
+                    || isolatedMutationScope.End <= isolatedMutationScope.Start)
+                    throw new InvalidDataException("The isolated conversion recovery scope is not a valid body range.");
+                evidenceStart = isolatedMutationScope.Start;
+                evidenceEnd = isolatedMutationScope.End;
+                Release(content); content = ReadEvidenceRange(document);
+            }
+            var originalXml = WordDocumentXml.Read(document, content);
+            Trace("xml");
             var geometry = WordInlineObjectGeometry.Capture(content);
             bodySignature = WordLocalEditSnapshot.Signature(originalXml, geometry);
+            Trace("signature");
             if (ownedBookmarkNames is not null)
                 bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, content,
                     WordLocalEditSnapshot.NormalizedBody(originalXml, geometry), ownedBookmarkNames);
+            Trace("bookmarks");
             if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_RECOVERY_XML") == "1")
             {
                 diagnosticPath = (Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH")
@@ -40,10 +66,15 @@ internal sealed class WordDocumentEditSnapshot
             mathFont = document.OMathFontName;
             metadata = ReadMetadata(document);
             variables = ReadVariables(document);
+            Trace("metadata-variables");
             undoHistory = new WordUndoHistorySnapshot(document);
+            Trace("undo-history");
         }
         finally { Release(content); }
     }
+
+    private Range ReadEvidenceRange(Document document) => evidenceStart < 0
+        ? document.Content : document.Range(evidenceStart, evidenceEnd);
 
     private bool BodyMatches(Document document)
     {
@@ -51,9 +82,11 @@ internal sealed class WordDocumentEditSnapshot
         try
         {
             content = document.Content;
-            var xml = WordDocumentXml.Read(document);
+            if (content.End != documentEnd) return false;
+            Release(content); content = ReadEvidenceRange(document);
+            var xml = WordDocumentXml.Read(document, content);
             var geometry = WordInlineObjectGeometry.Capture(content);
-            var matches = content.End == documentEnd && WordLocalEditSnapshot.Signature(xml, geometry) == bodySignature;
+            var matches = WordLocalEditSnapshot.Signature(xml, geometry) == bodySignature;
             if (!matches && diagnosticPath is not null)
                 File.WriteAllText(diagnosticPath + "-after.xml", WordLocalEditSnapshot.NormalizedBody(xml, geometry));
             return matches;
@@ -86,8 +119,9 @@ internal sealed class WordDocumentEditSnapshot
                 content = document.Content;
                 if (content.End != documentEnd)
                     throw new InvalidDataException("Word undo has not restored the original document extent.");
+                Release(content); content = ReadEvidenceRange(document);
                 bookmarkRecovery.Restore(document, WordLocalEditSnapshot.NormalizedBody(
-                    WordDocumentXml.Read(document), WordInlineObjectGeometry.Capture(content)));
+                    WordDocumentXml.Read(document, content), WordInlineObjectGeometry.Capture(content)));
             }
             finally { Release(content); }
         }
@@ -101,7 +135,7 @@ internal sealed class WordDocumentEditSnapshot
         var metadataRestored = ReadMetadata(document).SequenceEqual(metadata);
         var variablesRestored = ReadVariables(document).OrderBy(p => p.Key).SequenceEqual(variables.OrderBy(p => p.Key));
         WordDoubleClickHook.TraceMessage(
-            $"format-conversion-recovery-verified body={bodyRestored} mathFont={fontRestored} metadata={metadataRestored} variables={variablesRestored}");
+            $"format-conversion-recovery-verified body={bodyRestored} scope={(evidenceStart < 0 ? "document" : evidenceStart + ":" + evidenceEnd)} mathFont={fontRestored} metadata={metadataRestored} variables={variablesRestored}");
         if (!bodyRestored || !fontRestored || !metadataRestored || !variablesRestored)
             throw new InvalidDataException("Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.");
     }

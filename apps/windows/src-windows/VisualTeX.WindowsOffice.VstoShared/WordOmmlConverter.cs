@@ -2975,6 +2975,15 @@ internal static class WordOmmlConverter
     private static string RestoreWordAsteriskSpelling(string mathematicalText)
         => mathematicalText.Replace('*', '∗');
 
+    private static string NormalizeImportedMathTextSpelling(string mathematicalText) =>
+        RestoreWordAsteriskSpelling(
+            mathematicalText
+                .Replace('\u2212', '-')
+                .Replace("\u2032", "'")
+                .Replace("\u2033", "''")
+                .Replace("\u2034", "'''")
+                .Replace("\u2057", "''''"));
+
     private static bool ContainsOnlyMathSymbols(string value)
     {
         var sawSymbol = false;
@@ -3314,7 +3323,26 @@ internal static class WordOmmlConverter
     {
         if (!string.Equals(ComputeImportedOmmlContentSignature(preparedWordOpenXml),
                 ComputeImportedOmmlContentSignature(materializedWordOpenXml), StringComparison.Ordinal))
+        {
+            // Optional pure evidence: preserve both sides before the caller's
+            // native Undo. Never relax content equality or let diagnostics block recovery.
+            if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_RECOVERY_XML") == "1")
+            {
+                try
+                {
+                    var trace = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+                    if (!string.IsNullOrWhiteSpace(trace))
+                    {
+                        var path = trace + ".omml-mismatch-" + Guid.NewGuid().ToString("N");
+                        File.WriteAllText(path + "-prepared.xml", preparedWordOpenXml);
+                        File.WriteAllText(path + "-actual.xml", materializedWordOpenXml);
+                        WordDoubleClickHook.TraceMessage("omml-materialization-mismatch evidence=" + path);
+                    }
+                }
+                catch { }
+            }
             throw new InvalidDataException("The materialized Word equation differs from its prepared formula content.");
+        }
         // Word's final native representation is the durable identity. The
         // prepared XML is only evidence of the intended content, never a proxy
         // for what Word actually stored after importing and laying out the row.
@@ -3366,6 +3394,37 @@ internal static class WordOmmlConverter
             if (type is null) properties.AddFirst(new XElement(math + "type", new XAttribute(math + "val", "bar")));
             else if (type.Attribute(math + "val") is null) type.SetAttributeValue(math + "val", "bar");
         }
+        // ISO/IEC 29500 m:accPr/m:chr defaults to the combining circumflex.
+        // Word commonly removes an explicit U+0302 after importing \hat{x}; the
+        // omission and explicit value are the same mathematical accent. Preserve
+        // every nondefault accent character.
+        foreach (var accent in document.Descendants(math + "acc"))
+        {
+            var properties = accent.Element(math + "accPr");
+            if (properties is null)
+            {
+                properties = new XElement(math + "accPr");
+                accent.AddFirst(properties);
+            }
+            var character = properties.Element(math + "chr");
+            if (character is null)
+                properties.AddFirst(new XElement(
+                    math + "chr",
+                    new XAttribute(math + "val", "\u0302")));
+            else if (character.Attribute(math + "val") is null)
+                character.SetAttributeValue(math + "val", "\u0302");
+        }
+        // ISO/IEC 29500 m:mPr/m:baseJc defaults to center. Word removes the
+        // explicit center during matrix import; keep nondefault top/bot intact.
+        // This is a representational equivalence, not permission to change a
+        // matrix's cells, row order, alignment or any mathematical contents.
+        foreach (var matrix in document.Descendants(math + "m"))
+        {
+            var justification = matrix.Element(math + "mPr")?.Element(math + "baseJc");
+            if (justification is not null
+                && ((string?)justification.Attribute(math + "val") is null or "center"))
+                justification.Remove();
+        }
         // A separator is rendered only between distinct delimiter arguments.
         // A single argument (including a multirow equation array) has none;
         // Word drops sepChr there. Beginning/end delimiters are always retained.
@@ -3377,7 +3436,7 @@ internal static class WordOmmlConverter
             var properties = text.Parent?.Element(math + "rPr");
             var literal = properties?.Elements().Any(e => (e.Name == math + "nor" || e.Name == math + "lit")
                 && (string?)e.Attribute(math + "val") == "1") == true;
-            if (!literal) text.Value = RestoreWordAsteriskSpelling(text.Value.Replace('\u2212', '-'));
+            if (!literal) text.Value = NormalizeImportedMathTextSpelling(text.Value);
         }
         foreach (var property in document.Descendants().Where(e => e.Name.Namespace == math
                      && e.Name.LocalName.EndsWith("Pr", StringComparison.Ordinal)
@@ -4401,6 +4460,18 @@ internal static class WordOmmlConverter
         writer.Write(content);
     }
 
+    internal static bool ShouldPreferInsertedMathCandidate(
+        int distance,
+        int span,
+        int bestDistance,
+        int bestSpan)
+    {
+        if (distance > 16) return false;
+        if (distance < bestDistance) return true;
+        if (distance > bestDistance) return false;
+        return span > bestSpan;
+    }
+
     private static OMath? FindMathAtPosition(
         Document document,
         int position,
@@ -4457,15 +4528,19 @@ internal static class WordOmmlConverter
                     math = maths[index];
                     range = math.Range;
                     // Word exposes nested matrix rows as OMath objects in a local
-                    // range. Select the largest equation that overlaps the exact
-                    // insertion target so the bookmark wraps the top-level math,
-                    // not an inner row such as e_x,e_y,e_z.
+                    // range. The physical equation nearest the insertion point must
+                    // win first; only candidates at the same start distance use the
+                    // larger span to prefer the top-level matrix over an inner row.
+                    // Prioritizing span before distance can select the next, longer
+                    // display equation in an adjacent paragraph.
                     if (range.End <= position || range.Start > preferredEnd + 1) continue;
                     var span = range.End - range.Start;
                     var distance = Math.Abs(range.Start - position);
-                    if (distance > 16
-                        || span < bestSpan
-                        || (span == bestSpan && distance >= bestDistance))
+                    if (!ShouldPreferInsertedMathCandidate(
+                            distance,
+                            span,
+                            bestDistance,
+                            bestSpan))
                         continue;
                     Release(best);
                     best = math;
@@ -4497,9 +4572,11 @@ internal static class WordOmmlConverter
                     if (range.End <= position || range.Start > preferredEnd + 1) continue;
                     var span = range.End - range.Start;
                     var distance = Math.Abs(range.Start - position);
-                    if (distance > 16
-                        || span < bestSpan
-                        || (span == bestSpan && distance >= bestDistance))
+                    if (!ShouldPreferInsertedMathCandidate(
+                            distance,
+                            span,
+                            bestDistance,
+                            bestSpan))
                         continue;
                     Release(best);
                     best = math;
