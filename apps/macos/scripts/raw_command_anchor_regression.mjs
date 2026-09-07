@@ -159,6 +159,7 @@ async function main() {
       localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
       localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
       localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
+      localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
       const key = "visualtex-editor";
       const persisted = JSON.parse(localStorage.getItem(key) || "{}");
       persisted.state = {

@@ -507,15 +507,22 @@ async function main() {
       ];
       for (const category of categories) {
         document.querySelector('[data-category="' + category + '"]')?.click();
+        const section = document.querySelector(
+          '[data-toolbar-category-section="' + category + '"]',
+        );
         const waitStartedAt = Date.now();
         while (Date.now() - waitStartedAt < 1000) {
-          const previews = Array.from(document.querySelectorAll(".template-button .math-preview"));
+          const previews = Array.from(
+            section?.querySelectorAll(".template-button .math-preview") ?? [],
+          );
           if (previews.length > 0 && previews.every((preview) => preview.dataset.fitReady === "true")) {
             break;
           }
           await new Promise((done) => setTimeout(done, 25));
         }
-        const buttons = Array.from(document.querySelectorAll(".template-button"));
+        const buttons = Array.from(
+          section?.querySelectorAll(".template-button") ?? [],
+        );
         result[category] = {
           count: buttons.length,
           unifiedFitCount: buttons.filter((button) =>

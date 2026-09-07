@@ -582,8 +582,6 @@ type ToolbarCategory = (typeof categories)[number];
 type ToolbarPreviewMode = "full" | "static";
 
 const staticToolbarPreviewCategories = new Set<ToolbarCategory>([
-  "arrow",
-  "physics",
   "set",
 ]);
 const toolbarPreviewOverscanRatio = 1.35;

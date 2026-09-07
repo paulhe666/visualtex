@@ -81,6 +81,7 @@ import {
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
+import { VISUALTEX_PACKAGE_MACRO_NAMES } from "../math/packageMacroCompatibility";
 import {
   installCustomSymbolGlobalStyle,
   installCustomSymbolShadowStyle,
@@ -687,6 +688,77 @@ function textualPlaceholderIndexForRange(
   return index >= 0 ? index : null;
 }
 
+const visualTexPackageMacroNameSet = new Set<string>(
+  VISUALTEX_PACKAGE_MACRO_NAMES,
+);
+
+function packageMacroForTextualPlaceholder(
+  latex: string,
+  targetIndex: number,
+) {
+  let placeholderIndex = -1;
+  let placeholderStart = -1;
+  const placeholderPattern = /\\placeholder\{\}/g;
+  for (const match of latex.matchAll(placeholderPattern)) {
+    placeholderIndex += 1;
+    if (placeholderIndex !== targetIndex) continue;
+    placeholderStart = match.index ?? -1;
+    break;
+  }
+  if (placeholderStart < 0) return null;
+
+  const prefix = latex.slice(0, placeholderStart);
+  const candidates: Array<{ name: string; braceStart: number }> = [];
+  const commandPattern = /\\([A-Za-z]+)\s*\{/g;
+  for (const match of prefix.matchAll(commandPattern)) {
+    const name = match[1];
+    if (!visualTexPackageMacroNameSet.has(name)) continue;
+    const full = match[0];
+    const braceOffset = full.lastIndexOf("{");
+    const braceStart = (match.index ?? 0) + braceOffset;
+    candidates.push({ name, braceStart });
+  }
+
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    const candidate = candidates[index];
+    let depth = 0;
+    for (let cursor = candidate.braceStart; cursor < placeholderStart; cursor += 1) {
+      if (latex[cursor] === "{" && latex[cursor - 1] !== "\\") depth += 1;
+      else if (latex[cursor] === "}" && latex[cursor - 1] !== "\\") depth -= 1;
+    }
+    if (depth > 0) return candidate.name;
+  }
+  return null;
+}
+
+function clearToolbarPackageMacroHint(field: MathfieldElement) {
+  delete field.dataset.toolbarPackageMacroName;
+  delete field.dataset.toolbarPackageMacroPlaceholderIndex;
+  delete field.dataset.toolbarPackageMacroModelStart;
+}
+
+function selectedPackageMacroPlaceholder(field: MathfieldElement) {
+  const activeRange = field.selection.ranges.at(-1) ?? null;
+  if (!activeRange || activeRange[0] === activeRange[1]) return null;
+  const range: [number, number] = [
+    Math.min(activeRange[0], activeRange[1]),
+    Math.max(activeRange[0], activeRange[1]),
+  ];
+  if (field.getValue(range[0], range[1], "latex").trim() !== "\\placeholder{}") {
+    return null;
+  }
+  const latex = normalizeChineseLatex(field.value);
+  const modelPlaceholderIndex = latexPlaceholderRanges(field).findIndex(
+    ([start, end]) => start === range[0] && end === range[1],
+  );
+  const placeholderIndex =
+    textualPlaceholderIndexForRange(latex, range) ??
+    (modelPlaceholderIndex >= 0 ? modelPlaceholderIndex : null);
+  if (placeholderIndex === null) return null;
+  const macroName = packageMacroForTextualPlaceholder(latex, placeholderIndex);
+  return macroName ? { latex, placeholderIndex, range, macroName } : null;
+}
+
 function replaceTextualPlaceholder(
   latex: string,
   targetIndex: number,
@@ -704,6 +776,23 @@ function replaceTextualPlaceholder(
     return replacement;
   });
   return replaced ? value : null;
+}
+
+function splitTextualPlaceholder(latex: string, targetIndex: number) {
+  let index = 0;
+  for (const match of latex.matchAll(/\\placeholder\{\}/g)) {
+    if (index !== targetIndex) {
+      index += 1;
+      continue;
+    }
+    const start = match.index ?? -1;
+    if (start < 0) return null;
+    return {
+      prefix: latex.slice(0, start),
+      suffix: latex.slice(start + match[0].length),
+    };
+  }
+  return null;
 }
 
 function modelRangeForTextualPlaceholder(
@@ -1491,7 +1580,15 @@ function decorateNativeSuggestionPreviews() {
   }
 
   panel.querySelectorAll<HTMLElement>("li[data-command]").forEach((item) => {
-    const command = item.dataset.command ?? "";
+    const sourceCommand = item.dataset.command ?? "";
+    const command = canonicalNativeSuggestionCommand(sourceCommand);
+    const commandLabel = item.querySelector<HTMLElement>(".ML__popover__latex");
+    if (command && command !== sourceCommand) {
+      item.dataset.visualtexCanonicalCommand = command;
+      if (commandLabel) commandLabel.textContent = command;
+    } else {
+      delete item.dataset.visualtexCanonicalCommand;
+    }
     const preview = item.querySelector<HTMLElement>(".ML__popover__command");
     if (!preview) return;
     const decoratedCommand = preview.dataset.visualtexPreviewCommand;
@@ -1551,6 +1648,15 @@ let nativeSuggestionUsageSnapshot: Record<string, CommandUsage> = {};
 let nativeSuggestionPersonalizeSnapshot = true;
 let nativeInputPopoverManualCommand = "";
 let nativeInputPopoverActiveField: MathfieldElement | null = null;
+
+const nativeSuggestionCanonicalCommands = new Map<string, string>([
+  ["\\dag", "\\dagger"],
+]);
+
+function canonicalNativeSuggestionCommand(command: string) {
+  const normalized = command.trim();
+  return nativeSuggestionCanonicalCommands.get(normalized) ?? normalized;
+}
 
 function casesEnvironmentSuggestionQuery(field: MathfieldElement) {
   const raw = rawLatexInput(field).replace(/\s+/g, "");
@@ -1621,7 +1727,7 @@ function renderCasesEnvironmentSuggestion(stable: HTMLElement, field: MathfieldE
 }
 
 function nativeSuggestionUsageId(command: string) {
-  const normalized = command.trim();
+  const normalized = canonicalNativeSuggestionCommand(command);
   return (
     findRuntimeCommandByCommand(normalized)?.id ?? `mathlive-native:${normalized}`
   );
@@ -1655,15 +1761,35 @@ function rankNativeSuggestionItems(panel: HTMLElement) {
   const parent = allItems[0]?.parentElement;
   if (!parent || allItems.some((item) => item.parentElement !== parent)) return;
 
-  const seenCommands = new Set<string>();
+  const rawCommands = new Set(
+    allItems
+      .map((item) => item.dataset.command?.trim() ?? "")
+      .filter(Boolean),
+  );
+  const seenCanonicalCommands = new Set<string>();
   const items = allItems.filter((item) => {
-    const command = item.dataset.command?.trim() ?? "";
-    if (!command || !seenCommands.has(command)) {
-      if (command) seenCommands.add(command);
-      return true;
+    const rawCommand = item.dataset.command?.trim() ?? "";
+    const canonicalCommand = canonicalNativeSuggestionCommand(rawCommand);
+
+    // MathLive may expose both a legacy spelling and its canonical spelling
+    // (for example \dag and \dagger). The visible label is canonicalized by
+    // VisualTeX, so retaining both would render two identical candidates.
+    // Prefer the native canonical item whenever it is available; otherwise
+    // keep one canonicalized legacy item so older input habits still work.
+    if (
+      rawCommand &&
+      rawCommand !== canonicalCommand &&
+      rawCommands.has(canonicalCommand)
+    ) {
+      item.remove();
+      return false;
     }
-    item.remove();
-    return false;
+    if (canonicalCommand && seenCanonicalCommands.has(canonicalCommand)) {
+      item.remove();
+      return false;
+    }
+    if (canonicalCommand) seenCanonicalCommands.add(canonicalCommand);
+    return true;
   });
 
   const activePrefix = nativeInputPopoverActiveField?.isConnected
@@ -1750,6 +1876,23 @@ function ensureStableNativeInputPopover() {
     const item = target.closest<HTMLElement>("li[data-command]");
     const command = item?.dataset.command ?? "";
     if (!command) return;
+    const canonicalCommand = canonicalNativeSuggestionCommand(command);
+    if (
+      canonicalCommand !== command &&
+      nativeInputPopoverActiveField?.isConnected
+    ) {
+      nativeInputPopoverActiveField.dataset.pendingNativeSuggestion =
+        canonicalCommand;
+      nativeInputPopoverActiveField.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return;
+    }
     const sourceItem = Array.from(
       getNativeInputPopoverSource()?.querySelectorAll<HTMLElement>(
         "li[data-command]",
@@ -3727,12 +3870,13 @@ function commitNativeSuggestion(
   traceVisualTexIme("commitNativeSuggestion.enter", field, null, {
     rememberedCommand,
   });
-  const selectedCommand =
+  const selectedCommand = canonicalNativeSuggestionCommand(
     rememberedCommand ||
-    getVisibleNativeSuggestionItems(field).find((item) =>
-      item.classList.contains("ML__popover__current"),
-    )?.dataset.command ||
-    "";
+      getVisibleNativeSuggestionItems(field).find((item) =>
+        item.classList.contains("ML__popover__current"),
+      )?.dataset.command ||
+      "",
+  );
 
   if (selectedCommand) {
     const rawInput = rawLatexInput(field).trim();
@@ -4034,7 +4178,7 @@ function markScriptAutoExitConsumed(
 }
 
 const accentContainerPattern =
-  /\\(?:acute|grave|dot|ddot|dddot|ddddot|tilde|bar|breve|check|hat|vec|widehat|widetilde|overline|overrightarrow|overleftarrow|overleftrightarrow)\s*\{/;
+  /^\\(?:acute|grave|dot|ddot|dddot|ddddot|tilde|bar|breve|check|hat|vec|widehat|widetilde|overline|overrightarrow|overleftarrow|overleftrightarrow)\s*\{/;
 
 function caretIsInsideLatexContainer(
   field: MathfieldElement,
@@ -4066,6 +4210,40 @@ function caretIsInsideLatexContainer(
 
 function caretIsInsideAccent(field: MathfieldElement) {
   return caretIsInsideLatexContainer(field, accentContainerPattern);
+}
+
+type CapturedAccentAutoExit = {
+  command: string;
+  expectedBoundary: number;
+};
+
+function moveCaretAfterCapturedAccent(
+  field: MathfieldElement,
+  captured: CapturedAccentAutoExit,
+) {
+  const normalizedCommand = captured.command.trim();
+  if (!normalizedCommand) return false;
+  const candidates: number[] = [];
+  for (let offset = 0; offset <= field.lastOffset; offset += 1) {
+    const latex = normalizeChineseLatex(
+      field.getElementInfo(offset)?.latex ?? "",
+    ).trim();
+    if (latex.startsWith(`${normalizedCommand}{`) && !latex.includes("\\placeholder{}")) {
+      candidates.push(offset);
+    }
+  }
+  const target = candidates.sort(
+    (left, right) =>
+      Math.abs(left - captured.expectedBoundary) -
+      Math.abs(right - captured.expectedBoundary),
+  )[0];
+  if (target === undefined || field.position === target) return false;
+  field.selection = {
+    ranges: [[target, target]],
+    direction: "none",
+  };
+  field.position = target;
+  return true;
 }
 
 function getCaretAutoExitSetting(
@@ -4720,7 +4898,9 @@ function FormulaField(props: FormulaFieldProps) {
     let backslashGuardTimer = 0;
     let pendingAutoExitSetting: InputBehaviorSettingKey | null = null;
     let pendingAutoExitScriptKey: string | null = null;
+    let pendingAccentAutoExit: CapturedAccentAutoExit | null = null;
     const capturePendingAutoExit = () => {
+      pendingAccentAutoExit = null;
       pendingAutoExitSetting = getCaretAutoExitSetting(field);
       const context = getScriptCaretContext(field);
       pendingAutoExitScriptKey =
@@ -4729,9 +4909,23 @@ function FormulaField(props: FormulaFieldProps) {
           ? context?.autoExitKey ?? null
           : null;
     };
+    const armSelectedAccentAutoExit = (
+      state: VisualTexPlaceholderBranchState,
+    ) => {
+      const command = state.restoreLatex?.match(/^\\[A-Za-z]+/)?.[0] ?? "";
+      const range = state.selection?.ranges.at(-1) ?? null;
+      if (!command || !range) return;
+      pendingAutoExitSetting = "autoExitAccent";
+      pendingAutoExitScriptKey = null;
+      pendingAccentAutoExit = {
+        command,
+        expectedBoundary: Math.max(range[0], range[1]) + 1,
+      };
+    };
     const clearPendingAutoExit = () => {
       pendingAutoExitSetting = null;
       pendingAutoExitScriptKey = null;
+      pendingAccentAutoExit = null;
     };
     let pendingWrapperInput: {
       command: string;
@@ -4743,6 +4937,17 @@ function FormulaField(props: FormulaFieldProps) {
       parentAutoExitSetting: InputBehaviorSettingKey | null;
       parentAutoExitScriptKey: string | null;
     } | null = null;
+    let pendingPackageMacroInput: {
+      macroName: string;
+      placeholderIndex: number;
+      sourcePrefix: string;
+      sourceSuffix: string;
+      content: string;
+      modelStart: number;
+    } | null = null;
+    const clearPendingPackageMacroInput = () => {
+      pendingPackageMacroInput = null;
+    };
     let replacingPendingWrapperInput = false;
     let restoringRawCommandAnchor = false;
     let wrapperPlaceholderFrame = 0;
@@ -5134,6 +5339,118 @@ function FormulaField(props: FormulaFieldProps) {
         afterLatex: after.latex,
       });
     };
+    const applyPendingPackageMacroInput = (
+      event: Event,
+      nextContent: string,
+    ) => {
+      const pending = pendingPackageMacroInput;
+      if (!pending) return false;
+      const replacement = nextContent || "\\placeholder{}";
+      const nextLatex =
+        pending.sourcePrefix + replacement + pending.sourceSuffix;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const before = captureFieldSnapshot(field);
+      field.setValue(nextLatex, {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      pending.content = nextContent;
+      if (nextContent) {
+        const position = Math.max(
+          0,
+          Math.min(
+            field.lastOffset,
+            pending.modelStart + Array.from(nextContent).length,
+          ),
+        );
+        field.position = position;
+        field.selection = {
+          ranges: [[position, position]],
+          direction: "none",
+        };
+      } else {
+        const placeholderRange = modelRangeForTextualPlaceholder(
+          field,
+          nextLatex,
+          pending.placeholderIndex,
+        );
+        if (placeholderRange) {
+          field.selection = {
+            ranges: [placeholderRange],
+            direction: "none",
+          };
+          field.position = placeholderRange[1];
+        } else {
+          selectFirstLatexPlaceholder(field, `\\${pending.macroName}`);
+        }
+      }
+      markVisualTexStructuralPlaceholders(field);
+      field.focus();
+      field.shadowRoot
+        ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+      const after = captureFieldSnapshot(field);
+      emitEdit(before, after, "insert", "keyboard");
+      propsRef.current.onInputActivity(field);
+      syncFrameSize();
+      return true;
+    };
+    const replaceSelectedPackageMacroPlaceholder = (
+      event: Event,
+      replacement: string,
+    ) => {
+      let packagePlaceholder = selectedPackageMacroPlaceholder(field);
+      if (!packagePlaceholder) {
+        const macroName = field.dataset.toolbarPackageMacroName ?? "";
+        const placeholderIndex = Number.parseInt(
+          field.dataset.toolbarPackageMacroPlaceholderIndex ?? "",
+          10,
+        );
+        const modelStart = Number.parseInt(
+          field.dataset.toolbarPackageMacroModelStart ?? "",
+          10,
+        );
+        const latex = normalizeChineseLatex(field.value);
+        if (
+          macroName &&
+          Number.isInteger(placeholderIndex) &&
+          placeholderIndex >= 0 &&
+          Number.isInteger(modelStart) &&
+          modelStart >= 0 &&
+          packageMacroForTextualPlaceholder(latex, placeholderIndex) === macroName
+        ) {
+          packagePlaceholder = {
+            latex,
+            placeholderIndex,
+            range: [modelStart, modelStart + 1],
+            macroName,
+          };
+        }
+      }
+      if (!packagePlaceholder || !replacement) return false;
+      const placeholderParts = splitTextualPlaceholder(
+        packagePlaceholder.latex,
+        packagePlaceholder.placeholderIndex,
+      );
+      if (!placeholderParts) return false;
+      pendingPackageMacroInput = {
+        macroName: packagePlaceholder.macroName,
+        placeholderIndex: packagePlaceholder.placeholderIndex,
+        sourcePrefix: placeholderParts.prefix,
+        sourceSuffix: placeholderParts.suffix,
+        content: "",
+        modelStart: packagePlaceholder.range[0],
+      };
+      clearToolbarPackageMacroHint(field);
+      if (applyPendingPackageMacroInput(event, replacement)) return true;
+      clearPendingPackageMacroInput();
+      return false;
+    };
   const handleBeforeInput = (event: InputEvent) => {
     traceVisualTexIme("field.beforeinput", field, event, {
       restoringRawCommandAnchor,
@@ -5143,7 +5460,24 @@ function FormulaField(props: FormulaFieldProps) {
     const selectedAccentState = captureSelectedAccentPlaceholderState(field);
     if (selectedAccentState) {
       activateVisualTexAccentPlaceholder(field, selectedAccentState);
+      if (
+        !event.isComposing &&
+        event.inputType === "insertText" &&
+        event.data &&
+        Array.from(event.data).length === 1
+      ) {
+        armSelectedAccentAutoExit(selectedAccentState);
+      }
     }
+      if (
+        !pendingWrapperInput &&
+        !event.isComposing &&
+        event.inputType === "insertText" &&
+        event.data &&
+        replaceSelectedPackageMacroPlaceholder(event, event.data)
+      ) {
+        return;
+      }
       if (
         event.inputType === "deleteContentBackward" &&
         !pendingWrapperInput &&
@@ -5371,6 +5705,7 @@ function FormulaField(props: FormulaFieldProps) {
       const autoExitSetting = pendingAutoExitSetting ?? directInputSetting;
       const autoExitScriptKey =
         pendingAutoExitScriptKey ?? directInputScriptKey;
+      const capturedAccentAutoExit = pendingAccentAutoExit;
       const shouldRetryDirectAutoExit =
         event instanceof InputEvent && isSingleDirectInput(event, field);
       let autoExitMoved = false;
@@ -5378,12 +5713,19 @@ function FormulaField(props: FormulaFieldProps) {
         autoExitSetting &&
         propsRef.current.inputBehavior[autoExitSetting]
       ) {
-        autoExitMoved = moveCaretThroughEnabledAutoExitContainers(
-          field,
-          propsRef.current.inputBehavior,
-          autoExitSetting,
-          autoExitScriptKey,
-        );
+        // A selected accent placeholder is committed by MathLive slightly after
+        // the input event on WKWebView. Moving the caret here can race that
+        // commit and leave the placeholder intact while placing the typed
+        // character outside the accent. Defer captured-accent exit to the next
+        // animation frame, after MathLive has finalized \vec{B}/\hat{x}/....
+        if (!(autoExitSetting === "autoExitAccent" && capturedAccentAutoExit)) {
+          autoExitMoved = moveCaretThroughEnabledAutoExitContainers(
+            field,
+            propsRef.current.inputBehavior,
+            autoExitSetting,
+            autoExitScriptKey,
+          );
+        }
       }
       clearPendingAutoExit();
     normalizeCompletedDifferentialDisplay(field);
@@ -5430,12 +5772,15 @@ function FormulaField(props: FormulaFieldProps) {
             deferredSetting &&
             propsRef.current.inputBehavior[deferredSetting]
           ) {
-            autoExitMoved = moveCaretThroughEnabledAutoExitContainers(
-              field,
-              propsRef.current.inputBehavior,
-              deferredSetting,
-              deferredScriptKey,
-            );
+            autoExitMoved =
+              deferredSetting === "autoExitAccent" && capturedAccentAutoExit
+                ? moveCaretAfterCapturedAccent(field, capturedAccentAutoExit)
+                : moveCaretThroughEnabledAutoExitContainers(
+                    field,
+                    propsRef.current.inputBehavior,
+                    deferredSetting,
+                    deferredScriptKey,
+                  );
           }
         }
         if (
@@ -5447,6 +5792,31 @@ function FormulaField(props: FormulaFieldProps) {
             "replace",
             "keyboard",
           );
+        }
+        if (
+          !autoExitMoved &&
+          autoExitSetting === "autoExitAccent" &&
+          capturedAccentAutoExit &&
+          propsRef.current.inputBehavior.autoExitAccent
+        ) {
+          window.requestAnimationFrame(() => {
+            if (!field.isConnected) return;
+            const retryBefore =
+              lastSnapshotRef.current ?? captureFieldSnapshot(field);
+            const retryMoved = moveCaretAfterCapturedAccent(
+              field,
+              capturedAccentAutoExit,
+            );
+            if (retryMoved) {
+              emitEdit(
+                retryBefore,
+                captureFieldSnapshot(field),
+                "replace",
+                "keyboard",
+              );
+              propsRef.current.onInputActivity(field);
+            }
+          });
         }
         propsRef.current.onInputActivity(field);
         decorateNativeSuggestionPreviews();
@@ -5998,6 +6368,71 @@ function FormulaField(props: FormulaFieldProps) {
     traceVisualTexIme("field.keydown", field, event, {
       imeGuardComposing: imeGuard.isComposing(),
     });
+    if (field.dataset.cancelPendingPackageMacroInput === "true") {
+      delete field.dataset.cancelPendingPackageMacroInput;
+      clearPendingPackageMacroInput();
+    }
+    if (
+      pendingPackageMacroInput &&
+      !event.isComposing &&
+      !imeGuard.isComposing() &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        clearPendingPackageMacroInput();
+        propsRef.current.onCommitPending();
+        return;
+      }
+      if (event.key === "Backspace") {
+        const nextContent = Array.from(pendingPackageMacroInput.content)
+          .slice(0, -1)
+          .join("");
+        if (applyPendingPackageMacroInput(event, nextContent)) return;
+      }
+      if (
+        event.key !== "\\" &&
+        Array.from(event.key).length === 1 &&
+        /^[\x20-\x7E]$/.test(event.key)
+      ) {
+        const nextContent = pendingPackageMacroInput.content + event.key;
+        if (applyPendingPackageMacroInput(event, nextContent)) return;
+      }
+      if (
+        event.key === "Escape" ||
+        event.key === "Tab" ||
+        event.key.startsWith("Arrow") ||
+        event.key === "Home" ||
+        event.key === "End"
+      ) {
+        clearPendingPackageMacroInput();
+      }
+    }
+    const directPackagePlaceholderCharacter =
+      !pendingWrapperInput &&
+      !pendingPackageMacroInput &&
+      !event.isComposing &&
+      !imeGuard.isComposing() &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      event.key !== "\\" &&
+      Array.from(event.key).length === 1 &&
+      /^[\x20-\x7E]$/.test(event.key)
+        ? event.key
+        : "";
+    if (
+      directPackagePlaceholderCharacter &&
+      replaceSelectedPackageMacroPlaceholder(
+        event,
+        directPackagePlaceholderCharacter,
+      )
+    ) {
+      return;
+    }
     const selectedAccentState = captureSelectedAccentPlaceholderState(field);
     if (selectedAccentState) {
       activateVisualTexAccentPlaceholder(field, selectedAccentState);
@@ -6145,6 +6580,12 @@ function FormulaField(props: FormulaFieldProps) {
         Array.from(event.key).length === 1;
       if (capturesDirectMathInput) {
         capturePendingAutoExit();
+        // WKWebView can temporarily report the caret outside an accent between
+        // keydown and beforeinput even though the user is replacing the accent
+        // placeholder. The selected placeholder is the authoritative signal:
+        // arm accent auto-exit explicitly so the first committed character
+        // leaves \vec/\hat/... when that setting is enabled.
+        if (selectedAccentState) armSelectedAccentAutoExit(selectedAccentState);
       } else if (
         event.key !== "Shift" &&
         event.key !== "Control" &&
@@ -6243,6 +6684,7 @@ function FormulaField(props: FormulaFieldProps) {
       field.classList.add(visualTexPointerSelectingClass);
       schedulePointerPlaceholderSnapshotStyle();
       clearPendingWrapperInput();
+      clearPendingPackageMacroInput();
       rawCommandAnchors.delete(field);
       propsRef.current.onCommitPending();
 
@@ -7819,13 +8261,54 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               focus: true,
               scrollIntoView: false,
             });
+            if (inserted) {
+              field.dataset.cancelPendingPackageMacroInput = "true";
+            }
             if (inserted && hasPlaceholder) {
               markVisualTexStructuralPlaceholders(field);
+              const packageMacroName = command.command.replace(/^\\/, "");
+              if (visualTexPackageMacroNameSet.has(packageMacroName)) {
+                const activeRange = field.selection.ranges.at(-1) ?? null;
+                const normalizedLatex = normalizeChineseLatex(field.value);
+                if (activeRange && activeRange[0] !== activeRange[1]) {
+                  const normalizedRange: [number, number] = [
+                    Math.min(activeRange[0], activeRange[1]),
+                    Math.max(activeRange[0], activeRange[1]),
+                  ];
+                  const modelPlaceholderIndex = latexPlaceholderRanges(field).findIndex(
+                    ([start, end]) =>
+                      start === normalizedRange[0] && end === normalizedRange[1],
+                  );
+                  const placeholderIndex =
+                    textualPlaceholderIndexForRange(
+                      normalizedLatex,
+                      normalizedRange,
+                    ) ??
+                    (modelPlaceholderIndex >= 0 ? modelPlaceholderIndex : null);
+                  if (placeholderIndex !== null) {
+                    field.dataset.toolbarPackageMacroName = packageMacroName;
+                    field.dataset.toolbarPackageMacroPlaceholderIndex = String(
+                      placeholderIndex,
+                    );
+                    field.dataset.toolbarPackageMacroModelStart = String(
+                      normalizedRange[0],
+                    );
+                  } else {
+                    clearToolbarPackageMacroHint(field);
+                  }
+                } else {
+                  clearToolbarPackageMacroHint(field);
+                }
+              } else {
+                clearToolbarPackageMacroHint(field);
+              }
               window.requestAnimationFrame(() => {
                 if (field.isConnected) {
                   markVisualTexStructuralPlaceholders(field);
                 }
               });
+            } else if (inserted) {
+              clearToolbarPackageMacroHint(field);
             }
             if (
               inserted &&

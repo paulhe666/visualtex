@@ -15,9 +15,13 @@ import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
 import wechatPayImageUrl from "../../../../docs/images/wechat-pay.jpg";
 import alipayImageUrl from "../../../../docs/images/alipay.jpg";
+import {
+  VISUALTEX_QQ_GROUP_NUMBER,
+  VISUALTEX_QQ_GROUP_QR_DATA_URL,
+} from "../../../windows/src/assets/visualtexQqGroup";
 
-const QQ_GROUP_NUMBER = "1045801770";
-const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg";
+const QQ_GROUP_NUMBER = VISUALTEX_QQ_GROUP_NUMBER;
+const QQ_GROUP_IMAGE_URL = VISUALTEX_QQ_GROUP_QR_DATA_URL;
 
 interface Props {
   open: boolean;

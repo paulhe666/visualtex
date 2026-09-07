@@ -44,7 +44,6 @@ const complexCommands: LatexCommand[] = [
   makeCommand("anglebrackets", "\\langle", "\\left\\langle\\placeholder{}\\right\\rangle", "\\langle x\\rangle", "尖括号", "Angle brackets", "structure", 77, ["angle brackets"], ["尖括号"]),
   makeCommand("floor", "\\lfloor", "\\left\\lfloor\\placeholder{}\\right\\rfloor", "\\lfloor x\\rfloor", "下取整", "Floor", "structure", 76, ["floor"], ["向下取整"]),
   makeCommand("ceil", "\\lceil", "\\left\\lceil\\placeholder{}\\right\\rceil", "\\lceil x\\rceil", "上取整", "Ceiling", "structure", 76, ["ceil", "ceiling"], ["向上取整"]),
-  makeCommand("overline", "\\overline", "\\overline{\\placeholder{}}", "\\overline{x}", "上划线", "Overline", "structure", 75, ["bar", "overline"], ["平均值", "上划线"]),
   makeCommand("hat", "\\hat", "\\hat{\\placeholder{}}", "\\hat{x}", "帽子重音", "Hat accent", "structure", 84, ["hat"], ["帽子", "重音"]),
   makeCommand("widehat", "\\widehat", "\\widehat{\\placeholder{}}", "\\widehat{ABC}", "宽帽子重音", "Wide hat", "structure", 78, ["wide hat"], ["宽帽子", "重音"]),
   makeCommand("tilde", "\\tilde", "\\tilde{\\placeholder{}}", "\\tilde{x}", "波浪重音", "Tilde accent", "structure", 83, ["tilde"], ["波浪号", "重音"]),
@@ -56,11 +55,6 @@ const complexCommands: LatexCommand[] = [
   makeCommand("acuteaccent", "\\acute", "\\acute{\\placeholder{}}", "\\acute{x}", "尖音重音", "Acute accent", "structure", 71, ["acute"], ["尖音", "重音"]),
   makeCommand("graveaccent", "\\grave", "\\grave{\\placeholder{}}", "\\grave{x}", "重音符", "Grave accent", "structure", 70, ["grave"], ["重音符"]),
   makeCommand("ringaccent", "\\mathring", "\\mathring{\\placeholder{}}", "\\mathring{x}", "圆圈重音", "Ring accent", "structure", 69, ["ring accent"], ["圆圈", "重音"]),
-  makeCommand("overrightarrow", "\\overrightarrow", "\\overrightarrow{\\placeholder{}}", "\\overrightarrow{AB}", "上方右箭头", "Over-arrow right", "structure", 77, ["over arrow"], ["向量箭头"]),
-  makeCommand("overleftarrow", "\\overleftarrow", "\\overleftarrow{\\placeholder{}}", "\\overleftarrow{AB}", "上方左箭头", "Over-arrow left", "structure", 74, ["over left arrow"], ["向量箭头"]),
-  makeCommand("underline", "\\underline", "\\underline{\\placeholder{}}", "\\underline{x}", "下划线", "Underline", "structure", 73, ["underline"], ["下划线"]),
-  makeCommand("overbrace", "\\overbrace", "\\overbrace{\\placeholder{}}^{\\placeholder{}}", "\\overbrace{a+\\cdots+a}^{n}", "上花括号", "Overbrace", "structure", 72, ["overbrace"], ["上括注"]),
-  makeCommand("underbrace", "\\underbrace", "\\underbrace{\\placeholder{}}_{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号", "Underbrace", "structure", 72, ["underbrace"], ["下括注"]),
   makeCommand("cases", "\\begin{cases}", "\\begin{cases}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{cases}", "f(x)=\\begin{cases}x&x>0\\\\0&x\\leq0\\end{cases}", "分段函数", "Cases", "structure", 85, ["cases", "piecewise"], ["分段函数"]),
   makeCommand("boxed", "\\boxed", "\\boxed{\\placeholder{}}", "\\boxed{x}", "方框公式", "Boxed", "structure", 70, ["boxed", "box"], ["方框"]),
   makeCommand("left-parenthesis-only", "\\left(", "\\left(\\placeholder{}\\right.", "\\left(x\\right.", "仅左圆括号", "Left parenthesis only", "structure", 68, ["left parenthesis"], ["单边括号", "左括号"]),
@@ -168,6 +162,10 @@ const complexCommands: LatexCommand[] = [
   makeCommand("outerproduct", "|\\psi\\rangle\\langle\\phi|", "|\\placeholder{}\\rangle\\langle\\placeholder{}|", "|\\psi\\rangle\\langle\\phi|", "外积", "Outer product", "physics", 91, ["outer product", "ket bra"], ["外积", "狄拉克"]),
   makeCommand("matrixelement", "\\langle\\phi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\phi|\\hat A|\\psi\\rangle", "矩阵元", "Matrix element", "physics", 90, ["matrix element"], ["矩阵元", "量子力学"]),
   makeCommand("expectation-operator", "\\langle\\psi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\psi|\\hat A|\\psi\\rangle", "算符期望值", "Operator expectation", "physics", 89, ["operator expectation"], ["期望值", "算符"]),
+
+  // 化学反应箭头：上下两个条件槽位均可直接编辑。
+  makeCommand("reaction-arrow-labeled", "\\xrightarrow", "\\xrightarrow[\\placeholder{}]{\\placeholder{}}", "A\\xrightarrow[k_-]{k_+}B", "反应箭头（上下标注）", "Reaction arrow with labels", "arrow", 94, ["reaction arrow", "xrightarrow"], ["化学", "反应箭头", "上下标注", "条件"]),
+  makeCommand("equilibrium-arrow-labeled", "\\xrightleftharpoons", "\\xrightleftharpoons[\\placeholder{}]{\\placeholder{}}", "A\\xrightleftharpoons[k_-]{k_+}B", "可逆反应箭头（上下标注）", "Equilibrium arrow with labels", "arrow", 93, ["equilibrium arrow", "xrightleftharpoons"], ["化学", "可逆反应", "平衡", "上下标注", "条件"]),
 
   makeCommand("time-ordering", "\\mathcal{T}", "\\mathcal{T}\\left\\{\\placeholder{}\\right\\}", "\\mathcal{T}\\{A(t)B(t')\\}", "时间序算符", "Time ordering", "physics", 75, ["time ordering"], ["时间序", "量子场论"]),
 ];
@@ -438,8 +436,8 @@ const simpleDefinitions: SimpleDefinition[] = [
   ["upharpoonright", "\\upharpoonright", "向上右鱼叉", "Up harpoon right", "arrow", 64],
   ["downharpoonleft", "\\downharpoonleft", "向下左鱼叉", "Down harpoon left", "arrow", 64],
   ["downharpoonright", "\\downharpoonright", "向下右鱼叉", "Down harpoon right", "arrow", 64],
-  ["mapsfrom", "↤", "映射自", "Maps from", "arrow", 72],
-  ["longmapsfrom", "⟻", "长映射自", "Long maps from", "arrow", 68],
+  ["mapsfrom", "\\mapsfrom", "映射自", "Maps from", "arrow", 72],
+  ["longmapsfrom", "\\longmapsfrom", "长映射自", "Long maps from", "arrow", 68],
   ["leadsto", "\\leadsto", "引导箭头", "Leads to", "arrow", 68],
 
   // 物理常用
@@ -452,7 +450,7 @@ const simpleDefinitions: SimpleDefinition[] = [
   ["laplacian", "\\nabla^{2}", "拉普拉斯算子", "Laplacian", "physics", 88],
   ["divergence", "\\nabla\\cdot", "散度", "Divergence", "physics", 86],
   ["curl", "\\nabla\\times", "旋度", "Curl", "physics", 86],
-  ["dagger", "\\dagger", "厄米共轭符号", "Dagger", "physics", 84],
+  ["dagger", "\\dagger", "厄米共轭符号", "Dagger", "physics", 84, ["dag"], ["厄米共轭", "dagger"]],
   ["ddagger", "\\ddagger", "双剑号", "Double dagger", "physics", 72],
   ["tensorproduct", "\\otimes", "张量积", "Tensor product", "physics", 88],
   ["directsum", "\\oplus", "直和", "Direct sum", "physics", 82],

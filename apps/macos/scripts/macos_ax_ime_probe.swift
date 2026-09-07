@@ -122,13 +122,24 @@ func snapshot(_ pid: pid_t) {
         if let size = node.size { item["size"] = size }
         return item
     }
+    let buttons = nodes.filter { $0.role == kAXButtonRole as String }.map { node -> [String: Any] in
+        var item: [String: Any] = [
+            "title": node.title,
+            "description": node.description,
+            "value": node.value,
+            "focused": node.focused,
+        ]
+        if let position = node.position { item["position"] = position }
+        if let size = node.size { item["size"] = size }
+        return item
+    }
     let named = nodes.filter {
         let text = [$0.title, $0.description, $0.value].joined(separator: " ")
         return text.contains("\\alpha") || text.contains("\\aleph") || text.contains("\\int") || text.contains("VisualTeX IME Diagnostic Trace")
     }.map { node in
         ["role": node.role, "title": node.title, "description": node.description, "value": node.value]
     }
-    json(["pid": Int(pid), "fields": fields, "areas": areas, "named": named])
+    json(["pid": Int(pid), "fields": fields, "areas": areas, "buttons": buttons, "named": named])
 }
 
 func formulaFields(_ pid: pid_t) -> [AxNode] {

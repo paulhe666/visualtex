@@ -953,13 +953,25 @@ async function main() {
             section.dataset.previewMode,
           ]),
         );
-        const staticCategories = ['arrow', 'physics', 'set'];
+        const observedCategories = ['arrow', 'physics', 'set'];
         const staticCategoryDetails = Object.fromEntries(
-          staticCategories.map((category) => {
+          observedCategories.map((category) => {
             const section = sections.find(
               (item) => item.dataset.toolbarCategorySection === category,
             );
             const previews = [...(section?.querySelectorAll('.math-preview') ?? [])];
+            const insideCount = previews.filter((preview) => {
+              const content = preview.querySelector('.math-preview-fit-content');
+              const hostBounds = preview.getBoundingClientRect();
+              const contentBounds = content?.getBoundingClientRect();
+              return Boolean(
+                contentBounds &&
+                  contentBounds.left >= hostBounds.left - 1 &&
+                  contentBounds.right <= hostBounds.right + 1 &&
+                  contentBounds.top >= hostBounds.top - 1 &&
+                  contentBounds.bottom <= hostBounds.bottom + 1,
+              );
+            }).length;
             return [category, {
               mode: section?.dataset.previewMode ?? '',
               previewCount: previews.length,
@@ -969,6 +981,7 @@ async function main() {
               measuredCount: previews.filter(
                 (preview) => preview.dataset.fitReady === 'true',
               ).length,
+              insideCount,
             }];
           }),
         );
@@ -998,7 +1011,7 @@ async function main() {
       assert.ok(initialState.previewCount >= initialState.buttonCount);
       assert.ok(initialState.staticPreviewCount > 0);
       assert.ok(initialState.measuredPreviewCount < initialState.previewCount);
-      for (const category of ['arrow', 'physics', 'set']) {
+      for (const category of ['set']) {
         const details = initialState.staticCategoryDetails[category];
         assert.equal(details.mode, 'static');
         assert.ok(details.previewCount > 0);
@@ -1023,14 +1036,74 @@ async function main() {
           ready:
             state.ready &&
             state.modes.relation === 'full' &&
-            state.staticCategoryDetails.arrow.mode === 'static' &&
-            state.staticCategoryDetails.physics.mode === 'static' &&
             state.staticCategoryDetails.set.mode === 'static',
         };
       })()`, "viewport upgrades nearby previews after scroll settles");
       assert.equal(shiftedState.placeholderCount, 0);
       assert.ok(shiftedState.measuredPreviewCount < shiftedState.previewCount);
-      console.log(JSON.stringify({ initialState, shiftedState }));
+
+      await evaluate(`(() => {
+        const strip = document.querySelector(
+          '.template-strip.is-continuous-categories',
+        );
+        const arrow = strip?.querySelector(
+          '[data-toolbar-category-section="arrow"]',
+        );
+        if (strip && arrow) strip.scrollLeft = arrow.offsetLeft;
+      })()`);
+      await sleep(240);
+      const arrowState = await waitForEvaluation(`(() => {
+        const state = eval(${JSON.stringify(inspectPreviewModes)});
+        const arrow = state.staticCategoryDetails.arrow;
+        return {
+          ...state,
+          ready:
+            state.ready &&
+            state.modes.arrow === 'full' &&
+            arrow.previewCount > 0 &&
+            arrow.staticCount === 0 &&
+            arrow.measuredCount === arrow.previewCount &&
+            arrow.insideCount === arrow.previewCount,
+        };
+      })()`, "arrow previews fit inside toolbar cells");
+      assert.equal(arrowState.placeholderCount, 0);
+      assert.equal(arrowState.staticCategoryDetails.arrow.mode, 'full');
+      assert.equal(
+        arrowState.staticCategoryDetails.arrow.insideCount,
+        arrowState.staticCategoryDetails.arrow.previewCount,
+      );
+
+      await evaluate(`(() => {
+        const strip = document.querySelector(
+          '.template-strip.is-continuous-categories',
+        );
+        const physics = strip?.querySelector(
+          '[data-toolbar-category-section="physics"]',
+        );
+        if (strip && physics) strip.scrollLeft = physics.offsetLeft;
+      })()`);
+      await sleep(240);
+      const physicsState = await waitForEvaluation(`(() => {
+        const state = eval(${JSON.stringify(inspectPreviewModes)});
+        const physics = state.staticCategoryDetails.physics;
+        return {
+          ...state,
+          ready:
+            state.ready &&
+            state.modes.physics === 'full' &&
+            physics.previewCount > 0 &&
+            physics.staticCount === 0 &&
+            physics.measuredCount === physics.previewCount &&
+            physics.insideCount === physics.previewCount,
+        };
+      })()`, "physics previews fit inside toolbar cells");
+      assert.equal(physicsState.placeholderCount, 0);
+      assert.equal(physicsState.staticCategoryDetails.physics.mode, 'full');
+      assert.equal(
+        physicsState.staticCategoryDetails.physics.insideCount,
+        physicsState.staticCategoryDetails.physics.previewCount,
+      );
+      console.log(JSON.stringify({ initialState, shiftedState, arrowState, physicsState }));
     }
 
     if (mode === "continuous-performance-legacy") {

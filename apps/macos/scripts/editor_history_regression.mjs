@@ -180,6 +180,7 @@ async function main() {
     }) => {
       await evaluate(`(() => {
         localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+        localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
         let persisted;
         try {
           persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "null");
