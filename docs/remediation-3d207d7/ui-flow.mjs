@@ -14,9 +14,37 @@ if(process.env.VISUALTEX_PERF_WORD_PID&&(!pinnedDocument||!process.env.VISUALTEX
 function exec(script,params={},quiet=false){if(script==='word-ui.ps1'&&pinnedDocument)params={ExpectedDocument:pinnedDocument,...params};if(targetWordPid && ['word-ui.ps1','inspect-word.ps1'].includes(script))params={WordProcessId:targetWordPid,...params};const args=['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',join(dir,script)];for(const[k,v]of Object.entries(params)){if(v===false||v===undefined)continue;args.push('-'+k);if(v!==true)args.push(String(v));}const t=Date.now();const r=spawnSync(ps,args,{cwd:root,encoding:'utf8',timeout:40000,maxBuffer:4*1024*1024});const record={time:new Date().toISOString(),script,params,elapsed:Date.now()-t,status:r.status,stdout:r.stdout,stderr:r.stderr,error:r.error?.message};appendFileSync(join(output,'ui-actions.ndjson'),JSON.stringify(record)+'\n');if(!quiet)process.stdout.write((r.stdout??'')+(r.stderr??''));if(r.error||r.status!==0)throw new Error(r.error?.message??r.stderr??`PowerShell exit ${r.status}`);return r.stdout;}
 function ui(Action,params={},quiet=false){return exec('word-ui.ps1',{WindowHandle:-1,Action,...params},quiet)}
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
+async function waitForCreateEditor(format, display) {
+ const deadline=Date.now()+15000;
+ while(Date.now()<deadline) {
+  assertNoWordErrorDialog('create-editor-ready');
+  const windows=JSON.parse(ui('windows',{},true));
+  const editors=windows.filter(w=>w.process==='visualtex'&&w.title.startsWith('Office'));
+  if(editors.length>1)throw new Error('Multiple Office editors are visible; refusing ambiguous UI input.');
+  if(editors.length===1){
+   ui('probe',{Target:'editor',Label:'create-editor-ready'},true);
+   const controls=JSON.parse(readFileSync(join(output,'create-editor-ready-uia.json'),'utf8'));
+   const id=controls.map(c=>c.value??'').join('\n').match(/sessionId=([0-9a-f-]+)/i)?.[1];
+   if(id){
+    const path=join(process.env.APPDATA,'com.visualtex.studio','office','sessions',id,'session.json');
+    const session=JSON.parse(readFileSync(path,'utf8').replace(/^\uFEFF/,''));
+    const documentName=(session.sourceDocumentId??'').split(/[\\/]/).pop();
+    if(session.mode!=='create'||session.displayMode!==display||(pinnedDocument&&documentName!==pinnedDocument))
+     throw new Error(`Unexpected real editor session: ${id} ${session.mode} ${session.displayMode} ${documentName}`);
+    if(format==='omml'&&session.objectMode!=='wordOmml')throw new Error('The real editor is not the requested OMML session.');
+    if(controls.some(c=>c.type==='ControlType.Button'&&c.name==='完成并插入'&&c.enabled))return;
+   }
+  }
+  await pause(400);
+ }
+ throw new Error('The exact real create editor was not ready in 15 seconds; do not click a second Ribbon action.');
+}
 async function readReadySourceEditor(label) {
  const deadline=Date.now()+15000;
  while(Date.now()<deadline) {
+  const visibleEditors=JSON.parse(ui('windows',{},true)).filter(w=>w.process==='visualtex'&&w.title.startsWith('Office'));
+  if(visibleEditors.length>1)throw new Error('Multiple real Office editors are visible; no input was sent.');
+  if(!visibleEditors.length){assertNoWordErrorDialog(label);await pause(400);continue;}
   ui('probe',{Target:'editor',Label:label},true);
   const controls=JSON.parse(readFileSync(join(output,label+'-uia.json'),'utf8'));
   const edits=controls.filter(c=>c.type==='ControlType.Edit');
@@ -116,8 +144,9 @@ if(action==='insert'||action==='resume-insert'){
  const [format='native',display='block',side='right',preset='勾股定理']=argv;
  if(action==='insert'){
   ui('ribbon',{},true);
-  ui('click',{Name:(format==='omml'?'OMML':'OLE')+(display==='block'?' 行间公式':' 行内公式')});await pause(1600);
+  ui('click',{Name:(format==='omml'?'OMML':'OLE')+(display==='block'?' 行间公式':' 行内公式')});
  }
+ await waitForCreateEditor(format,display);
  if(format!=='omml') ui('combo',{Target:'editor',Name:'公式对象格式',Choice:format==='native'?'VisualTeX OLE':'MathType OLE'});
  if(display==='block')ui('check',{Target:'editor',Name:'编号',Checked:true});
  if(format==='mathType'&&display==='block')ui('combo',{Target:'editor',Name:'MathType 公式编号位置',Choice:side==='left'?'左侧':'右侧'});

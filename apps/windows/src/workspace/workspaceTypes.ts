@@ -14,8 +14,9 @@ export type WorkspaceMode =
 
 export type WorkspaceExportFormat = "markdown" | "svg" | "png";
 
-export interface WorkspaceOcrModelOption {
+export interface WorkspaceOcrRecognizerOption {
   id: string;
+  group?: "local" | "api";
   labelZh: string;
   labelEn: string;
 }
@@ -55,10 +56,10 @@ export interface EditorWorkspaceProps {
     source: ReplaceDocumentEntry["source"],
   ) => boolean;
 
-  ocrModel?: string;
-  ocrModels?: readonly WorkspaceOcrModelOption[];
+  ocrRecognizer?: string;
+  ocrRecognizers?: readonly WorkspaceOcrRecognizerOption[];
   ocrBusy?: boolean;
-  onOcrModelChange?: (model: string) => void;
+  onOcrRecognizerChange?: (recognizer: string) => void;
   onQuickOcr?: () => void;
   quickOcrCaptureMode?: QuickOcrCaptureMode;
   onQuickOcrCaptureModeChange?: (mode: QuickOcrCaptureMode) => void;

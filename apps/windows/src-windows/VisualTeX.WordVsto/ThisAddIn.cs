@@ -293,6 +293,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
+    private WordCopyPasteHook? _copyPasteHook;
+    private readonly object _copyPasteGate = new();
+    private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
+    private uint _formulaCopyClipboardSequence;
+    private int _copyPasteRepairGeneration;
+    private int _copyPasteSelectionRepairPending;
+    private long _lastSuccessfulPasteRepairStartedAt;
+    private long _lastSuccessfulPasteRepairCompletedAt;
     private static readonly object BulkAcceptanceLogGate = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _activeSessionOperationGate = new();
@@ -411,6 +419,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             try { _doubleClickHook?.Dispose(); } catch { }
             _doubleClickHook = null;
             doubleClickError = error.Message;
+        }
+        try
+        {
+            _copyPasteHook = new WordCopyPasteHook(OnWordClipboardGesture);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _copyPasteHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
+            _copyPasteHook.Start();
+        }
+        catch (Exception error)
+        {
+            try { _copyPasteHook?.Dispose(); } catch { }
+            _copyPasteHook = null;
+            WordDoubleClickHook.TraceMessage(
+                $"copy-paste-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
         SetStatus(!officeMathFontReady
             ? $"VisualTeX 已就绪，但 Word 数学字体不可用：{officeMathFontError}"
@@ -909,13 +937,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
-    private void BeginFormulaFormatMutation()
+    private void BeginFormulaFormatMutation(bool copyPasteRepair = false)
     {
+        if (!copyPasteRepair)
+        {
+            // Explicit Ribbon inserts/edits are not clipboard pastes. Cancel any
+            // queued copy probe before the new objects become visible.
+            Interlocked.Increment(ref _copyPasteRepairGeneration);
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+        }
         Interlocked.Increment(ref _typingCaretNormalizationGeneration);
         Interlocked.Increment(ref _formulaFormatMutationDepth);
     }
 
-    private void EndFormulaFormatMutation()
+    private void EndFormulaFormatMutation(bool copyPasteRepair = false)
     {
         var depth = Interlocked.Decrement(ref _formulaFormatMutationDepth);
         if (depth < 0)
@@ -932,6 +967,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
                 || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
                 return;
+            if (!copyPasteRepair)
+            {
+                WordFormulaService.WordFormulaCopySnapshot? copy;
+                lock (_copyPasteGate) { copy = _formulaCopySnapshot; }
+                if (copy is not null) _formulaService?.RefreshCopySnapshotAfterExplicitMutation(copy);
+            }
             _lastFormulaRibbonOwnerStart = int.MinValue;
             _lastFormulaRibbonOwnerEnd = int.MinValue;
             Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
@@ -939,9 +980,251 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
+    private void OnWordClipboardGesture(WordClipboardGestureEvent gesture)
+    {
+        if (gesture.Gesture != WordClipboardGesture.Copy) return;
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        if (dispatcher is null || service is null) return;
+
+        dispatcher.Post(() =>
+        {
+            try
+            {
+                var snapshot = service.CaptureSelectedFormulaForCopy();
+                if (snapshot is null && IsClipboardChangeFromRecentPasteRepair(gesture.ObservedTimestamp))
+                {
+                    WordFormulaService.WordFormulaCopySnapshot? existingSnapshot;
+                    lock (_copyPasteGate)
+                    {
+                        existingSnapshot = _formulaCopySnapshot;
+                        if (existingSnapshot is not null)
+                            _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+                    }
+                    if (existingSnapshot is not null)
+                    {
+                        WordDoubleClickHook.TraceMessage(
+                            $"copy-snapshot-sequence-continued mode={existingSnapshot.ObjectMode} "
+                            + $"clipboardSequence={WordCopyPasteHook.CurrentClipboardSequence}");
+                        return;
+                    }
+                }
+
+                lock (_copyPasteGate)
+                {
+                    _formulaCopySnapshot = snapshot;
+                    _formulaCopyClipboardSequence = snapshot is null
+                        ? 0
+                        : gesture.ClipboardSequence;
+                }
+                if (snapshot is not null)
+                {
+                    Interlocked.Exchange(ref _lastSuccessfulPasteRepairStartedAt, 0);
+                    Interlocked.Exchange(ref _lastSuccessfulPasteRepairCompletedAt, 0);
+                }
+                Interlocked.Increment(ref _copyPasteRepairGeneration);
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    snapshot is null
+                        ? $"copy-snapshot-cleared clipboardSequence={gesture.ClipboardSequence}"
+                        : $"copy-snapshot-captured mode={snapshot.ObjectMode} "
+                            + $"source={snapshot.SourceStart}:{snapshot.SourceEnd} "
+                            + $"numbered={snapshot.Metadata.Numbered} "
+                            + $"inline={snapshot.KnownInlineShapeCount} omml={snapshot.KnownOmmlCount} "
+                            + $"clipboardSequence={gesture.ClipboardSequence}");
+            }
+            catch (Exception error)
+            {
+                lock (_copyPasteGate)
+                {
+                    _formulaCopySnapshot = null;
+                    _formulaCopyClipboardSequence = 0;
+                }
+                Interlocked.Increment(ref _copyPasteRepairGeneration);
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    $"copy-snapshot-failed {error.GetType().Name}: {error.Message}");
+            }
+        });
+    }
+
+    private bool IsClipboardChangeFromRecentPasteRepair(long observedTimestamp)
+    {
+        var startedAt = Interlocked.Read(ref _lastSuccessfulPasteRepairStartedAt);
+        var completedAt = Interlocked.Read(ref _lastSuccessfulPasteRepairCompletedAt);
+        if (startedAt <= 0 || completedAt < startedAt) return false;
+        var graceTicks = (long)(Stopwatch.Frequency * 0.5d);
+        return observedTimestamp >= startedAt
+            && observedTimestamp <= completedAt + graceTicks;
+    }
+
+    private void TrySchedulePastedFormulaRepairFromSelectionChange()
+    {
+        WordFormulaService.WordFormulaCopySnapshot? snapshot;
+        uint clipboardSequence;
+        lock (_copyPasteGate)
+        {
+            snapshot = _formulaCopySnapshot;
+            clipboardSequence = _formulaCopyClipboardSequence;
+        }
+        if (snapshot is null || clipboardSequence == 0) return;
+
+        var currentClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+        if (currentClipboardSequence != clipboardSequence)
+        {
+            lock (_copyPasteGate)
+            {
+                if (_formulaCopyClipboardSequence == clipboardSequence)
+                {
+                    _formulaCopySnapshot = null;
+                    _formulaCopyClipboardSequence = 0;
+                }
+            }
+            Interlocked.Increment(ref _copyPasteRepairGeneration);
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            return;
+        }
+        if (Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 1) != 0)
+            return;
+
+        var generation = Interlocked.Increment(ref _copyPasteRepairGeneration);
+        SchedulePastedFormulaRepair(
+            snapshot,
+            clipboardSequence,
+            generation,
+            attempt: 0);
+    }
+
+    private void SchedulePastedFormulaRepair(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        uint clipboardSequence,
+        int generation,
+        int attempt)
+    {
+        var dispatcher = _dispatcher;
+        if (dispatcher is null) return;
+        dispatcher.Post(() =>
+        {
+            if (generation != Volatile.Read(ref _copyPasteRepairGeneration))
+            {
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                return;
+            }
+            lock (_copyPasteGate)
+            {
+                if (_formulaCopySnapshot is null
+                    || _formulaCopyClipboardSequence != clipboardSequence)
+                {
+                    Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                    return;
+                }
+            }
+            var service = _formulaService;
+            if (service is null || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+            {
+                RetryPastedFormulaRepair(snapshot, clipboardSequence, generation, attempt);
+                return;
+            }
+
+            WordFormulaService.PastedFormulaRepairResult result;
+            var repairStartedAt = Stopwatch.GetTimestamp();
+            BeginFormulaFormatMutation(copyPasteRepair: true);
+            try
+            {
+                result = service.RepairPastedFormula(snapshot);
+            }
+            catch (Exception error)
+            {
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    $"paste-repair-failed mode={snapshot.ObjectMode} "
+                    + $"attempt={attempt} error={error.GetType().Name}:{error.Message}");
+                return;
+            }
+            finally { EndFormulaFormatMutation(copyPasteRepair: true); }
+
+            if (result == WordFormulaService.PastedFormulaRepairResult.NotReady)
+            {
+                RetryPastedFormulaRepair(snapshot, clipboardSequence, generation, attempt);
+                return;
+            }
+            if (result == WordFormulaService.PastedFormulaRepairResult.Repaired)
+            {
+                var repairCompletedAt = Stopwatch.GetTimestamp();
+                Interlocked.Exchange(ref _lastSuccessfulPasteRepairStartedAt, repairStartedAt);
+                Interlocked.Exchange(ref _lastSuccessfulPasteRepairCompletedAt, repairCompletedAt);
+                lock (_copyPasteGate)
+                {
+                    if (ReferenceEquals(_formulaCopySnapshot, snapshot))
+                        _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+                }
+            }
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            WordDoubleClickHook.TraceMessage(
+                $"paste-repair-complete mode={snapshot.ObjectMode} result={result} attempt={attempt}");
+        });
+    }
+
+    private void RetryPastedFormulaRepair(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        uint clipboardSequence,
+        int generation,
+        int attempt)
+    {
+        if (attempt >= 6)
+        {
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            WordDoubleClickHook.TraceMessage(
+                $"paste-repair-timeout mode={snapshot.ObjectMode} attempts={attempt + 1}");
+            return;
+        }
+        var lifetime = _lifetime;
+        if (lifetime is null || lifetime.IsCancellationRequested) return;
+        var token = lifetime.Token;
+        _ = Task.Delay(90, token).ContinueWith(
+            task =>
+            {
+                if (task.IsCanceled || token.IsCancellationRequested) return;
+                SchedulePastedFormulaRepair(
+                    snapshot,
+                    clipboardSequence,
+                    generation,
+                    attempt + 1);
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
     private void OnWindowActivate(Document document, Window window)
     {
         try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
+        uint copySequence = 0;
+        lock (_copyPasteGate)
+        {
+            copySnapshot = _formulaCopySnapshot;
+            copySequence = _formulaCopyClipboardSequence;
+        }
+        if (copySnapshot is not null && copySequence != 0)
+        {
+            if (WordCopyPasteHook.CurrentClipboardSequence == copySequence)
+            {
+                try { _formulaService?.TrackCopySnapshotDocument(copySnapshot); } catch { }
+            }
+            else
+            {
+                lock (_copyPasteGate)
+                {
+                    if (_formulaCopyClipboardSequence == copySequence)
+                    {
+                        _formulaCopySnapshot = null;
+                        _formulaCopyClipboardSequence = 0;
+                    }
+                }
+            }
+        }
         ClearNativeOleTarget();
         _cachedEquationNumberFormatId = null;
         Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
@@ -1043,6 +1326,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ClearNativeOleTarget();
             return;
         }
+        TrySchedulePastedFormulaRepairFromSelectionChange();
 
         Range? range = null;
         Window? window = null;
@@ -3738,6 +4022,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         try { _doubleClickHook?.Dispose(); } catch { }
         _doubleClickHook = null;
+        try { _copyPasteHook?.Dispose(); } catch { }
+        _copyPasteHook = null;
+        lock (_copyPasteGate)
+        {
+            _formulaCopySnapshot = null;
+            _formulaCopyClipboardSequence = 0;
+        }
+        Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
         if (_mathTypePreviewSessionAcquired)
         {

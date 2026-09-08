@@ -84,7 +84,7 @@ internal sealed partial class WordFormulaService
         internal bool Contains(int position) => position >= Start && position < End;
     }
 
-    private sealed class MathTypeDisplayParagraphLayout
+    internal sealed class MathTypeDisplayParagraphLayout
     {
         internal WdParagraphAlignment Alignment { get; set; }
         internal float LeftIndent { get; set; }

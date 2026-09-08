@@ -508,6 +508,26 @@ impl OcrState {
         app: AppHandle,
         request: OcrImageRequest,
     ) -> Result<OcrRecognitionResult, String> {
+        self.recognize_local_with_fallback(app, request, false).await
+    }
+
+    pub(crate) async fn recognize_with_local_fallback(
+        &self,
+        app: AppHandle,
+        request: OcrImageRequest,
+    ) -> Result<OcrRecognitionResult, String> {
+        if self.providers.active_provider(&app)? != ocr_provider::LOCAL_PROVIDER {
+            return self.recognize(app, request).await;
+        }
+        self.recognize_local_with_fallback(app, request, true).await
+    }
+
+    async fn recognize_local_with_fallback(
+        &self,
+        app: AppHandle,
+        mut request: OcrImageRequest,
+        allow_model_fallback: bool,
+    ) -> Result<OcrRecognitionResult, String> {
         let mutation = self.begin_runtime_mutation("recognizing a formula")?;
         if !ALLOWED_MODELS.contains(&request.model.as_str()) {
             return Err(format!("Unsupported PP-FormulaNet model: {}", request.model));
@@ -517,23 +537,37 @@ impl OcrState {
             return Err(format!("OCR runtime is not installed: {}", status.message));
         }
         if !status.installed_models.iter().any(|model| model == &request.model) {
-            return Err(format!(
-                "OCR model {} is not installed. Import a verified .vtxocrmodel package or explicitly download it first.",
-                request.model
-            ));
-        }
-        if ALLOWED_MODELS.contains(&request.model.as_str()) {
-            {
-                let mut desired = self
-                    .desired_warmup_model
-                    .lock()
-                    .map_err(|_| "OCR warmup selection is unavailable".to_string())?;
-                *desired = Some(request.model.clone());
+            if allow_model_fallback {
+                request.model = if status
+                    .installed_models
+                    .iter()
+                    .any(|model| model == &status.default_model)
+                {
+                    status.default_model.clone()
+                } else {
+                    status
+                        .installed_models
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| "No OCR model is installed".to_string())?
+                };
+            } else {
+                return Err(format!(
+                    "OCR model {} is not installed. Import a verified .vtxocrmodel package or explicitly download it first.",
+                    request.model
+                ));
             }
-            if let Ok(paths) = runtime_paths(&app) {
-                if let Err(error) = write_preferred_ocr_model(&paths, &request.model) {
-                    eprintln!("Unable to persist the active OCR model: {error}");
-                }
+        }
+        {
+            let mut desired = self
+                .desired_warmup_model
+                .lock()
+                .map_err(|_| "OCR warmup selection is unavailable".to_string())?;
+            *desired = Some(request.model.clone());
+        }
+        if let Ok(paths) = runtime_paths(&app) {
+            if let Err(error) = write_preferred_ocr_model(&paths, &request.model) {
+                eprintln!("Unable to persist the active OCR model: {error}");
             }
         }
         let worker = self.worker.clone();

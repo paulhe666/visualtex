@@ -154,10 +154,10 @@ export function EditorWorkspace({
   onCopyPng,
   onCopy,
   onReplaceDocument,
-  ocrModel,
-  ocrModels = [],
+  ocrRecognizer,
+  ocrRecognizers = [],
   ocrBusy = false,
-  onOcrModelChange,
+  onOcrRecognizerChange,
   onQuickOcr,
   quickOcrCaptureMode = "windows",
   onQuickOcrCaptureModeChange,
@@ -254,6 +254,12 @@ export function EditorWorkspace({
   };
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const isEn = language === "en";
+  const localOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group !== "api",
+  );
+  const apiOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group === "api",
+  );
   const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
   const sourceLatex = formatLatexSourceForEditor(
@@ -1314,29 +1320,45 @@ export function EditorWorkspace({
                   )}
                 </div>
               )}
-              {!keypadMode && showOcrActions && ocrModels.length > 0 && ocrModel && (
+              {!keypadMode &&
+                showOcrActions &&
+                ocrRecognizers.length > 0 &&
+                ocrRecognizer && (
                 <label
                   className="canvas-ocr-model"
                   title={
                     isEn
-                      ? "Model used when an image is pasted into a formula field"
-                      : "在公式输入框中粘贴图片时使用的 OCR 模型"
+                      ? "OCR recognizer used for pasted images and quick OCR"
+                      : "选择粘贴图片和快捷 OCR 使用的本地模型或 API"
                   }
                 >
                   <ScanLine size={14} />
                   <select
-                    value={ocrModel}
+                    value={ocrRecognizer}
                     disabled={ocrBusy}
                     onChange={(event) =>
-                      onOcrModelChange?.(event.target.value)
+                      onOcrRecognizerChange?.(event.target.value)
                     }
-                    aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
+                    aria-label={isEn ? "OCR recognizer" : "OCR 识别器"}
                   >
-                    {ocrModels.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {isEn ? item.labelEn : item.labelZh}
-                      </option>
-                    ))}
+                    {localOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "Local models" : "本地模型"}>
+                        {localOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {apiOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "OCR APIs" : "OCR API"}>
+                        {apiOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </label>
               )}
