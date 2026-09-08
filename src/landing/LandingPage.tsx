@@ -10,7 +10,7 @@ import {
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 import { SupportCodes } from "./SupportCodes";
 
-const VERSION = "1.2.4";
+const VERSION = "1.2.6";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
 const OCR_MODEL_BASE = "https://download.visualtex.pauljianliao.com/ppformula-model";
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
