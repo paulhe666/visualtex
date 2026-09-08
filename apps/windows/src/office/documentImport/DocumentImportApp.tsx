@@ -20,6 +20,7 @@ import {
 } from "../../themeSync";
 import {
   closeOfficeSessionWindow,
+  getOfficePreferences,
   getOfficeSession,
   getOfficeTheme,
   saveOfficeSessionKeepalive,
@@ -42,7 +43,10 @@ import "./documentImport.css";
 
 function sessionIdFromLocation() {
   const match = window.location.pathname.match(/\/dialog\/([0-9a-f-]{36})/i);
-  if (!match) throw new Error("批量导入窗口缺少有效的 Session id。");
+  if (!match) {
+    const english = !navigator.language.toLowerCase().startsWith("zh");
+    throw new Error(english ? "The bulk-import window is missing a valid session id." : "批量导入窗口缺少有效的 Session id。");
+  }
   return match[1].toLowerCase();
 }
 
@@ -52,7 +56,7 @@ function formatFromSession(session: OfficeFormulaSession): DocumentSourceFormat 
   return "auto";
 }
 
-function FormulaPreview({ latex, display }: { latex: string; display: boolean }) {
+function FormulaPreview({ latex, display, isEn }: { latex: string; display: boolean; isEn: boolean }) {
   const rendered = useMemo(() => {
     try {
       return {
@@ -67,10 +71,10 @@ function FormulaPreview({ latex, display }: { latex: string; display: boolean })
     } catch (error) {
       return {
         svg: "",
-        error: readErrorMessage(error, "公式预览失败。"),
+        error: readErrorMessage(error, isEn ? "Formula preview failed." : "公式预览失败。"),
       };
     }
-  }, [display, latex]);
+  }, [display, isEn, latex]);
 
   if (rendered.error) {
     return (
@@ -88,12 +92,12 @@ function FormulaPreview({ latex, display }: { latex: string; display: boolean })
   );
 }
 
-function InlineRuns({ runs }: { runs: DocumentImportRun[] }) {
+function InlineRuns({ runs, isEn }: { runs: DocumentImportRun[]; isEn: boolean }) {
   return (
     <>
       {runs.map((run, index) => {
         if (run.kind === "formula") {
-          return <FormulaPreview key={index} latex={run.latex} display={run.display} />;
+          return <FormulaPreview key={index} latex={run.latex} display={run.display} isEn={isEn} />;
         }
         const className = [
           run.bold ? "bold" : "",
@@ -114,12 +118,12 @@ function InlineRuns({ runs }: { runs: DocumentImportRun[] }) {
   );
 }
 
-function PreviewBlock({ block }: { block: DocumentImportBlock }) {
+function PreviewBlock({ block, isEn }: { block: DocumentImportBlock; isEn: boolean }) {
   if (block.kind === "display") {
     const formula = block.runs.find((run) => run.kind === "formula");
     return formula?.kind === "formula" ? (
       <div className="doc-import-display-row">
-        <FormulaPreview latex={formula.latex} display />
+        <FormulaPreview latex={formula.latex} display isEn={isEn} />
       </div>
     ) : null;
   }
@@ -128,7 +132,7 @@ function PreviewBlock({ block }: { block: DocumentImportBlock }) {
     return <pre className="doc-import-code-block">{text}</pre>;
   }
   if (block.kind === "heading") {
-    const content = <InlineRuns runs={block.runs} />;
+    const content = <InlineRuns runs={block.runs} isEn={isEn} />;
     switch (Math.min(6, Math.max(1, block.level))) {
       case 1:
         return <h1 className="doc-import-heading">{content}</h1>;
@@ -147,7 +151,7 @@ function PreviewBlock({ block }: { block: DocumentImportBlock }) {
   if (block.kind === "quote") {
     return (
       <blockquote className="doc-import-quote">
-        <InlineRuns runs={block.runs} />
+        <InlineRuns runs={block.runs} isEn={isEn} />
       </blockquote>
     );
   }
@@ -160,43 +164,43 @@ function PreviewBlock({ block }: { block: DocumentImportBlock }) {
         <span className="doc-import-list-marker">
           {block.kind === "bullet" ? "•" : `${block.level + 1}.`}
         </span>
-        <span><InlineRuns runs={block.runs} /></span>
+        <span><InlineRuns runs={block.runs} isEn={isEn} /></span>
       </div>
     );
   }
   return (
     <p className="doc-import-paragraph">
-      <InlineRuns runs={block.runs} />
+      <InlineRuns runs={block.runs} isEn={isEn} />
     </p>
   );
 }
 
-function PreviewPane({ parsed }: { parsed: ParsedDocumentImport }) {
+function PreviewPane({ parsed, isEn }: { parsed: ParsedDocumentImport; isEn: boolean }) {
   return (
     <div className="doc-import-preview-stage">
       <div className="doc-import-preview-caption" aria-hidden="true">
         <span>
           <Eye size={14} />
-          Word 页面预览
+          {isEn ? "Word page preview" : "Word 页面预览"}
         </span>
-        <span>A4 · 实时结构</span>
+        <span>{isEn ? "A4 · Live structure" : "A4 · 实时结构"}</span>
       </div>
       <div className="doc-import-preview-document" role="document">
         <div className="doc-import-paper-content">
           {parsed.blocks.length > 0 ? (
             parsed.blocks.map((block) => (
-              <PreviewBlock key={block.id} block={block} />
+              <PreviewBlock key={block.id} block={block} isEn={isEn} />
             ))
           ) : (
             <div className="doc-import-paper-empty">
               <FileText size={28} />
-              <strong>等待文档内容</strong>
-              <span>在左侧输入或粘贴 LaTeX、Markdown 后，这里会实时生成 Word 结构预览。</span>
+              <strong>{isEn ? "Waiting for document content" : "等待文档内容"}</strong>
+              <span>{isEn ? "Enter or paste LaTeX or Markdown on the left to generate a live Word structure preview here." : "在左侧输入或粘贴 LaTeX、Markdown 后，这里会实时生成 Word 结构预览。"}</span>
             </div>
           )}
         </div>
         <div className="doc-import-page-footer" aria-hidden="true">
-          <span>VisualTeX 文档预览</span>
+          <span>{isEn ? "VisualTeX document preview" : "VisualTeX 文档预览"}</span>
           <span>1</span>
         </div>
       </div>
@@ -228,6 +232,8 @@ export function DocumentImportApp() {
   const [fileBusy, setFileBusy] = useState(false);
   const [importedFile, setImportedFile] = useState<ImportedFileState | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [language, setLanguage] = useState<"cn" | "en">("cn");
+  const isEn = language === "en";
 
   useEffect(() => {
     let disposed = false;
@@ -258,8 +264,17 @@ export function DocumentImportApp() {
 
   useEffect(() => {
     let disposed = false;
-    void getOfficeSession(sessionId)
-      .then((next) => {
+    void (async () => {
+      let resolvedLanguage: "cn" | "en" = "cn";
+      try {
+        const preferences = await getOfficePreferences();
+        resolvedLanguage = preferences.editorPreferences?.settings?.language === "en" ? "en" : "cn";
+        if (!disposed) setLanguage(resolvedLanguage);
+      } catch {
+        // Keep the default language if preferences are temporarily unavailable.
+      }
+      try {
+        const next = await getOfficeSession(sessionId);
         if (disposed) return;
         setSession(next);
         setSource(next.lines[0]?.latex ?? "");
@@ -273,12 +288,19 @@ export function DocumentImportApp() {
         );
         setNumberDisplayFormulas(Boolean(next.numbered));
         setLoading(false);
-      })
-      .catch((error) => {
+      } catch (error) {
         if (disposed) return;
-        setLoadError(readErrorMessage(error, "无法读取批量导入 Session。"));
+        setLoadError(
+          readErrorMessage(
+            error,
+            resolvedLanguage === "en"
+              ? "Unable to read the bulk-import session."
+              : "无法读取批量导入 Session。",
+          ),
+        );
         setLoading(false);
-      });
+      }
+    })();
     return () => {
       disposed = true;
     };
@@ -286,11 +308,14 @@ export function DocumentImportApp() {
 
   const preview = useMemo(() => {
     try {
-      return { parsed: parseDocumentImport(source, format), error: "" };
+      return { parsed: parseDocumentImport(source, format, language), error: "" };
     } catch (error) {
-      return { parsed: null, error: readErrorMessage(error, "无法解析当前文档。") };
+      return {
+        parsed: null,
+        error: readErrorMessage(error, isEn ? "Unable to parse the current document." : "无法解析当前文档。"),
+      };
     }
-  }, [format, source]);
+  }, [format, isEn, language, source]);
 
   useEffect(() => {
     const cancelOnClose = () => {
@@ -326,10 +351,14 @@ export function DocumentImportApp() {
       const lineId = session.lines[0]?.id || createUuid();
       const serializedDocument = JSON.stringify(preview.parsed);
       if (serializedDocument.length > 5_000_000) {
-        throw new Error("解析后的文档结构超过 5 MB，无法提交给 Word。请拆分后导入。");
+        throw new Error(
+          isEn
+            ? "The parsed document structure exceeds 5 MB. Split the document before importing it into Word."
+            : "解析后的文档结构超过 5 MB，无法提交给 Word。请拆分后导入。",
+        );
       }
       await updateOfficeSession(sessionId, {
-        title: "Word 文档批量导入",
+        title: isEn ? "Word Document Bulk Import" : "Word 文档批量导入",
         lines: [{ id: lineId, latex: serializedDocument }],
         activeLineId: lineId,
         codeFormat: "visualtex-document-json",
@@ -344,7 +373,9 @@ export function DocumentImportApp() {
       finalizedRef.current = true;
       await closeOfficeSessionWindow(sessionId).catch(() => undefined);
     } catch (error) {
-      setLoadError(readErrorMessage(error, "无法把文档提交给 Word。"));
+      setLoadError(
+        readErrorMessage(error, isEn ? "Unable to submit the document to Word." : "无法把文档提交给 Word。"),
+      );
       setBusy(false);
     }
   };
@@ -354,7 +385,7 @@ export function DocumentImportApp() {
     setFileBusy(true);
     setLoadError("");
     try {
-      const imported = await readDocumentImportFile(file);
+      const imported = await readDocumentImportFile(file, language);
       setSource(imported.source);
       setFormat(imported.format);
       setImportedFile({
@@ -364,7 +395,9 @@ export function DocumentImportApp() {
         modified: false,
       });
     } catch (error) {
-      setLoadError(readErrorMessage(error, "无法读取所选文件。"));
+      setLoadError(
+        readErrorMessage(error, isEn ? "Unable to read the selected file." : "无法读取所选文件。"),
+      );
     } finally {
       setFileBusy(false);
     }
@@ -374,7 +407,7 @@ export function DocumentImportApp() {
     return (
       <main className="doc-import-loading">
         <LoaderCircle className="spin" />
-        <span>正在打开 Word 文档导入器…</span>
+        <span>{isEn ? "Opening the Word document importer…" : "正在打开 Word 文档导入器…"}</span>
       </main>
     );
   }
@@ -382,7 +415,7 @@ export function DocumentImportApp() {
     return (
       <main className="doc-import-loading error">
         <TriangleAlert />
-        <span>{loadError || "无法读取批量导入 Session。"}</span>
+        <span>{loadError || (isEn ? "Unable to read the bulk-import session." : "无法读取批量导入 Session。")}</span>
       </main>
     );
   }
@@ -393,30 +426,30 @@ export function DocumentImportApp() {
         <div className="doc-import-title-block">
           <FileText size={20} />
           <div>
-            <strong>Word 文档批量导入</strong>
-            <span>左侧编辑源码，右侧实时查看 Word 导入结构</span>
+            <strong>{isEn ? "Word Document Bulk Import" : "Word 文档批量导入"}</strong>
+            <span>{isEn ? "Edit source on the left and preview the Word structure live on the right" : "左侧编辑源码，右侧实时查看 Word 导入结构"}</span>
           </div>
         </div>
         <div className="doc-import-options">
           <label>
-            <span>源格式</span>
+            <span>{isEn ? "Source format" : "源格式"}</span>
             <select value={format} onChange={(event) => setFormat(event.target.value as DocumentSourceFormat)}>
-              <option value="auto">自动识别</option>
+              <option value="auto">{isEn ? "Auto detect" : "自动识别"}</option>
               <option value="latex">LaTeX</option>
               <option value="markdown">Markdown</option>
             </select>
           </label>
           <label>
-            <span>公式格式</span>
+            <span>{isEn ? "Equation format" : "公式格式"}</span>
             <select value={objectMode} onChange={(event) => setObjectMode(event.target.value as DocumentObjectMode)}>
-              <option value="wordOmml">Word 原生 OMML</option>
+              <option value="wordOmml">{isEn ? "Native Word OMML" : "Word 原生 OMML"}</option>
               <option value="nativeOle">VisualTeX OLE</option>
               <option value="mathTypeOle">MathType OLE</option>
             </select>
           </label>
           <label
             className="doc-import-numbering-option"
-            title="勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。"
+            title={isEn ? "Number every display equation in this import using the current VisualTeX equation-number format for the Word document." : "勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。"}
           >
             <input
               type="checkbox"
@@ -424,22 +457,22 @@ export function DocumentImportApp() {
               onChange={(event) => setNumberDisplayFormulas(event.target.checked)}
               disabled={busy}
             />
-            <span>所有行间公式添加编号</span>
+            <span>{isEn ? "Number all display equations" : "所有行间公式添加编号"}</span>
           </label>
           <button
             className="doc-import-secondary doc-import-file-button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy || fileBusy}
-            title="导入单个 LaTeX 或 Markdown 文件"
+            title={isEn ? "Import a single LaTeX or Markdown file" : "导入单个 LaTeX 或 Markdown 文件"}
           >
             {fileBusy ? <LoaderCircle size={16} className="spin" /> : <FolderOpen size={16} />}
-            {fileBusy ? "正在读取…" : "导入 .tex / .md"}
+            {fileBusy ? (isEn ? "Reading…" : "正在读取…") : (isEn ? "Import .tex / .md" : "导入 .tex / .md")}
           </button>
           <input
             ref={fileInputRef}
             type="file"
             accept=".tex,.md,.markdown,text/x-tex,text/markdown"
-            aria-label="导入 LaTeX 或 Markdown 文件"
+            aria-label={isEn ? "Import a LaTeX or Markdown file" : "导入 LaTeX 或 Markdown 文件"}
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -458,8 +491,8 @@ export function DocumentImportApp() {
                 <Braces size={16} />
               </span>
               <div>
-                <strong>LaTeX / Markdown 源码</strong>
-                <small>支持正文、标题、列表、引用、代码块和混合公式</small>
+                <strong>{isEn ? "LaTeX / Markdown Source" : "LaTeX / Markdown 源码"}</strong>
+                <small>{isEn ? "Supports body text, headings, lists, quotes, code blocks and mixed equations" : "支持正文、标题、列表、引用、代码块和混合公式"}</small>
               </div>
             </div>
             <div className="doc-import-source-meta">
@@ -470,17 +503,26 @@ export function DocumentImportApp() {
                 >
                   <FileText size={12} />
                   <span>{importedFile.name}</span>
-                  <small>{importedFile.encoding}{importedFile.modified ? " · 已编辑" : ""}</small>
+                  <small>{importedFile.encoding}{importedFile.modified ? (isEn ? " · edited" : " · 已编辑") : ""}</small>
                 </span>
               ) : null}
               <span className="doc-import-pane-stat">
-                {source.length.toLocaleString()} 字符
+                {source.length.toLocaleString()} {isEn ? "characters" : "字符"}
               </span>
             </div>
           </div>
           <textarea
             value={source}
-            placeholder={String.raw`在这里粘贴 LaTeX 或 Markdown，例如：
+            placeholder={isEn ? String.raw`Paste LaTeX or Markdown here, for example:
+
+Body text with an inline equation $E=mc^2$.
+
+A display equation directly after body text: \[\frac{1}{2\pi\tau}\]
+
+\begin{itemize}
+\item First item
+\item Second item
+\end{itemize}` : String.raw`在这里粘贴 LaTeX 或 Markdown，例如：
 
 正文中的行内公式 $E=mc^2$。
 
@@ -499,7 +541,7 @@ export function DocumentImportApp() {
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
-            aria-label="文档源码"
+            aria-label={isEn ? "Document source" : "文档源码"}
           />
         </article>
 
@@ -510,22 +552,22 @@ export function DocumentImportApp() {
                 <Eye size={16} />
               </span>
               <div>
-                <strong>Word 结构预览</strong>
-                <small>按最终导入层级模拟正文、公式与段落间距</small>
+                <strong>{isEn ? "Word Structure Preview" : "Word 结构预览"}</strong>
+                <small>{isEn ? "Simulates body text, equations and paragraph spacing using the final import hierarchy" : "按最终导入层级模拟正文、公式与段落间距"}</small>
               </div>
             </div>
             {preview.parsed ? (
-              <div className="doc-import-preview-counts" aria-label="预览统计">
-                <span>{preview.parsed.blocks.length} 块</span>
-                <span>{preview.parsed.inlineFormulaCount} 行内</span>
-                <span>{preview.parsed.displayFormulaCount} 行间</span>
+              <div className="doc-import-preview-counts" aria-label={isEn ? "Preview statistics" : "预览统计"}>
+                <span>{preview.parsed.blocks.length} {isEn ? "blocks" : "块"}</span>
+                <span>{preview.parsed.inlineFormulaCount} {isEn ? "inline" : "行内"}</span>
+                <span>{preview.parsed.displayFormulaCount} {isEn ? "display" : "行间"}</span>
               </div>
             ) : (
-              <span className="doc-import-pane-stat">等待有效内容</span>
+              <span className="doc-import-pane-stat">{isEn ? "Waiting for valid content" : "等待有效内容"}</span>
             )}
           </div>
           <div className="doc-import-preview-scroll">
-            {preview.parsed ? <PreviewPane parsed={preview.parsed} /> : (
+            {preview.parsed ? <PreviewPane parsed={preview.parsed} isEn={isEn} /> : (
               <div className="doc-import-preview-error">
                 <TriangleAlert size={20} />
                 <span>{preview.error}</span>
@@ -544,17 +586,17 @@ export function DocumentImportApp() {
           {!loadError && preview.parsed && preview.parsed.warnings.length === 0 ? (
             <span className="ok">
               <CheckCircle2 size={15} />
-              预览解析正常；Word 将按当前结构化预览结果插入。
+              {isEn ? "Preview parsed successfully. Word will insert the current structured preview." : "预览解析正常；Word 将按当前结构化预览结果插入。"}
             </span>
           ) : null}
         </div>
         <div className="doc-import-actions">
           <button className="doc-import-secondary" onClick={() => void cancel()} disabled={busy}>
-            <X size={16} />取消
+            <X size={16} />{isEn ? "Cancel" : "取消"}
           </button>
           <button className="doc-import-primary" onClick={() => void commit()} disabled={busy || !preview.parsed || Boolean(preview.error)}>
             {busy ? <LoaderCircle size={16} className="spin" /> : <FileText size={16} />}
-            {busy ? "正在提交…" : "导入到 Word"}
+            {busy ? (isEn ? "Submitting…" : "正在提交…") : (isEn ? "Import into Word" : "导入到 Word")}
           </button>
         </div>
       </footer>

@@ -154,9 +154,10 @@ public sealed partial class ThisAddIn
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
-                        $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n"
-                        + "旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
-                        "VisualTeX 公式格式转换",
+                        T(
+                            $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+                            $"Redraw all {plan.Targets.Count} {sourceName} equations in the document as {targetName}?\r\n\r\nThe old equation hosts and numbering will be removed, and target numbering will be recreated using the current Word numbering settings."),
+                        T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2)
@@ -421,8 +422,10 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            $"已成功转换 {result.FormulaCount} 个公式，随后停止。\r\n\r\n{detail}",
-                            "VisualTeX 公式格式转换",
+                            T(
+                                $"已成功转换 {result.FormulaCount} 个公式，随后停止。\r\n\r\n{detail}",
+                                $"Successfully converted {result.FormulaCount} equations, then stopped.\r\n\r\n{OfficePluginLanguage.SafeErrorMessage(detail)}"),
+                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Warning);
                         return true;
@@ -453,8 +456,8 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            reported.Message,
-                            "VisualTeX 公式格式转换",
+                            OfficePluginLanguage.SafeErrorMessage(reported.Message),
+                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;

@@ -347,7 +347,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Office.COMAddIn? _comAddIn;
     private bool _mathTypePreviewSessionAcquired;
 
-    public string GetCustomUI(string ribbonId) => RibbonXml;
+    public string GetCustomUI(string ribbonId) =>
+        OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
 
     public void OnConnection(
         object application,
@@ -479,7 +480,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             var size = GetCachedSelectedFormulaFontSize();
             return size.HasValue
-                ? FormulaFontSize.FormatDisplay(size.Value)
+                ? FormulaFontSize.FormatDisplay(size.Value, OfficePluginLanguage.IsEnglish)
                 : string.Empty;
         }
         catch { return string.Empty; }
@@ -496,20 +497,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.PreviousPreset(current));
         }
-        catch (Exception error) { SetStatus($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnIncreaseFormulaFontSize(object control)
     {
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.NextPreset(current));
         }
-        catch (Exception error) { SetStatus($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnInsertInline(object control) =>
         BeginSession("create", "inline", null);
@@ -606,15 +613,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             (_sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
                 .OpenDesktop();
-            SetStatus("VisualTeX 已打开。");
+            SetStatus(T("VisualTeX 已打开。", "VisualTeX is open."));
         }
         catch (Exception error)
         {
-            SetStatus($"无法打开 VisualTeX：{error.Message}");
+            SetStatus(T($"无法打开 VisualTeX：{error.Message}", $"Unable to open VisualTeX: {error.Message}"));
         }
     }
 
-    private static double ParseFontSize(string value) => FormulaFontSize.Parse(value);
+    private static double ParseFontSize(string value) =>
+        FormulaFontSize.Parse(value, OfficePluginLanguage.IsEnglish);
 
     private void ApplyFormulaFontSize(double value)
     {
@@ -625,12 +633,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .SetSelectedFormulaFontSize(value);
             Volatile.Write(ref _cachedSelectedFormulaFontSize, applied);
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-completed requested={value} applied={applied}");
-            SetStatus($"公式字号已设置为 {FormulaFontSize.Describe(applied)}。");
+            SetStatus(T(
+                $"公式字号已设置为 {FormulaFontSize.Describe(applied)}。",
+                $"Formula font size set to {FormulaFontSize.Describe(applied, english: true)}."));
         }
         catch (Exception error)
         {
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-failed requested={value} error={error}");
-            SetStatus($"无法设置公式字号：{error.Message}");
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -2852,8 +2862,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX LaTeX 重绘",
+                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -2929,9 +2939,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
-                        $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n"
-                        + "另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
-                        "VisualTeX 公式转为 LaTeX",
+                        T(
+                            $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
+                            $"Restore {count} {modeLabel} equations in the current document to LaTeX source in place?\r\n\r\nOther equation object types will not be changed. The operation can be undone with a single Ctrl+Z."),
+                        T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2)
@@ -2977,8 +2988,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX 公式转为 LaTeX",
+                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -3331,7 +3342,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             await dispatcher.InvokeAsync(() =>
             {
-                System.Windows.Forms.MessageBox.Show(message, "VisualTeX 批量导入",
+                System.Windows.Forms.MessageBox.Show(
+                    OfficePluginLanguage.SafeUserMessage(
+                        message,
+                        warning ? "The VisualTeX bulk import could not continue." : "The VisualTeX bulk import failed."),
+                    T("VisualTeX 批量导入", "VisualTeX Bulk Import"),
                     System.Windows.Forms.MessageBoxButtons.OK,
                     warning ? System.Windows.Forms.MessageBoxIcon.Warning : System.Windows.Forms.MessageBoxIcon.Error);
                 return true;
@@ -3823,7 +3838,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (visualTexTargets.Count == 0 && mathTypeTargets.Count == 0)
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
+                            T(
+                                "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
+                                "The current document has no numbered equations to reference. Insert a numbered VisualTeX or MathType display equation first."),
                             "VisualTeX",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Information);
@@ -3935,7 +3952,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     window = _application?.ActiveWindow
                         ?? throw new InvalidOperationException("Word's error-reporting window is unavailable.");
                     System.Windows.Forms.MessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
-                        error.Message, "VisualTeX " + operation,
+                        OfficePluginLanguage.SafeErrorMessage(error.Message),
+                        OfficePluginLanguage.IsEnglish ? "VisualTeX Word" : "VisualTeX " + operation,
                         System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
                     return true;
                 }
@@ -3972,9 +3990,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
+        var userMessage = OfficePluginLanguage.SafeStatusMessage(message);
         dispatcher.Post(() =>
         {
-            try { application.StatusBar = message; } catch { }
+            try { application.StatusBar = userMessage; } catch { }
         });
     }
 
