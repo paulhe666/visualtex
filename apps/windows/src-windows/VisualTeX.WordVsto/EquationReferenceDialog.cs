@@ -1,10 +1,14 @@
 using System.Drawing;
 using System.Windows.Forms;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.WordVsto;
 
 internal sealed class EquationReferenceDialog : Form
 {
+    private static string T(string chinese, string english) =>
+        OfficePluginLanguage.Text(chinese, english);
+
     private readonly IReadOnlyList<EquationReferenceTarget> _visualTexTargets;
     private readonly IReadOnlyList<EquationReferenceTarget> _mathTypeTargets;
     private readonly ComboBox _sourceBox = new();
@@ -25,7 +29,9 @@ internal sealed class EquationReferenceDialog : Form
         public EquationReferenceSource Source { get; }
         public string Label { get; }
         public int Count { get; }
-        public override string ToString() => $"{Label}（{Count}）";
+        public override string ToString() => OfficePluginLanguage.IsEnglish
+            ? $"{Label} ({Count})"
+            : $"{Label}（{Count}）";
     }
 
     public EquationReferenceTarget? SelectedTarget =>
@@ -52,18 +58,18 @@ internal sealed class EquationReferenceDialog : Form
         _visualTexTargets = visualTexTargets ?? Array.Empty<EquationReferenceTarget>();
         _mathTypeTargets = mathTypeTargets ?? Array.Empty<EquationReferenceTarget>();
 
-        Text = "插入公式引用";
+        Text = T("插入公式引用", "Insert Equation Reference");
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
         ClientSize = new Size(640, 474);
-        Font = new Font("Microsoft YaHei UI", 9f);
+        Font = new Font(OfficePluginLanguage.UiFontFamily, 9f);
 
         var sourceLabel = new Label
         {
-            Text = "引用来源：",
+            Text = T("引用来源：", "Reference source:"),
             AutoSize = true,
             Location = new Point(18, 19),
         };
@@ -72,12 +78,12 @@ internal sealed class EquationReferenceDialog : Form
         if (_visualTexTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(
                 EquationReferenceSource.VisualTeX,
-                "VisualTeX 编号公式",
+                T("VisualTeX 编号公式", "Numbered VisualTeX equations"),
                 _visualTexTargets.Count));
         if (_mathTypeTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(
                 EquationReferenceSource.MathType,
-                "MathType 编号公式",
+                T("MathType 编号公式", "Numbered MathType equations"),
                 _mathTypeTargets.Count));
         if (_sourceBox.Items.Count > 0) _sourceBox.SelectedIndex = 0;
         _sourceBox.SelectedIndexChanged += (_, _) =>
@@ -88,7 +94,7 @@ internal sealed class EquationReferenceDialog : Form
 
         var searchLabel = new Label
         {
-            Text = "搜索公式：",
+            Text = T("搜索公式：", "Search equations:"),
             AutoSize = true,
             Location = new Point(18, 59),
         };
@@ -99,7 +105,7 @@ internal sealed class EquationReferenceDialog : Form
         _listBox.IntegralHeight = false;
         _listBox.DoubleClick += (_, _) => ConfirmSelection();
 
-        _styleLabel.Text = "引用格式：";
+        _styleLabel.Text = T("引用格式：", "Reference format:");
         _styleLabel.AutoSize = true;
         _styleLabel.Location = new Point(18, 385);
         _styleBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -107,7 +113,7 @@ internal sealed class EquationReferenceDialog : Form
 
         var insertButton = new Button
         {
-            Text = "插入引用",
+            Text = T("插入引用", "Insert Reference"),
             DialogResult = DialogResult.OK,
             Location = new Point(434, 424),
             Size = new Size(90, 32),
@@ -118,7 +124,7 @@ internal sealed class EquationReferenceDialog : Form
             DialogResult = DialogResult.None;
             MessageBox.Show(
                 this,
-                "请先选择一个带编号公式。",
+                T("请先选择一个带编号公式。", "Select a numbered equation first."),
                 "VisualTeX",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -126,7 +132,7 @@ internal sealed class EquationReferenceDialog : Form
 
         var cancelButton = new Button
         {
-            Text = "取消",
+            Text = T("取消", "Cancel"),
             DialogResult = DialogResult.Cancel,
             Location = new Point(530, 424),
             Size = new Size(90, 32),
@@ -163,7 +169,7 @@ internal sealed class EquationReferenceDialog : Form
             _styleBox.Items.Clear();
             if (CurrentSource == EquationReferenceSource.MathType)
             {
-                _styleBox.Items.Add("沿用 MathType 原编号格式");
+                _styleBox.Items.Add(T("沿用 MathType 原编号格式", "Keep the native MathType number format"));
                 _styleBox.SelectedIndex = 0;
                 _styleBox.Enabled = false;
                 _styleLabel.Enabled = false;
@@ -173,7 +179,7 @@ internal sealed class EquationReferenceDialog : Form
             _styleBox.Items.AddRange(new object[]
             {
                 "(1)",
-                "式（1）",
+                T("式（1）", "Eq. (1)"),
                 "1",
             });
             _styleBox.SelectedIndex = 0;

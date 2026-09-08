@@ -21,6 +21,7 @@
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.Management" />
     <Reference Include="Microsoft.CSharp" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\VstoDependencyResolver.cs" Link="VstoDependencyResolver.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />

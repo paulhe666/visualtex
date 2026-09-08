@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Microsoft.Win32;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -79,11 +80,11 @@ internal sealed class EquationNumberFormat
 
     public static EquationNumberFormat Resolve(string? id) => id switch
     {
-        Heading1DotId => new EquationNumberFormat(Heading1DotId, "按章编号（1.1）", 1, "."),
-        Heading1DashId => new EquationNumberFormat(Heading1DashId, "按章编号（1-1）", 1, "-"),
-        Heading2DotId => new EquationNumberFormat(Heading2DotId, "按节编号（1.1.1）", 2, "."),
-        Heading2DashId => new EquationNumberFormat(Heading2DashId, "按节编号（1.1-1）", 2, "-"),
-        _ => new EquationNumberFormat(ContinuousId, "全文连续编号（1）", 0, string.Empty),
+        Heading1DotId => new EquationNumberFormat(Heading1DotId, OfficePluginLanguage.Text("按章编号（1.1）", "By chapter (1.1)"), 1, "."),
+        Heading1DashId => new EquationNumberFormat(Heading1DashId, OfficePluginLanguage.Text("按章编号（1-1）", "By chapter (1-1)"), 1, "-"),
+        Heading2DotId => new EquationNumberFormat(Heading2DotId, OfficePluginLanguage.Text("按节编号（1.1.1）", "By section (1.1.1)"), 2, "."),
+        Heading2DashId => new EquationNumberFormat(Heading2DashId, OfficePluginLanguage.Text("按节编号（1.1-1）", "By section (1.1-1)"), 2, "-"),
+        _ => new EquationNumberFormat(ContinuousId, OfficePluginLanguage.Text("全文连续编号（1）", "Continuous (1)"), 0, string.Empty),
     };
 }
 

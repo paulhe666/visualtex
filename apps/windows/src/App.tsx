@@ -87,16 +87,21 @@ import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
+  OCR_RECOGNIZER_OPTIONS,
   cancelOcrRecognition,
   fileToOcrRequest,
   getOcrProviderConfiguration,
-  getOcrRuntimeStatus,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
+  ocrProviderDisplayLabel,
+  ocrRecognizerSelection,
+  parseOcrRecognizerSelection,
   recognizeFormulaImage,
+  setActiveOcrProvider,
   warmupOcrModel,
   type OcrModelName,
+  type OcrProviderId,
 } from "./ocr/ocrService";
 import {
   checkForUpdates,
@@ -160,6 +165,9 @@ function App() {
       ? (stored as OcrModelName)
       : DEFAULT_OCR_MODEL;
   });
+  const [activeOcrProvider, setActiveOcrProviderId] =
+    useState<OcrProviderId>("local");
+  const [ocrProviderLoaded, setOcrProviderLoaded] = useState(false);
   const [silentOcrEnabled, setSilentOcrEnabled] = useState(
     () => readLocalStorage(SILENT_OCR_STORAGE_KEY) === "true",
   );
@@ -239,6 +247,10 @@ function App() {
   const selectedOcrModel =
     OCR_MODELS.find((item) => item.id === ocrModel) ??
     OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!;
+  const selectedOcrRecognizer = ocrRecognizerSelection(
+    activeOcrProvider,
+    ocrModel,
+  );
   const inlineOcrModel =
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
@@ -417,12 +429,37 @@ function App() {
   }, [toast]);
 
   useEffect(() => {
-    if (!isTauriEnvironment()) return;
+    if (!isTauriEnvironment()) {
+      setOcrProviderLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    void getOcrProviderConfiguration()
+      .then((configuration) => {
+        if (!cancelled) setActiveOcrProviderId(configuration.activeProvider);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setOcrProviderLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isTauriEnvironment() ||
+      !ocrProviderLoaded ||
+      activeOcrProvider !== "local"
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
     }, 50);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [activeOcrProvider, ocrProviderLoaded]);
 
   useEffect(() => {
     if (!isTauriEnvironment()) return;
@@ -532,7 +569,46 @@ function App() {
     startupOcrModelRef.current = nextModel;
     setOcrModel(nextModel);
     writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
-    void warmupOcrModel(nextModel).catch(() => undefined);
+    if (activeOcrProvider === "local") {
+      void warmupOcrModel(nextModel).catch(() => undefined);
+    }
+  };
+
+  const handleOcrRecognizerChange = async (selection: string) => {
+    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) return;
+    const parsed = parseOcrRecognizerSelection(selection);
+    if (!parsed) return;
+    try {
+      if (parsed.provider === "local") {
+        const saved = await setActiveOcrProvider("local");
+        setActiveOcrProviderId(saved.activeProvider);
+        if (parsed.model) {
+          startupOcrModelRef.current = parsed.model;
+          setOcrModel(parsed.model);
+          writeLocalStorage(OCR_MODEL_STORAGE_KEY, parsed.model);
+          void warmupOcrModel(parsed.model).catch(() => undefined);
+        }
+        return;
+      }
+      const saved = await setActiveOcrProvider(parsed.provider);
+      setActiveOcrProviderId(saved.activeProvider);
+      setToast(
+        isEn
+          ? `OCR recognizer: ${ocrProviderDisplayLabel(saved.activeProvider, true)}`
+          : `OCR 识别器：${ocrProviderDisplayLabel(saved.activeProvider, false)}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : isEn
+              ? "Unable to switch OCR recognizer"
+              : "无法切换 OCR 识别器";
+      setToast(message);
+      setOcrOpen(true);
+    }
   };
 
   const cancelInlineOcr = async () => {
@@ -577,61 +653,30 @@ function App() {
     const runId = ++inlineOcrRunIdRef.current;
     inlineOcrBusyRef.current = true;
     inlineOcrCancelRequestedRef.current = false;
+    const usingLocalProvider = activeOcrProvider === "local";
+    const remoteSourceLabel = usingLocalProvider
+      ? undefined
+      : ocrProviderDisplayLabel(activeOcrProvider, isEn);
     setInlineOcr({
       status: "running",
-      message: isEn ? "Checking the OCR provider…" : "正在检查 OCR 提供器…",
+      message: usingLocalProvider
+        ? isEn
+          ? "Starting local formula recognition…"
+          : "正在启动本地公式识别…"
+        : isEn
+          ? `Sending the image to ${remoteSourceLabel}…`
+          : `正在通过 ${remoteSourceLabel} 识别公式…`,
       seconds: 0,
       model: ocrModel,
+      sourceLabel: remoteSourceLabel,
     });
 
     let unlisten: (() => void) | undefined;
     try {
-      const providerConfiguration = await getOcrProviderConfiguration();
-      const usingLocalProvider = providerConfiguration.activeProvider === "local";
-      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      if (usingLocalProvider) {
-        const runtime = await getOcrRuntimeStatus();
-        if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-        if (!runtime.installed) {
-          setOcrOpen(true);
-          throw new Error(
-            isEn
-              ? "Install the OCR runtime before pasting an image"
-              : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
-          );
-        }
-
-        if (!runtime.installedModels.includes(ocrModel)) {
-          setOcrOpen(true);
-          throw new Error(
-            isEn
-              ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
-              : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
-          );
-        }
-      } else {
-        const remoteSourceLabel =
-          providerConfiguration.activeProvider === "paddleocr"
-            ? `PaddleOCR · ${providerConfiguration.paddleOcr.model}`
-            : providerConfiguration.activeProvider === "simpletex"
-              ? `SimpleTex · ${providerConfiguration.simpleTex.model}`
-            : providerConfiguration.activeProvider === "mathpix"
-              ? "Mathpix"
-              : providerConfiguration.activeProvider === "ollama"
-                ? `Ollama · ${providerConfiguration.ollama.model || "API"}`
-                : `OpenAI API · ${providerConfiguration.openAiCompatible.model || "API"}`;
-        setInlineOcr((current) =>
-          current
-            ? {
-                ...current,
-                sourceLabel: remoteSourceLabel,
-                message: isEn
-                  ? "Sending the image to the configured OCR API…"
-                  : "正在将图片发送到已配置的 OCR API…",
-              }
-            : current,
-        );
-      }
+      // The native recognition command owns provider/runtime validation. The old
+      // frontend preflight called getOcrRuntimeStatus() here and recognize_local()
+      // immediately called runtime_status() again, scanning Python metadata and
+      // model storage twice before every local OCR request.
       const availableOcrModel = ocrModel;
 
       unlisten = await listenOcrRecognitionProgress((progress) => {
@@ -723,6 +768,14 @@ function App() {
           model: ocrModel,
           sourceLabel: current?.sourceLabel,
         }));
+        if (
+          usingLocalProvider &&
+          /(runtime is not installed|python executable is missing|model .* is not installed|package metadata is missing)/i.test(
+            message,
+          )
+        ) {
+          setOcrOpen(true);
+        }
         setToast(message);
         scheduleInlineOcrClear(4500);
       }
@@ -1673,11 +1726,11 @@ function App() {
           await handleCopy();
         }}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrModel={ocrModel}
-        ocrModels={OCR_MODELS}
+        ocrRecognizer={selectedOcrRecognizer}
+        ocrRecognizers={OCR_RECOGNIZER_OPTIONS}
         ocrBusy={inlineOcrIsBusy || quickOcrCaptureBusy}
-        onOcrModelChange={(model) =>
-          handleOcrModelChange(model as OcrModelName)
+        onOcrRecognizerChange={(recognizer) =>
+          void handleOcrRecognizerChange(recognizer)
         }
         onQuickOcr={() => void handleQuickOcr()}
         quickOcrCaptureMode={quickOcrCaptureMode}
@@ -1815,6 +1868,9 @@ function App() {
         onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
         onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
+        onProviderConfigurationChange={(configuration) =>
+          setActiveOcrProviderId(configuration.activeProvider)
+        }
       />
       <UpdateDialog
         open={updateOpen}

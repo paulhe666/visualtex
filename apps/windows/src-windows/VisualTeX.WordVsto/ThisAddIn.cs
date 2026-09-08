@@ -293,6 +293,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
+    private WordCopyPasteHook? _copyPasteHook;
+    private readonly object _copyPasteGate = new();
+    private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
+    private uint _formulaCopyClipboardSequence;
+    private int _copyPasteRepairGeneration;
+    private int _copyPasteSelectionRepairPending;
+    private long _lastSuccessfulPasteRepairStartedAt;
+    private long _lastSuccessfulPasteRepairCompletedAt;
     private static readonly object BulkAcceptanceLogGate = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _activeSessionOperationGate = new();
@@ -339,7 +347,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Office.COMAddIn? _comAddIn;
     private bool _mathTypePreviewSessionAcquired;
 
-    public string GetCustomUI(string ribbonId) => RibbonXml;
+    public string GetCustomUI(string ribbonId) =>
+        OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
 
     public void OnConnection(
         object application,
@@ -412,6 +421,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = null;
             doubleClickError = error.Message;
         }
+        try
+        {
+            _copyPasteHook = new WordCopyPasteHook(OnWordClipboardGesture);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _copyPasteHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
+            _copyPasteHook.Start();
+        }
+        catch (Exception error)
+        {
+            try { _copyPasteHook?.Dispose(); } catch { }
+            _copyPasteHook = null;
+            WordDoubleClickHook.TraceMessage(
+                $"copy-paste-hook-start-failed {error.GetType().Name}: {error.Message}");
+        }
         SetStatus(!officeMathFontReady
             ? $"VisualTeX 已就绪，但 Word 数学字体不可用：{officeMathFontError}"
             : doubleClickError is null
@@ -451,7 +480,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             var size = GetCachedSelectedFormulaFontSize();
             return size.HasValue
-                ? FormulaFontSize.FormatDisplay(size.Value)
+                ? FormulaFontSize.FormatDisplay(size.Value, OfficePluginLanguage.IsEnglish)
                 : string.Empty;
         }
         catch { return string.Empty; }
@@ -468,20 +497,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.PreviousPreset(current));
         }
-        catch (Exception error) { SetStatus($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnIncreaseFormulaFontSize(object control)
     {
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.NextPreset(current));
         }
-        catch (Exception error) { SetStatus($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnInsertInline(object control) =>
         BeginSession("create", "inline", null);
@@ -578,15 +613,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             (_sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
                 .OpenDesktop();
-            SetStatus("VisualTeX 已打开。");
+            SetStatus(T("VisualTeX 已打开。", "VisualTeX is open."));
         }
         catch (Exception error)
         {
-            SetStatus($"无法打开 VisualTeX：{error.Message}");
+            SetStatus(T($"无法打开 VisualTeX：{error.Message}", $"Unable to open VisualTeX: {error.Message}"));
         }
     }
 
-    private static double ParseFontSize(string value) => FormulaFontSize.Parse(value);
+    private static double ParseFontSize(string value) =>
+        FormulaFontSize.Parse(value, OfficePluginLanguage.IsEnglish);
 
     private void ApplyFormulaFontSize(double value)
     {
@@ -597,12 +633,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .SetSelectedFormulaFontSize(value);
             Volatile.Write(ref _cachedSelectedFormulaFontSize, applied);
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-completed requested={value} applied={applied}");
-            SetStatus($"公式字号已设置为 {FormulaFontSize.Describe(applied)}。");
+            SetStatus(T(
+                $"公式字号已设置为 {FormulaFontSize.Describe(applied)}。",
+                $"Formula font size set to {FormulaFontSize.Describe(applied, english: true)}."));
         }
         catch (Exception error)
         {
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-failed requested={value} error={error}");
-            SetStatus($"无法设置公式字号：{error.Message}");
+            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -909,13 +947,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
-    private void BeginFormulaFormatMutation()
+    private void BeginFormulaFormatMutation(bool copyPasteRepair = false)
     {
+        if (!copyPasteRepair)
+        {
+            // Explicit Ribbon inserts/edits are not clipboard pastes. Cancel any
+            // queued copy probe before the new objects become visible.
+            Interlocked.Increment(ref _copyPasteRepairGeneration);
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+        }
         Interlocked.Increment(ref _typingCaretNormalizationGeneration);
         Interlocked.Increment(ref _formulaFormatMutationDepth);
     }
 
-    private void EndFormulaFormatMutation()
+    private void EndFormulaFormatMutation(bool copyPasteRepair = false)
     {
         var depth = Interlocked.Decrement(ref _formulaFormatMutationDepth);
         if (depth < 0)
@@ -932,6 +977,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (generation != Volatile.Read(ref _typingCaretNormalizationGeneration)
                 || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
                 return;
+            if (!copyPasteRepair)
+            {
+                WordFormulaService.WordFormulaCopySnapshot? copy;
+                lock (_copyPasteGate) { copy = _formulaCopySnapshot; }
+                if (copy is not null) _formulaService?.RefreshCopySnapshotAfterExplicitMutation(copy);
+            }
             _lastFormulaRibbonOwnerStart = int.MinValue;
             _lastFormulaRibbonOwnerEnd = int.MinValue;
             Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
@@ -939,9 +990,251 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
+    private void OnWordClipboardGesture(WordClipboardGestureEvent gesture)
+    {
+        if (gesture.Gesture != WordClipboardGesture.Copy) return;
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        if (dispatcher is null || service is null) return;
+
+        dispatcher.Post(() =>
+        {
+            try
+            {
+                var snapshot = service.CaptureSelectedFormulaForCopy();
+                if (snapshot is null && IsClipboardChangeFromRecentPasteRepair(gesture.ObservedTimestamp))
+                {
+                    WordFormulaService.WordFormulaCopySnapshot? existingSnapshot;
+                    lock (_copyPasteGate)
+                    {
+                        existingSnapshot = _formulaCopySnapshot;
+                        if (existingSnapshot is not null)
+                            _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+                    }
+                    if (existingSnapshot is not null)
+                    {
+                        WordDoubleClickHook.TraceMessage(
+                            $"copy-snapshot-sequence-continued mode={existingSnapshot.ObjectMode} "
+                            + $"clipboardSequence={WordCopyPasteHook.CurrentClipboardSequence}");
+                        return;
+                    }
+                }
+
+                lock (_copyPasteGate)
+                {
+                    _formulaCopySnapshot = snapshot;
+                    _formulaCopyClipboardSequence = snapshot is null
+                        ? 0
+                        : gesture.ClipboardSequence;
+                }
+                if (snapshot is not null)
+                {
+                    Interlocked.Exchange(ref _lastSuccessfulPasteRepairStartedAt, 0);
+                    Interlocked.Exchange(ref _lastSuccessfulPasteRepairCompletedAt, 0);
+                }
+                Interlocked.Increment(ref _copyPasteRepairGeneration);
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    snapshot is null
+                        ? $"copy-snapshot-cleared clipboardSequence={gesture.ClipboardSequence}"
+                        : $"copy-snapshot-captured mode={snapshot.ObjectMode} "
+                            + $"source={snapshot.SourceStart}:{snapshot.SourceEnd} "
+                            + $"numbered={snapshot.Metadata.Numbered} "
+                            + $"inline={snapshot.KnownInlineShapeCount} omml={snapshot.KnownOmmlCount} "
+                            + $"clipboardSequence={gesture.ClipboardSequence}");
+            }
+            catch (Exception error)
+            {
+                lock (_copyPasteGate)
+                {
+                    _formulaCopySnapshot = null;
+                    _formulaCopyClipboardSequence = 0;
+                }
+                Interlocked.Increment(ref _copyPasteRepairGeneration);
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    $"copy-snapshot-failed {error.GetType().Name}: {error.Message}");
+            }
+        });
+    }
+
+    private bool IsClipboardChangeFromRecentPasteRepair(long observedTimestamp)
+    {
+        var startedAt = Interlocked.Read(ref _lastSuccessfulPasteRepairStartedAt);
+        var completedAt = Interlocked.Read(ref _lastSuccessfulPasteRepairCompletedAt);
+        if (startedAt <= 0 || completedAt < startedAt) return false;
+        var graceTicks = (long)(Stopwatch.Frequency * 0.5d);
+        return observedTimestamp >= startedAt
+            && observedTimestamp <= completedAt + graceTicks;
+    }
+
+    private void TrySchedulePastedFormulaRepairFromSelectionChange()
+    {
+        WordFormulaService.WordFormulaCopySnapshot? snapshot;
+        uint clipboardSequence;
+        lock (_copyPasteGate)
+        {
+            snapshot = _formulaCopySnapshot;
+            clipboardSequence = _formulaCopyClipboardSequence;
+        }
+        if (snapshot is null || clipboardSequence == 0) return;
+
+        var currentClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+        if (currentClipboardSequence != clipboardSequence)
+        {
+            lock (_copyPasteGate)
+            {
+                if (_formulaCopyClipboardSequence == clipboardSequence)
+                {
+                    _formulaCopySnapshot = null;
+                    _formulaCopyClipboardSequence = 0;
+                }
+            }
+            Interlocked.Increment(ref _copyPasteRepairGeneration);
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            return;
+        }
+        if (Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 1) != 0)
+            return;
+
+        var generation = Interlocked.Increment(ref _copyPasteRepairGeneration);
+        SchedulePastedFormulaRepair(
+            snapshot,
+            clipboardSequence,
+            generation,
+            attempt: 0);
+    }
+
+    private void SchedulePastedFormulaRepair(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        uint clipboardSequence,
+        int generation,
+        int attempt)
+    {
+        var dispatcher = _dispatcher;
+        if (dispatcher is null) return;
+        dispatcher.Post(() =>
+        {
+            if (generation != Volatile.Read(ref _copyPasteRepairGeneration))
+            {
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                return;
+            }
+            lock (_copyPasteGate)
+            {
+                if (_formulaCopySnapshot is null
+                    || _formulaCopyClipboardSequence != clipboardSequence)
+                {
+                    Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                    return;
+                }
+            }
+            var service = _formulaService;
+            if (service is null || Volatile.Read(ref _formulaFormatMutationDepth) > 0)
+            {
+                RetryPastedFormulaRepair(snapshot, clipboardSequence, generation, attempt);
+                return;
+            }
+
+            WordFormulaService.PastedFormulaRepairResult result;
+            var repairStartedAt = Stopwatch.GetTimestamp();
+            BeginFormulaFormatMutation(copyPasteRepair: true);
+            try
+            {
+                result = service.RepairPastedFormula(snapshot);
+            }
+            catch (Exception error)
+            {
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                WordDoubleClickHook.TraceMessage(
+                    $"paste-repair-failed mode={snapshot.ObjectMode} "
+                    + $"attempt={attempt} error={error.GetType().Name}:{error.Message}");
+                return;
+            }
+            finally { EndFormulaFormatMutation(copyPasteRepair: true); }
+
+            if (result == WordFormulaService.PastedFormulaRepairResult.NotReady)
+            {
+                RetryPastedFormulaRepair(snapshot, clipboardSequence, generation, attempt);
+                return;
+            }
+            if (result == WordFormulaService.PastedFormulaRepairResult.Repaired)
+            {
+                var repairCompletedAt = Stopwatch.GetTimestamp();
+                Interlocked.Exchange(ref _lastSuccessfulPasteRepairStartedAt, repairStartedAt);
+                Interlocked.Exchange(ref _lastSuccessfulPasteRepairCompletedAt, repairCompletedAt);
+                lock (_copyPasteGate)
+                {
+                    if (ReferenceEquals(_formulaCopySnapshot, snapshot))
+                        _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+                }
+            }
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            WordDoubleClickHook.TraceMessage(
+                $"paste-repair-complete mode={snapshot.ObjectMode} result={result} attempt={attempt}");
+        });
+    }
+
+    private void RetryPastedFormulaRepair(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        uint clipboardSequence,
+        int generation,
+        int attempt)
+    {
+        if (attempt >= 6)
+        {
+            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            WordDoubleClickHook.TraceMessage(
+                $"paste-repair-timeout mode={snapshot.ObjectMode} attempts={attempt + 1}");
+            return;
+        }
+        var lifetime = _lifetime;
+        if (lifetime is null || lifetime.IsCancellationRequested) return;
+        var token = lifetime.Token;
+        _ = Task.Delay(90, token).ContinueWith(
+            task =>
+            {
+                if (task.IsCanceled || token.IsCancellationRequested) return;
+                SchedulePastedFormulaRepair(
+                    snapshot,
+                    clipboardSequence,
+                    generation,
+                    attempt + 1);
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
     private void OnWindowActivate(Document document, Window window)
     {
         try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
+        uint copySequence = 0;
+        lock (_copyPasteGate)
+        {
+            copySnapshot = _formulaCopySnapshot;
+            copySequence = _formulaCopyClipboardSequence;
+        }
+        if (copySnapshot is not null && copySequence != 0)
+        {
+            if (WordCopyPasteHook.CurrentClipboardSequence == copySequence)
+            {
+                try { _formulaService?.TrackCopySnapshotDocument(copySnapshot); } catch { }
+            }
+            else
+            {
+                lock (_copyPasteGate)
+                {
+                    if (_formulaCopyClipboardSequence == copySequence)
+                    {
+                        _formulaCopySnapshot = null;
+                        _formulaCopyClipboardSequence = 0;
+                    }
+                }
+            }
+        }
         ClearNativeOleTarget();
         _cachedEquationNumberFormatId = null;
         Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
@@ -1043,6 +1336,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ClearNativeOleTarget();
             return;
         }
+        TrySchedulePastedFormulaRepairFromSelectionChange();
 
         Range? range = null;
         Window? window = null;
@@ -2568,8 +2862,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX LaTeX 重绘",
+                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -2645,9 +2939,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
-                        $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n"
-                        + "另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
-                        "VisualTeX 公式转为 LaTeX",
+                        T(
+                            $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
+                            $"Restore {count} {modeLabel} equations in the current document to LaTeX source in place?\r\n\r\nOther equation object types will not be changed. The operation can be undone with a single Ctrl+Z."),
+                        T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2)
@@ -2693,8 +2988,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX 公式转为 LaTeX",
+                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -3047,7 +3342,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             await dispatcher.InvokeAsync(() =>
             {
-                System.Windows.Forms.MessageBox.Show(message, "VisualTeX 批量导入",
+                System.Windows.Forms.MessageBox.Show(
+                    OfficePluginLanguage.SafeUserMessage(
+                        message,
+                        warning ? "The VisualTeX bulk import could not continue." : "The VisualTeX bulk import failed."),
+                    T("VisualTeX 批量导入", "VisualTeX Bulk Import"),
                     System.Windows.Forms.MessageBoxButtons.OK,
                     warning ? System.Windows.Forms.MessageBoxIcon.Warning : System.Windows.Forms.MessageBoxIcon.Error);
                 return true;
@@ -3539,7 +3838,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (visualTexTargets.Count == 0 && mathTypeTargets.Count == 0)
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
+                            T(
+                                "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
+                                "The current document has no numbered equations to reference. Insert a numbered VisualTeX or MathType display equation first."),
                             "VisualTeX",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Information);
@@ -3651,7 +3952,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     window = _application?.ActiveWindow
                         ?? throw new InvalidOperationException("Word's error-reporting window is unavailable.");
                     System.Windows.Forms.MessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
-                        error.Message, "VisualTeX " + operation,
+                        OfficePluginLanguage.SafeErrorMessage(error.Message),
+                        OfficePluginLanguage.IsEnglish ? "VisualTeX Word" : "VisualTeX " + operation,
                         System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
                     return true;
                 }
@@ -3688,9 +3990,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
+        var userMessage = OfficePluginLanguage.SafeStatusMessage(message);
         dispatcher.Post(() =>
         {
-            try { application.StatusBar = message; } catch { }
+            try { application.StatusBar = userMessage; } catch { }
         });
     }
 
@@ -3738,6 +4041,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         try { _doubleClickHook?.Dispose(); } catch { }
         _doubleClickHook = null;
+        try { _copyPasteHook?.Dispose(); } catch { }
+        _copyPasteHook = null;
+        lock (_copyPasteGate)
+        {
+            _formulaCopySnapshot = null;
+            _formulaCopyClipboardSequence = 0;
+        }
+        Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
         if (_mathTypePreviewSessionAcquired)
         {
