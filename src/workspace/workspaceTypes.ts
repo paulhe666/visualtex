@@ -1,5 +1,8 @@
 import type { ReactNode, RefObject } from "react";
-import type { MathEditorHandle } from "../editor/MathEditor";
+import type {
+  MathEditorHandle,
+  MathEditorInsertionTarget,
+} from "../editor/MathEditor";
 import type { DocumentSnapshot, ReplaceDocumentEntry } from "../history/historyTypes";
 
 export type WorkspaceMode =
@@ -31,6 +34,10 @@ export interface EditorWorkspaceProps {
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
   onHistoryBusyChange: (busy: boolean) => void;
+  onPasteImage?: (
+    file: File,
+    target: MathEditorInsertionTarget,
+  ) => Promise<void>;
   onCopyPng?: () => Promise<void>;
   onCopy: () => Promise<void>;
   onReplaceDocument: (

@@ -1,6 +1,10 @@
+import { isLandingPreview } from "./landingPreview";
+
 const memoryStorage = new Map<string, string>();
 
 function browserStorage(): Storage | null {
+  // Showcase reads and writes stay in this frame; never touch user documents.
+  if (isLandingPreview) return null;
   try {
     return typeof window === "undefined" ? null : window.localStorage;
   } catch {

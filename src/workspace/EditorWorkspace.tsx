@@ -146,6 +146,7 @@ export function EditorWorkspace({
   sidebarOpen,
   onSidebarOpenChange,
   onHistoryBusyChange,
+  onPasteImage,
   onCopyPng,
   onCopy,
   onReplaceDocument,
@@ -763,6 +764,7 @@ export function EditorWorkspace({
           sourceDraftFallback ? undefined : () => handleSourceFocusChange(false)
         }
         draftError={sourceDraftFallback?.error}
+        onPasteImage={previewLines ? undefined : onPasteImage}
         onCopyPng={previewLines ? undefined : onCopyPng}
         onHistoryBusyChange={onHistoryBusyChange}
       />

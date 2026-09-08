@@ -6291,6 +6291,8 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onContextMenu?.(pointer.clientX, pointer.clientY);
     };
     const handlePaste = (event: ClipboardEvent) => {
+      const eventPath = event.composedPath();
+      if (!eventPath.includes(field) && document.activeElement !== field) return;
       const clipboard = event.clipboardData;
       if (!clipboard) return;
 
@@ -6334,7 +6336,7 @@ function FormulaField(props: FormulaFieldProps) {
       if (!image) return;
 
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       propsRef.current.onCommitPending();
       propsRef.current.onFocus(propsRef.current.index, field);
 
@@ -6486,7 +6488,7 @@ function FormulaField(props: FormulaFieldProps) {
     keyboardSink?.addEventListener("keydown", handleRawWrapperKeyDown, true);
     keyboardSink?.addEventListener("input", scheduleInputActivity, true);
     keyboardSink?.addEventListener("keyup", scheduleInputActivity, true);
-    field.addEventListener("paste", handlePaste, true);
+    document.addEventListener("paste", handlePaste, true);
     field.shadowRoot?.addEventListener(
       "contextmenu",
       suppressMathLiveContextMenu,
@@ -6562,7 +6564,7 @@ function FormulaField(props: FormulaFieldProps) {
       keyboardSink?.removeEventListener("keydown", handleRawWrapperKeyDown, true);
       keyboardSink?.removeEventListener("input", scheduleInputActivity, true);
       keyboardSink?.removeEventListener("keyup", scheduleInputActivity, true);
-      field.removeEventListener("paste", handlePaste, true);
+      document.removeEventListener("paste", handlePaste, true);
       field.shadowRoot?.removeEventListener(
         "contextmenu",
         suppressMathLiveContextMenu,
