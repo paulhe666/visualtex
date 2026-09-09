@@ -3276,7 +3276,9 @@ internal static partial class WordEquationNumbering
         {
             document = selection.Document;
             selectionRange = selection.Range.Duplicate;
-            if (!(bool)selectionRange.get_Information(WdInformation.wdWithInTable))
+            // Runs on every collapsed SelectionChange, including after Apply.
+            // Table containment needs no pagination or visual-layout query.
+            if (!RangeIsWhollyWithinTable(selectionRange))
                 return false;
             selectionTables = selectionRange.Tables;
             if (selectionTables.Count != 1) return false;

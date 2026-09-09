@@ -57,6 +57,14 @@ internal static class WordDocumentXml
         }
     }
 
+    internal static bool IsUnexpectedlyEmptyBody(XElement body, string liveText)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        if (body.Descendants(w + "t").Any(text => !string.IsNullOrWhiteSpace(text.Value))) return false;
+        return liveText.Any(c => !char.IsWhiteSpace(c) && !char.IsControl(c)
+            && c != '\u200B' && c != '\u200C' && c != '\u2060');
+    }
+
     internal static string Read(Document document, Range? ownedScope = null)
     {
         Range? content = null;
@@ -104,7 +112,13 @@ internal static class WordDocumentXml
                 var body = package.Descendants(w + "body").Single();
                 var exportedMaths = body.Descendants(m + "oMath").Count();
                 var exportedOles = body.Descendants(o + "OLEObject").Count();
-                if (exportedMaths == mathCount && exportedOles == oleCount) return xml;
+                // Before redraw, an all-LaTeX document contains zero OMath/OLE
+                // objects. An empty scratch export also contains zero of both,
+                // so inventory equality alone previously accepted a blank undo
+                // checkpoint for a nonempty source document.
+                var missingPlainText = mathCount == 0 && shapeCount == 0
+                    && IsUnexpectedlyEmptyBody(body, content.Text ?? string.Empty);
+                if (exportedMaths == mathCount && exportedOles == oleCount && !missingPlainText) return xml;
                 WordDoubleClickHook.TraceMessage($"word-xml-incomplete-export document={document.FullName} attempt={attempt + 1} maths={exportedMaths}/{mathCount} oles={exportedOles}/{oleCount}");
                 Marshal.ReleaseComObject(export); export = null;
             }

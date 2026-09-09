@@ -15,6 +15,8 @@ internal sealed class WordLocalEditSnapshot
     private readonly int end;
     private readonly int documentEnd;
     private readonly string bodySignature;
+    private readonly string capturedScopeXml;
+    private readonly int scopeOmmlCount;
     private readonly string mathFont;
     private readonly WordUndoHistorySnapshot undoHistory;
     private readonly WordBookmarkRecoverySnapshot bookmarkRecovery;
@@ -39,6 +41,7 @@ internal sealed class WordLocalEditSnapshot
         Row? row = null;
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
+        OMaths? scopeMaths = null;
         try
         {
             tables = formulaRange.Tables;
@@ -65,8 +68,11 @@ internal sealed class WordLocalEditSnapshot
             content = document.Content;
             documentEnd = content.End;
             mathFont = document.OMathFontName;
+            scopeMaths = scope.OMaths;
+            scopeOmmlCount = scopeMaths.Count;
             Trace("scope");
             var originalXml = scope.WordOpenXML;
+            capturedScopeXml = originalXml;
             Trace("xml");
             var geometry = WordInlineObjectGeometry.Capture(scope);
             bodySignature = Signature(originalXml, geometry);
@@ -79,6 +85,7 @@ internal sealed class WordLocalEditSnapshot
         }
         finally
         {
+            Release(scopeMaths);
             Release(scope);
             Release(content);
             Release(paragraph);
@@ -88,6 +95,22 @@ internal sealed class WordLocalEditSnapshot
             Release(table);
             Release(tables);
         }
+    }
+
+    // Reuse this transaction's exact local snapshot for source verification only
+    // when it contains one physical OMath. A multi-equation paragraph still uses
+    // the identity-bound exporter; no positional or process-lifetime cache is used.
+    internal bool TryGetSingleOmmlSource(out string omml)
+    {
+        omml = string.Empty;
+        if (scopeOmmlCount != 1) return false;
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        var body = XDocument.Parse(capturedScopeXml).Descendants(w + "body").Single();
+        var equations = body.Descendants(m + "oMath").Take(2).ToArray();
+        if (equations.Length != 1) return false;
+        omml = equations[0].ToString(SaveOptions.DisableFormatting);
+        return true;
     }
 
     internal void VerifyRestored(Document document)
@@ -187,8 +210,16 @@ internal sealed class WordLocalEditSnapshot
                     if (!parts.TryGetValue(path, out var part))
                         throw new InvalidDataException("A Word content payload is missing from recovery evidence.");
                     var binary = part.Element(pkg + "binaryData");
+                    var xmlPayload = part.Element(pkg + "xmlData");
+                    if (binary is null && xmlPayload is null)
+                        throw new InvalidDataException("A Word recovery relationship has neither binary nor XML payload.");
+                    var normalizedPayload = xmlPayload is null ? string.Empty
+                        : type is not null && (type.EndsWith("/header", StringComparison.Ordinal)
+                            || type.EndsWith("/footer", StringComparison.Ordinal))
+                            ? WordRecoveryXmlEquivalence.NormalizeHeaderFooterPayload(xmlPayload)
+                            : xmlPayload.ToString(SaveOptions.DisableFormatting);
                     var bytes = binary is not null ? Convert.FromBase64String(binary.Value)
-                        : Encoding.UTF8.GetBytes(part.Element(pkg + "xmlData")!.ToString(SaveOptions.DisableFormatting));
+                        : Encoding.UTF8.GetBytes(normalizedPayload);
                     using var payloadHash = SHA256.Create();
                     reference.Value = type + ":sha256:" + Convert.ToBase64String(payloadHash.ComputeHash(bytes));
                 }

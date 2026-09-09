@@ -23,8 +23,6 @@ internal sealed class LatexRedrawDialog : Form
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(540, 235);
-        MinimumSize = new Size(540, 235);
-        MaximumSize = new Size(780, 360);
         Font = new Font(
             OfficePluginLanguage.UiFontFamily,
             9f,
@@ -40,15 +38,33 @@ internal sealed class LatexRedrawDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 2,
             Padding = new Padding(18),
         };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(root);
+
+        var contentHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            Margin = Padding.Empty,
+        };
+        var content = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = Padding.Empty,
+        };
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        contentHost.Controls.Add(content);
+        root.Controls.Add(contentHost, 0, 0);
 
         var description = new Label
         {
@@ -63,7 +79,7 @@ internal sealed class LatexRedrawDialog : Form
                     : $"将在所选内容中原位重绘 {formulaCount} 个 LaTeX 公式为 {objectModeLabel}。",
             Margin = new Padding(0, 0, 0, 12),
         };
-        root.Controls.Add(description, 0, 0);
+        content.Controls.Add(description, 0, 0);
 
         if (allowNumbering)
         {
@@ -77,7 +93,7 @@ internal sealed class LatexRedrawDialog : Form
                     ? $"为全部 {displayFormulaCount} 个行间公式添加编号"
                     : "为所有行间公式添加编号（本次未检测到行间公式）";
             _numberDisplayFormulas.Margin = new Padding(0, 0, 0, 5);
-            root.Controls.Add(_numberDisplayFormulas, 0, 1);
+            content.Controls.Add(_numberDisplayFormulas, 0, 1);
 
             var detail = new Label
             {
@@ -89,7 +105,7 @@ internal sealed class LatexRedrawDialog : Form
                 ForeColor = Color.FromArgb(88, 88, 88),
                 Margin = new Padding(22, 0, 0, 12),
             };
-            root.Controls.Add(detail, 0, 2);
+            content.Controls.Add(detail, 0, 2);
         }
 
         var actions = new FlowLayoutPanel
@@ -98,6 +114,7 @@ internal sealed class LatexRedrawDialog : Form
             AutoSize = true,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
+            Margin = new Padding(0, 12, 0, 0),
         };
         var cancel = new Button
         {
@@ -115,12 +132,55 @@ internal sealed class LatexRedrawDialog : Form
         };
         actions.Controls.Add(cancel);
         actions.Controls.Add(redraw);
-        root.Controls.Add(actions, 0, 4);
+        root.Controls.Add(actions, 0, 1);
 
         AcceptButton = redraw;
         CancelButton = cancel;
+        Shown += (_, _) => FitToContent(root, content, actions);
     }
 
     internal bool NumberDisplayFormulas =>
         _numberDisplayFormulas.Enabled && _numberDisplayFormulas.Checked;
+
+    private void FitToContent(
+        TableLayoutPanel root,
+        TableLayoutPanel content,
+        FlowLayoutPanel actions)
+    {
+        SuspendLayout();
+        try
+        {
+            root.PerformLayout();
+            content.PerformLayout();
+            actions.PerformLayout();
+
+            var availableContentWidth = Math.Max(
+                1,
+                ClientSize.Width - root.Padding.Horizontal);
+            var contentHeight = content.GetPreferredSize(
+                new Size(availableContentWidth, 0)).Height;
+            var actionsHeight = actions.GetPreferredSize(
+                new Size(availableContentWidth, 0)).Height + actions.Margin.Vertical;
+            var desiredClientHeight = root.Padding.Vertical
+                + contentHeight
+                + actionsHeight;
+
+            var workingArea = Screen.FromControl(this).WorkingArea;
+            var nonClientHeight = Math.Max(0, Height - ClientSize.Height);
+            const int screenMargin = 48;
+            var maxClientHeight = Math.Max(
+                235,
+                workingArea.Height - nonClientHeight - screenMargin);
+            var targetClientHeight = Math.Min(
+                Math.Max(235, desiredClientHeight),
+                maxClientHeight);
+
+            ClientSize = new Size(ClientSize.Width, targetClientHeight);
+            root.PerformLayout();
+        }
+        finally
+        {
+            ResumeLayout(performLayout: true);
+        }
+    }
 }

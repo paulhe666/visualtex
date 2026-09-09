@@ -51,6 +51,37 @@ public sealed class WordOmmlImportSignatureTests
         Assert.Equal(Signature(unicode), Signature(ascii));
     }
 
+    [Theory]
+    [InlineData("ℜ", "R", "fraktur")]
+    [InlineData("ℑ", "I", "fraktur")]
+    [InlineData("ℒ", "L", "script")]
+    [InlineData("ℝ", "R", "double-struck")]
+    public void LegacyMathAlphabetGlyphMatchesWordsScriptProperty(
+        string glyph,
+        string baseLetter,
+        string script)
+    {
+        var unicode = $"<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>{glyph}</m:t></m:r>";
+        var word = $"<m:r><m:rPr><m:scr m:val=\"{script}\"/><m:sty m:val=\"p\"/></m:rPr><m:t>{baseLetter}</m:t></m:r>";
+        Assert.Equal(Signature(unicode), Signature(word));
+        Assert.NotEqual(Signature(unicode), Signature(word.Replace(script, "roman")));
+    }
+
+    [Fact]
+    public void WordScriptRunCanAbsorbAdjacentPunctuationWithoutChangingContent()
+    {
+        const string prepared =
+            "<m:r><m:rPr><m:scr m:val=\"script\"/></m:rPr><m:t>L</m:t></m:r>"
+            + "<m:r><m:t>{</m:t></m:r>";
+        const string materialized =
+            "<m:r><m:rPr><m:scr m:val=\"script\"/></m:rPr><m:t>L{</m:t></m:r>";
+        const string changed =
+            "<m:r><m:rPr><m:scr m:val=\"script\"/></m:rPr><m:t>M{</m:t></m:r>";
+
+        Assert.Equal(Signature(prepared), Signature(materialized));
+        Assert.NotEqual(Signature(prepared), Signature(changed));
+    }
+
     [Fact]
     public void DefaultHatAccentMatchesWordsOmittedAccentCharacter()
     {
@@ -106,6 +137,27 @@ public sealed class WordOmmlImportSignatureTests
         var root = "<m:rad><m:radPr><m:degHide m:val=\"on\"/></m:radPr><m:deg/><m:e>" + Sup + "</m:e></m:rad>";
         Assert.Equal(Signature(root), Signature(root.Replace("\"on\"", "\"1\"")));
         Assert.NotEqual(Signature(root), Signature(root.Replace("\"on\"", "\"0\"")));
+
+        var explicitVisible = "<m:rad><m:radPr><m:degHide m:val=\"off\"/></m:radPr><m:deg><m:r><m:t>3</m:t></m:r></m:deg><m:e>" + Sup + "</m:e></m:rad>";
+        Assert.Equal(
+            Signature(explicitVisible),
+            Signature(explicitVisible.Replace("<m:degHide m:val=\"off\"/>", "")));
+
+        var differentialOff = "<m:box><m:boxPr><m:diff m:val=\"false\"/></m:boxPr><m:e>" + Sup + "</m:e></m:box>";
+        Assert.Equal(Signature(differentialOff), Signature(differentialOff.Replace("<m:diff m:val=\"false\"/>", "")));
+        Assert.NotEqual(Signature(differentialOff), Signature(differentialOff.Replace("\"false\"", "\"true\"")));
+
+        var phantomShown = "<m:phant><m:phantPr><m:show m:val=\"true\"/></m:phantPr><m:e>" + Sup + "</m:e></m:phant>";
+        Assert.Equal(Signature(phantomShown), Signature(phantomShown.Replace("<m:show m:val=\"true\"/>", "")));
+        Assert.NotEqual(Signature(phantomShown), Signature(phantomShown.Replace("\"true\"", "\"false\"")));
+
+        var naryGrowOff = "<m:nary><m:naryPr><m:grow m:val=\"false\"/></m:naryPr><m:sub/><m:sup/><m:e>" + Sup + "</m:e></m:nary>";
+        Assert.Equal(Signature(naryGrowOff), Signature(naryGrowOff.Replace("<m:grow m:val=\"false\"/>", "")));
+        Assert.NotEqual(Signature(naryGrowOff), Signature(naryGrowOff.Replace("\"false\"", "\"true\"")));
+
+        var delimiterGrowOn = "<m:d><m:dPr><m:grow m:val=\"true\"/></m:dPr><m:e>" + Sup + "</m:e></m:d>";
+        Assert.Equal(Signature(delimiterGrowOn), Signature(delimiterGrowOn.Replace("<m:grow m:val=\"true\"/>", "")));
+        Assert.NotEqual(Signature(delimiterGrowOn), Signature(delimiterGrowOn.Replace("\"true\"", "\"false\"")));
     }
 
     [Fact]

@@ -93,7 +93,8 @@ internal static class WordOmmlNativeSource
 
         internal IReadOnlyDictionary<string, string> MaterializedSignatures => materializedSignatures;
 
-        internal void Capture(string formulaId, Range inserted, string preparedOmml)
+        internal void Capture(string formulaId, Range inserted, string preparedOmml,
+            bool verifyDuringCapture = true)
         {
             if (!Guid.TryParse(formulaId, out var parsed))
                 throw new InvalidDataException("Fresh OMML redraw formulaId is invalid.");
@@ -119,10 +120,15 @@ internal static class WordOmmlNativeSource
                     || mathRange.End != inserted.End)
                     throw new InvalidDataException("Fresh OMML redraw range differs from its physical equation.");
 
-                var materializedOmml = WordOmmlConverter.ExtractSingleOMath(mathRange.WordOpenXML);
-                WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(
-                    preparedOmml,
-                    materializedOmml);
+                var materializedOmml = preparedOmml;
+                if (verifyDuringCapture)
+                {
+                    materializedOmml = WordOmmlConverter.ExtractSingleOMath(mathRange.WordOpenXML);
+                    WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(preparedOmml, materializedOmml);
+                }
+                // Deferred callers supplied a Word-materialized, prevalidated
+                // source and must compare every final equation after Undo ends.
+                // Serializing here would split that custom Undo transaction.
                 materializedSignatures.Add(
                     formulaId,
                     WordOmmlConverter.ComputeImportedOmmlContentSignature(materializedOmml));
@@ -528,6 +534,40 @@ internal static class WordOmmlNativeSource
             return identities.Count;
         }
         finally { Release(maths); Release(content); }
+    }
+
+    internal static int FinalizeNewBatchAnchorsWithoutExport(
+        Document document,
+        IReadOnlyList<FormulaMetadata> metadataItems,
+        StableRedrawInsertionOwners liveInsertions)
+    {
+        OMaths? maths = null;
+        try
+        {
+            maths = document.OMaths;
+            var indices = liveInsertions.CaptureIndices(maths);
+            if (indices.Count != metadataItems.Count || indices.Values.Distinct().Count() != metadataItems.Count)
+                throw new InvalidDataException("The completed OMML batch does not have independent physical owners.");
+            foreach (var metadata in metadataItems)
+            {
+                if (!indices.TryGetValue(metadata.FormulaId, out var index))
+                    throw new InvalidDataException("The completed OMML batch lost an insertion identity.");
+                OMath? math = null;
+                Range? range = null;
+                Bookmark? bookmark = null;
+                try
+                {
+                    math = maths[index + 1];
+                    range = math.Range;
+                    bookmark = WordOmmlFormulaStore.Wrap(document, range, metadata, replaceExisting: true);
+                    if (!WordOmmlFormulaStore.IsCanonicalAnchor(bookmark, range))
+                        throw new InvalidDataException("The completed OMML anchor did not retain its exact physical owner.");
+                }
+                finally { Release(bookmark); Release(range); Release(math); }
+            }
+            return metadataItems.Count;
+        }
+        finally { Release(maths); }
     }
 
     internal static int FinalizeNewBatchFingerprintsFromDocumentOpenXml(

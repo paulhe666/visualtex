@@ -40,6 +40,7 @@ internal sealed class WordLatexRedrawTarget
     internal string Latex { get; set; } = string.Empty;
     internal string DisplayMode { get; set; } = "inline";
     internal bool PreserveDisplayParagraphBoundary { get; set; }
+    internal bool DedicatedDisplayParagraph { get; set; }
     internal double FontSizePt { get; set; }
 }
 

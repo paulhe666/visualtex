@@ -336,6 +336,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _normalizingTypingCaret;
     private int _typingCaretNormalizationPending;
     private int _typingCaretNormalizationGeneration;
+    private int _ommlRedrawUndoCleanupPending;
+    private readonly object _ommlRedrawUndoCleanupWatcherGate = new();
+    private System.Threading.Timer? _ommlRedrawUndoCleanupWatcher;
     private int _formulaFormatMutationDepth;
     private int _formulaFontReadsDeferredDuringMutation;
     private bool _acceptanceSelectionDiagnostics;
@@ -769,7 +772,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // even though the user is still in the same formula. Resolve the
             // stable center-cell Display OMath first so Ribbon state is read only
             // once when entering this managed equation host.
-            if ((bool)selectionRange.get_Information(WdInformation.wdWithInTable))
+            // Ribbon owner discovery is structural. Information() requests a
+            // full layout pass after an edit even for an ordinary prose caret.
+            if (WordEquationNumbering.RangeIsWhollyWithinTable(selectionRange))
             {
                 tables = selectionRange.Tables;
                 if (tables.Count == 1)
@@ -900,6 +905,85 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ui.InvalidateControl("VisualTeX.WordVsto.NumberFormatHeading2Dash");
         }
         catch { }
+    }
+
+    private void ScheduleOmmlRedrawUndoMetadataCleanup()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        var application = _application;
+        if (dispatcher is null
+            || service is null
+            || application is null
+            || !service.HasPendingOmmlRedrawUndoCleanup
+            || Volatile.Read(ref _formulaFormatMutationDepth) > 0
+            || Interlocked.Exchange(ref _ommlRedrawUndoCleanupPending, 1) != 0)
+            return;
+
+        dispatcher.Post(() =>
+        {
+            Interlocked.Exchange(ref _ommlRedrawUndoCleanupPending, 0);
+            if (Volatile.Read(ref _formulaFormatMutationDepth) > 0
+                || !service.HasPendingOmmlRedrawUndoCleanup)
+            {
+                StopOmmlRedrawUndoCleanupWatcherIfIdle();
+                return;
+            }
+            Document? document = null;
+            try
+            {
+                document = application.ActiveDocument;
+                if (document is null) return;
+                _ = service.TryCleanupPendingOmmlRedrawUndoMetadata(document);
+            }
+            catch (Exception error)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"redraw-omml-undo-orphan-metadata-cleanup-failed error={error.GetType().Name}:{error.Message}");
+            }
+            finally
+            {
+                ReleaseComObject(document);
+                StopOmmlRedrawUndoCleanupWatcherIfIdle();
+            }
+        });
+    }
+
+    private void EnsureOmmlRedrawUndoCleanupWatcher()
+    {
+        lock (_ommlRedrawUndoCleanupWatcherGate)
+        {
+            if (_ommlRedrawUndoCleanupWatcher is not null) return;
+            _ommlRedrawUndoCleanupWatcher = new System.Threading.Timer(
+                _ =>
+                {
+                    var lifetime = _lifetime;
+                    var service = _formulaService;
+                    if (lifetime is null || lifetime.IsCancellationRequested
+                        || service is null || !service.HasPendingOmmlRedrawUndoCleanup)
+                    {
+                        StopOmmlRedrawUndoCleanupWatcherIfIdle(force: lifetime is null || lifetime.IsCancellationRequested);
+                        return;
+                    }
+                    ScheduleOmmlRedrawUndoMetadataCleanup();
+                },
+                null,
+                dueTime: 2000,
+                period: 2000);
+        }
+    }
+
+    private void StopOmmlRedrawUndoCleanupWatcherIfIdle(bool force = false)
+    {
+        System.Threading.Timer? timer = null;
+        lock (_ommlRedrawUndoCleanupWatcherGate)
+        {
+            if (!force && _formulaService?.HasPendingOmmlRedrawUndoCleanup == true)
+                return;
+            timer = _ommlRedrawUndoCleanupWatcher;
+            _ommlRedrawUndoCleanupWatcher = null;
+        }
+        try { timer?.Dispose(); } catch { }
     }
 
     private void ScheduleTypingCaretNormalization()
@@ -1251,6 +1335,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch { }
         finally { ReleaseComObject(selection); }
 
+        ScheduleOmmlRedrawUndoMetadataCleanup();
+
         // Returning from the VisualTeX Office editor does not necessarily move
         // Word's Selection, so WindowSelectionChange may never fire. Word can
         // still rebuild the collapsed caret's character format from the adjacent
@@ -1302,6 +1388,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (cancel) return;
         try
         {
+            if (_formulaService?.HasPendingOmmlRedrawUndoCleanup == true)
+                _ = _formulaService.TryCleanupPendingOmmlRedrawUndoMetadata(document);
             _formulaService?.NormalizeInlineOleParagraphBaselinesBeforeSave(
                 document);
         }
@@ -1324,6 +1412,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ClearNativeOleTarget();
             return;
         }
+        ScheduleOmmlRedrawUndoMetadataCleanup();
         // The guard must precede the Ribbon owner probe as well as normalization:
         // owner discovery itself reads OMaths/Cells and can reenter an incomplete
         // table write. The deferred callback also checks the mutation generation.
@@ -2702,7 +2791,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 foreach (var item in rendered)
                 {
-                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                    var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
                         item.Value.MathMl
                             ?? throw new InvalidDataException(
                                 $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
@@ -2710,8 +2799,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             item.Value.Session.DisplayMode,
                             "inline",
                             StringComparison.OrdinalIgnoreCase),
-                        item.Value.Session.FontSizePt);
-                    nativePreviewInputs[item.Key] = generated.Mtef;
+                        item.Value.Session.FontSizePt,
+                        item.Value.Session.ToMetadata().Latex);
+                    nativePreviewInputs[item.Key] = standalone.Generated.Mtef;
                 }
 
                 var nativePreviewRoot = rendered.Values
@@ -2806,9 +2896,25 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .Where(target => prepared.ContainsKey(target.Id))
                 .ToList();
             SetStatus("公式渲染完成，正在原位写入 Word…");
-            var result = await dispatcher.InvokeAsync(
-                    () => service.ApplyLatexRedrawPlan(plan, prepared))
-                .ConfigureAwait(false);
+            BeginFormulaFormatMutation();
+            WordLatexRedrawResult result;
+            try
+            {
+                result = await dispatcher.InvokeAsync(
+                        () => service.ApplyLatexRedrawPlan(plan, prepared))
+                    .ConfigureAwait(false);
+            }
+            finally { EndFormulaFormatMutation(); }
+            if (string.Equals(
+                    objectMode,
+                    FormulaOleContract.WordOmmlMode,
+                    StringComparison.Ordinal))
+            {
+                service.TrackCompletedOmmlRedrawForUndo(
+                    plan.DocumentId,
+                    result.FormulaIds);
+                EnsureOmmlRedrawUndoCleanupWatcher();
+            }
             foreach (var sessionId in converterSessionIds)
             {
                 try
@@ -4022,6 +4128,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void Dispose()
     {
         _lifetime?.Cancel();
+        StopOmmlRedrawUndoCleanupWatcherIfIdle(force: true);
         CancellationTokenSource? activeOperationCancellation = null;
         lock (_activeSessionOperationGate)
         {
