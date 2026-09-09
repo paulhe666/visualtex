@@ -1909,6 +1909,11 @@ internal static partial class MathTypeMtefCodec
             || string.Equals(tokenClass, expectedClass, StringComparison.OrdinalIgnoreCase);
         fence = NormalizeFence(token.Value.Trim());
         if (markerMatches) return true;
+        // Explicitly fixed CHAR delimiters must not become stretchable TMPL
+        // fences merely because a read-back mrow groups their siblings.
+        if (string.Equals((string?)token.Attribute("fence"), "false", StringComparison.OrdinalIgnoreCase)
+            || string.Equals((string?)token.Attribute("stretchy"), "false", StringComparison.OrdinalIgnoreCase))
+            return false;
         if (fence.Length == 0
             && string.Equals((string?)token.Attribute("fence"), "true", StringComparison.OrdinalIgnoreCase))
             return true;
@@ -1935,6 +1940,7 @@ internal static partial class MathTypeMtefCodec
             (Variant: "script", Encoding: "EuclidMath1", Font: "Euclid Math One"),
             (Variant: "double-struck", Encoding: "EuclidMath2", Font: "Euclid Math Two"),
             (Variant: "fraktur", Encoding: "EuclidFraktur", Font: "Euclid Fraktur"),
+            (Variant: "sans-serif", Encoding: "WindowsANSI", Font: "Arial"),
         };
         var existing = CountPrefixDefinitions(sourceMtef);
         var created = 0;
@@ -5057,6 +5063,17 @@ internal static partial class MathTypeMtefCodec
             else
                 token = new XElement("mi", text);
 
+            // A CHAR contains a fixed glyph; actual scalable delimiters are
+            // decoded by the TMPL path as mfenced. Preserve that distinction for
+            // nested bra/ket characters inside a scalable absolute-value pair.
+            if (token.Name.LocalName == "mo"
+                && NormalizeFence(text) is "(" or ")" or "[" or "]" or "{" or "}"
+                    or "⟨" or "⟩" or "⌈" or "⌉" or "⌊" or "⌋" or "|" or "‖")
+            {
+                token.SetAttributeValue("fence", "false");
+                token.SetAttributeValue("stretchy", "false");
+            }
+
             foreach (var embellishment in embellishments)
             {
                 var mark = EmbellishmentMark(embellishment);
@@ -5107,6 +5124,14 @@ internal static partial class MathTypeMtefCodec
                 return "double-struck";
             if (font.IndexOf("Fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "fraktur";
+            if (string.Equals(font, "Arial", StringComparison.OrdinalIgnoreCase))
+                return characterStyle switch
+                {
+                    1 => "bold-sans-serif",
+                    2 => "sans-serif-italic",
+                    3 => "sans-serif-bold-italic",
+                    _ => "sans-serif",
+                };
 
             if (TryNormalizeLetterlikeScalar(scalar, out var letterlikeText, out var letterlikeVariant))
             {

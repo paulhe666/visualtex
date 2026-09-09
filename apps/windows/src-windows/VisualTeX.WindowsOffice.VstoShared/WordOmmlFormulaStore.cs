@@ -101,7 +101,7 @@ internal static class WordOmmlFormulaStore
             : FindByFormulaId(document, bestFormulaId);
     }
 
-    private static Bookmark? FindAtRangeFast(
+    internal static Bookmark? FindAtRangeFast(
         Document document,
         Range selectionRange)
     {
@@ -424,6 +424,8 @@ internal static class WordOmmlFormulaStore
 
         object? parts = null;
         object? cachedPart = null;
+        object? addedPart = null;
+        object? staleProbe = null;
         var tracePerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_NUMBERED_PERF_TRACE"),
             "1",
@@ -447,9 +449,46 @@ internal static class WordOmmlFormulaStore
             if (cachedPart is null) return false;
             var xml = BuildPartXml(metadata);
             Trace("build-xml");
-            if (!(bool)((dynamic)cachedPart).LoadXML(xml))
-                return false;
+            var loadedInPlace = false;
+            try { loadedInPlace = (bool)((dynamic)cachedPart).LoadXML(xml); }
+            catch { loadedInPlace = false; }
             Trace("load-xml");
+            if (!loadedInPlace)
+            {
+                // Word can reject LoadXML immediately after rebuilding an OMath.
+                // The old fallback returned to Save(), which added a replacement
+                // and then scanned every VisualTeX CustomXMLPart to remove possible
+                // duplicates. In a 1000-formula document that made one local edit
+                // O(N) even though this transaction already owns the exact cached
+                // part id. Replace that one known part atomically instead: add the
+                // new value first, delete the known old part, and prove the old id
+                // disappeared before accepting the cache update. If Word refuses
+                // either mutation, delete the provisional part and fall back to the
+                // full defensive Save() path without changing metadata semantics.
+                try
+                {
+                    addedPart = ((dynamic)parts).Add(xml);
+                    if (addedPart is null) return false;
+                    ((dynamic)cachedPart).Delete();
+                    staleProbe = ((dynamic)parts).SelectByID(cachedPartId!);
+                    if (staleProbe is not null)
+                    {
+                        try { ((dynamic)addedPart).Delete(); } catch { }
+                        return false;
+                    }
+                    RememberPart(document, addedPart, metadata);
+                    Trace("replace-known-part");
+                    return true;
+                }
+                catch
+                {
+                    if (addedPart is not null)
+                    {
+                        try { ((dynamic)addedPart).Delete(); } catch { }
+                    }
+                    return false;
+                }
+            }
 
             // This fast path is intentionally transaction-local. The caller has
             // already read and validated this exact cached part earlier in the same
@@ -468,6 +507,8 @@ internal static class WordOmmlFormulaStore
         }
         finally
         {
+            Release(staleProbe);
+            Release(addedPart);
             Release(cachedPart);
             Release(parts);
         }
@@ -543,6 +584,52 @@ internal static class WordOmmlFormulaStore
             formulaId,
             keepPartId: null);
         ForgetPart(document, formulaId);
+    }
+
+    internal static int RemoveOrphanedMetadataParts(Document document)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        var liveFormulaIds = new HashSet<string>(
+            BookmarkedFormulaIds(document),
+            StringComparer.OrdinalIgnoreCase);
+        object? parts = null;
+        object? selected = null;
+        var removed = 0;
+        try
+        {
+            parts = ((dynamic)document).CustomXMLParts;
+            selected = ((dynamic)parts).SelectByNamespace(NamespaceUri);
+            var count = (int)((dynamic)selected).Count;
+            for (var index = count; index >= 1; index--)
+            {
+                object? part = null;
+                try
+                {
+                    part = ((dynamic)selected)[index];
+                    var partXml = (string?)((dynamic)part).XML;
+                    if (!TryDecodePartXml(partXml, out var metadata)
+                        || !Guid.TryParse(metadata.FormulaId, out var parsed))
+                        continue;
+                    var formulaId = parsed.ToString("D");
+                    if (liveFormulaIds.Contains(formulaId)) continue;
+                    ((dynamic)part).Delete();
+                    removed++;
+                }
+                catch
+                {
+                    // An unreadable or non-deletable part is not safe to mutate.
+                    // Leave it untouched rather than guessing from malformed data.
+                }
+                finally { Release(part); }
+            }
+        }
+        finally
+        {
+            Release(selected);
+            Release(parts);
+            InvalidateDocumentCache(document);
+        }
+        return removed;
     }
 
     internal static Bookmark WrapFreshOmmlReplacement(

@@ -613,7 +613,8 @@ internal static class WordOmmlConverter
         Application application,
         IReadOnlyList<(string FormulaId, string MathMl)> formulas,
         Func<string, string, string>? transformOmml = null,
-        string? mathFontName = null)
+        string? mathFontName = null,
+        bool normalizeMaterializedSource = false)
     {
         if (application is null) throw new ArgumentNullException(nameof(application));
         if (formulas is null) throw new ArgumentNullException(nameof(formulas));
@@ -656,6 +657,8 @@ internal static class WordOmmlConverter
                 AddToRecentFiles: false,
                 Visible: false,
                 OpenAndRepair: false);
+            if (normalizeMaterializedSource)
+                entries = ReadMaterializedBatchEntries(document, entries);
             var source = new BatchSource(
                 document,
                 path,
@@ -673,6 +676,39 @@ internal static class WordOmmlConverter
                 try { File.Delete(path); } catch { }
             }
         }
+    }
+
+    private static Dictionary<string, BatchEntry> ReadMaterializedBatchEntries(
+        Document document, IReadOnlyDictionary<string, BatchEntry> prepared)
+    {
+        // Export the read-only source before the target edit's Undo starts. Its
+        // actual Word-normalized tree is what FormattedText will transfer; validate
+        // it against the requested content instead of guessing Word's defaults.
+        var package = XDocument.Parse(WordDocumentXml.Read(document));
+        XNamespace w = WordNamespace;
+        XNamespace m = MathNamespace;
+        var body = package.Descendants(w + "body").Single();
+        if (body.Descendants(m + "oMath").Count() != prepared.Count)
+            throw new InvalidDataException("The normalized OMML source inventory is incomplete.");
+        var anchors = body.Descendants(w + "bookmarkStart")
+            .ToDictionary(e => (string?)e.Attribute(w + "name") ?? string.Empty, StringComparer.Ordinal);
+        var result = new Dictionary<string, BatchEntry>(StringComparer.OrdinalIgnoreCase);
+        var claimed = new HashSet<XElement>();
+        foreach (var pair in prepared)
+        {
+            var entry = pair.Value;
+            if (!anchors.TryGetValue(entry.BookmarkName, out var anchor))
+                throw new InvalidDataException("The normalized OMML source lost its transport identity.");
+            var paragraph = anchor.Ancestors(w + "p").FirstOrDefault()
+                ?? throw new InvalidDataException("The normalized source anchor has no paragraph.");
+            var equation = paragraph.Descendants(m + "oMath").Single();
+            if (!claimed.Add(equation))
+                throw new InvalidDataException("Two source identities own the same normalized OMath.");
+            var actual = equation.ToString(SaveOptions.DisableFormatting);
+            var fingerprint = ComputeVerifiedMaterializedOmmlFingerprint(entry.Omml, actual);
+            result.Add(pair.Key, new BatchEntry(entry.BookmarkName, fingerprint, actual, entry.BookmarkId));
+        }
+        return result;
     }
 
     internal static Range Insert(
@@ -2975,6 +3011,145 @@ internal static class WordOmmlConverter
     private static string RestoreWordAsteriskSpelling(string mathematicalText)
         => mathematicalText.Replace('*', '∗');
 
+    private static void NormalizeLegacyMathAlphabetSpelling(
+        XDocument document,
+        XNamespace math)
+    {
+        // Word may materialize legacy Unicode mathematical letter symbols as a
+        // base Latin letter plus m:scr (for example ℜ -> R + fraktur), while the
+        // converter can emit the equivalent precomposed Unicode symbol. Canonicalize
+        // only the standard one-to-one legacy spellings so a real script/style
+        // change still produces a different content signature.
+        var spellings = new Dictionary<char, (char Base, string Script)>
+        {
+            ['ℭ'] = ('C', "fraktur"),
+            ['ℌ'] = ('H', "fraktur"),
+            ['ℑ'] = ('I', "fraktur"),
+            ['ℜ'] = ('R', "fraktur"),
+            ['ℨ'] = ('Z', "fraktur"),
+            ['ℬ'] = ('B', "script"),
+            ['ℰ'] = ('E', "script"),
+            ['ℱ'] = ('F', "script"),
+            ['ℋ'] = ('H', "script"),
+            ['ℐ'] = ('I', "script"),
+            ['ℒ'] = ('L', "script"),
+            ['ℳ'] = ('M', "script"),
+            ['ℛ'] = ('R', "script"),
+            ['ℯ'] = ('e', "script"),
+            ['ℊ'] = ('g', "script"),
+            ['ℴ'] = ('o', "script"),
+            ['ℂ'] = ('C', "double-struck"),
+            ['ℍ'] = ('H', "double-struck"),
+            ['ℕ'] = ('N', "double-struck"),
+            ['ℙ'] = ('P', "double-struck"),
+            ['ℚ'] = ('Q', "double-struck"),
+            ['ℝ'] = ('R', "double-struck"),
+            ['ℤ'] = ('Z', "double-struck"),
+        };
+
+        foreach (var run in document.Descendants(math + "r").ToArray())
+        {
+            var text = run.Element(math + "t");
+            if (text is null || text.Value.Length != 1
+                || !spellings.TryGetValue(text.Value[0], out var spelling))
+                continue;
+
+            var properties = run.Element(math + "rPr");
+            var script = properties?.Element(math + "scr");
+            var currentScript = (string?)script?.Attribute(math + "val");
+            if (script is not null
+                && !string.Equals(currentScript, spelling.Script, StringComparison.Ordinal))
+                continue;
+
+            if (properties is null)
+            {
+                properties = new XElement(math + "rPr");
+                run.AddFirst(properties);
+            }
+            if (script is null)
+            {
+                script = new XElement(
+                    math + "scr",
+                    new XAttribute(math + "val", spelling.Script));
+                properties.AddFirst(script);
+            }
+            else if (script.Attribute(math + "val") is null)
+            {
+                script.SetAttributeValue(math + "val", spelling.Script);
+            }
+            text.Value = spelling.Base.ToString();
+        }
+    }
+
+    private static void NormalizeMathScriptRunBoundaries(
+        XDocument document,
+        XNamespace math)
+    {
+        foreach (var run in document.Descendants(math + "r").ToArray())
+        {
+            var properties = run.Element(math + "rPr");
+            if (properties?.Element(math + "scr") is null) continue;
+            var texts = run.Elements(math + "t").ToArray();
+            if (texts.Length != 1
+                || run.Elements().Any(element => element.Name != math + "rPr" && element.Name != math + "t"))
+                continue;
+
+            var value = texts[0].Value;
+            if (value.Length < 2) continue;
+            var segments = new List<(string Text, bool ScriptSensitive)>();
+            var builder = new StringBuilder();
+            bool? currentSensitive = null;
+            for (var index = 0; index < value.Length;)
+            {
+                var category = CharUnicodeInfo.GetUnicodeCategory(value, index);
+                var scalarLength = char.IsHighSurrogate(value[index])
+                    && index + 1 < value.Length
+                    && char.IsLowSurrogate(value[index + 1])
+                    ? 2
+                    : 1;
+                var sensitive = category is UnicodeCategory.UppercaseLetter
+                    or UnicodeCategory.LowercaseLetter
+                    or UnicodeCategory.TitlecaseLetter
+                    or UnicodeCategory.ModifierLetter
+                    or UnicodeCategory.OtherLetter
+                    or UnicodeCategory.DecimalDigitNumber
+                    or UnicodeCategory.LetterNumber;
+                if (currentSensitive.HasValue && currentSensitive.Value != sensitive)
+                {
+                    segments.Add((builder.ToString(), currentSensitive.Value));
+                    builder.Clear();
+                }
+                currentSensitive = sensitive;
+                builder.Append(value, index, scalarLength);
+                index += scalarLength;
+            }
+            if (builder.Length > 0 && currentSensitive.HasValue)
+                segments.Add((builder.ToString(), currentSensitive.Value));
+            if (segments.Count <= 1) continue;
+
+            foreach (var segment in segments)
+            {
+                XElement? segmentProperties = new XElement(properties);
+                if (!segment.ScriptSensitive)
+                {
+                    segmentProperties.Element(math + "scr")?.Remove();
+                    if (!segmentProperties.HasElements
+                        && !segmentProperties.HasAttributes
+                        && string.IsNullOrWhiteSpace(segmentProperties.Value))
+                        segmentProperties = null;
+                }
+                var segmentText = new XElement(math + "t", segment.Text);
+                foreach (var attribute in texts[0].Attributes())
+                    segmentText.SetAttributeValue(attribute.Name, attribute.Value);
+                var replacement = new XElement(math + "r");
+                if (segmentProperties is not null) replacement.Add(segmentProperties);
+                replacement.Add(segmentText);
+                run.AddBeforeSelf(replacement);
+            }
+            run.Remove();
+        }
+    }
+
     private static string NormalizeImportedMathTextSpelling(string mathematicalText) =>
         RestoreWordAsteriskSpelling(
             mathematicalText
@@ -3363,19 +3538,7 @@ internal static class WordOmmlConverter
         document.Descendants(math + "ctrlPr").Remove();
         document.Descendants(word + "bookmarkStart").Remove();
         document.Descendants(word + "bookmarkEnd").Remove();
-        var booleans = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "degHide", "subHide", "supHide", "grow", "nor", "lit", "aln", "diff", "noBreak",
-            "opEmu", "transp", "zeroAsc", "zeroDesc", "zeroWid", "hideTop", "hideBot",
-            "hideLeft", "hideRight", "strikeH", "strikeV", "strikeBLTR", "strikeTLBR",
-        };
-        foreach (var property in document.Descendants().Where(e => e.Name.Namespace == math && booleans.Contains(e.Name.LocalName)))
-        {
-            var value = property.Attribute(math + "val");
-            if (value is null) property.SetAttributeValue(math + "val", "1");
-            else if (value.Value is "on" or "true") value.Value = "1";
-            else if (value.Value is "off" or "false") value.Value = "0";
-        }
+        NormalizeImportedMathOnOffProperties(document, math);
         foreach (var nary in document.Descendants(math + "nary"))
         {
             var properties = nary.Element(math + "naryPr");
@@ -3431,6 +3594,8 @@ internal static class WordOmmlConverter
         foreach (var delimiter in document.Descendants(math + "d"))
             if (delimiter.Elements(math + "e").Count() == 1)
                 delimiter.Element(math + "dPr")?.Elements(math + "sepChr").Remove();
+        NormalizeLegacyMathAlphabetSpelling(document, math);
+        NormalizeMathScriptRunBoundaries(document, math);
         foreach (var text in document.Descendants(math + "t"))
         {
             var properties = text.Parent?.Element(math + "rPr");
@@ -3463,6 +3628,80 @@ internal static class WordOmmlConverter
         using var hash = SHA256.Create();
         return string.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()))
             .Select(value => value.ToString("x2")));
+    }
+
+    private static void NormalizeImportedMathOnOffProperties(
+        XDocument document,
+        XNamespace math)
+    {
+        // OfficeMath CT_OnOff uses two independent defaults:
+        //   1) when an element is present without m:val, that val means true;
+        //   2) when the element itself is absent, the property's semantic default
+        //      depends on the property (and for m:grow, on its parent object).
+        // Word routinely removes properties that equal their semantic default while
+        // materializing OMML. Canonicalize those representation-only omissions, but
+        // keep every nondefault value so a real mathematical/layout change remains
+        // a different content signature.
+        var onOffNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "degHide", "subHide", "supHide", "grow", "nor", "lit", "aln", "diff", "noBreak",
+            "opEmu", "transp", "zeroAsc", "zeroDesc", "zeroWid", "show", "plcHide",
+            "hideTop", "hideBot", "hideLeft", "hideRight", "strikeH", "strikeV",
+            "strikeBLTR", "strikeTLBR",
+        };
+        var defaultFalseNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "degHide", "subHide", "supHide", "nor", "lit", "aln", "diff", "noBreak",
+            "opEmu", "transp", "zeroAsc", "zeroDesc", "zeroWid", "plcHide",
+            "hideTop", "hideBot", "hideLeft", "hideRight", "strikeH", "strikeV",
+            "strikeBLTR", "strikeTLBR",
+        };
+
+        foreach (var property in document.Descendants()
+                     .Where(element => element.Name.Namespace == math
+                         && onOffNames.Contains(element.Name.LocalName))
+                     .ToArray())
+        {
+            var value = property.Attribute(math + "val");
+            if (value is null)
+            {
+                property.SetAttributeValue(math + "val", "1");
+                value = property.Attribute(math + "val");
+            }
+            else if (value.Value is "on" or "true")
+            {
+                value.Value = "1";
+            }
+            else if (value.Value is "off" or "false")
+            {
+                value.Value = "0";
+            }
+
+            bool? semanticDefault = null;
+            if (defaultFalseNames.Contains(property.Name.LocalName))
+            {
+                semanticDefault = false;
+            }
+            else if (property.Name == math + "show")
+            {
+                // Phantom content is shown when m:show is omitted.
+                semanticDefault = true;
+            }
+            else if (property.Name == math + "grow")
+            {
+                // ISO/IEC 29500 gives m:grow a context-sensitive default:
+                // delimiter objects grow by default, n-ary operators do not.
+                if (property.Parent?.Name == math + "dPr")
+                    semanticDefault = true;
+                else if (property.Parent?.Name == math + "naryPr")
+                    semanticDefault = false;
+            }
+
+            if (!semanticDefault.HasValue || value is null) continue;
+            var normalizedValue = string.Equals(value.Value, "1", StringComparison.Ordinal);
+            if (normalizedValue == semanticDefault.Value)
+                property.Remove();
+        }
     }
 
     private static void NormalizeMathRunGrouping(XDocument document, XNamespace math)

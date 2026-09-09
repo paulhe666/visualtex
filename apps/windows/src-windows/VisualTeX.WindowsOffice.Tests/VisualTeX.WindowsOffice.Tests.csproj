@@ -43,6 +43,7 @@
     <Compile Include="..\VisualTeX.WordVsto\MathTypeMtefCodec.cs" Link="MathTypeMtefCodec.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeMtefCodec.FontSize.cs" Link="MathTypeMtefCodec.FontSize.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordRecoveryXmlEquivalence.cs" Link="WordRecoveryXmlEquivalence.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordBookmarkRecoverySnapshot.cs" Link="WordBookmarkRecoverySnapshot.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordInlineObjectGeometry.cs" Link="WordInlineObjectGeometry.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />

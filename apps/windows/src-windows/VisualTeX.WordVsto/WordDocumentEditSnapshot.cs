@@ -9,6 +9,7 @@ namespace VisualTeX.WordVsto;
 internal sealed class WordDocumentEditSnapshot
 {
     private readonly string bodySignature;
+    private readonly string normalizedOriginalBody;
     private readonly int documentEnd;
     private readonly int evidenceStart = -1;
     private readonly int evidenceEnd;
@@ -51,6 +52,7 @@ internal sealed class WordDocumentEditSnapshot
             Trace("xml");
             var geometry = WordInlineObjectGeometry.Capture(content);
             bodySignature = WordLocalEditSnapshot.Signature(originalXml, geometry);
+            normalizedOriginalBody = WordLocalEditSnapshot.NormalizedBody(originalXml, geometry);
             Trace("signature");
             if (ownedBookmarkNames is not null)
                 bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, content,
@@ -87,6 +89,15 @@ internal sealed class WordDocumentEditSnapshot
             var xml = WordDocumentXml.Read(document, content);
             var geometry = WordInlineObjectGeometry.Capture(content);
             var matches = WordLocalEditSnapshot.Signature(xml, geometry) == bodySignature;
+            if (!matches && WordRecoveryXmlEquivalence.HasOnlyAutomaticChineseProofingAdditions(
+                    normalizedOriginalBody, WordLocalEditSnapshot.NormalizedBody(xml, geometry)))
+            {
+                // Native Undo restores the actual text and layout. Word may then
+                // fill previously implicit Chinese proofing annotations while
+                // repaginating; explicit languages, fonts and content still match.
+                WordDoubleClickHook.TraceMessage("word-undo-body-equivalent automaticChineseProofingOnly=True");
+                matches = true;
+            }
             if (!matches && diagnosticPath is not null)
                 File.WriteAllText(diagnosticPath + "-after.xml", WordLocalEditSnapshot.NormalizedBody(xml, geometry));
             return matches;
