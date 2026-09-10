@@ -214,7 +214,12 @@ expect(!powerpointAdapter.includes("VTWriteRequest sessionId, requestJson\n    V
 expectIncludes(launcher, "VTTryWriteAndLaunchSessionDirect", "macOS Office formula opens must attempt the sandbox-inbox VBA fast path before AppleScriptTask");
 expectIncludes(launcher, 'Environ$("HOME")', "The Office fast path must use the host sandbox HOME instead of the normalized user home");
 expectIncludes(launcher, '"/Library/Application Support/VisualTeX/FastOpen/" & normalizedHost', "The Office fast path must write only beneath the host sandbox FastOpen inbox");
-expectIncludes(launcher, 'InStr(1, requestJson, """operation"":""formula"""', "Only ordinary formula requests may use the sandbox fast-open path");
+expectIncludes(launcher, 'InStr(1, requestJson, """operation"":""formula"""', "The VBA sandbox fast-open path must remain limited to ordinary formula requests");
+expectIncludes(wordScript, "on publishPreparedSessionToResident(sessionId)", "Word AppleScriptTask must publish already-prepared redraw/restore requests directly to the resident inbox");
+expectIncludes(wordScript, "if my publishPreparedSessionToResident(safeSessionId) then return \"ok|resident-inbox\"", "Prepared Word Sessions must prefer resident inbox activation before the legacy URL fallback");
+expectIncludes(wordScript, "maximumFastOpenRequestBytes : 65536", "Word AppleScriptTask resident publication must retain a bounded request size");
+expectIncludes(wordScript, 'set acceptedPath to inboxRoot & "/" & safeSessionId & ".accepted"', "Word must require an explicit resident acceptance marker instead of treating inbox disappearance as success");
+expectIncludes(rustRuntime, 'b"accepted\\n"', "The resident must acknowledge prepared Word inbox requests only after validation succeeds");
 expectIncludes(launcher, "VT_FAST_OPEN_MAX_REQUEST_BYTES", "Oversized Office requests must fall back to the established AppleScriptTask bridge");
 expectIncludes(launcher, "requestBytes = VTUtf8Encode(requestJson)", "The sandbox fast-open request must be written as strict UTF-8 bytes");
 expectIncludes(launcher, "Open temporaryPath For Binary Access Write As #handle", "The Office host must write the fast-open request directly inside its own writable sandbox");
@@ -231,6 +236,10 @@ expect(!launcher.includes("&request="), "The rejected inline custom-URL payload 
 expectIncludes(launcher, "VTFastOpenRequestClaimed(requestPath, payloadReadyAt)", "The direct Office fast path must confirm that the resident actually claimed the sandbox request before reporting success");
 expectIncludes(launcher, "MAX_CLAIM_WAIT_SECONDS As Double = 0.2", "A stale resident heartbeat must fall back quickly instead of falsely reporting a successful open");
 expectIncludes(launcher, '"fastPath=inbox-poll;writeMs="', "The direct Office fast path must report sandbox inbox write and resident-claim timing without a process launch round trip");
+expectIncludes(wordScript, "set processIdItems to paragraphs of processIds", "Word must parse multiple visualtex resident PIDs without treating CR-separated pgrep output as one invalid PID");
+expectIncludes(powerpointScript, "set processIdItems to paragraphs of processIds", "PowerPoint must parse multiple visualtex resident PIDs without treating CR-separated pgrep output as one invalid PID");
+expectIncludes(wordScript, "set markerLines to paragraphs of markerText", "Word must parse the resident heartbeat independently of line-ending representation");
+expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", "PowerPoint must parse the resident heartbeat independently of line-ending representation");
 
 expectIncludes(wordAdapter, "Public Sub AutoExec()", "Word template must publish AutoExec health");
 expectIncludes(wordAdapter, '"word-office-performance-20260801-r87"', "Word health must identify the painted-centre native Office build");
@@ -442,10 +451,11 @@ expect(
 );
 expectIncludes(wordAdapter, "Prefer the exact SEQ field result when resolving the hidden helper", "Equation scaffold deletion must resolve the hidden helper from VT_N_ before the collapsed VT_C_ paragraph-end fallback");
 expectIncludes(wordAdapter, "VTNormalizePlainWordParagraph paragraphRange", "Restored numbered LaTeX must remove the old Caption/tabbed numbering paragraph layout");
-expectIncludes(wordAdapter, "VTWriteFormulaRestoreAndLaunchSession", "Small native OMML restore requests must write both payloads and launch VisualTeX in one AppleScriptTask");
-expectIncludes(wordAdapter, "VT_WORD_FORMULA_RESTORE_COMBINED_MAX_BYTES", "Large formula restore manifests must retain the chunked compatibility fallback");
+expectIncludes(wordAdapter, "VTWriteFormulaRestoreAndLaunchSession", "Small native OMML restore requests must keep the existing atomic AppleScriptTask bridge");
+expectIncludes(wordAdapter, "VT_WORD_FORMULA_RESTORE_COMBINED_MAX_BYTES", "Large formula restore manifests must retain the chunked compatibility path");
 expectIncludes(launcher, "Public Function VTWriteFormulaRestoreAndLaunchSession", "The shared Office launcher must expose the atomic formula-restore write-and-launch bridge");
-expectIncludes(wordScript, "on WriteFormulaRestoreAndOpenVisualTeXSession", "The Word AppleScriptTask must atomically write request and restore source before launching VisualTeX");
+expectIncludes(wordScript, "on WriteFormulaRestoreAndOpenVisualTeXSession", "The Word AppleScriptTask must atomically write request and restore source before resident publication");
+expectIncludes(wordScript, "publishPreparedSessionToResident(safeSessionId)", "Formula restore and redraw launch handlers must reuse the resident inbox publisher");
 expectIncludes(wordAdapter, "Set selectedShape = VTVisualTeXInlineShapeAtSelection(Selection)", "The image-to-OMML Ribbon command must resolve the selected formula without unsafe collection indexing");
 expect(!wordAdapter.includes("VTWordEditInlineShape target, True\n"), "Image-to-native conversion must not fall back to an ordinary visible edit Session");
 expectIncludes(wordAdapter, "VTDetachWordFormulaPictureFromMath", "Native-to-image conversion must detach the final picture from Word's OMath container");
@@ -1541,7 +1551,9 @@ expectIncludes(backgroundRuntime, "Every Accessory-to-Regular transition must ha
 expectIncludes(backgroundRuntime, 'const DOCK_ICON_MIGRATION_MARKER_FILE: &str = "dock-icon-v5.refreshed"', "The repaired Dock icon lifecycle must refresh stale same-version icon cache once");
 expectIncludes(backgroundRuntime, "Install the bundle icon before changing activation policy", "Foreground reveal must install the VisualTeX icon before creating a regular Dock tile");
 expectIncludes(rustRuntime, "open_editor_window(\n        app,\n        host,\n        &session_id,\n        received_epoch_ms,\n        received_at,\n        silent,", "Office formula requests must activate the fixed host editor with one generation, timing origin and explicit silent mode");
-expectIncludes(rustRuntime, 'if host == OfficeHost::Word {\n            let url = format!("visualtex://office/open?session={session_id}");\n            handle_open_url_safely(app, &url)?;', "The resident watcher must keep direct in-process fast-open activation scoped to Word only");
+expectIncludes(rustRuntime, "if host == OfficeHost::Word {", "The resident watcher must keep direct in-process fast-open activation scoped to Word only");
+expectIncludes(rustRuntime, 'let url = format!("visualtex://office/open?session={session_id}");', "Accepted Word inbox requests must reuse the validated in-process Office URL handler");
+expectIncludes(rustRuntime, "handle_open_url_safely(app, &url)?;", "Accepted Word inbox requests must activate through the panic-safe in-process URL path");
 expectIncludes(launcher, 'If normalizedHost = "powerpoint" Then\n            operationStage = "powerpoint-fast-open-activate"\n            VTLaunchSession normalizedHost, sessionId', "PowerPoint must activate a claimed fast-open request through its proven AppleScriptTask URL launcher instead of the resident watcher thread");
 expectIncludes(rustRuntime, "office-native-dialog.html?transport=tauri", "The resident Office editor must use the direct native-dialog entry so a hidden prewarmed WebView cannot stall on the desktop entry's dynamic import");
 expectIncludes(read("src/desktop/main.tsx"), 'view === "office-formula"', "The desktop entry must select the dedicated Office formula view from the window query");

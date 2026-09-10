@@ -8,14 +8,16 @@ property runtimeSuffix : "Library/Application Scripts/com.microsoft.Word/VisualT
 property maximumRelativePathLength : 1024
 property expectedHost : "word"
 property numberingPreferenceFileName : "VisualTeXNumberingPreference.txt"
+property maximumFastOpenRequestBytes : 65536
 property cachedVisualTeXExecutable : ""
 
 on OpenVisualTeXSession(sessionId)
     try
         set safeSessionId to my validateSessionId(sessionId as text)
+        if my publishPreparedSessionToResident(safeSessionId) then return "ok|resident-inbox"
         set visualTeXURL to "visualtex://office/open?session=" & safeSessionId
         my launchVisualTeXURL(visualTeXURL)
-        return "ok|1"
+        return "ok|compat-url"
     on error errorMessage number errorNumber
         return my errorResponse(errorNumber, errorMessage)
     end try
@@ -31,9 +33,13 @@ on WriteAndOpenVisualTeXSession(argumentText)
         set validatedAt to my monotonicSeconds()
         my writeEncodedFileAtomically(targetPath, encodedData)
         set writtenAt to my monotonicSeconds()
-        set visualTeXURL to "visualtex://office/open?session=" & safeSessionId
-        my launchVisualTeXURL(visualTeXURL)
-        set launchedAt to my monotonicSeconds()
+        if my publishPreparedSessionToResident(safeSessionId) then
+            set launchedAt to my monotonicSeconds()
+        else
+            set visualTeXURL to "visualtex://office/open?session=" & safeSessionId
+            my launchVisualTeXURL(visualTeXURL)
+            set launchedAt to my monotonicSeconds()
+        end if
         return "ok|host=" & safeHost & ";validationMs=" & my elapsedMilliseconds(startedAt, validatedAt) & ";writeMs=" & my elapsedMilliseconds(validatedAt, writtenAt) & ";launchMs=" & my elapsedMilliseconds(writtenAt, launchedAt) & ";totalMs=" & my elapsedMilliseconds(startedAt, launchedAt)
     on error errorMessage number errorNumber
         return my errorResponse(errorNumber, errorMessage)
@@ -53,9 +59,13 @@ on WriteFormulaRestoreAndOpenVisualTeXSession(argumentText)
         my writeEncodedFileAtomically(requestPath, encodedRequest)
         my writeEncodedFileAtomically(sourcePath, encodedSource)
         set writtenAt to my monotonicSeconds()
-        set visualTeXURL to "visualtex://office/open?session=" & safeSessionId
-        my launchVisualTeXURL(visualTeXURL)
-        set launchedAt to my monotonicSeconds()
+        if my publishPreparedSessionToResident(safeSessionId) then
+            set launchedAt to my monotonicSeconds()
+        else
+            set visualTeXURL to "visualtex://office/open?session=" & safeSessionId
+            my launchVisualTeXURL(visualTeXURL)
+            set launchedAt to my monotonicSeconds()
+        end if
         return "ok|host=" & safeHost & ";validationMs=" & my elapsedMilliseconds(startedAt, validatedAt) & ";writeMs=" & my elapsedMilliseconds(validatedAt, writtenAt) & ";launchMs=" & my elapsedMilliseconds(writtenAt, launchedAt) & ";totalMs=" & my elapsedMilliseconds(startedAt, launchedAt)
     on error errorMessage number errorNumber
         return my errorResponse(errorNumber, errorMessage)
@@ -292,6 +302,52 @@ on ensureDirectory(targetPath)
     do shell script "/bin/mkdir -p " & quoted form of targetPath & " && /bin/chmod 700 " & quoted form of targetPath
 end ensureDirectory
 
+on publishPreparedSessionToResident(sessionId)
+    set safeSessionId to my validateSessionId(sessionId as text)
+    set sourcePath to my absoluteRuntimePath("OfficeSessions/" & safeSessionId & "/request.json")
+    set fileManager to current application's NSFileManager's defaultManager()
+    set requestData to current application's NSData's dataWithContentsOfFile:sourcePath
+    if requestData is missing value then return false
+    set requestSize to requestData's |length|() as integer
+    if requestSize < 1 or requestSize > maximumFastOpenRequestBytes then return false
+
+    -- Ensure one actual resident is alive before publishing. This may cold-start
+    -- VisualTeX once, but never starts a second process only to forward a URL.
+    set residentExecutable to my runningVisualTeXExecutable()
+    if residentExecutable is "" then return false
+
+    set markerPath to my fastOpenReadyMarkerPath()
+    set inboxRoot to ((current application's NSString's stringWithString:markerPath)'s stringByDeletingLastPathComponent()) as text
+    my ensureDirectory(inboxRoot)
+    set inboxPath to inboxRoot & "/" & safeSessionId & ".json"
+    set acceptedPath to inboxRoot & "/" & safeSessionId & ".accepted"
+    try
+        do shell script "/bin/rm -f " & quoted form of inboxPath & space & quoted form of acceptedPath
+        set writeSucceeded to (requestData's writeToFile:inboxPath atomically:true) as boolean
+        if not writeSucceeded then return false
+        do shell script "/bin/chmod 600 " & quoted form of inboxPath
+    on error
+        return false
+    end try
+
+    -- A current resident writes the accepted marker only after request and
+    -- auxiliary-file validation succeeds. An older resident may consume and
+    -- reject the inbox file, so disappearance alone is not enough for success.
+    repeat with attemptIndex from 1 to 16
+        delay 0.025
+        if (fileManager's fileExistsAtPath:acceptedPath) as boolean then
+            try
+                do shell script "/bin/rm -f " & quoted form of acceptedPath
+            end try
+            return true
+        end if
+    end repeat
+    try
+        do shell script "/bin/rm -f " & quoted form of inboxPath & space & quoted form of acceptedPath
+    end try
+    return false
+end publishPreparedSessionToResident
+
 on launchVisualTeXURL(visualTeXURL)
     set safeURL to visualTeXURL as text
     if safeURL does not start with "visualtex://office/open?session=" then error "VisualTeX launch URL is invalid" number 7127
@@ -390,10 +446,7 @@ on readyResidentVisualTeXExecutable(executableSuffix)
     on error
         return ""
     end try
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set markerLines to text items of markerText
-    set AppleScript's text item delimiters to previousDelimiters
+    set markerLines to paragraphs of markerText
     if (count of markerLines) < 4 then return ""
     if item 1 of markerLines is not "visualtex-fast-open-ready-v2" then return ""
     set processId to item 3 of markerLines as text
@@ -422,10 +475,7 @@ on isRunningVisualTeXExecutable(candidatePath, executableSuffix)
     on error
         return false
     end try
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set processIdItems to text items of processIds
-    set AppleScript's text item delimiters to previousDelimiters
+    set processIdItems to paragraphs of processIds
     repeat with processIdItem in processIdItems
         set processId to processIdItem as text
         if my isDecimalProcessId(processId) then
@@ -444,10 +494,7 @@ on firstRunningVisualTeXExecutable(executableSuffix)
         set processIds to do shell script "/usr/bin/pgrep -x " & quoted form of "visualtex"
     end try
     if processIds is "" then return ""
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set processIdItems to text items of processIds
-    set AppleScript's text item delimiters to previousDelimiters
+    set processIdItems to paragraphs of processIds
     repeat with processIdItem in processIdItems
         set processId to processIdItem as text
         if my isDecimalProcessId(processId) then

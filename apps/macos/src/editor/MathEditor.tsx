@@ -6,7 +6,9 @@ import {
   useRef,
   useState,
   forwardRef,
+  Component,
   type CSSProperties,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 import {
@@ -78,6 +80,10 @@ import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
+import {
+  inspectMathLiveSourceSafety,
+  mathLiveSourceSafetyMessage,
+} from "./mathLiveSourceSafety";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
@@ -141,9 +147,103 @@ export interface MathEditorFocusOptions {
   moveToEnd?: boolean;
 }
 
+interface FormulaFieldErrorBoundaryProps {
+  recoveryKey: string;
+  children: ReactNode;
+}
+
+interface FormulaFieldErrorBoundaryState {
+  error: unknown | null;
+  recoveryKey: string;
+}
+
+function FormulaFieldRenderFallback({ message }: { message: string }) {
+  return (
+    <div
+      role="status"
+      className="formula-field-render-fallback"
+      style={{
+        minHeight: 42,
+        boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        padding: "8px 12px",
+        border: "1px solid rgba(190, 18, 60, 0.28)",
+        borderRadius: 6,
+        color: "#9f1239",
+        background: "rgba(255, 241, 242, 0.72)",
+        fontSize: 12,
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+class FormulaFieldErrorBoundary extends Component<
+  FormulaFieldErrorBoundaryProps,
+  FormulaFieldErrorBoundaryState
+> {
+  state: FormulaFieldErrorBoundaryState = {
+    error: null,
+    recoveryKey: this.props.recoveryKey,
+  };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+
+  static getDerivedStateFromProps(
+    props: FormulaFieldErrorBoundaryProps,
+    state: FormulaFieldErrorBoundaryState,
+  ) {
+    if (props.recoveryKey === state.recoveryKey) return null;
+    return { error: null, recoveryKey: props.recoveryKey };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("VisualTeX isolated a formula renderer failure", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <FormulaFieldRenderFallback message="该行公式渲染失败，源码已保留。可在 LaTeX 源码区修改或删除这一行。" />
+    );
+  }
+}
+
 const EDITOR_LAYOUT_REFRESH_EVENT = "visualtex-editor-layout-refresh";
 const VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE =
   "application/x-visualtex-multiline-latex";
+
+function safeConvertVisualTexLatexToMarkup(
+  ...args: Parameters<typeof convertVisualTexLatexToMarkup>
+) {
+  const source = args[0];
+  if (typeof source === "string") {
+    const issue = inspectMathLiveSourceSafety(source);
+    if (issue) {
+      console.warn(
+        "VisualTeX skipped a structurally unsafe auxiliary MathLive render.",
+        { sourceLength: source.length, issue },
+      );
+      return "";
+    }
+  }
+  try {
+    return convertVisualTexLatexToMarkup(...args);
+  } catch (error) {
+    console.warn(
+      "VisualTeX skipped a non-essential MathLive markup render after an exception.",
+      {
+        sourceLength: typeof source === "string" ? source.length : 0,
+        error,
+      },
+    );
+    return "";
+  }
+}
 
 // Temporary WKWebView IME transaction trace. This is intentionally kept in
 // the DOM (rather than console-only) so the real Tauri app can be inspected
@@ -1599,7 +1699,7 @@ function decorateNativeSuggestionPreviews() {
       return;
     }
     if (preview.dataset.visualtexPreview) {
-      preview.innerHTML = convertVisualTexLatexToMarkup(command, {
+      preview.innerHTML = safeConvertVisualTexLatexToMarkup(command, {
         defaultMode: "math",
       });
       delete preview.dataset.visualtexPreview;
@@ -1613,11 +1713,11 @@ function decorateNativeSuggestionPreviews() {
     let previewLatex = resolved.latex;
     let previewKind = resolved.kind;
 
-    preview.innerHTML = convertVisualTexLatexToMarkup(previewLatex, {
+    preview.innerHTML = safeConvertVisualTexLatexToMarkup(previewLatex, {
       defaultMode: "math",
     });
     if (!nativeSuggestionPreviewHasVisibleInk(preview)) {
-      preview.innerHTML = convertVisualTexLatexToMarkup("\\boxed{?}", {
+      preview.innerHTML = safeConvertVisualTexLatexToMarkup("\\boxed{?}", {
         defaultMode: "math",
       });
       previewLatex = "\\boxed{?}";
@@ -1666,7 +1766,7 @@ function casesEnvironmentSuggestionQuery(field: MathfieldElement) {
 }
 
 function casesEnvironmentSuggestionItemMarkup() {
-  const preview = convertVisualTexLatexToMarkup(
+  const preview = safeConvertVisualTexLatexToMarkup(
     "\\begin{cases}x & x>0\\\\0 & x=0\\end{cases}",
     { defaultMode: "math" },
   );
@@ -2098,26 +2198,34 @@ function predictedFormulaRowHeight(
   );
   let renderedHeight = latex.trim() ? 0 : metrics.fontSize * 1.2;
 
+  // Keep the accurate pre-mount measurement for ordinary formulas because
+  // early pointer hit testing depends on the correct row geometry. The render
+  // itself is now guarded: structurally dangerous LaTeX is rejected before it
+  // reaches MathLive, and any remaining renderer exception falls back to the
+  // heuristic height instead of taking down the React root.
   if (measurementHost && latex.trim()) {
-    const probe = document.createElement("span");
-    probe.setAttribute("aria-hidden", "true");
-    probe.style.position = "absolute";
-    probe.style.left = "-100000px";
-    probe.style.top = "0";
-    probe.style.display = "inline-block";
-    probe.style.width = "max-content";
-    probe.style.maxWidth = "none";
-    probe.style.whiteSpace = "nowrap";
-    probe.style.visibility = "hidden";
-    probe.style.pointerEvents = "none";
-    probe.style.fontSize = metrics.fontSize + "px";
-    probe.style.lineHeight = "normal";
-    probe.innerHTML = convertVisualTexLatexToMarkup(latex, {
+    const markup = safeConvertVisualTexLatexToMarkup(latex, {
       defaultMode: "math",
     });
-    measurementHost.append(probe);
-    renderedHeight = probe.getBoundingClientRect().height;
-    probe.remove();
+    if (markup) {
+      const probe = document.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.position = "absolute";
+      probe.style.left = "-100000px";
+      probe.style.top = "0";
+      probe.style.display = "inline-block";
+      probe.style.width = "max-content";
+      probe.style.maxWidth = "none";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.visibility = "hidden";
+      probe.style.pointerEvents = "none";
+      probe.style.fontSize = metrics.fontSize + "px";
+      probe.style.lineHeight = "normal";
+      probe.innerHTML = markup;
+      measurementHost.append(probe);
+      renderedHeight = probe.getBoundingClientRect().height;
+      probe.remove();
+    }
   }
 
   return Math.ceil(
@@ -5004,7 +5112,7 @@ function FormulaField(props: FormulaFieldProps) {
       let renderedWidth = 0;
       if (content) {
         wrapperMeasure.style.fontSize = field.style.fontSize;
-        wrapperMeasure.innerHTML = convertVisualTexLatexToMarkup(
+        wrapperMeasure.innerHTML = safeConvertVisualTexLatexToMarkup(
           pendingWrapperInput.command + "{" + content + "}",
           { defaultMode: "math" },
         );
@@ -7171,7 +7279,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     previewOnlyRef.current = previewOnly;
 
     useEffect(() => {
-      installCustomSymbolGlobalStyle();
+      // Do not eagerly materialize every persisted custom-symbol SVG mask on
+      // initial startup. Runtime edits still refresh the complete global style
+      // so already-mounted non-shadow previews update immediately.
+      installCustomSymbolGlobalStyle(undefined, customSymbolRevision > 0);
       fieldRefs.current.forEach((field) => refreshCustomSymbolMathfield(field));
     }, [customSymbolRevision]);
 
@@ -10611,6 +10722,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         <div className="mathfield-stack">
           {lines.map((line, index) => {
             const lineId = line.id;
+            const safetyIssue = inspectMathLiveSourceSafety(line.latex);
             return (
             <div
               className={
@@ -10654,48 +10766,74 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   </button>
                 </div>
               ) : null}
-              <FormulaField
-                key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}-${fieldRepairEpochByLineId[lineId] ?? 0}`}
-                lineId={lineId}
-                index={index}
-                latex={line.latex}
-                zoom={zoom}
-                formulaRowVerticalInset={formulaRowVerticalInset}
-                language={language}
-                formulaLetterFont={formulaLetterFont}
-                formulaChineseFont={formulaChineseFont}
-                autoPairDelimiters={autoPairDelimiters}
-                inputBehavior={inputBehavior}
-                readOnly={interactionReadOnly}
-                freshExternalSync={previewOnly}
-                register={registerField}
-                onEdit={handleFieldEdit}
-                onInputActivity={(field) =>
-                  refreshSuggestionQuery(
+              {safetyIssue ? (
+                <FormulaFieldRenderFallback
+                  message={`${mathLiveSourceSafetyMessage(safetyIssue, language)} ${
+                    language === "en"
+                      ? "The LaTeX source is preserved; edit or remove this row in the source panel."
+                      : "LaTeX 源码仍完整保留，可在源码区修改或删除这一行。"
+                  }`}
+                />
+              ) : (
+                <FormulaFieldErrorBoundary
+                  recoveryKey={[
                     lineId,
-                    field,
-                    normalizeChineseLatex(field.value),
-                  )
-                }
-                onSelectionChange={rememberSelectionTarget}
-                onCommitPending={() => historyManager.commitPendingTransaction()}
-                onFocus={(_lineIndex, field) => {
-                  setActiveLine(lineId);
-                  const normalizedValue = normalizeChineseLatex(field.value);
-                  suppressedSuggestionRef.current = {
-                    lineId,
-                    value: normalizedValue,
-                  };
-                  queryRef.current = "";
-                  setQuery("");
-                }}
-                onKeyDown={(lineIndex, event, field) =>
-                  handleKeyDown(lineIndex, lineId, event, field)
-                }
-                onPasteImage={onPasteImage}
-                onContextMenu={openContextMenu}
-                onPasteLatexLines={pasteLatexLines}
-              />
+                    line.latex,
+                    zoom,
+                    formulaRowVerticalInset,
+                    formulaLetterFont,
+                    formulaChineseFont,
+                    autoPairDelimiters,
+                    interactionReadOnly,
+                    previewOnly,
+                    fieldRenderEpoch,
+                    fieldRepairEpochByLineId[lineId] ?? 0,
+                  ].join("\u0000")}
+                >
+                  <FormulaField
+                    key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}-${fieldRepairEpochByLineId[lineId] ?? 0}`}
+                    lineId={lineId}
+                    index={index}
+                    latex={line.latex}
+                    zoom={zoom}
+                    formulaRowVerticalInset={formulaRowVerticalInset}
+                    language={language}
+                    formulaLetterFont={formulaLetterFont}
+                    formulaChineseFont={formulaChineseFont}
+                    autoPairDelimiters={autoPairDelimiters}
+                    inputBehavior={inputBehavior}
+                    readOnly={interactionReadOnly}
+                    freshExternalSync={previewOnly}
+                    register={registerField}
+                    onEdit={handleFieldEdit}
+                    onInputActivity={(field) =>
+                      refreshSuggestionQuery(
+                        lineId,
+                        field,
+                        normalizeChineseLatex(field.value),
+                      )
+                    }
+                    onSelectionChange={rememberSelectionTarget}
+                    onCommitPending={() => historyManager.commitPendingTransaction()}
+                    onFocus={(_lineIndex, field) => {
+                      setActiveLine(lineId);
+                      const normalizedValue = normalizeChineseLatex(field.value);
+                      suppressedSuggestionRef.current = {
+                        lineId,
+                        value: normalizedValue,
+                      };
+                      queryRef.current = "";
+                      setQuery("");
+                    }}
+                    onKeyDown={(lineIndex, event, field) =>
+                      handleKeyDown(lineIndex, lineId, event, field)
+                    }
+                    onPasteImage={onPasteImage}
+                    onContextMenu={openContextMenu}
+                    onPasteLatexLines={pasteLatexLines}
+                  />
+                </FormulaFieldErrorBoundary>
+              )}
             </div>
             );
           })}

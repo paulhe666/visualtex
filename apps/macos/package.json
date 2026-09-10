@@ -44,7 +44,7 @@
     "test:svg-export": "tsx scripts/svg_export_smoke.mjs",
     "test:rare-integral-glyphs": "node --experimental-strip-types scripts/rare_integral_glyph_registry_regression.mjs",
     "test:mathlive-integrals": "npm run build:desktop && node scripts/mathlive_integral_regression.mjs",
-    "test:mathlive-runtime-safety:run": "tsx scripts/mathlive_runtime_safety_patch_regression.mts && tsx scripts/mathlive_option_guard_regression.mts && node scripts/mathlive_runtime_safety_browser_regression.mjs",
+    "test:mathlive-runtime-safety:run": "tsx scripts/mathlive_runtime_safety_patch_regression.mts && tsx scripts/mathlive_option_guard_regression.mts && tsx scripts/mathlive_source_safety_regression.mts && tsx scripts/editor_crash_recovery_regression.mts && node scripts/mathlive_runtime_safety_browser_regression.mjs",
     "test:mathlive-runtime-safety": "npm run build:desktop && npm run test:mathlive-runtime-safety:run",
     "test:native-suggestion-previews": "npm run build:desktop && node scripts/native_suggestion_preview_regression.mjs --audit",
     "test:word-omml": "node scripts/word_omml_regression.mjs",

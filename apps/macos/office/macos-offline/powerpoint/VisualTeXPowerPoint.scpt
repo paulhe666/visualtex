@@ -253,10 +253,7 @@ on readyResidentVisualTeXExecutable(executableSuffix)
     on error
         return ""
     end try
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set markerLines to text items of markerText
-    set AppleScript's text item delimiters to previousDelimiters
+    set markerLines to paragraphs of markerText
     if (count of markerLines) < 4 then return ""
     if item 1 of markerLines is not "visualtex-fast-open-ready-v2" then return ""
     set processId to item 3 of markerLines as text
@@ -285,10 +282,7 @@ on isRunningVisualTeXExecutable(candidatePath, executableSuffix)
     on error
         return false
     end try
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set processIdItems to text items of processIds
-    set AppleScript's text item delimiters to previousDelimiters
+    set processIdItems to paragraphs of processIds
     repeat with processIdItem in processIdItems
         set processId to processIdItem as text
         if my isDecimalProcessId(processId) then
@@ -307,10 +301,7 @@ on firstRunningVisualTeXExecutable(executableSuffix)
         set processIds to do shell script "/usr/bin/pgrep -x " & quoted form of "visualtex"
     end try
     if processIds is "" then return ""
-    set previousDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to linefeed
-    set processIdItems to text items of processIds
-    set AppleScript's text item delimiters to previousDelimiters
+    set processIdItems to paragraphs of processIds
     repeat with processIdItem in processIdItems
         set processId to processIdItem as text
         if my isDecimalProcessId(processId) then
