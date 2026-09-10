@@ -670,11 +670,28 @@ fn fast_open_session_id(path: &Path) -> Option<String> {
     }
 }
 
+fn fast_open_accept_path(inbox_root: &Path, session_id: &str) -> Result<PathBuf, String> {
+    validate_uuid(session_id, "Fast-open Session id")?;
+    Ok(inbox_root.join(format!("{session_id}.accepted")))
+}
+
 fn fast_open_modified_is_recent(modified: SystemTime, now: SystemTime) -> bool {
     match now.duration_since(modified) {
         Ok(age) => (FAST_OPEN_MIN_STABLE_AGE..=FAST_OPEN_MAX_AGE).contains(&age),
         Err(error) => error.duration() <= FAST_OPEN_FUTURE_TOLERANCE,
     }
+}
+
+fn fast_open_operation_supported(operation: &str) -> bool {
+    matches!(
+        operation,
+        "formula"
+            | "nativeToImage"
+            | "imageToNative"
+            | "documentImport"
+            | "latexRedraw"
+            | "formulaRestore"
+    )
 }
 
 fn persist_fast_open_claim(
@@ -707,8 +724,9 @@ fn persist_fast_open_claim(
     if host_from_request_name(&request.host)? != expected_host {
         return Err("Office fast-open request host does not match its sandbox inbox".to_string());
     }
-    if request.operation.as_deref().unwrap_or("formula") != "formula" {
-        return Err("Office fast-open accepts only ordinary formula requests".to_string());
+    let operation = request.operation.as_deref().unwrap_or("formula");
+    if !fast_open_operation_supported(operation) {
+        return Err("Office fast-open request uses an unsupported operation".to_string());
     }
 
     ensure_runtime_root(expected_host)?;
@@ -822,6 +840,16 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         let _ = fs::remove_file(&claim_path);
         persist_result?;
         if host == OfficeHost::Word {
+            // AppleScriptTask uses this explicit acknowledgement to distinguish a
+            // current resident that accepted a prepared redraw/restore request
+            // from an older resident that merely claimed and rejected the inbox
+            // file. The marker is written only after full request/auxiliary-file
+            // validation succeeds.
+            atomic_write_runtime(
+                &fast_open_accept_path(parent, &session_id)?,
+                b"accepted\n",
+                0o600,
+            )?;
             let url = format!("visualtex://office/open?session={session_id}");
             handle_open_url_safely(app, &url)?;
         }
@@ -7116,6 +7144,29 @@ mod tests {
         );
         assert!(fast_open_session_id(Path::new(&format!(".{session_id}.tmp"))).is_none());
         assert!(fast_open_session_id(Path::new("not-a-uuid.json")).is_none());
+        assert_eq!(
+            fast_open_accept_path(Path::new("/tmp/inbox"), session_id)
+                .expect("accepted marker path should be valid"),
+            Path::new("/tmp/inbox").join(format!("{session_id}.accepted"))
+        );
+    }
+
+    #[test]
+    fn fast_open_supports_prepared_word_operations_without_accepting_unknown_actions() {
+        for operation in [
+            "formula",
+            "nativeToImage",
+            "imageToNative",
+            "documentImport",
+            "latexRedraw",
+            "formulaRestore",
+        ] {
+            assert!(
+                fast_open_operation_supported(operation),
+                "fast-open should accept {operation}"
+            );
+        }
+        assert!(!fast_open_operation_supported("unknownOperation"));
     }
 
     #[test]

@@ -138,8 +138,8 @@ export function convertVisualTexLatexToMarkup(
   ...args: Parameters<typeof convertLatexToMarkup>
 ) {
   installMathLiveContourIntegralGlobalStyle();
-  installCustomSymbolGlobalStyle();
   const [text, options] = args;
+  installCustomSymbolGlobalStyle(text);
   const macros: MacroDictionary = {
     ...VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS,
     ...(options?.macros ?? {}),
