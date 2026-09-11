@@ -1989,7 +1989,10 @@ internal static class MathTypeOleInterop
         return null;
     }
 
-    internal static string? ResolveMathPagePath()
+    internal static string? ResolveMathPagePath() =>
+        ResolveMathPagePathForArchitecture(RuntimeInformation.ProcessArchitecture);
+
+    internal static string? ResolveMathPagePathForArchitecture(Architecture processArchitecture)
     {
         var overridePath = Environment.GetEnvironmentVariable(
             "VISUALTEX_MATHTYPE_MATHPAGE_PATH");
@@ -1998,18 +2001,27 @@ internal static class MathTypeOleInterop
             var expanded = Environment.ExpandEnvironmentVariables(
                 overridePath.Trim().Trim('"'));
             if (File.Exists(expanded)
-                && IsMathPageBinaryCompatibleWithCurrentProcess(expanded))
+                && IsMathPageBinaryCompatible(expanded, processArchitecture))
                 return expanded;
         }
 
-        var architecture = Environment.Is64BitProcess ? "64" : "32";
-        var candidates = new List<string>();
+        var architectureFolder = processArchitecture switch
+        {
+            Architecture.X64 or Architecture.Arm64 => "64",
+            Architecture.X86 or Architecture.Arm => "32",
+            _ => Environment.Is64BitProcess ? "64" : "32",
+        };
         var serverPath = ResolveInstalledServerPath();
+        var bundledMathPage = ResolveBundledMathPagePath(processArchitecture);
+        if (!string.IsNullOrWhiteSpace(bundledMathPage))
+            return bundledMathPage;
+
+        var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(serverPath))
         {
             var installRoot = Path.GetDirectoryName(serverPath);
             if (!string.IsNullOrWhiteSpace(installRoot))
-                AddMathPageCandidates(candidates, installRoot!, architecture);
+                AddMathPageCandidates(candidates, installRoot!, architectureFolder);
         }
         foreach (var root in new[]
                  {
@@ -2022,18 +2034,105 @@ internal static class MathTypeOleInterop
                 AddMathPageCandidates(
                     candidates,
                     Path.Combine(root, "MathType"),
-                    architecture);
+                    architectureFolder);
                 AddMathPageCandidates(
                     candidates,
                     Path.Combine(root, "WIRIS", "MathType"),
-                    architecture);
+                    architectureFolder);
             }
         }
         return candidates
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(path =>
                 File.Exists(path)
-                && IsMathPageBinaryCompatibleWithCurrentProcess(path));
+                && IsMathPageBinaryCompatible(path, processArchitecture));
+    }
+
+    private static string? ResolveBundledMathPagePath(Architecture processArchitecture)
+    {
+        var runtimeRoots = new List<string>();
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\VisualTeX\OfficeIntegration");
+            var executable = key?.GetValue("ExecutablePath") as string;
+            if (!string.IsNullOrWhiteSpace(executable))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(
+                    executable!.Trim().Trim('"'));
+                var installRoot = Path.GetDirectoryName(expanded);
+                if (!string.IsNullOrWhiteSpace(installRoot))
+                    runtimeRoots.Add(Path.Combine(installRoot!, "mathtype-runtime"));
+            }
+        }
+        catch { }
+
+        var localAppData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+            runtimeRoots.Add(Path.Combine(
+                localAppData,
+                "VisualTeX",
+                "mathtype-runtime"));
+
+        var architectureFolder = processArchitecture switch
+        {
+            Architecture.X64 or Architecture.Arm64 => "64",
+            Architecture.X86 or Architecture.Arm => "32",
+            _ => Environment.Is64BitProcess ? "64" : "32",
+        };
+        foreach (var runtimeRoot in runtimeRoots
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!IsBundledMathTypeRuntimeComplete(runtimeRoot)) continue;
+            foreach (var path in new[]
+                     {
+                         Path.Combine(
+                             runtimeRoot,
+                             "MathPage",
+                             architectureFolder,
+                             "MathPage.wll"),
+                         Path.Combine(runtimeRoot, "MathPage", "MathPage.wll"),
+                         Path.Combine(runtimeRoot, "MathPage.wll"),
+                     })
+            {
+                if (File.Exists(path)
+                    && IsMathPageBinaryCompatible(path, processArchitecture))
+                    return path;
+            }
+        }
+        return null;
+    }
+
+    private static bool IsBundledMathTypeRuntimeComplete(string runtimeRoot)
+    {
+        if (string.IsNullOrWhiteSpace(runtimeRoot)) return false;
+        try
+        {
+            foreach (var relative in new[]
+                     {
+                         "MathType.exe",
+                         "MT7.dsc",
+                         Path.Combine("System", "MathTypeLib.exe"),
+                         Path.Combine("System", "MT6.dll"),
+                         Path.Combine("System", "64", "MT6.dll"),
+                         Path.Combine("System", "rt", "lib", "rt.jar"),
+                         Path.Combine("System", "rt", "lib", "charsets.jar"),
+                         Path.Combine("System", "rt", "lib", "jce.jar"),
+                         Path.Combine("System", "rt", "lib", "jsse.jar"),
+                         Path.Combine("System", "rt", "lib", "security", "java.security"),
+                     })
+            {
+                if (!File.Exists(Path.Combine(runtimeRoot, relative))) return false;
+            }
+            return Directory.Exists(Path.Combine(runtimeRoot, "System", "rt", "bin"))
+                && Directory.Exists(Path.Combine(runtimeRoot, "System", "rt", "lib", "ext"))
+                && Directory.Exists(Path.Combine(runtimeRoot, "System", "rt", "lib", "security"));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryReadProgIdClsid(string progId, out Guid clsid)
@@ -2138,7 +2237,9 @@ internal static class MathTypeOleInterop
         }
     }
 
-    private static bool IsMathPageBinaryCompatibleWithCurrentProcess(string path)
+    private static bool IsMathPageBinaryCompatible(
+        string path,
+        Architecture processArchitecture)
     {
         try
         {
@@ -2155,7 +2256,7 @@ internal static class MathTypeOleInterop
             stream.Position = peOffset;
             if (reader.ReadUInt32() != 0x00004550) return false; // PE\0\0
             var machine = reader.ReadUInt16();
-            return RuntimeInformation.ProcessArchitecture switch
+            return processArchitecture switch
             {
                 Architecture.X86 => machine == 0x014C,
                 Architecture.X64 => machine == 0x8664,

@@ -24,7 +24,8 @@ internal static partial class WordEquationNumbering
         bool deferExternalShapeCreation = false,
         bool deferMetadataPersistence = false,
         Range? cleanTableTemplateRange = null,
-        bool replaceSourceParagraphFromTemplate = false)
+        bool replaceSourceParagraphFromTemplate = false,
+        bool verifiedFreshBareOmml = false)
     {
         _ = deferFieldUpdate;
         _ = deferExternalShapeCreation;
@@ -85,45 +86,58 @@ internal static partial class WordEquationNumbering
                 }
             }
 
-            // A document created by the retired #(SEQ) route is valid migration
-            // input, but its mathematical number must be stripped before the OMath
-            // is placed in the center cell. The center cell owns formula semantics
-            // only; every number field remains ordinary Word content in cell (1,3).
-            var activeXml = activeRange.WordOpenXML;
-            if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
+            if (!verifiedFreshBareOmml)
             {
-                var semanticOmml = metadata is not null
-                    ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(activeXml)
-                    : WordOmmlConverter.StripVisualTeXNativeEquationNumber(activeXml);
-                RemoveVisibleEquationNumber(document, formulaId);
-                RemoveNativeCaption(document, formulaId);
-                application = document.Application;
-                replacementRange = WordOmmlConverter.ReplaceWithPreparedOmml(
-                    application,
-                    document,
-                    activeRange,
-                    semanticOmml,
-                    display: true,
-                    mathFontName: document.OMathFontName);
-                Release(activeRange);
-                activeRange = replacementRange;
-                replacementRange = null;
-                EnsureNumberedOmmlIsDisplay(activeRange);
-                traceStage("strip-retired-native-hash");
+                // A document created by the retired #(SEQ) route is valid migration
+                // input, but its mathematical number must be stripped before the OMath
+                // is placed in the center cell. The center cell owns formula semantics
+                // only; every number field remains ordinary Word content in cell (1,3).
+                var activeXml = activeRange.WordOpenXML;
+                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
+                {
+                    var semanticOmml = metadata is not null
+                        ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(activeXml)
+                        : WordOmmlConverter.StripVisualTeXNativeEquationNumber(activeXml);
+                    RemoveVisibleEquationNumber(document, formulaId);
+                    RemoveNativeCaption(document, formulaId);
+                    application = document.Application;
+                    replacementRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                        application,
+                        document,
+                        activeRange,
+                        semanticOmml,
+                        display: true,
+                        mathFontName: document.OMathFontName);
+                    Release(activeRange);
+                    activeRange = replacementRange;
+                    replacementRange = null;
+                    EnsureNumberedOmmlIsDisplay(activeRange);
+                    traceStage("strip-retired-native-hash");
+                }
+                else
+                {
+                    // Remove only generated numbering artifacts. For an existing 1x3
+                    // host this clears an older hidden-caption + visible-REF scaffold;
+                    // the formula itself remains untouched in the center cell.
+                    RemoveVisibleEquationNumber(document, formulaId);
+                    RemoveNativeCaption(document, formulaId);
+                }
+
+                DeleteBookmarkOnly(document, EquationBookmarkName(formulaId));
+                DeleteBookmarkOnly(document, NativeCaptionBookmarkName(formulaId));
+                DeleteBookmarkOnly(document, NativeNumberBookmarkName(formulaId));
+                traceStage("native-clear-artifacts");
             }
             else
             {
-                // Remove only generated numbering artifacts. For an existing 1x3
-                // host this clears an older hidden-caption + visible-REF scaffold;
-                // the formula itself remains untouched in the center cell.
-                RemoveVisibleEquationNumber(document, formulaId);
-                RemoveNativeCaption(document, formulaId);
+                // Format conversion has just materialized a new FormulaId as a bare
+                // display OMath and globally verified its physical owner against the
+                // prepared OMML. A fresh UUID cannot own legacy caption/REF artifacts,
+                // so repeating the document-wide cleanup probes here only rescans Word
+                // state once per row. The final strict document validation still runs
+                // after every numbered table has been committed.
+                traceStage("native-clear-artifacts-skipped");
             }
-
-            DeleteBookmarkOnly(document, EquationBookmarkName(formulaId));
-            DeleteBookmarkOnly(document, NativeCaptionBookmarkName(formulaId));
-            DeleteBookmarkOnly(document, NativeNumberBookmarkName(formulaId));
-            traceStage("native-clear-artifacts");
 
             float? nativeDisplayHeightPoints = null;
             var activeRangeAlreadyInTable = false;
@@ -316,6 +330,76 @@ internal static partial class WordEquationNumbering
             Release(paragraphs);
             Release(centerRange);
             Release(centerCell);
+        }
+    }
+
+    internal static bool TryReadManagedDirectTableNumberPlan(
+        Document document,
+        string formulaId,
+        out int ordinal,
+        out string prefix)
+    {
+        ordinal = 0;
+        prefix = string.Empty;
+        Bookmarks? bookmarks = null;
+        Bookmark? numberBookmark = null;
+        Range? numberRange = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var name = NativeNumberBookmarkName(formulaId);
+            if (!bookmarks.Exists(name)) return false;
+            numberBookmark = bookmarks[name];
+            numberRange = numberBookmark.Range.Duplicate;
+            fields = numberRange.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(result); result = null;
+                Release(code); code = null;
+                Release(field); field = fields[index];
+                if (field.Type != WdFieldType.wdFieldSequence) continue;
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf(
+                        LegacyEquationSequenceName,
+                        StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                result = field.Result;
+                var ordinalText = (result.Text ?? string.Empty).Trim();
+                if (!int.TryParse(
+                        ordinalText,
+                        System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out ordinal)
+                    || ordinal <= 0)
+                    return false;
+                var visible = (numberRange.Text ?? string.Empty)
+                    .Trim('\t', '\r', '\n', '\a', ' ');
+                if (!visible.EndsWith(ordinalText, StringComparison.Ordinal))
+                    return false;
+                prefix = visible.Substring(0, visible.Length - ordinalText.Length);
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            ordinal = 0;
+            prefix = string.Empty;
+            return false;
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(numberRange);
+            Release(numberBookmark);
+            Release(bookmarks);
         }
     }
 

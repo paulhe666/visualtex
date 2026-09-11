@@ -10,6 +10,11 @@ internal sealed class WordFormulaFormatConversionPlan
     internal string TargetMode { get; set; } = string.Empty;
     internal bool WholeDocument { get; set; }
     internal string NumberFormatId { get; set; } = EquationNumberFormat.ContinuousId;
+    // Whole-document OLE capture already visits every InlineShape. Cache exact
+    // source/target counts there so Apply does not enumerate 1000 OLEFormat RCWs
+    // again merely to establish its pre-transaction cardinality baseline.
+    internal int? InitialSourceObjectCount { get; set; }
+    internal int? InitialTargetObjectCount { get; set; }
     internal List<WordFormulaFormatConversionTarget> Targets { get; set; } = new();
 }
 
@@ -27,6 +32,7 @@ internal sealed class WordFormulaFormatConversionTarget
     internal int PrecedingPlainBlankParagraphCount { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";
     internal double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;
+    internal float? MathTypeDisplayColumnWidth { get; set; }
     internal FormulaMetadata Metadata { get; set; } = new();
 }
 

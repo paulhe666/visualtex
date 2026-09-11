@@ -96,6 +96,9 @@ internal static class MathMlToLatexConverter
             ["'"] = @"\prime ",
             ["′"] = @"\prime ",
             ["″"] = @"\prime\prime ",
+            ["‴"] = @"\prime\prime\prime ",
+            ["⁗"] = @"\prime\prime\prime\prime ",
+            ["‵"] = @"\backprime ",
             ["∀"] = @"\forall ",
             ["∃"] = @"\exists ",
             ["∣"] = @"\mid ",
@@ -610,13 +613,35 @@ internal static class MathMlToLatexConverter
         if (children.Count == 0) return string.Empty;
         var builder = new StringBuilder(GroupBase(ConvertElement(children[0])));
         var index = 1;
+        var postPair = 0;
         while (index < children.Count && children[index].Name.LocalName != "mprescripts")
         {
-            var sub = ConvertElement(children[index]);
-            var sup = index + 1 < children.Count ? ConvertElement(children[index + 1]) : string.Empty;
-            if (!string.IsNullOrEmpty(sub)) builder.Append("_{").Append(sub).Append('}');
-            if (!string.IsNullOrEmpty(sup)) builder.Append("^{").Append(sup).Append('}');
+            var sub = ScriptArgument(children[index]);
+            var sup = index + 1 < children.Count && children[index + 1].Name.LocalName != "mprescripts"
+                ? ScriptArgument(children[index + 1]) : string.Empty;
+            // Each additional pair is an adjacent script column, not a second
+            // superscript on the same TeX atom (which would be invalid TeX).
+            if (postPair++ > 0 && (sub.Length > 0 || sup.Length > 0)) builder.Append("{}");
+            if (sub.Length > 0) builder.Append("_{").Append(sub).Append('}');
+            if (sup.Length > 0) builder.Append("^{").Append(sup).Append('}');
             index += 2;
+        }
+        if (index < children.Count && children[index].Name.LocalName == "mprescripts")
+        {
+            var prescripts = new List<string>();
+            for (index++; index < children.Count; index += 2)
+            {
+                var sub = ScriptArgument(children[index]);
+                var sup = index + 1 < children.Count ? ScriptArgument(children[index + 1]) : string.Empty;
+                if (sub.Length == 0 && sup.Length == 0) continue;
+                prescripts.Add("{}"
+                    + (sub.Length > 0 ? "_{" + sub + "}" : string.Empty)
+                    + (sup.Length > 0 ? "^{" + sup + "}" : string.Empty));
+            }
+            // MathML lists prescript columns from the base outward. TeX is
+            // emitted from left to right, so those columns precede it in reverse.
+            prescripts.Reverse();
+            builder.Insert(0, string.Concat(prescripts));
         }
         return builder.ToString();
     }

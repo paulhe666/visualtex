@@ -8,7 +8,7 @@ namespace VisualTeX.WordVsto;
 /// Undefined values mean mixed user formatting, not a failed COM read.</summary>
 internal sealed class WordCharacterFormatting
 {
-    private readonly List<Action<Microsoft.Office.Interop.Word.Font>> setters = new();
+    private readonly List<(string PropertyName, Action<Microsoft.Office.Interop.Word.Font> Apply)> setters = new();
     internal WdColor? Color { get; set; }
 
     internal static WordCharacterFormatting CaptureParagraphMarkAtPosition(Document document, int position)
@@ -111,35 +111,35 @@ internal sealed class WordCharacterFormatting
         try
         {
             font = range.Font;
-            void Add<T>(T value, Action<Microsoft.Office.Interop.Word.Font, T> set)
+            void Add<T>(string propertyName, T value, Action<Microsoft.Office.Interop.Word.Font, T> set)
             {
                 if (value is null) return;
                 if (value is string name ? string.IsNullOrWhiteSpace(name)
                     : Convert.ToDouble(value) == (int)WdConstants.wdUndefined) return;
-                result.setters.Add(target => set(target, value));
+                result.setters.Add((propertyName, target => set(target, value)));
             }
-            Add(font.Name, (target, value) => target.Name = value);
-            Add(font.NameAscii, (target, value) => target.NameAscii = value);
-            Add(font.NameOther, (target, value) => target.NameOther = value);
-            Add(font.NameFarEast, (target, value) => target.NameFarEast = value);
-            Add(font.NameBi, (target, value) => target.NameBi = value);
-            Add(font.Size, (target, value) => target.Size = value);
-            Add(font.SizeBi, (target, value) => target.SizeBi = value);
-            Add(font.Bold, (target, value) => target.Bold = value);
-            Add(font.BoldBi, (target, value) => target.BoldBi = value);
-            Add(font.Italic, (target, value) => target.Italic = value);
-            Add(font.ItalicBi, (target, value) => target.ItalicBi = value);
-            Add(font.Underline, (target, value) => target.Underline = value);
-            Add(font.Position, (target, value) => target.Position = value);
-            Add(font.Spacing, (target, value) => target.Spacing = value);
-            Add(font.Scaling, (target, value) => target.Scaling = value);
-            Add(font.Kerning, (target, value) => target.Kerning = value);
-            Add(font.Subscript, (target, value) => target.Subscript = value);
-            Add(font.Superscript, (target, value) => target.Superscript = value);
-            Add(font.StrikeThrough, (target, value) => target.StrikeThrough = value);
-            Add(font.DoubleStrikeThrough, (target, value) => target.DoubleStrikeThrough = value);
-            Add(font.AllCaps, (target, value) => target.AllCaps = value);
-            Add(font.SmallCaps, (target, value) => target.SmallCaps = value);
+            Add(nameof(font.Name), font.Name, (target, value) => target.Name = value);
+            Add(nameof(font.NameAscii), font.NameAscii, (target, value) => target.NameAscii = value);
+            Add(nameof(font.NameOther), font.NameOther, (target, value) => target.NameOther = value);
+            Add(nameof(font.NameFarEast), font.NameFarEast, (target, value) => target.NameFarEast = value);
+            Add(nameof(font.NameBi), font.NameBi, (target, value) => target.NameBi = value);
+            Add(nameof(font.Size), font.Size, (target, value) => target.Size = value);
+            Add(nameof(font.SizeBi), font.SizeBi, (target, value) => target.SizeBi = value);
+            Add(nameof(font.Bold), font.Bold, (target, value) => target.Bold = value);
+            Add(nameof(font.BoldBi), font.BoldBi, (target, value) => target.BoldBi = value);
+            Add(nameof(font.Italic), font.Italic, (target, value) => target.Italic = value);
+            Add(nameof(font.ItalicBi), font.ItalicBi, (target, value) => target.ItalicBi = value);
+            Add(nameof(font.Underline), font.Underline, (target, value) => target.Underline = value);
+            Add(nameof(font.Position), font.Position, (target, value) => target.Position = value);
+            Add(nameof(font.Spacing), font.Spacing, (target, value) => target.Spacing = value);
+            Add(nameof(font.Scaling), font.Scaling, (target, value) => target.Scaling = value);
+            Add(nameof(font.Kerning), font.Kerning, (target, value) => target.Kerning = value);
+            Add(nameof(font.Subscript), font.Subscript, (target, value) => target.Subscript = value);
+            Add(nameof(font.Superscript), font.Superscript, (target, value) => target.Superscript = value);
+            Add(nameof(font.StrikeThrough), font.StrikeThrough, (target, value) => target.StrikeThrough = value);
+            Add(nameof(font.DoubleStrikeThrough), font.DoubleStrikeThrough, (target, value) => target.DoubleStrikeThrough = value);
+            Add(nameof(font.AllCaps), font.AllCaps, (target, value) => target.AllCaps = value);
+            Add(nameof(font.SmallCaps), font.SmallCaps, (target, value) => target.SmallCaps = value);
             var color = font.Color;
             if (color == WdColor.wdColorAutomatic || (int)color >= 0)
                 result.Color = color;
@@ -163,7 +163,32 @@ internal sealed class WordCharacterFormatting
     {
         // Use the PIA property setters so failures propagate to the owning
         // edit transaction. A partial format application is not success.
-        foreach (var set in setters) set(font);
+        foreach (var setter in setters) setter.Apply(font);
+        if (Color.HasValue) font.Color = Color.Value;
+        font.Hidden = 0;
+    }
+
+    internal void ApplyToParagraphStyle(Microsoft.Office.Interop.Word.Font font)
+    {
+        foreach (var setter in setters)
+        {
+            try
+            {
+                setter.Apply(font);
+            }
+            catch (COMException error) when (
+                setter.PropertyName == nameof(font.NameFarEast)
+                && error.HResult == unchecked((int)0x800A16D4))
+            {
+                // Word 2019 can return a valid East-Asian range font (for example
+                // Noto Sans CJK SC) and then reject the same value specifically on
+                // Style.Font.NameFarEast with "The parameter is incorrect". Name is
+                // already applied above and carries the same effective family for
+                // the generated MathType paragraph. Keep every other captured
+                // property strict; only this known Style.Font incompatibility is
+                // allowed to fall back to Word's inherited East-Asian style font.
+            }
+        }
         if (Color.HasValue) font.Color = Color.Value;
         font.Hidden = 0;
     }

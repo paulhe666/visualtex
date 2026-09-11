@@ -11,6 +11,7 @@
       "../scripts/install_windows_vsto_runtime.ps1": "scripts/install_windows_vsto_runtime.ps1",
       "../scripts/test_windows_office_runtime.ps1": "scripts/test_windows_office_runtime.ps1",
       "../scripts/uninstall_windows_vsto.ps1": "scripts/uninstall_windows_vsto.ps1",
+      "target/private-mathtype-runtime/": "mathtype-runtime/",
       "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi": "windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi",
       "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json": "windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json",
       "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi": "windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi",

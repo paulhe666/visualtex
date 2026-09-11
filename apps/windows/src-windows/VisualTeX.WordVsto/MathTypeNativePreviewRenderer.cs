@@ -100,6 +100,14 @@ internal static class MathTypeNativePreviewRenderer
     internal static bool WaitForSharedSessionPrewarm(TimeSpan timeout) =>
         SharedPrewarmCompleted.Wait(timeout);
 
+    internal static bool IsAvailable =>
+        ResolveBridgePath() is not null
+        // The packaged preview bridge is always win-x64, even when Word/VSTO is
+        // x86. Probe MathPage for the sidecar architecture rather than Office's
+        // process architecture, or x86 Word would unnecessarily lose native WMF.
+        && MathTypeOleInterop.ResolveMathPagePathForArchitecture(
+            System.Runtime.InteropServices.Architecture.X64) is not null;
+
     private static void QueueSharedSessionPrewarm()
     {
         if (Interlocked.Exchange(ref _sharedPrewarmQueued, 1) != 0) return;

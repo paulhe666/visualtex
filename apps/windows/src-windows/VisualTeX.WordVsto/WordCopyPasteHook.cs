@@ -30,8 +30,9 @@ internal readonly struct WordClipboardGestureEvent
 /// Observes Windows clipboard sequence changes while this add-in's Word process
 /// owns the foreground window. This covers keyboard, Ribbon and context-menu Copy
 /// without intercepting Word's native command or touching COM off the Office STA.
-/// Paste is detected from Word's own WindowSelectionChange event: the clipboard
-/// sequence does not change on Paste, while the OLE/OMath inventory does.
+/// Paste itself does not change the clipboard sequence; a lightweight Office-STA
+/// watcher compares only the tracked document-end marker until an insertion is
+/// possible, while WindowSelectionChange remains an immediate secondary signal.
 /// </summary>
 internal sealed class WordCopyPasteHook : IDisposable
 {

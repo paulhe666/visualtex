@@ -14,6 +14,7 @@ src-tauri/gen/
 src-tauri/binaries/*.exe
 src-tauri/resources/windows-office/*.msi
 src-tauri/resources/windows-office/*.sha256.json
+src-tauri/resources/mathtype-runtime/**/MathPage.wll
 
 src-windows/**/bin/
 src-windows/**/obj/

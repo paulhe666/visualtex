@@ -36,6 +36,26 @@ internal sealed class OfficeOleInkSafePreview
     internal float BaselinePixels { get; }
 }
 
+internal sealed class OfficeOleInkSafeVectorPreview
+{
+    internal OfficeOleInkSafeVectorPreview(
+        string emfPath,
+        float widthPixels,
+        float heightPixels,
+        float baselinePixels)
+    {
+        EmfPath = emfPath;
+        WidthPixels = widthPixels;
+        HeightPixels = heightPixels;
+        BaselinePixels = baselinePixels;
+    }
+
+    internal string EmfPath { get; }
+    internal float WidthPixels { get; }
+    internal float HeightPixels { get; }
+    internal float BaselinePixels { get; }
+}
+
 internal static class OfficeOlePreview
 {
     private const long MaximumSvgBytes = 16L * 1024L * 1024L;
@@ -93,6 +113,60 @@ internal static class OfficeOlePreview
                 horizontalSafetyInsetPixels);
             ValidateVectorEmf(emfPath);
             return emfPath;
+        }
+        catch
+        {
+            try { File.Delete(emfPath); } catch { }
+            throw;
+        }
+    }
+
+    internal static OfficeOleInkSafeVectorPreview CreateInkSafeVectorPreviewFromSvg(
+        string svgPath,
+        float widthPixels,
+        float heightPixels,
+        float? baselinePixels,
+        float safetyPaddingPixels = 1f)
+    {
+        if (string.IsNullOrWhiteSpace(svgPath))
+            throw new ArgumentException("SVG preview path is required.", nameof(svgPath));
+        if (!File.Exists(svgPath))
+            throw new FileNotFoundException("SVG preview does not exist.", svgPath);
+        var information = new FileInfo(svgPath);
+        if (information.Length <= 0 || information.Length > MaximumSvgBytes)
+            throw new InvalidDataException("SVG preview size is invalid.");
+        if (!IsPositiveFinite(widthPixels) || !IsPositiveFinite(heightPixels))
+            throw new InvalidDataException("SVG preview dimensions are invalid.");
+        if (float.IsNaN(safetyPaddingPixels)
+            || float.IsInfinity(safetyPaddingPixels)
+            || safetyPaddingPixels < 0f)
+            throw new InvalidDataException("SVG ink safety padding is invalid.");
+
+        var directory = Path.GetDirectoryName(svgPath)
+            ?? throw new InvalidOperationException("SVG preview has no parent directory.");
+        var emfPath = Path.Combine(directory, $"{Guid.NewGuid():N}.emf");
+        try
+        {
+            var renderer = SvgVectorRenderer.Load(svgPath);
+            var geometry = renderer.ResolveInkSafeGeometry(
+                widthPixels,
+                heightPixels,
+                baselinePixels,
+                safetyPaddingPixels,
+                measurementPixels: 1024);
+            renderer.Render(
+                emfPath,
+                geometry.WidthPixels,
+                geometry.HeightPixels,
+                usePowerPointStablePhysicalFrame: false,
+                horizontalSafetyInsetPixels: 0f,
+                geometry.ViewBox);
+            ValidateVectorEmf(emfPath);
+            return new OfficeOleInkSafeVectorPreview(
+                emfPath,
+                geometry.WidthPixels,
+                geometry.HeightPixels,
+                geometry.BaselinePixels);
         }
         catch
         {
@@ -466,7 +540,8 @@ internal static class OfficeOlePreview
             float widthPixels,
             float heightPixels,
             float? baselinePixels,
-            float safetyPaddingPixels)
+            float safetyPaddingPixels,
+            int measurementPixels = 1536)
         {
             var unitsPerPixelX = _viewBox.Width / widthPixels;
             var unitsPerPixelY = _viewBox.Height / heightPixels;
@@ -492,7 +567,7 @@ internal static class OfficeOlePreview
             // the expensive painted-bounds pass only for that replacement case.
             if (!ContainsTextOutlines) return original;
 
-            var measured = MeasurePaintedBounds();
+            var measured = MeasurePaintedBounds(measurementPixels);
             if (!measured.HasValue) return original;
             var ink = measured.Value;
             var safetyX = safetyPaddingPixels * unitsPerPixelX;
@@ -565,10 +640,11 @@ internal static class OfficeOlePreview
             bitmap.Save(pngPath, ImageFormat.Png);
         }
 
-        private SvgViewBox? MeasurePaintedBounds()
+        private SvgViewBox? MeasurePaintedBounds(int measurementPixels)
         {
-            const int measurementWidth = 1536;
-            const int measurementHeight = 1536;
+            var measurementSize = Math.Max(256, Math.Min(4096, measurementPixels));
+            var measurementWidth = measurementSize;
+            var measurementHeight = measurementSize;
             foreach (var marginFactor in new[] { 1d, 3d, 7d })
             {
                 var measurementViewBox = new SvgViewBox(
