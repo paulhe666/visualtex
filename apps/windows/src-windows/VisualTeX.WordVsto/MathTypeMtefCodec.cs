@@ -97,6 +97,10 @@ internal static partial class MathTypeMtefCodec
 
     private const byte EmbellDot = 2;
     private const byte EmbellDoubleDot = 3;
+    private const byte EmbellPrime = 5;
+    private const byte EmbellDoublePrime = 6;
+    private const byte EmbellBackPrime = 7;
+    private const byte EmbellTriplePrime = 18;
     private const byte EmbellTilde = 8;
     private const byte EmbellHat = 9;
     private const byte EmbellRightArrow = 11;
@@ -5074,16 +5078,41 @@ internal static partial class MathTypeMtefCodec
                 token.SetAttributeValue("stretchy", "false");
             }
 
+            // EMBELL is not restricted to over-accents: native MathType stores
+            // primes here, including on characters nested inside another script.
+            // Apply accents to the character, then attach all right/left primes
+            // at that character's script level. Never silently discard a record.
+            var rightPrimes = new StringBuilder();
+            var leftPrimes = new StringBuilder();
             foreach (var embellishment in embellishments)
             {
+                switch (embellishment)
+                {
+                    case EmbellPrime: rightPrimes.Append('′'); continue;
+                    case EmbellDoublePrime: rightPrimes.Append('″'); continue;
+                    case EmbellTriplePrime: rightPrimes.Append('‴'); continue;
+                    case EmbellBackPrime: leftPrimes.Append('‵'); continue;
+                }
                 var mark = EmbellishmentMark(embellishment);
-                if (mark.Length == 0) continue;
+                if (mark.Length == 0)
+                    throw new InvalidDataException(
+                        $"Unsupported MathType character embellishment {embellishment}; conversion stopped to avoid losing a symbol.");
                 token = new XElement(
                     "mover",
                     new XAttribute("accent", "true"),
                     token,
                     new XElement("mo", mark));
             }
+            if (leftPrimes.Length > 0)
+            {
+                token = new XElement("mmultiscripts", token,
+                    new XElement("none"),
+                    rightPrimes.Length > 0 ? new XElement("mo", rightPrimes.ToString()) : new XElement("none"),
+                    new XElement("mprescripts"), new XElement("none"),
+                    new XElement("mo", leftPrimes.ToString()));
+            }
+            else if (rightPrimes.Length > 0)
+                token = new XElement("msup", token, new XElement("mo", rightPrimes.ToString()));
             return token;
         }
 

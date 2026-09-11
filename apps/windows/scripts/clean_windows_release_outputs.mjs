@@ -12,7 +12,19 @@ const repositoryRoot = resolve(root, "..", "..");
 const argumentsList = process.argv.slice(2);
 const cleanAcceptanceOutputs = argumentsList.includes("--acceptance");
 const dryRun = argumentsList.includes("--dry-run");
-const releaseRoot = resolve(root, "src-tauri/target/release");
+const targetDirIndex = argumentsList.indexOf("--target-dir");
+const targetDirectory = targetDirIndex >= 0
+  ? argumentsList[targetDirIndex + 1]
+  : "src-tauri/target";
+if (!targetDirectory || targetDirectory.startsWith("-") || targetDirectory.includes("..")) {
+  throw new Error(`Invalid --target-dir value: ${targetDirectory ?? "<missing>"}`);
+}
+const targetRoot = resolve(root, targetDirectory);
+const expectedTargetParent = resolve(root, "src-tauri");
+if (!targetRoot.startsWith(expectedTargetParent + "\\") && targetRoot !== expectedTargetParent) {
+  throw new Error(`Windows release target must stay under src-tauri: ${targetRoot}`);
+}
+const releaseRoot = join(targetRoot, "release");
 const fixedPaths = [
   resolve(root, "dist"),
   join(releaseRoot, "visualtex.exe"),

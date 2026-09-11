@@ -1556,6 +1556,15 @@ internal sealed partial class WordFormulaService
                         shape.Width,
                         shape.Height,
                         metadata);
+                if (MathTypeOleInterop.IsMathTypeOle(shape)
+                    && MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
+                        shape,
+                        out var mathTypeCompound))
+                {
+                    var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
+                    return FormulaFontSize.Normalize(
+                        MathTypeMtefCodec.ReadEquationNativeFullFontSize(equationNative));
+                }
             }
 
             // First prove there is actual nearby native math. FindAtRange's
@@ -1623,6 +1632,7 @@ internal sealed partial class WordFormulaService
             throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
 
         var target = FormulaFontSize.Normalize(requestedFontSizePt);
+        var metadata = selected.Metadata!;
         Document? document = null;
         InlineShape? shape = null;
         Bookmark? bookmark = null;
@@ -1638,10 +1648,58 @@ internal sealed partial class WordFormulaService
             document = _application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
+
+            if (string.Equals(
+                    selected.ObjectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                shape = FindMathTypeOleByRange(
+                        document,
+                        selected.ObjectId,
+                        allowGlobalFallback: false)
+                    ?? throw new InvalidOperationException(
+                        "The selected MathType equation no longer exists at the captured Word location.");
+                var sourceFragment = MathTypeWordOpenXml.Read(shape);
+                var sourceMathMl = MathTypeOleStorage.ReadMathMl(sourceFragment.CompoundFile);
+                var numberPosition = metadata.Numbered
+                    ? GetMathTypeNumberPositionForRange(selected.ObjectId)
+                    : "right";
+                var resizeSession = new OfficeSessionDocument
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    Mode = "edit",
+                    Host = "word",
+                    FormulaId = selected.FormulaId!,
+                    SourceDocumentId = selected.DocumentId,
+                    SourceObjectId = selected.ObjectId,
+                    Title = metadata.Title,
+                    Lines = metadata.Lines.ConvertAll(line => new FormulaLine
+                    {
+                        Id = line.Id,
+                        Latex = line.Latex,
+                    }),
+                    CodeFormat = metadata.CodeFormat,
+                    DisplayMode = metadata.DisplayMode,
+                    ObjectMode = FormulaOleContract.MathTypeOleMode,
+                    Numbered = metadata.Numbered,
+                    MathTypeNumberPosition = numberPosition,
+                    FontSizePt = target,
+                    OriginalMetadata = metadata,
+                    Dirty = true,
+                    Status = "committing",
+                };
+                Release(shape);
+                shape = null;
+                Release(document);
+                document = null;
+                _ = ReplaceMathTypeOle(resizeSession, sourceMathMl, emfPath: null);
+                return target;
+            }
+
             undoRecord = BeginUndoRecord("VisualTeX Set Formula Font Size");
             if (undoRecord is null)
                 throw new InvalidOperationException("Word could not establish an independent font-size edit transaction.");
-            var metadata = selected.Metadata;
             var sourceSemanticFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
 
             if (string.Equals(
@@ -1891,6 +1949,7 @@ internal sealed partial class WordFormulaService
 
     public int UpdateEquationNumbers()
     {
+        using var performance = WordSelectionPerformance.Start("update-numbers");
         Document? document = null;
         try
         {
@@ -1899,11 +1958,16 @@ internal sealed partial class WordFormulaService
             EnsureWritable(document);
             EnsureEquationFieldResultsVisible(document);
             var referenceCounts = WordEquationReferenceFields.CaptureReferenceCounts(document);
+            performance?.Mark("reference-inventory");
             return ExecuteDocumentEdit(document, "VisualTeX Update Equation Numbers", () =>
             {
-                var count = WordEquationNumbering.UpdateEquationNumbers(document)
-                    + MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                performance?.Mark("rollback-snapshot");
+                var count = WordEquationNumbering.UpdateEquationNumbers(document);
+                performance?.Mark("visualtex-numbering");
+                count += MathTypeEquationNumbering.UpdateEquationNumbers(document);
+                performance?.Mark("mathtype-numbering");
                 WordEquationReferenceFields.ValidateReferences(document, referenceCounts);
+                performance?.Mark("reference-validation");
                 return count;
             });
         }
@@ -9257,15 +9321,11 @@ internal sealed partial class WordFormulaService
     public OfficeObjectResult ReplaceMathTypeOle(
         OfficeSessionDocument session,
         string mathMl,
-        string emfPath)
+        string? emfPath)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
             throw new InvalidDataException("VisualTeX did not provide valid MathML for MathType OLE.");
-        if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
-            throw new FileNotFoundException(
-                "VisualTeX did not provide a valid MathType OLE vector preview.",
-                emfPath);
 
         var metadata = session.ToMetadata();
         metadata.Validate();
@@ -9295,13 +9355,14 @@ internal sealed partial class WordFormulaService
         var numberingLayoutChanged = false;
         MathTypeWordOpenXml.NumberTemplate? sourceNumberTemplate = null;
         var createdEditSectionBreakCodeStart = -1;
+        var editUndoEnded = false;
+        var editViewRestored = false;
         var alignInline = string.Equals(
             session.DisplayMode,
             "inline",
             StringComparison.OrdinalIgnoreCase);
         try
         {
-            undoRecord = BeginUndoRecord("VisualTeX Update MathType OLE Formula");
             document = _application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document.");
             EnsureWritable(document);
@@ -9406,7 +9467,9 @@ internal sealed partial class WordFormulaService
             // This keeps MathType's own glyph/spacing model and prevents an inline
             // edit from changing the object baseline merely because VisualTeX's
             // frontend export has different pixel geometry.
-            var renderRoot = Path.GetDirectoryName(emfPath) ?? Path.GetTempPath();
+            var renderRoot = !string.IsNullOrWhiteSpace(emfPath)
+                ? Path.GetDirectoryName(emfPath!) ?? Path.GetTempPath()
+                : Path.GetTempPath();
             var nativePreviewInputs = new Dictionary<string, byte[]>(StringComparer.Ordinal)
             {
                 ["source"] = ReadMathTypeMtefFromCompoundFile(sourceFragment.CompoundFile),
@@ -9453,8 +9516,11 @@ internal sealed partial class WordFormulaService
                 // VisualTeX EMF as a Word-owned presentation while preserving the
                 // genuine MathType CFB/MTEF semantics. This is the same safe fallback
                 // used by direct insertion and never activates the MathType server.
+                if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
+                    throw new InvalidOperationException(
+                        "MathType native preview is unavailable, so VisualTeX cannot resize this MathType equation without a fallback vector preview.");
                 previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
-                    emfPath,
+                    emfPath!,
                     targetWidthPt,
                     targetHeightPt);
                 targetWordPosition = alignToWordTextBaseline
@@ -9491,6 +9557,12 @@ internal sealed partial class WordFormulaService
 
             rollbackWordOpenXml = sourceFragment.WordOpenXml;
             rollbackStart = oldStart;
+
+            // WordOpenXML exports above may terminate Word's custom Undo record.
+            // Open it only after every source/template export and offline render,
+            // immediately before the first document mutation.
+            undoRecord = BeginUndoRecord("VisualTeX Update MathType OLE Formula")
+                ?? throw new InvalidOperationException("Word could not establish an independent MathType edit transaction.");
 
             // An inline OLE object occupies exactly one Word character. Remove only
             // that character, then materialize the rewritten Flat OPC at the same
@@ -9587,6 +9659,19 @@ internal sealed partial class WordFormulaService
             if (alignInline)
                 RestoreTypingBaselineAfter(replacement);
 
+            // Complete view/baseline changes inside the same Undo item. The final
+            // materialized XML read remains mandatory but happens after that item
+            // closes, so it cannot split content replacement from font writes.
+            finalSelection = replacement.Range.Duplicate;
+            RestoreViewState(document, viewState, finalSelection);
+            editViewRestored = true;
+            if (screenUpdatingSuspended)
+            {
+                _application.ScreenUpdating = previousScreenUpdating;
+                screenUpdatingSuspended = false;
+            }
+            EndUndoRecord(undoRecord);
+            editUndoEnded = true;
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=validate-replacement formulaId={session.FormulaId}");
             var replacementFragment = MathTypeWordOpenXml.Read(replacement);
@@ -9603,13 +9688,14 @@ internal sealed partial class WordFormulaService
                 throw new InvalidDataException(
                     $"Word materialized the wrong MathType formula. Expected '{metadata.Latex}', actual '{replacementLatex}'.");
 
-            finalSelection = replacement.Range.Duplicate;
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=complete formulaId={session.FormulaId}");
             return Result(session, document);
         }
         catch
         {
+            editViewRestored = false;
+            Release(finalSelection); finalSelection = null;
             if (oldDeleted && document is not null && rollbackStart >= 0
                 && !string.IsNullOrWhiteSpace(rollbackWordOpenXml))
             {
@@ -9688,8 +9774,8 @@ internal sealed partial class WordFormulaService
             {
                 try { _application.ScreenUpdating = previousScreenUpdating; } catch { }
             }
-            RestoreViewState(document, viewState, finalSelection);
-            EndUndoRecord(undoRecord);
+            if (!editViewRestored) RestoreViewState(document, viewState, finalSelection);
+            if (!editUndoEnded) EndUndoRecord(undoRecord);
             Release(undoRecord);
             Release(finalSelection);
             Release(insertion);
@@ -12819,7 +12905,9 @@ internal sealed partial class WordFormulaService
         bool deferNativeOmmlShapeFinalization = false,
         bool deferNativeOmmlShapeCreation = false,
         bool deferNativeOmmlMetadataPersistence = false,
-        string? preparedUnnumberedOmml = null)
+        string? preparedUnnumberedOmml = null,
+        int? plannedNumberOrdinal = null,
+        string? plannedNumberPrefix = null)
     {
         var display = string.Equals(
             metadata.DisplayMode,
@@ -12864,7 +12952,9 @@ internal sealed partial class WordFormulaService
                 equationRange,
                 height,
                 metadata,
-                knownNumberedTable);
+                knownNumberedTable,
+                plannedOrdinal: plannedNumberOrdinal,
+                plannedPrefix: plannedNumberPrefix);
         }
         else
         {
@@ -13635,7 +13725,8 @@ internal sealed partial class WordFormulaService
         InlineShape shape,
         bool numbered,
         string numberPosition,
-        MathTypeWordOpenXml.NumberTemplate? numberTemplate)
+        MathTypeWordOpenXml.NumberTemplate? numberTemplate,
+        bool updateNumberFields = true)
     {
         Range? shapeRange = null;
         Paragraphs? paragraphs = null;
@@ -13719,7 +13810,8 @@ internal sealed partial class WordFormulaService
                 document,
                 shape,
                 numbered,
-                numberPosition);
+                numberPosition,
+                updateNestedNumberFields: updateNumberFields);
         }
         finally
         {
@@ -15199,7 +15291,7 @@ internal sealed partial class WordFormulaService
                     displayStyle.set_BaseStyle(ref normalStyle);
                     displayStyle.set_NextParagraphStyle(ref normalStyle);
                     displayFont = displayStyle.Font;
-                    displayBodyFormatting.Apply(displayFont);
+                    displayBodyFormatting.ApplyToParagraphStyle(displayFont);
                     // Match MathType's own behavior: create the style only when the
                     // document does not already have it. Never overwrite an existing
                     // native MathType style, because its tab geometry may have been

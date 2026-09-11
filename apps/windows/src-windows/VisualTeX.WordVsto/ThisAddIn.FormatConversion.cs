@@ -317,61 +317,75 @@ public sealed partial class ThisAddIn
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
             {
-                SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
-                var nativePreviewInputs =
-                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 foreach (var target in plan.Targets)
-                {
-                    var formula = prepared[target.Id];
-                    var mathMl = formula.MathMl
-                        ?? throw new InvalidDataException(
-                            $"缺少公式“{target.Latex}”的 MathType MathML。");
-                    var inline = string.Equals(
-                        target.DisplayMode,
-                        "inline",
-                        StringComparison.OrdinalIgnoreCase);
-                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                        mathMl,
-                        inline,
-                        formula.Session.FontSizePt);
-                    nativePreviewInputs[target.Id] = generated.Mtef;
-                    // Once the batch is attempted, InsertMathTypeOle must never
-                    // start one MathPage sidecar per formula or silently switch
-                    // the visible result back to frontend/MathJax geometry.
-                    formula.MathTypeNativePreviewAttempted = true;
-                }
+                    prepared[target.Id].MathTypeNativePreviewAttempted = true;
 
-                var nativePreviewRoot = prepared.Values
-                    .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
-                        ? null
-                        : Path.GetDirectoryName(formula.EmfPath))
-                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
-                    ?? Path.GetTempPath();
-                var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
-                var renderedAllNativePreviews =
-                    MathTypeNativePreviewRenderer.TryRenderBatch(
-                        nativePreviewInputs,
-                        nativePreviewRoot,
-                        out var nativePreviews);
-                var missingNativePreviewIds = plan.Targets
-                    .Where(target => !nativePreviews.ContainsKey(target.Id))
-                    .Select(target => target.Id)
-                    .ToArray();
-                if (!renderedAllNativePreviews
-                    || missingNativePreviewIds.Length > 0)
+                var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
+                if (!nativePreviewAvailable)
                 {
-                    foreach (var preview in nativePreviews.Values)
-                        preview.Dispose();
-                    throw new InvalidOperationException(
-                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{plan.Targets.Count}）。"
-                        + "为避免回退到 VisualTeX 前端几何，Word 文档尚未开始转换。");
+                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览完成 MathType 转换…");
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-preview-fallback reason=native-unavailable formulas={plan.Targets.Count}");
                 }
+                else
+                {
+                    SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
+                    var nativePreviewInputs =
+                        new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    foreach (var target in plan.Targets)
+                    {
+                        var formula = prepared[target.Id];
+                        var mathMl = formula.MathMl
+                            ?? throw new InvalidDataException(
+                                $"缺少公式“{target.Latex}”的 MathType MathML。");
+                        var inline = string.Equals(
+                            target.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase);
+                        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                            mathMl,
+                            inline,
+                            formula.Session.FontSizePt);
+                        nativePreviewInputs[target.Id] = generated.Mtef;
+                    }
 
-                foreach (var target in plan.Targets)
-                    prepared[target.Id].MathTypeNativePreview =
-                        nativePreviews[target.Id];
-                WordDoubleClickHook.TraceMessage(
-                    $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    var nativePreviewRoot = prepared.Values
+                        .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
+                            ? null
+                            : Path.GetDirectoryName(formula.EmfPath))
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                        ?? Path.GetTempPath();
+                    var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
+                    var renderedAllNativePreviews =
+                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                            nativePreviewInputs,
+                            nativePreviewRoot,
+                            out var nativePreviews);
+                    var missingNativePreviewIds = plan.Targets
+                        .Where(target => !nativePreviews.ContainsKey(target.Id))
+                        .Select(target => target.Id)
+                        .ToArray();
+                    if (!renderedAllNativePreviews
+                        || missingNativePreviewIds.Length > 0)
+                    {
+                        foreach (var preview in nativePreviews.Values)
+                            preview.Dispose();
+                        nativePreviewWatch.Stop();
+                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-preview-fallback reason=native-batch-incomplete "
+                            + $"native={nativePreviews.Count}/{plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                    else
+                    {
+                        foreach (var target in plan.Targets)
+                            prepared[target.Id].MathTypeNativePreview =
+                                nativePreviews[target.Id];
+                        nativePreviewWatch.Stop();
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                }
             }
 
             SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");

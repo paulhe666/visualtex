@@ -51,7 +51,9 @@ $requiredInteropTokens = @(
     'RegistryView.Registry32',
     'RegistryView.Registry64',
     'RunForConversionVerb',
-    'RegisteredMathMlGetSet'
+    'RegisteredMathMlGetSet',
+    'ResolveBundledMathPagePath',
+    'mathtype-runtime'
 )
 foreach ($token in $requiredInteropTokens) {
     if (-not $interop.Contains($token)) {
@@ -81,6 +83,9 @@ if (-not $powerPoint.Contains('CompleteGeneration')) {
 }
 if (-not $preview.Contains('MathType')) {
     throw 'MathType native preview bridge source is unexpectedly empty or disconnected.'
+}
+if (-not $preview.Contains('AppContext.BaseDirectory') -or -not $preview.Contains('mathtype-runtime')) {
+    throw 'MathType native preview bridge does not probe VisualTeX private MathPage runtime first.'
 }
 if ($omml -match 'Office16\\OMML2MML\.XSL' -and -not $omml.Contains('RegistryView')) {
     throw 'OMML converter appears tied to one Office installation path without registry-view probing.'

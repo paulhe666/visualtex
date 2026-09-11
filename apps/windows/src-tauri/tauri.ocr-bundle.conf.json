@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "resources": {
+      "ocr/worker.py": "ocr/worker.py",
+      "resources/ocr-python/windows-x64": "ocr-python/windows-x64",
+      "resources/ocr-models/windows-x64": "ocr-models/windows-x64"
+    }
+  }
+}

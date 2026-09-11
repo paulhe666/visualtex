@@ -3,6 +3,7 @@
 ; LocalServer. Legacy Office.js Trusted Catalog resources are not installed.
 
 !define VISUALTEX_INSTALLER_VERSION "1.2.6"
+!define VISUALTEX_RUNTIME_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\manage_private_mathtype_runtime.ps1"
 
 Var VisualTeXOfficeChoice
 Var VisualTeXOfficeOnlyRadio
@@ -104,9 +105,11 @@ visualtex_office_close_declined:
 visualtex_office_process_check_done:
     ${EndIf}
     StrCpy $VisualTeXOfficeChoice "native"
-    Return
+    Goto visualtex_office_choice_done
   ${EndIf}
   StrCpy $VisualTeXOfficeChoice "none"
+visualtex_office_choice_done:
+  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
 FunctionEnd
 
 Function VisualTeXOcrPageCreate
@@ -173,6 +176,70 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+; Keep the process inspection in a bundled script: short -File invocations avoid
+; command-line truncation, nested escaping and quoting custom install paths.
+; This same script is embedded into both installer and uninstaller; an old or
+; partially removed installation therefore cannot supply a stale guard script.
+!macro VisualTeXRunPrivateRuntimeGuard MODE
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\visualtex-runtime-maintenance.ps1" "${VISUALTEX_RUNTIME_GUARD_SOURCE}"
+  nsExec::ExecToStack /TIMEOUT=15000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-runtime-maintenance.ps1" -InstallRoot "$INSTDIR" -Mode ${MODE}`
+  Pop $0
+  Pop $1
+  DetailPrint "Private MathType runtime ${MODE}: ExitCode=$0 Output=$1"
+!macroend
+
+!macro VisualTeXStopPrivateMathTypeRuntimeBody
+  ; Never terminate a user's separately installed MathType. The guard verifies
+  ; both executable name and canonical path, and rechecks process identity.
+  !insertmacro VisualTeXRunPrivateRuntimeGuard Stop
+!macroend
+
+Function VisualTeXStopPrivateMathTypeRuntime
+  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
+FunctionEnd
+
+Function un.VisualTeXStopPrivateMathTypeRuntime
+  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
+FunctionEnd
+
+!macro VisualTeXPromptPrivateMathTypeRuntimeBody PREFIX
+visualtex_runtime_check:
+  !insertmacro VisualTeXRunPrivateRuntimeGuard Check
+  ${If} $0 == "0"
+    Return
+  ${EndIf}
+  ${If} $0 != "10"
+    Goto visualtex_runtime_check_failed
+  ${EndIf}
+  ; Unattended maintenance must not kill a helper without interactive consent.
+  IfSilent visualtex_runtime_abort 0
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "检测到 VisualTeX 自带的私有 MathType Runtime 正在运行。$\r$\n$\r$\n是否关闭 VisualTeX 私有 MathType Runtime 并继续安装/卸载？$\r$\n仅处理此目录下的 MathType.exe 和 MathTypeLib.exe：$\r$\n$INSTDIR\mathtype-runtime$\r$\n$\r$\n请先结束 VisualTeX 的公式转换。不会关闭独立安装的 MathType，也不会关闭 Word。选择“否”取消本次操作。$\r$\n$\r$\nClose the VisualTeX-owned runtime and continue? A separately installed MathType and Word will not be closed." IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype
+visualtex_close_private_mathtype_now:
+  Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime
+  ${If} $0 == "0"
+    Return
+  ${EndIf}
+visualtex_runtime_check_failed:
+  SetDetailsView show
+  IfSilent visualtex_runtime_abort 0
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完成 VisualTeX 私有 runtime 的检查或关闭，尚未继续覆盖文件。$\r$\n返回值：$0$\r$\n$1$\r$\n$\r$\n可重试，或取消本次操作。独立安装的 MathType 不会被关闭。$\r$\n$\r$\nRuntime inspection/closure failed. Retry or cancel without replacing files." IDRETRY visualtex_runtime_check IDCANCEL visualtex_keep_private_mathtype
+visualtex_runtime_abort:
+  SetErrorLevel 1
+  Quit
+visualtex_keep_private_mathtype:
+  SetErrorLevel 1
+  Abort
+!macroend
+
+Function VisualTeXPromptPrivateMathTypeRuntimeClosure
+  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody ""
+FunctionEnd
+
+Function un.VisualTeXPromptPrivateMathTypeRuntimeClosure
+  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody "un."
+FunctionEnd
+
 !macro NSIS_HOOK_PREINSTALL
   ; Normalize the two legacy 1.2.3 install locations back to Tauri's canonical
   ; current-user directory. Preserve genuinely custom directories.
@@ -181,6 +248,11 @@ FunctionEnd
   ${ElseIf} $INSTDIR == "$APPDATA\VisualTeX"
     StrCpy $INSTDIR "$LOCALAPPDATA\VisualTeX"
   ${EndIf}
+
+  ; Recheck after the destination page as well: custom paths and helpers that
+  ; restarted since the early maintenance page still require explicit consent.
+  ; Do not remove the runtime tree before successful payload extraction.
+  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
 
   ; Custom pages are skipped by NSIS /S. A release acceptance install may use
   ; /VISUALTEXOFFICE=skip to leave the machine's existing Office integration
@@ -206,20 +278,27 @@ FunctionEnd
     StrCpy $VisualTeXOfficeChoice "native"
   ${EndIf}
 
-  ClearErrors
-  ${GetOptions} $0 "/VISUALTEXOCR=" $1
-  ${IfNot} ${Errors}
-    ${If} $1 == "install"
-      StrCpy $VisualTeXOcrChoice "install"
-    ${ElseIf} $1 == "none"
-      StrCpy $VisualTeXOcrChoice "none"
-    ${Else}
-      Abort "Unsupported /VISUALTEXOCR value: $1"
+  !ifdef VISUALTEX_NO_OCR_BUNDLE
+    ; The lightweight installer is compiled without worker/Python/wheel/model
+    ; resources. Keep the runtime choice pinned to none even for unattended
+    ; installs so logs and resource hooks reflect the actual package contents.
+    StrCpy $VisualTeXOcrChoice "none"
+  !else
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXOCR=" $1
+    ${IfNot} ${Errors}
+      ${If} $1 == "install"
+        StrCpy $VisualTeXOcrChoice "install"
+      ${ElseIf} $1 == "none"
+        StrCpy $VisualTeXOcrChoice "none"
+      ${Else}
+        Abort "Unsupported /VISUALTEXOCR value: $1"
+      ${EndIf}
     ${EndIf}
-  ${EndIf}
-  ${If} $VisualTeXOcrChoice == ""
-    StrCpy $VisualTeXOcrChoice "install"
-  ${EndIf}
+    ${If} $VisualTeXOcrChoice == ""
+      StrCpy $VisualTeXOcrChoice "install"
+    ${EndIf}
+  !endif
 
   ${If} $VisualTeXAcceptanceMode == "1"
     DetailPrint "Installed-release acceptance mode: preserving existing Office integration and skipping machine prerequisite prompts."
@@ -373,6 +452,10 @@ visualtex_postinstall_cleanup_done:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  ; Release VisualTeX's private MathType/MathPage runtime before the uninstaller
+  ; removes the application tree. The path-scoped guard cannot touch a separate
+  ; MathType installation.
+  Call un.VisualTeXPromptPrivateMathTypeRuntimeClosure
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_preuninstall_done
   nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
   Pop $0

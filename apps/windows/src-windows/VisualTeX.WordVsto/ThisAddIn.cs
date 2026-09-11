@@ -298,6 +298,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
     private uint _formulaCopyClipboardSequence;
     private int _copyPasteRepairGeneration;
+    private int _copyPasteWatchGeneration;
     private int _copyPasteSelectionRepairPending;
     private long _lastSuccessfulPasteRepairStartedAt;
     private long _lastSuccessfulPasteRepairCompletedAt;
@@ -1086,22 +1087,35 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             try
             {
                 var snapshot = service.CaptureSelectedFormulaForCopy();
-                if (snapshot is null && IsClipboardChangeFromRecentPasteRepair(gesture.ObservedTimestamp))
+                WordFormulaService.WordFormulaCopySnapshot? existingSnapshot;
+                lock (_copyPasteGate) { existingSnapshot = _formulaCopySnapshot; }
+                if (snapshot is null && existingSnapshot is not null
+                    && (IsClipboardChangeFromRecentPasteRepair(gesture.ObservedTimestamp)
+                        || service.HasPotentialCopiedInsertion(existingSnapshot)))
                 {
-                    WordFormulaService.WordFormulaCopySnapshot? existingSnapshot;
+                    // Word's delayed OLE rendering can advance the clipboard
+                    // sequence during Paste, before our repair has run. Keep the
+                    // captured source only for a verifiable local insertion; the
+                    // repair still checks the physical FormulaId/native content.
+                    var continuedSequence = WordCopyPasteHook.CurrentClipboardSequence;
                     lock (_copyPasteGate)
                     {
-                        existingSnapshot = _formulaCopySnapshot;
-                        if (existingSnapshot is not null)
-                            _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
+                        if (ReferenceEquals(_formulaCopySnapshot, existingSnapshot))
+                            _formulaCopyClipboardSequence = continuedSequence;
                     }
-                    if (existingSnapshot is not null)
-                    {
-                        WordDoubleClickHook.TraceMessage(
-                            $"copy-snapshot-sequence-continued mode={existingSnapshot.ObjectMode} "
-                            + $"clipboardSequence={WordCopyPasteHook.CurrentClipboardSequence}");
-                        return;
-                    }
+                    var continuedWatchGeneration =
+                        Interlocked.Increment(ref _copyPasteWatchGeneration);
+                    ScheduleCopiedFormulaInsertionWatch(
+                        existingSnapshot,
+                        continuedSequence,
+                        continuedWatchGeneration,
+                        existingSnapshot.KnownDocumentEnd,
+                        attempt: 0);
+                    WordDoubleClickHook.TraceMessage(
+                        $"copy-snapshot-sequence-continued mode={existingSnapshot.ObjectMode} "
+                        + $"clipboardSequence={continuedSequence}");
+                    TrySchedulePastedFormulaRepairFromSelectionChange();
+                    return;
                 }
 
                 lock (_copyPasteGate)
@@ -1111,10 +1125,17 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ? 0
                         : gesture.ClipboardSequence;
                 }
+                var watchGeneration = Interlocked.Increment(ref _copyPasteWatchGeneration);
                 if (snapshot is not null)
                 {
                     Interlocked.Exchange(ref _lastSuccessfulPasteRepairStartedAt, 0);
                     Interlocked.Exchange(ref _lastSuccessfulPasteRepairCompletedAt, 0);
+                    ScheduleCopiedFormulaInsertionWatch(
+                        snapshot,
+                        gesture.ClipboardSequence,
+                        watchGeneration,
+                        snapshot.KnownDocumentEnd,
+                        attempt: 0);
                 }
                 Interlocked.Increment(ref _copyPasteRepairGeneration);
                 Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
@@ -1134,12 +1155,80 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     _formulaCopySnapshot = null;
                     _formulaCopyClipboardSequence = 0;
                 }
+                Interlocked.Increment(ref _copyPasteWatchGeneration);
                 Interlocked.Increment(ref _copyPasteRepairGeneration);
                 Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
                 WordDoubleClickHook.TraceMessage(
                     $"copy-snapshot-failed {error.GetType().Name}: {error.Message}");
             }
         });
+    }
+
+    private void ScheduleCopiedFormulaInsertionWatch(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        uint clipboardSequence,
+        int generation,
+        int lastDocumentEnd,
+        int attempt)
+    {
+        // Fast cadence only around the user's immediate Copy/Paste gesture, then
+        // back off to one O(1) Content.End read per second. The watch is bounded;
+        // WindowSelectionChange remains available for much later Paste operations.
+        if (attempt >= 320) return;
+        var lifetime = _lifetime;
+        var dispatcher = _dispatcher;
+        if (lifetime is null || dispatcher is null || lifetime.IsCancellationRequested)
+            return;
+        var delayMilliseconds = attempt < 42
+            ? 120
+            : attempt < 72
+                ? 350
+                : 1000;
+        var token = lifetime.Token;
+        _ = Task.Delay(delayMilliseconds, token).ContinueWith(
+            task =>
+            {
+                if (task.IsCanceled || token.IsCancellationRequested) return;
+                dispatcher.Post(() =>
+                {
+                    if (generation != Volatile.Read(ref _copyPasteWatchGeneration))
+                        return;
+                    lock (_copyPasteGate)
+                    {
+                        if (!ReferenceEquals(_formulaCopySnapshot, snapshot)
+                            || _formulaCopyClipboardSequence != clipboardSequence)
+                            return;
+                    }
+                    if (WordCopyPasteHook.CurrentClipboardSequence != clipboardSequence)
+                        return;
+                    var service = _formulaService;
+                    if (service is null)
+                        return;
+                    var currentDocumentEnd = service.ReadCopyWatchDocumentEnd(snapshot);
+                    if (currentDocumentEnd < 0)
+                        return;
+                    if (currentDocumentEnd != lastDocumentEnd)
+                    {
+                        if (service.HasPotentialCopiedInsertion(snapshot))
+                        {
+                            WordDoubleClickHook.TraceMessage(
+                                $"paste-watch-detected mode={snapshot.ObjectMode} "
+                                + $"documentEnd={lastDocumentEnd}->{currentDocumentEnd} attempt={attempt}");
+                            TrySchedulePastedFormulaRepairFromSelectionChange();
+                        }
+                        lastDocumentEnd = currentDocumentEnd;
+                    }
+                    ScheduleCopiedFormulaInsertionWatch(
+                        snapshot,
+                        clipboardSequence,
+                        generation,
+                        lastDocumentEnd,
+                        attempt + 1);
+                });
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private bool IsClipboardChangeFromRecentPasteRepair(long observedTimestamp)
@@ -1166,17 +1255,30 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var currentClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
         if (currentClipboardSequence != clipboardSequence)
         {
-            lock (_copyPasteGate)
+            if (_formulaService?.HasPotentialCopiedInsertion(snapshot) == true)
             {
-                if (_formulaCopyClipboardSequence == clipboardSequence)
+                lock (_copyPasteGate)
                 {
-                    _formulaCopySnapshot = null;
-                    _formulaCopyClipboardSequence = 0;
+                    if (!ReferenceEquals(_formulaCopySnapshot, snapshot)) return;
+                    _formulaCopyClipboardSequence = currentClipboardSequence;
                 }
+                clipboardSequence = currentClipboardSequence;
             }
-            Interlocked.Increment(ref _copyPasteRepairGeneration);
-            Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
-            return;
+            else
+            {
+                lock (_copyPasteGate)
+                {
+                    if (ReferenceEquals(_formulaCopySnapshot, snapshot))
+                    {
+                        _formulaCopySnapshot = null;
+                        _formulaCopyClipboardSequence = 0;
+                    }
+                }
+                Interlocked.Increment(ref _copyPasteWatchGeneration);
+                Interlocked.Increment(ref _copyPasteRepairGeneration);
+                Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                return;
+            }
         }
         if (Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 1) != 0)
             return;
@@ -1206,8 +1308,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             lock (_copyPasteGate)
             {
-                if (_formulaCopySnapshot is null
-                    || _formulaCopyClipboardSequence != clipboardSequence)
+                if (!ReferenceEquals(_formulaCopySnapshot, snapshot))
                 {
                     Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
                     return;
@@ -1305,7 +1406,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             if (WordCopyPasteHook.CurrentClipboardSequence == copySequence)
             {
-                try { _formulaService?.TrackCopySnapshotDocument(copySnapshot); } catch { }
+                try
+                {
+                    _formulaService?.TrackCopySnapshotDocument(copySnapshot);
+                    var watchGeneration =
+                        Interlocked.Increment(ref _copyPasteWatchGeneration);
+                    ScheduleCopiedFormulaInsertionWatch(
+                        copySnapshot,
+                        copySequence,
+                        watchGeneration,
+                        copySnapshot.KnownDocumentEnd,
+                        attempt: 0);
+                }
+                catch { }
             }
             else
             {
@@ -1315,6 +1428,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     {
                         _formulaCopySnapshot = null;
                         _formulaCopyClipboardSequence = 0;
+                        Interlocked.Increment(ref _copyPasteWatchGeneration);
                     }
                 }
             }
@@ -2336,12 +2450,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         StringComparison.Ordinal))
                 {
                     svgPath = client.MaterializeSvg(session);
-                    emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+                    var preview = OfficeOlePreview.CreateInkSafeVectorPreviewFromSvg(
                         svgPath,
                         export.Width,
                         export.Height,
-                        horizontalSafetyInsetPixels:
-                            MathTypePreviewHorizontalSafetyInsetPixels);
+                        export.Baseline,
+                        safetyPaddingPixels: MathTypePreviewHorizontalSafetyInsetPixels);
+                    emfPath = preview.EmfPath;
+                    // MathType fallback SVGs replace MathJax's original TeX glyphs
+                    // with Times outlines after MathJax has already chosen its SVG
+                    // viewBox.  Re-measure the actual GDI+ outlines before creating
+                    // the offline Equation.DSMT4 presentation; otherwise wider Times
+                    // letters can be clipped or visually squeezed into the old TeX
+                    // geometry on machines without a native MathPage renderer.
+                    export.Width = preview.WidthPixels;
+                    export.Height = preview.HeightPixels;
+                    export.Baseline = preview.BaselinePixels;
                 }
             }
             else if (string.Equals(
@@ -2780,59 +2904,75 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     StringComparison.Ordinal)
                 && rendered.Count > 0)
             {
-                // Bulk import already prepares MathType's native WMF geometry in
-                // one MathPage batch before Word insertion. Redraw used to omit
-                // that phase, so InsertMathTypeOle synchronously invoked the native
-                // renderer once per formula on the Office UI thread (~0.35 s each).
-                // Prepare one native preview per unique rendered template instead;
-                // repeated formulas reuse the same immutable WMF/geometry payload.
-                SetStatus($"正在批量生成 {rendered.Count} 个 MathType 原生预览…");
-                var nativePreviewInputs =
-                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
-                foreach (var item in rendered)
+                // Prefer MathType's native MathPage geometry when the optional
+                // renderer is available. Machines without MathType already have a
+                // vector EMF from the converter, so the whole batch falls back to
+                // that existing presentation instead of failing or launching one
+                // native renderer attempt per formula during Word insertion.
+                var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
+                if (!nativePreviewAvailable)
                 {
-                    var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
-                        item.Value.MathMl
-                            ?? throw new InvalidDataException(
-                                $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
-                        string.Equals(
-                            item.Value.Session.DisplayMode,
-                            "inline",
-                            StringComparison.OrdinalIgnoreCase),
-                        item.Value.Session.FontSizePt,
-                        item.Value.Session.ToMetadata().Latex);
-                    nativePreviewInputs[item.Key] = standalone.Generated.Mtef;
+                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览写入 MathType 公式…");
+                    WriteRedrawAcceptanceLog(
+                        $"mathtype-preview-fallback reason=native-unavailable templates={rendered.Count} "
+                        + $"formulas={plan.Targets.Count}");
                 }
+                else
+                {
+                    SetStatus($"正在批量生成 {rendered.Count} 个 MathType 原生预览…");
+                    var nativePreviewInputs =
+                        new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    foreach (var item in rendered)
+                    {
+                        var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
+                            item.Value.MathMl
+                                ?? throw new InvalidDataException(
+                                    $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
+                            string.Equals(
+                                item.Value.Session.DisplayMode,
+                                "inline",
+                                StringComparison.OrdinalIgnoreCase),
+                            item.Value.Session.FontSizePt,
+                            item.Value.Session.ToMetadata().Latex);
+                        nativePreviewInputs[item.Key] = standalone.Generated.Mtef;
+                    }
 
-                var nativePreviewRoot = rendered.Values
-                    .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
-                        ? null
-                        : Path.GetDirectoryName(template.EmfPath))
-                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
-                    ?? Path.GetTempPath();
-                var nativePreviewWatch = Stopwatch.StartNew();
-                var renderedAllNativePreviews =
-                    MathTypeNativePreviewRenderer.TryRenderBatch(
-                        nativePreviewInputs,
-                        nativePreviewRoot,
-                        out var nativePreviews);
-                var missingPreviewKeys = rendered.Keys
-                    .Where(key => !nativePreviews.ContainsKey(key))
-                    .ToArray();
-                if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
-                {
-                    foreach (var preview in nativePreviews.Values)
-                        preview.Dispose();
-                    throw new InvalidOperationException(
-                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{rendered.Count}）。"
-                        + "为避免重绘过程中混用前端几何，Word 文档尚未开始修改。");
+                    var nativePreviewRoot = rendered.Values
+                        .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
+                            ? null
+                            : Path.GetDirectoryName(template.EmfPath))
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                        ?? Path.GetTempPath();
+                    var nativePreviewWatch = Stopwatch.StartNew();
+                    var renderedAllNativePreviews =
+                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                            nativePreviewInputs,
+                            nativePreviewRoot,
+                            out var nativePreviews);
+                    var missingPreviewKeys = rendered.Keys
+                        .Where(key => !nativePreviews.ContainsKey(key))
+                        .ToArray();
+                    if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
+                    {
+                        foreach (var preview in nativePreviews.Values)
+                            preview.Dispose();
+                        nativePreviewWatch.Stop();
+                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
+                        WriteRedrawAcceptanceLog(
+                            $"mathtype-preview-fallback reason=native-batch-incomplete "
+                            + $"native={nativePreviews.Count}/{rendered.Count} formulas={plan.Targets.Count} "
+                            + $"elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                    else
+                    {
+                        foreach (var preview in nativePreviews)
+                            mathTypePreviews.Add(preview.Key, preview.Value);
+                        nativePreviewWatch.Stop();
+                        WriteRedrawAcceptanceLog(
+                            $"mathtype-native-preview-batch templates={nativePreviews.Count} "
+                            + $"formulas={plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
                 }
-                foreach (var preview in nativePreviews)
-                    mathTypePreviews.Add(preview.Key, preview.Value);
-                nativePreviewWatch.Stop();
-                WriteRedrawAcceptanceLog(
-                    $"mathtype-native-preview-batch templates={nativePreviews.Count} "
-                    + $"formulas={plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
             }
 
             for (var index = 0; index < plan.Targets.Count; index++)
@@ -3275,49 +3415,67 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
             {
-                SetStatus($"正在批量生成 {formulaRuns.Count} 个 MathType 原生预览…");
-                var nativePreviewInputs =
-                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
-                foreach (var item in rendered)
+                var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
+                if (!nativePreviewAvailable)
                 {
-                    var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                        item.Value.MathMl,
-                        string.Equals(
-                            item.Value.Session.DisplayMode,
-                            "inline",
-                            StringComparison.OrdinalIgnoreCase),
-                        item.Value.Session.FontSizePt);
-                    nativePreviewInputs[item.Key] = generated.Mtef;
+                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览导入 MathType 公式…");
+                    WriteBulkAcceptanceLog(
+                        $"mathtype-preview-fallback reason=native-unavailable templates={rendered.Count} "
+                        + $"formulas={formulaRuns.Count}");
                 }
+                else
+                {
+                    SetStatus($"正在批量生成 {formulaRuns.Count} 个 MathType 原生预览…");
+                    var nativePreviewInputs =
+                        new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    foreach (var item in rendered)
+                    {
+                        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                            item.Value.MathMl,
+                            string.Equals(
+                                item.Value.Session.DisplayMode,
+                                "inline",
+                                StringComparison.OrdinalIgnoreCase),
+                            item.Value.Session.FontSizePt);
+                        nativePreviewInputs[item.Key] = generated.Mtef;
+                    }
 
-                var nativePreviewRoot = rendered.Values
-                    .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
-                        ? null
-                        : Path.GetDirectoryName(template.EmfPath))
-                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
-                    ?? Path.GetTempPath();
-                var nativePreviewWatch = Stopwatch.StartNew();
-                var renderedAllNativePreviews =
-                    MathTypeNativePreviewRenderer.TryRenderBatch(
-                        nativePreviewInputs,
-                        nativePreviewRoot,
-                        out var nativePreviews);
-                var missingPreviewKeys = rendered.Keys
-                    .Where(key => !nativePreviews.ContainsKey(key))
-                    .ToArray();
-                if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
-                {
-                    foreach (var preview in nativePreviews.Values)
-                        preview.Dispose();
-                    throw new InvalidOperationException(
-                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{rendered.Count}）。"
-                        + "为避免批量导入回退到 VisualTeX 前端几何，Word 文档尚未开始修改。");
+                    var nativePreviewRoot = rendered.Values
+                        .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
+                            ? null
+                            : Path.GetDirectoryName(template.EmfPath))
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                        ?? Path.GetTempPath();
+                    var nativePreviewWatch = Stopwatch.StartNew();
+                    var renderedAllNativePreviews =
+                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                            nativePreviewInputs,
+                            nativePreviewRoot,
+                            out var nativePreviews);
+                    var missingPreviewKeys = rendered.Keys
+                        .Where(key => !nativePreviews.ContainsKey(key))
+                        .ToArray();
+                    if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
+                    {
+                        foreach (var preview in nativePreviews.Values)
+                            preview.Dispose();
+                        nativePreviewWatch.Stop();
+                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
+                        WriteBulkAcceptanceLog(
+                            $"mathtype-preview-fallback reason=native-batch-incomplete "
+                            + $"native={nativePreviews.Count}/{rendered.Count} formulas={formulaRuns.Count} "
+                            + $"elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                    else
+                    {
+                        foreach (var preview in nativePreviews)
+                            mathTypePreviews.Add(preview.Key, preview.Value);
+                        nativePreviewWatch.Stop();
+                        WriteBulkAcceptanceLog(
+                            $"mathtype-native-preview-batch templates={nativePreviews.Count} "
+                            + $"formulas={formulaRuns.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
                 }
-                foreach (var preview in nativePreviews)
-                    mathTypePreviews.Add(preview.Key, preview.Value);
-                WriteBulkAcceptanceLog(
-                    $"mathtype-native-preview-batch templates={nativePreviews.Count} "
-                    + $"formulas={formulaRuns.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
             }
 
             foreach (var run in formulaRuns)
@@ -3714,12 +3872,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 else
                 {
-                    template.EmfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+                    var preview = OfficeOlePreview.CreateInkSafeVectorPreviewFromSvg(
                         template.SvgPath,
                         export.Width,
                         export.Height,
-                        horizontalSafetyInsetPixels:
-                            MathTypePreviewHorizontalSafetyInsetPixels);
+                        export.Baseline,
+                        safetyPaddingPixels: MathTypePreviewHorizontalSafetyInsetPixels);
+                    template.EmfPath = preview.EmfPath;
+                    export.Width = preview.WidthPixels;
+                    export.Height = preview.HeightPixels;
+                    export.Baseline = preview.BaselinePixels;
                 }
             }
             catch (Exception error)
@@ -4155,6 +4317,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _formulaCopySnapshot = null;
             _formulaCopyClipboardSequence = 0;
         }
+        Interlocked.Increment(ref _copyPasteWatchGeneration);
         Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
         if (_mathTypePreviewSessionAcquired)

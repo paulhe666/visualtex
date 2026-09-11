@@ -8,6 +8,7 @@ const [
   rustMain,
   officeLifecycle,
   officeServer,
+  officeSessions,
   certificateScript,
   installerHooks,
   tauriBuild,
@@ -20,6 +21,7 @@ const [
   read("src-tauri/src/lib.rs"),
   read("src-tauri/src/office/lifecycle.rs"),
   read("src-tauri/src/office/server.rs"),
+  read("src-tauri/src/office/sessions.rs"),
   read("scripts/ensure_windows_office_certificate.ps1"),
   read("src-tauri/windows/hooks.nsh"),
   read("scripts/tauri_build.mjs"),
@@ -72,6 +74,13 @@ assert(officeServer.includes(".on_page_load"));
 assert(officeServer.includes("navigating hidden reused Office editor WebView"));
 assert(officeServer.includes("Office editor page-load reveal fallback"));
 assert(officeLifecycle.includes("office-bootstrap completed without creating a WebView"));
+assert(officeLifecycle.includes("VisualTeX Office Session Cleanup"));
+assert(officeLifecycle.includes("background Session cleanup started"));
+assert(officeLifecycle.includes("cleanup_expired_now"));
+assert(!officeSessions.includes("store.cleanup_expired(now_ms())?;"));
+assert(officeSessions.includes("session_file_is_definitely_fresh"));
+assert(officeSessions.includes("SESSION_CLEANUP_INTERVAL_MS"));
+assert(officeSessions.includes("Lock only the individual candidate"));
 
 assert(certificateScript.includes('ArgumentList "--office-bootstrap"'));
 assert(certificateScript.includes("WaitForExit(30000)"));
@@ -80,6 +89,32 @@ assert(!certificateScript.includes('ArgumentList "--office-background"'));
 assert(!installerHooks.includes("-CompanionOnly"));
 assert(installerHooks.includes("without leaving a resident VisualTeX process"));
 assert(installerHooks.includes("RuntimeVerificationPending"));
+assert(installerHooks.includes("Function VisualTeXStopPrivateMathTypeRuntime"));
+assert(installerHooks.includes("Function un.VisualTeXStopPrivateMathTypeRuntime"));
+assert(installerHooks.includes("Function VisualTeXPromptPrivateMathTypeRuntimeClosure"));
+assert(installerHooks.includes("$INSTDIR\\mathtype-runtime"));
+const runtimeGuard = await read("scripts/manage_private_mathtype_runtime.ps1");
+assert(runtimeGuard.includes("Get-CimInstance -ClassName Win32_Process"));
+assert(runtimeGuard.includes("$path.StartsWith($script:runtimePrefix"));
+assert(runtimeGuard.includes("$current.CreationDate -ne $target.CreationDate"));
+assert(runtimeGuard.includes("PRIVATE_RUNTIME_CHECK_FAILED"));
+assert(installerHooks.includes('visualtex-runtime-maintenance.ps1'));
+assert(installerHooks.includes('-InstallRoot "$INSTDIR" -Mode ${MODE}'));
+assert(installerHooks.includes("Never terminate a user's separately installed"));
+assert(installerHooks.includes("是否关闭 VisualTeX 私有 MathType Runtime 并继续安装"));
+assert(installerHooks.includes("IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype"));
+assert.equal(
+  (installerHooks.match(/^\s*Call VisualTeXPromptPrivateMathTypeRuntimeClosure\s*$/gm) ?? []).length,
+  2,
+);
+assert(installerHooks.includes('Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime'));
+assert.equal(
+  (installerHooks.match(/^\s*Call un\.VisualTeXPromptPrivateMathTypeRuntimeClosure\s*$/gm) ?? []).length,
+  1,
+);
+assert(installerHooks.includes('${If} $0 != "10"'));
+assert(!installerHooks.includes('RMDir /r "$INSTDIR\\mathtype-runtime"'));
+assert(!installerHooks.includes('$$targets='));
 
 assert(tauriBuild.includes("clean_windows_release_outputs.mjs"));
 assert.equal((tauriBuild.match(/build:desktop/g) ?? []).length, 2); // Windows and non-Windows branches, one each.

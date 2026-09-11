@@ -15,12 +15,18 @@ internal sealed partial class WordFormulaService
         internal int SourceStart { get; set; }
         internal int SourceEnd { get; set; }
         internal string MathTypeNumberPosition { get; set; } = "right";
+        internal string? MathTypeContentSignature { get; set; }
         internal MathTypeWordOpenXml.NumberTemplate? MathTypeNumberTemplate { get; set; }
+        internal string[] MathTypeNumberFieldResults { get; set; } = Array.Empty<string>();
         internal MathTypeDisplayParagraphLayout? MathTypeParagraphLayout { get; set; }
+        internal int? OmmlNumberOrdinal { get; set; }
+        internal string? OmmlNumberPrefix { get; set; }
         internal WordCharacterFormatting? BodyFormatting { get; set; }
         internal string TrackingDocumentId { get; set; } = string.Empty;
         internal int KnownInlineShapeCount { get; set; }
         internal int KnownOmmlCount { get; set; }
+        internal int KnownDocumentEnd { get; set; }
+        internal string? VisibleNumber { get; set; }
     }
 
     internal enum PastedFormulaRepairResult
@@ -32,6 +38,7 @@ internal sealed partial class WordFormulaService
 
     internal WordFormulaCopySnapshot? CaptureSelectedFormulaForCopy()
     {
+        using var perf = WordSelectionPerformance.Start("copy-capture");
         Document? document = null;
         Selection? selection = null;
         Range? selectionRange = null;
@@ -72,19 +79,28 @@ internal sealed partial class WordFormulaService
                         TrackingDocumentId = documentId,
                         KnownInlineShapeCount = inlineShapeCount,
                         KnownOmmlCount = ommlCount,
+                        KnownDocumentEnd = document.Content.End,
+                        VisibleNumber = metadata.Numbered ? ReadPastedOleVisibleNumber(shape, metadata.FormulaId) : null,
                     };
                 }
 
                 if (!MathTypeOleInterop.IsMathTypeOle(shape)) return null;
-                var mathTypeMetadata = MathTypeOleInterop.ReadMetadata(_application, shape);
+                var mathTypeBytes = MathTypeOleStorage.CaptureCompoundFile(shape);
+                var mathTypeMathMl = MathTypeOleStorage.ReadMathMl(mathTypeBytes);
+                var mathTypeMetadata = MathTypeOleInterop.ReadMetadata(_application, shape, mathTypeMathMl, mathTypeBytes);
                 var numberPosition = "right";
                 MathTypeWordOpenXml.NumberTemplate? numberTemplate = null;
+                var numberFieldResults = Array.Empty<string>();
                 if (mathTypeMetadata.Numbered)
                 {
                     if (!MathTypeOleInterop.TryReadDisplayNumberPosition(shape, out numberPosition))
                         throw new InvalidDataException(
                             "The copied MathType equation has no readable number position.");
                     numberTemplate = ReadMathTypePlaceRefTemplateForShape(
+                        document,
+                        shape,
+                        numberPosition);
+                    numberFieldResults = CaptureMathTypePlaceRefFieldResults(
                         document,
                         shape,
                         numberPosition);
@@ -98,7 +114,9 @@ internal sealed partial class WordFormulaService
                     SourceStart = formulaRange.Start,
                     SourceEnd = formulaRange.End,
                     MathTypeNumberPosition = numberPosition,
+                    MathTypeContentSignature = MathTypeMtefCodec.SemanticSignature(mathTypeMathMl),
                     MathTypeNumberTemplate = numberTemplate,
+                    MathTypeNumberFieldResults = numberFieldResults,
                     MathTypeParagraphLayout = string.Equals(
                         mathTypeMetadata.DisplayMode,
                         "block",
@@ -109,6 +127,7 @@ internal sealed partial class WordFormulaService
                     TrackingDocumentId = documentId,
                     KnownInlineShapeCount = inlineShapeCount,
                     KnownOmmlCount = ommlCount,
+                    KnownDocumentEnd = document.Content.End,
                 };
             }
 
@@ -120,8 +139,19 @@ internal sealed partial class WordFormulaService
             if (ommlMetadata is null) return null;
 
             WordCharacterFormatting? bodyFormatting = null;
+            int? ommlNumberOrdinal = null;
+            string? ommlNumberPrefix = null;
             if (ommlMetadata.Numbered)
             {
+                if (WordEquationNumbering.TryReadManagedDirectTableNumberPlan(
+                        document,
+                        ommlMetadata.FormulaId,
+                        out var sourceOrdinal,
+                        out var sourcePrefix))
+                {
+                    ommlNumberOrdinal = sourceOrdinal;
+                    ommlNumberPrefix = sourcePrefix;
+                }
                 numberedTable = WordEquationNumbering.FindNumberedEquationTable(
                     document,
                     ommlMetadata.FormulaId);
@@ -141,10 +171,13 @@ internal sealed partial class WordFormulaService
                 SourceStoryType = formulaRange.StoryType,
                 SourceStart = formulaRange.Start,
                 SourceEnd = formulaRange.End,
+                OmmlNumberOrdinal = ommlNumberOrdinal,
+                OmmlNumberPrefix = ommlNumberPrefix,
                 BodyFormatting = bodyFormatting,
                 TrackingDocumentId = documentId,
                 KnownInlineShapeCount = inlineShapeCount,
                 KnownOmmlCount = ommlCount,
+                KnownDocumentEnd = document.Content.End,
             };
         }
         finally
@@ -197,10 +230,50 @@ internal sealed partial class WordFormulaService
         finally { Release(document); }
     }
 
+    internal int ReadCopyWatchDocumentEnd(WordFormulaCopySnapshot snapshot)
+    {
+        Document? document = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            if (document is null
+                || !string.Equals(
+                    DocumentIdentity(document),
+                    snapshot.TrackingDocumentId,
+                    StringComparison.OrdinalIgnoreCase))
+                return -1;
+            return document.Content.End;
+        }
+        catch { return -1; }
+        finally { Release(document); }
+    }
+
+    // Delayed rendering of a native OLE clipboard can change its sequence on
+    // Paste. Inventory growth only permits a bounded payload check; the actual
+    // repair must still prove the copied FormulaId/content before any write.
+    internal bool HasPotentialCopiedInsertion(WordFormulaCopySnapshot snapshot)
+    {
+        Document? document = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            if (document is null || !string.Equals(DocumentIdentity(document),
+                    snapshot.TrackingDocumentId, StringComparison.OrdinalIgnoreCase)) return false;
+            ReadFormulaObjectCounts(document, out var oleCount, out var mathCount);
+            return snapshot.ObjectMode == FormulaOleContract.WordOmmlMode
+                ? mathCount > snapshot.KnownOmmlCount
+                    || (snapshot.Metadata.DisplayMode == "inline" && mathCount == snapshot.KnownOmmlCount
+                        && document.Content.End > snapshot.KnownDocumentEnd)
+                : oleCount > snapshot.KnownInlineShapeCount;
+        }
+        finally { Release(document); }
+    }
+
     internal PastedFormulaRepairResult RepairPastedFormula(
         WordFormulaCopySnapshot snapshot)
     {
         if (snapshot is null) return PastedFormulaRepairResult.NotApplicable;
+        using var perf = WordSelectionPerformance.Start("paste-repair");
         Document? document = null;
         Selection? selection = null;
         InlineShape? shape = null;
@@ -278,13 +351,23 @@ internal sealed partial class WordFormulaService
                 catch { WordFormulaMetadataReader.CacheMetadata(shape, metadata); }
                 if (string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
                 {
+                    var copiedNumber = ReadPastedOleVisibleNumber(shape, snapshot.Metadata.FormulaId)
+                        ?? snapshot.VisibleNumber;
                     RebindPastedOleVisibleNumber(document, shape, snapshot.Metadata.FormulaId, metadata.FormulaId);
-                    TryReconcileShape(
-                        document,
-                        shape,
-                        metadata,
-                        numberingOrderMayHaveChanged: metadata.Numbered,
-                        reuseExistingNumberedTableFormatting: false);
+                    perf?.Mark("identity-and-local-ref");
+                    if (metadata.Numbered)
+                    {
+                        // Give the copy its own SEQ/REF owner, but preserve the
+                        // displayed number. No global renumber/reference refresh
+                        // belongs in Paste; Update Numbers performs it explicitly.
+                        WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+                            document, formulaRange, shape.Height, metadata,
+                            plannedOrdinal: 1, plannedPrefix: string.Empty, deferFieldUpdate: true);
+                        RestorePastedOleVisibleNumber(document, metadata.FormulaId, copiedNumber);
+                    }
+                    else
+                        TryReconcileShape(document, shape, metadata, numberingOrderMayHaveChanged: false);
+                    perf?.Mark("local-number-owner");
                     // Numbering inserts a leading TAB before a display OLE. Word can
                     // expand a just-created bookmark over that new character, so bind
                     // the durable VTO identity once more after the final scaffold is stable.
@@ -331,18 +414,44 @@ internal sealed partial class WordFormulaService
                 var metadata = snapshot.Metadata;
                 if (string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal))
                 {
-                    // A whole-row paste already includes MTPlaceRef and tabs.
-                    // Rebuild that copied scaffold, rather than append a second number.
-                    RebuildMathTypeDisplayScaffold(
+                    // A complete native row is already independent after Word
+                    // Paste. Rebuilding it needlessly destroys/recreates MTPlaceRef.
+                    // OLE-only Paste, however, has no number field; build one local
+                    // scaffold without updating the sequence, then restore the exact
+                    // copied nested field results. Word can also leave a freshly-built
+                    // MTPlaceRef in a stale code-visible runtime state even though
+                    // Field.ShowCodes reports false, so normalize that presentation
+                    // explicitly before accepting the row as healthy.
+                    var hasCompleteScaffold = HasCompletePastedMathTypeScaffold(
                         document,
                         shape,
                         metadata.Numbered,
-                        snapshot.MathTypeNumberPosition,
-                        snapshot.MathTypeNumberTemplate);
-                    if (snapshot.MathTypeParagraphLayout is not null)
-                        RestoreMathTypeDisplayParagraphLayout(
-                            shape,
-                            snapshot.MathTypeParagraphLayout);
+                        snapshot.MathTypeNumberPosition);
+                    var presentationHealthy = !metadata.Numbered
+                        || hasCompleteScaffold
+                            && TryRestorePastedMathTypeNumberPresentation(
+                                document,
+                                shape,
+                                snapshot.MathTypeNumberPosition,
+                                snapshot.MathTypeNumberFieldResults);
+                    if (!hasCompleteScaffold || !presentationHealthy)
+                    {
+                        RebuildMathTypeDisplayScaffold(
+                            document, shape, metadata.Numbered,
+                            snapshot.MathTypeNumberPosition, snapshot.MathTypeNumberTemplate,
+                            updateNumberFields: false);
+                        if (metadata.Numbered
+                            && !TryRestorePastedMathTypeNumberPresentation(
+                                document,
+                                shape,
+                                snapshot.MathTypeNumberPosition,
+                                snapshot.MathTypeNumberFieldResults))
+                            throw new InvalidDataException(
+                                "The copied MathType equation number could not be restored without renumbering the document.");
+                        if (snapshot.MathTypeParagraphLayout is not null)
+                            RestoreMathTypeDisplayParagraphLayout(shape, snapshot.MathTypeParagraphLayout);
+                    }
+                    perf?.Mark("mathtype-preserve-number-scaffold");
                 }
                 else
                 {
@@ -395,13 +504,22 @@ internal sealed partial class WordFormulaService
             try
             {
                 WordOmmlFormulaStore.Save(document, pastedMetadata);
+                // Paste creates only this formula's independent host. Preserve the
+                // copied number presentation and leave sequence reordering to the
+                // explicit Update Numbers command, exactly like VisualTeX OLE and
+                // MathType OLE. Current direct-table OMML carries an exact ordinal
+                // + heading prefix snapshot; legacy inputs still build only a local
+                // scaffold and never renumber the surrounding document here.
                 TryReconcileOmml(
                     document,
                     bookmark,
                     formulaRange,
                     pastedMetadata,
-                    numberingOrderMayHaveChanged: pastedMetadata.Numbered,
-                    reuseExistingNumberedTableFormatting: false);
+                    numberingOrderMayHaveChanged: false,
+                    reuseExistingNumberedTableFormatting: false,
+                    numberingScaffoldOnly: pastedMetadata.Numbered,
+                    plannedNumberOrdinal: snapshot.OmmlNumberOrdinal,
+                    plannedNumberPrefix: snapshot.OmmlNumberPrefix);
             }
             finally { Release(bookmark); }
 
@@ -475,6 +593,7 @@ internal sealed partial class WordFormulaService
         snapshot.TrackingDocumentId = DocumentIdentity(document);
         snapshot.KnownInlineShapeCount = inlineShapeCount;
         snapshot.KnownOmmlCount = ommlCount;
+        snapshot.KnownDocumentEnd = document.Content.End;
     }
 
     private static FormulaMetadata CloneFormulaMetadata(FormulaMetadata metadata) =>
@@ -552,6 +671,257 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static string[] CaptureMathTypePlaceRefFieldResults(
+        Document document,
+        InlineShape shape,
+        string side)
+    {
+        Range? shapeRange = null;
+        Range? paragraphRange = null;
+        Field? placeRef = null;
+        Range? code = null;
+        Fields? nestedFields = null;
+        Field? nested = null;
+        Range? result = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphRange = shapeRange.Paragraphs[1].Range;
+            placeRef = FindMathTypePlaceRefFieldForShape(
+                paragraphRange,
+                shapeRange,
+                string.Equals(side, "left", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException(
+                    "The copied numbered MathType equation has no MTPlaceRef field.");
+            if (!TryReadCompleteMathTypePlaceRefTemplate(document, placeRef, out _))
+                throw new InvalidDataException(
+                    "The copied MathType equation has an incomplete MTPlaceRef field tree.");
+            code = placeRef.Code;
+            nestedFields = code.Fields;
+            var values = new string[nestedFields.Count];
+            for (var index = 1; index <= nestedFields.Count; index++)
+            {
+                Release(result);
+                result = null;
+                Release(nested);
+                nested = nestedFields[index];
+                result = nested.Result;
+                values[index - 1] = result.Text ?? string.Empty;
+            }
+            return values;
+        }
+        finally
+        {
+            Release(result);
+            Release(nested);
+            Release(nestedFields);
+            Release(code);
+            Release(placeRef);
+            Release(paragraphRange);
+            Release(shapeRange);
+        }
+    }
+
+    private static bool TryRestorePastedMathTypeNumberPresentation(
+        Document document,
+        InlineShape shape,
+        string side,
+        IReadOnlyList<string> copiedFieldResults)
+    {
+        if (copiedFieldResults is null || copiedFieldResults.Count == 0)
+            return false;
+        Range? shapeRange = null;
+        Range? paragraphRange = null;
+        Field? placeRef = null;
+        Range? code = null;
+        Fields? nestedFields = null;
+        Field? nested = null;
+        Range? result = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraphRange = shapeRange.Paragraphs[1].Range;
+            placeRef = FindMathTypePlaceRefFieldForShape(
+                paragraphRange,
+                shapeRange,
+                string.Equals(side, "left", StringComparison.OrdinalIgnoreCase));
+            if (placeRef is null
+                || !TryReadCompleteMathTypePlaceRefTemplate(document, placeRef, out _))
+                return false;
+            code = placeRef.Code;
+            nestedFields = code.Fields;
+            if (nestedFields.Count != copiedFieldResults.Count)
+                return false;
+            for (var index = 1; index <= nestedFields.Count; index++)
+            {
+                Release(result);
+                result = null;
+                Release(nested);
+                nested = nestedFields[index];
+                result = nested.Result;
+                var expected = copiedFieldResults[index - 1] ?? string.Empty;
+                if (!string.Equals(result.Text ?? string.Empty, expected, StringComparison.Ordinal))
+                    result.Text = expected;
+                try { nested.ShowCodes = false; } catch { }
+            }
+
+            var viewShowsCodes = false;
+            try { viewShowsCodes = document.ActiveWindow.View.ShowFieldCodes; } catch { }
+            if (viewShowsCodes)
+                return true;
+
+            // Word can materialize a newly-created MTPlaceRef with its runtime
+            // code cache still visible even though Field.ShowCodes already reports
+            // false. A real false -> true -> false transition refreshes that cache
+            // without updating any SEQ field, so the copied number stays unchanged.
+            try { placeRef.ShowCodes = true; } catch { return false; }
+            try { placeRef.ShowCodes = false; } catch { return false; }
+
+            Release(paragraphRange);
+            paragraphRange = null;
+            Release(shapeRange);
+            shapeRange = shape.Range;
+            paragraphRange = shapeRange.Paragraphs[1].Range;
+            Range? visibleScaffold = null;
+            try
+            {
+                visibleScaffold = string.Equals(side, "left", StringComparison.OrdinalIgnoreCase)
+                    ? document.Range(paragraphRange.Start, shapeRange.Start)
+                    : document.Range(
+                        shapeRange.End,
+                        Math.Max(shapeRange.End, paragraphRange.End - 1));
+                var visibleText = visibleScaffold.Text ?? string.Empty;
+                return visibleText.IndexOf('\u0013') < 0
+                    && visibleText.IndexOf(
+                        "MACROBUTTON MTPlaceRef",
+                        StringComparison.OrdinalIgnoreCase) < 0
+                    && visibleText.IndexOf(
+                        "SEQ MT",
+                        StringComparison.OrdinalIgnoreCase) < 0;
+            }
+            finally { Release(visibleScaffold); }
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(result);
+            Release(nested);
+            Release(nestedFields);
+            Release(code);
+            Release(placeRef);
+            Release(paragraphRange);
+            Release(shapeRange);
+        }
+    }
+
+    private static bool HasCompletePastedMathTypeScaffold(Document document, InlineShape shape, bool numbered, string side)
+    {
+        Range? shapeRange = null; Range? paragraph = null; Field? number = null; Range? prefix = null;
+        try
+        {
+            shapeRange = shape.Range;
+            paragraph = shapeRange.Paragraphs[1].Range;
+            if (paragraph.InlineShapes.Count != 1) return false;
+            if (numbered)
+            {
+                number = FindMathTypePlaceRefFieldForShape(paragraph, shapeRange, side == "left");
+                return number is not null && TryReadCompleteMathTypePlaceRefTemplate(document, number, out _);
+            }
+            prefix = document.Range(paragraph.Start, shapeRange.Start);
+            return prefix.Text == "\t";
+        }
+        finally { Release(prefix); Release(number); Release(paragraph); Release(shapeRange); }
+    }
+
+    private static string? ReadPastedOleVisibleNumber(InlineShape shape, string formulaId)
+    {
+        Range? range = null;
+        Range? paragraph = null;
+        Fields? fields = null;
+        try
+        {
+            range = shape.Range;
+            paragraph = range.Paragraphs[1].Range;
+            fields = paragraph.Fields;
+            var name = "VTEqNum_" + Guid.Parse(formulaId).ToString("N");
+            for (var i = 1; i <= fields.Count; i++)
+            {
+                Field? field = null; Range? code = null; Range? result = null;
+                try
+                {
+                    field = fields[i];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (!(code.Text ?? string.Empty).Contains(name)) continue;
+                    result = field.Result;
+                    return result.Text;
+                }
+                finally { Release(result); Release(code); Release(field); }
+            }
+            return null;
+        }
+        finally { Release(fields); Release(paragraph); Release(range); }
+    }
+
+    private static void RestorePastedOleVisibleNumber(Document document, string formulaId, string? number)
+    {
+        if (number is null) return;
+        Bookmarks? bookmarks = null; Bookmark? bookmark = null; Range? range = null; Fields? fields = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var suffix = Guid.Parse(formulaId).ToString("N");
+            // Preserve the cached SEQ value as well as its visible REF. Otherwise
+            // the next ordinary content edit refreshes REF from the seed ordinal 1
+            // and loses the copied chapter prefix even without global renumbering.
+            // The SEQ instruction stays live; explicit Update Numbers recalculates it.
+            bookmark = bookmarks["VTEqCap_" + suffix];
+            range = bookmark.Range;
+            fields = range.Fields;
+            var restoredCaption = false;
+            for (var i = 1; i <= fields.Count; i++)
+            {
+                Field? field = null; Range? result = null; Bookmark? rebound = null;
+                try
+                {
+                    field = fields[i];
+                    if (field.Type != WdFieldType.wdFieldSequence) continue;
+                    result = field.Result;
+                    if (result.Text != number) result.Text = number;
+                    rebound = bookmarks.Add("VTEqNum_" + suffix, result);
+                    restoredCaption = true;
+                    break;
+                }
+                finally { Release(rebound); Release(result); Release(field); }
+            }
+            if (!restoredCaption) throw new InvalidDataException("The copied formula has no independent SEQ owner.");
+            Release(fields); fields = null; Release(range); range = null; Release(bookmark); bookmark = null;
+            bookmark = bookmarks["VTEq_" + suffix];
+            range = bookmark.Range;
+            fields = range.Fields;
+            for (var i = 1; i <= fields.Count; i++)
+            {
+                Field? field = null; Range? code = null; Range? result = null;
+                try
+                {
+                    field = fields[i];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (!(code.Text ?? string.Empty).Contains("VTEqNum_" + Guid.Parse(formulaId).ToString("N"))) continue;
+                    result = field.Result;
+                    if (result.Text != number) result.Text = number;
+                    return;
+                }
+                finally { Release(result); Release(code); Release(field); }
+            }
+            throw new InvalidDataException("The copied formula has no independent visible number reference.");
+        }
+        finally { Release(fields); Release(range); Release(bookmark); Release(bookmarks); }
+    }
+
     private static void RebindPastedOleVisibleNumber(Document document, InlineShape shape, string sourceId, string copiedId)
     {
         Range? shapeRange = null;
@@ -627,7 +997,7 @@ internal sealed partial class WordFormulaService
                 candidate = shapes[index];
                 if (!predicate(candidate)) continue;
                 candidateRange = candidate.Range;
-                if (IsCurrentOriginalManagedOle(document, candidateRange, snapshot)) continue;
+                if (requireSourceFormulaId && IsCurrentOriginalManagedOle(document, candidateRange, snapshot)) continue;
                 if (requireSourceFormulaId)
                 {
                     // At an adjacent paste Word can expand the previous copy's
@@ -640,6 +1010,16 @@ internal sealed partial class WordFormulaService
                             candidateMetadata.FormulaId,
                             snapshot.Metadata.FormulaId,
                             StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+                else
+                {
+                    // MathType has no persistent FormulaId. A newly pasted object
+                    // may occupy the old source coordinates when pasted in front;
+                    // compare its native content, not those now-stale coordinates.
+                    var actualMathMl = MathTypeOleStorage.ReadMathMl(candidate);
+                    if (!string.Equals(MathTypeMtefCodec.SemanticSignature(actualMathMl),
+                            snapshot.MathTypeContentSignature, StringComparison.Ordinal))
                         continue;
                 }
                 var distance = DistanceToRange(anchor, candidateRange.Start, candidateRange.End);
