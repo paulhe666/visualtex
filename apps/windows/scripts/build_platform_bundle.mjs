@@ -24,13 +24,18 @@ const powershell = process.platform === "win32" ? windowsPowerShellPath() : "pow
 // Prepare only native/resource inputs consumed by Tauri. The main desktop
 // frontend is built exactly once by tauri_build.mjs before Tauri codegen.
 if (process.platform === "win32") {
-  run(powershell, [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    "scripts/prepare_windows_ocr_python.ps1",
-  ]);
+  const noOcrBundle = process.env.VISUALTEX_NO_OCR_BUNDLE === "1";
+  if (noOcrBundle) {
+    console.log("Skipping bundled OCR Python preparation for the no-OCR installer flavor.");
+  } else {
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/prepare_windows_ocr_python.ps1",
+    ]);
+  }
   run(powershell, [
     "-NoProfile",
     "-ExecutionPolicy",

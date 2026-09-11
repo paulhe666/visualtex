@@ -278,20 +278,27 @@ FunctionEnd
     StrCpy $VisualTeXOfficeChoice "native"
   ${EndIf}
 
-  ClearErrors
-  ${GetOptions} $0 "/VISUALTEXOCR=" $1
-  ${IfNot} ${Errors}
-    ${If} $1 == "install"
-      StrCpy $VisualTeXOcrChoice "install"
-    ${ElseIf} $1 == "none"
-      StrCpy $VisualTeXOcrChoice "none"
-    ${Else}
-      Abort "Unsupported /VISUALTEXOCR value: $1"
+  !ifdef VISUALTEX_NO_OCR_BUNDLE
+    ; The lightweight installer is compiled without worker/Python/wheel/model
+    ; resources. Keep the runtime choice pinned to none even for unattended
+    ; installs so logs and resource hooks reflect the actual package contents.
+    StrCpy $VisualTeXOcrChoice "none"
+  !else
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXOCR=" $1
+    ${IfNot} ${Errors}
+      ${If} $1 == "install"
+        StrCpy $VisualTeXOcrChoice "install"
+      ${ElseIf} $1 == "none"
+        StrCpy $VisualTeXOcrChoice "none"
+      ${Else}
+        Abort "Unsupported /VISUALTEXOCR value: $1"
+      ${EndIf}
     ${EndIf}
-  ${EndIf}
-  ${If} $VisualTeXOcrChoice == ""
-    StrCpy $VisualTeXOcrChoice "install"
-  ${EndIf}
+    ${If} $VisualTeXOcrChoice == ""
+      StrCpy $VisualTeXOcrChoice "install"
+    ${EndIf}
+  !endif
 
   ${If} $VisualTeXAcceptanceMode == "1"
     DetailPrint "Installed-release acceptance mode: preserving existing Office integration and skipping machine prerequisite prompts."
