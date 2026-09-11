@@ -981,7 +981,13 @@ internal static partial class MathTypeMtefCodec
     {
         var token = value.Trim();
         var variant = (mathVariant ?? string.Empty).Trim().ToLowerInvariant();
-        if (variant.Contains("double-struck")) variant = "double-struck";
+        if (variant.Contains("sans-serif-bold-italic")) variant = "sans-serif-bold-italic";
+        else if (variant.Contains("sans-serif-italic")) variant = "sans-serif-italic";
+        else if (variant.Contains("bold-sans-serif")) variant = "bold-sans-serif";
+        else if (variant.Contains("bold-script")) variant = "bold-script";
+        else if (variant.Contains("bold-fraktur")) variant = "bold-fraktur";
+        else if (variant.Contains("bold-italic")) variant = "bold-italic";
+        else if (variant.Contains("double-struck")) variant = "double-struck";
         else if (variant.Contains("fraktur")) variant = "fraktur";
         else if (variant.Contains("script")) variant = "script";
         else if (variant.Contains("monospace")) variant = "monospace";
@@ -1941,10 +1947,17 @@ internal static partial class MathTypeMtefCodec
     {
         var specs = new[]
         {
-            (Variant: "script", Encoding: "EuclidMath1", Font: "Euclid Math One"),
-            (Variant: "double-struck", Encoding: "EuclidMath2", Font: "Euclid Math Two"),
-            (Variant: "fraktur", Encoding: "EuclidFraktur", Font: "Euclid Fraktur"),
-            (Variant: "sans-serif", Encoding: "WindowsANSI", Font: "Arial"),
+            (Variant: "script", Encoding: "EuclidMath1", Font: "Euclid Math One", CharacterStyle: (byte)0),
+            (Variant: "bold-script", Encoding: "EuclidMath1", Font: "Euclid Math One", CharacterStyle: (byte)1),
+            (Variant: "double-struck", Encoding: "EuclidMath2", Font: "Euclid Math Two", CharacterStyle: (byte)0),
+            (Variant: "fraktur", Encoding: "EuclidFraktur", Font: "Euclid Fraktur", CharacterStyle: (byte)0),
+            (Variant: "bold-fraktur", Encoding: "EuclidFraktur", Font: "Euclid Fraktur", CharacterStyle: (byte)1),
+            (Variant: "sans-serif", Encoding: "WindowsANSI", Font: "Arial", CharacterStyle: (byte)0),
+            (Variant: "bold-sans-serif", Encoding: "WindowsANSI", Font: "Arial", CharacterStyle: (byte)1),
+            (Variant: "sans-serif-italic", Encoding: "WindowsANSI", Font: "Arial", CharacterStyle: (byte)2),
+            (Variant: "sans-serif-bold-italic", Encoding: "WindowsANSI", Font: "Arial", CharacterStyle: (byte)3),
+            (Variant: "monospace", Encoding: "WindowsANSI", Font: "Courier New", CharacterStyle: (byte)0),
+            (Variant: "bold-italic", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)3),
         };
         var existing = CountPrefixDefinitions(sourceMtef);
         var created = 0;
@@ -1955,7 +1968,10 @@ internal static partial class MathTypeMtefCodec
                 .ToArray();
             if (tokens.Length == 0) continue;
 
-            var existingStyleIndex = FindPrefixFontStyleIndex(sourceMtef, spec.Font);
+            var existingStyleIndex = FindPrefixFontStyleIndex(
+                sourceMtef,
+                spec.Font,
+                spec.CharacterStyle);
             if (existingStyleIndex is not null)
             {
                 foreach (var token in tokens)
@@ -1977,7 +1993,7 @@ internal static partial class MathTypeMtefCodec
             WriteNullTerminatedAscii(output, spec.Font);
             output.Add(RecordFontStyleDef);
             WriteUnsigned(output, fontDefinitionIndex);
-            output.Add(0); // plain character style; the explicit font carries the alphabet style
+            output.Add(spec.CharacterStyle);
 
             foreach (var token in tokens)
                 token.SetAttributeValue("data-mtef-explicit-typeface", -fontStyleIndex);
@@ -2034,7 +2050,8 @@ internal static partial class MathTypeMtefCodec
 
     private static int? FindPrefixFontStyleIndex(
         byte[] mtef,
-        string fontName)
+        string fontName,
+        byte expectedCharacterStyle)
     {
         var root = FindRootStructureOffset(mtef);
         var position = FindEquationOptionsOffset(mtef) + 1;
@@ -2060,9 +2077,9 @@ internal static partial class MathTypeMtefCodec
                     position++;
                     var fontDefinitionIndex = ReadUnsigned(mtef, ref position);
                     Require(mtef, position, 1);
-                    var characterStyle = mtef[position++];
+                    var actualCharacterStyle = mtef[position++];
                     styleIndex++;
-                    if (characterStyle == 0
+                    if (actualCharacterStyle == expectedCharacterStyle
                         && fontDefinitionIndex > 0
                         && fontDefinitionIndex <= fontDefinitions.Count
                         && string.Equals(
@@ -5148,11 +5165,13 @@ internal static partial class MathTypeMtefCodec
                 return null;
             }
             if (font.IndexOf("Euclid Math One", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "script";
+                return characterStyle is 1 or 3 ? "bold-script" : "script";
             if (font.IndexOf("Euclid Math Two", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "double-struck";
             if (font.IndexOf("Fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "fraktur";
+                return characterStyle is 1 or 3 ? "bold-fraktur" : "fraktur";
+            if (string.Equals(font, "Courier New", StringComparison.OrdinalIgnoreCase))
+                return "monospace";
             if (string.Equals(font, "Arial", StringComparison.OrdinalIgnoreCase))
                 return characterStyle switch
                 {

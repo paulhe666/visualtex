@@ -49,7 +49,7 @@
 
 .formula-color-popover {
   position: absolute;
-  z-index: 2200;
+  z-index: var(--z-popover, 190);
   top: calc(100% + 7px);
   right: 0;
   width: min(360px, calc(100vw - 24px));
@@ -739,7 +739,7 @@
 }
 
 .app-header.has-open-menu {
-  z-index: 520;
+  z-index: var(--z-app-menu, 90);
   overflow: visible;
   isolation: isolate;
 }
@@ -755,7 +755,7 @@
 }
 
 .menu-dismiss-layer {
-  z-index: 510;
+  z-index: var(--z-menu-dismiss, 85);
 }
 
 .code-format-control {
@@ -814,7 +814,7 @@
 }
 
 .export-dialog-backdrop {
-  z-index: 180;
+  z-index: var(--z-modal, 300);
   padding: 24px;
 }
 

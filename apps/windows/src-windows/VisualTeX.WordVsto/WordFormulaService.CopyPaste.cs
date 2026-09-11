@@ -614,8 +614,8 @@ internal sealed partial class WordFormulaService
                 Latex = line.Latex,
             })
             .ToList();
-        clone.CreatedWithVersion = "1.2.6";
-        clone.UpdatedWithVersion = "1.2.6";
+        clone.CreatedWithVersion = "1.2.7";
+        clone.UpdatedWithVersion = "1.2.7";
         clone.CreatedAt = now;
         clone.UpdatedAt = now;
         clone.Validate();

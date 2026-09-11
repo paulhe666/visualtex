@@ -18,6 +18,7 @@ const formulaHotkeyStore = await source("src/stores/formulaHotkeyStore.ts");
 const editorStore = await source("src/stores/editorStore.ts");
 const officeDialog = await source("src/office/dialog/OfficeDialogApp.tsx");
 const officeStyles = await source("src/styles-windows-shared-latest.css");
+const sharedStyles = await source("src/styles.css");
 const latestStyles = await source("src/styles-latest-macos-ui.css");
 const tauriLib = await source("src-tauri/src/lib.rs");
 const appLifecycle = await source("src-tauri/src/app_lifecycle.rs");
@@ -188,7 +189,22 @@ assert.ok(officeState.includes("app_editor_preferences"));
 assert.ok(officeState.includes('"custom" => "custom"'));
 assert.ok(officeState.includes('"rose-pine" => "rose-pine"'));
 assert.ok(officeDialog.includes("applyOfficeEditorPreferences"));
-assert.ok(officeDialog.includes("settings.zoom"));
+const applyOfficePreferencesBody = officeDialog.slice(
+  officeDialog.indexOf("function applyOfficeEditorPreferences"),
+  officeDialog.indexOf("function requireOfficeSessionFontSizePt"),
+);
+assert.ok(!applyOfficePreferencesBody.includes("setZoom("));
+assert.ok(officeDialog.includes("initialSynchronizedZoomAppliedRef"));
+assert.ok(officeDialog.includes("preferences.editorPreferences?.settings?.zoom"));
+assert.ok(officeDialog.includes("if (!initialSynchronizedZoomAppliedRef.current)"));
+assert.ok(sharedStyles.includes("--z-workspace-header: 80;"));
+assert.ok(sharedStyles.includes("--z-popover: 190;"));
+assert.ok(sharedStyles.includes("--z-modal: 300;"));
+assert.ok(sharedStyles.includes("z-index: var(--suggestion-zindex, var(--z-popover, 190));"));
+assert.ok(officeStyles.includes("z-index: var(--z-workspace-header, 80);"));
+assert.ok(officeStyles.includes("z-index: var(--z-workspace-footer, 50);"));
+assert.ok(officeStyles.includes("z-index: var(--z-workspace-floating, 60);"));
+assert.ok(officeStyles.includes("z-index: var(--z-workspace-resizer, 70);"));
 assert.ok(officeDialog.includes("settings.formulaInsetLeft"));
 assert.ok(officeDialog.includes("settings.formulaToolButtonSize"));
 assert.ok(officeDialog.includes("settings.formulaLetterFont"));

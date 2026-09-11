@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$InstallerPath,
-    [string]$ExpectedAppVersion = "1.2.6",
+    [string]$ExpectedAppVersion = "1.2.7",
     [switch]$VerifyOfficeRuntime,
     [switch]$VerifyOfficeReadonly,
     [switch]$ForceCloseOffice,

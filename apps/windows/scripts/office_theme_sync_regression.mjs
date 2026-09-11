@@ -366,6 +366,36 @@ async function main() {
       caret: "#d7c2ff",
     });
 
+    const officeCandidateLayer = await client.evaluate(`(() => {
+      const probe = document.createElement("div");
+      probe.id = "visualtex-native-input-suggestion-popover";
+      probe.className = "is-visible";
+      document.body.append(probe);
+      const modalProbe = document.createElement("div");
+      modalProbe.className = "modal-backdrop";
+      document.body.append(modalProbe);
+      const candidateZIndex = Number.parseInt(getComputedStyle(probe).zIndex || "0", 10) || 0;
+      const modalZIndex = Number.parseInt(getComputedStyle(modalProbe).zIndex || "0", 10) || 0;
+      const chromeZIndex = Math.max(
+        0,
+        ...[".formula-toolbar", ".source-panel", ".editor-pane-header", ".classic-bottom-tabs", ".classic-bottom-formatting-slot"]
+          .map((selector) => document.querySelector(selector))
+          .filter(Boolean)
+          .map((element) => Number.parseInt(getComputedStyle(element).zIndex || "0", 10) || 0),
+      );
+      probe.remove();
+      modalProbe.remove();
+      return { candidateZIndex, chromeZIndex, modalZIndex };
+    })()`);
+    assert.ok(
+      officeCandidateLayer.chromeZIndex < 100 &&
+        officeCandidateLayer.candidateZIndex >= 190 &&
+        officeCandidateLayer.candidateZIndex > officeCandidateLayer.chromeZIndex &&
+        officeCandidateLayer.modalZIndex >= 300 &&
+        officeCandidateLayer.modalZIndex > officeCandidateLayer.candidateZIndex,
+      JSON.stringify(officeCandidateLayer),
+    );
+
     await client.send("Emulation.setDeviceMetricsOverride", {
       width: 1280,
       height: 820,
@@ -412,6 +442,115 @@ async function main() {
       JSON.stringify(compactGeometry),
     );
 
+    // A real OCR modal must cover every ordinary Office workspace layer. Keep
+    // the input-behavior popover open first when possible so this also guards the
+    // historical "operation logic is above the dialog" regression.
+    await client.evaluate(`(() => {
+      document.querySelector('.canvas-input-behavior-trigger')?.click();
+      return true;
+    })()`);
+    await sleep(60);
+    const operationPopoverWasOpen = await client.evaluate(
+      `Boolean(document.querySelector('.input-behavior-popover'))`,
+    );
+    const ocrOpened = await client.evaluate(`(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((candidate) => candidate.textContent?.trim() === 'OCR');
+      if (!(button instanceof HTMLButtonElement)) return false;
+      button.click();
+      return true;
+    })()`);
+    assert.equal(ocrOpened, true);
+    await sleep(180);
+    const ocrLayerState = await client.evaluate(`(() => {
+      const backdrop = document.querySelector('.ocr-modal-backdrop');
+      const dialog = document.querySelector('.ocr-dialog');
+      const header = document.querySelector('.editor-pane-header.is-office-editor-header');
+      const toolbar = document.querySelector('.formula-toolbar');
+      const tabs = document.querySelector('.classic-bottom-tabs');
+      const formatting = document.querySelector('.classic-bottom-formatting-slot');
+      const operation = document.querySelector('.input-behavior-popover');
+      const z = (element) => element
+        ? Number.parseInt(getComputedStyle(element).zIndex || '0', 10) || 0
+        : 0;
+      const covered = (element) => {
+        if (!element || !backdrop) return true;
+        const bounds = element.getBoundingClientRect();
+        if (bounds.width <= 0 || bounds.height <= 0) return true;
+        const x = Math.max(1, Math.min(innerWidth - 2, bounds.left + Math.min(bounds.width / 2, 24)));
+        const y = Math.max(1, Math.min(innerHeight - 2, bounds.top + Math.min(bounds.height / 2, 18)));
+        const top = document.elementFromPoint(x, y);
+        return Boolean(top?.closest('.ocr-modal-backdrop'));
+      };
+      const candidate = document.createElement('div');
+      candidate.id = 'visualtex-native-input-suggestion-popover';
+      candidate.className = 'is-visible';
+      document.body.append(candidate);
+      const context = document.createElement('div');
+      context.className = 'formula-editor-context-menu';
+      document.body.append(context);
+      const result = {
+        backdropExists: Boolean(backdrop),
+        dialogExists: Boolean(dialog),
+        backdropZ: z(backdrop),
+        headerZ: z(header),
+        toolbarZ: z(toolbar),
+        tabsZ: z(tabs),
+        formattingZ: z(formatting),
+        operationZ: z(operation),
+        candidateZ: z(candidate),
+        contextZ: z(context),
+        headerCovered: covered(header),
+        toolbarCovered: covered(toolbar),
+        tabsCovered: covered(tabs),
+        formattingCovered: covered(formatting),
+        operationCovered: covered(operation),
+      };
+      candidate.remove();
+      context.remove();
+      return result;
+    })()`);
+    assert.ok(
+      operationPopoverWasOpen &&
+        ocrLayerState.backdropExists &&
+        ocrLayerState.dialogExists &&
+        ocrLayerState.backdropZ >= 300 &&
+        ocrLayerState.headerZ < 100 &&
+        ocrLayerState.tabsZ < 100 &&
+        ocrLayerState.formattingZ < 100 &&
+        ocrLayerState.candidateZ < ocrLayerState.backdropZ &&
+        ocrLayerState.contextZ < ocrLayerState.backdropZ &&
+        ocrLayerState.headerCovered &&
+        ocrLayerState.toolbarCovered &&
+        ocrLayerState.tabsCovered &&
+        ocrLayerState.formattingCovered &&
+        ocrLayerState.operationCovered,
+      JSON.stringify(ocrLayerState),
+    );
+    const ocrClosed = await client.evaluate(`(() => {
+      const button = document.querySelector('button[aria-label="关闭 OCR"], button[aria-label="Close OCR"]');
+      if (!(button instanceof HTMLButtonElement)) return false;
+      button.click();
+      return true;
+    })()`);
+    assert.equal(ocrClosed, true);
+    await sleep(120);
+    assert.equal(
+      await client.evaluate(`Boolean(document.querySelector('.ocr-modal-backdrop'))`),
+      false,
+    );
+
+    const zoomAfterUserClick = await client.evaluate(`(() => {
+      const button = document.querySelector('button[aria-label="放大公式"], button[aria-label="Zoom in"]');
+      if (!(button instanceof HTMLButtonElement)) return null;
+      button.click();
+      return true;
+    })()`);
+    assert.equal(zoomAfterUserClick, true);
+    await sleep(120);
+    const userAdjustedAppearance = await readAppearance(client);
+    assert.equal(userAdjustedAppearance.zoom, 0.85);
+
     currentTheme = "green";
     currentEditorLayout = "standard";
     currentEditorPreferences = {
@@ -433,7 +572,7 @@ async function main() {
       if (
         synchronized.theme === "green" &&
         synchronized.editorLayout === "standard" &&
-        synchronized.zoom === 1.2 &&
+        synchronized.zoom === 0.85 &&
         synchronized.formulaInsetLeft === 18 &&
         synchronized.formulaLetterFont === "helvetica"
       ) break;
@@ -441,7 +580,9 @@ async function main() {
     assert.deepEqual(synchronized, {
       theme: "green",
       editorLayout: "standard",
-      zoom: 1.2,
+      // Companion changes continue to sync normal editor preferences, but the
+      // Office window's user-adjusted zoom must not snap back on the 500 ms poll.
+      zoom: 0.85,
       formulaInsetLeft: 18,
       formulaInsetRight: 22,
       formulaToolButtonSize: 60,

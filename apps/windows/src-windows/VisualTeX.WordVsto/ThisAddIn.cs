@@ -3919,8 +3919,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             EquationTag = run.DisplayMode == "block" ? run.EquationTag : null,
             FontSizePt = FormulaFontSize.Normalize(fontSizePt),
             RenderFontSizePt = FormulaFontSize.Normalize(fontSizePt),
-            CreatedWithVersion = "1.2.6",
-            UpdatedWithVersion = "1.2.6",
+            CreatedWithVersion = "1.2.7",
+            UpdatedWithVersion = "1.2.7",
             CreatedAt = now,
             UpdatedAt = now,
         };

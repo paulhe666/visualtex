@@ -1718,7 +1718,7 @@ internal sealed partial class WordFormulaService
                 finally { Release(originalMaths); }
                 WordDoubleClickHook.TraceMessage($"omml-font-size-begin formulaId={selected.FormulaId} maths={originalMathCount} range={equationRange.Start}:{equationRange.End} size={target}");
                 metadata.FontSizePt = target;
-                metadata.UpdatedWithVersion = "1.2.6";
+                metadata.UpdatedWithVersion = "1.2.7";
                 metadata.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
                 RemoveInlineBaselineSentinel(document, metadata.FormulaId);
                 // A numbered block OMML is genuine Word display math. Its separate

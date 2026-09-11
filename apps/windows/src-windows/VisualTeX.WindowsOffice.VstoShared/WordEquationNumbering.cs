@@ -9612,7 +9612,9 @@ internal static partial class WordEquationNumbering
                     try
                     {
                         listFormat = range.ListFormat;
-                        listNumber = NormalizeHeadingNumberText(listFormat.ListString);
+                        listNumber = NormalizeHeadingNumberText(
+                            listFormat.ListString,
+                            outlineLevel);
                     }
                     catch { }
                     var explicitNumber = !string.IsNullOrWhiteSpace(listNumber)
@@ -10804,7 +10806,9 @@ internal static partial class WordEquationNumbering
                         try
                         {
                             listFormat = range.ListFormat;
-                            listNumber = NormalizeHeadingNumberText(listFormat.ListString);
+                            listNumber = NormalizeHeadingNumberText(
+                                listFormat.ListString,
+                                outlineLevel);
                         }
                         catch { }
                         candidates.Add(new HeadingParagraphCandidate(
@@ -10912,7 +10916,9 @@ internal static partial class WordEquationNumbering
                     try
                     {
                         listFormat = range.ListFormat;
-                        listNumber = NormalizeHeadingNumberText(listFormat.ListString);
+                        listNumber = NormalizeHeadingNumberText(
+                            listFormat.ListString,
+                            outlineLevel);
                     }
                     catch { }
                     candidates.Add(new HeadingParagraphCandidate(
@@ -10966,14 +10972,64 @@ internal static partial class WordEquationNumbering
         return result;
     }
 
-    private static string NormalizeHeadingNumberText(string? value)
+    internal static string NormalizeHeadingNumberText(string? value, int outlineLevel)
     {
         var text = (value ?? string.Empty)
             .Replace("\t", string.Empty)
             .Replace("\r", string.Empty)
             .Replace("\n", string.Empty)
+            .Replace("\a", string.Empty)
             .Trim();
-        return text.TrimEnd(' ', '.', '-', '–', '—', '、', ')', '）');
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        // Word's ListString is presentation text, not a semantic chapter number.
+        // Multilevel lists may therefore expose labels such as "第3章",
+        // "第3章 第2节" or "Chapter 3 Section 2". Never copy those decorations
+        // into an equation-number prefix. Accept only Arabic-number components
+        // surrounded by a small, explicit set of list-label decorations and
+        // normalize every hierarchy separator to '.'. Any unexpected text fails
+        // closed so the ordinary heading-text/fallback counter path can take over.
+        var normalized = text
+            .Replace('０', '0')
+            .Replace('１', '1')
+            .Replace('２', '2')
+            .Replace('３', '3')
+            .Replace('４', '4')
+            .Replace('５', '5')
+            .Replace('６', '6')
+            .Replace('７', '7')
+            .Replace('８', '8')
+            .Replace('９', '9');
+        var numericMatches = Regex.Matches(
+            normalized,
+            @"\d+",
+            RegexOptions.CultureInvariant);
+        if (numericMatches.Count == 0
+            || numericMatches.Count > Math.Max(1, outlineLevel))
+            return string.Empty;
+
+        var remainder = Regex.Replace(
+            normalized,
+            @"\d+",
+            string.Empty,
+            RegexOptions.CultureInvariant);
+        remainder = Regex.Replace(
+            remainder,
+            @"(?i:\b(?:chapter|section|part)\b)|[第章节篇部卷]",
+            string.Empty,
+            RegexOptions.CultureInvariant);
+        remainder = Regex.Replace(
+            remainder,
+            @"[\s.．、,:：;；\-–—()（）\[\]【】{}]+",
+            string.Empty,
+            RegexOptions.CultureInvariant);
+        if (!string.IsNullOrEmpty(remainder)) return string.Empty;
+
+        return string.Join(
+            ".",
+            numericMatches
+                .Cast<Match>()
+                .Select(match => match.Value));
     }
 
     private static bool IsVisualTeXStructuralHeadingParagraph(Range range)

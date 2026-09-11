@@ -22,7 +22,7 @@
 }
 
 .custom-symbol-designer-backdrop {
-  z-index: 145;
+  z-index: 3600;
   display: grid;
   place-items: center;
   padding: 16px;

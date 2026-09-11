@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub const SESSION_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+const SESSION_CLEANUP_INTERVAL_MS: u64 = 60 * 60 * 1000;
+const SESSION_CLEANUP_MARKER_FILE: &str = ".cleanup-stamp";
 
 fn default_display_mode() -> String {
     "inline".to_string()
@@ -228,6 +230,24 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn file_modified_within(path: &Path, now: u64, interval_ms: u64) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return false;
+    };
+    let Ok(modified_since_epoch) = modified.duration_since(UNIX_EPOCH) else {
+        return false;
+    };
+    let modified_ms = modified_since_epoch.as_millis() as u64;
+    modified_ms <= now && modified_ms.saturating_add(interval_ms) > now
+}
+
+fn session_file_is_definitely_fresh(path: &Path, now: u64) -> bool {
+    file_modified_within(path, now, SESSION_TTL_MS)
+}
+
 #[cfg(unix)]
 fn set_mode(path: &Path, mode: u32) -> Result<(), SessionError> {
     use std::os::unix::fs::PermissionsExt;
@@ -318,13 +338,11 @@ impl SessionStore {
         })?;
         set_mode(&paths.sessions, 0o700)?;
         set_mode(&paths.recovery, 0o700)?;
-        let store = Self {
+        Ok(Self {
             sessions_root: paths.sessions.clone(),
             recovery_root: paths.recovery.clone(),
             lock: Arc::new(Mutex::new(())),
-        };
-        store.cleanup_expired(now_ms())?;
-        Ok(store)
+        })
     }
 
     fn session_directory(&self, id: &str) -> Result<PathBuf, SessionError> {
@@ -731,11 +749,30 @@ impl SessionStore {
         Ok(deleted)
     }
 
+    pub fn cleanup_expired_now(&self) -> Result<(), SessionError> {
+        let now = now_ms();
+        let marker = self.sessions_root.join(SESSION_CLEANUP_MARKER_FILE);
+        if file_modified_within(&marker, now, SESSION_CLEANUP_INTERVAL_MS) {
+            return Ok(());
+        }
+        self.cleanup_expired(now)?;
+        // Cleanup is maintenance, not user data. A marker write failure should
+        // not turn a successful scan into an Office startup/runtime failure.
+        let _ = fs::write(marker, now.to_string());
+        Ok(())
+    }
+
     pub fn cleanup_expired(&self, now: u64) -> Result<(), SessionError> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|_| SessionError::Io("Session store lock is unavailable".to_string()))?;
+        // Startup used to hold the global SessionStore mutex while reading and
+        // deserializing every session.json. A busy Word user can accumulate tens
+        // of thousands of converter sessions, so that turned desktop launch into
+        // an O(N) read of hundreds of megabytes before the first WebView existed.
+        //
+        // The file timestamp is a conservative prefilter only: every Session
+        // mutation rewrites session.json and refreshes expiresAt. A file modified
+        // within SESSION_TTL_MS therefore cannot be expired and does not need JSON
+        // parsing. Older/ambiguous files still go through the authoritative
+        // expiresAt + dirty/recovery checks below.
         let entries = fs::read_dir(&self.sessions_root).map_err(|error| {
             SessionError::Io(format!("Unable to scan Office Sessions: {error}"))
         })?;
@@ -748,6 +785,22 @@ impl SessionStore {
             }
             let id = entry.file_name().to_string_lossy().into_owned();
             if !valid_uuid(&id) {
+                continue;
+            }
+
+            let session_path = entry.path().join(SESSION_FILE);
+            if session_file_is_definitely_fresh(&session_path, now) {
+                continue;
+            }
+
+            // Lock only the individual candidate while reading/moving/deleting it.
+            // Formula creation can interleave between old entries instead of being
+            // blocked behind a minutes-long whole-store cleanup.
+            let _guard = self
+                .lock
+                .lock()
+                .map_err(|_| SessionError::Io("Session store lock is unavailable".to_string()))?;
+            if !entry.path().is_dir() {
                 continue;
             }
             let Ok(session) = self.read_locked(&id) else {
@@ -1267,6 +1320,32 @@ mod tests {
         assert_eq!(after_stale_autosave.status, OfficeSessionStatus::Committing);
         assert_eq!(after_stale_autosave.lines[0].latex, "a=b");
         assert!(after_stale_autosave.export_result.is_some());
+    }
+
+    #[test]
+    fn constructor_defers_expired_session_cleanup() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let store = SessionStore::new(&paths).unwrap();
+        let mut session = store.create(create_input()).unwrap();
+        session.lines[0].latex = "a=b".to_string();
+        session.dirty = true;
+        session.status = OfficeSessionStatus::Editing;
+        session.expires_at = 1;
+        store.overwrite_for_test(&session).unwrap();
+        drop(store);
+
+        let reopened = SessionStore::new(&paths).unwrap();
+        assert!(paths.sessions.join(&session.id).is_dir());
+        assert!(!paths.recovery.join(&session.id).exists());
+
+        reopened.cleanup_expired(2).unwrap();
+        assert!(!paths.sessions.join(&session.id).exists());
+        assert!(paths
+            .recovery
+            .join(&session.id)
+            .join(SESSION_FILE)
+            .is_file());
     }
 
     #[test]

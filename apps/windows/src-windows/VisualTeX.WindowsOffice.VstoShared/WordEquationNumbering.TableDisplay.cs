@@ -539,7 +539,9 @@ internal static partial class WordEquationNumbering
                     try
                     {
                         listFormat = paragraphRange.ListFormat;
-                        listNumber = NormalizeHeadingNumberText(listFormat.ListString);
+                        listNumber = NormalizeHeadingNumberText(
+                            listFormat.ListString,
+                            outlineLevel);
                     }
                     catch { }
                     var explicitNumber = !string.IsNullOrWhiteSpace(listNumber)

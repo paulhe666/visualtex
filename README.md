@@ -97,7 +97,7 @@ Windows 版可将 VisualTeX 中的公式直接插入为 `Equation.DSMT4` 原生 
 - 带 MathType 原生左编号的行间公式。
 - 带 MathType 原生右编号的行间公式。
 
-VisualTeX 对 MathType OLE 的创建、插入、渲染和编辑不依赖 MathType 安装。使用 MathType 自带编辑器打开对象时需要安装 MathType。
+VisualTeX 对 MathType OLE 的创建、插入、渲染和编辑不依赖 MathType 安装。Windows 版当前以 MathType 7 作为稳定兼容与验收基线；使用 MathType 自带编辑器打开对象时需要安装 MathType 7。
 
 相关转换和文档维护功能包括：
 
@@ -182,7 +182,7 @@ macOS 和 Windows 使用独立的源码、依赖、Office 加载项和构建流�
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS 帮助手册](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-macOS 版本要求 macOS 11 或更高版本。Office 功能要求本机安装 Microsoft Word 或 PowerPoint。Windows 版的 MathType OLE 创建、插入、渲染和 VisualTeX 编辑功能不依赖 MathType 安装。
+macOS 版本要求 macOS 11 或更高版本。Windows 版 Office 集成稳定支持 Microsoft Office 2021 及以上桌面版的 Word / PowerPoint。Windows 版的 MathType OLE 创建、插入、渲染和 VisualTeX 编辑功能不依赖 MathType 安装，并以 MathType 7 作为稳定兼容基线。
 
 ## 开发
 
@@ -272,7 +272,7 @@ VisualTeX for Windows inserts formula content as native `Equation.DSMT4` MathTyp
 - Display formulas with native MathType numbering on the left.
 - Display formulas with native MathType numbering on the right.
 
-Creation, insertion, rendering, and editing through VisualTeX do not require a MathType installation. Opening an object in the MathType editor requires MathType.
+Creation, insertion, rendering, and editing through VisualTeX do not require a MathType installation. The Windows build uses MathType 7 as its stable compatibility and validation baseline; opening an object in the native MathType editor requires MathType 7.
 
 Related conversion and document maintenance functions include:
 
@@ -357,7 +357,7 @@ The macOS and Windows versions use separate source trees, dependencies, Office a
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS user guide](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-The macOS version requires macOS 11 or later. Office functions require Microsoft Word or PowerPoint. MathType OLE creation, insertion, rendering, and VisualTeX editing on Windows do not require a MathType installation.
+The macOS version requires macOS 11 or later. The Windows Office integration is supported on Microsoft Office 2021 and later desktop versions of Word and PowerPoint. MathType OLE creation, insertion, rendering, and VisualTeX editing on Windows do not require a MathType installation, with MathType 7 used as the stable compatibility baseline.
 
 ## Development
 

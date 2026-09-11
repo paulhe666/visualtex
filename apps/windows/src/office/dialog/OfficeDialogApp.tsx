@@ -253,7 +253,6 @@ function applyOfficeEditorPreferences(
   if (settings.language === "cn" || settings.language === "en") {
     editor.setLanguage(settings.language);
   }
-  if (typeof settings.zoom === "number") editor.setZoom(settings.zoom);
   if (settings.formulaAlignment) {
     editor.setFormulaAlignment(settings.formulaAlignment);
   }
@@ -406,6 +405,7 @@ export function OfficeDialogApp() {
   const conversionStartedRef = useRef(false);
   const batchConversionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const initialEditorFocusSessionRef = useRef("");
+  const initialSynchronizedZoomAppliedRef = useRef(false);
   const latestCompleteExportRef = useRef<{
     fingerprint: string;
     exportResult: OfficeExportResult;
@@ -534,10 +534,16 @@ export function OfficeDialogApp() {
         ]);
         if (!disposed) {
           // Shared visual/editor preferences stay live, but Office-window view
-          // state (source tab and resizable panel dimensions) is deliberately
-          // excluded inside applyOfficeEditorPreferences. Those values persist
-          // in this Office WebView and must never be overwritten by the main
-          // app's 500ms companion snapshot.
+          // state must not be rewritten continuously from the companion. Seed
+          // zoom once from the main editor, then let this Office window own later
+          // +/- changes instead of snapping back on the 500 ms sync interval.
+          if (!initialSynchronizedZoomAppliedRef.current) {
+            const initialZoom = preferences.editorPreferences?.settings?.zoom;
+            if (typeof initialZoom === "number") {
+              useEditorStore.getState().setZoom(initialZoom);
+            }
+            initialSynchronizedZoomAppliedRef.current = true;
+          }
           applyOfficeEditorPreferences(
             preferences,
             applyTheme,
@@ -891,13 +897,12 @@ export function OfficeDialogApp() {
     const outputLetterFont: FormulaLetterFont =
       isMathTypeOle ? "times" : sourceFormulaLetterFont;
     // Equation Native created by VisualTeX carries MathType's Full Size equation
-    // preferences.  Its own equation geometry is independent of whether Word later
-    // places the OLE inline or in an MTDisplayEquation paragraph.  Do not feed
-    // Word's inline/block choice back into MathJax, because that changes fraction,
-    // limit and operator sizing and was the source of the 6a43aec inline-height
-    // regression.  The current standalone MathType preferences are 12 pt, matching
-    // the Equation Native prefix; Word placement is handled later by the VSTO.
-    const outputFontSizePt = isMathTypeOle ? 12 : sourceFontSizePt;
+    // preferences. Its geometry is independent of whether Word later places the
+    // OLE inline or in an MTDisplayEquation paragraph. Keep MathType typography
+    // on the Times family, but render at the Session's semantic size so a 10.5 pt
+    // Word paragraph does not preview at 12 pt while the committed MTEF is 10.5 pt.
+    // Word placement is handled later by the VSTO.
+    const outputFontSizePt = sourceFontSizePt;
     const outputDisplayMode = isMathTypeOle || sourceDisplayMode === "block";
     const mathTypeVerticalPaddingPx = outputFontSizePt * 0.5;
     const svg = latexToSvg(sourceLatex, {

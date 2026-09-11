@@ -113,7 +113,7 @@
 
 .formula-color-popover {
   position: absolute;
-  z-index: 2200;
+  z-index: var(--z-popover, 190);
   top: calc(100% + 7px);
   right: 0;
   width: 190px;
