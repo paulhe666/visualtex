@@ -14,7 +14,6 @@ internal static class WordOmmlNativeSource
     internal sealed class LiveInsertionOwners : IDisposable
     {
         private readonly Dictionary<string, OMath> owners = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, Bookmark> stableTableOwners = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> verifiedOwners = new(StringComparer.OrdinalIgnoreCase);
 
         internal void Capture(string formulaId, Range inserted)
@@ -61,6 +60,7 @@ internal static class WordOmmlNativeSource
                 }
 
                 owners.Add(formulaId, math);
+                verifiedOwners.Remove(formulaId);
                 math = null;
                 if (stableOwner is not null)
                 {
@@ -450,6 +450,55 @@ internal static class WordOmmlNativeSource
                 }
             }
             return true;
+        }
+
+        internal void MarkVerifiedOwners(IEnumerable<string> formulaIds)
+        {
+            foreach (var formulaId in formulaIds.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!owners.ContainsKey(formulaId))
+                    throw new InvalidDataException($"Fresh OMML owner {formulaId} was not retained for verified reuse.");
+                verifiedOwners.Add(formulaId);
+            }
+        }
+
+        internal Range? TryReadVerifiedOwner(string formulaId)
+        {
+            if (!verifiedOwners.Contains(formulaId)
+                || !owners.TryGetValue(formulaId, out var math))
+                return null;
+
+            Range? range = null;
+            OMaths? maths = null;
+            OMath? resolved = null;
+            Range? resolvedRange = null;
+            try
+            {
+                range = math.Range.Duplicate;
+                if (range.Start >= range.End) return null;
+                maths = range.OMaths;
+                if (maths.Count != 1) return null;
+                resolved = maths[1];
+                resolvedRange = resolved.Range;
+                if (resolvedRange.StoryType != range.StoryType
+                    || resolvedRange.Start != range.Start
+                    || resolvedRange.End != range.End)
+                    return null;
+                var result = range;
+                range = null;
+                return result;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                Release(resolvedRange);
+                Release(resolved);
+                Release(maths);
+                Release(range);
+            }
         }
 
         internal IReadOnlyDictionary<string, int> CaptureIndices(OMaths maths)
@@ -977,8 +1026,7 @@ internal static class WordOmmlNativeSource
         IReadOnlyCollection<string> formulaIds,
         IReadOnlyDictionary<string, string>? freshSourceOmml = null,
         LiveInsertionOwners? liveInsertions = null,
-        IDictionary<string, FormulaMetadata>? verifiedMetadata = null,
-        IReadOnlyDictionary<string, FormulaMetadata>? finalizedMetadata = null)
+        IDictionary<string, FormulaMetadata>? verifiedMetadata = null)
     {
         if (formulaIds is null || formulaIds.Count == 0) return 0;
         if (finalizedMetadata is not null && (freshSourceOmml is not null
@@ -1042,13 +1090,6 @@ internal static class WordOmmlNativeSource
                     var actual = ReadCompleteEquationWordOpenXml(document, local, id);
                     if (WordOmmlConverter.ComputeOmmlFingerprint(actual) != item.NativeOmmlFingerprint)
                         throw new InvalidDataException("The final single converted OMML content changed.");
-                    if (finalizedMetadata is not null)
-                    {
-                        anchor = WordOmmlFormulaStore.Wrap(document, local, item);
-                        if (!WordOmmlFormulaStore.IsCanonicalAnchor(anchor, local))
-                            throw new InvalidDataException("The finalized native owner could not retain its canonical identity.");
-                        WordOmmlFormulaStore.Save(document, item);
-                    }
                     if (verifiedMetadata is not null)
                         verifiedMetadata[id] = item;
                     return 1;

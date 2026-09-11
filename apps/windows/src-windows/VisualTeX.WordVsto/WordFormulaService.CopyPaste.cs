@@ -44,18 +44,6 @@ internal sealed partial class WordFormulaService
         internal int KnownOmmlCount { get; set; }
         internal int KnownDocumentEnd { get; set; }
         internal string? VisibleNumber { get; set; }
-        internal List<WordFormulaCopyGroupItem> GroupItems { get; set; } = new();
-        internal int CopiedSelectionStart { get; set; }
-        internal int CopiedSelectionEnd { get; set; }
-    }
-
-    internal sealed class NumberedHostDeleteGuard
-    {
-        internal string DocumentId { get; set; } = string.Empty;
-        internal string FormulaId { get; set; } = string.Empty;
-        internal int SelectionStart { get; set; }
-        internal int SelectionEnd { get; set; }
-        internal int DocumentEnd { get; set; }
     }
 
     internal enum PastedFormulaRepairResult
