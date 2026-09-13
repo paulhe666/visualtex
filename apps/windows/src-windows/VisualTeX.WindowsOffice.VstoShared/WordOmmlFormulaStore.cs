@@ -678,6 +678,9 @@ internal static class WordOmmlFormulaStore
         Range? preceding = null;
         Tables? equationTables = null;
         Table? equationTable = null;
+        Range? equationTableRange = null;
+        Table? managedNumberTable = null;
+        Range? managedNumberTableRange = null;
         Rows? equationRows = null;
         Columns? equationColumns = null;
         Cell? centerCell = null;
@@ -725,33 +728,45 @@ internal static class WordOmmlFormulaStore
                 equationTables = equationRange.Tables;
                 if (equationTables.Count > 0)
                 {
-                    if (equationTables.Count > 0)
+                    equationTable = equationTables[1];
+                    managedNumberTable = WordEquationNumbering.FindNumberedEquationTable(
+                        document,
+                        metadata.FormulaId);
+                    if (managedNumberTable is not null)
                     {
-                        equationTable = equationTables[1];
-                        equationRows = equationTable.Rows;
-                        equationColumns = equationTable.Columns;
-                        if (equationRows.Count >= 1
-                            && equationColumns.Count == 3
-                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
-                                equationTable,
-                                equationRange,
-                                expectedColumnIndex: 2,
-                                out var equationRowIndex))
+                        equationTableRange = equationTable.Range;
+                        managedNumberTableRange = managedNumberTable.Range;
+                        var sameManagedTable =
+                            equationTableRange.StoryType == managedNumberTableRange.StoryType
+                            && equationTableRange.Start == managedNumberTableRange.Start
+                            && equationTableRange.End == managedNumberTableRange.End;
+                        if (sameManagedTable)
                         {
-                            centerCell = equationTable.Cell(equationRowIndex, 2);
-                            centerCellRange = centerCell.Range;
-                            if (equationRange.Start >= centerCellRange.Start
-                                && equationRange.End <= centerCellRange.End)
+                            equationRows = equationTable.Rows;
+                            equationColumns = equationTable.Columns;
+                            if (equationRows.Count >= 1
+                                && equationColumns.Count == 3
+                                && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                    equationTable,
+                                    equationRange,
+                                    expectedColumnIndex: 2,
+                                    out var equationRowIndex))
                             {
-                                centerParagraphs = centerCellRange.Paragraphs;
-                                if (centerParagraphs.Count == 1)
+                                centerCell = equationTable.Cell(equationRowIndex, 2);
+                                centerCellRange = centerCell.Range;
+                                if (equationRange.Start >= centerCellRange.Start
+                                    && equationRange.End <= centerCellRange.End)
                                 {
-                                    centerParagraph = centerParagraphs[1];
-                                    centerParagraphRange = centerParagraph.Range.Duplicate;
-                                    centerParagraphRange.Collapse(WdCollapseDirection.wdCollapseStart);
-                                    anchorRange = centerParagraphRange;
-                                    centerParagraphRange = null;
-                                    anchoredInCenterCell = true;
+                                    centerParagraphs = centerCellRange.Paragraphs;
+                                    if (centerParagraphs.Count == 1)
+                                    {
+                                        centerParagraph = centerParagraphs[1];
+                                        centerParagraphRange = centerParagraph.Range.Duplicate;
+                                        centerParagraphRange.Collapse(WdCollapseDirection.wdCollapseStart);
+                                        anchorRange = centerParagraphRange;
+                                        centerParagraphRange = null;
+                                        anchoredInCenterCell = true;
+                                    }
                                 }
                             }
                         }
@@ -797,6 +812,9 @@ internal static class WordOmmlFormulaStore
             Release(centerCell);
             Release(equationColumns);
             Release(equationRows);
+            Release(managedNumberTableRange);
+            Release(managedNumberTable);
+            Release(equationTableRange);
             Release(equationTable);
             Release(equationTables);
             Release(preceding);
@@ -998,7 +1016,12 @@ internal static class WordOmmlFormulaStore
             bool ContentMatches(Range range) => string.IsNullOrWhiteSpace(expectedFingerprint)
                 || string.Equals(GetEquationFingerprint(range), expectedFingerprint, StringComparison.OrdinalIgnoreCase);
 
-            candidate = FindAdjacentEquationRangeNearAnchor(document, content, bookmarkRange.Start);
+            // Read the exact canonical bookmark before broadening any range.
+            // Word 2021 can omit or clip table OMaths in a probe spanning body /
+            // table boundaries. Opening, applying and converting must not choose
+            // a neighbouring equation merely because that widened collection did.
+            candidate = TryGetExactAnchorEquationRange(bookmark)
+                ?? FindAdjacentEquationRangeNearAnchor(document, content, bookmarkRange.Start);
             if (candidate is not null && IsCanonicalAnchor(bookmark, candidate)
                 && ((NumberedFormulaIdentityMatchesEquationRange(document, formulaId, metadata, candidate)
                         && (captureCurrentContent || ContentMatches(candidate)))
@@ -1046,6 +1069,31 @@ internal static class WordOmmlFormulaStore
             Release(candidate);
             Release(content);
             Release(bookmarkRange);
+        }
+    }
+
+    private static Range? TryGetExactAnchorEquationRange(Bookmark bookmark)
+    {
+        Range? anchor = null;
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? range = null;
+        try
+        {
+            anchor = bookmark.Range;
+            if (anchor.Start != anchor.End) return null;
+            maths = anchor.OMaths;
+            if (maths.Count != 1) return null;
+            math = maths[1];
+            range = math.Range.Duplicate;
+            if (!IsCanonicalAnchor(bookmark, range)) return null;
+            var result = range;
+            range = null;
+            return result;
+        }
+        finally
+        {
+            Release(range); Release(math); Release(maths); Release(anchor);
         }
     }
 

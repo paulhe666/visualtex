@@ -1,8 +1,9 @@
-param([string]$Label='stage01')
+param([string]$Label='stage01',[string]$SourceDirectory='')
 $ErrorActionPreference='Stop'
 if($env:VISUALTEX_VSTO_ACCEPTANCE -eq '1'){throw 'Manual-service acceptance mode must not be enabled.'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$source=Join-Path $root 'apps\windows\src-windows\VisualTeX.WordVsto\bin\x64\Release\net472'
+$source=if($SourceDirectory){[IO.Path]::GetFullPath($SourceDirectory)}else{Join-Path $root 'apps\windows\src-windows\VisualTeX.WordVsto\bin\x64\Release\net472'}
+if($SourceDirectory -and $source -ne 'C:\Program Files\VisualTeX\WindowsOffice\VSTO' -and !$source.StartsWith((Join-Path $env:LOCALAPPDATA 'VisualTeX\office\remediation-builds\'),[StringComparison]::OrdinalIgnoreCase)){throw 'Explicit baseline must be the installed package or an immutable recorded test build.'}
 $hash=(Get-FileHash -LiteralPath (Join-Path $source 'VisualTeX.WordVsto.dll') -Algorithm SHA256).Hash
 $installBase=Join-Path $env:LOCALAPPDATA 'VisualTeX\office\remediation-builds'
 $destination=Join-Path $installBase $hash
@@ -44,6 +45,6 @@ try{
   try{$server.SetValue('CodeBase',$codeBase,[Microsoft.Win32.RegistryValueKind]::String)}finally{$server.Dispose()}
  }
 }finally{$machine.Dispose();$user.Dispose();$userBase.Dispose();$machineBase.Dispose()}
-$record=@{label=$Label;time=[DateTime]::UtcNow.ToString('o');source=$source;directory=$destination;wordSha256=$hash;registryKey=$keyPath;previousUserCodeBase=$oldCodeBase;existingWordProcesses=@(Get-Process WINWORD | Select-Object Id,StartTime,Path);files=$files;manualServiceAcceptance=$false}
+$record=@{label=$Label;time=[DateTime]::UtcNow.ToString('o');source=$source;directory=$destination;wordSha256=$hash;registryKey=$keyPath;previousUserCodeBase=$oldCodeBase;existingWordProcesses=@(Get-Process WINWORD -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path);files=$files;manualServiceAcceptance=$false}
 $record | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $PSScriptRoot "evidence\$Label-installed.json") -Encoding UTF8
 Write-Output ("STAGE_INSTALLED|"+$destination)

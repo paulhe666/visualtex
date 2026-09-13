@@ -40,6 +40,8 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordEquationReferenceFields.cs" Link="WordEquationReferenceFields.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordCharacterFormatting.cs" Link="WordCharacterFormatting.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFormulaHost.cs" Link="WordFormulaHost.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\MathTypeSourceHost.cs" Link="MathTypeSourceHost.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeMtefCodec.cs" Link="MathTypeMtefCodec.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeMtefCodec.FontSize.cs" Link="MathTypeMtefCodec.FontSize.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />

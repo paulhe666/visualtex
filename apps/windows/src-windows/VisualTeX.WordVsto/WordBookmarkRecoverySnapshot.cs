@@ -23,7 +23,7 @@ internal sealed class WordBookmarkRecoverySnapshot
     internal static IEnumerable<string> NamesForFormula(string formulaId)
     {
         var suffix = Guid.Parse(formulaId).ToString("N");
-        return new[] { "VTO_", "VTOMML_", "VTBL_", "VTEq_", "VTEqCap_", "VTEqNum_", "VTEqAnc_", "VTAncR_" }
+        return new[] { "VTO_", "VTOMML_", "VTBL_", "VTEq_", "VTEqCap_", "VTEqNum_", "VTEqFT_", "VTEqAnc_", "VTEqSep_", "VTAncR_" }
             .Select(prefix => prefix + suffix);
     }
 

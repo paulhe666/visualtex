@@ -322,11 +322,20 @@ internal static class WordBulkImportParser
         var spans = new List<WordLatexFormulaSpan>();
         for (var index = 0; index < source.Length;)
         {
+            // Word exposes a table cell terminator as \r\a. A delimiter opened in
+            // one cell must never consume a closing delimiter from another cell:
+            // that would turn several independent cells into one apparent formula
+            // and make the in-place Word coordinates point at unrelated content.
+            // Keep offsets in the original story string, but bound every closing
+            // delimiter/environment search to the current cell.
+            var cellBoundary = source.IndexOf('\a', index);
+            var searchEnd = cellBoundary >= 0 ? cellBoundary : source.Length;
+
             if (source[index] == '$' && !IsEscaped(source, index))
             {
-                if (index + 1 < source.Length && source[index + 1] == '$')
+                if (index + 1 < searchEnd && source[index + 1] == '$')
                 {
-                    var end = FindUnescapedSequence(source, "$$", index + 2);
+                    var end = FindUnescapedSequence(source, "$$", index + 2, searchEnd);
                     if (end >= index + 2)
                     {
                         AddFormulaSpan(
@@ -344,7 +353,7 @@ internal static class WordBulkImportParser
                 }
                 else
                 {
-                    var end = FindUnescaped(source, '$', index + 1);
+                    var end = FindUnescaped(source, '$', index + 1, searchEnd);
                     if (end > index + 1)
                     {
                         AddFormulaSpan(
@@ -363,13 +372,13 @@ internal static class WordBulkImportParser
             }
 
             if (source[index] == '\\'
-                && index + 1 < source.Length
+                && index + 1 < searchEnd
                 && (source[index + 1] == '(' || source[index + 1] == '[')
                 && !IsEscaped(source, index))
             {
                 var display = source[index + 1] == '[';
                 var endToken = display ? "\\]" : "\\)";
-                var end = FindUnescapedSequence(source, endToken, index + 2);
+                var end = FindUnescapedSequence(source, endToken, index + 2, searchEnd);
                 if (end > index + 2)
                 {
                     AddFormulaSpan(
@@ -389,7 +398,7 @@ internal static class WordBulkImportParser
             if (source[index] == '\\' && !IsEscaped(source, index))
             {
                 var environment = Regex.Match(
-                    source.Substring(index),
+                    source.Substring(index, searchEnd - index),
                     @"^\\begin\{(?<name>equation\*?|align\*?|gather\*?|multline\*?|displaymath)\}",
                     RegexOptions.IgnoreCase);
                 if (environment.Success)
@@ -397,7 +406,7 @@ internal static class WordBulkImportParser
                     var name = environment.Groups["name"].Value;
                     var endToken = $"\\end{{{name}}}";
                     var bodyStart = index + environment.Length;
-                    var end = FindUnescapedSequence(source, endToken, bodyStart);
+                    var end = FindUnescapedSequence(source, endToken, bodyStart, searchEnd);
                     if (end >= bodyStart)
                     {
                         var latex = NormalizeDisplayEnvironmentLatex(
@@ -1657,19 +1666,35 @@ internal static class WordBulkImportParser
         return -1;
     }
 
-    private static int FindUnescaped(string text, char target, int start)
+    private static int FindUnescaped(string text, char target, int start) =>
+        FindUnescaped(text, target, start, text.Length);
+
+    private static int FindUnescaped(
+        string text,
+        char target,
+        int start,
+        int endExclusive)
     {
-        for (var index = start; index < text.Length; index++)
+        var end = Math.Min(text.Length, Math.Max(0, endExclusive));
+        for (var index = Math.Max(0, start); index < end; index++)
         {
             if (text[index] == target && !IsEscaped(text, index)) return index;
         }
         return -1;
     }
 
-    private static int FindUnescapedSequence(string text, string target, int start)
+    private static int FindUnescapedSequence(string text, string target, int start) =>
+        FindUnescapedSequence(text, target, start, text.Length);
+
+    private static int FindUnescapedSequence(
+        string text,
+        string target,
+        int start,
+        int endExclusive)
     {
         if (string.IsNullOrEmpty(target)) return -1;
-        for (var index = Math.Max(0, start); index <= text.Length - target.Length; index++)
+        var end = Math.Min(text.Length, Math.Max(0, endExclusive));
+        for (var index = Math.Max(0, start); index <= end - target.Length; index++)
         {
             if (!text.AsSpan(index, target.Length).SequenceEqual(target.AsSpan())) continue;
             if (!IsEscaped(text, index)) return index;

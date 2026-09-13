@@ -1514,6 +1514,23 @@ fn python_command(program: &Path) -> Command {
     command
 }
 
+fn configure_ocr_runtime_cache_environment(command: &mut Command, paths: &RuntimePaths) {
+    let huggingface = paths.cache.join("huggingface");
+    command
+        .env("PADDLE_PDX_CACHE_HOME", paths.cache.join("paddlex"))
+        .env("PADDLE_HOME", paths.cache.join("paddle"))
+        .env("MODELSCOPE_CACHE", paths.cache.join("modelscope"))
+        .env("HF_HOME", &huggingface)
+        .env("HF_HUB_CACHE", huggingface.join("hub"))
+        .env("HUGGINGFACE_HUB_CACHE", huggingface.join("hub"))
+        .env("XDG_CACHE_HOME", &paths.cache)
+        .env("PIP_CACHE_DIR", paths.cache.join("pip"))
+        .env("TMPDIR", &paths.temp)
+        .env("TMP", &paths.temp)
+        .env("TEMP", &paths.temp)
+        .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True");
+}
+
 fn command_output_detailed(command: &mut Command, label: &str) -> Result<(String, String), String> {
     configure_python_environment(command);
     hide_windows_console(command);
@@ -1881,8 +1898,11 @@ fn probe_runtime(paths: &RuntimePaths) -> Result<RuntimeProbe, String> {
     ensure_private_python_isolation(paths)?;
     ensure_private_python_app_local_runtime(paths)?;
     let script = r#"import json, platform; import paddle; import paddleocr; import tokenizers, imagesize, ftfy, wand; from importlib.metadata import version; from paddleocr import FormulaRecognition; print(json.dumps({'pythonVersion': platform.python_version(), 'paddleVersion': paddle.__version__, 'paddleocrVersion': version('paddleocr')}))"#;
+    let mut command = python_command(&paths.python);
+    command.arg("-c").arg(script);
+    configure_ocr_runtime_cache_environment(&mut command, paths);
     let (stdout, stderr) = command_output_detailed(
-        python_command(&paths.python).arg("-c").arg(script),
+        &mut command,
         "OCR runtime verification",
     )?;
     let probe = parse_runtime_probe_output(&stdout, &stderr)?;
@@ -2233,13 +2253,10 @@ fn install_command(
     command: &mut Command,
     label: &str,
 ) -> Result<CommandCapture, String> {
+    configure_ocr_runtime_cache_environment(command, paths);
     command
-        .env("TMP", &paths.temp)
-        .env("TEMP", &paths.temp)
-        .env("TMPDIR", &paths.temp)
         .env("PIP_DEFAULT_TIMEOUT", "30")
         .env("PIP_RETRIES", "2")
-        .env("PIP_CACHE_DIR", paths.cache.join("pip"))
         .env("CARGO_TARGET_DIR", paths.temp.join("cargo-target"));
     run_logged_command(
         command,
@@ -3179,6 +3196,7 @@ fn spawn_worker(
         .map_err(|error| format!("Unable to clone OCR log handle: {error}"))?;
 
     let mut command = python_command(&paths.python);
+    configure_ocr_runtime_cache_environment(&mut command, paths);
     command
         .arg(&script)
         .env("PYTHONUNBUFFERED", "1")
@@ -3190,12 +3208,6 @@ fn spawn_worker(
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("MODELSCOPE_OFFLINE", "1")
         .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        .env("PADDLE_PDX_CACHE_HOME", paths.cache.join("paddlex"))
-        .env("PADDLE_HOME", paths.cache.join("paddle"))
-        .env("XDG_CACHE_HOME", &paths.cache)
-        .env("TMPDIR", &paths.temp)
-        .env("TMP", &paths.temp)
-        .env("TEMP", &paths.temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log_file_error));
@@ -4413,6 +4425,47 @@ mod protocol_tests {
             storage_source: "test".to_string(),
             storage_managed: true,
         }
+    }
+
+    #[test]
+    fn every_ocr_python_subprocess_cache_follows_runtime_storage() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = test_runtime_paths(root.path());
+        let mut command = Command::new("python.exe");
+        configure_ocr_runtime_cache_environment(&mut command, &paths);
+
+        let value = |name: &str| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new(name))
+                .and_then(|(_, value)| value)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| panic!("missing OCR subprocess environment variable {name}"))
+        };
+
+        assert_eq!(value("PADDLE_PDX_CACHE_HOME"), paths.cache.join("paddlex"));
+        assert_eq!(value("PADDLE_HOME"), paths.cache.join("paddle"));
+        assert_eq!(value("MODELSCOPE_CACHE"), paths.cache.join("modelscope"));
+        assert_eq!(value("HF_HOME"), paths.cache.join("huggingface"));
+        assert_eq!(value("HF_HUB_CACHE"), paths.cache.join("huggingface").join("hub"));
+        assert_eq!(
+            value("HUGGINGFACE_HUB_CACHE"),
+            paths.cache.join("huggingface").join("hub")
+        );
+        assert_eq!(value("XDG_CACHE_HOME"), paths.cache);
+        assert_eq!(value("PIP_CACHE_DIR"), paths.cache.join("pip"));
+        assert_eq!(value("TMPDIR"), paths.temp);
+        assert_eq!(value("TMP"), paths.temp);
+        assert_eq!(value("TEMP"), paths.temp);
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"))
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+                .as_deref(),
+            Some("True")
+        );
     }
 
     #[test]

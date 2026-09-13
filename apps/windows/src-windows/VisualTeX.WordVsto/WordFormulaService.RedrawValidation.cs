@@ -48,11 +48,75 @@ internal sealed partial class WordFormulaService
                     var name = WordOmmlFormulaStore.BookmarkName(item.FormulaId);
                     if (!bookmarks.Exists(name)) throw new InvalidDataException("The completed OMath lost its identity.");
                     bookmark = bookmarks[name]; anchor = bookmark.Range;
-                    if (anchor.Start != anchor.End
-                        || !owners.TryGetValue((anchor.StoryType, anchor.Start), out var owner)
-                        || !claimed.Add(owner.Index)
-                        || owner.Display != string.Equals(item.DisplayMode, "block", StringComparison.Ordinal))
+                    if (anchor.Start != anchor.End)
+                        throw new InvalidDataException("The completed OMath identity bookmark is not collapsed.");
+
+                    var ownerResolved = owners.TryGetValue(
+                        (anchor.StoryType, anchor.Start),
+                        out var owner);
+                    if (!ownerResolved)
+                    {
+                        // Word display math can legally keep the canonical collapsed
+                        // bookmark one story character before OMath.Start (the native
+                        // vertical-tab display separator). WordOmmlFormulaStore.Wrap
+                        // and IsCanonicalAnchor already define that as a valid owner;
+                        // final redraw validation must use the same contract instead
+                        // of rejecting a healthy formula after the Undo record closes.
+                        if (owners.TryGetValue(
+                                (anchor.StoryType, anchor.Start + 1),
+                                out var adjacentOwner))
+                        {
+                            OMath? adjacentMath = null;
+                            Range? adjacentRange = null;
+                            try
+                            {
+                                adjacentMath = maths[adjacentOwner.Index + 1];
+                                adjacentRange = adjacentMath.Range;
+                                if (WordOmmlFormulaStore.IsCanonicalAnchor(
+                                        bookmark,
+                                        adjacentRange))
+                                {
+                                    owner = adjacentOwner;
+                                    ownerResolved = true;
+                                }
+                            }
+                            finally
+                            {
+                                Release(adjacentRange);
+                                Release(adjacentMath);
+                            }
+                        }
+                    }
+                    var expectedDisplay = string.Equals(
+                        item.DisplayMode,
+                        "block",
+                        StringComparison.Ordinal);
+                    var duplicateOwner = ownerResolved && claimed.Contains(owner.Index);
+                    if (!ownerResolved
+                        || duplicateOwner
+                        || owner.Display != expectedDisplay)
+                    {
+                        var nearby = string.Join(
+                            ",",
+                            owners
+                                .Where(pair => pair.Key.Story == anchor.StoryType)
+                                .OrderBy(pair => Math.Abs(pair.Key.Start - anchor.Start))
+                                .Take(4)
+                                .Select(pair =>
+                                    $"{pair.Key.Start}:idx={pair.Value.Index}:display={pair.Value.Display}"));
+                        WordDoubleClickHook.TraceMessage(
+                            $"redraw-omml-owner-validation-failed formulaId={item.FormulaId} "
+                            + $"anchor={anchor.StoryType}/{anchor.Start}:{anchor.End} "
+                            + $"ownerResolved={ownerResolved} ownerIndex={(ownerResolved ? owner.Index : -1)} "
+                            + $"ownerDisplay={(ownerResolved ? owner.Display.ToString() : "<none>")} "
+                            + $"expectedDisplay={expectedDisplay} duplicate={duplicateOwner} nearby=[{nearby}]");
                         throw new InvalidDataException("The completed OMath identity has an incorrect or shared physical owner.");
+                    }
+                    claimed.Add(owner.Index);
+                    WordDoubleClickHook.TraceMessage(
+                        $"redraw-omml-owner-verified formulaId={item.FormulaId} "
+                        + $"anchor={anchor.StoryType}/{anchor.Start}:{anchor.End} "
+                        + $"ownerIndex={owner.Index} display={owner.Display}");
                     var actual = equations[owner.Index].ToString(SaveOptions.DisableFormatting);
                     if (!string.Equals(WordOmmlConverter.ComputeOmmlFingerprint(actual), item.NativeOmmlFingerprint, StringComparison.Ordinal))
                         throw new InvalidDataException($"Word changed the materialized OMML for {item.FormulaId}; the source fingerprint cannot be persisted.");
@@ -64,11 +128,37 @@ internal sealed partial class WordFormulaService
         finally { Release(bookmarks); Release(maths); }
     }
 
+    private static void RetainMathTypeRedrawValidationIdentity(
+        ICollection<(string FormulaId, Range EndAnchor, int OwnerLength, string Signature)> retained,
+        string formulaId,
+        Range owner,
+        string signature)
+    {
+        Range? endAnchor = null;
+        try
+        {
+            var ownerLength = owner.End - owner.Start;
+            if (ownerLength <= 0)
+                throw new InvalidDataException(
+                    $"MathType redraw identity {formulaId} has no physical owner length.");
+            endAnchor = owner.Duplicate;
+            endAnchor.SetRange(owner.End, owner.End);
+            retained.Add((formulaId, endAnchor, ownerLength, signature));
+            endAnchor = null;
+        }
+        finally { Release(endAnchor); }
+    }
+
     // Called only after the entire custom Undo record is closed. A single final
     // export replaces N per-object exports, without skipping any native data check.
+    // Redraw mutates strictly from right to left. Retaining a spanning Word Range
+    // across those structural edits is unsafe: Word can pull its Start all the way
+    // into earlier body paragraphs when the owner lives in a user table. A collapsed
+    // right-edge anchor remains a point while edits occur only to its left; pair it
+    // with the immutable owner length captured immediately after insertion.
     private static void ValidateCompletedMathTypeRedraw(
         Document document,
-        IReadOnlyList<(string FormulaId, Range Range, string Signature)> expected,
+        IReadOnlyList<(string FormulaId, Range EndAnchor, int OwnerLength, string Signature)> expected,
         int expectedCount)
     {
         if (expected.Count != expectedCount || expectedCount == 0)
@@ -103,11 +193,32 @@ internal sealed partial class WordFormulaService
 
             var claimed = new HashSet<int>();
             var formulaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            WordDoubleClickHook.TraceMessage(
+                "redraw-mathtype-owner-inventory actual=["
+                + string.Join(",", ordinals
+                    .OrderBy(pair => pair.Value)
+                    .Select(pair => $"{pair.Value}:{pair.Key.Story}/{pair.Key.Start}:{pair.Key.End}"))
+                + "]");
             foreach (var item in expected)
             {
-                if (!formulaIds.Add(item.FormulaId)
-                    || !ordinals.TryGetValue((item.Range.StoryType, item.Range.Start, item.Range.End), out var index)
-                    || !claimed.Add(index))
+                if (item.EndAnchor.Start != item.EndAnchor.End || item.OwnerLength <= 0)
+                    throw new InvalidDataException(
+                        $"MathType redraw identity {item.FormulaId} lost its collapsed owner anchor.");
+                var ownerEnd = item.EndAnchor.Start;
+                var ownerStart = ownerEnd - item.OwnerLength;
+                var expectedKey = (item.EndAnchor.StoryType, ownerStart, ownerEnd);
+                var uniqueFormulaId = formulaIds.Add(item.FormulaId);
+                var index = -1;
+                var ownerResolved = ownerStart >= 0
+                    && ordinals.TryGetValue(expectedKey, out index);
+                var independentOwner = ownerResolved && claimed.Add(index);
+                WordDoubleClickHook.TraceMessage(
+                    $"redraw-mathtype-owner-probe formulaId={item.FormulaId} "
+                    + $"anchor={item.EndAnchor.StoryType}/{item.EndAnchor.Start}:{item.EndAnchor.End} "
+                    + $"length={item.OwnerLength} expected={item.EndAnchor.StoryType}/{ownerStart}:{ownerEnd} "
+                    + $"uniqueId={uniqueFormulaId} ownerResolved={ownerResolved} "
+                    + $"ownerIndex={(ownerResolved ? index : -1)} independent={independentOwner}");
+                if (!uniqueFormulaId || !ownerResolved || !independentOwner)
                     throw new InvalidDataException($"MathType redraw identity {item.FormulaId} has no independent physical owner.");
                 var snapshot = snapshots[index];
                 if (!string.Equals(snapshot.ProgId, "Equation.DSMT4", StringComparison.OrdinalIgnoreCase))

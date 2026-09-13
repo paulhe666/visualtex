@@ -23,7 +23,8 @@ internal static partial class WordEquationNumbering
         int? plannedOrdinal = null,
         string? plannedPrefix = null,
         bool deferFieldUpdate = false,
-        bool deferExternalShapeCreation = false)
+        bool deferExternalShapeCreation = false,
+        bool deferMetadataPersistence = false)
     {
         _ = formulaHeightPoints;
         _ = formulaFontSizePoints;
@@ -111,7 +112,7 @@ internal static partial class WordEquationNumbering
             if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeRange.WordOpenXML))
                 traceStage("strip-legacy-or-stale-number-wrapper");
 
-            if (IsNumberedEquationTable(activeRange))
+            if (IsManagedNumberedEquationTable(document, activeRange, formulaId))
             {
                 TrimBenignEmptyRowsFromNumberedTable(document, activeRange, formulaId);
                 migratedRange = TryConvertStandardNumberedOmmlTableToStandaloneDisplayParagraph(
@@ -209,7 +210,8 @@ internal static partial class WordEquationNumbering
                 WordOmmlNativeSource.StampFingerprintFromResolvedRange(
                     metadata,
                     activeRange);
-                WordOmmlFormulaStore.Save(document, metadata);
+                if (!deferMetadataPersistence)
+                    WordOmmlFormulaStore.Save(document, metadata);
             }
 
             formulaRange.SetRange(activeRange.Start, activeRange.End);
@@ -336,6 +338,22 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    private static int GetWordParagraphStructuralTerminatorLength(Range paragraphRange)
+    {
+        // Word serializes the one cell-end story position as two UTF-16
+        // characters (CR+BEL). Its Text.Length must not be subtracted from End.
+        // Probe the exact final story position, for ordinary and cell paragraphs.
+        Range? terminal = null;
+        try
+        {
+            if (paragraphRange.End <= paragraphRange.Start) return 0;
+            terminal = paragraphRange.Duplicate;
+            terminal.SetRange(paragraphRange.End - 1, paragraphRange.End);
+            return WordFormulaHost.ParagraphTerminatorStoryLength(terminal.Text);
+        }
+        finally { Release(terminal); }
+    }
+
     private static bool ContainsOnlyNativeHashSequenceMigrationAdornment(
         string? text)
     {
@@ -406,8 +424,6 @@ internal static partial class WordEquationNumbering
             if (paragraphs.Count != 1) return false;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range.Duplicate;
-            if ((bool)paragraphRange.get_Information(WdInformation.wdWithInTable))
-                return false;
             paragraphMaths = paragraphRange.OMaths;
             inlineShapes = paragraphRange.InlineShapes;
             if (paragraphMaths.Count != 1 || inlineShapes.Count != 0)
@@ -417,8 +433,11 @@ internal static partial class WordEquationNumbering
             // begins at the paragraph start and its Range is followed immediately
             // by the normal paragraph mark. These exact boundaries prove that an
             // atomic owner replacement cannot delete adjacent user prose.
-            if (activeRange.Start != paragraphRange.Start
-                || paragraphRange.End != activeRange.End + 1)
+            var paragraphTerminatorLength =
+                GetWordParagraphStructuralTerminatorLength(paragraphRange);
+            if (paragraphTerminatorLength <= 0
+                || activeRange.Start != paragraphRange.Start
+                || paragraphRange.End != activeRange.End + paragraphTerminatorLength)
                 return false;
             before = document.Range(paragraphRange.Start, activeRange.Start);
             after = document.Range(activeRange.End, paragraphRange.End);
@@ -1650,9 +1669,10 @@ internal static partial class WordEquationNumbering
             if (paragraphs.Count != 1) return false;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            if ((bool)paragraphRange.get_Information(WdInformation.wdWithInTable))
-                return false;
-            if (mathRange.End + 1 != paragraphRange.End)
+            var paragraphTerminatorLength =
+                GetWordParagraphStructuralTerminatorLength(paragraphRange);
+            if (paragraphTerminatorLength <= 0
+                || mathRange.End + paragraphTerminatorLength != paragraphRange.End)
                 return false;
             if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                     mathRange.WordOpenXML))
@@ -5818,8 +5838,7 @@ internal static partial class WordEquationNumbering
             if (!bookmarks.Exists(numberName)) return false;
             numberBookmark = bookmarks[numberName];
             numberRange = numberBookmark.Range;
-            maths = numberRange.OMaths;
-            if (maths.Count == 0) return false;
+            if (!WordFormulaHost.IsWhollyInsideMath(numberRange)) return false;
 
             // In the native #() host VTEqNum_/VTEqCap_ are aliases around the
             // mathematical SEQ result. Removing a caption means removing only the

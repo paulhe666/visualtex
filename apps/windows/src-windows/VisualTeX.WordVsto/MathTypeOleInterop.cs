@@ -1746,6 +1746,11 @@ internal static class MathTypeOleInterop
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
         InlineShapes? paragraphShapes = null;
+        Document? document = null;
+        Range? shapePrefix = null;
+        ParagraphFormat? paragraphFormat = null;
+        TabStops? tabStops = null;
+        TabStop? tabStop = null;
         try
         {
             paragraphs = range.Paragraphs;
@@ -1767,6 +1772,35 @@ internal static class MathTypeOleInterop
             // and the conversion safety check refuses the neighboring object.
             paragraphShapes = paragraphRange.InlineShapes;
             if (paragraphShapes.Count != 1) return "inline";
+
+            if (WordEquationNumbering.RangeIsWhollyWithinTable(range))
+            {
+                // A table cell is itself a paragraph-sized host, so "one OLE and no
+                // prose" does not prove display math. VisualTeX/MathType display OLE
+                // creation has a stricter structural contract: an exact center TAB
+                // immediately before the OLE plus both center/right tab stops. An
+                // isolated inline OLE in a cell has no such leading TAB. Preserve
+                // that distinction during MathType -> OMML/VisualTeX round trips.
+                document = range.Document;
+                shapePrefix = document.Range(paragraphRange.Start, range.Start);
+                paragraphFormat = paragraph.Format;
+                tabStops = paragraphFormat.TabStops;
+                var hasCenterTab = false;
+                var hasRightTab = false;
+                for (var index = 1; index <= tabStops.Count; index++)
+                {
+                    Release(tabStop);
+                    tabStop = tabStops[index];
+                    hasCenterTab |= tabStop.Alignment == WdTabAlignment.wdAlignTabCenter;
+                    hasRightTab |= tabStop.Alignment == WdTabAlignment.wdAlignTabRight;
+                }
+                return WordEquationNumbering.IsTableMathTypeDisplayLayout(
+                        shapePrefix.Text,
+                        hasCenterTab,
+                        hasRightTab)
+                    ? "block"
+                    : "inline";
+            }
 
             var text = (paragraphRange.Text ?? string.Empty)
                 .Replace("\r", string.Empty)
@@ -1791,6 +1825,11 @@ internal static class MathTypeOleInterop
         catch { return "inline"; }
         finally
         {
+            Release(tabStop);
+            Release(tabStops);
+            Release(paragraphFormat);
+            Release(shapePrefix);
+            Release(document);
             Release(paragraphShapes);
             Release(paragraphRange);
             Release(paragraph);
@@ -1818,7 +1857,7 @@ internal static class MathTypeOleInterop
             if (paragraphs.Count != 1) return false;
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            fields = paragraphRange.Fields;
+            fields = WordFormulaHost.GetLocalFields(paragraphRange);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(result);
@@ -1892,7 +1931,7 @@ internal static class MathTypeOleInterop
         Range? code = null;
         try
         {
-            fields = paragraphRange.Fields;
+            fields = WordFormulaHost.GetLocalFields(paragraphRange);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);

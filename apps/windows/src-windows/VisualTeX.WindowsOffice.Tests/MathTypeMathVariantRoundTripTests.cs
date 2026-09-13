@@ -47,6 +47,32 @@ public sealed class MathTypeMathVariantRoundTripTests
 
     [Theory]
     [MemberData(nameof(SemanticVariantCases))]
+    public void StyledMultiLetterIdentifierSurvivesNativeCharacterRunSplitting(string sourceVariant)
+    {
+        var source = $"<math><mi mathvariant='{sourceVariant}'>ABC</mi></math>";
+        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: true, 10.5);
+        var read = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(read));
+    }
+
+    [Theory]
+    [InlineData("monospace", "normal")]
+    [InlineData("bold", "normal")]
+    [InlineData("bold-italic", "italic")]
+    [InlineData("script", "fraktur")]
+    public void StyledRunNormalizationStillRejectsDifferentTypography(string left, string right)
+        => Assert.NotEqual(
+            MathTypeMtefCodec.SemanticSignature($"<math><mi mathvariant='{left}'>ABC</mi></math>"),
+            MathTypeMtefCodec.SemanticSignature($"<math><mi mathvariant='{right}'>ABC</mi></math>"));
+
+    [Fact]
+    public void StyledRunNormalizationRetainsCharacterOrder()
+        => Assert.NotEqual(
+            MathTypeMtefCodec.SemanticSignature("<math><mi mathvariant='monospace'>ABC</mi></math>"),
+            MathTypeMtefCodec.SemanticSignature("<math><mi mathvariant='monospace'>ACB</mi></math>"));
+
+    [Theory]
+    [MemberData(nameof(SemanticVariantCases))]
     public void StandaloneEquationNativePreservesSupportedIdentifierSemantics(string sourceVariant)
     {
         var source = $"<math><mi mathvariant='{sourceVariant}'>A</mi></math>";

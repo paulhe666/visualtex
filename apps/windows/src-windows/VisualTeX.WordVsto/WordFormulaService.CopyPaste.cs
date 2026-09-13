@@ -6,6 +6,23 @@ namespace VisualTeX.WordVsto;
 
 internal sealed partial class WordFormulaService
 {
+    internal sealed class WordFormulaCopyGroupItem
+    {
+        internal FormulaMetadata Metadata { get; set; } = new();
+        internal WdStoryType SourceStoryType { get; set; }
+        internal int SourceStart { get; set; }
+        internal int SourceEnd { get; set; }
+        internal WordCharacterFormatting? BodyFormatting { get; set; }
+        internal string? VisibleNumber { get; set; }
+    }
+
+    private sealed class PastedNativeOleGroupCandidate
+    {
+        internal WordFormulaCopyGroupItem Item { get; set; } = new();
+        internal InlineShape Shape { get; set; } = null!;
+        internal int Start { get; set; }
+    }
+
     internal sealed class WordFormulaCopySnapshot
     {
         internal string ObjectMode { get; set; } = string.Empty;
@@ -27,6 +44,18 @@ internal sealed partial class WordFormulaService
         internal int KnownOmmlCount { get; set; }
         internal int KnownDocumentEnd { get; set; }
         internal string? VisibleNumber { get; set; }
+        internal List<WordFormulaCopyGroupItem> GroupItems { get; set; } = new();
+        internal int CopiedSelectionStart { get; set; }
+        internal int CopiedSelectionEnd { get; set; }
+    }
+
+    internal sealed class NumberedHostDeleteGuard
+    {
+        internal string DocumentId { get; set; } = string.Empty;
+        internal string FormulaId { get; set; } = string.Empty;
+        internal int SelectionStart { get; set; }
+        internal int SelectionEnd { get; set; }
+        internal int DocumentEnd { get; set; }
     }
 
     internal enum PastedFormulaRepairResult
@@ -59,6 +88,15 @@ internal sealed partial class WordFormulaService
             var documentId = DocumentIdentity(document);
 
             shapes = selectionRange.InlineShapes;
+            if (shapes.Count > 1)
+            {
+                return CaptureSelectedNativeOleGroupForCopy(
+                    document,
+                    selectionRange,
+                    inlineShapeCount,
+                    ommlCount,
+                    documentId);
+            }
             if (shapes.Count == 1)
             {
                 shape = shapes[1];
@@ -191,6 +229,268 @@ internal sealed partial class WordFormulaService
             Release(shapes);
             Release(selectionRange);
             Release(selection);
+            Release(document);
+        }
+    }
+
+    private static WordFormulaCopySnapshot? CaptureSelectedNativeOleGroupForCopy(
+        Document document,
+        Range selectionRange,
+        int inlineShapeCount,
+        int ommlCount,
+        string documentId)
+    {
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? formulaRange = null;
+        Range? numberingOwner = null;
+        var items = new List<WordFormulaCopyGroupItem>();
+        var formulaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            shapes = selectionRange.InlineShapes;
+            if (shapes.Count <= 1) return null;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(numberingOwner);
+                numberingOwner = null;
+                Release(formulaRange);
+                formulaRange = null;
+                Release(shape);
+                shape = shapes[index];
+                if (!WordFormulaMetadataReader.IsNativeOle(shape)) return null;
+                var metadata = WordFormulaMetadataReader.TryRead(shape);
+                if (metadata is null
+                    || !metadata.Numbered
+                    || !string.Equals(metadata.DisplayMode, "block", StringComparison.Ordinal)
+                    || !formulaIds.Add(metadata.FormulaId))
+                    return null;
+                formulaRange = shape.Range;
+                if (!WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(
+                        document,
+                        metadata.FormulaId)
+                    || !WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
+                        document,
+                        formulaRange,
+                        metadata.FormulaId))
+                    return null;
+                numberingOwner = WordEquationNumbering.FindNumberingOwnerRange(
+                    document,
+                    metadata.FormulaId);
+                if (numberingOwner is null
+                    || numberingOwner.StoryType != selectionRange.StoryType
+                    || selectionRange.Start > numberingOwner.Start
+                    || selectionRange.End < numberingOwner.End)
+                    return null;
+                items.Add(new WordFormulaCopyGroupItem
+                {
+                    Metadata = CloneFormulaMetadata(metadata),
+                    SourceStoryType = formulaRange.StoryType,
+                    SourceStart = formulaRange.Start,
+                    SourceEnd = formulaRange.End,
+                    BodyFormatting = TryCaptureParagraphMarkFormatting(formulaRange),
+                    VisibleNumber = ReadPastedOleVisibleNumber(shape, metadata.FormulaId),
+                });
+            }
+            if (items.Count != shapes.Count || items.Count <= 1) return null;
+            var first = items[0];
+            return new WordFormulaCopySnapshot
+            {
+                ObjectMode = FormulaOleContract.NativeOleMode,
+                Metadata = CloneFormulaMetadata(first.Metadata),
+                SourceDocumentId = documentId,
+                SourceStoryType = selectionRange.StoryType,
+                SourceStart = selectionRange.Start,
+                SourceEnd = selectionRange.End,
+                BodyFormatting = first.BodyFormatting,
+                TrackingDocumentId = documentId,
+                KnownInlineShapeCount = inlineShapeCount,
+                KnownOmmlCount = ommlCount,
+                KnownDocumentEnd = document.Content.End,
+                VisibleNumber = first.VisibleNumber,
+                GroupItems = items,
+                CopiedSelectionStart = selectionRange.Start,
+                CopiedSelectionEnd = selectionRange.End,
+            };
+        }
+        finally
+        {
+            Release(numberingOwner);
+            Release(formulaRange);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
+    internal NumberedHostDeleteGuard? CaptureNumberedHostDeleteGuard(Selection selection)
+    {
+        if (selection is null || selection.Start == selection.End) return null;
+        Document? document = null;
+        Range? selectionRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Bookmarks? localBookmarks = null;
+        Bookmark? localBookmark = null;
+        Bookmarks? documentBookmarks = null;
+        Bookmark? identityBookmark = null;
+        Range? identityRange = null;
+        try
+        {
+            document = selection.Document;
+            selectionRange = selection.Range;
+            paragraphs = selectionRange.Paragraphs;
+            if (paragraphs.Count != 1) return null;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            // This guard is deliberately narrow: only a full numbered display
+            // paragraph selection (including its paragraph mark) is eligible.
+            // Partial formula/number selections do not exhibit Word's viewport jump
+            // and must not participate in view restoration.
+            if (selectionRange.Start != paragraphRange.Start
+                || selectionRange.End != paragraphRange.End)
+                return null;
+            shapes = paragraphRange.InlineShapes;
+            if (shapes.Count != 1) return null;
+            shape = shapes[1];
+            if (!WordFormulaMetadataReader.IsNativeOle(shape)) return null;
+            shapeRange = shape.Range;
+
+            string? formulaId = null;
+            localBookmarks = paragraphRange.Bookmarks;
+            for (var index = 1; index <= localBookmarks.Count; index++)
+            {
+                Release(localBookmark);
+                localBookmark = localBookmarks[index];
+                if (!WordEquationNumbering.TryFormulaIdFromEquationBookmark(
+                        localBookmark.Name,
+                        out var candidateId))
+                    continue;
+                if (formulaId is not null
+                    && !string.Equals(formulaId, candidateId, StringComparison.OrdinalIgnoreCase))
+                    return null;
+                formulaId = candidateId;
+            }
+            if (string.IsNullOrWhiteSpace(formulaId)
+                || !WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(
+                    document,
+                    formulaId!)
+                || !WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
+                    document,
+                    shapeRange,
+                    formulaId!))
+                return null;
+
+            documentBookmarks = document.Bookmarks;
+            var identityName = WordFormulaMetadataReader.IdentityBookmarkName(formulaId!);
+            if (!documentBookmarks.Exists(identityName)) return null;
+            identityBookmark = documentBookmarks[identityName];
+            identityRange = identityBookmark.Range;
+            if (identityRange.StoryType != shapeRange.StoryType
+                || identityRange.Start != shapeRange.Start
+                || identityRange.End != shapeRange.End)
+                return null;
+
+            return new NumberedHostDeleteGuard
+            {
+                DocumentId = DocumentIdentity(document),
+                FormulaId = formulaId!,
+                SelectionStart = selectionRange.Start,
+                SelectionEnd = selectionRange.End,
+                DocumentEnd = document.Content.End,
+            };
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(identityRange);
+            Release(identityBookmark);
+            Release(documentBookmarks);
+            Release(localBookmark);
+            Release(localBookmarks);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(selectionRange);
+            Release(document);
+        }
+    }
+
+    internal bool IsPendingNumberedHostDeletionTransition(
+        Selection selection,
+        NumberedHostDeleteGuard guard)
+    {
+        if (selection is null || guard is null) return false;
+        Document? document = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            document = selection.Document;
+            if (!string.Equals(
+                    DocumentIdentity(document),
+                    guard.DocumentId,
+                    StringComparison.OrdinalIgnoreCase)
+                || selection.Start != selection.End
+                || selection.Start != guard.SelectionStart
+                || document.Content.End != guard.DocumentEnd)
+                return false;
+            bookmarks = document.Bookmarks;
+            return bookmarks.Exists(
+                WordFormulaMetadataReader.IdentityBookmarkName(guard.FormulaId));
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(bookmarks);
+            Release(document);
+        }
+    }
+
+    internal bool IsCompletedNumberedHostDeletion(
+        Selection selection,
+        NumberedHostDeleteGuard guard)
+    {
+        if (selection is null || guard is null) return false;
+        Document? document = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            document = selection.Document;
+            if (!string.Equals(
+                    DocumentIdentity(document),
+                    guard.DocumentId,
+                    StringComparison.OrdinalIgnoreCase)
+                || selection.Start != selection.End
+                || selection.Start != guard.SelectionStart
+                || document.Content.End >= guard.DocumentEnd)
+                return false;
+            bookmarks = document.Bookmarks;
+            // The visible paragraph deletion removes the VTO physical owner while
+            // the hidden SEQ caption can legitimately survive until a later explicit
+            // numbering refresh. That exact loss proves this was the guarded delete,
+            // not an ordinary caret move or text replacement.
+            return !bookmarks.Exists(
+                WordFormulaMetadataReader.IdentityBookmarkName(guard.FormulaId));
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(bookmarks);
             Release(document);
         }
     }
@@ -330,6 +630,17 @@ internal sealed partial class WordFormulaService
             }
 
             selection = _application.Selection;
+            if (snapshot.GroupItems.Count > 1)
+            {
+                if (!string.Equals(
+                        snapshot.ObjectMode,
+                        FormulaOleContract.NativeOleMode,
+                        StringComparison.Ordinal))
+                    return PastedFormulaRepairResult.NotApplicable;
+                if (inlineShapeCount < snapshot.KnownInlineShapeCount + snapshot.GroupItems.Count)
+                    return PastedFormulaRepairResult.NotReady;
+                return RepairPastedNativeOleGroup(document, selection, snapshot);
+            }
             if (string.Equals(
                     snapshot.ObjectMode,
                     FormulaOleContract.NativeOleMode,
@@ -545,6 +856,345 @@ internal sealed partial class WordFormulaService
             Release(selection);
             Release(document);
         }
+    }
+
+    private PastedFormulaRepairResult RepairPastedNativeOleGroup(
+        Document document,
+        Selection selection,
+        WordFormulaCopySnapshot snapshot)
+    {
+        if (snapshot.GroupItems.Count <= 1)
+            return PastedFormulaRepairResult.NotApplicable;
+        Range? caretAnchor = null;
+        var candidates = new List<PastedNativeOleGroupCandidate>();
+        var repairedFormulaIds = new List<string>();
+        try
+        {
+            caretAnchor = selection.Range.Duplicate;
+            caretAnchor.SetRange(selection.End, selection.End);
+            if (!TryCollectPastedNativeOleGroup(
+                    document,
+                    selection,
+                    snapshot,
+                    candidates,
+                    out var pastedStart,
+                    out var pastedEnd))
+                return PastedFormulaRepairResult.NotReady;
+
+            RemoveUnownedCopiedNativeCaptionParagraphs(
+                document,
+                pastedStart,
+                pastedEnd);
+
+            foreach (var candidate in candidates.OrderByDescending(item => item.Start))
+            {
+                Range? formulaRange = null;
+                try
+                {
+                    formulaRange = candidate.Shape.Range;
+                    candidate.Item.BodyFormatting?.ApplyToParagraphMark(formulaRange);
+                    var sourceId = candidate.Item.Metadata.FormulaId;
+                    var copiedNumber = ReadPastedOleVisibleNumber(candidate.Shape, sourceId)
+                        ?? candidate.Item.VisibleNumber;
+                    var metadata = CloneForPastedFormula(candidate.Item.Metadata);
+                    BindOleIdentityBookmark(candidate.Shape, metadata.FormulaId);
+                    try { WordFormulaMetadataReader.Write(candidate.Shape, metadata); }
+                    catch { WordFormulaMetadataReader.CacheMetadata(candidate.Shape, metadata); }
+                    RebindPastedOleVisibleNumber(
+                        document,
+                        candidate.Shape,
+                        sourceId,
+                        metadata.FormulaId);
+                    WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+                        document,
+                        formulaRange,
+                        candidate.Shape.Height,
+                        metadata,
+                        plannedOrdinal: 1,
+                        plannedPrefix: string.Empty,
+                        deferFieldUpdate: true);
+                    RestorePastedOleVisibleNumber(document, metadata.FormulaId, copiedNumber);
+                    BindOleIdentityBookmark(candidate.Shape, metadata.FormulaId);
+                    RepairLocalCopiedOleIdentityBookmarks(candidate.Shape);
+                    repairedFormulaIds.Add(metadata.FormulaId);
+                    WordDoubleClickHook.TraceMessage(
+                        $"copy-paste-group-item-repaired sourceFormulaId={sourceId} "
+                        + $"formulaId={metadata.FormulaId} range={formulaRange.Start}:{formulaRange.End} "
+                        + $"number={copiedNumber}");
+                }
+                finally { Release(formulaRange); }
+            }
+
+            RefreshCopySnapshotCounts(document, snapshot);
+            var caret = caretAnchor.Start;
+            foreach (var formulaId in repairedFormulaIds)
+            {
+                Range? caption = null;
+                try
+                {
+                    caption = WordEquationNumbering.FindNativeEquationCaptionRange(
+                        document,
+                        formulaId);
+                    if (caption is not null
+                        && caption.StoryType == WdStoryType.wdMainTextStory)
+                        caret = Math.Max(caret, caption.End);
+                }
+                finally { Release(caption); }
+            }
+            caret = Math.Max(document.Content.Start,
+                Math.Min(caret, document.Content.End - 1));
+            selection.SetRange(caret, caret);
+            WordDoubleClickHook.TraceMessage(
+                $"copy-paste-group-repaired formulas={candidates.Count} range={pastedStart}:{pastedEnd}");
+            return PastedFormulaRepairResult.Repaired;
+        }
+        finally
+        {
+            foreach (var candidate in candidates)
+                Release(candidate.Shape);
+            Release(caretAnchor);
+        }
+    }
+
+    private static bool TryCollectPastedNativeOleGroup(
+        Document document,
+        Selection selection,
+        WordFormulaCopySnapshot snapshot,
+        ICollection<PastedNativeOleGroupCandidate> output,
+        out int pastedStart,
+        out int pastedEnd)
+    {
+        pastedStart = -1;
+        pastedEnd = -1;
+        Range? content = null;
+        Range? search = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        var best = new Dictionary<string, (InlineShape Shape, int Start, int End, int Distance)>(
+            StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var itemById = snapshot.GroupItems.ToDictionary(
+                item => item.Metadata.FormulaId,
+                item => item,
+                StringComparer.OrdinalIgnoreCase);
+            if (itemById.Count != snapshot.GroupItems.Count) return false;
+            content = document.Content;
+            var anchor = Math.Max(content.Start,
+                Math.Min(selection.Start, Math.Max(content.Start, content.End - 1)));
+            var copiedLength = Math.Max(1, snapshot.CopiedSelectionEnd - snapshot.CopiedSelectionStart);
+            var radius = Math.Min(250_000, Math.Max(4096, copiedLength * 3 + 2048));
+            var searchStart = Math.Max(content.Start, anchor - radius);
+            var searchEnd = Math.Min(content.End, anchor + 1024);
+            search = document.Range(searchStart, searchEnd);
+            shapes = search.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Release(shapeRange);
+                shapeRange = null;
+                Release(shape);
+                shape = shapes[index];
+                if (!WordFormulaMetadataReader.IsNativeOle(shape)) continue;
+                var metadata = WordFormulaMetadataReader.TryReadCachedPreview(shape)
+                    ?? WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape);
+                if (metadata is null
+                    || !itemById.TryGetValue(metadata.FormulaId, out var item))
+                    continue;
+                shapeRange = shape.Range;
+                if (IsCurrentOriginalNativeOleGroupItem(document, shapeRange, item, snapshot))
+                    continue;
+                var distance = DistanceToRange(anchor, shapeRange.Start, shapeRange.End);
+                if (best.TryGetValue(metadata.FormulaId, out var previous)
+                    && previous.Distance <= distance)
+                    continue;
+                if (best.TryGetValue(metadata.FormulaId, out previous))
+                    Release(previous.Shape);
+                best[metadata.FormulaId] = (
+                    shape,
+                    shapeRange.Start,
+                    shapeRange.End,
+                    distance);
+                shape = null;
+            }
+            if (best.Count != snapshot.GroupItems.Count) return false;
+
+            foreach (var item in snapshot.GroupItems)
+            {
+                if (!best.TryGetValue(item.Metadata.FormulaId, out var match))
+                    return false;
+                output.Add(new PastedNativeOleGroupCandidate
+                {
+                    Item = item,
+                    Shape = match.Shape,
+                    Start = match.Start,
+                });
+                best.Remove(item.Metadata.FormulaId);
+
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = null;
+                Release(paragraphs);
+                paragraphs = null;
+                shapeRange = match.Shape.Range;
+                paragraphs = shapeRange.Paragraphs;
+                if (paragraphs.Count != 1) return false;
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range;
+                pastedStart = pastedStart < 0
+                    ? paragraphRange.Start
+                    : Math.Min(pastedStart, paragraphRange.Start);
+                pastedEnd = Math.Max(pastedEnd, paragraphRange.End);
+            }
+            return pastedStart >= 0 && pastedEnd > pastedStart;
+        }
+        finally
+        {
+            foreach (var orphan in best.Values)
+                Release(orphan.Shape);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(search);
+            Release(content);
+        }
+    }
+
+    private static bool IsCurrentOriginalNativeOleGroupItem(
+        Document document,
+        Range candidate,
+        WordFormulaCopyGroupItem item,
+        WordFormulaCopySnapshot snapshot)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? owner = null;
+        try
+        {
+            if (string.Equals(
+                    DocumentIdentity(document),
+                    snapshot.SourceDocumentId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                bookmarks = document.Bookmarks;
+                var name = WordFormulaMetadataReader.IdentityBookmarkName(item.Metadata.FormulaId);
+                if (bookmarks.Exists(name))
+                {
+                    bookmark = bookmarks[name];
+                    owner = bookmark.Range;
+                    if (owner.StoryType == candidate.StoryType
+                        && owner.Start == candidate.Start
+                        && owner.End == candidate.End)
+                        return true;
+                }
+                return candidate.StoryType == item.SourceStoryType
+                    && candidate.Start == item.SourceStart
+                    && candidate.End == item.SourceEnd;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(owner);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static void RemoveUnownedCopiedNativeCaptionParagraphs(
+        Document document,
+        int start,
+        int end)
+    {
+        Range? scan = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Frames? frames = null;
+        Tables? tables = null;
+        Bookmarks? bookmarks = null;
+        var deletions = new List<(int Start, int End)>();
+        try
+        {
+            scan = document.Range(
+                Math.Max(document.Content.Start, start),
+                Math.Min(document.Content.End, end));
+            paragraphs = scan.Paragraphs;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(bookmarks); bookmarks = null;
+                Release(tables); tables = null;
+                Release(frames); frames = null;
+                Release(code); code = null;
+                Release(field); field = null;
+                Release(fields); fields = null;
+                Release(maths); maths = null;
+                Release(shapes); shapes = null;
+                Release(paragraphRange); paragraphRange = null;
+                Release(paragraph); paragraph = paragraphs[index];
+                paragraphRange = paragraph.Range;
+                shapes = paragraphRange.InlineShapes;
+                maths = paragraphRange.OMaths;
+                fields = WordFormulaHost.GetLocalFields(paragraphRange);
+                frames = paragraphRange.Frames;
+                tables = paragraphRange.Tables;
+                bookmarks = paragraphRange.Bookmarks;
+                if (shapes.Count != 0
+                    || maths.Count != 0
+                    || fields.Count != 1
+                    || frames.Count != 1
+                    || tables.Count != 0
+                    || bookmarks.Count != 0)
+                    continue;
+                field = fields[1];
+                code = field.Code;
+                var fieldCode = (code.Text ?? string.Empty).Trim();
+                if (!fieldCode.StartsWith("SEQ VisualTeXEquation ", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                deletions.Add((paragraphRange.Start, paragraphRange.End));
+            }
+        }
+        finally
+        {
+            Release(bookmarks);
+            Release(tables);
+            Release(frames);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(maths);
+            Release(shapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(scan);
+        }
+
+        foreach (var deletion in deletions.OrderByDescending(item => item.Start))
+        {
+            Range? range = null;
+            try
+            {
+                range = document.Range(deletion.Start, deletion.End);
+                range.Delete();
+            }
+            finally { Release(range); }
+        }
+        if (deletions.Count > 0)
+            WordDoubleClickHook.TraceMessage(
+                $"copy-paste-group-caption-copies-removed count={deletions.Count} range={start}:{end}");
     }
 
     private static Range RestoreCopiedOmmlDisplayMode(Range range, string displayMode)

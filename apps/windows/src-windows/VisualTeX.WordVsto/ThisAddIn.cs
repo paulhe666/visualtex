@@ -288,12 +288,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 </customUI>
 """;
 
+    private sealed class NumberedHostDeleteViewState
+    {
+        internal WordFormulaService.NumberedHostDeleteGuard Guard { get; set; } = null!;
+        internal int VerticalPercentScrolled { get; set; }
+        internal int HorizontalPercentScrolled { get; set; }
+    }
+
     private Application? _application;
     private WordFormulaService? _formulaService;
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
+    private WordDeleteKeyHook? _deleteKeyHook;
     private readonly object _copyPasteGate = new();
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
     private uint _formulaCopyClipboardSequence;
@@ -302,6 +310,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _copyPasteSelectionRepairPending;
     private long _lastSuccessfulPasteRepairStartedAt;
     private long _lastSuccessfulPasteRepairCompletedAt;
+    private NumberedHostDeleteViewState? _numberedHostDeleteViewState;
     private static readonly object BulkAcceptanceLogGate = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _activeSessionOperationGate = new();
@@ -444,6 +453,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _copyPasteHook = null;
             WordDoubleClickHook.TraceMessage(
                 $"copy-paste-hook-start-failed {error.GetType().Name}: {error.Message}");
+        }
+        try
+        {
+            _deleteKeyHook = new WordDeleteKeyHook(OnWordDeleteKeyGesture);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _deleteKeyHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
+            _deleteKeyHook.Start();
+        }
+        catch (Exception error)
+        {
+            try { _deleteKeyHook?.Dispose(); } catch { }
+            _deleteKeyHook = null;
+            WordDoubleClickHook.TraceMessage(
+                $"delete-key-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
         SetStatus(!officeMathFontReady
             ? $"VisualTeX 已就绪，但 Word 数学字体不可用：{officeMathFontError}"
@@ -1036,6 +1065,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         if (!copyPasteRepair)
         {
+            _numberedHostDeleteViewState = null;
             // Explicit Ribbon inserts/edits are not clipboard pastes. Cancel any
             // queued copy probe before the new objects become visible.
             Interlocked.Increment(ref _copyPasteRepairGeneration);
@@ -1395,6 +1425,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
         try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _deleteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
         WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
         uint copySequence = 0;
         lock (_copyPasteGate)
@@ -1514,6 +1545,148 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
+    private NumberedHostDeleteViewState? CaptureNumberedHostDeleteViewState(Selection selection)
+    {
+        var service = _formulaService;
+        var application = _application;
+        if (service is null || application is null) return null;
+        var guard = service.CaptureNumberedHostDeleteGuard(selection);
+        if (guard is null) return null;
+        Window? window = null;
+        Pane? pane = null;
+        try
+        {
+            window = application.ActiveWindow;
+            pane = window.ActivePane;
+            return new NumberedHostDeleteViewState
+            {
+                Guard = guard,
+                VerticalPercentScrolled = pane.VerticalPercentScrolled,
+                HorizontalPercentScrolled = pane.HorizontalPercentScrolled,
+            };
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            ReleaseComObject(pane);
+            ReleaseComObject(window);
+        }
+    }
+
+    private bool TryRestoreNumberedHostDeleteViewport(
+        Selection selection,
+        NumberedHostDeleteViewState? capturedState = null)
+    {
+        var state = capturedState ?? _numberedHostDeleteViewState;
+        var service = _formulaService;
+        var application = _application;
+        if (state is null || service is null || application is null
+            || !service.IsCompletedNumberedHostDeletion(selection, state.Guard))
+            return false;
+
+        if (ReferenceEquals(_numberedHostDeleteViewState, state))
+            _numberedHostDeleteViewState = null;
+        Window? window = null;
+        Pane? pane = null;
+        try
+        {
+            window = application.ActiveWindow;
+            pane = window.ActivePane;
+            pane.VerticalPercentScrolled = state.VerticalPercentScrolled;
+            pane.HorizontalPercentScrolled = state.HorizontalPercentScrolled;
+            WordDoubleClickHook.TraceMessage(
+                $"numbered-host-delete-view-restored formulaId={state.Guard.FormulaId} "
+                + $"caret={selection.Start} vertical={state.VerticalPercentScrolled} "
+                + $"horizontal={state.HorizontalPercentScrolled}");
+            return true;
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"numbered-host-delete-view-restore-failed formulaId={state.Guard.FormulaId} "
+                + $"error={error.GetType().Name}:{error.Message}");
+            return false;
+        }
+        finally
+        {
+            ReleaseComObject(pane);
+            ReleaseComObject(window);
+        }
+    }
+
+    private void OnWordDeleteKeyGesture()
+    {
+        NumberedHostDeleteViewState? capturedState = null;
+        Selection? currentSelection = null;
+        try
+        {
+            var application = _application;
+            if (application is not null)
+            {
+                currentSelection = application.Selection;
+                capturedState = CaptureNumberedHostDeleteViewState(currentSelection);
+                if (capturedState is not null)
+                    _numberedHostDeleteViewState = capturedState;
+            }
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"numbered-host-delete-key-live-capture-failed error={error.GetType().Name}:{error.Message}");
+        }
+        finally { ReleaseComObject(currentSelection); }
+
+        capturedState ??= _numberedHostDeleteViewState;
+        if (capturedState is null) return;
+        WordDoubleClickHook.TraceMessage(
+            $"numbered-host-delete-key-armed formulaId={capturedState.Guard.FormulaId} "
+            + $"selection={capturedState.Guard.SelectionStart}:{capturedState.Guard.SelectionEnd} "
+            + $"liveCapture={(ReferenceEquals(capturedState, _numberedHostDeleteViewState) ? "true" : "false")}");
+        ScheduleNumberedHostDeleteViewportVerification(capturedState, attempt: 0);
+    }
+
+    private void ScheduleNumberedHostDeleteViewportVerification(
+        NumberedHostDeleteViewState capturedState,
+        int attempt)
+    {
+        if (attempt >= 6) return;
+        var dispatcher = _dispatcher;
+        var lifetime = _lifetime;
+        if (dispatcher is null || lifetime is null || lifetime.IsCancellationRequested) return;
+        var token = lifetime.Token;
+        _ = Task.Delay(attempt == 0 ? 25 : 40, token).ContinueWith(
+            task =>
+            {
+                if (task.IsCanceled || token.IsCancellationRequested) return;
+                dispatcher.Post(() =>
+                {
+                    var application = _application;
+                    if (application is null) return;
+                    Selection? currentSelection = null;
+                    try
+                    {
+                        currentSelection = application.Selection;
+                        if (TryRestoreNumberedHostDeleteViewport(currentSelection, capturedState))
+                            return;
+                    }
+                    catch (Exception error)
+                    {
+                        WordDoubleClickHook.TraceMessage(
+                            $"numbered-host-delete-view-verify-failed attempt={attempt} "
+                            + $"error={error.GetType().Name}:{error.Message}");
+                    }
+                    finally { ReleaseComObject(currentSelection); }
+                    ScheduleNumberedHostDeleteViewportVerification(capturedState, attempt + 1);
+                });
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
     private void OnWindowSelectionChange(Selection selection)
     {
         using var perf = WordSelectionPerformance.Start("selection-change");
@@ -1538,6 +1711,29 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             ClearNativeOleTarget();
             return;
+        }
+        var previousDeleteViewState = _numberedHostDeleteViewState;
+        var restoredDeletedHostViewport = TryRestoreNumberedHostDeleteViewport(selection);
+        if (!restoredDeletedHostViewport)
+        {
+            if (previousDeleteViewState is not null
+                && service.IsPendingNumberedHostDeletionTransition(
+                    selection,
+                    previousDeleteViewState.Guard))
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"numbered-host-delete-view-guard-retained formulaId={previousDeleteViewState.Guard.FormulaId} "
+                    + $"caret={selection.Start}");
+            }
+            else
+            {
+                _numberedHostDeleteViewState = CaptureNumberedHostDeleteViewState(selection);
+                if (_numberedHostDeleteViewState is not null)
+                    WordDoubleClickHook.TraceMessage(
+                        $"numbered-host-delete-view-guard-captured formulaId={_numberedHostDeleteViewState.Guard.FormulaId} "
+                        + $"selection={_numberedHostDeleteViewState.Guard.SelectionStart}:{_numberedHostDeleteViewState.Guard.SelectionEnd} "
+                        + $"vertical={_numberedHostDeleteViewState.VerticalPercentScrolled}");
+            }
         }
         TrySchedulePastedFormulaRepairFromSelectionChange();
 
@@ -4312,6 +4508,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _doubleClickHook = null;
         try { _copyPasteHook?.Dispose(); } catch { }
         _copyPasteHook = null;
+        try { _deleteKeyHook?.Dispose(); } catch { }
+        _deleteKeyHook = null;
         lock (_copyPasteGate)
         {
             _formulaCopySnapshot = null;

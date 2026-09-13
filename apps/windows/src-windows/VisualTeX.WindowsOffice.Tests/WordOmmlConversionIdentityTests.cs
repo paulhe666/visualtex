@@ -22,6 +22,35 @@ public sealed class WordOmmlConversionIdentityTests
             Start(id, WordEquationNumbering.NativeNumberBookmarkName(formula)),
             new XElement(W + "r", new XElement(W + "t", "1")), End(id))));
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 1)]
+    [InlineData(3, 2)]
+    [InlineData(3, 3)]
+    public void InnerNativeNumberOwnsItsEquationBeforeOuterUserTable(int columns, int ownerColumn)
+    {
+        var row = new XElement(W + "tr");
+        for (var column = 1; column <= columns; column++)
+        {
+            var math = Math(column == ownerColumn ? "a" : "other");
+            var paragraph = new XElement(W + "p");
+            if (column == ownerColumn)
+            {
+                paragraph.Add(Anchor(First, "1"));
+                math.AddFirst(Start("2", WordEquationNumbering.NativeNumberBookmarkName(First)));
+                math.Add(End("2"));
+            }
+            paragraph.Add(math);
+            row.Add(new XElement(W + "tc", paragraph));
+        }
+        var body = new XElement(W + "body", new XElement(W + "tbl", row));
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+            new Dictionary<string, string> { [First] = Fingerprint("a") });
+        Assert.Equal((ownerColumn - 1, true), result[First]);
+    }
+
     [Fact]
     public void CollapsedAnchorInSameParagraphOwnsItsFormula()
     {
@@ -184,6 +213,35 @@ public sealed class WordOmmlConversionIdentityTests
         Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
             new Dictionary<string, string> { [First] = Fingerprint("a") },
             liveInsertedOwners: new Dictionary<string, int> { [First] = 0 }));
+    }
+
+    [Fact]
+    public void FreshConversionMayRecoverWrongXmlOrdinalByUniquePreparedContent()
+    {
+        var body = new XElement(W + "body",
+            new XElement(W + "p", Math("b")),
+            new XElement(W + "p", Math("a")));
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(
+            body,
+            new Dictionary<string, string> { [First] = Fingerprint("a") },
+            liveInsertedOwners: new Dictionary<string, int> { [First] = 0 },
+            allowFreshOwnerFingerprintRecovery: true);
+        Assert.Equal((1, false), result[First]);
+    }
+
+    [Fact]
+    public void FreshConversionRecoveryRejectsAmbiguousPreparedContent()
+    {
+        var body = new XElement(W + "body",
+            new XElement(W + "p", Math("b")),
+            new XElement(W + "p", Math("a")),
+            new XElement(W + "p", Math("a")));
+        Assert.Throws<InvalidDataException>(() =>
+            WordOmmlNativeSource.IndexConversionEquationIdentities(
+                body,
+                new Dictionary<string, string> { [First] = Fingerprint("a") },
+                liveInsertedOwners: new Dictionary<string, int> { [First] = 0 },
+                allowFreshOwnerFingerprintRecovery: true));
     }
 
     [Fact]

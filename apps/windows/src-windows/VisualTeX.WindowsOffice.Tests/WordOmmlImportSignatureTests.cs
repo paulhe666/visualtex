@@ -20,6 +20,33 @@ public sealed class WordOmmlImportSignatureTests
     }
 
     [Fact]
+    public void WordExplicitPlainStyleOnOperatorsAndDigitsMatchesImplicitMathDefaults()
+    {
+        const string prepared =
+            "<m:r><m:t>E=m</m:t></m:r>"
+            + "<m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e>"
+            + "<m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>";
+        const string materialized =
+            "<m:r><m:t>E</m:t></m:r>"
+            + "<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>=</m:t></m:r>"
+            + "<m:r><m:t>m</m:t></m:r>"
+            + "<m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e>"
+            + "<m:sup><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>2</m:t></m:r></m:sup></m:sSup>";
+
+        Assert.Equal(Signature(prepared), Signature(materialized));
+    }
+
+    [Fact]
+    public void ExplicitPlainStyleOnLettersRemainsSemantic()
+    {
+        const string implicitItalic = "<m:r><m:t>x</m:t></m:r>";
+        const string explicitPlain =
+            "<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>x</m:t></m:r>";
+
+        Assert.NotEqual(Signature(implicitItalic), Signature(explicitPlain));
+    }
+
+    [Fact]
     public void MaterializationStoresTheActualWordFingerprintAfterProvingContent()
     {
         var prepared = Math(Sup);
@@ -109,6 +136,59 @@ public sealed class WordOmmlImportSignatureTests
             distance: 17, span: 800, bestDistance: int.MaxValue, bestSpan: -1));
     }
 
+    [Fact]
+    public void DisplayFractionZeroScriptLevelHintMatchesWordImport()
+    {
+        const string prepared = "<m:r><m:t>y=</m:t></m:r><m:f><m:fPr><m:type m:val=\"bar\"/></m:fPr>"
+            + "<m:num><m:argPr><m:scrLvl m:val=\"0\"/></m:argPr><m:r><m:t>1</m:t></m:r></m:num>"
+            + "<m:den><m:argPr><m:scrLvl m:val=\"0\"/></m:argPr><m:r><m:t>x−2</m:t></m:r></m:den></m:f>";
+        var actual = prepared.Replace("<m:argPr><m:scrLvl m:val=\"0\"/></m:argPr>", "")
+            .Replace("<m:fPr><m:type m:val=\"bar\"/></m:fPr>", "<m:fPr/>").Replace("x−2", "x-2");
+        Assert.Equal(Signature(prepared), Signature(actual));
+        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Math(actual)),
+            WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(actual)));
+        Assert.NotEqual(Signature(prepared), Signature(actual.Replace("x-2", "x-3")));
+        Assert.NotEqual(Signature(prepared), Signature(actual.Replace("<m:t>1</m:t>", "<m:t>2</m:t>")));
+    }
+
+    [Theory]
+    [InlineData("scrLvl", "1")]
+    [InlineData("scrLvl", "-1")]
+    [InlineData("argSz", "1")]
+    [InlineData("argSz", "-2")]
+    public void NonNeutralArgumentHintsCannotBeDiscarded(string name, string value)
+    {
+        var argument = $"<m:argPr><m:{name} m:val=\"{value}\"/></m:argPr>";
+        var body = "<m:f><m:num>" + argument + "<m:r><m:t>1</m:t></m:r></m:num>"
+            + "<m:den><m:r><m:t>x</m:t></m:r></m:den></m:f>";
+        Assert.NotEqual(Signature(body), Signature(body.Replace(argument, "")));
+    }
+
+    [Fact]
+    public void EmptyNormalTextRunCanDisappearBetweenMathOperands()
+    {
+        const string empty = "<m:r><m:rPr><m:nor/></m:rPr><m:t/></m:r>";
+        const string prefix = "<m:r><m:t>f(x)=|x|,</m:t></m:r>";
+        const string suffix = "<m:r><m:t>g(x)=</m:t></m:r>";
+        var prepared = prefix + empty + suffix + Sup;
+        var actual = "<m:r><m:t>f(x)=|x|,g(x)=</m:t></m:r>" + Sup;
+        Assert.Equal(Signature(prepared), Signature(actual));
+        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Math(actual)),
+            WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(actual)));
+        Assert.NotEqual(Signature(prepared), Signature(actual.Replace("g(x)", "h(x)")));
+        Assert.NotEqual(Signature(prepared), Signature(prepared.Replace("<m:t/>", "<m:t xml:space=\"preserve\"> </m:t>")));
+        Assert.NotEqual(Signature(prepared), Signature(prepared.Replace("<m:nor/>", "<m:nor/><m:aln m:val=\"1\"/>")));
+    }
+
+    [Fact]
+    public void EmptyRunsNeverEraseFractionArgumentStructure()
+    {
+        var fraction = "<m:f><m:num><m:r><m:t/></m:r></m:num><m:den><m:r><m:t>x</m:t></m:r></m:den></m:f>";
+        var emptyNumerator = fraction.Replace("<m:r><m:t/></m:r>", "");
+        Assert.Equal(Signature(fraction), Signature(emptyNumerator));
+        Assert.NotEqual(Signature(fraction), Signature(emptyNumerator.Replace("<m:num></m:num>", "")));
+    }
+
     private static string Integral(string glyph, string lower = "−1") =>
         "<m:nary><m:naryPr>" + glyph + "<m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>" + lower
         + "</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup><m:e>" + Sup + "</m:e></m:nary>";
@@ -158,6 +238,37 @@ public sealed class WordOmmlImportSignatureTests
         var delimiterGrowOn = "<m:d><m:dPr><m:grow m:val=\"true\"/></m:dPr><m:e>" + Sup + "</m:e></m:d>";
         Assert.Equal(Signature(delimiterGrowOn), Signature(delimiterGrowOn.Replace("<m:grow m:val=\"true\"/>", "")));
         Assert.NotEqual(Signature(delimiterGrowOn), Signature(delimiterGrowOn.Replace("\"true\"", "\"false\"")));
+    }
+
+    private static string MatrixWithColumns(string columnMarkup) =>
+        "<m:m><m:mPr><m:mcs>" + columnMarkup + "</m:mcs></m:mPr>"
+        + "<m:mr><m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e></m:mr>"
+        + "<m:mr><m:e><m:r><m:t>c</m:t></m:r></m:e><m:e><m:r><m:t>d</m:t></m:r></m:e></m:mr></m:m>";
+
+    private static string MatrixColumn(int count, string justification) =>
+        $"<m:mc><m:mcPr><m:count m:val=\"{count}\"/><m:mcJc m:val=\"{justification}\"/></m:mcPr></m:mc>";
+
+    [Fact]
+    public void WordCoalescedIdenticalMatrixColumnGroupsPreserveImportedContent()
+    {
+        var prepared = MatrixWithColumns(MatrixColumn(1, "left") + MatrixColumn(1, "left"));
+        var materialized = MatrixWithColumns(MatrixColumn(2, "left"));
+
+        Assert.Equal(Signature(prepared), Signature(materialized));
+        Assert.Equal(
+            WordOmmlConverter.ComputeOmmlFingerprint(Math(materialized)),
+            WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(materialized)));
+    }
+
+    [Fact]
+    public void MatrixColumnAlignmentAndCountChangesRemainSemantic()
+    {
+        var twoLeft = MatrixWithColumns(MatrixColumn(2, "left"));
+        var leftRight = MatrixWithColumns(MatrixColumn(1, "left") + MatrixColumn(1, "right"));
+        var oneLeft = MatrixWithColumns(MatrixColumn(1, "left"));
+
+        Assert.NotEqual(Signature(twoLeft), Signature(leftRight));
+        Assert.NotEqual(Signature(twoLeft), Signature(oneLeft));
     }
 
     [Fact]

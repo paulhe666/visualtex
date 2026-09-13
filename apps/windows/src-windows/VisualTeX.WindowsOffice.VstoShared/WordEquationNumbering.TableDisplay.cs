@@ -43,6 +43,36 @@ internal static partial class WordEquationNumbering
             EnsureNumberedOmmlIsDisplay(activeRange);
             traceStage("native-resolve-display");
 
+            // A user's Word table is already the layout container. Never create a
+            // VisualTeX 1x3 numbering table inside it (or reinterpret the outer table
+            // as our own host). Inside a genuine user cell, use Word's native
+            // #(SEQ VisualTeXEquation) display wrapper instead. Body formulas keep
+            // the current 1x3 contract, while table geometry remains untouched.
+            if (RangeIsWhollyWithinTable(activeRange)
+                && !IsManagedNumberedEquationTable(
+                    document,
+                    activeRange,
+                    formulaId))
+            {
+                var result = ConfigureNumberedNativeOmmlDisplayHashRetired(
+                    document,
+                    activeRange,
+                    formulaHeightPoints,
+                    formulaFontSizePoints,
+                    formulaId,
+                    reuseExistingScaffold,
+                    metadata,
+                    traceStage,
+                    plannedOrdinal,
+                    plannedPrefix,
+                    deferFieldUpdate,
+                    deferExternalShapeCreation,
+                    deferMetadataPersistence);
+                formulaRange.SetRange(activeRange.Start, activeRange.End);
+                traceStage("native-table-cell-hash-seq");
+                return result;
+            }
+
             if (reuseExistingScaffold
                 && HasReusableNumberedNativeOmmlDirectTableHost(document, activeRange, formulaId))
             {
@@ -744,6 +774,7 @@ internal static partial class WordEquationNumbering
         Paragraphs? followingParagraphs = null;
         Paragraph? followingParagraph = null;
         Range? followingParagraphRange = null;
+        Range? boundaryParagraphSeed = null;
         Paragraphs? anchorParagraphs = null;
         Paragraph? anchorParagraph = null;
         Range? anchorParagraphRange = null;
@@ -845,7 +876,24 @@ internal static partial class WordEquationNumbering
             Release(documentContent);
             documentContent = null;
 
-            paragraphRange.InsertParagraphAfter();
+            if (sourceFollowedByTable)
+            {
+                // Word 2021 gives InsertParagraphAfter at a body->table boundary
+                // affinity to the following table's first cell. A second
+                // InsertParagraphBefore then stays in that same cell, so Tables.Add
+                // silently creates a nested 1x3 inside the user's table. Create both
+                // structural paragraphs while we are still unambiguously inside the
+                // source body paragraph instead: the first inserted CR terminates the
+                // source, the second becomes the table anchor, and the original CR is
+                // retained after the new table as the mandatory separator.
+                boundaryParagraphSeed = document.Range(editableEnd, editableEnd);
+                boundaryParagraphSeed.InsertBefore("\r\r");
+            }
+            else
+            {
+                paragraphRange.InsertParagraphAfter();
+            }
+
             documentContent = document.Content;
             tablePosition = Math.Max(
                 documentContent.Start,
@@ -854,43 +902,12 @@ internal static partial class WordEquationNumbering
                 tablePosition,
                 Math.Min(documentContent.End, tablePosition + 1));
             anchorParagraphs = tableAnchor.Paragraphs;
-            if (anchorParagraphs.Count != 1)
+            if (anchorParagraphs.Count != 1
+                || (sourceFollowedByTable && RangeIsWhollyWithinTable(tableAnchor)))
                 throw new InvalidOperationException(
-                    "Word did not create one empty paragraph for the OMML number table.");
+                    "Word did not create an independent body paragraph for the OMML number table.");
             anchorParagraph = anchorParagraphs[1];
             anchorParagraphRange = anchorParagraph.Range.Duplicate;
-
-            if (sourceFollowedByTable)
-            {
-                // Tables.Add consumes the anchor paragraph. If the original source
-                // paragraph was immediately before another table, consuming the only
-                // new paragraph would make Word merge the new 1x3 host with that
-                // following table into a 2x3 structure. Insert a second body paragraph
-                // *before* the complete anchor (InsertParagraphAfter at this boundary
-                // is interpreted as editing the next table's first cell), then use
-                // the new first paragraph as the table anchor. The original one stays
-                // behind the new table as its mandatory independent separator.
-                anchorParagraphRange.InsertParagraphBefore();
-                Release(anchorParagraphRange);
-                anchorParagraphRange = null;
-                Release(anchorParagraph);
-                anchorParagraph = null;
-                Release(anchorParagraphs);
-                anchorParagraphs = null;
-                Release(tableAnchor);
-                tableAnchor = null;
-                Release(documentContent);
-                documentContent = document.Content;
-                tableAnchor = document.Range(
-                    tablePosition,
-                    Math.Min(documentContent.End, tablePosition + 1));
-                anchorParagraphs = tableAnchor.Paragraphs;
-                if (anchorParagraphs.Count != 1)
-                    throw new InvalidOperationException(
-                        "Word did not preserve a dedicated table anchor before the following table.");
-                anchorParagraph = anchorParagraphs[1];
-                anchorParagraphRange = anchorParagraph.Range.Duplicate;
-            }
 
             // InsertParagraphAfter inherits more than serialized pPr from the
             // source paragraph. In particular, a paragraph that just hosted an
@@ -930,9 +947,15 @@ internal static partial class WordEquationNumbering
             try { anchorFont.Reset(); } catch { }
             anchorFont.Hidden = 0;
             anchorFont.Position = 0;
+            // Consume the dedicated empty body paragraph at a table boundary.
+            // A collapsed Tables.Add leaves that paragraph behind as a second
+            // separator; the original source paragraph mark is already retained.
+            if (sourceFollowedByTable
+                && !string.Equals(anchorParagraphRange.Text, "\r", StringComparison.Ordinal))
+                throw new InvalidDataException("The dedicated OMML table anchor is not empty.");
             tableAnchor.SetRange(
                 anchorParagraphRange.Start,
-                anchorParagraphRange.Start);
+                sourceFollowedByTable ? anchorParagraphRange.End : anchorParagraphRange.Start);
             if (cleanTableTemplateRange is not null)
             {
                 tableAnchor.FormattedText = cleanTableTemplateRange.FormattedText;
@@ -957,6 +980,11 @@ internal static partial class WordEquationNumbering
             if (rows.Count != 1 || columns.Count != 3)
                 throw new InvalidOperationException(
                     "Word did not create the required 1x3 OMML numbering table.");
+            if (sourceFollowedByTable)
+            {
+                EnsureIndependentSeparatorBeforeFollowingTable(document, table);
+                MarkOwnedNativeOmmlTableSeparator(document, table, formulaId);
+            }
 
             // Geometry is reset on our empty anchor, while the number and cell
             // marks retain the source paragraph's body character appearance.
@@ -1075,6 +1103,7 @@ internal static partial class WordEquationNumbering
             Release(anchorParagraphRange);
             Release(anchorParagraph);
             Release(anchorParagraphs);
+            Release(boundaryParagraphSeed);
             Release(followingParagraphRange);
             Release(followingParagraph);
             Release(followingParagraphs);
@@ -1088,6 +1117,125 @@ internal static partial class WordEquationNumbering
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
+        }
+    }
+
+    internal static string NativeOmmlOwnedSeparatorBookmarkName(string formulaId)
+        => "VTEqSep_" + Guid.Parse(formulaId).ToString("N");
+
+    internal static bool IsExactOwnedNativeOmmlSeparator(
+        int tableEnd, int start, int end, string? text, bool withinTable)
+        => start == tableEnd && end > start && end - start == 1
+            && string.Equals(text, "\r", StringComparison.Ordinal) && !withinTable;
+
+    private static void MarkOwnedNativeOmmlTableSeparator(
+        Document document, Table table, string formulaId)
+    {
+        Range? tableRange = null;
+        Range? separator = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? marker = null;
+        Range? marked = null;
+        try
+        {
+            tableRange = table.Range;
+            separator = document.Range(tableRange.End, tableRange.End + 1);
+            if (!IsExactOwnedNativeOmmlSeparator(tableRange.End,
+                    separator.Start, separator.End, separator.Text,
+                    RangeIsWhollyWithinTable(separator)))
+                throw new InvalidDataException("The generated OMML table separator is not a body paragraph.");
+            bookmarks = document.Bookmarks;
+            var name = NativeOmmlOwnedSeparatorBookmarkName(formulaId);
+            if (bookmarks.Exists(name))
+                throw new InvalidDataException("An OMML table separator identity already exists before creation.");
+            marker = bookmarks.Add(name, separator);
+            marked = marker.Range;
+            if (marked.Start != separator.Start || marked.End != separator.End)
+                throw new InvalidDataException("Word did not retain the owned OMML separator identity.");
+        }
+        finally { Release(marked); Release(marker); Release(bookmarks); Release(separator); Release(tableRange); }
+    }
+
+    internal static bool HasExactOwnedNativeOmmlTableSeparator(
+        Document document, Table table, string formulaId)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? marker = null;
+        Range? range = null;
+        Range? tableRange = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            var name = NativeOmmlOwnedSeparatorBookmarkName(formulaId);
+            if (!bookmarks.Exists(name)) return false;
+            marker = bookmarks[name];
+            range = marker.Range;
+            tableRange = table.Range;
+            return range.StoryType == tableRange.StoryType
+                && IsExactOwnedNativeOmmlSeparator(tableRange.End,
+                    range.Start, range.End, range.Text, RangeIsWhollyWithinTable(range));
+        }
+        finally { Release(tableRange); Release(range); Release(marker); Release(bookmarks); }
+    }
+
+    private static void EnsureIndependentSeparatorBeforeFollowingTable(
+        Document document,
+        Table table)
+    {
+        Range? tableRange = null;
+        Range? content = null;
+        Range? separator = null;
+        Range? following = null;
+        Tables? followingTables = null;
+        Table? followingTable = null;
+        Range? followingRange = null;
+        try
+        {
+            tableRange = table.Range;
+            content = document.Content;
+            // The new body host must be a top-level table. A nested 1x3 can
+            // satisfy its own Rows/Columns checks while corrupting a user's cell.
+            if (table.NestingLevel != 1 || tableRange.End + 1 >= content.End)
+                throw new InvalidDataException(
+                    "The new OMML number table is not independent of the following user table.");
+            separator = document.Range(tableRange.End, tableRange.End + 1);
+            if (!string.Equals(separator.Text, "\r", StringComparison.Ordinal)
+                || RangeIsWhollyWithinTable(separator))
+                throw new InvalidDataException(
+                    "Word did not retain the body separator between the OMML number table and the following table.");
+
+            // Resolve only the next character, without scanning the document or
+            // trusting a Cell/Table RCW retained across Tables.Add.
+            following = document.Range(separator.End, separator.End + 1);
+            followingTables = following.Tables;
+            var independent = false;
+            for (var index = 1; index <= followingTables.Count; index++)
+            {
+                Release(followingRange); followingRange = null;
+                Release(followingTable); followingTable = followingTables[index];
+                followingRange = followingTable.Range;
+                if (followingRange.StoryType == tableRange.StoryType
+                    && followingRange.Start == separator.End
+                    && followingRange.End > followingRange.Start
+                    && followingTable.NestingLevel == 1)
+                {
+                    independent = true;
+                    break;
+                }
+            }
+            if (!independent)
+                throw new InvalidDataException(
+                    "The original following table is no longer a separate top-level table.");
+        }
+        finally
+        {
+            Release(followingRange);
+            Release(followingTable);
+            Release(followingTables);
+            Release(following);
+            Release(separator);
+            Release(content);
+            Release(tableRange);
         }
     }
 
@@ -1319,10 +1467,16 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static bool IsEmptyGeneratedNativeMathShell(
+        int contentStart, int contentEnd, int mathStart, int mathEnd, string? text)
+        => contentStart == contentEnd && mathStart == contentStart
+            && mathEnd == contentStart && string.IsNullOrEmpty(text);
+
     private static void RemoveEmptyBodyParagraphImmediatelyBeforeTable(
         Document document,
         Table table,
-        string formulaId)
+        string formulaId,
+        bool cleanupFreshOmmlSource = false)
     {
         Range? tableRange = null;
         Range? probe = null;
@@ -1392,8 +1546,36 @@ internal static partial class WordEquationNumbering
             if (traceSpacing)
                 TraceNumberingPerformance(
                     $"[perf] cleanup-before-table formulaId={formulaId} paragraph={paragraphRange.Start}:{paragraphRange.End} content={paragraphContent.Start}:{paragraphContent.End} shapes={shapes.Count} maths={maths.Count} fields={fields.Count} bookmarks={bookmarks.Count} frames={frames.Count}");
+            var hasMathContent = maths.Count != 0;
+            if (hasMathContent && cleanupFreshOmmlSource)
+            {
+                // Deleting the original OMath text can leave an empty math shell
+                // on its generated source paragraph in Word 2021. It serializes
+                // no formula but remains in OMaths until this paragraph is removed.
+                // Only this freshly created, otherwise empty source may be cleaned;
+                // nonempty neighbours and pre-existing user placeholders stay safe.
+                hasMathContent = false;
+                for (var index = 1; index <= maths.Count; index++)
+                {
+                    OMath? math = null;
+                    Range? mathRange = null;
+                    try
+                    {
+                        math = maths[index];
+                        mathRange = math.Range;
+                        if (!IsEmptyGeneratedNativeMathShell(
+                                paragraphContent.Start, paragraphContent.End,
+                                mathRange.Start, mathRange.End, mathRange.Text))
+                        {
+                            hasMathContent = true;
+                            break;
+                        }
+                    }
+                    finally { Release(mathRange); Release(math); }
+                }
+            }
             if (shapes.Count != 0
-                || maths.Count != 0
+                || hasMathContent
                 || fields.Count != 0
                 || frames.Count != 0)
             {

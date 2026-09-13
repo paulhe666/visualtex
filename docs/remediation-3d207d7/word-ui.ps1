@@ -1,4 +1,4 @@
-﻿param([int]$WordProcessId=0,[string]$Action='probe',[string]$Name='',[string]$Target='word',[string]$ExpectedDocument='',[string]$Doc='',[int]$Index=1,[int]$Position=-1,[string]$Value='',[string]$Choice='',[string]$InputFile='',[string]$LatinFont='',[single]$FontSize=0,[string]$Label='ui',[long]$WindowHandle=0,[switch]$Checked,[switch]$KeyClick)
+﻿param([int]$WordProcessId=0,[string]$Action='probe',[string]$Name='',[string]$Target='word',[string]$ExpectedDocument='',[string]$Doc='',[int]$Index=1,[int]$Position=-1,[string]$Value='',[string]$Choice='',[string]$InputFile='',[string]$LatinFont='',[single]$FontSize=0,[string]$Label='ui',[long]$WindowHandle=0,[switch]$Checked,[switch]$KeyClick,[switch]$NoClipboardRestore)
 $ErrorActionPreference='Stop'
 if(!$WordProcessId){
  $recordedTarget=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'evidence\target-word.json') -Raw | ConvertFrom-Json
@@ -50,7 +50,15 @@ $r=$el.Current.BoundingRectangle
 if($r.IsEmpty -or $r.Width -le 0 -or $r.Height -le 0){throw 'UI element has no visible rectangle'}
 [void][AuditUi]::SetCursorPos([int]($r.X+$r.Width/2),[int]($r.Y+$r.Height/2));[AuditUi]::mouse_event(2,0,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 60;[AuditUi]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
-function PasteText([string]$txt) { $old=[System.Windows.Forms.Clipboard]::GetDataObject();try { [System.Windows.Forms.Clipboard]::SetText($txt);[System.Windows.Forms.SendKeys]::SendWait('^v');Start-Sleep -Milliseconds 500 } finally {if($null -ne $old){try{[System.Windows.Forms.Clipboard]::SetDataObject($old,$true)}catch{}}} }
+function PasteText([string]$txt) {
+ if($NoClipboardRestore){
+  # Benchmark-owned clipboard data can be an active Word/MathType IDataObject.
+  # Re-publishing that live COM object from this short-lived PowerShell process
+  # is not part of editing and can crash Word in combase.dll. Keep plain text.
+  [System.Windows.Forms.Clipboard]::SetText($txt);[System.Windows.Forms.SendKeys]::SendWait('^v');Start-Sleep -Milliseconds 500;return
+ }
+ $old=[System.Windows.Forms.Clipboard]::GetDataObject();try { [System.Windows.Forms.Clipboard]::SetText($txt);[System.Windows.Forms.SendKeys]::SendWait('^v');Start-Sleep -Milliseconds 500 } finally {if($null -ne $old){try{[System.Windows.Forms.Clipboard]::SetDataObject($old,$true)}catch{}}}
+}
 function Tree($r) {
 $result=@();$els=$r.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
 foreach($e in $els){$c=$e.Current;$v='';$pat=$null;try {if($e.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pat)){$v=([System.Windows.Automation.ValuePattern]$pat).Current.Value};$pat=$null;if($e.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$pat)){$v=([System.Windows.Automation.TogglePattern]$pat).Current.ToggleState.ToString()}}catch{}
@@ -128,6 +136,30 @@ Write-Output ('NATIVE_LIST_SELECTED|'+$Index+'|count='+$count);exit
 };if($Action -eq 'native'){[IO.File]::WriteAllText((Join-Path $out ($Label+'-native.json')),($script:children|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false));$script:children|ConvertTo-Json -Depth 4;exit};$b=$script:children|Where-Object {$_.class -like '*BUTTON*' -and $_.name -like ('*'+$Name+'*')}|Select-Object -First 1;if(!$b){throw "Native button missing: $Name"};if($Action -eq 'dlgcheck') {$state=[AuditUi]::SendMessage([IntPtr]$b.handle,0x00F0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32();if(($state -eq 1) -eq [bool]$Checked){Write-Output ('NATIVE_CHECK_ALREADY|'+$b.name+'|'+$state);exit}};Write-Output ('UI_NATIVE_BEGIN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);[void][AuditUi]::PostMessage([IntPtr]$b.handle,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero);Write-Output ('UI_NATIVE_POSTED|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);Start-Sleep -Milliseconds 600;Write-Output ('NATIVE_CLICK|'+$b.name);exit }
 [void][AuditUi]::SetForegroundWindow($hwnd);Start-Sleep -Milliseconds 250
 $r=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+if($Action -eq 'menu') {
+ if(!$Name -or !$Choice){throw 'Menu action requires exact parent and child labels.'}
+ $deadline=[DateTime]::UtcNow.AddSeconds(4)
+ $opened=$false
+ do {
+  $r=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+  $items=$r.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty,$Choice))
+  $visible=@($items|Where-Object {!$_.Current.IsOffscreen -and $_.Current.IsEnabled})
+  if($visible.Count -eq 1){
+   Write-Output ('UI_INVOKE_BEGIN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|menu|'+$Name+'|'+$Choice)
+   ClickEl $visible[0]
+   Write-Output ('UI_INVOKE_RETURN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|menu|'+$Choice)
+   exit
+  }
+  if(!$opened){ClickEl (FindEl $r $Name);$opened=$true}else{
+   $parent=FindEl $r $Name;$pattern=$null
+   if($parent -and $parent.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)){
+    if(([System.Windows.Automation.ExpandCollapsePattern]$pattern).Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Collapsed){([System.Windows.Automation.ExpandCollapsePattern]$pattern).Expand()}
+   }
+  }
+  Start-Sleep -Milliseconds 100
+ }while([DateTime]::UtcNow -lt $deadline)
+ throw 'The requested native menu child did not become uniquely visible; no product action was invoked.'
+}
 if($Action -eq 'activate') {
  $titleCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TitleBar)
  $titleBar=$r.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$titleCondition)
