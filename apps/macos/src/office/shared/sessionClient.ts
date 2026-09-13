@@ -55,6 +55,7 @@ export interface PreparedPowerPointCommit {
 }
 
 export interface OfficeFormulaSession {
+  nativeEquation?: boolean;
   id: string;
   mode: OfficeSessionMode;
   host: OfficeHost;

@@ -6,7 +6,7 @@
       <tab id="VisualTeX.Mac.Word.Tab"
            label="VisualTeX"
            insertAfterMso="TabInsert">
-        <group id="VisualTeX.Mac.Word.Group" label="VisualTeX">
+        <group id="VisualTeX.Mac.Word.Group" label="公式">
           <button id="VisualTeX.Mac.Word.Inline"
                   label="图片行内公式"
                   size="large"
@@ -37,7 +37,10 @@
                   image="VisualTeXWordEditSelected"
                   onAction="VTWordRibbonEdit"/>
 
-          <box id="VisualTeX.Mac.Word.ConvertRow" boxStyle="horizontal">
+        </group>
+
+        <group id="VisualTeX.Mac.Word.ToolsGroup" label="转换与编号">
+          <box id="VisualTeX.Mac.Word.ConvertColumn" boxStyle="vertical">
             <button id="VisualTeX.Mac.Word.ConvertNative"
                     label="转为 Word OMML"
                     image="VisualTeXWordConvertOmml"
@@ -50,8 +53,20 @@
                     onAction="VTWordRibbonConvertImage"
                     screentip="直接转换为 VisualTeX 图片公式"
                     supertip="将所选 Word OMML 公式在后台直接转换为 VisualTeX 图片公式，不打开公式编辑窗口。"/>
+            <menu id="VisualTeX.Mac.Word.ConvertDocumentFormat"
+                  label="全文格式转换"
+                  image="VisualTeXWordConvertOmml"
+                  screentip="转换全文公式格式"
+                  supertip="在当前 Word 文档中批量转换 VisualTeX 图片公式与 Word OMML；保留公式身份、字号、编号和引用。">
+              <button id="VisualTeX.Mac.Word.ConvertDocumentImagesToOmml"
+                      label="全文图片公式 → Word OMML"
+                      onAction="VTWordRibbonConvertDocumentImagesToOmml"/>
+              <button id="VisualTeX.Mac.Word.ConvertDocumentOmmlToImages"
+                      label="全文 OMML → 图片公式"
+                      onAction="VTWordRibbonConvertDocumentOmmlToImages"/>
+            </menu>
           </box>
-          <box id="VisualTeX.Mac.Word.NumberingRow" boxStyle="horizontal">
+          <box id="VisualTeX.Mac.Word.NumberingColumn" boxStyle="vertical">
             <button id="VisualTeX.Mac.Word.Numbering"
                     label="更新公式编号"
                     image="VisualTeXWordUpdateNumbers"
@@ -77,8 +92,6 @@
                       label="按节编号 (2.3‐1)"
                       onAction="VTWordRibbonNumberingFormatSectionDash"/>
             </menu>
-          </box>
-          <box id="VisualTeX.Mac.Word.ReferenceRow" boxStyle="horizontal">
             <dynamicMenu id="VisualTeX.Mac.Word.CrossReference"
                          label="插入公式引用"
                          image="VisualTeXWordCrossReference"
@@ -86,10 +99,6 @@
                          invalidateContentOnDrop="true"
                          screentip="引用带编号公式"
                          supertip="展开当前文档的 VisualTeX 编号公式列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
-            <button id="VisualTeX.Mac.Word.Open"
-                    label="打开 VisualTeX"
-                    image="VisualTeXWordOpenApp"
-                    onAction="VTWordRibbonOpen"/>
           </box>
           <button id="VisualTeX.Mac.Word.DocumentImport"
                   label="批量导入"
@@ -98,6 +107,11 @@
                   onAction="VTWordRibbonDocumentImport"
                   screentip="批量导入 LaTeX / Markdown"
                   supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内、行间公式。"/>
+          <button id="VisualTeX.Mac.Word.Open"
+                  label="打开 VisualTeX"
+                  size="large"
+                  image="VisualTeXWordOpenApp"
+                  onAction="VTWordRibbonOpen"/>
         </group>
 
         <group id="VisualTeX.Mac.Word.RedrawGroup" label="LaTeX 重绘">

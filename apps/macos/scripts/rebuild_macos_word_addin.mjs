@@ -41,6 +41,9 @@ const outputPath = resolve(
 const outputDocumentName = basename(outputPath);
 const keepWordOpenOnError = process.argv.includes("--keep-word-open-on-error");
 const preserveWord = process.argv.includes("--preserve-word");
+// Compile through the established restart/import/Debug > Compile workflow,
+// while leaving production Startup files and their loaded state unchanged.
+const keepStartupFiles = process.argv.includes("--keep-startup-files");
 const buildLockRoot = join(scratchRoot, "VisualTeXWordBuild.lock");
 const buildLockOwnerPath = join(buildLockRoot, "pid");
 const offlineOfficeRoot = join(repositoryRoot, "office", "macos-offline");
@@ -1040,15 +1043,55 @@ function compileVbaProject() {
 
 function runIsolatedVbaCompileProbe() {
   closeVbeWindowIfOpen();
-  const result = osascript([
-    'tell application "Microsoft Word"',
-    `if not (exists document ${JSON.stringify(outputDocumentName)}) then error "The isolated Word template is not open"`,
-    `activate object document ${JSON.stringify(outputDocumentName)}`,
-    'activate',
-    `run VB macro macro name ${JSON.stringify(`${outputDocumentName}!VisualTeX_PerformanceNoop`)}`,
-    'return "PASS"',
-    'end tell',
-  ], 60_000).trim();
+  let result;
+  try {
+    result = osascript([
+      'tell application "Microsoft Word"',
+      `if not (exists document ${JSON.stringify(outputDocumentName)}) then error "The isolated Word template is not open"`,
+      `activate object document ${JSON.stringify(outputDocumentName)}`,
+      'activate',
+      // Word for Mac's AppleScript dictionary rejects a document-qualified
+      // macro name containing the .dotm extension (-1708). The build document
+      // is activated immediately above, so the unqualified public macro resolves
+      // to that isolated project and still exercises a full VBA compile.
+      'run VB macro macro name "VisualTeX_PerformanceNoop"',
+      'return "PASS"',
+      'end tell',
+    ], 60_000).trim();
+  } catch (error) {
+    const diagnostic = bestEffort("/usr/bin/osascript", [
+      "-e",
+      'tell application "System Events"',
+      "-e",
+      'tell process "Microsoft Word"',
+      "-e",
+      'set details to ""',
+      "-e",
+      'repeat with candidateWindow in windows',
+      "-e",
+      'set details to details & (name of candidateWindow as text) & ": "',
+      "-e",
+      "try",
+      "-e",
+      'set details to details & (value of every static text of candidateWindow as text)',
+      "-e",
+      "end try",
+      "-e",
+      'set details to details & linefeed',
+      "-e",
+      "end repeat",
+      "-e",
+      "return details",
+      "-e",
+      "end tell",
+      "-e",
+      "end tell",
+    ], { timeout: 10_000 }).trim();
+    throw new Error(
+      `The isolated Word VBA compile probe failed${diagnostic ? `:\n${diagnostic}` : ""}`,
+      { cause: error },
+    );
+  }
   if (result !== "PASS") {
     throw new Error(`The isolated Word VBA compile probe returned ${result}`);
   }
@@ -1063,7 +1106,21 @@ function replaceAndCompileAdapter() {
       importVbaModule(modulePath);
     }
   }
-  if (preserveWord && incrementalBuild) {
+  if (preserveWord) {
+    // With an already-open user document, macOS can keep Word's menu bar active
+    // while the VBE code window is frontmost. In that state Debug > Compile is
+    // absent from Accessibility even though the isolated template is valid.
+    // Running a qualified no-op macro makes Word compile the same VBA project
+    // and fails the build if any imported module has a compile error.
+    // Persist the imported source before the compile probe. If Word rejects a
+    // module, the failed candidate remains inspectable instead of silently
+    // reverting to the empty template created at the start of the build.
+    osascript([
+      'tell application "Microsoft Word"',
+      `save as document ${JSON.stringify(outputDocumentName)} file name ${JSON.stringify(outputPath)}`,
+      'end tell',
+    ]);
+    sleep(1_000);
     runIsolatedVbaCompileProbe();
     return;
   }
@@ -1194,7 +1251,7 @@ function verifyBuiltVba(path) {
     "VTInsertRegisteredEquationCaption",
     "VTWriteWordFailureTrace",
     "VisualTeX_RunWordNativeRegression",
-    "AutoExec",
+    "VisualTeX_InitializeWordHost",
     "word-structured-document-import-20260730-r61",
     "VTWordRibbonDocumentImport",
     "VisualTeX_InsertLatexMarkdownDocument",
@@ -1215,8 +1272,8 @@ function verifyBuiltVba(path) {
     "VisualTeX_EditSelectedImageFromNativeMonitor",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r87",
-    "1.2.6",
+    "word-office-performance-20260801-r90",
+    "1.2.7",
   ];
   for (const value of required) {
     const utf8 = Buffer.from(value, "utf8");
@@ -1253,8 +1310,8 @@ try {
     }
   } else {
     closeWordWithoutSaving();
-    moveStartupTemplatesOut();
-    if (!incrementalBuild) moveNormalTemplateOut();
+    if (!keepStartupFiles) moveStartupTemplatesOut();
+    if (!incrementalBuild && !keepStartupFiles) moveNormalTemplateOut();
     setVbaTrust(true);
   }
   rmSync(outputPath, { force: true });
@@ -1323,8 +1380,8 @@ try {
     }
   } else {
     if (buildSucceeded || !keepWordOpenOnError) closeWordWithoutSaving();
-    if (!incrementalBuild) restoreNormalTemplate();
-    restoreStartupTemplates();
+    if (!incrementalBuild && !keepStartupFiles) restoreNormalTemplate();
+    if (!keepStartupFiles) restoreStartupTemplates();
     restoreVbaTrust(originalTrust);
     releaseBuildLock();
   }

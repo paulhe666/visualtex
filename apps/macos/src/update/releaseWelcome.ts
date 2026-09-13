@@ -1,7 +1,7 @@
 import type { UpdateCheckResult } from "./updateService";
 import { CURRENT_VERSION } from "./updateService";
 
-export const RELEASE_WELCOME_VERSION = "1.2.6";
+export const RELEASE_WELCOME_VERSION = "1.2.7";
 export const RELEASE_WELCOME_STORAGE_KEY =
   `visualtex.release-welcome.${RELEASE_WELCOME_VERSION}.seen`;
 

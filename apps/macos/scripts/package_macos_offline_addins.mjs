@@ -132,7 +132,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r87",
+            "word-office-performance-20260801-r90",
             "word-structured-document-import-20260730-r61",
             "VTWordRibbonDocumentImport",
             "word-latex-redraw-20260802-r1",
@@ -501,12 +501,14 @@ function installMacosArtifacts(wordOutput, powerpointOutput) {
 }
 
 try {
-  const existingWordShell = join(resourcesRoot, "VisualTeX.dotm");
-  const resolvedWordShell = wordShell
-    ? resolve(wordShell)
-    : existsSync(existingWordShell) && resolve(wordInput) !== existingWordShell
-      ? existingWordShell
-      : undefined;
+  // A newly VBE-compiled Word DOTM is already a complete, valid OOXML template.
+  // Reusing the previously packaged resources/VisualTeX.dotm as an implicit
+  // shell causes document.xml, relationships and template metadata from older
+  // builds to survive indefinitely. On Word for Mac that stale shell can consume
+  // the first Finder/LaunchServices open-document request, leaving only Word open
+  // until the user double-clicks the document a second time. Use the current
+  // compiled DOTM directly unless a shell is explicitly requested by the caller.
+  const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;
   const wordOutput = packageAddin(
     resolve(wordInput),
     "Word",

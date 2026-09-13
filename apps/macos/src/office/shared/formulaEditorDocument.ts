@@ -5,6 +5,7 @@ import {
 } from "../../clipboard/LatexCopyService";
 import { createUuid } from "../../runtime/browserCompatibility";
 import { unwrapSingleLatexDisplayMath } from "../../math/latexEnvironment";
+import { stripMathSourceComments } from "../../math/mathModeSource";
 import {
   ensureVisualTexAlignmentMarkers,
   usesExplicitAlignmentPoints,
@@ -33,7 +34,7 @@ function normalizeAlignmentLines(
 }
 
 function normalizeLogicalFormulaLineWhitespace(value: string) {
-  const source = value.replace(/\r\n?/g, "\n");
+  const source = stripMathSourceComments(value.replace(/\r\n?/g, "\n"));
   return source
     .replace(/[ \t]*\n[ \t]*/g, (match, offset: number) => {
       const before = source.slice(0, offset);

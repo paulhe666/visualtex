@@ -582,6 +582,17 @@ fn refresh_dock_after_icon_migration() -> Result<(), String> {
 }
 
 pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if MainThreadMarker::new().is_none() {
+        let main_app = app.clone();
+        return app
+            .run_on_main_thread(move || {
+                if let Err(error) = reveal_main_window(&main_app) {
+                    eprintln!("Unable to restore the VisualTeX workspace: {error}");
+                }
+            })
+            .map_err(|error| format!("Unable to schedule VisualTeX window restoration: {error}"));
+    }
     // Install the bundle icon before changing activation policy. A process
     // launched by the Office background agent has no Dock tile until it becomes
     // Regular; setting the icon first prevents macOS from creating a generic or
@@ -591,6 +602,26 @@ pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        let trace_app = app.clone();
+        window
+            .with_webview(move |webview| unsafe {
+                let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+                trace_main_window_visibility(&trace_app, native_window, "before-restore");
+                // Office operations temporarily place the workspace below normal
+                // windows. show/set_focus alone cannot undo that native level,
+                // including when an Office operation failed before its cleanup.
+                native_window.setLevel(objc2_app_kit::NSNormalWindowLevel);
+                native_window.setAlphaValue(1.0);
+                native_window.setIgnoresMouseEvents(false);
+                native_window.setExcludedFromWindowsMenu(false);
+                if let Some(main_thread) = MainThreadMarker::new() {
+                    NSApplication::sharedApplication(main_thread).unhideWithoutActivation();
+                }
+            })
+            .map_err(|error| format!("Unable to restore the VisualTeX native window: {error}"))?;
+    }
     window
         .show()
         .map_err(|error| format!("Unable to show VisualTeX: {error}"))?;
@@ -601,10 +632,50 @@ pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
     window
         .set_focus()
         .map_err(|error| format!("Unable to focus VisualTeX: {error}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        let trace_app = app.clone();
+        window
+            .with_webview(move |webview| unsafe {
+                let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+                native_window.makeKeyAndOrderFront(None);
+                native_window.orderFrontRegardless();
+                trace_main_window_visibility(&trace_app, native_window, "after-restore");
+            })
+            .map_err(|error| format!("Unable to bring VisualTeX to the front: {error}"))?;
+    }
     if let Err(error) = refresh_dock_after_icon_migration() {
         eprintln!("{error}");
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn trace_main_window_visibility(app: &AppHandle, window: &objc2_app_kit::NSWindow, stage: &str) {
+    let Ok(directory) = app.path().app_data_dir() else {
+        return;
+    };
+    if !directory.join("window-visibility-trace.enabled").is_file() {
+        return;
+    }
+    let frame = window.frame();
+    let state = serde_json::json!({
+        "stage": stage,
+        "pid": std::process::id(),
+        "level": window.level(),
+        "alpha": window.alphaValue(),
+        "visible": window.isVisible(),
+        "onActiveSpace": window.isOnActiveSpace(),
+        "occlusionVisible": window.occlusionState().contains(objc2_app_kit::NSWindowOcclusionState::Visible),
+        "key": window.isKeyWindow(),
+        "main": window.isMainWindow(),
+        "appActive": MainThreadMarker::new().map(|main_thread| NSApplication::sharedApplication(main_thread).isActive()),
+        "screen": window.screen().map(|screen| screen.localizedName().to_string()),
+        "frame": [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height],
+    });
+    if let Ok(bytes) = serde_json::to_vec_pretty(&state) {
+        let _ = write_atomic(&directory.join(format!("window-visibility-{stage}.json")), &bytes);
+    }
 }
 
 pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {

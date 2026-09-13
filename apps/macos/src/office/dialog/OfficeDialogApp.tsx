@@ -1,3 +1,4 @@
+import { readWordFormulaFontSize, writeWordFormulaFontSize } from "../shared/wordFormulaPreferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { MathfieldElement } from "mathlive";
@@ -107,8 +108,6 @@ const EDITOR_PERSISTENCE_STORAGE_KEY = "visualtex-editor";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY =
   "visualtex.office.word.create.numbered";
-const OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY =
-  "visualtex.office.word.create.font-size-pt";
 const USE_NATIVE_POWERPOINT_COMMIT =
   document
     .querySelector<HTMLMetaElement>(
@@ -231,23 +230,6 @@ function normalizeOfficeFontSizePt(value: unknown, fallback: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   const resolved = Number.isFinite(numeric) ? numeric : fallback;
   return Math.round(Math.min(200, Math.max(5, resolved)) * 2) / 2;
-}
-
-function readOfficeWordCreateFontSizePreference(fallback: number) {
-  const stored = readLocalStorage(OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY);
-  if (stored === null) return normalizeOfficeFontSizePt(fallback, fallback);
-  const numeric = Number(stored);
-  if (!Number.isFinite(numeric) || numeric < 5 || numeric > 200) {
-    return normalizeOfficeFontSizePt(fallback, fallback);
-  }
-  return normalizeOfficeFontSizePt(numeric, fallback);
-}
-
-function writeOfficeWordCreateFontSizePreference(fontSizePt: number) {
-  writeLocalStorage(
-    OFFICE_WORD_CREATE_FONT_SIZE_STORAGE_KEY,
-    String(normalizeOfficeFontSizePt(fontSizePt, fontSizePt)),
-  );
 }
 
 const OFFICE_CHINESE_FONT_SIZE_OPTIONS = [
@@ -772,7 +754,7 @@ export function OfficeDialogApp() {
       !session.dirty
         ? powerPointDefaultFontSizePt
         : session.host === "word" && session.mode === "create"
-          ? readOfficeWordCreateFontSizePreference(requestedFontSizePt)
+          ? (readWordFormulaFontSize(session.nativeEquation ? "omml" : "image") ?? requestedFontSizePt)
           : requestedFontSizePt;
     setOfficeFontSizePt(loadedFontSizePt);
     const loadedFingerprint = documentFingerprint(
@@ -1024,7 +1006,12 @@ export function OfficeDialogApp() {
         codeFormat: latexCodeFormat,
         displayMode,
         host: session?.host,
+        fontSizePt: officeFontSizePt,
         includeWordOmml: session?.host === "word",
+        numbered:
+          session?.host === "word" &&
+          displayMode === "block" &&
+          Boolean(session?.numbered),
         formulaLetterFont,
         formulaChineseFont,
       }),
@@ -1035,6 +1022,8 @@ export function OfficeDialogApp() {
     lines,
     latexCodeFormat,
     session?.host,
+    officeFontSizePt,
+    session?.numbered,
     formulaLetterFont,
     formulaChineseFont,
   ]);
@@ -1046,7 +1035,12 @@ export function OfficeDialogApp() {
       codeFormat: latexCodeFormat,
       displayMode,
       host: session?.host,
+        fontSizePt: officeFontSizePt,
       includeWordOmml: session?.host === "word",
+      numbered:
+        session?.host === "word" &&
+        displayMode === "block" &&
+        Boolean(session?.numbered),
       formulaLetterFont,
       formulaChineseFont,
     });
@@ -1057,6 +1051,8 @@ export function OfficeDialogApp() {
     lines,
     latexCodeFormat,
     session?.host,
+    officeFontSizePt,
+    session?.numbered,
     formulaLetterFont,
     formulaChineseFont,
   ]);
@@ -1917,9 +1913,13 @@ export function OfficeDialogApp() {
   }, [autoCommitOnClose, handleCancel, handleCommit, isEn, latex, sessionId]);
 
   const handleCopy = async () => {
-    await copyFormulaLines(lines, latexCodeFormat);
-    addHistory(latex);
-    setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
+    try {
+      await copyFormulaLines(lines, latexCodeFormat);
+      addHistory(latex);
+      setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
+    } catch (reason) {
+      setToast(errorMessage(reason, isEn ? "Could not copy formula source" : "无法复制公式源码"));
+    }
   };
 
   const editorAvailable = Boolean(session && sessionHydrated);
@@ -1985,7 +1985,7 @@ export function OfficeDialogApp() {
             );
             setOfficeFontSizePt(nextFontSizePt);
             if (session.host === "word" && session.mode === "create") {
-              writeOfficeWordCreateFontSizePreference(nextFontSizePt);
+              writeWordFormulaFontSize(session.nativeEquation ? "omml" : "image", nextFontSizePt);
             }
           }}
         >

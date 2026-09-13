@@ -91,7 +91,7 @@ assert(updateDialogSource.includes("alipayImageUrl"));
 assert(updateDialogSource.includes("QQ群"));
 assert(updateDialogSource.includes("updateAvailable || releaseWelcome"));
 assert(updateDialogSource.includes("releaseWelcome ?"));
-assert(releaseWelcomeSource.includes('RELEASE_WELCOME_VERSION = "1.2.6"'));
+assert(releaseWelcomeSource.includes('RELEASE_WELCOME_VERSION = "1.2.7"'));
 assert(releaseWelcomeSource.includes("visualtex.release-welcome.${RELEASE_WELCOME_VERSION}.seen"));
 assert(releaseWelcomeSource.includes("VisualTeX ${RELEASE_WELCOME_VERSION}"));
 assert(releaseWelcomeSource.includes("Office 公式复制工作流"));

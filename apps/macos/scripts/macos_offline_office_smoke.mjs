@@ -48,6 +48,7 @@ const requiredFiles = [
   "src-tauri/src/office/macos_offline_installer.rs",
   "src-tauri/Info.macos.plist",
   "scripts/package_macos_offline_addins.mjs",
+  "scripts/word_orphan_sequence_lifecycle_regression.mjs",
   "scripts/document_import_word_integration.mjs",
   "scripts/register_macos_dev_url_handler.mjs",
   "scripts/tauri_dev.mjs",
@@ -57,6 +58,7 @@ const requiredFiles = [
   "src/office/documentImport/OfficeDocumentImportApp.tsx",
   "src/office/redraw/WordLatexRedrawApp.tsx",
   "src/office/redraw/wordLatexRedrawParser.ts",
+  "src/office/redraw/wordLatexRedrawGeometry.ts",
   "src/office/redraw/wordLatexRedrawRenderer.ts",
 ];
 
@@ -121,6 +123,7 @@ const documentImportApp = read(
 );
 const wordLatexRedrawApp = read("src/office/redraw/WordLatexRedrawApp.tsx");
 const wordLatexRedrawParser = read("src/office/redraw/wordLatexRedrawParser.ts");
+const wordLatexRedrawGeometry = read("src/office/redraw/wordLatexRedrawGeometry.ts");
 const wordLatexRedrawRenderer = read("src/office/redraw/wordLatexRedrawRenderer.ts");
 const mathMlToLatex = read("src/office/redraw/mathMlToLatex.ts");
 const tauriTransport = read("src/office/shared/tauriTransport.ts");
@@ -147,6 +150,8 @@ for (const callback of [
   "VTWordRibbonRestoreSelectionImageToLatex",
   "VTWordRibbonRestoreDocumentOmmlToLatex",
   "VTWordRibbonRestoreDocumentImageToLatex",
+  "VTWordRibbonConvertDocumentImagesToOmml",
+  "VTWordRibbonConvertDocumentOmmlToImages",
 ]) {
   expectIncludes(wordRibbon, `onAction=\"${callback}\"`, `Word Ribbon is missing ${callback}`);
 }
@@ -241,9 +246,21 @@ expectIncludes(powerpointScript, "set processIdItems to paragraphs of processIds
 expectIncludes(wordScript, "set markerLines to paragraphs of markerText", "Word must parse the resident heartbeat independently of line-ending representation");
 expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", "PowerPoint must parse the resident heartbeat independently of line-ending representation");
 
-expectIncludes(wordAdapter, "Public Sub AutoExec()", "Word template must publish AutoExec health");
-expectIncludes(wordAdapter, '"word-office-performance-20260801-r87"', "Word health must identify the painted-centre native Office build");
-expectIncludes(wordAdapter, "VTInitializeWordEvents", "Word AutoExec must initialize its persistent application event sink");
+expect(!wordAdapter.includes("Public Sub AutoExec()"), "Word Startup template must not expose AutoExec because Word for Mac can consume Finder's first document-open request before the document is created");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_InitializeWordHost()", "Word must expose explicit host initialization for application health refreshes");
+expectIncludes(wordAdapter, '"word-office-performance-20260801-r90"', "Word health must identify the current native Office build");
+const wordHostInitStart = wordAdapter.indexOf("Public Sub VisualTeX_InitializeWordHost()");
+const wordHostInitEnd = wordAdapter.indexOf("End Sub", wordHostInitStart);
+const wordHostInitSource = wordAdapter.slice(wordHostInitStart, wordHostInitEnd);
+expectIncludes(wordHostInitSource, "VTInitializeWordEvents", "Explicit Word host initialization must retain the persistent application event sink");
+expectIncludes(wordHostInitSource, "VTEnsureApplicationPrewarmScheduled", "Explicit Word host initialization must preserve deferred resident prewarming once a document exists");
+expect(!wordHostInitSource.includes("VTPrewarmApplication VT_WORD_HOST"), "Explicit Word host initialization must not synchronously wait for VisualTeX");
+expectIncludes(wordAdapter, "Public Sub AutoOpen()", "Word template must retain document-open migration scheduling");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_PrewarmWordApplication()", "Word must retain the validated resident prewarm on its deferred path");
+expectIncludes(wordAdapter, 'name:="VisualTeX_PrewarmWordApplication"', "Deferred Word resident prewarming must run through Word's idle-time scheduler");
+expectIncludes(wordEvents, "App_DocumentOpen", "Word must observe document-open lifecycle events");
+expectIncludes(wordEvents, "App_NewDocument", "Word must observe new-document lifecycle events");
+expectIncludes(wordEvents, "VTEnsureApplicationPrewarmScheduled", "DocumentOpen/NewDocument must schedule resident prewarming only after Word has committed a document");
 expectIncludes(wordEvents, "App_WindowBeforeDoubleClick", "Word must use its native application event for double-click editing");
 expectIncludes(wordEvents, "App_WindowSelectionChange", "Word must repair a clicked legacy image-number REF through the native selection-change event");
 expectIncludes(wordAdapter, "VisualTeX_StabilizeImageEquationNumberSelection", "Word must expose the narrow image-number selection repair entry point");
@@ -342,6 +359,8 @@ expect(!wordLatexRedrawParser.includes("documentImportParser"), "The Word redraw
 expectIncludes(wordLatexRedrawParser, "Direct TypeScript port of Windows WordBulkImportParser.FindFormulaSpans", "The redraw scanner must document its Windows source of truth");
 expectIncludes(wordLatexRedrawRenderer, "const templates = new Map", "The redraw renderer must cache duplicate formulas like Windows");
 expectIncludes(wordLatexRedrawRenderer, "String(span.fontSizePt)", "The redraw cache key must include each source formula's Word font size like Windows");
+expectIncludes(wordLatexRedrawRenderer, "reusableImageGeometry(span.metadata)", "Image-to-OMML conversion must reuse stable image geometry without re-rendering PNG data");
+expectIncludes(wordLatexRedrawGeometry, "referenceBaselinePt / referenceHeightPt", "Reusable Word image geometry must preserve the original mathematical baseline ratio");
 expectIncludes(rustRuntime, 'action", "latexRedrawPreflight"', "The native bridge must dispatch a non-mutating Word redraw preflight");
 expectIncludes(rustRuntime, "parse_latex_redraw_font_sizes", "The native bridge must validate the complete Word font-size plan");
 expect(!documentImportApp.includes("autoRedrawStartedRef"), "The document importer must not own the automatic Word redraw workflow");
@@ -389,9 +408,9 @@ expectIncludes(wordAdapter, 'VTRequireDispatchValue dispatch, "vectorDocumentPat
 expectIncludes(wordAdapter, 'fallbackImagePath = VTDispatchOptional', "Word must retain the PNG preview only as an image-formula compatibility fallback");
 expectIncludes(wordAdapter, "VTProbeInlineShapeRangeFontSizeBehavior", "Word must expose a real-host probe for InlineShape.Range.Font.Size behavior");
 expectIncludes(wordAdapter, "VisualTeX_ConvertSelectedToImageFormula", "Native OMML formulas must support conversion back to an image formula");
-expect(!wordAdapter.includes("ElseIf VTWordConvertNativeBookmarkToImageFast(nativeBookmark) Then"), "OMML-to-image conversion must not reuse stale cached image geometry from older font calibrations");
-expectIncludes(wordAdapter, 'VTWordOpenNativeSession nativeBookmark, False, "nativeToImage"', "Managed OMML-to-image conversion must use the dedicated silent re-render Session instead of a visible editor or stale cache");
-expectIncludes(wordAdapter, "VTWordNativeSignatureMatches", "The retained cached helper must still reject stale image artifacts before any future fast-path reuse");
+expectIncludes(wordAdapter, "If VTWordConvertNativeBookmarkToImageFast(nativeBookmark) Then Exit Sub", "Managed OMML-to-image conversion must prefer the validated local cache fast path before renderer fallback");
+expectIncludes(wordAdapter, 'VTWordOpenNativeSession nativeBookmark, False, "nativeToImage"', "Managed OMML-to-image conversion must retain the silent renderer fallback for stale or incomplete caches");
+expectIncludes(wordAdapter, "VTWordNativeSignatureMatches", "The cached OMML-to-image helper must reject stale image artifacts before reuse");
 expectIncludes(wordAdapter, "Set insertionRange = sourceRange.Duplicate", "Any retained cached OMML-to-image helper must replace the exact OMath Range instead of inserting at OMath.Range.End");
 expectIncludes(wordAdapter, "Set candidate = VTDetachWordFormulaPictureFromMath(candidate)", "Any retained cached OMML-to-image helper must detach the picture from Word math before committing it");
 expectIncludes(metadata, 'Optional ByVal operationName As String = "formula"', "Formula requests must carry an explicit immutable operation discriminator");
@@ -408,10 +427,25 @@ expectIncludes(dialogApp, "await cancelMacosOfflineOfficeSession(session.id)", "
 expect(!dialogApp.includes('"present_macos_offline_office_editor_window"'), "A failed direct conversion must never reveal the resident editor");
 expectIncludes(wordAdapter, 'VTWordEditInlineShape target, True, "imageToNative"', "A missing native staging DOCX must be regenerated by a silent image-to-native Session");
 expectIncludes(wordAdapter, "If VTWordConvertInlineShapeToNativeFast(selectedShape) Then Exit Sub", "The Ribbon image-to-OMML command must use the narrow cached fast path before any compatibility workflow");
-expectIncludes(wordAdapter, "VTWordConvertInlineShapeToNativeEquation selectedShape", "Numbered or legacy image formulas must retain the established compatible in-Word conversion transaction");
+expectIncludes(wordAdapter, "VTWordConvertInlineShapeToNativeEquation selectedShape", "Legacy or incomplete image formulas must retain the established compatible in-Word conversion transaction");
+expectIncludes(wordAdapter, "sourceContainerRange.Information(wdWithInTable)", "Numbered image fast conversion must reject legacy table layouts rather than treating them as canonical");
+expectIncludes(wordAdapter, "VTNativeEquationArrayReferenceField", "Numbered OMML fast conversion must require the canonical internal REF identity");
 expectIncludes(wordAdapter, "The image remains the rollback", "The cached image-to-OMML fast path must keep the source image live until the new OMath is validated");
 expectIncludes(wordAdapter, "Private Function VTInsertCachedNativeEquationFast", "Cached image-to-OMML conversion must use a local native insertion helper instead of the generic full-document scanner");
 expectIncludes(wordAdapter, "If probeRange.OMaths.Count <> 1 Then", "Cached native insertion must validate exactly one OMath near the insertion point");
+const imageToNativeFastStart = wordAdapter.indexOf("Private Function VTWordConvertInlineShapeToNativeFast(");
+const imageToNativeFastEnd = wordAdapter.indexOf("Private Sub VTWordConvertInlineShapeToNativeEquation(", imageToNativeFastStart);
+const imageToNativeFastSource = wordAdapter.slice(imageToNativeFastStart, imageToNativeFastEnd);
+expectIncludes(imageToNativeFastSource, "Resume ConversionRollback", "A failed cached image-to-OMML conversion must leave its active VBA error handler before rollback");
+expectIncludes(imageToNativeFastSource, "targetDocument.Undo 1", "A failed cached image-to-OMML conversion must restore the source through Word's documented Document.Undo method");
+expect(!imageToNativeFastSource.includes('CallByName Application, "Undo"'), "Cached image-to-OMML rollback must not use the incompatible late-bound Word Undo call");
+expectIncludes(imageToNativeFastSource, 'conversionPath = "numbered-direct-cache-insert"', "Numbered image-to-OMML conversion must import the cached DOCX directly after removing only its local visible-number row");
+expectIncludes(imageToNativeFastSource, "VTPrepareNumberedImageCarrierForNativeFastConversion", "Numbered direct conversion must preserve VT_N_/VT_C_/SEQ while preparing a field-free image carrier");
+const nativeToImageFastStart = wordAdapter.indexOf("Private Function VTWordConvertNativeBookmarkToImageFast(");
+const nativeToImageFastEnd = wordAdapter.indexOf("Public Sub VisualTeX_ConvertSelectedToImageFormula()", nativeToImageFastStart);
+const nativeToImageFastSource = wordAdapter.slice(nativeToImageFastStart, nativeToImageFastEnd);
+expectIncludes(nativeToImageFastSource, "VTRebuildNumberedImageLayoutFast", "Numbered OMML-to-image conversion must rebuild only its local visible REF around the existing external helper");
+expect(!nativeToImageFastSource.includes("VTInsertEquationNumber("), "Numbered OMML-to-image fast conversion must not enter the generic insertion/reconciliation workflow");
 expectIncludes(wordAdapter, 'VTWordEditInlineShape target, True, "imageToNative"', "The cached image-to-OMML fast path must preserve the silent hidden-renderer fallback for older formulas without a native DOCX");
 expectIncludes(wordAdapter, "Private Function VTRestoreCachedImageFormulasToLatex", "VisualTeX image formulas with durable LaTeX payloads must restore without launching the hidden renderer");
 expectIncludes(wordAdapter, "Private Function VTRestoreCachedNativeFormulasToLatex", "Unmodified VisualTeX OMML formulas with durable LaTeX payloads must restore without launching the hidden renderer");
@@ -592,11 +626,18 @@ expectIncludes(wordAdapter, "insertionRange.InsertParagraphAfter", "The external
 const nativeArrayStart = wordAdapter.indexOf("Private Function VTEnsureNativeEquationArrayNumber");
 const nativeArrayEnd = wordAdapter.indexOf("Private Function VTEnsureNativeEquationNumber", nativeArrayStart);
 const nativeArraySource = wordAdapter.slice(nativeArrayStart, nativeArrayEnd);
-expectIncludes(nativeArraySource, 'Selection.TypeText Text:="#()"', "Native display numbering must create a complete Word #() Equation-array boundary inside OMath");
+expectIncludes(nativeArraySource, "VTImportNativeNumberShell", "Native numbering must import the separately built professional shell");
 expectIncludes(nativeArraySource, "Type:=wdFieldRef", "The OMath array number slot must contain a dynamic REF rather than the true Equation SEQ");
 expectIncludes(nativeArraySource, "VTEnsureNativeEquationSequenceHelper", "The true Equation SEQ must be isolated before the internal array REF is created");
 expect(!nativeArraySource.includes("VTInsertRegisteredEquationCaption( _\n        numberSlotRange"), "The true Equation SEQ must never be inserted into the OMath number slot");
-expectIncludes(nativeArraySource, "nativeEquation.BuildUp", "Native numbered OMML must retain built-up professional mathematics");
+expect(!nativeArraySource.includes("nativeEquation.BuildUp"), "Native numbering must never rebuild the professional source, including reuse and post-REF paths");
+expectIncludes(wordAdapter, 'shellRange.Text = "VTNUMBERBODY#(0)"', "Only the disposable number shell may be built from linear text");
+expectIncludes(wordAdapter, "Set target = VTNormalizeImageConversionCarrier( _\n        target, formulaId, targetDocumentMutated)", "Cold-cache resume must normalize the actual image-in-OMath carrier before numbering");
+expect(
+  wordAdapter.indexOf("If Not VTPathFileExists(nativeDocumentPath) Then") <
+    wordAdapter.indexOf("Set target = VTNormalizeImageConversionCarrier( _"),
+  "Cold-cache resume must dispatch the renderer before mutating the image carrier",
+);
 expectIncludes(nativeArraySource, "nativeEquation.Type = wdOMathDisplay", "Native numbered OMML must remain authentic Word display math");
 expectIncludes(nativeArraySource, "VTFinalizeParagraphEquationNumber", "Native Equation arrays must immediately reconcile their SEQ ordinal and Bookmarks");
 expectIncludes(wordAdapter, "Private Function VTNativeEquationNumberBookmarkIsCompatible", "Built-up native OMath must accept Word's safe full-equation Bookmark expansion while retaining exact SEQ identity");
@@ -684,7 +725,7 @@ expectIncludes(wordAdapter, "Abs(.LeftIndent + 360!) > 0.2", "Detached native he
 expectIncludes(wordAdapter, "VTPruneDetachedVisualTeXNativeSequenceHelpers documentObject", "Refresh numbering must remove detached native SEQ helpers before recounting fields");
 expectIncludes(wordAdapter, "sequenceAnchors() As Long", "Equation reconciliation must snapshot stable SEQ anchors before updating fields");
 expectIncludes(wordAdapter, "If sequenceAnchors(previousIndex) <= anchorValue Then Exit Do", "Mixed image and OMML Equation helpers must be sorted by document anchor without reading index zero");
-expectIncludes(wordAdapter, "sequenceAnchors(sequenceCount) = nativeFormulaRange.Start", "VisualTeX numbering must prefer the visible formula position over a potentially displaced helper-field position");
+expect(!wordAdapter.includes("sequenceAnchors(sequenceCount) = nativeFormulaRange.Start"), "VisualTeX numbering must not move a managed helper ahead of an interleaved ordinary Word Caption in native SEQ order");
 expectIncludes(wordAdapter, "Private Function VTRepairMixedNumberHelperOrder", "Mixed image and OMML numbering must restore each native SEQ helper beside its visible formula before manual refresh");
 expectIncludes(wordAdapter, "helperParagraph.Start <> formulaParagraph.End", "A displaced Equation helper must be detected from the visible formula paragraph boundary");
 expectIncludes(wordAdapter, "movedHelpers = VTRepairMixedNumberHelperOrder", "Manual Equation refresh must repair mixed-format helper order before assigning ordinals");
@@ -754,6 +795,8 @@ const registeredCaptionEnd = wordAdapter.indexOf("Private Function VTIsNativeEqu
 const registeredCaptionSource = wordAdapter.slice(registeredCaptionStart, registeredCaptionEnd);
 expectIncludes(registeredCaptionSource, '" \\* ARABIC"', "Fresh native Equation captions must create the ARABIC switch only after the SEQ helper is external to OMath");
 expectIncludes(wordAdapter, "sequenceRange.End <= VTEquationFieldEnd(candidate)", "A reopened Mac VT_N_ bookmark may end at the SEQ field boundary while remaining an exact schema-7 helper");
+expectIncludes(wordAdapter, "Private Function VTSequenceIdentifierFromFieldCode", "Equation SEQ discovery must parse the exact identifier instead of matching a label substring");
+expectIncludes(wordAdapter, "StrComp(sequenceIdentifier, equationLabelName, vbTextCompare) = 0", "Ordinary Word captions must join reconciliation only when Word uses the same literal localized SEQ identifier");
 const reconcileStart = wordAdapter.indexOf("Private Sub VTReconcileEquationNumbers");
 const reconcileEnd = wordAdapter.indexOf("Private Function VTCustomTabStopCount", reconcileStart);
 const reconcileSource = wordAdapter.slice(reconcileStart, reconcileEnd);
@@ -810,6 +853,56 @@ expectIncludes(wordAdapter, '"renumberedVisualTeXReferenceA=1"', "The reference 
 expectIncludes(wordAdapter, '"renumberedVisualTeXReferenceB=1"', "The reference regression PASS report must record the second direct VisualTeX REF after renumbering");
 expect(!wordAdapter.includes('"Image-to-OMML conversion lost the surviving formula identity."'), "Reference acceptance must not fail on an unrelated formula-identity assertion that contradicts hands-on editing");
 expectIncludes(wordAdapter, "Private Function VTHelperParagraphOwnsNativeEquationSequence", "Orphan cleanup must verify a helper paragraph owns exactly one native Equation SEQ before deleting it");
+expectIncludes(wordAdapter, "Private Function VTIsDetachedVisualTeXNativeSequenceHelper", "Orphan cleanup must distinguish a detached VisualTeX helper by its private geometry and missing VT_N_ identity");
+expectIncludes(wordAdapter, "Private Function VTFormulaIdForDetachedSequenceHelper", "Detached SEQ cleanup must recover formulaId from VT_C_ or the adjacent VT_R_ scaffold");
+expectIncludes(wordAdapter, "Private Function VTPruneDetachedVisualTeXNativeSequenceHelpers", "Numbering entry points must delete or repair detached VisualTeX native SEQ helpers");
+expectIncludes(wordAdapter, "Private Sub VTReconcileEquationNumbersPass", "Equation reconciliation must use a fresh-pass implementation that can be replayed after cleanup");
+expectIncludes(wordAdapter, "Resume RetryAttempt", "A strict Word SEQ mismatch must leave VBA's first error handler before retrying cleanup and replay");
+expectIncludes(wordAdapter, "VTReconcileEquationNumbersPass documentObject, -1, True", "The one-time SEQ recovery path must replay every managed helper from the beginning");
+expectIncludes(wordAdapter, "detachedHelperFound = True", "Detached helpers must be excluded and cleaned before the sequence snapshot is numbered");
+expectIncludes(wordAdapter, "GoTo CaptureSequenceSnapshot", "A helper deletion must discard stale Field and Range snapshots before numbering continues");
+expectIncludes(reconcileSource, "sequenceAnchors(sequenceCount) = _\n                VTEquationFieldStart(candidate)", "Managed and ordinary Equation fields must be sorted by the same physical SEQ coordinate used by Word");
+expect(!reconcileSource.includes("sequenceAnchors(sequenceCount) = nativeFormulaRange.Start"), "Reconciliation must not sort managed helpers by visible-formula positions while sorting ordinary captions by field positions");
+expectIncludes(reconcileSource, "sequenceOrdinal = nativeSequenceState + 1", "Managed SEQ expected values must flow from the complete native sequence state");
+expectIncludes(reconcileSource, "VTEquationSequenceFieldRestartValue(candidate)", "Ordinary Equation restart fields must replace the native sequence state with their explicit value");
+expectIncludes(reconcileSource, 'candidate, "c"', "Ordinary Equation repeat fields must preserve the current native sequence state");
+expectIncludes(reconcileSource, "Plain SEQ and \\s both advance the underlying counter once", "Heading-scoped Equation fields must advance native state even when their displayed result restarts locally");
+expectIncludes(reconcileSource, "candidate.Update", "Ordinary Equation captions must be replayed before their result is used by a following managed helper");
+expectIncludes(reconcileSource, "VTPrimeEquationSequenceReplayAtOne", "A forced full replay must reset stale Word sequence state when the first shared field is managed");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_RunWordManagedSequenceInterleaveRegression", "The packaged add-in must include the no-orphan managed/ordinary SEQ interleave regression");
+for (const interleaveMarker of [
+  'regressionStage = "prove-word-eight-visualtex-seven-without-orphan"',
+  '"validFormulaIds=7"',
+  '"ordinaryEquationSeq=1"',
+  '"legacyExpected=7"',
+  '"wordNativeResult=8"',
+  '"reconciledExpected=8"',
+  '"orphanHelpers=0"',
+  '"restartSwitchResult=20"',
+  '"repeatSwitchResult=20"',
+  '"headingSwitchResult=1"',
+  '"switchFlowManagedResult=22"',
+  '"identifierBoundary=PASS"',
+]) {
+  expectIncludes(wordAdapter, interleaveMarker, `The managed SEQ interleave regression must include ${interleaveMarker}`);
+}
+expectIncludes(wordAdapter, "Public Sub VisualTeX_RunWordOrphanSequenceLifecycleRegression", "The packaged add-in must include the real Word orphan-sequence lifecycle regression");
+for (const lifecycleMarker of [
+  'regressionStage = "direct-delete-middle-formula"',
+  'regressionStage = "cut-numbered-formula"',
+  'regressionStage = "failure-immediate-retry"',
+  'regressionStage = "insert-ordinary-word-equation-caption"',
+  'regressionStage = "orphan-result-eight-expected-seven"',
+  '"orphanBeforeResult=8"',
+  '"orphanAfterExpected=7"',
+]) {
+  expectIncludes(wordAdapter, lifecycleMarker, `The orphan-sequence regression must include ${lifecycleMarker}`);
+}
+expectIncludes(wordAdapter, "Private Function VTResolveImageFormulaByIdentity", "Word mutations must re-resolve image formulas from durable formulaId metadata");
+expectIncludes(wordAdapter, "Set sourceImage = VTWordImageOwnerShape(targetDocument, formulaId)", "Single image-to-OMML conversion must re-resolve its source from VT_I_ before using a document scan");
+expectIncludes(wordAdapter, "Set equationRange = VTTryInsertNativeEquationFileFast", "A standalone display image must attempt direct cached DOCX insertion before opening a hidden staging document");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_RunImageToNativeFastPerformanceRegression", "The packaged add-in must measure the single image-to-OMML fast path in real Word");
+expectIncludes(wordAdapter, 'conversionPath = "direct-cache-insert"', "The single image-to-OMML regression must prove direct cached DOCX insertion was used");
 expectIncludes(wordAdapter, "Private Sub VTPruneUnbookmarkedEmptyNumberTables", "Document-wide cleanup must remove empty VisualTeX number tables even after VT_R_ is lost");
 expectIncludes(wordAdapter, "Private Sub VTRepairLiveNumberedTableScaffolds", "Number refresh must repair missing VT_R_/VT_N_/VT_C_ for a still-live formula instead of deleting it");
 expectIncludes(wordAdapter, '"(" & Trim$(numberText) & ")  " & previewText', "The Equation picker must show each complete live number together with its formula preview");
@@ -859,22 +952,23 @@ expectIncludes(wordRibbon, '<menu id="VisualTeX.Mac.Word.NumberingFormat"', "The
 expect(!wordRibbon.includes('<dropDown id="VisualTeX.Mac.Word.NumberingFormat"'), "The numbering-format control must not use the large Office dropDown that stretches the compact Ribbon rows");
 expect(!wordRibbon.includes('sizeString="按节编号 (2.3‐1)"'), "The numbering-format menu must not reserve a wide drop-down text box that distorts the Ribbon layout");
 expectIncludes(wordEvents, "VTInvalidateWordEquationNumberingFormatControl", "The numbering-format control must remain refreshable when Word opens, creates, or activates a document");
-expectIncludes(wordRibbon, '<group id="VisualTeX.Mac.Word.Group" label="VisualTeX">', "The macOS Word Ribbon must use the Windows-parity primary VisualTeX group");
-for (const rowId of [
-  "VisualTeX.Mac.Word.ConvertRow",
-  "VisualTeX.Mac.Word.NumberingRow",
-  "VisualTeX.Mac.Word.ReferenceRow",
+expectIncludes(wordRibbon, '<group id="VisualTeX.Mac.Word.Group" label="公式">', "The macOS Word Ribbon must keep formula insertion and editing in a concise primary group");
+expectIncludes(wordRibbon, '<group id="VisualTeX.Mac.Word.ToolsGroup" label="转换与编号">', "Conversion and numbering must use a clearly labelled second Ribbon group");
+for (const columnId of [
+  "VisualTeX.Mac.Word.ConvertColumn",
+  "VisualTeX.Mac.Word.NumberingColumn",
 ]) {
-  expectIncludes(wordRibbon, `<box id="${rowId}" boxStyle="horizontal">`, `The compact Word Ribbon must define ${rowId}`);
+  expectIncludes(wordRibbon, `<box id="${columnId}" boxStyle="vertical">`, `The balanced Word Ribbon must define ${columnId}`);
 }
-expectIncludes(wordRibbon, 'id="VisualTeX.Mac.Word.NumberingFormat"', "Number format must remain in the dedicated compact numbering row");
-const compactConvertRow = wordRibbon.slice(
-  wordRibbon.indexOf('<box id="VisualTeX.Mac.Word.ConvertRow"'),
-  wordRibbon.indexOf('</box>', wordRibbon.indexOf('<box id="VisualTeX.Mac.Word.ConvertRow"')),
+expectIncludes(wordRibbon, 'id="VisualTeX.Mac.Word.NumberingFormat"', "Number format must remain in the compact numbering column");
+const compactConvertColumn = wordRibbon.slice(
+  wordRibbon.indexOf('<box id="VisualTeX.Mac.Word.ConvertColumn"'),
+  wordRibbon.indexOf('</box>', wordRibbon.indexOf('<box id="VisualTeX.Mac.Word.ConvertColumn"')),
 );
-expect((compactConvertRow.match(/<button\b/g) ?? []).length === 2, "The first compact Ribbon row must contain only the two direct conversion commands");
+expect((compactConvertColumn.match(/<(?:button|menu)\b/g) ?? []).length === 5, "The conversion column must contain two direct commands and the document-format menu with its two choices");
 expectIncludes(wordRibbon, 'id="VisualTeX.Mac.Word.DocumentImport"\n                  label="批量导入"\n                  size="large"', "Batch import must be an independent large Ribbon button with the same visual weight as the primary formula commands");
-expect(!compactConvertRow.includes('id="VisualTeX.Mac.Word.DocumentImport"'), "Batch import must not remain compressed inside the small conversion row");
+expect(!compactConvertColumn.includes('id="VisualTeX.Mac.Word.DocumentImport"'), "Batch import must not remain compressed inside the conversion column");
+expectIncludes(wordRibbon, 'id="VisualTeX.Mac.Word.Open"\n                  label="打开 VisualTeX"\n                  size="large"', "Open VisualTeX must align with the other large Ribbon buttons");
 const redesignedWordIcons = [
   ["VisualTeXWordImageInline", "image-inline.svg"],
   ["VisualTeXWordImageDisplay", "image-display.svg"],
@@ -913,12 +1007,16 @@ for (const label of [
 ]) {
   expectIncludes(wordRibbon, `label="${label}"`, `Word redraw menus must expose ${label}`);
 }
-expectIncludes(wordAdapter, "payload = sourceRange.WordOpenXML", "Native Word formulas must be restored from their current WordOpenXML instead of VisualTeX metadata");
+expectIncludes(wordAdapter, "payload = VTFormulaRestoreNativeXml(sourceRange)", "Native Word formula restoration must transfer current Word XML");
+expectIncludes(wordAdapter, "sourceXml = sourceRange.WordOpenXML", "Native Word formulas must be restored from current WordOpenXML instead of cached metadata");
+expectIncludes(wordAdapter, 'documentEnd - documentStart + Len("</w:document>")', "Native formula transfer must retain the complete document part and its namespace declarations");
 expectIncludes(wordAdapter, 'VTStartWordFormulaRestore "selection", "omml", "image"', "Native OMML without a VisualTeX Bookmark must use the hidden direct image conversion path");
 expectIncludes(wordAdapter, "VTTryResolveVisualTeXInlineShapeReference", "Image-to-LaTeX must accept only recoverable VisualTeX image formulas");
 expectIncludes(rustRuntime, '"/Applications/Microsoft Word.app/Contents/Resources/omml2mathml.xsl"', "Native OMML restoration must use Microsoft Word's own OMML-to-MathML stylesheet");
 expectIncludes(rustRuntime, 'Command::new("/usr/bin/xsltproc")', "Native OMML restoration must execute the reviewed local XSL transform without network access");
 expectIncludes(rustRuntime, '"formulaRestore"', "The native Office runtime must support the hidden formula restore operation");
+expectIncludes(rustRuntime, "document_output_requires_image_artifacts(&input.output_kind)", "OMML-only document commits must not require SVG or PNG artifacts");
+expect(!rustRuntime.includes('ok_or_else(|| "Document formula is missing SVG data"'), "The document commit path must not unconditionally require SVG data");
 expectIncludes(wordLatexRedrawApp, 'request.operation === "formulaRestore"', "The hidden Word renderer must automatically process formula restore sessions");
 expectIncludes(wordLatexRedrawApp, 'displayMode === "block" ? `$$${latex}$$` : `$${latex}$`', "Restored LaTeX must use dollar delimiters for display and inline formulas");
 expectIncludes(mathMlToLatex, "export function mathMlToLatex", "The macOS frontend must contain a dedicated MathML-to-LaTeX converter");
@@ -1122,7 +1220,13 @@ expect(!wordAdapter.includes("candidate.Range.End + originalNativeLength"), "Wor
 expectIncludes(wordAdapter, "VTSetNativeFormulaBookmark", "Word native formulas must retain a persistent VisualTeX identity bookmark");
 expectIncludes(wordAdapter, "VTSetWordMetadataPayload", "Word native formulas must retain their complete VisualTeX edit metadata");
 expectIncludes(wordAdapter, "Private Function VTWordConvertNativeBookmarkToImageFast", "The formula-scoped cached conversion helper may remain available for future validated reuse");
-expectIncludes(wordAdapter, "If numbered Then Exit Function", "The retained cached helper must never handle numbered OMML even if it is re-enabled later");
+expectIncludes(wordAdapter, "If displayMode <> \"block\" Or _\n           nativeMath.Range.Information(wdWithInTable) Then Exit Function", "The cached helper may handle numbered OMML only in the canonical table-free display layout");
+expectIncludes(wordAdapter, "Complex native numbering regressed to the legacy table fallback.", "Complex numbered OMML regression must forbid the historical table fallback");
+expectIncludes(wordAdapter, "VisualTeX_ConvertDocumentImagesToOmml", "Word must expose full-document image-to-OMML format conversion");
+expectIncludes(wordAdapter, "VisualTeX_ConvertDocumentOmmlToImages", "Word must expose full-document OMML-to-image format conversion");
+expectIncludes(wordAdapter, 'operationName = "formulaRestore" And outputKind <> "latex"', "Full-document format conversion must use atomic rollback rather than partial skip-on-error semantics");
+expectIncludes(wordAdapter, 'atomicFormulaConversion And outputKind = "image" And _', "Global OMML-to-image conversion must defer repeated Equation sequence reconciliation");
+expectIncludes(wordAdapter, 'transactionStage = "redraw-reconcile-numbering"', "Deferred global Equation numbering must run one final complete reconciliation");
 expectIncludes(wordAdapter, "VTWordEditNativeBookmark nativeBookmark", "Word native VisualTeX formulas must pass the already-resolved Bookmark directly into the edit path");
 expect(!wordAdapter.includes("VTNativeMathForBookmark(nativeBookmark) Is Nothing"), "Word VBA must assign object-returning functions before testing Is Nothing");
 expect(!wordAdapter.includes("If Not VTNativeMathForBookmark(candidate) Is Nothing Then"), "Word VBA must avoid ambiguous Not/function-call/Is Nothing expressions");
@@ -1287,8 +1391,9 @@ expectIncludes(rustRuntime, "create_external", "Tauri runtime must import the VB
 expectIncludes(rustRuntime, "deny_unknown_fields", "Offline request JSON must reject unknown fields");
 expectIncludes(rustRuntime, "run_vba_callback", "Tauri runtime must return results through the VBA callback");
 expectIncludes(rustRuntime, 'join("NativeDocuments")', "Tauri must persist native Word staging DOCX files outside ephemeral Session directories");
-expectIncludes(rustRuntime, "if request.native_equation", "Tauri must materialize only the Word representation required by the current commit mode");
-expectIncludes(rustRuntime, "atomic_write(&path, &omml_docx, 0o600)?", "Native Word commits must durably materialize their formula-scoped staging DOCX before dispatch");
+expectIncludes(rustRuntime, "let prepared_image_artifacts = materialize_word_svg_package(session, geometry)?", "Every Word commit must keep the formula-scoped image cache warm for later OMML-to-image conversion");
+expectIncludes(rustRuntime, "let image_artifacts = if request.native_equation", "Native Word commits must cache image artifacts without dispatching them as the active representation");
+expectIncludes(rustRuntime, "atomic_write(&native_document_path, &omml_docx, 0o600)?", "Every Word commit must durably materialize its formula-scoped native DOCX before dispatch");
 expectIncludes(rustRuntime, 'const RESULT_SVG_FILE: &str = "formula.svg"', "Native Office formulas must be materialized as SVG files");
 expectIncludes(rustRuntime, 'const RESULT_WORD_SVG_DOCX_FILE: &str = "formula-svg.docx"', "Word must receive SVG through a generated OOXML staging document");
 expectIncludes(rustRuntime, "build_word_svg_docx", "Tauri must package the SVG and PNG preview into a minimal Word document");
@@ -1869,7 +1974,7 @@ expectIncludes(dialogMessages, 'typeof ui.messageParent !== "function"', "Office
 expectIncludes(appRuntime, "initial_office_url", "Cold Office URL launches must be recognized before the main workspace is revealed");
 expectIncludes(appRuntime, "if office::macos_offline::focus_open_office_editor(&app)", "macOS reopen must prefer an Office formula editor over the main workspace after the single-instance activation grace period");
 expectIncludes(rustRuntime, "refresh_health_signal", "Tauri status refresh must ask a running Office host for a fresh health signal");
-expectIncludes(rustRuntime, 'macro name "AutoExec"', "Word health refresh must call only the fixed AutoExec macro");
+expectIncludes(rustRuntime, 'macro name "VisualTeX_InitializeWordHost"', "Word health refresh must call the explicit VisualTeX initializer instead of Word's AutoExec startup hook");
 expectIncludes(rustRuntime, 'macro name "Auto_Open"', "PowerPoint health refresh must call only the fixed Auto_Open macro");
 expectIncludes(
   read("scripts/register_macos_dev_url_handler.mjs"),
@@ -2005,7 +2110,9 @@ expectIncludes(macFirstRun, "修复 VisualTeX Office 插件", "Missing files aft
 expectIncludes(installer, "powerpoint_script.clone()", "PowerPoint installed status must include its AppleScriptTask resource");
 expectIncludes(installer, 'health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))', "Installer must reject stale plug-in health versions");
 expect(!installer.includes("source_revision_matches"), "Runtime health must not reject a current-version add-in only because an optional sourceRevision field is absent");
-expectIncludes(packager, "word-office-performance-20260801-r87", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "word-office-performance-20260801-r90", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
+expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
 expectIncludes(packager, "powerpoint-office-performance-20260801-r4", "Packaging must reject a PowerPoint PPAM that lacks the current performance revision");
 expectIncludes(installer, "POWERPOINT_VBA_SOURCE_REVISION", "Installer validation must reject a stale PowerPoint PPAM without SVG point-size support");
 expectIncludes(installer, "Library/Application Scripts/com.microsoft.Word", "Installer must use Word's AppleScriptTask directory");
@@ -2038,7 +2145,13 @@ if (process.platform === "darwin") {
       ["word", join(offline, "word", "VisualTeXWord.scpt")],
       ["powerpoint", join(offline, "powerpoint", "VisualTeXPowerPoint.scpt")],
     ]) {
-      execFileSync("/usr/bin/osacompile", ["-o", join(temp, `${name}.scpt`), source], {
+      execFileSync("/usr/bin/osacompile", [
+        "-l",
+        "AppleScript",
+        "-o",
+        join(temp, `${name}.scpt`),
+        source,
+      ], {
         stdio: "pipe",
       });
     }

@@ -1,4 +1,6 @@
 import { validateLatex } from "mathlive/ssr";
+import { normalizeMathModeSource } from "../math/mathModeSource";
+import { latexToMathMl } from "../export/runtime";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
@@ -231,7 +233,7 @@ function filledLogicalFormulaLines(lines: readonly string[]): string[] {
   const normalized = lines
     .map((line) =>
       normalizeMathLiveCanonicalUprightCommands(
-        String(line ?? "").replace(/\r\n?/g, "\n"),
+        normalizeMathModeSource(String(line ?? "").replace(/\r\n?/g, "\n")),
       ).trim(),
     )
     .filter(Boolean);
@@ -265,8 +267,8 @@ interface EnvironmentToken {
 }
 
 function readEnvironmentToken(source: string, index: number): EnvironmentToken | null {
-  if (source[index] !== "\\") return null;
-  const match = source.slice(index).match(/^\\(begin|end)\{([A-Za-z]+\*?)\}/);
+  if (source[index] !== "\\" || isEscaped(source, index)) return null;
+  const match = source.slice(index).match(/^\\(begin|end)\s*\{\s*([A-Za-z]+\*?)\s*\}/);
   if (!match) return null;
   return {
     kind: match[1] as EnvironmentToken["kind"],
@@ -378,6 +380,7 @@ function splitTopLevelTextSegments(latex: string): InlineTextSegment[] {
   const environments: string[] = [];
   let math = "";
   let braceDepth = 0;
+  let fenceDepth = 0;
 
   const flushMath = () => {
     appendInlineTextSegment(segments, "math", math);
@@ -385,6 +388,13 @@ function splitTopLevelTextSegments(latex: string): InlineTextSegment[] {
   };
 
   for (let index = 0; index < latex.length; index += 1) {
+    if (latex[index] === "%" && !isEscaped(latex, index)) {
+      const lineEnd = latex.indexOf("\n", index);
+      const end = lineEnd < 0 ? latex.length : lineEnd + 1;
+      math += latex.slice(index, end);
+      index = end - 1;
+      continue;
+    }
     const token = readEnvironmentToken(latex, index);
     if (token) {
       math += latex.slice(index, token.end);
@@ -395,18 +405,49 @@ function splitTopLevelTextSegments(latex: string): InlineTextSegment[] {
 
     if (
       braceDepth === 0 &&
+      fenceDepth === 0 &&
       environments.length === 0 &&
-      latex.startsWith("\\text{", index)
+      !isEscaped(latex, index) &&
+      /^\\text\s*\{/.test(latex.slice(index))
     ) {
-      const openingBrace = index + "\\text".length;
+      const openingBrace = skipLatexWhitespace(latex, index + "\\text".length);
       const end = readBalancedGroupEnd(latex, openingBrace);
-      if (end !== null) {
+      if (end !== null && !/[_^]/.test(latex[skipLatexWhitespace(latex, end)] ?? "")) {
         flushMath();
         appendInlineTextSegment(
           segments,
           "text",
           latex.slice(openingBrace + 1, end - 1),
         );
+        index = end - 1;
+        continue;
+      }
+    }
+
+    if (latex[index] === "\\" && !isEscaped(latex, index)) {
+      const commandEnd = readLatexCommandEnd(latex, index);
+      const command = latex.slice(index + 1, commandEnd);
+      if (braceDepth === 0 && fenceDepth === 0 && environments.length === 0 &&
+          /^(?:over|atop|choose|brace|brack|above|overwithdelims|atopwithdelims|abovewithdelims)$/.test(command)) {
+        // An infix fraction consumes the whole surrounding math group, including
+        // text before/after the command. It cannot be split into separate spans.
+        return [{ kind: "math", value: latex }];
+      }
+      if (command === "left" || command === "mleft") fenceDepth += 1;
+      if (command === "right" || command === "mright") {
+        fenceDepth = Math.max(0, fenceDepth - 1);
+      }
+      // An unbraced argument is still part of its command. Moving its text
+      // outside math would change the formula, just as splitting a fence does.
+      const end = readCompleteMathAtomEnd(latex, index) ?? commandEnd;
+      math += latex.slice(index, end);
+      index = end - 1;
+      continue;
+    }
+    if ((latex[index] === "_" || latex[index] === "^") && !isEscaped(latex, index)) {
+      const end = readCompleteMathAtomEnd(latex, index + 1);
+      if (end !== null) {
+        math += latex.slice(index, end);
         index = end - 1;
         continue;
       }
@@ -446,7 +487,7 @@ export function formatFormulaLines(
   const lines = formulaLines
     .map((line) => ({
       latex: normalizeMathLiveCanonicalUprightCommands(
-        String(line.latex ?? "").replace(/\r\n?/g, "\n"),
+        normalizeMathModeSource(String(line.latex ?? "").replace(/\r\n?/g, "\n")),
       ).trim(),
       mode: line.mode === "inline" ? "inline" as const : "display" as const,
     }))
@@ -853,7 +894,7 @@ function parseByFormatStrict(
         : null;
     }
     case "aligned":
-      return /^\\\[[\s\S]*\\begin\{aligned\}[\s\S]*\\end\{aligned\}[\s\S]*\\\]$/.test(
+      return patternConsumesWholeSource(source, environmentPattern("aligned")) || /^\\\[[\s\S]*\\begin\{aligned\}[\s\S]*\\end\{aligned\}[\s\S]*\\\]$/.test(
         source.trim(),
       )
         ? values
@@ -916,6 +957,31 @@ function readLatexArgumentEnd(source: string, start: number): number | null {
   return index + 1;
 }
 
+function readCompleteMathAtomEnd(source: string, start: number, depth = 0): number | null {
+  const index = skipLatexWhitespace(source, start);
+  if (depth > 100 || index >= source.length || source[index] === "}") return null;
+  if (source[index] === "{") return readBalancedGroupEnd(source, index);
+  if (source[index] !== "\\") return index + 1;
+  let cursor = readLatexCommandEnd(source, index);
+  const command = source.slice(index + 1, cursor);
+  const count = requiredCommandArgumentCount.get(command) ?? 0;
+  if (!count) return cursor;
+  cursor = skipLatexWhitespace(source, cursor);
+  if (command === "operatorname" && source[cursor] === "*") cursor += 1;
+  cursor = skipLatexWhitespace(source, cursor);
+  if (command === "sqrt" && source[cursor] === "[") {
+    const end = readBalancedGroupEnd(source, cursor, "[", "]");
+    if (end === null) return null;
+    cursor = end;
+  }
+  for (let argument = 0; argument < count; argument += 1) {
+    const end = readCompleteMathAtomEnd(source, cursor, depth + 1);
+    if (end === null) return null;
+    cursor = end;
+  }
+  return cursor;
+}
+
 function hasBalancedLatexGroups(source: string) {
   let braceDepth = 0;
   for (let index = 0; index < source.length; index += 1) {
@@ -969,7 +1035,7 @@ function hasCompleteRequiredCommandArguments(source: string) {
   return true;
 }
 
-function validateFormulaDraft(latex: string): string | null {
+function validateFormulaDraft(latex: string, requireExport = true): string | null {
   if (!latex.trim()) return "empty-formula";
   const trimmed = latex.trimEnd();
   if (
@@ -995,7 +1061,16 @@ function validateFormulaDraft(latex: string): string | null {
         )
       ),
   );
-  return errors.length ? errors[0]?.code ?? "invalid-latex" : null;
+  if (errors.length) return errors[0]?.code ?? "invalid-latex";
+  if (!requireExport) return null;
+  // MathLive intentionally renders incomplete/forgiving previews. A completed
+  // source draft must also compile with the engine used by export and Word.
+  try {
+    latexToMathMl(normalizeMathModeSource(latex).replace(/\r?\n/g, " "));
+    return null;
+  } catch (reason) {
+    return `render-source: ${reason instanceof Error ? reason.message : String(reason)}`;
+  }
 }
 
 interface DraftPreviewEnvironment {
@@ -1196,7 +1271,7 @@ function buildFormulaDraftPreview(latex: string): string | null {
   preview = completeTrailingScriptForPreview(preview);
   preview = completeLeftRightPairsForPreview(preview);
   preview = completeUnclosedEnvironmentsForPreview(preview);
-  return validateFormulaDraft(preview) === null ? preview : null;
+  return validateFormulaDraft(preview, false) === null ? preview : null;
 }
 
 function buildFallbackDraftPreviewValues(source: string): string[] | undefined {
@@ -1268,8 +1343,8 @@ export function parseLatexSource(
   const normalized = source.replace(/\r\n?/g, "\n").trim();
   if (!normalized) return [""];
 
-  const preferred = parseByFormat(normalized, preferredFormat);
-  if (preferred.length) return preferred;
+  const preferred = parseByFormatStrict(normalized, preferredFormat);
+  if (preferred?.length) return preferred;
 
   const fallbackOrder: LatexCodeFormat[] = [
     "equation-split",
@@ -1293,8 +1368,8 @@ export function parseLatexSource(
 
   for (const format of fallbackOrder) {
     if (format === preferredFormat) continue;
-    const parsed = parseByFormat(normalized, format);
-    if (parsed.length) return parsed;
+    const parsed = parseByFormatStrict(normalized, format);
+    if (parsed?.length) return parsed;
   }
 
   return [normalized];
@@ -1304,12 +1379,23 @@ export async function copyLatex(
   latex: string,
   format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,
 ) {
-  await navigator.clipboard.writeText(formatLatex(latex, format));
+  const source = formatLatex(latex, format);
+  assertCompleteExportSource(source, format);
+  await navigator.clipboard.writeText(source);
 }
 
 export async function copyFormulaLines(
   lines: readonly FormulaLine[],
   format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,
 ) {
-  await navigator.clipboard.writeText(formatFormulaLines(lines, format));
+  const source = formatFormulaLines(lines, format);
+  assertCompleteExportSource(source, format);
+  await navigator.clipboard.writeText(source);
+}
+
+function assertCompleteExportSource(source: string, format: LatexCodeFormat) {
+  const result = parseLatexSourceDraft(source, format);
+  if (!result.valid) {
+    throw new Error(`公式源码尚未通过校验：${result.error ?? "invalid-latex"}`);
+  }
 }

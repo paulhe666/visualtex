@@ -1,3 +1,4 @@
+import { alignWordInlineSvg } from "./wordImageGeometry";
 import { latexToSvg } from "../../export/latexToSvg";
 import type { LatexCodeFormat } from "../../types/formula";
 import type {
@@ -23,6 +24,8 @@ export interface RenderOfficeFormulaArtifactsInput {
   displayMode: "inline" | "block";
   host?: "word" | "powerpoint";
   includeWordOmml?: boolean;
+  numbered?: boolean;
+  fontSizePt?: number;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
 }
@@ -46,6 +49,8 @@ export function renderOfficeFormulaArtifacts({
   displayMode,
   host,
   includeWordOmml = true,
+  numbered = false,
+  fontSizePt,
   formulaLetterFont,
   formulaChineseFont,
 }: RenderOfficeFormulaArtifactsInput): OfficeFormulaRenderArtifacts {
@@ -87,6 +92,9 @@ export function renderOfficeFormulaArtifacts({
       { cause: reason },
     );
   }
+  if (host === "word" && displayMode === "inline" && fontSizePt !== undefined) {
+    svg = alignWordInlineSvg(svg, fontSizePt, formulaLetterFont);
+  }
   let omml: OmmlArtifacts | null = null;
   if (includeWordOmml) {
     try {
@@ -95,6 +103,7 @@ export function renderOfficeFormulaArtifacts({
         displayMode,
         document.codeFormat,
         { formulaLetterFont, formulaChineseFont },
+        numbered,
       );
     } catch (reason) {
       throw new Error(
