@@ -31,6 +31,18 @@
   --shadow-lg: 0 16px 40px rgba(24, 31, 40, 0.18), 0 2px 8px rgba(24, 31, 40, 0.08);
   --control-height: 30px;
   --panel-header-height: 52px;
+  /* Global stacking contract. Ordinary workspace chrome must stay below 100;
+     non-modal popovers stay below 200; real dialogs own 300+. This prevents
+     Office tool/source chrome from covering OCR and other modal surfaces. */
+  --z-workspace-footer: 50;
+  --z-workspace-floating: 60;
+  --z-workspace-resizer: 70;
+  --z-workspace-header: 80;
+  --z-menu-dismiss: 85;
+  --z-app-menu: 90;
+  --z-popover: 190;
+  --z-modal: 300;
+  --z-modal-confirm: 340;
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
@@ -1675,7 +1687,7 @@ kbd {
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 110;
+  z-index: var(--z-modal, 300);
   background: rgba(15, 17, 24, 0.28);
   backdrop-filter: blur(3px);
   animation: fade-in 140ms ease;
@@ -4158,7 +4170,7 @@ button:disabled {
 .office-first-run-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 230;
+  z-index: var(--z-modal-confirm, 340);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -4301,7 +4313,7 @@ button:disabled {
 .onboarding-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 220;
+  z-index: var(--z-modal-confirm, 340);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -5501,7 +5513,7 @@ textarea:disabled {
 
 /* Application update dialog: restrained macOS utility styling. */
 .update-backdrop {
-  z-index: 230;
+  z-index: var(--z-modal-confirm, 340);
 }
 
 .update-dialog {
@@ -6953,7 +6965,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 /* LaTeX code-format selector */
 .app-header.has-open-menu {
-  z-index: 520;
+  z-index: var(--z-app-menu, 90);
   overflow: visible;
   isolation: isolate;
 }
@@ -6969,7 +6981,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 }
 
 .menu-dismiss-layer {
-  z-index: 510;
+  z-index: var(--z-menu-dismiss, 85);
 }
 
 .code-format-control {
@@ -7744,7 +7756,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 .office-confirm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 260;
+  z-index: var(--z-modal-confirm, 340);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -7881,7 +7893,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 }
 
 .export-dialog-backdrop {
-  z-index: 180;
+  z-index: var(--z-modal, 300);
   padding: 24px;
 }
 
@@ -8124,10 +8136,9 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .suggestion-popup {
   position: fixed;
-  /* Command completion is a document-level portal. Keep it above normal
-     workspace chrome (Office/classic source + toolbar layers reach 520), but
-     below context menus and modal dialogs (1800+). */
-  z-index: 1600;
+  /* Command completion is a document-level portal. Keep it above all normal
+     workspace chrome (<100), but below true modal dialogs (300+). */
+  z-index: var(--z-popover, 190);
 }
 
 .toolbar-tabs {
@@ -8425,7 +8436,10 @@ html body #visualtex-native-input-suggestion-popover {
   min-width: 250px;
   max-width: min(380px, calc(100vw - 24px));
   position: fixed;
-  z-index: var(--suggestion-zindex, 100);
+  /* Match VisualTeX's document-level command popup. Workspace chrome remains
+     below 100, non-modal popovers share the 190 tier, and modal dialogs start
+     at 300. This keeps candidates above tools/source without ever covering OCR. */
+  z-index: var(--suggestion-zindex, var(--z-popover, 190));
   display: none;
   flex-direction: column;
   justify-content: center;
@@ -8973,7 +8987,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 
 .formula-tile-context-menu {
   position: fixed;
-  z-index: 1800;
+  z-index: var(--z-popover, 190);
   min-width: 144px;
   padding: 4px;
   border: 1px solid var(--border-strong);

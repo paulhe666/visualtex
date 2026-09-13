@@ -149,7 +149,7 @@ internal static class MathTypeEquationReferences
             if (paragraphs.Count != 1) return Array.Empty<string>();
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            fields = paragraphRange.Fields;
+            fields = WordFormulaHost.GetLocalFields(paragraphRange);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -228,7 +228,7 @@ internal static class MathTypeEquationReferences
             if (paragraphs.Count != 1) return Array.Empty<EquationReferenceBookmarkAlias>();
             paragraph = paragraphs[1];
             ownerRange = paragraph.Range.Duplicate;
-            fields = ownerRange.Fields;
+            fields = WordFormulaHost.GetLocalFields(ownerRange);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -515,7 +515,7 @@ internal static class MathTypeEquationReferences
                 throw new InvalidDataException("Converted MathType target is not in one stable paragraph.");
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
-            fields = paragraphRange.Fields;
+            fields = WordFormulaHost.GetLocalFields(paragraphRange);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);

@@ -122,10 +122,30 @@ internal static partial class Program
                 Release(temporaryShapeRange);
             }
 
-            WordFormulaService.RemoveResidualFormatConversionBridgeAfterRollback(
-                temporary,
-                FormulaOleContract.NativeOleMode,
-                target);
+            // The product no longer exposes the old post-rollback bridge cleanup
+            // helper: current rollback is expected to restore the document atomically.
+            // Keep this legacy fixture buildable by removing only the exact bridge
+            // text in its disposable copy, so the rest of the fixture can still
+            // validate the historical residual shape without requiring a deleted API.
+            Word.Range? residualBridgeRange = null;
+            Word.Find? residualBridgeFind = null;
+            try
+            {
+                residualBridgeRange = temporary.Content.Duplicate;
+                residualBridgeFind = residualBridgeRange.Find;
+                residualBridgeFind.ClearFormatting();
+                residualBridgeFind.Text = bridge;
+                residualBridgeFind.Forward = true;
+                residualBridgeFind.Wrap = Word.WdFindWrap.wdFindStop;
+                if (!residualBridgeFind.Execute())
+                    throw new InvalidDataException("Rollback-residual fixture could not locate its exact bridge text.");
+                residualBridgeRange.Text = string.Empty;
+            }
+            finally
+            {
+                Release(residualBridgeFind);
+                Release(residualBridgeRange);
+            }
 
             AssertEqual(1, CountVisualTeXNativeOleShapes(temporary),
                 "Rollback bridge cleanup removed or duplicated the restored VisualTeX OLE source.");

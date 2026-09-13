@@ -545,11 +545,21 @@ internal static partial class Program
         if (string.Equals(
                 mode,
                 "word-sparse-numbered-omml-performance",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-deep-format-rollback",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
             {
-                RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
+                if (string.Equals(
+                        mode,
+                        "word-deep-format-rollback",
+                        StringComparison.OrdinalIgnoreCase))
+                    RunWordDeepFormatRollbackAcceptance(artifactRoot);
+                else
+                    RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
                 Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
                 Console.WriteLine($"Artifacts: {artifactRoot}");
                 return 0;

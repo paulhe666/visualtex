@@ -765,6 +765,29 @@ public sealed class WordBulkImportParserTests
     }
 
     [Fact]
+    public void RedrawScannerTreatsWordTableCellEndsAsHardFormulaBoundaries()
+    {
+        const string source =
+            "左格 $unclosed\r\a"
+            + "右格正文 和 $b$\r\a"
+            + "第三格 $$c+d$$\r\a"
+            + "第四格 \\begin{align}x&=1\r\a"
+            + "第五格 y&=2\\end{align}\r\a"
+            + "第六格 \\(z\\)";
+
+        var spans = WordBulkImportParser.FindFormulaSpans(source);
+
+        Assert.Equal(3, spans.Count);
+        Assert.Equal(new[] { "b", "c+d", "z" }, spans.Select(span => span.Latex).ToArray());
+        Assert.Equal(new[] { "inline", "block", "inline" }, spans.Select(span => span.DisplayMode).ToArray());
+        Assert.Equal("$b$", source.Substring(spans[0].Start, spans[0].Length));
+        Assert.Equal("$$c+d$$", source.Substring(spans[1].Start, spans[1].Length));
+        Assert.Equal("\\(z\\)", source.Substring(spans[2].Start, spans[2].Length));
+        Assert.All(spans, span =>
+            Assert.DoesNotContain('\a', source.Substring(span.Start, span.Length)));
+    }
+
+    [Fact]
     public void RejectsEmptyOrExcessivelyLargeInput()
     {
         Assert.Throws<InvalidDataException>(() => WordBulkImportParser.Parse(

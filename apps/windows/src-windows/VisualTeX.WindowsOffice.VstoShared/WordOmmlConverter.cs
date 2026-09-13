@@ -325,29 +325,18 @@ internal static class WordOmmlConverter
             Document targetDocument,
             Range targetParagraphRange)
         {
-            var sourceDocument = _document
+            _ = _document
                 ?? throw new ObjectDisposedException(nameof(BatchSource));
-            Paragraphs? sourceParagraphs = null;
-            Paragraph? sourceParagraph = null;
-            Range? sourceRange = null;
             Range? target = null;
+            Range? editable = null;
+            Range? emptyParagraph = null;
+            InlineShapes? emptyShapes = null;
+            OMaths? emptyMaths = null;
+            Fields? emptyFields = null;
+            Tables? emptyTables = null;
             Range? result = null;
             try
             {
-                sourceParagraphs = sourceDocument.Paragraphs;
-                if (sourceParagraphs.Count == 0)
-                    throw new InvalidDataException(
-                        "The OMML batch source has no clean terminal paragraph.");
-                sourceParagraph = sourceParagraphs[sourceParagraphs.Count];
-                sourceRange = sourceParagraph.Range.Duplicate;
-                if (!string.Equals(sourceRange.Text, "\r", StringComparison.Ordinal)
-                    || sourceRange.OMaths.Count != 0
-                    || sourceRange.InlineShapes.Count != 0
-                    || sourceRange.Fields.Count != 0
-                    || sourceRange.Tables.Count != 0)
-                    throw new InvalidDataException(
-                        "The OMML batch source terminal paragraph is not structurally empty.");
-
                 target = targetParagraphRange.Duplicate;
                 var start = target.Start;
                 if (target.Paragraphs.Count != 1
@@ -359,21 +348,33 @@ internal static class WordOmmlConverter
                     throw new InvalidOperationException(
                         "The MathType source is not one complete Word paragraph.");
 
-                // Replace the complete, prevalidated MathType display paragraph in
-                // one Word operation. This lets Word tear down the Equation.DSMT4
-                // OLE and the outer MTPlaceRef/nested sequence tree as one owner,
-                // instead of exposing any partially deleted field hierarchy.
+                // Keep the ORIGINAL paragraph mark. Assigning FormattedText from a
+                // hidden document to the complete paragraph also replaces its final
+                // ¶. Word 2021 can then re-home unrelated bookmarks and the boundary
+                // of a following user table onto the replacement paragraph. The
+                // caller has already proved that this MathType display paragraph
+                // contains no ordinary user text, so clear only its editable body
+                // [Start, End-1). This removes Equation.DSMT4, MTPlaceRef and nested
+                // sequence fields as one Word text replacement while preserving the
+                // document's structural paragraph boundary and all later anchors.
                 var bodyFormatting = WordCharacterFormatting.CaptureParagraphMark(target);
-                target.FormattedText = sourceRange.FormattedText;
-                Range? emptyParagraph = null;
-                try
-                {
-                    emptyParagraph = targetDocument.Range(start, start + 1);
-                    if (emptyParagraph.Text != "\r")
-                        throw new InvalidDataException("The replacement did not retain its one empty body paragraph.");
-                    bodyFormatting.ApplyToParagraphMark(emptyParagraph);
-                }
-                finally { Release(emptyParagraph); }
+                editable = targetDocument.Range(start, target.End - 1);
+                editable.Text = string.Empty;
+
+                emptyParagraph = targetDocument.Range(start, start + 1);
+                emptyShapes = emptyParagraph.InlineShapes;
+                emptyMaths = emptyParagraph.OMaths;
+                emptyFields = emptyParagraph.Fields;
+                emptyTables = emptyParagraph.Tables;
+                if (emptyParagraph.Text != "\r"
+                    || emptyShapes.Count != 0
+                    || emptyMaths.Count != 0
+                    || emptyFields.Count != 0
+                    || emptyTables.Count != 0)
+                    throw new InvalidDataException(
+                        "The MathType body replacement did not leave one structurally empty body paragraph.");
+                bodyFormatting.ApplyToParagraphMark(emptyParagraph);
+
                 result = targetDocument.Range(start, start);
                 var returned = result;
                 result = null;
@@ -382,10 +383,13 @@ internal static class WordOmmlConverter
             finally
             {
                 Release(result);
+                Release(emptyTables);
+                Release(emptyFields);
+                Release(emptyMaths);
+                Release(emptyShapes);
+                Release(emptyParagraph);
+                Release(editable);
                 Release(target);
-                Release(sourceRange);
-                Release(sourceParagraph);
-                Release(sourceParagraphs);
             }
         }
 
@@ -3539,6 +3543,19 @@ internal static class WordOmmlConverter
         document.Descendants(word + "bookmarkStart").Remove();
         document.Descendants(word + "bookmarkEnd").Remove();
         NormalizeImportedMathOnOffProperties(document, math);
+        // The Office MathML stylesheet emits a legacy scrLvl=0 hint for
+        // display-style fraction arguments (e.g. \\dfrac). Word 2021 drops this
+        // hint when importing the same numerator/denominator. Match only this
+        // observed neutral encoding; preserve nonzero hints, valid argSz
+        // properties, and every operand/structural node for strict comparison.
+        foreach (var hint in document.Descendants(math + "scrLvl").Where(element =>
+                     element.Parent?.Name == math + "argPr"
+                     && (string?)element.Attribute(math + "val") == "0"
+                     && !element.HasElements
+                     && string.IsNullOrWhiteSpace(element.Value)
+                     && element.Attributes().All(attribute =>
+                         attribute.IsNamespaceDeclaration || attribute.Name == math + "val")).ToArray())
+            hint.Remove();
         foreach (var nary in document.Descendants(math + "nary"))
         {
             var properties = nary.Element(math + "naryPr");
@@ -3588,6 +3605,7 @@ internal static class WordOmmlConverter
                 && ((string?)justification.Attribute(math + "val") is null or "center"))
                 justification.Remove();
         }
+        NormalizeImportedMatrixColumnGroups(document, math);
         // A separator is rendered only between distinct delimiter arguments.
         // A single argument (including a multirow equation array) has none;
         // Word drops sepChr there. Beginning/end delimiters are always retained.
@@ -3603,6 +3621,23 @@ internal static class WordOmmlConverter
                 && (string?)e.Attribute(math + "val") == "1") == true;
             if (!literal) text.Value = NormalizeImportedMathTextSpelling(text.Value);
         }
+        NormalizeImportedPlainStyleDefaults(document, math);
+        // The MathML stylesheet can leave a zero-length normal-text run between
+        // operands. Word removes that empty run and joins its neighbours. Remove
+        // only truly empty text/format-only runs in the import comparison: a real
+        // space, alignment/break control, object, or empty argument container must
+        // remain observable. Durable fingerprints still use Word's actual XML.
+        foreach (var run in document.Descendants(math + "r").Where(run =>
+                     !run.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)
+                     && run.Elements(math + "t").Any()
+                     && run.Elements(math + "t").All(text => !text.HasElements && text.Value.Length == 0)
+                     && run.Elements().All(child => child.Name == math + "t"
+                         || (child.Name == math + "rPr"
+                             && !child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)
+                             && child.Elements().All(property => property.Name == math + "nor"
+                                 || property.Name == math + "lit" || property.Name == math + "sty"
+                                 || property.Name == math + "scr")))).ToArray())
+            run.Remove();
         foreach (var property in document.Descendants().Where(e => e.Name.Namespace == math
                      && e.Name.LocalName.EndsWith("Pr", StringComparison.Ordinal)
                      && !e.HasElements && !e.HasAttributes && string.IsNullOrWhiteSpace(e.Value)).ToArray())
@@ -3628,6 +3663,88 @@ internal static class WordOmmlConverter
         using var hash = SHA256.Create();
         return string.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()))
             .Select(value => value.ToString("x2")));
+    }
+
+    private static void NormalizeImportedMatrixColumnGroups(
+        XDocument document,
+        XNamespace math)
+    {
+        foreach (var matrix in document.Descendants(math + "m"))
+        {
+            var columns = matrix.Element(math + "mPr")?.Element(math + "mcs");
+            if (columns is null) continue;
+            var groups = columns.Elements(math + "mc").ToArray();
+            if (groups.Length == 0) continue;
+
+            var expanded = new List<XElement>();
+            var safe = true;
+            foreach (var group in groups)
+            {
+                if (group.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)
+                    || group.Elements().Count() != 1
+                    || group.Element(math + "mcPr") is not XElement properties
+                    || group.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+                {
+                    safe = false;
+                    break;
+                }
+
+                if (properties.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)
+                    || properties.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+                {
+                    safe = false;
+                    break;
+                }
+
+                var propertyElements = properties.Elements().ToArray();
+                if (propertyElements.Length != 2
+                    || propertyElements.Count(element => element.Name == math + "count") != 1
+                    || propertyElements.Count(element => element.Name == math + "mcJc") != 1)
+                {
+                    safe = false;
+                    break;
+                }
+
+                var count = properties.Element(math + "count");
+                var justification = properties.Element(math + "mcJc");
+                var countValue = (string?)count?.Attribute(math + "val");
+                var justificationValue = (string?)justification?.Attribute(math + "val");
+                if (count is null
+                    || justification is null
+                    || count.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && attribute.Name != math + "val")
+                    || justification.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && attribute.Name != math + "val")
+                    || count.HasElements
+                    || justification.HasElements
+                    || !string.IsNullOrWhiteSpace(count.Value)
+                    || !string.IsNullOrWhiteSpace(justification.Value)
+                    || !int.TryParse(countValue, NumberStyles.None, CultureInfo.InvariantCulture, out var repetitions)
+                    || repetitions <= 0
+                    || repetitions > 256
+                    || string.IsNullOrWhiteSpace(justificationValue))
+                {
+                    safe = false;
+                    break;
+                }
+
+                for (var index = 0; index < repetitions; index++)
+                {
+                    expanded.Add(
+                        new XElement(
+                            math + "mc",
+                            new XElement(
+                                math + "mcPr",
+                                new XElement(
+                                    math + "count",
+                                    new XAttribute(math + "val", "1")),
+                                new XElement(
+                                    math + "mcJc",
+                                    new XAttribute(math + "val", justificationValue)))));
+                }
+            }
+
+            if (safe)
+                columns.ReplaceNodes(expanded);
+        }
     }
 
     private static void NormalizeImportedMathOnOffProperties(
@@ -3702,6 +3819,57 @@ internal static class WordOmmlConverter
             if (normalizedValue == semanticDefault.Value)
                 property.Remove();
         }
+    }
+
+    private static void NormalizeImportedPlainStyleDefaults(
+        XDocument document,
+        XNamespace math)
+    {
+        foreach (var run in document.Descendants(math + "r").ToArray())
+        {
+            var properties = run.Element(math + "rPr");
+            var style = properties?.Element(math + "sty");
+            if (style is null
+                || !string.Equals(
+                    (string?)style.Attribute(math + "val"),
+                    "p",
+                    StringComparison.Ordinal))
+                continue;
+
+            var text = string.Concat(run.Elements(math + "t").Select(item => item.Value));
+            if (string.IsNullOrEmpty(text) || ContainsUnicodeLetter(text))
+                continue;
+
+            // Word commonly splits a mixed math run such as "E=m" into
+            // E / = / m and adds an explicit plain style to the operator. It also
+            // writes m:sty="p" on ordinary digits such as a superscript 2. For
+            // characters with no Unicode letter semantics this is only an explicit
+            // spelling of their normal upright math appearance, not a change of
+            // formula content. Keep plain styling on any run containing a letter:
+            // \mathrm{x}, upright Greek, script alphabets, etc. remain semantic.
+            style.Remove();
+            if (properties is not null
+                && !properties.HasElements
+                && !properties.HasAttributes)
+                properties.Remove();
+        }
+    }
+
+    private static bool ContainsUnicodeLetter(string value)
+    {
+        for (var index = 0; index < value.Length;)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(value, index);
+            if (category is UnicodeCategory.UppercaseLetter
+                or UnicodeCategory.LowercaseLetter
+                or UnicodeCategory.TitlecaseLetter
+                or UnicodeCategory.ModifierLetter
+                or UnicodeCategory.OtherLetter
+                or UnicodeCategory.LetterNumber)
+                return true;
+            index += char.IsSurrogatePair(value, index) ? 2 : 1;
+        }
+        return false;
     }
 
     private static void NormalizeMathRunGrouping(XDocument document, XNamespace math)

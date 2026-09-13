@@ -266,6 +266,47 @@ pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState
     }
     let session_store = SessionStore::new(&paths).map_err(|error| error.to_string())?;
     let formula_cache = FormulaMetadataCache::new(&paths).map_err(|error| error.to_string())?;
+
+    // Session cleanup must never delay creation of the main desktop window.
+    // Large redraw/import workloads can leave tens of thousands of short-lived
+    // converter sessions on disk; the old synchronous constructor scanned and
+    // deserialized all of them before Tauri created its first WebView.
+    let cleanup_store = session_store.clone();
+    let cleanup_paths = paths.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name("VisualTeX Office Session Cleanup".to_string())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            let started = std::time::Instant::now();
+            append_office_log(
+                &cleanup_paths,
+                "startup.log",
+                "background Session cleanup started",
+            );
+            match cleanup_store.cleanup_expired_now() {
+                Ok(()) => append_office_log(
+                    &cleanup_paths,
+                    "startup.log",
+                    &format!(
+                        "background Session cleanup completed elapsedMs={}",
+                        started.elapsed().as_millis()
+                    ),
+                ),
+                Err(error) => append_office_log(
+                    &cleanup_paths,
+                    "startup.log",
+                    &format!("background Session cleanup failed: {error}"),
+                ),
+            }
+        })
+    {
+        append_office_log(
+            &paths,
+            "startup.log",
+            &format!("background Session cleanup could not be scheduled: {error}"),
+        );
+    }
+
     append_office_log(&paths, "startup.log", "startup initialization completed");
     Ok(OfficeCompanionState::new(
         Some(app.clone()),

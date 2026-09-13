@@ -1211,6 +1211,7 @@ const windowsPowerShell = await source("scripts/windows_powershell.mjs");
 const officeLifecycle = await source("src-tauri/src/office/lifecycle.rs");
 const windowsBundle = await source("src-tauri/tauri.windows.conf.json");
 const installerHooks = await source("src-tauri/windows/hooks.nsh");
+const officeProcessGuard = await source("scripts/office_process_guard.ps1");
 const nsisPatch = await source("scripts/patch_generated_nsis.ps1");
 assert.ok(platformBundle.includes('"scripts/build_windows_office.ps1"'));
 assert.ok(platformBundle.includes("windowsPowerShellPath"));
@@ -1297,12 +1298,22 @@ assert.ok(installerHooks.includes('-VisualTeXPath "$INSTDIR\\${MAINBINARYNAME}.e
 assert.ok(!installerHooks.includes('-VisualTeXPath "$INSTDIR\\VisualTeX.exe"'));
 assert.ok(installerHooks.includes("uninstall_windows_vsto.ps1"));
 assert.ok(!installerHooks.includes("uninstall_windows_ole.ps1"));
-assert.ok(installerHooks.includes("Get-Process WINWORD,POWERPNT"));
-assert.ok(installerHooks.includes("Stop-Process -Force"));
-assert.ok(installerHooks.includes("IDYES visualtex_force_close_office"));
+assert.ok(installerHooks.includes("office_process_guard.ps1"));
+assert.ok(installerHooks.includes("Function VisualTeXEnsureOfficeProcessesClosed"));
+assert.equal((installerHooks.match(/Call VisualTeXEnsureOfficeProcessesClosed/g) ?? []).length, 2);
+assert.ok(installerHooks.includes("POWERPNT.EXE -Embedding"));
 assert.ok(installerHooks.includes("未保存的 Office 文档可能丢失"));
-assert.ok(installerHooks.includes("选择“否”将返回上一页"));
-assert.ok(installerHooks.indexOf("IDYES visualtex_force_close_office") < installerHooks.indexOf("Stop-Process -Force"));
+assert.ok(installerHooks.includes("选择“否”不会关闭任何进程"));
+assert.ok(installerHooks.includes("Recheck at the last safe moment immediately before MSI/COM registration"));
+assert.ok(
+  installerHooks.lastIndexOf("Call VisualTeXEnsureOfficeProcessesClosed") <
+    installerHooks.lastIndexOf('-File "$INSTDIR\\scripts\\install_windows_vsto.ps1"'),
+);
+assert.ok(officeProcessGuard.includes("Get-Process -Name $officeNames"));
+assert.ok(officeProcessGuard.includes("Stop-Process -Id $item.ProcessId -Force"));
+assert.ok(officeProcessGuard.includes("background COM/OLE (-Embedding"));
+assert.ok(officeProcessGuard.includes("exit 10"));
+assert.ok(officeProcessGuard.includes("exit 11"));
 assert.ok(!installerHooks.includes("VisualTeXOfficeOleRadio"));
 assert.ok(!installerHooks.includes('VisualTeXOfficeChoice == "ole"'));
 assert.ok(

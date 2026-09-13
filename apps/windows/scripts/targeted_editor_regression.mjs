@@ -6273,6 +6273,16 @@ async function main() {
           .filter((node) => !node.classList.contains("ML__suggestion"))
           .map((node) => node.textContent ?? "")
           .join("");
+        const stableZIndex = stable
+          ? Number.parseInt(getComputedStyle(stable).zIndex || "0", 10)
+          : 0;
+        const chromeZIndex = Math.max(
+          0,
+          ...[".formula-toolbar", ".source-panel", ".editor-pane-header"]
+            .map((selector) => document.querySelector(selector))
+            .filter(Boolean)
+            .map((element) => Number.parseInt(getComputedStyle(element).zIndex || "0", 10) || 0),
+        );
         return {
           ready:
             Boolean(stable?.classList.contains("is-visible")) &&
@@ -6280,7 +6290,9 @@ async function main() {
             source?.dataset.visualtexInputPopoverSource === "true" &&
             document.querySelectorAll("math-field").length === 2 &&
             document.querySelectorAll("math-field")[0]?.hasFocus?.() &&
-            !document.querySelector(".suggestion-popup"),
+            !document.querySelector(".suggestion-popup") &&
+            stableZIndex >= 190 &&
+            stableZIndex > chromeZIndex,
           commands,
           sourceCommands,
           rawLatex,
@@ -6295,6 +6307,8 @@ async function main() {
             ? { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
             : null,
           sourceOpacity: source ? getComputedStyle(source).opacity : "",
+          stableZIndex,
+          chromeZIndex,
           customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),
         };
       })()`, "stable native input-selection popover for \\be");

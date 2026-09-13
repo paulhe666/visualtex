@@ -27,6 +27,20 @@ internal sealed class WordFormulaFormatConversionTarget
     internal string Latex { get; set; } = string.Empty;
     internal string? SourceMathMl { get; set; }
     internal bool SourceIsManagedOmml { get; set; }
+    // Captured before any source object is deleted. Table-contained formulas use
+    // cell-safe replacement paths and never participate in whole-paragraph/group
+    // optimizations that can consume Word's terminal \r\a cell markers.
+    internal bool SourceWithinTable { get; set; }
+    // A foreign section-state field is document-owned, not part of the equation
+    // being replaced. Preflight records it; the edit transaction isolates it.
+    internal bool SourceHasMathTypeSectionPrefix { get; set; }
+    // For table-contained inline formulas, Word can consume the first ordinary
+    // whitespace character after the formula while replacing a native OMath with
+    // an OLE field. Capture a short user-text suffix plus the first character's
+    // formatting before any mutation so the write transaction can prove/repair
+    // exactly that one-character boundary loss without guessing at surrounding text.
+    internal string? FollowingInlineTableText { get; set; }
+    internal WordCharacterFormatting? FollowingInlineTableFormatting { get; set; }
     internal string DisplayMode { get; set; } = "inline";
     internal bool Numbered { get; set; }
     internal int PrecedingPlainBlankParagraphCount { get; set; }

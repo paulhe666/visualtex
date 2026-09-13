@@ -1,6 +1,6 @@
 # VisualTeX 使用手册
 
-**适用版本：Windows 1.2.6**
+**适用版本：Windows 1.2.7**
 
 ---
 
@@ -697,6 +697,8 @@ VisualTeX 也会兼容单个 `latex` 字段、公式字符串数组、Markdown J
 
 ## 13. Office 集成
 
+Windows 原生 Office 集成稳定支持 Microsoft Office 2021 及以上桌面版的 Word / PowerPoint。MathType OLE 功能以 MathType 7 作为稳定兼容与验收基线；VisualTeX 自身创建、插入、渲染和编辑 MathType OLE 不要求本机安装 MathType。
+
 ### 13.1 基本操作
 
 **设置 → Office 集成**：
@@ -857,6 +859,8 @@ VisualTeX 也会兼容单个 `latex` 字段、公式字符串数组、Markdown J
 
 ## 17. 安装器
 
+- Windows Office 集成支持 Microsoft Office 2021 及以上桌面版。
+- MathType OLE 稳定兼容基线为 MathType 7。
 - **仅 VisualTeX**：不安装 Office 插件。
 - **VisualTeX + 原生 Office 集成**：安装 Word / PowerPoint 插件。
 - **OCR 离线资源**：可选安装本地 OCR Python、依赖和 Worker。

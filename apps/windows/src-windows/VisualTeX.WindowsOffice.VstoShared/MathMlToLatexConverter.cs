@@ -676,18 +676,37 @@ internal static class MathMlToLatexConverter
             var escaped = EscapeMathIdentifier(token);
             if (variant.IndexOf("double-struck", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathbb{" + escaped + "}";
+            if (variant.IndexOf("bold-fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathfrak{" + escaped + "}}";
             if (variant.IndexOf("fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathfrak{" + escaped + "}";
+            if (variant.IndexOf("bold-script", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathcal{" + escaped + "}}";
             if (variant.IndexOf("script", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathcal{" + escaped + "}";
             if (variant.IndexOf("monospace", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathtt{" + escaped + "}";
+            if (variant.IndexOf("bold-sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathsf{" + escaped + "}}";
             if (variant.IndexOf("sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathsf{" + escaped + "}";
+            if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbfit{" + escaped + "}";
             if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathbf{" + escaped + "}";
             if (explicitlyUpright)
                 return @"\mathrm{" + escaped + "}";
+        }
+        if (element.Name.LocalName == "mi"
+            && IsGreekIdentifier(token)
+            && (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0
+                || variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0))
+        {
+            // MathJax represents \boldsymbol/\bm lower Greek as bold-italic
+            // and upper Greek as bold. These identifiers are deliberately not
+            // part of IsLatinIdentifier(), so preserve the variant around the
+            // already-canonical Greek command instead of dropping it.
+            return @"\boldsymbol{" + ConvertToken(token).Trim() + "}";
         }
         return ConvertToken(token);
     }
@@ -770,6 +789,12 @@ internal static class MathMlToLatexConverter
         && token.All(character =>
             (character <= '\u024F' && char.IsLetterOrDigit(character))
             || character is '.' or ',');
+
+    private static bool IsGreekIdentifier(string token) =>
+        token.Length > 0
+        && token.All(character =>
+            character is >= '\u0370' and <= '\u03FF'
+            || character is >= '\u1F00' and <= '\u1FFF');
 
     private static string EscapeMathIdentifier(string value) =>
         value.Replace("\\", @"\backslash ")
