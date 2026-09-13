@@ -13,9 +13,11 @@ const checks = [
   [entry.includes('normalizedPath === "/editor"'), "The /editor route is not configured"],
   [entry.includes("<LandingPage />"), "The landing page is not rendered at the root route"],
   [landing.includes('href="/editor"'), "The web editor call-to-action is missing"],
-  [landing.includes('const VERSION = "1.2.6"'), "The current desktop version is not configured"],
+  [landing.includes('const VERSION = "1.2.7"'), "The current desktop version is not configured"],
   [landing.includes("_aarch64.dmg"), "The macOS download is missing"],
   [landing.includes("_x64-setup.exe"), "The Windows download is missing"],
+  [landing.includes("_aarch64-no-ocr.dmg") && landing.includes("_x64-no-ocr-setup.exe"), "The lightweight installers are missing"],
+  [landing.includes("href={download.secondaryHref}") && landing.includes("不含本地 OCR，支持 API 识别"), "Lightweight download buttons or edition descriptions are missing"],
   [
     landing.includes("https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}"),
     "The R2 download base is not configured",

@@ -10,7 +10,7 @@ import {
 import { VisualTeXLogo } from "../components/VisualTeXLogo";
 import { SupportCodes } from "./SupportCodes";
 
-const VERSION = "1.2.6";
+const VERSION = "1.2.7";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
 const OCR_MODEL_BASE = "https://download.visualtex.pauljianliao.com/ppformula-model";
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
@@ -24,8 +24,8 @@ type DownloadOption = {
   detail: string;
   href: string;
   action: string;
-  secondaryHref?: string;
-  secondaryAction?: string;
+  secondaryHref: string;
+  secondaryAction: string;
 };
 
 const downloads: readonly DownloadOption[] = [
@@ -35,7 +35,9 @@ const downloads: readonly DownloadOption[] = [
     title: "macOS",
     detail: "Apple Silicon · macOS 11+",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64.dmg`,
-    action: "下载 DMG",
+    action: "下载完整版",
+    secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64-no-ocr.dmg`,
+    secondaryAction: "下载轻量版",
   },
   {
     id: "windows",
@@ -43,7 +45,9 @@ const downloads: readonly DownloadOption[] = [
     title: "Windows",
     detail: "Windows 10/11 · x64",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
-    action: "下载安装程序",
+    action: "下载完整版",
+    secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-no-ocr-setup.exe`,
+    secondaryAction: "下载轻量版",
   },
 ];
 
@@ -230,9 +234,19 @@ export function LandingPage() {
                       {recommended && <span className="landing-device-label">当前设备</span>}
                     </div>
                     <p>{download.detail}</p>
+                    <div className="landing-download-options">
+                      <div>
+                        <a className="landing-button landing-download-action" href={download.href} aria-label={download.title + " " + download.action}><Download size={17} aria-hidden="true" />{download.action}</a>
+                        <p>包含本地 OCR 环境与基础模型。</p>
+                      </div>
+                      <div>
+                        <a className="landing-button landing-button-outline landing-download-action" href={download.secondaryHref} aria-label={download.title + " " + download.secondaryAction}><Download size={17} aria-hidden="true" />{download.secondaryAction}</a>
+                        <p>不含本地 OCR，支持 API 识别。</p>
+                      </div>
+                    </div>
                     <div className="landing-download-bottom">
-                      <a className="landing-button landing-download-action" href={download.href}><Download size={17} aria-hidden="true" />{download.action}</a>
                       <span className="landing-version">v{VERSION}</span>
+                      <span className="landing-edition-note">两版均保留公式编辑与 Office 功能。</span>
                     </div>
                   </article>
                 );
@@ -240,7 +254,7 @@ export function LandingPage() {
             </div>
 
             <section className="landing-models" aria-labelledby="models-title">
-              <div className="landing-models-heading"><h3 id="models-title">Windows 离线 OCR 模型</h3><p>下载后在桌面端导入。</p></div>
+              <div className="landing-models-heading"><h3 id="models-title">Windows 离线 OCR 模型</h3><p>适用于完整版，下载后在桌面端导入。</p></div>
               <div className="landing-ocr-model-grid">
                 {ocrModels.map((model) => (
                   <article className="landing-model-row" key={model.id}>

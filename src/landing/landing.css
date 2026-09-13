@@ -100,6 +100,10 @@ html[data-page="landing"] body, html[data-page="landing"] #root { height: auto; 
 .landing-device-label { margin-left: auto; color: var(--landing-muted); font-size: .875rem; }
 .landing-download-item > p { margin-top: 12px; color: var(--landing-muted); font-size: 1.125rem; }
 .landing-download-bottom { margin-top: 26px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.landing-download-options { margin-top: 26px; display: grid; gap: 22px; }
+.landing-download-options .landing-button { width: 100%; }
+.landing-download-options p { margin-top: 8px; font-size: 1rem; color: var(--landing-muted); }
+.landing-edition-note { color: var(--landing-muted); font-size: .875rem; }
 .landing-version { color: var(--landing-muted); font-family: ui-monospace, Consolas, monospace; font-size: .9375rem; }
 .landing-models { margin-top: 52px; }
 .landing-models-heading { margin-bottom: 22px; display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
