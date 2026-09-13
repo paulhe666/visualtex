@@ -1039,7 +1039,32 @@ function utf8ToBase64Url(value: string) {
   return bytesToBase64Url(new TextEncoder().encode(value));
 }
 
-function minimalDocxBytes(omml: string, displayMode: OmmlDisplayMode) {
+export function wordNumberedNativeCacheOmml(omml: string) {
+  const openingEnd = omml.indexOf(">");
+  const closingStart = omml.lastIndexOf("</m:oMath>");
+  if (
+    !omml.startsWith("<m:oMath ") ||
+    openingEnd < 0 ||
+    closingStart <= openingEnd
+  ) {
+    throw new Error("Cannot build a numbered Word cache from invalid OMML.");
+  }
+  const formulaBody = omml.slice(openingEnd + 1, closingStart);
+  const numberShell =
+    '<m:eqArr><m:eqArrPr><m:maxDist m:val="1"/></m:eqArrPr><m:e>' +
+    formulaBody +
+    '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>#</m:t></m:r>' +
+    '<m:d><m:dPr/><m:e>' +
+    '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>0</m:t></m:r>' +
+    "</m:e></m:d></m:e></m:eqArr>";
+  return wrapOmml(numberShell);
+}
+
+function minimalDocxBytes(
+  omml: string,
+  displayMode: OmmlDisplayMode,
+  numbered: boolean,
+) {
   const contentTypes =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
@@ -1052,10 +1077,13 @@ function minimalDocxBytes(omml: string, displayMode: OmmlDisplayMode) {
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
     "</Relationships>";
+  const nativeCacheOmml = numbered
+    ? wordNumberedNativeCacheOmml(omml)
+    : omml;
   const mathBody =
     displayMode === "block"
-      ? `<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${omml}</m:oMathPara>`
-      : omml;
+      ? `<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${nativeCacheOmml}</m:oMathPara>`
+      : nativeCacheOmml;
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     `<w:document xmlns:w="${WORD_NAMESPACE}" xmlns:m="${MATH_NAMESPACE}">` +
@@ -1116,6 +1144,7 @@ export function latexLinesToOmmlArtifacts(
   displayMode: OmmlDisplayMode,
   codeFormat: LatexCodeFormat | string = "raw",
   fontPreferences: OmmlFontPreferences = {},
+  numbered = false,
 ): OmmlArtifacts {
   const omml = latexLinesToOmml(
     lines,
@@ -1126,6 +1155,8 @@ export function latexLinesToOmmlArtifacts(
   return {
     omml,
     ommlBase64: utf8ToBase64Url(omml),
-    ommlDocxBase64: bytesToBase64Url(minimalDocxBytes(omml, displayMode)),
+    ommlDocxBase64: bytesToBase64Url(
+      minimalDocxBytes(omml, displayMode, numbered),
+    ),
   };
 }

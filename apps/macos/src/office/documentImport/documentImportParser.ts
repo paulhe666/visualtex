@@ -404,6 +404,7 @@ function extractLatexLiteralFallbacks(
 function latexProtectedRanges(
   source: string,
   theoremEnvironmentNames: ReadonlySet<string> = new Set(),
+  includeComments = true,
 ) {
   const ranges = latexLiteralFallbackRanges(source, theoremEnvironmentNames);
   const mathRanges = latexMathSourceRanges(source);
@@ -411,6 +412,7 @@ function latexProtectedRanges(
   for (let match = verbPattern.exec(source); match; match = verbPattern.exec(source)) {
     ranges.push({ start: match.index, end: verbPattern.lastIndex });
   }
+  if (!includeComments) return mergeProtectedRanges(ranges);
   for (let cursor = 0; cursor < source.length; cursor += 1) {
     if (
       source[cursor] !== "%" ||
@@ -535,7 +537,7 @@ function stripLatexComments(
   source: string,
   theoremEnvironmentNames: ReadonlySet<string>,
 ) {
-  const protectedRanges = latexProtectedRanges(source, theoremEnvironmentNames);
+  const protectedRanges = latexProtectedRanges(source, theoremEnvironmentNames, false);
   const records: Array<{
     text: string;
     commentOnly: boolean;
@@ -975,32 +977,31 @@ function findClosingDelimiter(
   source: string,
   delimiter: MathDelimiter,
 ): ClosingDelimiterMatch | null {
-  let cursor = delimiter.contentStart;
-  if (delimiter.environment) {
-    const flexiblePattern = new RegExp(
-      `\\\\end\\s*\\{${escapeRegExp(delimiter.environment)}\\}`,
-      "g",
-    );
-    flexiblePattern.lastIndex = cursor;
-    const match = flexiblePattern.exec(source);
-    return match
-      ? { start: match.index, end: flexiblePattern.lastIndex }
-      : null;
-  }
-  while (cursor < source.length) {
-    const found = source.indexOf(delimiter.closing, cursor);
-    if (found < 0) return null;
-    if (delimiter.closing === "$" || delimiter.closing === "$$") {
-      if (isEscaped(source, found)) {
-        cursor = found + delimiter.closing.length;
-        continue;
-      }
-      if (delimiter.closing === "$" && source.startsWith("$$", found)) {
-        cursor = found + 2;
-        continue;
-      }
+  let depth = 1;
+  for (let cursor = delimiter.contentStart; cursor < source.length; cursor += 1) {
+    if (isEscaped(source, cursor)) continue;
+    // Delimiters in TeX comments are not field boundaries.
+    if (source[cursor] === "%") {
+      const end = source.slice(cursor).search(/[\r\n]/);
+      if (end < 0) return null;
+      cursor += end;
+      continue;
     }
-    return { start: found, end: found + delimiter.closing.length };
+    if (delimiter.environment) {
+      if (source[cursor] !== "\\") continue;
+      const token = source.slice(cursor).match(/^\\(begin|end)\s*\{\s*([^{}]+?)\s*\}/);
+      if (!token || token[2] !== delimiter.environment) continue;
+      depth += token[1] === "begin" ? 1 : -1;
+      if (depth === 0) return { start: cursor, end: cursor + token[0].length };
+      cursor += token[0].length - 1;
+      continue;
+    }
+    if (!source.startsWith(delimiter.closing, cursor)) continue;
+    if (delimiter.closing === "$" && source.startsWith("$$", cursor)) {
+      cursor += 1;
+      continue;
+    }
+    return { start: cursor, end: cursor + delimiter.closing.length };
   }
   return null;
 }
@@ -1025,8 +1026,16 @@ export function findLatexFormulaSpans(
   if (new TextEncoder().encode(source).byteLength > 5 * 1024 * 1024) {
     throw new Error("Word LaTeX redraw source exceeds the 5 MB limit.");
   }
-  const sourceKind = resolvedSourceKind(source, requestedKind);
-  const protectedRanges = protectedSourceRanges(source, sourceKind, new Set());
+  return scanLatexFormulaSpans(source, defaultFontSizePt, resolvedSourceKind(source, requestedKind));
+}
+
+function scanLatexFormulaSpans(
+  source: string,
+  defaultFontSizePt: number,
+  sourceKind: DocumentImportSourceKind,
+  theoremEnvironmentNames: ReadonlySet<string> = new Set(),
+): DocumentLatexFormulaSpan[] {
+  const protectedRanges = protectedSourceRanges(source, sourceKind, theoremEnvironmentNames);
   const fontSizePt = Math.min(512, Math.max(1, defaultFontSizePt));
   const spans: DocumentLatexFormulaSpan[] = [];
   let protectedIndex = 0;
@@ -1096,7 +1105,60 @@ export function findLatexFormulaSpans(
     cursor = closing.end;
   }
 
-  return spans;
+  return joinSplitMathScopes(source, spans);
+}
+
+/** Recover legacy editor output that closed/reopened math inside an unfinished
+ * TeX scope. Only whitespace/TeX spacing may separate the fragments; ordinary
+ * prose, complete formulas, unmatched closers and code blocks are never joined.
+ * Offsets still refer to the original Word text, including both delimiters.
+ */
+function joinSplitMathScopes(source: string, spans: DocumentLatexFormulaSpan[]) {
+  const scopeState = (latex: string) => {
+    const stack: string[] = [];
+    for (let i = 0; i < latex.length; i += 1) {
+      if (isEscaped(latex, i)) continue;
+      if (latex[i] === "%") {
+        while (i < latex.length && !/[\r\n]/.test(latex[i])) i += 1;
+        continue;
+      }
+      if (latex[i] === "{") stack.push("group");
+      if (latex[i] === "}" && stack.pop() !== "group") return null;
+      if (latex[i] !== "\\") continue;
+      const token = latex.slice(i).match(/^\\(left|right|mleft|mright)\b|^\\(begin|end)\s*\{\s*([^{}]+?)\s*\}/);
+      if (!token) continue;
+      const opening = token[1] === "left" || token[1] === "mleft" || token[2] === "begin";
+      const name = token[2] ? `env:${token[3]}` : "fence";
+      if (opening) stack.push(name);
+      else if (stack.pop() !== name) return null;
+      i += token[0].length - 1;
+    }
+    return stack;
+  };
+  const result: DocumentLatexFormulaSpan[] = [];
+  for (let index = 0; index < spans.length; index += 1) {
+    const first = spans[index];
+    let latex = first.latex;
+    let endIndex = index;
+    let state = scopeState(latex);
+    while (state?.length && endIndex + 1 < spans.length) {
+      const next = spans[endIndex + 1];
+      const gap = source.slice(spans[endIndex].end, next.start);
+      if (next.displayMode !== first.displayMode ||
+          !/^(?:[ \t]|\\(?:[ ,;:!]|quad\b|qquad\b))*$/.test(gap) ||
+          !/^(?:\$|\\\()/u.test(first.sourceText) ||
+          !/^(?:\$|\\\()/u.test(next.sourceText)) break;
+      latex += gap + next.latex;
+      endIndex += 1;
+      state = scopeState(latex);
+    }
+    if (endIndex > index && state?.length === 0) {
+      const end = spans[endIndex].end;
+      result.push({ ...first, latex, end, sourceText: source.slice(first.start, end) });
+      index = endIndex;
+    } else result.push(first);
+  }
+  return result;
 }
 
 function extractFormulas(
@@ -1106,86 +1168,27 @@ function extractFormulas(
   theoremEnvironmentNames: ReadonlySet<string> = new Set(),
 ) {
   const formulas: ExtractedFormula[] = [];
-  const protectedRanges = protectedSourceRanges(
-    source,
-    sourceKind,
-    theoremEnvironmentNames,
-  );
-  let protectedIndex = 0;
   let output = "";
-  let textStart = 0;
   let cursor = 0;
-
-  while (cursor < source.length) {
-    while (
-      protectedIndex < protectedRanges.length &&
-      protectedRanges[protectedIndex].end <= cursor
-    ) {
-      protectedIndex += 1;
-    }
-    const protectedRange = protectedRanges[protectedIndex];
-    if (
-      protectedRange &&
-      cursor >= protectedRange.start &&
-      cursor < protectedRange.end
-    ) {
-      cursor = protectedRange.end;
-      continue;
-    }
-
-    const delimiter = delimiterAt(source, cursor);
-    if (!delimiter) {
-      cursor += 1;
-      continue;
-    }
-    const closing = findClosingDelimiter(source, delimiter);
-    if (!closing) {
-      cursor += delimiter.opening.length;
-      continue;
-    }
-    if (
-      protectedRange &&
-      closing.start > protectedRange.start &&
-      cursor < protectedRange.start
-    ) {
-      cursor = protectedRange.end;
-      continue;
-    }
-
-    output += source.slice(textStart, cursor);
-    const sourceText = source.slice(cursor, closing.end);
-    const latex = (delimiter.environment && delimiter.displayMode === "block"
-      ? sourceText
-      : source.slice(delimiter.contentStart, closing.start)
-    )
-      .trim()
-      .replace(/^\s*\\displaystyle\s*/, "")
-      .replace(/\\label\s*\{[^{}]*\}/g, "")
-      .replace(/\\tag\*?\s*\{[^{}]*\}/g, "")
-      .trim();
-
-    if (latex) {
-      const token = `${formulaTokenPrefix}${formulas.length}${formulaTokenSuffix}`;
-      formulas.push({
-        token,
-        block: {
-          id: createUuid(),
-          kind: "formula",
-          latex,
-          sourceText,
-          displayMode: delimiter.displayMode,
-          numbered: delimiter.displayMode === "block" && delimiter.numbered,
-          fontSizePt: Math.min(512, Math.max(1, defaultFontSizePt)),
-        },
-      });
-      output += delimiter.displayMode === "block" ? `\n${token}\n` : token;
-    } else {
-      output += source.slice(cursor, closing.end);
-    }
-    cursor = closing.end;
-    textStart = cursor;
+  for (const span of scanLatexFormulaSpans(source, defaultFontSizePt, sourceKind, theoremEnvironmentNames)) {
+    output += source.slice(cursor, span.start);
+    const token = `${formulaTokenPrefix}${formulas.length}${formulaTokenSuffix}`;
+    formulas.push({
+      token,
+      block: {
+        id: span.id,
+        kind: "formula",
+        latex: span.latex,
+        sourceText: span.sourceText,
+        displayMode: span.displayMode,
+        numbered: span.numbered,
+        fontSizePt: span.fontSizePt,
+      },
+    });
+    output += span.displayMode === "block" ? `\n${token}\n` : token;
+    cursor = span.end;
   }
-  output += source.slice(textStart);
+  output += source.slice(cursor);
   return { text: output, formulas };
 }
 

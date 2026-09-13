@@ -413,8 +413,8 @@ export function LatexSourceEditor({
                       ? "Formula wrapper is incomplete"
                       : "公式环境包裹尚未完成"
                     : isEn
-                      ? "Incomplete fragment is shown as LaTeX"
-                      : "未完成片段按源码显示，其余保持渲染"}
+                      ? "Preview only — source validation has not passed"
+                      : "仅预览：源码尚未通过校验"}
                 </span>
               ) : dirty ? (
                 <span className="source-live-chip">
@@ -431,8 +431,8 @@ export function LatexSourceEditor({
                   ? "Incomplete wrapper"
                   : "环境包裹未完成"
                 : isEn
-                  ? "Partial LaTeX preview"
-                  : "局部源码预览"}
+                  ? "Unvalidated source preview"
+                  : "源码未通过校验，仅预览"}
             </span>
           )}
           <div className="source-actions">

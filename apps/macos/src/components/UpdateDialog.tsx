@@ -113,8 +113,8 @@ export function UpdateDialog({
     : "";
   const title = releaseWelcome
     ? isEn
-      ? `What's new in VisualTeX ${result?.latestVersion ?? "1.2.6"}`
-      : `VisualTeX ${result?.latestVersion ?? "1.2.6"} 更新内容`
+      ? `What's new in VisualTeX ${result?.latestVersion ?? "1.2.7"}`
+      : `VisualTeX ${result?.latestVersion ?? "1.2.7"} 更新内容`
     : checking
       ? isEn
         ? "Checking for updates"

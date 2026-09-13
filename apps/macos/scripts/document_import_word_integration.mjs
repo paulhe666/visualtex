@@ -1909,7 +1909,7 @@ function runFormulaRegressionReport(testDocumentName, formulas) {
   );
   if (
     report.revision !==
-    "word-office-performance-20260801-r87"
+    "word-office-performance-20260801-r90"
   ) {
     throw new Error(`Word loaded the wrong VisualTeX source revision: ${report.revision}`);
   }
@@ -4246,7 +4246,7 @@ p(\mathbf{x},t)\,
       JSON.stringify(
         {
           status: "PASS",
-          revision: "word-office-performance-20260801-r87",
+          revision: "word-office-performance-20260801-r90",
           ...physicalDoubleClickResult,
         },
         null,
@@ -6293,7 +6293,7 @@ try {
         JSON.stringify(
           {
             status: "PASS",
-            revision: "word-office-performance-20260801-r87",
+            revision: "word-office-performance-20260801-r90",
             sessionId: physicalEditSessionId,
             formulaId: physicalFormula.formulaId,
             editorReadiness,
@@ -6472,7 +6472,7 @@ try {
         JSON.stringify(
           {
             status: "FAIL",
-            revision: "word-office-performance-20260801-r87",
+            revision: "word-office-performance-20260801-r90",
             error: error instanceof Error ? error.message : String(error),
           },
           null,

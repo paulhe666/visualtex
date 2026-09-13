@@ -1,3 +1,4 @@
+import { readWordFormulaFontSize } from "../shared/wordFormulaPreferences";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, LoaderCircle, X } from "lucide-react";
 import {
@@ -61,7 +62,11 @@ export function WordLatexRedrawApp() {
                 : "No matching formula was found in the Word selection.",
             );
           }
-          if (outputKind !== "latex" && outputKind !== "image") {
+          if (
+            outputKind !== "latex" &&
+            outputKind !== "image" &&
+            outputKind !== "omml"
+          ) {
             throw new Error("The Word formula restore output format is invalid.");
           }
 
@@ -86,6 +91,7 @@ export function WordLatexRedrawApp() {
               })),
             });
           } else {
+            const formulaOutputKind = outputKind === "omml" ? "omml" : "image";
             setStatus(`Rendering 0/${recovered.length} formulas…`);
             const items = await prepareWindowsStyleWordLatexRedrawItems(
               recovered.map((target) => ({
@@ -95,12 +101,21 @@ export function WordLatexRedrawApp() {
                 latex: target.latex,
                 displayMode: target.displayMode,
                 fontSizePt: target.fontSizePt,
+                formulaId: target.formulaId,
+                numbered: target.numbered,
+                metadata: target.metadata,
+                sourceKind: target.sourceKind,
               })),
-              "image",
+              formulaOutputKind,
               (current, total) => setStatus(`Rendering ${current}/${total} formulas…`),
             );
-            setStatus(`Writing ${items.length} image formulas back to Word…`);
-            await commitMacosDocumentImport(sessionId, { outputKind: "image", items });
+            setStatus(
+              `Writing ${items.length} ${formulaOutputKind === "omml" ? "OMML" : "image"} formulas back to Word…`,
+            );
+            await commitMacosDocumentImport(sessionId, {
+              outputKind: formulaOutputKind,
+              items,
+            });
           }
           await closeMacosDocumentImportWindow();
           return;
@@ -144,7 +159,7 @@ export function WordLatexRedrawApp() {
         await reportStage("latex-redraw-font-preflight-complete", spans.length);
         const targets = spans.map((span, index) => ({
           ...span,
-          fontSizePt: fontSizes[index],
+          fontSizePt: readWordFormulaFontSize(outputKind) ?? fontSizes[index],
         }));
         setStatus(`Rendering 0/${targets.length} formulas…`);
         const items = await prepareWindowsStyleWordLatexRedrawItems(

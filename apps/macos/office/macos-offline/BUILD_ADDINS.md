@@ -14,7 +14,7 @@ The repository keeps VBA and Ribbon XML as reviewable source. Do not commit an e
    - `word/VTWordAdapter.bas`
    - `word/VTWordEvents.cls`
    - `word/VTRibbonCallbacks.bas`
-3. Run **Debug → Compile VBAProject**. Confirm `VTWordEvents` compiles, `AutoExec` initializes the application event sink, and the compiled project contains `word-structured-document-import-20260730-r61`, `VTWordRibbonDocumentImport`, `VisualTeX_InsertLatexMarkdownDocument`, `VTHandleWordBeforeDoubleClick`, `App_WindowSelectionChange`, `VTWordRibbonApplyImageFontSizePreset`, and `VTRefreshNumberedImageFormulaFontLayout`.
+3. Run **Debug → Compile VBAProject**. Confirm `VTWordEvents` compiles, `VTWordRibbonOnLoad` initializes the application event sink, the template does not expose an `AutoExec` startup macro, and the compiled project contains `word-structured-document-import-20260730-r61`, `VTWordRibbonDocumentImport`, `VisualTeX_InsertLatexMarkdownDocument`, `VTHandleWordBeforeDoubleClick`, `App_WindowSelectionChange`, `VTWordRibbonApplyImageFontSizePreset`, and `VTRefreshNumberedImageFormulaFontLayout`.
 4. Save the template as exactly `VisualTeX.dotm`.
 5. Quit Word before packaging so Office has flushed `vbaProject.bin`.
 

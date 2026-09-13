@@ -18,11 +18,11 @@ function run(command, args, env = process.env) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const tauri = process.platform === "win32" ? "tauri.cmd" : "tauri";
 
-// Native Office artifacts must exist before Tauri opens externalBin files.
-run(npm, ["run", "build:bundle"]);
+// tauri.conf.json owns the single build:bundle invocation through its
+// beforeBuildCommand. Running it here as well compiled the frontend and checked
+// the Office resources twice for every release build.
 
 if (process.platform === "darwin") {
   // Tauri may reuse generated resource and bundle directories between builds.

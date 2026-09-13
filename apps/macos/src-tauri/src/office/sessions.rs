@@ -160,6 +160,8 @@ pub struct OfficeFormulaSession {
     pub host: OfficeHost,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
+    #[serde(default)]
+    pub native_equation: bool,
     pub formula_id: String,
     pub source_document_id: Option<String>,
     pub source_object_id: Option<String>,
@@ -198,6 +200,8 @@ pub struct CreateOfficeSessionInput {
     pub host: OfficeHost,
     #[serde(default)]
     pub operation: Option<String>,
+    #[serde(default)]
+    pub native_equation: bool,
     pub formula_id: Option<String>,
     pub source_document_id: Option<String>,
     pub source_object_id: Option<String>,
@@ -549,6 +553,7 @@ impl SessionStore {
             mode: input.mode,
             host: input.host,
             operation: input.operation,
+            native_equation: input.native_equation,
             formula_id,
             source_document_id: input.source_document_id,
             source_object_id: input.source_object_id,
@@ -840,6 +845,7 @@ mod tests {
             mode: OfficeSessionMode::Create,
             host: OfficeHost::Word,
             operation: None,
+            native_equation: false,
             formula_id: None,
             source_document_id: None,
             source_object_id: None,

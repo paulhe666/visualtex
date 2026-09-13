@@ -313,7 +313,7 @@ async function runCase(caseInfo) {
 await waitForWordUi();
 runAppleScript([
   'tell application "Microsoft Word"',
-  'run VB macro macro name "AutoExec"',
+  'run VB macro macro name "VisualTeX_InitializeWordHost"',
   "end tell",
 ]);
 

@@ -501,6 +501,12 @@ async function main() {
         const sumFractionArtifacts = module.latexLinesToOmmlArtifacts([
           String.raw\`\\sum_{i=1}^{\\infty}\\frac{a_i}{b_i}\`,
         ], 'block');
+        const complexNumberingArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\sum_{i=1}^{n}\\left(\\binom{n}{i}\\right)\`,
+        ], 'block');
+        const numberedFastArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}\`,
+        ], 'block', 'raw', {}, true);
         const fontArtifacts = module.latexLinesToOmmlArtifacts([
           String.raw\`\\mathrm{x}+\\mathbf{A+1}+\\mathit{x}+\\boldsymbol{\\alpha}+\\mathbb{R}+\\mathcal{G}+\\mathscr{g}+\\mathfrak{g}+\\mathsf{x}+\\mathtt{x}\`,
         ], 'inline');
@@ -515,6 +521,9 @@ async function main() {
           ommlDocxBase64: artifacts.ommlDocxBase64,
           integralOmmlDocxBase64: integralArtifacts.ommlDocxBase64,
           sumFractionOmmlDocxBase64: sumFractionArtifacts.ommlDocxBase64,
+          complexNumberingOmmlBase64: complexNumberingArtifacts.ommlBase64,
+          complexNumberingOmmlDocxBase64: complexNumberingArtifacts.ommlDocxBase64,
+          numberedFastOmmlDocxBase64: numberedFastArtifacts.ommlDocxBase64,
           fontOmmlDocxBase64: fontArtifacts.ommlDocxBase64,
           preferredOmml: preferredArtifacts.omml,
           preferredOmmlDocxBase64: preferredArtifacts.ommlDocxBase64,
@@ -534,6 +543,9 @@ async function main() {
     const ommlBase64 = artifacts?.ommlBase64;
     const integralDocxBase64 = artifacts?.integralOmmlDocxBase64;
     const sumFractionDocxBase64 = artifacts?.sumFractionOmmlDocxBase64;
+    const complexNumberingOmmlBase64 = artifacts?.complexNumberingOmmlBase64;
+    const complexNumberingDocxBase64 = artifacts?.complexNumberingOmmlDocxBase64;
+    const numberedFastDocxBase64 = artifacts?.numberedFastOmmlDocxBase64;
     const fontDocxBase64 = artifacts?.fontOmmlDocxBase64;
     const preferredOmml = artifacts?.preferredOmml;
     const preferredOmmlDocxBase64 = artifacts?.preferredOmmlDocxBase64;
@@ -541,6 +553,9 @@ async function main() {
     expect(typeof ommlBase64 === "string" && ommlBase64.length > 100, "OMML Base64URL export is missing.");
     expect(typeof integralDocxBase64 === "string" && integralDocxBase64.length > 100, "Integral OMML DOCX export is missing.");
     expect(typeof sumFractionDocxBase64 === "string" && sumFractionDocxBase64.length > 100, "N-ary fraction OMML DOCX export is missing.");
+    expect(typeof complexNumberingOmmlBase64 === "string" && complexNumberingOmmlBase64.length > 100, "Complex numbered OMML export is missing.");
+    expect(typeof complexNumberingDocxBase64 === "string" && complexNumberingDocxBase64.length > 100, "Complex numbered OMML DOCX export is missing.");
+    expect(typeof numberedFastDocxBase64 === "string" && numberedFastDocxBase64.length > 100, "Numbered fast-path OMML DOCX export is missing.");
     expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
     expect(typeof preferredOmml === "string" && preferredOmml.length > 100, "Preferred-font OMML export is missing.");
     expect(typeof preferredOmmlDocxBase64 === "string" && preferredOmmlDocxBase64.length > 100, "Preferred-font OMML DOCX export is missing.");
@@ -592,6 +607,22 @@ async function main() {
     );
     expectIncludes(sumFractionDocumentXml, "<m:nary>", "Generated sum DOCX must contain a structural n-ary object.");
     expectIncludes(sumFractionDocumentXml, "<m:f>", "Generated sum DOCX must retain its structural fraction.");
+
+    const numberedFastDocxPath = join(docxDirectory, "numbered-fast.docx");
+    await writeFile(
+      numberedFastDocxPath,
+      Buffer.from(numberedFastDocxBase64, "base64url"),
+    );
+    execFileSync("/usr/bin/unzip", ["-tqq", numberedFastDocxPath]);
+    const numberedFastDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", numberedFastDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(numberedFastDocumentXml, "<m:eqArr>", "Numbered Word cache must contain its prebuilt Equation array.");
+    expectIncludes(numberedFastDocumentXml, "<m:t>#</m:t>", "Numbered Word cache must contain its Equation alignment marker.");
+    expectIncludes(numberedFastDocumentXml, "<m:t>0</m:t>", "Numbered Word cache must contain its local REF placeholder.");
+    expectIncludes(numberedFastDocumentXml, "<m:f>", "Numbered Word cache must preserve the structural source formula.");
 
     const fontDocxPath = join(docxDirectory, "font-variants.docx");
     await writeFile(fontDocxPath, Buffer.from(fontDocxBase64, "base64url"));
@@ -672,6 +703,21 @@ async function main() {
         join(nativeDocuments, "77777777-7777-4777-8777-777777777777.docx"),
         Buffer.from(sumFractionDocxBase64, "base64url"),
         { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "99999999-9999-4999-8999-999999999999.docx"),
+        Buffer.from(complexNumberingDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "22222222-2222-4222-8222-222222222222.docx"),
+        Buffer.from(numberedFastDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(tests, "word-native-regression-complex-numbering-omml.txt"),
+        complexNumberingOmmlBase64,
+        { encoding: "utf8", mode: 0o600 },
       );
       await writeFile(
         join(tests, "word-native-regression-omml.txt"),

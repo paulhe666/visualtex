@@ -1,3 +1,5 @@
+import { readWordFormulaFontSize } from "../shared/wordFormulaPreferences";
+import { wordImageReferenceGeometry } from "../shared/wordImageGeometry";
 import {
   Component,
   useCallback,
@@ -62,8 +64,6 @@ import {
   type DocumentImportSourceKind,
 } from "./documentImportParser";
 
-const MAX_WORD_REFERENCE_WIDTH_PT = 500;
-const WORD_IMAGE_VISUAL_SCALE = 1.1;
 const REFERENCE_FONT_SIZE_PT = OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT;
 
 type ImportedFileState = Pick<
@@ -138,28 +138,9 @@ function ommlRetainsLiteralLatexCommand(ommlBase64: string, latex: string) {
   return commands.some((command) => omml.includes(`\\${command}`));
 }
 
-function calculateReferenceGeometry(widthPx: number, heightPx: number, baselinePx: number) {
-  const naturalWidthPt = widthPx * 0.75 * WORD_IMAGE_VISUAL_SCALE;
-  const naturalHeightPt = heightPx * 0.75 * WORD_IMAGE_VISUAL_SCALE;
-  const scale = Math.min(1, MAX_WORD_REFERENCE_WIDTH_PT / naturalWidthPt);
-  const referenceWidthPt = naturalWidthPt * scale;
-  const referenceHeightPt = naturalHeightPt * scale;
-  const descentRatio = Math.max(0, Math.min(1, (heightPx - baselinePx) / heightPx));
-  // Keep the exported descent as a fractional 14 pt reference. Word accepts
-  // only an integer Font.Position, so rounding here and again after scaling to
-  // the requested font size makes short subscript formulas (for example L_z)
-  // lose almost a full point relative to superscript formulas such as L^2.
-  // Round exactly once at the final Word dispatch boundary instead.
-  const referenceBaselinePt = -Math.max(
-    0,
-    referenceHeightPt * descentRatio,
-  );
-  return { referenceWidthPt, referenceHeightPt, referenceBaselinePt };
-}
-
 async function prepareFormulaArtifactCommitItem(
   block: DocumentFormulaBlock,
-  outputKind: DocumentFormulaOutputKind,
+  _outputKind: DocumentFormulaOutputKind,
 ): Promise<DocumentImportCommitItem> {
   const formulaId = createUuid();
   const line = { id: createUuid(), latex: block.latex.trim() };
@@ -171,6 +152,8 @@ async function prepareFormulaArtifactCommitItem(
     codeFormat: editorDocument.codeFormat,
     displayMode: block.displayMode,
     host: "word",
+    fontSizePt: block.fontSizePt,
+    numbered: block.displayMode === "block" && block.numbered,
     formulaLetterFont,
     formulaChineseFont,
   });
@@ -193,18 +176,20 @@ async function prepareFormulaArtifactCommitItem(
     paragraphEnd: block.paragraphEnd,
   };
 
-  let metadata: VisualTeXFormulaMetadata;
-  if (outputKind === "image") {
-    const { svgToPng } = await import("../../export/svgToPng");
-    const png = await svgToPng(svg, { scale: 2, background: "transparent" });
-    const pngBase64 = png.base64;
-    const resolvedBaseline = svg.baseline;
-    const reference = calculateReferenceGeometry(
-      svg.width,
-      svg.height,
-      resolvedBaseline,
-    );
-    metadata = createFormulaMetadata({
+  // Prepare both Word representations once. OMML formulas need the real image
+  // geometry and SVG/DOCX cache too, otherwise their first format conversion
+  // falls back to the historical 14 x 14 placeholder square.
+  const { svgToPng } = await import("../../export/svgToPng");
+  const png = await svgToPng(svg, { scale: 2, background: "transparent" });
+  const pngBase64 = png.base64;
+  const resolvedBaseline = svg.baseline;
+  const reference = wordImageReferenceGeometry(
+    svg.width,
+    svg.height,
+    resolvedBaseline,
+    formulaLetterFont,
+  );
+  const metadata: VisualTeXFormulaMetadata = createFormulaMetadata({
       formulaId,
       title: block.displayMode === "inline" ? "Imported inline formula" : "Imported display formula",
       lines: editorDocument.lines,
@@ -219,38 +204,6 @@ async function prepareFormulaArtifactCommitItem(
       renderHeightPx: svg.height,
       imageInkCenterYRatio: png.inkCenterYRatio,
       ...reference,
-    });
-    return {
-      kind: "formula",
-      formulaId,
-      latex: canonicalLatex,
-      displayMode: block.displayMode,
-      numbered: block.displayMode === "block" && block.numbered,
-      fontSizePt: block.fontSizePt,
-      metadata,
-      ommlBase64: omml.ommlBase64,
-      ommlDocxBase64: omml.ommlDocxBase64,
-      svgBase64: svg.base64,
-      pngBase64,
-      width: svg.width,
-      height: svg.height,
-      baseline: resolvedBaseline,
-      inkCenterYRatio: png.inkCenterYRatio,
-      ...paragraphMetadata,
-    };
-  }
-
-  metadata = createFormulaMetadata({
-    formulaId,
-    title: block.displayMode === "inline" ? "Imported inline formula" : "Imported display formula",
-    lines: editorDocument.lines,
-    codeFormat: editorDocument.codeFormat,
-    sourceLatex: canonicalLatex,
-    displayMode: block.displayMode,
-    numbered: block.displayMode === "block" && block.numbered,
-    fontSizePt: block.fontSizePt,
-    formulaLetterFont,
-    formulaChineseFont,
   });
   return {
     kind: "formula",
@@ -262,56 +215,14 @@ async function prepareFormulaArtifactCommitItem(
     metadata,
     ommlBase64: omml.ommlBase64,
     ommlDocxBase64: omml.ommlDocxBase64,
+    svgBase64: svg.base64,
+    pngBase64,
+    width: svg.width,
+    height: svg.height,
+    baseline: resolvedBaseline,
+    inkCenterYRatio: png.inkCenterYRatio,
     ...paragraphMetadata,
   };
-}
-
-function formulaLiteralFallbackText(block: DocumentFormulaBlock) {
-  const original = block.sourceText?.trim();
-  if (original) return original;
-  const latex = block.latex.trim();
-  if (block.displayMode === "inline") return `\\(${latex}\\)`;
-  if (/^\\begin\s*\{[^{}]+\}/.test(latex)) return latex;
-  return `\\[\n${latex}\n\\]`;
-}
-
-async function prepareFormulaCommitItem(
-  block: DocumentFormulaBlock,
-  outputKind: DocumentFormulaOutputKind,
-): Promise<DocumentImportCommitItem> {
-  try {
-    return await prepareFormulaArtifactCommitItem(block, outputKind);
-  } catch (reason) {
-    console.warn(
-      "VisualTeX preserved an unsupported document formula as literal text",
-      reason,
-      block.latex,
-    );
-    const paragraphMetadata = block.paragraphId
-      ? {
-          paragraphId: block.paragraphId,
-          paragraphStyle: block.paragraphStyle,
-          paragraphAlignment: block.paragraphAlignment,
-          listKind: block.listKind,
-          listLevel: block.listLevel,
-          paragraphStart: block.paragraphStart,
-          paragraphEnd: block.paragraphEnd,
-        }
-      : {
-          paragraphId: createUuid(),
-          paragraphStyle: "code" as const,
-          paragraphAlignment: "left" as const,
-          listKind: "none" as const,
-          listLevel: 0,
-          paragraphStart: true,
-          paragraphEnd: true,
-        };
-    return {
-      kind: "text",
-      text: formulaLiteralFallbackText(block),
-      ...paragraphMetadata,
-    };
-  }
 }
 
 export function OfficeDocumentImportApp() {
@@ -329,6 +240,12 @@ export function OfficeDocumentImportApp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const explicitFontSizeIds = useRef(new Set<string>());
+  const defaultFontSizePt = readWordFormulaFontSize(outputKind) ?? request?.defaultFontSizePt ?? 12;
+  useEffect(() => {
+    setBlocks(current => current.map(block => block.kind === "formula" && !explicitFontSizeIds.current.has(block.id)
+      ? { ...block, fontSizePt: defaultFontSizePt } : block));
+  }, [defaultFontSizePt, outputKind]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const allowNativeCloseRef = useRef(false);
@@ -359,15 +276,16 @@ export function OfficeDocumentImportApp() {
       const parsed = parseLatexMarkdownDocument(
         nextSource,
         nextKind,
-        request?.defaultFontSizePt ?? 12,
+        defaultFontSizePt,
       );
       setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
     },
-    [request?.defaultFontSizePt, sourceKind],
+    [defaultFontSizePt, sourceKind],
   );
 
   const updateFormula = useCallback(
     (id: string, update: Partial<Omit<DocumentFormulaBlock, "id" | "kind">>) => {
+      if ("fontSizePt" in update) explicitFontSizeIds.current.add(id);
       setBlocks((current) =>
         current.map((block) => {
           if (block.kind !== "formula" || block.id !== id) return block;
@@ -421,7 +339,7 @@ export function OfficeDocumentImportApp() {
       const parsed = parseLatexMarkdownDocument(
         imported.source,
         imported.format,
-        request?.defaultFontSizePt ?? 12,
+        defaultFontSizePt,
       );
       setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
       setToast(
@@ -446,7 +364,7 @@ export function OfficeDocumentImportApp() {
     const parsed = parseLatexMarkdownDocument(
       source,
       value,
-      request?.defaultFontSizePt ?? 12,
+      defaultFontSizePt,
     );
     setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
   };
@@ -493,7 +411,7 @@ export function OfficeDocumentImportApp() {
       const preparedFormulas = await Promise.all(
         formulas.map(async (block, index) => {
           try {
-            return await prepareFormulaCommitItem(block, outputKind);
+            return await prepareFormulaArtifactCommitItem(block, outputKind);
           } catch (reason) {
             const detail = documentImportErrorMessage(
               reason,
@@ -526,14 +444,7 @@ export function OfficeDocumentImportApp() {
         formulaIndex += 1;
         return prepared;
       });
-      const literalFallbackCount = preparedFormulas.filter(
-        (item) => item.kind === "text",
-      ).length;
-      setToast(
-        literalFallbackCount > 0
-          ? `正在写入 Word（${literalFallbackCount} 个不支持片段按原文保留）…`
-          : `正在写入 Word：0/${items.length}`,
-      );
+      setToast(`正在写入 Word：0/${items.length}`);
       progressTimer = window.setInterval(() => {
         if (progressRequestInFlight) return;
         progressRequestInFlight = true;

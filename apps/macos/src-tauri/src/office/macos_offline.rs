@@ -108,7 +108,6 @@ const WORD_REFERENCE_FONT_SIZE_PT: f64 = 14.0;
 // by MathJax's TeX layout positions while removing the erroneous 10% vertical
 // enlargement that made Times image formulas taller and shifted their baseline.
 const WORD_TEX_IMAGE_VISUAL_SCALE: f64 = 1.1;
-const WORD_TEX_SHALLOW_DESCENT_FLOOR_PT: f64 = 1.91;
 const WORD_TIMES_IMAGE_WIDTH_SCALE: f64 = 1.067;
 const WORD_TIMES_IMAGE_HEIGHT_SCALE: f64 = 1.0;
 
@@ -237,6 +236,12 @@ pub struct MacOfflineFormulaRestoreTarget {
     display_mode: String,
     font_size_pt: f64,
     source_kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    formula_id: Option<String>,
+    #[serde(default)]
+    numbered: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<VisualTeXFormulaMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     math_ml: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1344,8 +1349,11 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
             ) {
                 return Err("Formula restore scope must be selection or document".to_string());
             }
-            if !matches!(document_import.output_kind.as_deref(), Some("latex" | "image")) {
-                return Err("Formula restore output kind must be latex or image".to_string());
+            if !matches!(
+                document_import.output_kind.as_deref(),
+                Some("latex" | "image" | "omml")
+            ) {
+                return Err("Formula restore output kind must be latex, image or omml".to_string());
             }
             if !matches!(document_import.source_kind.as_deref(), Some("omml" | "image")) {
                 return Err("Formula restore source kind must be omml or image".to_string());
@@ -1354,6 +1362,11 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
                 && document_import.source_kind.as_deref() != Some("omml")
             {
                 return Err("Only native OMML can be restored to a VisualTeX image".to_string());
+            }
+            if document_import.output_kind.as_deref() == Some("omml")
+                && document_import.source_kind.as_deref() != Some("image")
+            {
+                return Err("Only VisualTeX image formulas can be converted to Word OMML".to_string());
             }
             let source_metadata = fs::metadata(formula_restore_source_path(session_id)?)
                 .map_err(|error| format!("Unable to inspect formula restore source: {error}"))?;
@@ -2234,6 +2247,7 @@ fn import_request(
             mode,
             host,
             operation: session_operation,
+            native_equation: request.native_equation,
             formula_id: Some(formula_id),
             source_document_id,
             source_object_id,
@@ -2614,6 +2628,9 @@ fn set_resident_editor_native_state(
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
             native_window.setAlphaValue(alpha);
             native_window.setIgnoresMouseEvents(parked);
+            // Parked renderers are implementation windows, not destinations
+            // for Window/Dock navigation while the user opens the workspace.
+            native_window.setExcludedFromWindowsMenu(parked);
             native_window.setLevel(if parked {
                 objc2_app_kit::NSNormalWindowLevel
             } else {
@@ -4039,26 +4056,10 @@ fn calculate_word_svg_geometry_for_font(
         width_scale,
         height_scale,
     )?;
-    // KaTeX and the non-Times letter-font replacements share MathJax's very
-    // shallow SVG descent for superscript-only expressions. Word's integral
-    // Font.Position then leaves x^2 visibly above adjacent OMML on screen and
-    // by 0.5-0.67 pt in PDF ink measurements. Apply a canonical-size descent
-    // floor only to that shallow class; fractions, integrals, sums and roots
-    // already exceed it and keep their formula-specific baseline. Times uses
-    // real text glyph metrics and retains its independent calibration.
-    if formula_letter_font != Some("times")
-        && geometry.reference_baseline_pt < 0.0
-        && geometry.reference_baseline_pt > -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT
-    {
-        scale_word_reference_geometry(
-            geometry.reference_width_pt,
-            geometry.reference_height_pt,
-            -WORD_TEX_SHALLOW_DESCENT_FLOOR_PT,
-            font_size_pt,
-        )
-    } else {
-        Ok(geometry)
-    }
+    // The frontend aligns the SVG canvas to Word whole-point positions.
+    // Preserve its mathematical baseline; a formula-specific descent floor
+    // would shift only shallow formulas away from the shared text baseline.
+    Ok(geometry)
 }
 
 fn calculate_word_geometry(
@@ -4713,26 +4714,24 @@ fn commit_word(
     {
         return Err("Word formula OMML payload is not a safe Office Math fragment".to_string());
     }
-    let native_document_path = if request.native_equation {
-        let omml_docx_base64 = export
-            .omml_docx_base64
-            .as_deref()
-            .ok_or_else(|| "Word formula export has no native DOCX payload".to_string())?;
-        let omml_docx = URL_SAFE_NO_PAD
-            .decode(omml_docx_base64)
-            .map_err(|_| "Word formula native DOCX payload is not valid Base64URL".to_string())?;
-        if omml_docx.len() < 128
-            || omml_docx.len() > MAX_OMML_BYTES * 8
-            || !omml_docx.starts_with(b"PK\x03\x04")
-        {
-            return Err("Word formula native DOCX payload is invalid or too large".to_string());
-        }
-        let path = native_word_document_path(&session.formula_id)?;
-        atomic_write(&path, &omml_docx, 0o600)?;
-        Some(path)
-    } else {
-        None
-    };
+    // Keep both Word representations warm for every formula. Image formulas
+    // already carry OMML in their editor export, so dropping its DOCX package
+    // forced the first image-to-OMML conversion back through the renderer.
+    let omml_docx_base64 = export
+        .omml_docx_base64
+        .as_deref()
+        .ok_or_else(|| "Word formula export has no native DOCX payload".to_string())?;
+    let omml_docx = URL_SAFE_NO_PAD
+        .decode(omml_docx_base64)
+        .map_err(|_| "Word formula native DOCX payload is not valid Base64URL".to_string())?;
+    if omml_docx.len() < 128
+        || omml_docx.len() > MAX_OMML_BYTES * 8
+        || !omml_docx.starts_with(b"PK\x03\x04")
+    {
+        return Err("Word formula native DOCX payload is invalid or too large".to_string());
+    }
+    let native_document_path = native_word_document_path(&session.formula_id)?;
+    atomic_write(&native_document_path, &omml_docx, 0o600)?;
 
     // Every successful Word export refreshes the durable image cache. Native
     // OMML commits do not pass the Session-scoped image paths to VBA, but the
@@ -4816,10 +4815,7 @@ fn commit_word(
         ("ommlBase64", omml_base64.to_string()),
         (
             "nativeDocumentPath",
-            native_document_path
-                .as_ref()
-                .map(|path| path.to_string_lossy().to_string())
-                .unwrap_or_default(),
+            native_document_path.to_string_lossy().to_string(),
         ),
         ("pendingMarker", pending_marker),
         ("sourceMarker", source_marker),
@@ -5103,6 +5099,20 @@ fn parse_formula_restore_manifest(
         {
             return Err("Word formula restore font size is outside the supported range".to_string());
         }
+        let formula_id = values
+            .get(&format!("{prefix}formulaId"))
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let numbered = match values.get(&format!("{prefix}numbered")).map(String::as_str) {
+            Some("1") => true,
+            Some("0") | None => false,
+            _ => return Err("Word formula restore numbered flag is invalid".to_string()),
+        };
+        let encoded_identity_metadata = values
+            .get(&format!("{prefix}metadata"))
+            .map(String::as_str)
+            .filter(|value| !value.is_empty());
         let payload = String::from_utf8(
             URL_SAFE_NO_PAD
                 .decode(required(&format!("{prefix}payloadBase64"))?)
@@ -5112,16 +5122,69 @@ fn parse_formula_restore_manifest(
         if payload.is_empty() || payload.len() > MAX_OMML_BYTES.max(MAX_METADATA_BYTES) {
             return Err("Word formula restore payload is invalid or excessive".to_string());
         }
-        let (math_ml, latex) = if source_kind == "omml" {
-            (Some(word_omml_to_mathml(&payload)?), None)
-        } else {
-            let metadata = decode_metadata(&payload)?;
-            let latex = canonical_document_formula_latex(&metadata)?;
-            if metadata.display_mode != display_mode {
-                return Err("Word image formula display metadata changed".to_string());
-            }
-            (None, Some(latex))
-        };
+        let (resolved_formula_id, resolved_numbered, resolved_metadata, math_ml, latex) =
+            if source_kind == "omml" {
+                let metadata = if let Some(formula_id) = formula_id.as_deref() {
+                    validate_uuid(formula_id, "Word managed OMML formula id")?;
+                    let encoded = encoded_identity_metadata.ok_or_else(|| {
+                        "Managed Word OMML formula is missing VisualTeX metadata".to_string()
+                    })?;
+                    let metadata = decode_metadata(encoded)?;
+                    if metadata.formula_id != formula_id
+                        || metadata.display_mode != display_mode
+                        || metadata.numbered != numbered
+                    {
+                        return Err(
+                            "Managed Word OMML identity does not match its VisualTeX metadata"
+                                .to_string(),
+                        );
+                    }
+                    Some(metadata)
+                } else {
+                    if numbered || encoded_identity_metadata.is_some() {
+                        return Err(
+                            "Unmanaged Word OMML contains partial VisualTeX identity".to_string(),
+                        );
+                    }
+                    None
+                };
+                (
+                    formula_id,
+                    numbered,
+                    metadata,
+                    Some(word_omml_to_mathml(&payload)?),
+                    None,
+                )
+            } else {
+                let metadata = decode_metadata(&payload)?;
+                let latex = canonical_document_formula_latex(&metadata)?;
+                if metadata.display_mode != display_mode {
+                    return Err("Word image formula display metadata changed".to_string());
+                }
+                if let Some(manifest_formula_id) = formula_id.as_deref() {
+                    if metadata.formula_id != manifest_formula_id {
+                        return Err("Word image formula id changed during restore".to_string());
+                    }
+                }
+                if metadata.numbered != numbered {
+                    return Err("Word image formula numbering metadata changed".to_string());
+                }
+                if let Some(encoded) = encoded_identity_metadata {
+                    let manifest_metadata = decode_metadata(encoded)?;
+                    if manifest_metadata.formula_id != metadata.formula_id
+                        || manifest_metadata.numbered != metadata.numbered
+                    {
+                        return Err("Word image formula identity metadata changed".to_string());
+                    }
+                }
+                (
+                    Some(metadata.formula_id.clone()),
+                    metadata.numbered,
+                    Some(metadata),
+                    None,
+                    Some(latex),
+                )
+            };
         targets.push(MacOfflineFormulaRestoreTarget {
             source_start: start,
             source_end: end,
@@ -5129,6 +5192,9 @@ fn parse_formula_restore_manifest(
             display_mode,
             font_size_pt,
             source_kind: source_kind.to_string(),
+            formula_id: resolved_formula_id,
+            numbered: resolved_numbered,
+            metadata: resolved_metadata,
             math_ml,
             latex,
         });
@@ -5465,6 +5531,10 @@ fn decode_document_image_fallback_png(value: Option<&str>) -> Result<Vec<u8>, St
     Ok(bytes)
 }
 
+fn document_output_requires_image_artifacts(output_kind: &str) -> bool {
+    output_kind == "image"
+}
+
 fn calculate_document_image_geometry(
     width: f64,
     height: f64,
@@ -5796,7 +5866,7 @@ fn commit_document_import_blocking(
         );
     }
     let valid_output = if is_formula_restore {
-        matches!(input.output_kind.as_str(), "latex" | "image")
+        matches!(input.output_kind.as_str(), "latex" | "image" | "omml")
     } else {
         matches!(input.output_kind.as_str(), "omml" | "image")
     };
@@ -5883,7 +5953,7 @@ fn commit_document_import_blocking(
             if (is_redraw && item_kind != "formula")
                 || (is_formula_restore
                     && ((input.output_kind == "latex" && item_kind != "text")
-                        || (input.output_kind == "image" && item_kind != "formula")))
+                        || (input.output_kind != "latex" && item_kind != "formula")))
             {
                 return Err("Word range replacement contains an incompatible item kind".to_string());
             }
@@ -5931,7 +6001,27 @@ fn commit_document_import_blocking(
         ),
         ("itemCount".to_string(), input.items.len().to_string()),
     ];
-    let redraw_vector_batch_path = if is_range_replace && input.output_kind == "image" {
+    if is_range_replace {
+        entries.push((
+            "redrawScope".to_string(),
+            public_request.redraw_scope.clone().unwrap_or_default(),
+        ));
+        entries.push((
+            "sourceKind".to_string(),
+            public_request.source_kind.clone().unwrap_or_default(),
+        ));
+        let target_snapshot = public_request
+            .source
+            .as_deref()
+            .ok_or_else(|| "Word range replacement source snapshot is missing".to_string())?;
+        entries.push((
+            "targetTextBase64".to_string(),
+            URL_SAFE_NO_PAD.encode(target_snapshot.as_bytes()),
+        ));
+    }
+    // Import and redraw use the same shared drawing carrier. Opening a separate
+    // hidden Word document for every imported image dominates batch latency.
+    let redraw_vector_batch_path = if input.output_kind == "image" {
         Some(latex_redraw_vector_batch_path(&session_id)?)
     } else {
         None
@@ -6188,26 +6278,34 @@ fn commit_document_import_blocking(
                 let mut vector_document_path = String::new();
                 let mut vector_document_index = 0usize;
                 let mut fallback_image_path = String::new();
-                let geometry = if input.output_kind == "image" {
+                let width = width
+                    .ok_or_else(|| "Document formula width is missing".to_string())?;
+                let height = height
+                    .ok_or_else(|| "Document formula height is missing".to_string())?;
+                let baseline = baseline.ok_or_else(|| {
+                    "Document formula is missing its mathematical baseline".to_string()
+                })?;
+                let geometry = calculate_document_image_geometry(
+                    width,
+                    height,
+                    baseline,
+                    *font_size_pt,
+                    resolved_metadata.formula_letter_font.as_deref(),
+                )?;
+
+                if document_output_requires_image_artifacts(&input.output_kind) {
                     let svg_value = svg_base64
                         .as_deref()
-                        .ok_or_else(|| "Image document formula is missing SVG data".to_string())?;
+                        .ok_or_else(|| "Document image formula is missing SVG data".to_string())?;
                     let svg = decode_svg(svg_value)?;
                     let png = decode_document_image_fallback_png(png_base64.as_deref())?;
-                    let width = width
-                        .ok_or_else(|| "Image document formula width is missing".to_string())?;
-                    let height = height
-                        .ok_or_else(|| "Image document formula height is missing".to_string())?;
-                    let baseline = baseline.ok_or_else(|| {
-                        "Image document formula is missing its mathematical baseline".to_string()
-                    })?;
-                    let geometry = calculate_document_image_geometry(
-                        width,
-                        height,
-                        baseline,
-                        *font_size_pt,
-                        resolved_metadata.formula_letter_font.as_deref(),
-                    )?;
+                    let image_package =
+                        build_word_svg_docx(&svg, &png, geometry.width, geometry.height)?;
+                    let (cached_svg_path, cached_document_path, cached_png_path) =
+                        word_image_cache_paths(formula_id)?;
+                    atomic_write(&cached_svg_path, &svg, 0o600)?;
+                    atomic_write(&cached_document_path, &image_package, 0o600)?;
+                    atomic_write(&cached_png_path, &png, 0o600)?;
                     let svg_path = document_formula_file_path(&session_id, formula_id, "svg")?;
                     let png_path = document_formula_file_path(&session_id, formula_id, "png")?;
                     atomic_write(&svg_path, &svg, 0o600)?;
@@ -6215,8 +6313,8 @@ fn commit_document_import_blocking(
                     if let Some(batch_path) = redraw_vector_batch_path.as_ref() {
                         vector_document_index = redraw_vector_entries.len() + 1;
                         redraw_vector_entries.push(WordSvgBatchEntry {
-                            svg,
-                            png,
+                            svg: svg.clone(),
+                            png: png.clone(),
                             width_points: geometry.width,
                             height_points: geometry.height,
                         });
@@ -6224,41 +6322,35 @@ fn commit_document_import_blocking(
                     } else {
                         let vector_path =
                             document_formula_file_path(&session_id, formula_id, "docx")?;
-                        let package =
-                            build_word_svg_docx(&svg, &png, geometry.width, geometry.height)?;
-                        atomic_write(&vector_path, &package, 0o600)?;
+                        atomic_write(&vector_path, &image_package, 0o600)?;
                         vector_document_path = vector_path.to_string_lossy().to_string();
                     }
                     image_path = svg_path.to_string_lossy().to_string();
                     fallback_image_path = png_path.to_string_lossy().to_string();
-                    resolved_metadata.render_width_px = Some(width);
-                    resolved_metadata.render_height_px = Some(height);
-                    resolved_metadata.reference_width_pt = Some(geometry.reference_width_pt);
-                    resolved_metadata.reference_height_pt = Some(geometry.reference_height_pt);
-                    resolved_metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
-                    resolved_metadata.image_ink_center_y_ratio = ink_center_y_ratio
-                        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
-                    geometry
-                } else {
-                    resolved_metadata.reference_width_pt = None;
-                    resolved_metadata.reference_height_pt = None;
-                    resolved_metadata.reference_baseline_pt = None;
-                    resolved_metadata.image_ink_center_y_ratio = None;
-                    WordGeometry {
-                        width: *font_size_pt,
-                        height: (*font_size_pt * 1.8).max(18.0),
-                        baseline: 0,
-                        font_size_pt: *font_size_pt,
-                        reference_width_pt: WORD_REFERENCE_FONT_SIZE_PT,
-                        reference_height_pt: WORD_REFERENCE_FONT_SIZE_PT,
-                        reference_baseline_pt: 0.0,
-                    }
-                };
+                }
+                resolved_metadata.render_width_px = Some(width);
+                resolved_metadata.render_height_px = Some(height);
+                resolved_metadata.reference_width_pt = Some(geometry.reference_width_pt);
+                resolved_metadata.reference_height_pt = Some(geometry.reference_height_pt);
+                resolved_metadata.reference_baseline_pt = Some(geometry.reference_baseline_pt);
+                resolved_metadata.image_ink_center_y_ratio = ink_center_y_ratio
+                    .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
                 let encoded_metadata = encode_metadata(&resolved_metadata)?;
                 metadata_to_cache.push(resolved_metadata);
 
+                let preserve_formula_identity = is_formula_restore
+                    && public_request
+                        .restore_targets
+                        .as_ref()
+                        .and_then(|targets| targets.get(index))
+                        .and_then(|target| target.formula_id.as_deref())
+                        == Some(formula_id.as_str());
                 entries.push((format!("{prefix}kind"), "formula".to_string()));
                 entries.push((format!("{prefix}formulaId"), formula_id.clone()));
+                entries.push((
+                    format!("{prefix}preserveIdentity"),
+                    if preserve_formula_identity { "1" } else { "0" }.to_string(),
+                ));
                 entries.push((
                     format!("{prefix}latexBase64"),
                     URL_SAFE_NO_PAD.encode(canonical_latex.as_bytes()),
@@ -6358,8 +6450,18 @@ fn commit_document_import_blocking(
         return Err("Document import contains no visible content".to_string());
     }
     if let Some(batch_path) = redraw_vector_batch_path.as_ref() {
-        let package = build_word_svg_batch_docx(&redraw_vector_entries)?;
-        atomic_write(batch_path, &package, 0o600)?;
+        if !redraw_vector_entries.is_empty() {
+            let package = build_word_svg_batch_docx(&redraw_vector_entries)?;
+            atomic_write(batch_path, &package, 0o600)?;
+            entries.push((
+                "vectorBatchDocumentPath".to_string(),
+                batch_path.to_string_lossy().to_string(),
+            ));
+            entries.push((
+                "vectorBatchFormulaCount".to_string(),
+                redraw_vector_entries.len().to_string(),
+            ));
+        }
     }
     if let Some(batch_path) = native_batch_document_path.as_ref() {
         let package = build_word_omml_batch_docx(&native_batch_entries)?;
@@ -6391,6 +6493,10 @@ fn commit_document_import_blocking(
         ("sessionId", session_id.clone()),
         ("action", "documentCommit".to_string()),
         ("host", "word".to_string()),
+        (
+            "performanceTrace",
+            if word_performance_trace_enabled() { "1" } else { "0" }.to_string(),
+        ),
         (
             "sourceDocumentId",
             public_request.source_document_id.clone(),
@@ -6884,7 +6990,7 @@ pub(crate) fn refresh_health_signal(host: &str) -> bool {
     let (process_name, script) = match host {
         "word" => (
             "Microsoft Word",
-            r#"tell application "Microsoft Word" to run VB macro macro name "AutoExec""#,
+            r#"tell application "Microsoft Word" to run VB macro macro name "VisualTeX_InitializeWordHost""#,
         ),
         "powerpoint" => (
             "Microsoft PowerPoint",
@@ -7013,6 +7119,12 @@ mod tests {
         overflowing.extend_from_slice(b"IDAT");
         overflowing.extend_from_slice(&[0_u8; 4]);
         assert!(png_ink_center_y_ratio_from_bytes(&overflowing).is_err());
+    }
+
+    #[test]
+    fn omml_document_commits_do_not_require_svg_or_png_artifacts() {
+        assert!(!document_output_requires_image_artifacts("omml"));
+        assert!(document_output_requires_image_artifacts("image"));
     }
 
     #[test]
@@ -7385,7 +7497,7 @@ mod tests {
     }
 
     #[test]
-    fn word_non_times_fonts_lower_only_shallow_superscript_descent() {
+    fn word_non_times_fonts_preserve_svg_mathematical_descent() {
         for font in ["katex", "cambria", "stix", "palatino", "helvetica"] {
             let shallow = calculate_word_svg_geometry_for_font(
                 20.83792,
@@ -7404,8 +7516,8 @@ mod tests {
             )
             .expect("non-Times fraction geometry should resolve");
 
-            assert_eq!(shallow.baseline, -2, "font={font}");
-            assert!((shallow.reference_baseline_pt + 1.91).abs() < 0.001);
+            assert_eq!(shallow.baseline, -1, "font={font}");
+            assert!((shallow.reference_baseline_pt + (17.789648 - 16.5848) * 0.825).abs() < 0.001);
             assert_eq!(deep.baseline, -5, "font={font}");
             assert!(deep.reference_baseline_pt < -6.0);
         }
@@ -8261,6 +8373,7 @@ c &= e
             mode: OfficeSessionMode::Edit,
             host: OfficeHost::Powerpoint,
             operation: None,
+            native_equation: false,
             formula_id: "12345678-1234-4234-9234-123456789abc".to_string(),
             source_document_id: None,
             source_object_id: None,

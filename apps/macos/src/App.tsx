@@ -950,11 +950,11 @@ function App() {
           : `已复制：${currentCodeFormat.titleZh}`,
       );
       return true;
-    } catch {
+    } catch (reason) {
       setToast(
-        isEn
-          ? "Copy failed. Check clipboard permission."
-          : "复制失败，请检查系统剪贴板权限",
+        reason instanceof Error ? reason.message : isEn
+          ? "Could not copy formula source."
+          : "无法复制公式源码。",
       );
       return false;
     }

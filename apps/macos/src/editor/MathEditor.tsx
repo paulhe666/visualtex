@@ -1,3 +1,4 @@
+import { formatLatexLines } from "../clipboard/LatexCopyService";
 import {
   useEffect,
   useLayoutEffect,
@@ -10582,10 +10583,18 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       };
 
       const handleMultiLineCopy = (event: ClipboardEvent) => {
-        if (
-          !event.clipboardData ||
-          multiLineSelectedIdsRef.current.size <= 1
-        ) {
+        if (!event.clipboardData) return;
+        if (multiLineSelectedIdsRef.current.size <= 1) {
+          const field = event.composedPath().find(node =>
+            node instanceof MathfieldElement) as MathfieldElement | undefined;
+          if (!field || field.selectionIsCollapsed) return;
+          const raw = captureSelection(field).ranges.map(([start, end]) =>
+            field.getValue(Math.min(start, end), Math.max(start, end), "latex-expanded")).join("");
+          const value = normalizeChineseLatex(raw);
+          event.clipboardData.setData("application/x-latex", value);
+          event.clipboardData.setData("text/plain", formatLatexLines([value], latexCodeFormat));
+          event.preventDefault();
+          event.stopImmediatePropagation();
           return;
         }
         const selectedLines = linesRef.current.flatMap((line) => {
@@ -10612,7 +10621,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           JSON.stringify({ version: 1, lines: selectedLines }),
         );
         event.clipboardData.setData("application/x-latex", latex);
-        event.clipboardData.setData("text/plain", latex);
+        event.clipboardData.setData("text/plain", formatLatexLines(selectedLines, latexCodeFormat));
         event.preventDefault();
         event.stopImmediatePropagation();
       };

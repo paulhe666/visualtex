@@ -23,8 +23,8 @@ for (const required of [
   "VTAddWordFormulaPicture",
   "VTNormalizeUnnumberedDisplayParagraph",
   "VTEnsureImageEquationNumber",
-  "VTRefreshNumberedImageFormulaFontLayout",
-  "VTPlaceCaretAfterDisplayFormula",
+  "VTApplyWordInlineImageBaseline",
+  "VTContinuationRangeAfterDisplayFormula",
   "VTSetWordLatexPayload",
   "VTSetWordOmmlPayload",
   "VTSetWordMetadataPayload",
@@ -69,7 +69,7 @@ for (const required of [
 
 assert.match(
   insertion,
-  /If displayMode = "inline" Then[\s\S]*candidate\.Range\.Font\.Position = CLng\(baselinePoints\)/,
+  /If displayMode = "inline" Then[\s\S]*VTApplyWordInlineImageBaseline/,
   "Inline image formulas must preserve the normal VisualTeX baseline",
 );
 assert.match(

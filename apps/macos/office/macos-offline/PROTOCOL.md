@@ -159,12 +159,12 @@ Each pointer contains only one canonical UUID and is removed after the callback.
 
 ## Health files
 
-Word `AutoExec` and PowerPoint `Auto_Open` atomically write:
+Word explicit host initialization / Ribbon loading and PowerPoint `Auto_Open` atomically write:
 
 ```json
 {
   "loaded": true,
-  "pluginVersion": "1.2.6",
+  "pluginVersion": "1.2.7",
   "host": "word",
   "timestamp": "2026-07-15T00:00:00Z"
 }
