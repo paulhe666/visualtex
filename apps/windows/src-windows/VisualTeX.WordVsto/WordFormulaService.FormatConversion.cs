@@ -1492,7 +1492,7 @@ internal sealed partial class WordFormulaService
                             mathTypeTargetColumnLayouts);
                     }
 
-                    plan.Targets.Add(new WordFormulaFormatConversionTarget
+                    var conversionTarget = new WordFormulaFormatConversionTarget
                     {
                         Id = Guid.NewGuid().ToString("D"),
                         SourceFormulaId = sourceFormulaId,
@@ -2787,8 +2787,11 @@ internal sealed partial class WordFormulaService
                                     sourceReferenceCounts,
                                     preserveFormulaCrossReferences,
                                     useIdentityBookmarkSourceCheck:
-                                        canUseWholeDocumentVisualTeXToMathTypeCardinalityFastPath);
-                    if (useDirectSingleNativeOmmlDelete)
+                                        canUseWholeDocumentVisualTeXToMathTypeCardinalityFastPath,
+                                    deferCaptionFlowTailCleanup: true);
+                    if (useDirectUnnumberedOmmlDelete)
+                        WordDoubleClickHook.TraceMessage($"format-conversion-exact-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
+                    else if (useDirectSingleNativeOmmlDelete)
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-direct-omml-delete formulaId={target.SourceFormulaId} start={insertionStart}");
                     else if (useDirectSingleManagedDisplayOmmlDelete)
@@ -2868,7 +2871,8 @@ internal sealed partial class WordFormulaService
                                     "block",
                                     StringComparison.Ordinal),
                             knownDisplayColumnWidth:
-                                target.MathTypeDisplayColumnWidth);
+                                target.MathTypeDisplayColumnWidth,
+                            preserveCapturedInsertion: true);
                     }
                     else if (string.Equals(
                                  plan.TargetMode,
@@ -3167,6 +3171,19 @@ internal sealed partial class WordFormulaService
                 : Array.Empty<string>();
             var verifiedConvertedOmmlMetadata = new Dictionary<string, FormulaMetadata>(
                 StringComparer.OrdinalIgnoreCase);
+            if (targetIsVisualTeX && deferredOwnedOmmlSeparators.Count > 0)
+            {
+                // VisualTeX OLE numbering is a separate phase. Retire the old
+                // OMML separator after bare OLE insertion and BEFORE its new
+                // caption is created, so the caption can own its own flow tail.
+                VerifyConvertedBodyHosts(document, plan.TargetMode, successfulTargets,
+                    prepared, retainedMathTypeTargetBookmarks, userCellOwnerByTargetId);
+                foreach (var sourceId in deferredOwnedOmmlSeparators)
+                    WordEquationNumbering.CompleteDeferredOmmlSeparatorCleanup(document, sourceId);
+                deferredOwnedOmmlSeparators.Clear();
+                VerifyConvertedBodyHosts(document, plan.TargetMode, successfulTargets,
+                    prepared, retainedMathTypeTargetBookmarks, userCellOwnerByTargetId);
+            }
 
             // InsertOmml deliberately defers final WordOpenXML fingerprinting during
             // a batch. Word can normalize a freshly inserted OMath before numbering
@@ -5701,7 +5718,8 @@ internal sealed partial class WordFormulaService
         WordFormulaFormatConversionTarget target,
         IReadOnlyDictionary<string, int>? knownReferenceCounts = null,
         bool preserveCrossReferences = false,
-        bool useIdentityBookmarkSourceCheck = false)
+        bool useIdentityBookmarkSourceCheck = false,
+        bool deferCaptionFlowTailCleanup = false)
     {
         InlineShape? shape = null;
         Range? shapeRange = null;

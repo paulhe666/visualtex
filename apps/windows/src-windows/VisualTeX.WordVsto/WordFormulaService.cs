@@ -9834,6 +9834,9 @@ internal sealed partial class WordFormulaService
         var numberingLayoutChanged = false;
         MathTypeWordOpenXml.NumberTemplate? sourceNumberTemplate = null;
         var createdEditSectionBreakCodeStart = -1;
+        Options? editOptions = null;
+        var previousSmartCutPaste = false;
+        var smartCutPasteSuspended = false;
         var editUndoEnded = false;
         var editViewRestored = false;
         var alignInline = string.Equals(

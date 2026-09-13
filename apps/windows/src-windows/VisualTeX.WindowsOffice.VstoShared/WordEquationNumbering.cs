@@ -1245,6 +1245,21 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static bool IsOleNumberingParagraphXml(string paragraphXml, string formulaId)
+    {
+        // Classification only: the normal OLE health path below still checks tab
+        // geometry, unique aliases, sequence state and reference ownership.
+        // Never classify a user table by column count or by a neighbouring cell.
+        if (!Guid.TryParse(formulaId, out var id)) return false;
+        return Regex.Matches(paragraphXml, Regex.Escape("ProgID=\"VisualTeX.Formula.1\""),
+                   RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count == 1
+            && !Regex.IsMatch(paragraphXml, @"<m:oMath(?:\s|>)",
+                   RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            && Regex.IsMatch(paragraphXml,
+                @"\bREF\s+(?:&quot;|"")?VTEqNum_" + id.ToString("N") + @"(?=\s|&quot;|""|\\|<|$)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     internal static bool IsUnmanagedEquationDocumentXml(string xml)
     {
         if (string.IsNullOrWhiteSpace(xml)) return false;
@@ -2607,13 +2622,19 @@ internal static partial class WordEquationNumbering
             if (!verifiedFreshBareOmml)
                 return candidate;
 
-            Tables? tables = null;
             try
             {
-                tables = candidate.Tables;
-                if (tables.Count != 0)
+                // Fresh OMML may legitimately live inside an ordinary user table.
+                // The old assertion rejected every table-owned formula before the
+                // numbering code could choose its cell-safe native #(SEQ) host.
+                // Reject only a pre-existing VisualTeX numbering table: a fresh bare
+                // source must not already own our generated numbering scaffold.
+                if (IsManagedNumberedEquationTable(
+                        document,
+                        candidate,
+                        metadata.FormulaId))
                     throw new InvalidDataException(
-                        $"Verified fresh OMML {metadata.FormulaId} unexpectedly entered a table before numbering.");
+                        $"Verified fresh OMML {metadata.FormulaId} unexpectedly entered a managed numbering table before numbering.");
                 return candidate;
             }
             catch
@@ -2621,7 +2642,6 @@ internal static partial class WordEquationNumbering
                 Release(candidate);
                 throw;
             }
-            finally { Release(tables); }
         }
         try
         {
