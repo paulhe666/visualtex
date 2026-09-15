@@ -17,6 +17,7 @@ mod ocr_offline;
 mod ocr_provider;
 mod office;
 mod quick_ocr;
+mod svg_font_stabilizer;
 mod system_math_glyphs;
 
 const PADDLE_VERSION: &str = "3.3.1";

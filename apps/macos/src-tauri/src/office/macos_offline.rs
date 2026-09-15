@@ -4308,6 +4308,11 @@ fn materialize_result_svg(session: &OfficeFormulaSession) -> Result<PathBuf, Str
     Ok(path)
 }
 
+fn decode_stabilized_word_svg(value: &str) -> Result<Vec<u8>, String> {
+    let svg = decode_svg(value)?;
+    crate::svg_font_stabilizer::stabilize_word_svg_font_outlines(&svg)
+}
+
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = 0xffff_ffff_u32;
     for byte in bytes {
@@ -4650,7 +4655,7 @@ fn materialize_word_svg_package(
         .export_result
         .as_ref()
         .ok_or_else(|| "Word Session has no formula export".to_string())?;
-    let svg = decode_svg(&export.svg_base64)?;
+    let svg = decode_stabilized_word_svg(&export.svg_base64)?;
     let png = export
         .png_base64
         .as_deref()
@@ -6297,7 +6302,7 @@ fn commit_document_import_blocking(
                     let svg_value = svg_base64
                         .as_deref()
                         .ok_or_else(|| "Document image formula is missing SVG data".to_string())?;
-                    let svg = decode_svg(svg_value)?;
+                    let svg = decode_stabilized_word_svg(svg_value)?;
                     let png = decode_document_image_fallback_png(png_base64.as_deref())?;
                     let image_package =
                         build_word_svg_docx(&svg, &png, geometry.width, geometry.height)?;
@@ -7749,6 +7754,20 @@ mod tests {
         cleanup_session_files_at(&directory, false)
             .expect("empty Session directory should be removed");
         assert!(!directory.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn word_svg_decoder_freezes_visualtex_font_text_into_vector_paths() {
+        let source = r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(1,-1)"><text data-c="78" data-visualtex-output-letter-font="helvetica" transform="scale(1,-1)" font-size="1000px" font-family="Helvetica, Arial, sans-serif" font-style="italic">x</text></g></svg>"#;
+        let encoded = BASE64_STANDARD.encode(source.as_bytes());
+        let stabilized = decode_stabilized_word_svg(&encoded)
+            .expect("Word SVG should freeze host-font text before packaging");
+        let stabilized = std::str::from_utf8(&stabilized).unwrap();
+        assert!(!stabilized.contains("<text"));
+        assert!(!stabilized.contains("font-family"));
+        assert!(stabilized.contains("data-visualtex-stable-font-outline=\"true\""));
+        assert!(stabilized.contains("<path d=\"M"));
     }
 
     #[test]

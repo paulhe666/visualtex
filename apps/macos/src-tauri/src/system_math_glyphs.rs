@@ -28,7 +28,26 @@ pub(crate) struct SystemMathGlyphOutline {
     metrics: SystemMathGlyphMetrics,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct StableSvgGlyphOutline {
+    pub(crate) path: String,
+    pub(crate) advance_units: f64,
+    pub(crate) resolved_family: String,
+}
+
 const DEFAULT_MATH_FONT_FALLBACKS: &[&str] = &[
+    "STIX Two Math",
+    "Apple Symbols",
+    "Times New Roman",
+    "Helvetica",
+];
+
+const DEFAULT_STABLE_SVG_FONT_FALLBACKS: &[&str] = &[
+    "PingFang SC",
+    "Songti SC",
+    "Heiti SC",
+    "Kaiti SC",
+    "Hiragino Sans GB",
     "STIX Two Math",
     "Apple Symbols",
     "Times New Roman",
@@ -85,6 +104,8 @@ mod macos {
 
     const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
     const K_CT_FONT_ORIENTATION_HORIZONTAL: u32 = 0;
+    const K_CT_FONT_ITALIC_TRAIT: u32 = 1 << 0;
+    const K_CT_FONT_BOLD_TRAIT: u32 = 1 << 1;
 
     #[repr(C)]
     #[derive(Debug, Clone, Copy, Default)]
@@ -144,6 +165,13 @@ mod macos {
             matrix: *const c_void,
         ) -> CTFontRef;
         fn CTFontCopyFamilyName(font: CTFontRef) -> CFStringRef;
+        fn CTFontCreateCopyWithSymbolicTraits(
+            font: CTFontRef,
+            size: CGFloat,
+            matrix: *const c_void,
+            symbolic_traits: u32,
+            symbolic_traits_mask: u32,
+        ) -> CTFontRef;
         fn CTFontGetGlyphsForCharacters(
             font: CTFontRef,
             characters: *const UniChar,
@@ -357,6 +385,157 @@ mod macos {
         }
     }
 
+    struct BaselinePathWriter {
+        output: String,
+    }
+
+    impl BaselinePathWriter {
+        fn point(&self, point: CGPoint) -> (String, String) {
+            (format_number(point.x), format_number(point.y))
+        }
+    }
+
+    unsafe extern "C" fn append_baseline_path_element(
+        info: *mut c_void,
+        element: *const CGPathElement,
+    ) {
+        if info.is_null() || element.is_null() {
+            return;
+        }
+        let writer = unsafe { &mut *(info as *mut BaselinePathWriter) };
+        let element = unsafe { &*element };
+        let points = element.points;
+        match element.element_type {
+            0 => {
+                let point = unsafe { *points };
+                let (x, y) = writer.point(point);
+                writer.output.push_str(&format!("M{x} {y}"));
+            }
+            1 => {
+                let point = unsafe { *points };
+                let (x, y) = writer.point(point);
+                writer.output.push_str(&format!("L{x} {y}"));
+            }
+            2 => {
+                let control = unsafe { *points };
+                let destination = unsafe { *points.add(1) };
+                let (control_x, control_y) = writer.point(control);
+                let (destination_x, destination_y) = writer.point(destination);
+                writer.output.push_str(&format!(
+                    "Q{control_x} {control_y} {destination_x} {destination_y}"
+                ));
+            }
+            3 => {
+                let control_one = unsafe { *points };
+                let control_two = unsafe { *points.add(1) };
+                let destination = unsafe { *points.add(2) };
+                let (control_one_x, control_one_y) = writer.point(control_one);
+                let (control_two_x, control_two_y) = writer.point(control_two);
+                let (destination_x, destination_y) = writer.point(destination);
+                writer.output.push_str(&format!(
+                    "C{control_one_x} {control_one_y} {control_two_x} {control_two_y} {destination_x} {destination_y}"
+                ));
+            }
+            4 => writer.output.push('Z'),
+            _ => {}
+        }
+    }
+
+    fn styled_font_reference(
+        base: CTFontRef,
+        italic: bool,
+        bold: bool,
+    ) -> Option<OwnedCf> {
+        let mut traits = 0_u32;
+        if italic {
+            traits |= K_CT_FONT_ITALIC_TRAIT;
+        }
+        if bold {
+            traits |= K_CT_FONT_BOLD_TRAIT;
+        }
+        if traits == 0 {
+            return None;
+        }
+        let styled = unsafe {
+            CTFontCreateCopyWithSymbolicTraits(base, 1000.0, ptr::null(), traits, traits)
+        };
+        if styled.is_null() {
+            None
+        } else {
+            Some(OwnedCf(styled))
+        }
+    }
+
+    fn stable_svg_outline_from_font(
+        font: ResolvedFont,
+        character: &str,
+        italic: bool,
+        bold: bool,
+    ) -> Result<StableSvgGlyphOutline, String> {
+        let styled = styled_font_reference(font.reference.0, italic, bold);
+        let font_reference = styled
+            .as_ref()
+            .map(|value| value.0)
+            .unwrap_or(font.reference.0);
+        let glyph = mapped_glyph(font_reference, character).ok_or_else(|| {
+            format!(
+                "{} does not contain the requested SVG glyph {}.",
+                font.resolved_family, character
+            )
+        })?;
+        let mut advance = CGSize::default();
+        unsafe {
+            CTFontGetAdvancesForGlyphs(
+                font_reference,
+                K_CT_FONT_ORIENTATION_HORIZONTAL,
+                &glyph,
+                &mut advance,
+                1,
+            );
+        }
+        if !advance.width.is_finite() || advance.width < 0.0 {
+            return Err(format!(
+                "{} returned an invalid advance for {}.",
+                font.resolved_family, character
+            ));
+        }
+        if character.chars().all(char::is_whitespace) {
+            return Ok(StableSvgGlyphOutline {
+                path: String::new(),
+                advance_units: advance.width,
+                resolved_family: font.resolved_family,
+            });
+        }
+        let path_reference = unsafe {
+            CTFontCreatePathForGlyph(font_reference, glyph, ptr::null())
+        };
+        if path_reference.is_null() {
+            return Err(format!(
+                "{} could not expose a stable SVG outline for {}.",
+                font.resolved_family, character
+            ));
+        }
+        let path = OwnedPath(path_reference);
+        let mut writer = BaselinePathWriter {
+            output: String::with_capacity(2048),
+        };
+        unsafe {
+            CGPathApply(
+                path.0,
+                &mut writer as *mut BaselinePathWriter as *mut c_void,
+                Some(append_baseline_path_element),
+            );
+        }
+        if writer.output.is_empty() || writer.output.len() > 240_000 {
+            return Err("The stable SVG glyph outline is empty or too complex.".to_string());
+        }
+        Ok(StableSvgGlyphOutline {
+            path: writer.output,
+            advance_units: advance.width,
+            resolved_family: font.resolved_family,
+        })
+    }
+
     fn outline_from_font(
         font: ResolvedFont,
         character: &str,
@@ -514,6 +693,82 @@ mod macos {
             character,
             errors.join(" ")
         ))
+    }
+
+    pub(super) fn extract_stable_svg_outline(
+        requested_families: &[String],
+        character: &str,
+        italic: bool,
+        bold: bool,
+    ) -> Result<StableSvgGlyphOutline, String> {
+        if character.chars().count() != 1 || character.chars().any(char::is_control) {
+            return Err("The requested stable SVG glyph is invalid.".to_string());
+        }
+        let mut candidates: Vec<String> = Vec::new();
+        for family in requested_families {
+            let family = validate_font_family(family)?;
+            if !candidates.iter().any(|candidate| {
+                normalize_font_family(candidate) == normalize_font_family(&family)
+            }) {
+                candidates.push(family);
+            }
+        }
+        for fallback in DEFAULT_STABLE_SVG_FONT_FALLBACKS {
+            if !candidates.iter().any(|candidate| {
+                normalize_font_family(candidate) == normalize_font_family(fallback)
+            }) {
+                candidates.push((*fallback).to_string());
+            }
+        }
+        if candidates.is_empty() {
+            return Err("No stable SVG font family was requested.".to_string());
+        }
+        let mut errors = Vec::new();
+        for candidate in candidates {
+            let font = match resolve_font(&candidate) {
+                Ok(font) if font.exact_family => font,
+                Ok(font) => {
+                    errors.push(format!(
+                        "{} resolved to {} instead of the requested family.",
+                        candidate, font.resolved_family
+                    ));
+                    continue;
+                }
+                Err(error) => {
+                    errors.push(error);
+                    continue;
+                }
+            };
+            match stable_svg_outline_from_font(font, character, italic, bold) {
+                Ok(outline) => return Ok(outline),
+                Err(error) => errors.push(error),
+            }
+        }
+        Err(format!(
+            "VisualTeX could not resolve a stable SVG outline for {}. {}",
+            character,
+            errors.join(" ")
+        ))
+    }
+}
+
+pub(crate) fn extract_stable_macos_svg_glyph(
+    font_families: &[String],
+    character: &str,
+    italic: bool,
+    bold: bool,
+) -> Result<StableSvgGlyphOutline, String> {
+    if font_families.is_empty() || font_families.len() > 16 {
+        return Err("A bounded stable SVG font fallback list is required.".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return macos::extract_stable_svg_outline(font_families, character, italic, bold);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (font_families, character, italic, bold);
+        Err("Stable SVG glyph extraction is available only on macOS.".to_string())
     }
 }
 
