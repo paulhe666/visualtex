@@ -13,31 +13,25 @@ $officeNames = @(
 )
 
 function Get-VisualTeXOfficeProcesses {
+    # The installer only needs to know whether a blocking Office process exists
+    # and whether it has a visible main window. Querying Win32_Process once per
+    # PID made this guard scale linearly with the number of open Word instances;
+    # a heavily used/acceptance machine could exceed the NSIS 20 s timeout even
+    # though process inspection itself was healthy. Get-Process already reports
+    # hidden COM/OLE Office instances, so avoid CIM/WMI entirely here.
     $result = @()
     foreach ($process in @(Get-Process -Name $officeNames -ErrorAction SilentlyContinue)) {
-        $commandLine = ''
-        try {
-            $cim = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $process.Id) -ErrorAction Stop
-            if ($null -ne $cim -and $null -ne $cim.CommandLine) {
-                $commandLine = [string]$cim.CommandLine
-            }
-        } catch { }
-
-        $backgroundCom = $commandLine -match '(?i)(?:^|\s)-Embedding(?:\s|$)'
         $hasWindow = $false
         try { $hasWindow = [int64]$process.MainWindowHandle -ne 0 } catch { }
-        $kind = if ($backgroundCom) {
-            'background COM/OLE (-Embedding, no visible Office window required)'
-        } elseif ($hasWindow) {
+        $kind = if ($hasWindow) {
             'visible Office application'
         } else {
-            'background Office process (no visible main window)'
+            'background Office process (no visible main window; may be COM/OLE)'
         }
         $result += [pscustomobject]@{
             ProcessName = $process.ProcessName.ToUpperInvariant() + '.EXE'
             ProcessId = [int]$process.Id
             Kind = $kind
-            CommandLine = $commandLine
         }
     }
     return @($result | Sort-Object ProcessName, ProcessId)

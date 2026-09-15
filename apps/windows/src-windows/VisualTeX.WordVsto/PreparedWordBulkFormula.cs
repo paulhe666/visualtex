@@ -9,6 +9,10 @@ internal sealed class PreparedWordBulkFormula
     internal OfficeSessionDocument Session { get; set; } = new();
     internal string? MathMl { get; set; }
     internal string? PngPath { get; set; }
+    internal string? SvgPath { get; set; }
+    internal float? RawRenderWidthPx { get; set; }
+    internal float? RawRenderHeightPx { get; set; }
+    internal float? RawBaselinePx { get; set; }
     internal string? EmfPath { get; set; }
     internal bool MathTypeNativePreviewAttempted { get; set; }
     internal MathTypeNativePreviewRenderer.Result? MathTypeNativePreview { get; set; }
@@ -20,6 +24,9 @@ internal sealed class RenderedWordBulkFormulaTemplate
     internal string? MathMl { get; set; }
     internal string? PngPath { get; set; }
     internal string? SvgPath { get; set; }
+    internal float? RawRenderWidthPx { get; set; }
+    internal float? RawRenderHeightPx { get; set; }
+    internal float? RawBaselinePx { get; set; }
     internal string? EmfPath { get; set; }
 }
 
@@ -42,6 +49,10 @@ internal sealed class WordLatexRedrawTarget
     internal bool PreserveDisplayParagraphBoundary { get; set; }
     internal bool DedicatedDisplayParagraph { get; set; }
     internal double FontSizePt { get; set; }
+    // Set only when the LaTeX source was produced from an inline native object and
+    // carries a VisualTeX provenance bookmark for its established Word baseline.
+    internal int? SourceInlineWordPosition { get; set; }
+    internal float? SourceInlineBottomWhitespacePoints { get; set; }
 }
 
 internal sealed class WordLatexRedrawPlan

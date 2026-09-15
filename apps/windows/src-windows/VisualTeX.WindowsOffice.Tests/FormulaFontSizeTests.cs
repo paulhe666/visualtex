@@ -14,6 +14,16 @@ public sealed class FormulaFontSizeTests
         Assert.Equal((float)expected, FormulaFontSize.Normalize(input));
     }
 
+    [Theory]
+    [InlineData(11.94999981, 12.0)]
+    [InlineData(10.5, 10.5)]
+    [InlineData(11.5, 11.5)]
+    [InlineData(13.25, 13.5)]
+    public void NormalizesNativeOmmlToRepresentableHalfPoints(double input, double expected)
+    {
+        Assert.Equal((float)expected, FormulaFontSize.NormalizeWordOmmlSize(input));
+    }
+
     [Fact]
     public void PresetNavigationIncludesChineseStandardSizes()
     {
@@ -117,6 +127,26 @@ public sealed class FormulaFontSizeTests
             FormulaFontSize.InferOleFontSize(
                 currentWidthPoints: 52.5f,
                 currentHeightPoints: 13.5f,
+                metadata));
+    }
+
+    [Fact]
+    public void StoredInlineOleGeometryIgnoresOneAxisWordRematerializationDrift()
+    {
+        var metadata = new FormulaMetadata
+        {
+            FontSizePt = 12,
+            RenderFontSizePt = 12,
+            DisplayMode = "inline",
+            WordInlineOleWidthPt = 84.06694,
+            WordInlineOleHeightPt = 12.508917,
+        };
+
+        Assert.Equal(
+            12f,
+            FormulaFontSize.InferOleFontSize(
+                currentWidthPoints: 82.9f,
+                currentHeightPoints: 12.4f,
                 metadata));
     }
 

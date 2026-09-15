@@ -151,6 +151,9 @@ public interface IWordRibbonCallbacks
     [DispId(46)]
     void OnConvertOmmlToVisualTeXDocument(object control);
 
+    [DispId(47)]
+    void OnRepairInlineFormulaBaselines(object control);
+
 }
 
 [ComVisible(true)]
@@ -282,6 +285,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="增大" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
         </group>
+        <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="兼容修复">
+          <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="修复公式偏移" size="large" screentip="扫描并修复行内公式垂直偏移" supertip="扫描全文中的 MathType / VisualTeX 行内 OLE；VisualTeX 公式优先按自身保存的渲染基线校准，MathType 公式按文档稳定基线检测上浮或下沉。确认后仅修复垂直偏移，不修改公式内容、字号、编号或引用。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
+        </group>
       </tab>
     </tabs>
   </ribbon>
@@ -301,6 +307,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
+    private WordPasteKeyHook? _pasteKeyHook;
     private WordDeleteKeyHook? _deleteKeyHook;
     private readonly object _copyPasteGate = new();
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
@@ -310,6 +317,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _copyPasteSelectionRepairPending;
     private long _lastSuccessfulPasteRepairStartedAt;
     private long _lastSuccessfulPasteRepairCompletedAt;
+    private UndoRecord? _activePasteUndoRecord;
+    private WordFormulaService.WordFormulaCopySnapshot? _activePasteUndoSnapshot;
+    private int _activePasteUndoGeneration;
     private NumberedHostDeleteViewState? _numberedHostDeleteViewState;
     private static readonly object BulkAcceptanceLogGate = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
@@ -456,6 +466,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         try
         {
+            _pasteKeyHook = new WordPasteKeyHook(OnWordPasteKeyGesture);
+            Window? ownerWindow = null;
+            try
+            {
+                ownerWindow = _application.ActiveWindow;
+                if (ownerWindow is not null) _pasteKeyHook.BindOwnerWindow(ownerWindow.Hwnd);
+            }
+            catch { }
+            finally { ReleaseComObject(ownerWindow); }
+            _pasteKeyHook.Start();
+        }
+        catch (Exception error)
+        {
+            try { _pasteKeyHook?.Dispose(); } catch { }
+            _pasteKeyHook = null;
+            WordDoubleClickHook.TraceMessage(
+                $"paste-key-hook-start-failed {error.GetType().Name}: {error.Message}");
+        }
+        try
+        {
             _deleteKeyHook = new WordDeleteKeyHook(OnWordDeleteKeyGesture);
             Window? ownerWindow = null;
             try
@@ -573,6 +603,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             FormulaOleContract.WordOmmlMode,
             conversionOnly: true);
     public void OnUpdateEquationNumbers(object control) => _ = UpdateEquationNumbersAsync();
+    public void OnRepairInlineFormulaBaselines(object control) => _ = RepairInlineFormulaBaselinesAsync();
     public bool GetEquationNumberFormatPressed(Office.IRibbonControl control)
     {
         try
@@ -1105,6 +1136,117 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         });
     }
 
+    private void OnWordPasteKeyGesture()
+    {
+        var application = _application;
+        if (application is null) return;
+
+        WordFormulaService.WordFormulaCopySnapshot? snapshot;
+        uint clipboardSequence;
+        lock (_copyPasteGate)
+        {
+            snapshot = _formulaCopySnapshot;
+            clipboardSequence = _formulaCopyClipboardSequence;
+        }
+        if (snapshot is null || clipboardSequence == 0) return;
+        // Only native VisualTeX OLE paste is grouped here. Word's native OMath
+        // paste is not absorbed by a custom UndoRecord started from the keyboard
+        // hook, so wrapping OMML/MathType repair would leave a misleading partial
+        // undo entry above the native paste instead of improving its semantics.
+        if (!string.Equals(
+                snapshot.ObjectMode,
+                FormulaOleContract.NativeOleMode,
+                StringComparison.Ordinal))
+            return;
+        if (WordCopyPasteHook.CurrentClipboardSequence != clipboardSequence) return;
+        if (_activePasteUndoRecord is not null) return;
+
+        UndoRecord? record = null;
+        try
+        {
+            record = application.UndoRecord;
+            if (record.IsRecordingCustomRecord || record.CustomRecordLevel > 0)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"paste-undo-not-started reason=existing-custom-record level={record.CustomRecordLevel}");
+                return;
+            }
+
+            // This callback runs from a WH_KEYBOARD hook installed on Word's own
+            // UI thread, before the native Ctrl+V / Shift+Insert command executes.
+            // Opening the record here is what makes Word's Paste and the later
+            // identity/number repair one native Ctrl+Z operation. We do not replace
+            // or synthesize the user's paste command.
+            record.StartCustomRecord("VisualTeX Paste Formula");
+            _activePasteUndoRecord = record;
+            _activePasteUndoSnapshot = snapshot;
+            record = null;
+            var generation = Interlocked.Increment(ref _activePasteUndoGeneration);
+            WordDoubleClickHook.TraceMessage(
+                $"paste-undo-started mode={snapshot.ObjectMode} clipboardSequence={clipboardSequence} generation={generation}");
+            ScheduleActivePasteUndoTimeout(snapshot, generation);
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"paste-undo-start-failed {error.GetType().Name}:{error.Message}");
+        }
+        finally { ReleaseComObject(record); }
+    }
+
+    private void ScheduleActivePasteUndoTimeout(
+        WordFormulaService.WordFormulaCopySnapshot snapshot,
+        int generation)
+    {
+        var lifetime = _lifetime;
+        var dispatcher = _dispatcher;
+        if (lifetime is null || dispatcher is null || lifetime.IsCancellationRequested)
+            return;
+        var token = lifetime.Token;
+        _ = Task.Delay(2000, token).ContinueWith(
+            task =>
+            {
+                if (task.IsCanceled || token.IsCancellationRequested) return;
+                dispatcher.Post(() =>
+                {
+                    if (generation != Volatile.Read(ref _activePasteUndoGeneration))
+                        return;
+                    EndActivePasteUndoRecord(snapshot, "watchdog-timeout");
+                });
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private void EndActivePasteUndoRecord(
+        WordFormulaService.WordFormulaCopySnapshot? snapshot,
+        string reason)
+    {
+        if (_activePasteUndoRecord is null) return;
+        if (snapshot is not null
+            && !ReferenceEquals(snapshot, _activePasteUndoSnapshot))
+            return;
+
+        var record = _activePasteUndoRecord;
+        _activePasteUndoRecord = null;
+        _activePasteUndoSnapshot = null;
+        Interlocked.Increment(ref _activePasteUndoGeneration);
+        try
+        {
+            if (record.IsRecordingCustomRecord || record.CustomRecordLevel > 0)
+                record.EndCustomRecord();
+            WordDoubleClickHook.TraceMessage(
+                $"paste-undo-ended reason={reason}");
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"paste-undo-end-failed reason={reason} {error.GetType().Name}:{error.Message}");
+        }
+        finally { ReleaseComObject(record); }
+    }
+
     private void OnWordClipboardGesture(WordClipboardGestureEvent gesture)
     {
         if (gesture.Gesture != WordClipboardGesture.Copy) return;
@@ -1361,6 +1503,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             catch (Exception error)
             {
                 Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+                EndActivePasteUndoRecord(snapshot, "repair-error");
                 WordDoubleClickHook.TraceMessage(
                     $"paste-repair-failed mode={snapshot.ObjectMode} "
                     + $"attempt={attempt} error={error.GetType().Name}:{error.Message}");
@@ -1383,6 +1526,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (ReferenceEquals(_formulaCopySnapshot, snapshot))
                         _formulaCopyClipboardSequence = WordCopyPasteHook.CurrentClipboardSequence;
                 }
+                EndActivePasteUndoRecord(snapshot, "repair-complete");
+            }
+            else if (result == WordFormulaService.PastedFormulaRepairResult.NotApplicable)
+            {
+                // A tracked formula can legitimately be pasted into a context that
+                // does not need identity repair. The native paste still belongs to
+                // this custom record, but it must be closed immediately so later
+                // user typing is never captured by the paste transaction watchdog.
+                EndActivePasteUndoRecord(snapshot, "repair-not-applicable");
             }
             Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
             WordDoubleClickHook.TraceMessage(
@@ -1399,6 +1551,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (attempt >= 6)
         {
             Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            EndActivePasteUndoRecord(snapshot, "repair-timeout");
             WordDoubleClickHook.TraceMessage(
                 $"paste-repair-timeout mode={snapshot.ObjectMode} attempts={attempt + 1}");
             return;
@@ -1425,6 +1578,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
         try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _pasteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
         try { _deleteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
         WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
         uint copySequence = 0;
@@ -3959,7 +4113,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string objectMode,
         string? sourceDocumentId,
         double fontSizePt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? formulaLetterFont = null,
+        string? formulaChineseFont = null)
     {
         var formulaId = Guid.NewGuid().ToString("D");
         var line = new FormulaLine
@@ -3972,6 +4128,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             line,
             run,
             fontSizePt);
+        originalMetadata.FormulaLetterFont = formulaLetterFont;
+        originalMetadata.FormulaChineseFont = formulaChineseFont;
         WriteBulkAcceptanceLog(
             $"converter-create display={run.DisplayMode} mode={objectMode} latex={run.Latex}");
         var session = await client.CreateSessionAsync(
@@ -4028,6 +4186,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             Session = session,
             MathMl = export.MathMl,
+            RawRenderWidthPx = export.Width,
+            RawRenderHeightPx = export.Height,
+            RawBaselinePx = export.Baseline,
         };
         var needsVectorPreview = string.Equals(
                 objectMode,
@@ -4220,6 +4381,115 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         try { File.Delete(path!); } catch { }
+    }
+
+    private async Task RepairInlineFormulaBaselinesAsync()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        var lifetime = _lifetime;
+        if (dispatcher is null
+            || service is null
+            || lifetime is null
+            || lifetime.IsCancellationRequested)
+            return;
+
+        if (!await _operationGate.WaitAsync(
+                TimeSpan.FromSeconds(2),
+                lifetime.Token).ConfigureAwait(false))
+        {
+            SetStatus(T(
+                "VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Please try again shortly."));
+            return;
+        }
+
+        WordInlineBaselineRepairReport? report = null;
+        try
+        {
+            report = await dispatcher.InvokeAsync(service.ScanInlineBaselineRepairs)
+                .ConfigureAwait(false);
+            var decision = await dispatcher.InvokeAsync(() =>
+            {
+                if (report.TotalRepairCount == 0)
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        T(
+                            $"扫描完成。已检查 {report.ScannedOleCount} 个行内对象，无需调整公式位置。{report.SkippedCount} 个对象缺少可确定的基线信息，未作推测性修改。",
+                            $"Scan complete. {report.ScannedOleCount} inline objects were checked; no position change is needed. {report.SkippedCount} objects without a determinable baseline were left unchanged."),
+                        T("VisualTeX 修复公式偏移", "VisualTeX Formula Offset Repair"),
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return 0;
+                }
+
+                var answer = System.Windows.Forms.MessageBox.Show(
+                    T(
+                        $"需要调整 {report.TotalRepairCount} 个行内公式的位置（VisualTeX {report.VisualTeXRepairCount}，MathType {report.MathTypeRepairCount}）。\r\n\r\n"
+                        + "按当前段落的字符对齐规则校正公式：普通基线段落使用公式渲染基线，字符中心对齐段落不重复下移。只调整公式对象字符的位置，不重绘、不改字号或对象尺寸，不改段落格式、编号和引用。\r\n\r\n"
+                        + $"无法确定的对象：{report.SkippedCount} 个，保持不变。是否继续？",
+                        $"Adjust {report.TotalRepairCount} inline equation positions (VisualTeX {report.VisualTeXRepairCount}, MathType {report.MathTypeRepairCount}).\r\n\r\n"
+                        + "Use the current paragraph's character-alignment rule: render baselines for baseline-aligned text, without an extra descent for character-center alignment. Only equation-character positions are changed. No rendering, font-size, extent, paragraph-format, numbering or reference changes.\r\n\r\n"
+                        + $"Objects without a determinable baseline: {report.SkippedCount}, left unchanged. Continue?"),
+                    T("VisualTeX 修复公式偏移", "VisualTeX Formula Offset Repair"),
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2);
+                return answer == System.Windows.Forms.DialogResult.Yes ? 1 : -1;
+            }).ConfigureAwait(false);
+
+            if (decision <= 0)
+            {
+                if (decision == -1)
+                {
+                    SetStatus(T(
+                        "已取消公式偏移修复，Word 文档未修改。",
+                        "Formula offset repair was cancelled; the Word document was not changed."));
+                }
+                else if (decision == 0)
+                {
+                    SetStatus(T(
+                        "公式偏移扫描完成，未发现需要修复的垂直布局异常。",
+                        "Formula offset scan complete; no vertical-layout repair was needed."));
+                }
+                return;
+            }
+
+            SetStatus(T("正在校正公式字符的位置…", "Correcting equation character positions…"));
+
+            BeginFormulaFormatMutation();
+            int repaired;
+            try
+            {
+                repaired = await dispatcher.InvokeAsync(
+                        () => service.RepairInlineBaselineRepairs(report))
+                    .ConfigureAwait(false);
+            }
+            finally { EndFormulaFormatMutation(); }
+
+            SetStatus(T(
+                $"已校正 {repaired} 个行内公式的位置，未重绘公式或修改尺寸。",
+                $"Corrected {repaired} inline equation positions without rendering or resizing."));
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(T("VisualTeX 公式偏移修复已取消。", "VisualTeX formula offset repair was cancelled."));
+        }
+        catch (Exception error)
+        {
+            SetStatus(T(
+                $"修复公式偏移失败：{error.Message}",
+                $"Formula offset repair failed: {error.Message}"));
+            await ShowWordOperationErrorAsync(
+                    dispatcher,
+                    T("修复公式偏移", "Formula Offset Repair"),
+                    error)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
     }
 
     private async Task UpdateEquationNumbersAsync()
@@ -4508,6 +4778,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _doubleClickHook = null;
         try { _copyPasteHook?.Dispose(); } catch { }
         _copyPasteHook = null;
+        try { _pasteKeyHook?.Dispose(); } catch { }
+        _pasteKeyHook = null;
+        EndActivePasteUndoRecord(null, "addin-dispose");
         try { _deleteKeyHook?.Dispose(); } catch { }
         _deleteKeyHook = null;
         lock (_copyPasteGate)

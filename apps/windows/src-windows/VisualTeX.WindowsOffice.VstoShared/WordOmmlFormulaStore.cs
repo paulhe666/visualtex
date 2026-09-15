@@ -135,6 +135,36 @@ internal static class WordOmmlFormulaStore
                     if (bookmarkRange.Start >= selectionRange.Start - 2
                         && bookmarkRange.Start <= selectionRange.End + 1)
                     {
+                        // A VTOMML bookmark by itself is not proof that a live
+                        // equation still exists. Older conversion/delete paths can
+                        // leave a collapsed VTOMML_<id> anchor and metadata behind
+                        // after the OMath has been removed. Treating that orphan as
+                        // the current selection makes ordinary insertion points fail
+                        // before the editor even opens when RefreshForVisualTeX later
+                        // tries to recover a non-existent equation. Validate this one
+                        // local candidate through the same read-only identity resolver
+                        // used by edit/conversion; stale anchors are simply ignored and
+                        // the slow recovery below remains available for genuinely
+                        // drifted formulas.
+                        Range? verifiedEquation = null;
+                        try
+                        {
+                            verifiedEquation = GetEquationRange(bookmark);
+                            var containsOrTouchesCaret = selectionRange.Start == selectionRange.End
+                                && DistanceFromAnchorToEquation(
+                                    selectionRange.Start,
+                                    verifiedEquation) <= 1;
+                            var overlapsEquation = selectionRange.Start < verifiedEquation.End
+                                && selectionRange.End > verifiedEquation.Start;
+                            if (!containsOrTouchesCaret && !overlapsEquation)
+                                continue;
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                        finally { Release(verifiedEquation); }
+
                         var result = bookmark;
                         bookmark = null;
                         return result;
@@ -196,6 +226,109 @@ internal static class WordOmmlFormulaStore
             Release(equationRange);
             Release(math);
             Release(maths);
+        }
+    }
+
+    internal static IReadOnlyList<string> FindOrphanedAnchorsAtExactPosition(
+        Document document,
+        int position)
+    {
+        var orphaned = new List<string>();
+        Range? content = null;
+        Range? probe = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? bookmarkRange = null;
+        Range? equationRange = null;
+        try
+        {
+            content = document.Content;
+            if (position < content.Start || position > content.End)
+                return orphaned;
+            var probeStart = Math.Max(content.Start, position - 1);
+            var probeEnd = Math.Min(content.End, position + 1);
+            probe = document.Range(probeStart, probeEnd);
+            bookmarks = probe.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(equationRange); equationRange = null;
+                Release(bookmarkRange); bookmarkRange = null;
+                Release(bookmark); bookmark = bookmarks[index];
+                if (!TryGetFormulaId(bookmark, out _)) continue;
+                bookmarkRange = bookmark.Range;
+                if (bookmarkRange.Start != bookmarkRange.End
+                    || bookmarkRange.Start != position)
+                    continue;
+                try
+                {
+                    // This preflight deliberately runs before the insertion's
+                    // Custom UndoRecord starts. A recoverable drifted formula is
+                    // still live and must keep its anchor; only an identity that
+                    // cannot resolve to any unique OMath is safe to detach while
+                    // the new object is inserted at the same collapsed position.
+                    equationRange = GetEquationRange(bookmark);
+                }
+                catch (InvalidDataException)
+                {
+                    orphaned.Add(bookmark.Name);
+                }
+            }
+            return orphaned
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        finally
+        {
+            Release(equationRange);
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(probe);
+            Release(content);
+        }
+    }
+
+    internal static int DeleteCapturedOrphanedAnchorsAtExactPosition(
+        Document document,
+        int position,
+        IReadOnlyCollection<string> bookmarkNames)
+    {
+        if (bookmarkNames.Count == 0) return 0;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? range = null;
+        var deleted = 0;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var name in bookmarkNames.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                Release(range); range = null;
+                Release(bookmark); bookmark = null;
+                if (!bookmarks.Exists(name)) continue;
+                bookmark = bookmarks[name];
+                range = bookmark.Range;
+                // The preflight proved this exact collapsed anchor was orphaned.
+                // Re-check its physical coordinate before deletion so a user edit
+                // while the external editor was open cannot make us delete a moved
+                // or newly repaired live identity. Deletion occurs inside the
+                // insertion Custom UndoRecord; Word then restores the original
+                // orphan on Undo instead of losing it through bookmark gravity.
+                if (range.Start != range.End || range.Start != position)
+                    continue;
+                bookmark.Delete();
+                deleted++;
+            }
+            if (deleted > 0)
+                WordDoubleClickHook.TraceMessage(
+                    $"orphan-omml-anchor-detached-for-insert position={position} count={deleted}");
+            return deleted;
+        }
+        finally
+        {
+            Release(range);
+            Release(bookmark);
+            Release(bookmarks);
         }
     }
 

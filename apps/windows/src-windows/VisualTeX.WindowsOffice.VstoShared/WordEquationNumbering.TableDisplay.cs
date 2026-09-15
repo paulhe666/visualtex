@@ -25,7 +25,8 @@ internal static partial class WordEquationNumbering
         bool deferMetadataPersistence = false,
         Range? cleanTableTemplateRange = null,
         bool replaceSourceParagraphFromTemplate = false,
-        bool verifiedFreshBareOmml = false)
+        bool verifiedFreshBareOmml = false,
+        string? preparedFreshBareOmml = null)
     {
         _ = deferFieldUpdate;
         _ = deferExternalShapeCreation;
@@ -67,7 +68,10 @@ internal static partial class WordEquationNumbering
                     plannedPrefix,
                     deferFieldUpdate,
                     deferExternalShapeCreation,
-                    deferMetadataPersistence);
+                    deferMetadataPersistence,
+                    verifiedFreshBareOmml
+                        && !string.IsNullOrWhiteSpace(preparedFreshBareOmml),
+                    preparedFreshBareOmml);
                 formulaRange.SetRange(activeRange.Start, activeRange.End);
                 traceStage("native-table-cell-hash-seq");
                 return result;
@@ -236,13 +240,15 @@ internal static partial class WordEquationNumbering
                 ConfigurePreformattedNativeOmmlNumberTableHeightAndInk(
                     table,
                     activeRange,
-                    minimumDisplayHeightPoints);
+                    minimumDisplayHeightPoints,
+                    verifiedFreshBareOmml ? preparedFreshBareOmml : null);
             else
                 ConfigureNativeOmmlNumberTableGeometry(
                     document,
                     table,
                     activeRange,
-                    minimumDisplayHeightPoints);
+                    minimumDisplayHeightPoints,
+                    verifiedFreshBareOmml ? preparedFreshBareOmml : null);
             traceStage("native-geometry");
             traceStage("native-1x3-table");
 
@@ -431,6 +437,23 @@ internal static partial class WordEquationNumbering
             Release(numberBookmark);
             Release(bookmarks);
         }
+    }
+
+    internal static (int Ordinal, string Prefix) PlanFreshNativeOmmlNumber(
+        Document document,
+        Range insertionRange,
+        string formulaId)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (insertionRange is null) throw new ArgumentNullException(nameof(insertionRange));
+        if (string.IsNullOrWhiteSpace(formulaId))
+            throw new ArgumentException("FormulaId is required.", nameof(formulaId));
+        return ResolveDirectTableNumberPlan(
+            document,
+            insertionRange,
+            formulaId,
+            plannedOrdinal: null,
+            plannedPrefix: null);
     }
 
     private static (int Ordinal, string Prefix) ResolveDirectTableNumberPlan(
@@ -2290,7 +2313,10 @@ internal static partial class WordEquationNumbering
     // table row: the clipping surface is the center paragraph, not the row.
     // Reserve a small, size-relative descent inside tall formula paragraphs.
     // Never touch surrounding prose, the number cell, widths or OMath contents.
-    private static float NativeOmmlDisplayInkClearance(Range formulaRange, float? displayHeight)
+    private static float NativeOmmlDisplayInkClearance(
+        Range formulaRange,
+        float? displayHeight,
+        string? preparedOmml = null)
     {
         Microsoft.Office.Interop.Word.Font? font = null;
         try
@@ -2302,13 +2328,21 @@ internal static partial class WordEquationNumbering
             var tall = displayHeight.HasValue && displayHeight.Value >= size * 1.7f;
             if (!tall)
             {
-                // A same-state edit may only have the cheap 1.5em height estimate;
-                // a number refresh/reopen has no measurement at all. Inspect just
-                // this formula's structure so those paths cannot clear the matrix
-                // descent allowance installed by insertion. No scratch document,
-                // activation, scrolling or whole-document metadata search is used.
-                try { tall = HasTallNativeOmmlStructure(formulaRange.WordOpenXML); }
-                catch { }
+                // Fresh insertion already owns Word-normalized prepared OMML from
+                // the read-only BatchSource. Reuse it here instead of exporting the
+                // live target Range: Word 2021 can terminate a Custom UndoRecord as
+                // a side effect of Range.WordOpenXML. Existing/edit paths without a
+                // prepared source retain the established local structural probe.
+                if (!string.IsNullOrWhiteSpace(preparedOmml))
+                {
+                    try { tall = HasTallNativeOmmlStructure(preparedOmml!); }
+                    catch { }
+                }
+                else
+                {
+                    try { tall = HasTallNativeOmmlStructure(formulaRange.WordOpenXML); }
+                    catch { }
+                }
             }
             return tall ? Math.Max(1f, size * 0.2f) : 0f;
         }
@@ -2341,7 +2375,8 @@ internal static partial class WordEquationNumbering
     private static void ConfigurePreformattedNativeOmmlNumberTableHeightAndInk(
         Table table,
         Range formulaRange,
-        float? minimumDisplayHeightPoints)
+        float? minimumDisplayHeightPoints,
+        string? preparedOmml = null)
     {
         Rows? rows = null;
         Columns? columns = null;
@@ -2372,7 +2407,8 @@ internal static partial class WordEquationNumbering
             centerFormat.SpaceBefore = 0f;
             centerFormat.SpaceAfter = NativeOmmlDisplayInkClearance(
                 formulaRange,
-                minimumDisplayHeightPoints);
+                minimumDisplayHeightPoints,
+                preparedOmml);
             centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             try { centerFormat.DisableLineHeightGrid = -1; } catch { }
         }
@@ -2735,7 +2771,8 @@ internal static partial class WordEquationNumbering
         Document document,
         Table table,
         Range formulaRange,
-        float? minimumDisplayHeightPoints = null)
+        float? minimumDisplayHeightPoints = null,
+        string? preparedOmml = null)
     {
         Sections? sections = null;
         Section? section = null;
@@ -2828,7 +2865,9 @@ internal static partial class WordEquationNumbering
             rightFormat.FirstLineIndent = 0f;
             centerFormat.SpaceBefore = 0f;
             centerFormat.SpaceAfter = NativeOmmlDisplayInkClearance(
-                formulaRange, minimumDisplayHeightPoints);
+                formulaRange,
+                minimumDisplayHeightPoints,
+                preparedOmml);
             rightFormat.SpaceBefore = rightFormat.SpaceAfter = 0f;
             centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             rightFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;

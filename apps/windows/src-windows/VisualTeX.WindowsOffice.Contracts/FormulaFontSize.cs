@@ -56,6 +56,17 @@ public static class FormulaFontSize
         return (float)Math.Round(resolved, 2, MidpointRounding.AwayFromZero);
     }
 
+    public static float NormalizeWordOmmlSize(double? value, float fallback = DefaultPt)
+    {
+        var normalized = Normalize(value, fallback);
+        // WordprocessingML stores w:sz/w:szCs in half-points. Keep this
+        // representability rule local to native OMML; VisualTeX/MathType semantic
+        // sizes remain centipoint-capable and must not be globally quantized.
+        return (float)(Math.Round(
+            normalized * 2d,
+            MidpointRounding.AwayFromZero) / 2d);
+    }
+
     public static float NextPreset(double? value)
     {
         var current = Normalize(value);
@@ -182,7 +193,12 @@ public static class FormulaFontSize
                 || Math.Abs(currentWidthPoints - storedWidth) <= storedGeometryTolerancePoints;
             var heightMatchesStored = currentHeightPoints <= 0
                 || Math.Abs(currentHeightPoints - storedHeight) <= storedGeometryTolerancePoints;
-            if (widthMatchesStored && heightMatchesStored) return fallback;
+            // Word can re-materialize OLE width more aggressively than height
+            // (notably after cross-format replacement) even when the user never
+            // resized the formula. If either axis is still within normal Word
+            // quantisation, the geometry does not prove a semantic font-size
+            // change. Require both axes to move materially before inferring one.
+            if (widthMatchesStored || heightMatchesStored) return fallback;
 
             var storedHeightScale = currentHeightPoints > 0
                 ? currentHeightPoints / storedHeight
@@ -190,6 +206,15 @@ public static class FormulaFontSize
             var storedWidthScale = currentWidthPoints > 0
                 ? currentWidthPoints / storedWidth
                 : float.NaN;
+            // One semantic font size describes uniform glyph scaling. A wider
+            // but shorter transient OLE presentation is not evidence that the
+            // user changed that size. Allow only the per-axis Word rounding
+            // error when comparing scale factors; do not prefer height alone.
+            if (IsPositiveFinite(storedHeightScale) && IsPositiveFinite(storedWidthScale)
+                && Math.Abs(storedHeightScale - storedWidthScale)
+                    > storedGeometryTolerancePoints / storedWidth
+                      + storedGeometryTolerancePoints / storedHeight)
+                return fallback;
             var storedScale = IsPositiveFinite(storedHeightScale)
                 ? storedHeightScale
                 : storedWidthScale;
