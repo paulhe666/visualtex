@@ -28,6 +28,7 @@ internal static class RibbonVectorIconRenderer
             "convertToOmml",
             "convertToOle",
             "batchImport",
+            "repairBaseline",
         },
         StringComparer.OrdinalIgnoreCase);
 
@@ -77,6 +78,9 @@ internal static class RibbonVectorIconRenderer
                 break;
             case "batchimport":
                 DrawBatchImport(graphics);
+                break;
+            case "repairbaseline":
+                DrawRepairBaseline(graphics);
                 break;
         }
 
@@ -233,6 +237,20 @@ internal static class RibbonVectorIconRenderer
         using var rightPen = Pen(right, 3f);
         graphics.DrawRoundedRectangle(rightPen, new RectangleF(40, 13, 19, 32), 4f);
         DrawFormulaText(graphics, new RectangleF(41, 18, 17, 20), right, 7.3f);
+    }
+
+    private static void DrawRepairBaseline(Graphics graphics)
+    {
+        using var baseline = Pen(Ink, 3f);
+        graphics.DrawLine(baseline, 7, 46, 57, 46);
+        DrawFormulaText(graphics, new RectangleF(8, 23, 35, 25), Warm, 11.5f);
+        using var arrow = Pen(Accent, 4f);
+        graphics.DrawLine(arrow, 49, 43, 49, 16);
+        graphics.DrawLine(arrow, 49, 16, 42, 24);
+        graphics.DrawLine(arrow, 49, 16, 56, 24);
+        using var reference = Pen(Accent, 2.2f);
+        reference.DashStyle = DashStyle.Dash;
+        graphics.DrawLine(reference, 8, 31, 38, 31);
     }
 
     private static void DrawBatchImport(Graphics graphics)

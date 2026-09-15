@@ -24,7 +24,9 @@ internal static partial class WordEquationNumbering
         string? plannedPrefix = null,
         bool deferFieldUpdate = false,
         bool deferExternalShapeCreation = false,
-        bool deferMetadataPersistence = false)
+        bool deferMetadataPersistence = false,
+        bool verifiedFreshBareOmml = false,
+        string? preparedFreshBareOmml = null)
     {
         _ = formulaHeightPoints;
         _ = formulaFontSizePoints;
@@ -84,7 +86,8 @@ internal static partial class WordEquationNumbering
             // result so ordinary body REF fields can target it. No visible REF,
             // floating Shape/TextBox, anchor paragraph, or hidden SEQ paragraph is
             // part of this host.
-            if (IsHealthyNumberedNativeOmmlHashSequenceHost(
+            if (!verifiedFreshBareOmml
+                && IsHealthyNumberedNativeOmmlHashSequenceHost(
                     document,
                     activeRange,
                     formulaId)
@@ -104,16 +107,31 @@ internal static partial class WordEquationNumbering
                 return false;
             }
 
-            var semanticOmml = metadata is not null
-                ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(
-                    activeRange.WordOpenXML)
-                : WordOmmlConverter.StripVisualTeXNativeEquationNumber(
-                    activeRange.WordOpenXML);
-            if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeRange.WordOpenXML))
-                traceStage("strip-legacy-or-stale-number-wrapper");
+            string semanticOmml;
+            if (verifiedFreshBareOmml)
+            {
+                if (string.IsNullOrWhiteSpace(preparedFreshBareOmml))
+                    throw new InvalidDataException(
+                        "Verified fresh OMML numbering requires its prepared bare source.");
+                semanticOmml = preparedFreshBareOmml!;
+                traceStage("fresh-bare-omml-source");
+            }
+            else
+            {
+                var activeXml = activeRange.WordOpenXML;
+                semanticOmml = metadata is not null
+                    ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(
+                        activeXml)
+                    : WordOmmlConverter.StripVisualTeXNativeEquationNumber(activeXml);
+                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
+                    traceStage("strip-legacy-or-stale-number-wrapper");
+            }
 
             if (IsManagedNumberedEquationTable(document, activeRange, formulaId))
             {
+                if (verifiedFreshBareOmml)
+                    throw new InvalidDataException(
+                        $"Verified fresh OMML {formulaId} unexpectedly owns a managed numbering table before numbering.");
                 TrimBenignEmptyRowsFromNumberedTable(document, activeRange, formulaId);
                 migratedRange = TryConvertStandardNumberedOmmlTableToStandaloneDisplayParagraph(
                     document,
@@ -189,7 +207,8 @@ internal static partial class WordEquationNumbering
                     document,
                     activeRange,
                     formulaId,
-                    requireCurrentFieldResult: !deferFieldUpdate))
+                    requireCurrentFieldResult: !deferFieldUpdate,
+                    skipWordOpenXmlSequenceProof: verifiedFreshBareOmml))
             {
                 TraceNativeOmmlHashSequenceDiagnostics(
                     document,
@@ -207,11 +226,13 @@ internal static partial class WordEquationNumbering
                     activeRange,
                     metadata,
                     replaceExisting: true);
-                WordOmmlNativeSource.StampFingerprintFromResolvedRange(
-                    metadata,
-                    activeRange);
                 if (!deferMetadataPersistence)
+                {
+                    WordOmmlNativeSource.StampFingerprintFromResolvedRange(
+                        metadata,
+                        activeRange);
                     WordOmmlFormulaStore.Save(document, metadata);
+                }
             }
 
             formulaRange.SetRange(activeRange.Start, activeRange.End);
@@ -1638,7 +1659,8 @@ internal static partial class WordEquationNumbering
         Document document,
         Range formulaRange,
         string formulaId,
-        bool requireCurrentFieldResult = true)
+        bool requireCurrentFieldResult = true,
+        bool skipWordOpenXmlSequenceProof = false)
     {
         OMaths? maths = null;
         OMath? math = null;
@@ -1674,7 +1696,8 @@ internal static partial class WordEquationNumbering
             if (paragraphTerminatorLength <= 0
                 || mathRange.End + paragraphTerminatorLength != paragraphRange.End)
                 return false;
-            if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            if (!skipWordOpenXmlSequenceProof
+                && !WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                     mathRange.WordOpenXML))
                 return false;
 

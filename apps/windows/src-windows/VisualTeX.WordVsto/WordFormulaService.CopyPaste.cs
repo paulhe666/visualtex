@@ -14,6 +14,7 @@ internal sealed partial class WordFormulaService
         internal int SourceEnd { get; set; }
         internal WordCharacterFormatting? BodyFormatting { get; set; }
         internal string? VisibleNumber { get; set; }
+        internal int BlankParagraphsBefore { get; set; }
     }
 
     private sealed class PastedNativeOleGroupCandidate
@@ -243,7 +244,7 @@ internal sealed partial class WordFormulaService
         InlineShapes? shapes = null;
         InlineShape? shape = null;
         Range? formulaRange = null;
-        Range? numberingOwner = null;
+        Range? visibleNumberRange = null;
         var items = new List<WordFormulaCopyGroupItem>();
         var formulaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
@@ -252,8 +253,8 @@ internal sealed partial class WordFormulaService
             if (shapes.Count <= 1) return null;
             for (var index = 1; index <= shapes.Count; index++)
             {
-                Release(numberingOwner);
-                numberingOwner = null;
+                Release(visibleNumberRange);
+                visibleNumberRange = null;
                 Release(formulaRange);
                 formulaRange = null;
                 Release(shape);
@@ -274,13 +275,23 @@ internal sealed partial class WordFormulaService
                         formulaRange,
                         metadata.FormulaId))
                     return null;
-                numberingOwner = WordEquationNumbering.FindNumberingOwnerRange(
+                visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberRange(
                     document,
                     metadata.FormulaId);
-                if (numberingOwner is null
-                    || numberingOwner.StoryType != selectionRange.StoryType
-                    || selectionRange.Start > numberingOwner.Start
-                    || selectionRange.End < numberingOwner.End)
+                if (visibleNumberRange is null
+                    || visibleNumberRange.StoryType != selectionRange.StoryType)
+                    return null;
+                // A normal user drag commonly ends at the visible closing ')',
+                // not at the paragraph mark. Requiring the complete paragraph
+                // made multi-formula Copy fall back to raw Word paste, leaving
+                // duplicate FormulaIds/captions unrepaired. The semantic copy
+                // unit is the formula plus its visible number; hidden caption
+                // paragraphs are implementation details and must not be required
+                // in the user's selection.
+                var requiredStart = Math.Min(formulaRange.Start, visibleNumberRange.Start);
+                var requiredEnd = Math.Max(formulaRange.End, visibleNumberRange.End);
+                if (selectionRange.Start > requiredStart
+                    || selectionRange.End < requiredEnd)
                     return null;
                 items.Add(new WordFormulaCopyGroupItem
                 {
@@ -293,6 +304,18 @@ internal sealed partial class WordFormulaService
                 });
             }
             if (items.Count != shapes.Count || items.Count <= 1) return null;
+            items.Sort((left, right) => left.SourceStart.CompareTo(right.SourceStart));
+            for (var index = 1; index < items.Count; index++)
+            {
+                var blankParagraphs = CountOrdinaryBlankParagraphsBetweenCopiedFormulas(
+                    document,
+                    items[index - 1].Metadata.FormulaId,
+                    items[index].SourceStart);
+                if (blankParagraphs < 0) return null;
+                items[index].BlankParagraphsBefore = blankParagraphs;
+                WordDoubleClickHook.TraceMessage(
+                    $"copy-paste-group-source-gap previous={items[index - 1].Metadata.FormulaId} next={items[index].Metadata.FormulaId} blanks={blankParagraphs}");
+            }
             var first = items[0];
             return new WordFormulaCopySnapshot
             {
@@ -315,10 +338,69 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
-            Release(numberingOwner);
+            Release(visibleNumberRange);
             Release(formulaRange);
             Release(shape);
             Release(shapes);
+        }
+    }
+
+    private static int CountOrdinaryBlankParagraphsBetweenCopiedFormulas(
+        Document document,
+        string previousFormulaId,
+        int nextFormulaStart)
+    {
+        Range? caption = null;
+        Paragraphs? captionParagraphs = null;
+        Paragraph? captionParagraph = null;
+        Range? captionParagraphRange = null;
+        Range? gap = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            caption = WordEquationNumbering.FindNativeEquationCaptionRange(
+                document,
+                previousFormulaId);
+            if (caption is null
+                || caption.StoryType != WdStoryType.wdMainTextStory)
+                return -1;
+            captionParagraphs = caption.Paragraphs;
+            if (captionParagraphs.Count != 1) return -1;
+            captionParagraph = captionParagraphs[1];
+            captionParagraphRange = captionParagraph.Range;
+            if (nextFormulaStart <= captionParagraphRange.End) return 0;
+
+            gap = document.Range(captionParagraphRange.End, nextFormulaStart);
+            paragraphs = gap.Paragraphs;
+            var count = 0;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = paragraphs[index];
+                paragraphRange = paragraph.Range;
+                if (paragraphRange.Start < gap.Start
+                    || paragraphRange.End > gap.End)
+                    continue;
+                if (!IsStructurallyEmptyParagraph(paragraphRange))
+                    return -1;
+                count++;
+            }
+            return count;
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(gap);
+            Release(captionParagraphRange);
+            Release(captionParagraph);
+            Release(captionParagraphs);
+            Release(caption);
         }
     }
 
@@ -674,6 +756,11 @@ internal sealed partial class WordFormulaService
                         WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
                             document, formulaRange, shape.Height, metadata,
                             plannedOrdinal: 1, plannedPrefix: string.Empty, deferFieldUpdate: true);
+                        // Building the copied number scaffold can reset Word's
+                        // paragraph mark to the equation-number style. Restore the
+                        // source body mark afterwards so the normal continuation
+                        // paragraph inherits the user's upright/italic state.
+                        snapshot.BodyFormatting?.ApplyToParagraphMark(formulaRange);
                         RestorePastedOleVisibleNumber(document, metadata.FormulaId, copiedNumber);
                     }
                     else
@@ -683,9 +770,31 @@ internal sealed partial class WordFormulaService
                     // expand a just-created bookmark over that new character, so bind
                     // the durable VTO identity once more after the final scaffold is stable.
                     BindOleIdentityBookmark(shape, metadata.FormulaId);
+
+                    // A user commonly selects only the visible formula + number, not
+                    // the paragraph mark. Native Word then leaves the caret immediately
+                    // after the pasted REF inside that display paragraph. A second
+                    // Ctrl+V consequently appends another numbered OLE to the same
+                    // paragraph; all copied captions then share one owner and Update
+                    // Numbers makes every visible REF show the final sequence value.
+                    // Move through the same numbered-display continuation path used by
+                    // a normal VisualTeX insertion. It gives the copy exactly one local
+                    // ordinary typing paragraph after its hidden caption and restores
+                    // the source body character formatting on that paragraph. Repeated
+                    // paste therefore starts in an independent paragraph and subsequent
+                    // typing inherits upright/italic state from the copied host instead
+                    // of from the equation/REF field.
+                    MoveSelectionAfterNumberedDisplayFormula(
+                        document,
+                        selection,
+                        formulaRange,
+                        metadata.FormulaId);
                 }
                 else
                 {
+                    // A pasted VisualTeX equation adopts the destination
+                    // paragraph's anchor using the same rule as insertion/edit.
+                    ApplyVisualTeXInlineHostAlignment(shape, metadata);
                     RemoveInlineBaselineSentinel(document, metadata.FormulaId);
                     var boundary = EnsureInlineBaselineSentinel(
                         formulaRange,
@@ -867,7 +976,7 @@ internal sealed partial class WordFormulaService
             return PastedFormulaRepairResult.NotApplicable;
         Range? caretAnchor = null;
         var candidates = new List<PastedNativeOleGroupCandidate>();
-        var repairedFormulaIds = new List<string>();
+        var repairedFormulaIds = new List<(int SourceStart, string FormulaId, int BlankParagraphsBefore)>();
         try
         {
             caretAnchor = selection.Range.Duplicate;
@@ -913,10 +1022,14 @@ internal sealed partial class WordFormulaService
                         plannedOrdinal: 1,
                         plannedPrefix: string.Empty,
                         deferFieldUpdate: true);
+                    candidate.Item.BodyFormatting?.ApplyToParagraphMark(formulaRange);
                     RestorePastedOleVisibleNumber(document, metadata.FormulaId, copiedNumber);
                     BindOleIdentityBookmark(candidate.Shape, metadata.FormulaId);
                     RepairLocalCopiedOleIdentityBookmarks(candidate.Shape);
-                    repairedFormulaIds.Add(metadata.FormulaId);
+                    repairedFormulaIds.Add((
+                        candidate.Start,
+                        metadata.FormulaId,
+                        candidate.Item.BlankParagraphsBefore));
                     WordDoubleClickHook.TraceMessage(
                         $"copy-paste-group-item-repaired sourceFormulaId={sourceId} "
                         + $"formulaId={metadata.FormulaId} range={formulaRange.Start}:{formulaRange.End} "
@@ -925,25 +1038,69 @@ internal sealed partial class WordFormulaService
                 finally { Release(formulaRange); }
             }
 
-            RefreshCopySnapshotCounts(document, snapshot);
-            var caret = caretAnchor.Start;
-            foreach (var formulaId in repairedFormulaIds)
+            var last = repairedFormulaIds
+                .OrderByDescending(item => item.SourceStart)
+                .FirstOrDefault();
+            InlineShape? lastShape = null;
+            Range? lastFormulaRange = null;
+            try
             {
-                Range? caption = null;
+                if (!string.IsNullOrWhiteSpace(last.FormulaId))
+                {
+                    lastShape = FindByFormulaId(document, last.FormulaId);
+                    if (lastShape is not null)
+                    {
+                        lastFormulaRange = lastShape.Range;
+                        MoveSelectionAfterNumberedDisplayFormula(
+                            document,
+                            selection,
+                            lastFormulaRange,
+                            last.FormulaId);
+                    }
+                }
+                if (lastShape is null)
+                {
+                    var caret = Math.Max(document.Content.Start,
+                        Math.Min(caretAnchor.Start, document.Content.End - 1));
+                    selection.SetRange(caret, caret);
+                }
+            }
+            finally
+            {
+                Release(lastFormulaRange);
+                Release(lastShape);
+            }
+
+            // The continuation helper above can force Word to materialize the
+            // ordinary paragraphs that separate framed hidden captions from the
+            // following copied formula. Normalize only after that layout has
+            // settled, then resolve the final formula once more because deleting
+            // an excess paragraph shifts all later story coordinates.
+            NormalizePastedGroupInterFormulaSpacing(document, repairedFormulaIds);
+            if (!string.IsNullOrWhiteSpace(last.FormulaId))
+            {
                 try
                 {
-                    caption = WordEquationNumbering.FindNativeEquationCaptionRange(
-                        document,
-                        formulaId);
-                    if (caption is not null
-                        && caption.StoryType == WdStoryType.wdMainTextStory)
-                        caret = Math.Max(caret, caption.End);
+                    lastShape = FindByFormulaId(document, last.FormulaId);
+                    if (lastShape is not null)
+                    {
+                        lastFormulaRange = lastShape.Range;
+                        MoveSelectionAfterNumberedDisplayFormula(
+                            document,
+                            selection,
+                            lastFormulaRange,
+                            last.FormulaId);
+                    }
                 }
-                finally { Release(caption); }
+                finally
+                {
+                    Release(lastFormulaRange);
+                    lastFormulaRange = null;
+                    Release(lastShape);
+                    lastShape = null;
+                }
             }
-            caret = Math.Max(document.Content.Start,
-                Math.Min(caret, document.Content.End - 1));
-            selection.SetRange(caret, caret);
+            RefreshCopySnapshotCounts(document, snapshot);
             WordDoubleClickHook.TraceMessage(
                 $"copy-paste-group-repaired formulas={candidates.Count} range={pastedStart}:{pastedEnd}");
             return PastedFormulaRepairResult.Repaired;
@@ -954,6 +1111,135 @@ internal sealed partial class WordFormulaService
                 Release(candidate.Shape);
             Release(caretAnchor);
         }
+    }
+
+    private static void NormalizePastedGroupInterFormulaSpacing(
+        Document document,
+        IReadOnlyCollection<(int SourceStart, string FormulaId, int BlankParagraphsBefore)> repaired)
+    {
+        var ordered = repaired
+            .OrderBy(item => item.SourceStart)
+            .ToArray();
+        for (var index = ordered.Length - 1; index >= 1; index--)
+        {
+            WordDoubleClickHook.TraceMessage(
+                $"copy-paste-group-normalize-gap previous={ordered[index - 1].FormulaId} next={ordered[index].FormulaId} expected={ordered[index].BlankParagraphsBefore}");
+            RemoveExtraBlankParagraphsBetweenPastedFormulas(
+                document,
+                ordered[index - 1].FormulaId,
+                ordered[index].FormulaId,
+                ordered[index].BlankParagraphsBefore);
+        }
+    }
+
+    private static void RemoveExtraBlankParagraphsBetweenPastedFormulas(
+        Document document,
+        string previousFormulaId,
+        string nextFormulaId,
+        int expectedBlankParagraphs)
+    {
+        Range? caption = null;
+        Paragraphs? captionParagraphs = null;
+        Paragraph? captionParagraph = null;
+        Range? captionParagraphRange = null;
+        InlineShape? nextShape = null;
+        Range? nextRange = null;
+        Paragraphs? nextParagraphs = null;
+        Paragraph? nextParagraph = null;
+        Range? nextParagraphRange = null;
+        Range? gap = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        var emptyParagraphs = new List<(int Start, int End)>();
+        try
+        {
+            caption = WordEquationNumbering.FindNativeEquationCaptionRange(
+                document,
+                previousFormulaId);
+            nextShape = FindByFormulaId(document, nextFormulaId);
+            if (caption is null
+                || nextShape is null
+                || caption.StoryType != WdStoryType.wdMainTextStory)
+                return;
+
+            captionParagraphs = caption.Paragraphs;
+            nextRange = nextShape.Range;
+            nextParagraphs = nextRange.Paragraphs;
+            if (captionParagraphs.Count == 0 || nextParagraphs.Count != 1)
+                return;
+            // EnsureNormalTypingParagraphAfterNumberedDisplay may temporarily
+            // expand VTEqCap_<id> across the ordinary continuation paragraph.
+            // The first paragraph is still the real hidden SEQ caption; using
+            // that owner rather than requiring the bookmark itself to span one
+            // paragraph lets us detect/remove only the generated gap before the
+            // next pasted formula.
+            captionParagraph = captionParagraphs[1];
+            captionParagraphRange = captionParagraph.Range;
+            nextParagraph = nextParagraphs[1];
+            nextParagraphRange = nextParagraph.Range;
+            if (nextParagraphRange.StoryType != WdStoryType.wdMainTextStory
+                || nextParagraphRange.Start <= captionParagraphRange.End)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"copy-paste-group-gap-skip previous={previousFormulaId} next={nextFormulaId} captionEnd={captionParagraphRange.End} nextStart={nextParagraphRange.Start} story={nextParagraphRange.StoryType}");
+                return;
+            }
+
+            gap = document.Range(captionParagraphRange.End, nextParagraphRange.Start);
+            paragraphs = gap.Paragraphs;
+            for (var index = 1; index <= paragraphs.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = paragraphs[index];
+                paragraphRange = paragraph.Range;
+                if (paragraphRange.Start < gap.Start
+                    || paragraphRange.End > gap.End)
+                    continue;
+                if (!IsStructurallyEmptyParagraph(paragraphRange))
+                {
+                    WordDoubleClickHook.TraceMessage(
+                        $"copy-paste-group-gap-nonempty previous={previousFormulaId} next={nextFormulaId} range={paragraphRange.Start}:{paragraphRange.End}");
+                    return;
+                }
+                emptyParagraphs.Add((paragraphRange.Start, paragraphRange.End));
+            }
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(gap);
+            Release(nextParagraphRange);
+            Release(nextParagraph);
+            Release(nextParagraphs);
+            Release(nextRange);
+            Release(nextShape);
+            Release(captionParagraphRange);
+            Release(captionParagraph);
+            Release(captionParagraphs);
+            Release(caption);
+        }
+
+        var excess = emptyParagraphs.Count - Math.Max(0, expectedBlankParagraphs);
+        if (excess <= 0) return;
+        foreach (var item in emptyParagraphs
+                     .OrderByDescending(item => item.Start)
+                     .Take(excess))
+        {
+            Range? range = null;
+            try
+            {
+                range = document.Range(item.Start, item.End);
+                range.Delete();
+            }
+            finally { Release(range); }
+        }
+        WordDoubleClickHook.TraceMessage(
+            $"copy-paste-group-extra-blank-removed count={excess} previous={previousFormulaId} next={nextFormulaId}");
     }
 
     private static bool TryCollectPastedNativeOleGroup(

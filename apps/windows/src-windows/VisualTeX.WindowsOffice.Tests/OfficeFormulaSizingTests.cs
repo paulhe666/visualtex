@@ -105,6 +105,52 @@ public sealed class OfficeFormulaSizingTests
     }
 
     [Fact]
+    public void InlineVisualTeXEditCanPreserveIndependentHostPresentationScale()
+    {
+        var size = OfficeFormulaSizing.EditedSize(
+            currentWidth: 90f,
+            currentHeight: 12f,
+            originalRenderWidth: 140.7792510986328d,
+            originalRenderHeight: 18.015625d,
+            newRenderWidth: 168.28543090820313f,
+            newRenderHeight: 18.015625f,
+            originalFontSizePt: 12d,
+            originalRenderFontSizePt: 12d,
+            preserveIndependentAxisScale: true);
+
+        Assert.InRange(size.Width, 107.5f, 107.7f);
+        Assert.Equal(12f, size.Height, 3);
+    }
+
+    [Fact]
+    public void IndependentHostPresentationScaleRoundTripsWhenLatexReturnsToOriginal()
+    {
+        var widened = OfficeFormulaSizing.EditedSize(
+            currentWidth: 90f,
+            currentHeight: 12f,
+            originalRenderWidth: 140.7792510986328d,
+            originalRenderHeight: 18.015625d,
+            newRenderWidth: 168.28543090820313f,
+            newRenderHeight: 18.015625f,
+            originalFontSizePt: 12d,
+            originalRenderFontSizePt: 12d,
+            preserveIndependentAxisScale: true);
+        var restored = OfficeFormulaSizing.EditedSize(
+            currentWidth: widened.Width,
+            currentHeight: widened.Height,
+            originalRenderWidth: 168.28543090820313d,
+            originalRenderHeight: 18.015625d,
+            newRenderWidth: 140.7792510986328f,
+            newRenderHeight: 18.015625f,
+            originalFontSizePt: 12d,
+            originalRenderFontSizePt: 12d,
+            preserveIndependentAxisScale: true);
+
+        Assert.Equal(90f, restored.Width, 3);
+        Assert.Equal(12f, restored.Height, 3);
+    }
+
+    [Fact]
     public void EditedSmallInlineFormulaUsesRawPreviewHeightInsteadOfTwelvePointFloor()
     {
         var size = OfficeFormulaSizing.EditedSize(

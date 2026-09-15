@@ -1376,6 +1376,7 @@ internal sealed partial class WordFormulaService
                         continue;
                     FormulaMetadata? metadata = null;
                     string? sourceMathMl = null;
+                    byte[]? sourceMathTypeCompoundFile = null;
                     var mathTypeNumberPosition = "right";
                     string sourceFormulaId;
 
@@ -1419,7 +1420,6 @@ internal sealed partial class WordFormulaService
                         }
                         if (!isSourceMathTypeOle) continue;
                         TracePlanPerf("identify-mathtype");
-                        byte[]? knownNativeCompoundFile = null;
                         if (bulkOleSnapshot is not null
                             && bulkOleSnapshot.CompoundFile.Length > 0
                             && MathTypeOleStorage.LooksLikeMathTypeCompoundFile(
@@ -1429,7 +1429,7 @@ internal sealed partial class WordFormulaService
                             {
                                 sourceMathMl = MathTypeOleStorage.ReadMathMl(
                                     bulkOleSnapshot.CompoundFile);
-                                knownNativeCompoundFile = bulkOleSnapshot.CompoundFile;
+                                sourceMathTypeCompoundFile = bulkOleSnapshot.CompoundFile;
                                 TracePlanPerf("read-mathml-bulk");
                             }
                             catch
@@ -1447,7 +1447,7 @@ internal sealed partial class WordFormulaService
                             _application,
                             shape,
                             sourceMathMl,
-                            knownNativeCompoundFile);
+                            sourceMathTypeCompoundFile);
                         TracePlanPerf("read-metadata");
                         if (MathTypeOleInterop.TryReadDisplayNumberPosition(
                                 shape,
@@ -1455,6 +1455,20 @@ internal sealed partial class WordFormulaService
                             mathTypeNumberPosition = detectedPosition;
                         TracePlanPerf("number-position");
                         sourceFormulaId = metadata.FormulaId;
+                    }
+
+                    // Preserve the source format's semantic font size.  MathType's
+                    // authoritative value is the MTEF full font size already read
+                    // into metadata above; the Word U+0001 object character often
+                    // inherits surrounding prose formatting (for example 10.5 pt)
+                    // and must never overwrite that MathType semantic size.  A
+                    // VisualTeX OLE can legitimately be user-resized, so keep the
+                    // existing geometry-aware inference for that source family.
+                    var sourceFontSizePt = FormulaFontSize.ResolveSemanticFontSize(metadata);
+                    if (string.Equals(sourceMode, FormulaOleContract.NativeOleMode, StringComparison.Ordinal))
+                    {
+                        var stableSize = WordInlineObjectGeometry.ReadStableVisualTeXSize(shape, metadata);
+                        sourceFontSizePt = FormulaFontSize.InferOleFontSize(stableSize.Width, stableSize.Height, metadata);
                     }
 
                     var latex = string.IsNullOrWhiteSpace(metadata.Latex)
@@ -1492,6 +1506,44 @@ internal sealed partial class WordFormulaService
                             mathTypeTargetColumnLayouts);
                     }
 
+                    float? sourceMathTypePresentationScale = null;
+                    int? sourceInlineWordPosition = null;
+                    float? sourceInlineBottomWhitespacePoints = null;
+                    if (string.Equals(
+                            sourceMode,
+                            FormulaOleContract.MathTypeOleMode,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            targetMode,
+                            FormulaOleContract.NativeOleMode,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            metadata.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        // MTEF owns semantic size; Word's U+0001 host character is
+                        // only the document presentation size. Their ratio is the
+                        // display scale we must inherit without turning (for example)
+                        // a 12 pt MathType equation into 10.5 pt VisualTeX metadata.
+                        var hostFontSize = ReadInlineOleHostFontSize(shape);
+                        var semanticFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
+                        if (hostFontSize is > 0 && semanticFontSize > 0)
+                        {
+                            var scale = hostFontSize.Value / semanticFontSize;
+                            if (scale > 0 && !float.IsNaN(scale) && !float.IsInfinity(scale))
+                                sourceMathTypePresentationScale = Math.Max(0.25f, Math.Min(4f, scale));
+                        }
+                        sourceInlineWordPosition = ReadInlineOleWordPosition(shape);
+                        var sourcePreviewMetrics = TryMeasureInlineOlePreview(shape);
+                        if (sourcePreviewMetrics.HasValue)
+                        {
+                            sourceInlineBottomWhitespacePoints =
+                                shape.Height
+                                * sourcePreviewMetrics.Value.BottomWhitespaceRatio;
+                        }
+                    }
+
                     var conversionTarget = new WordFormulaFormatConversionTarget
                     {
                         Id = Guid.NewGuid().ToString("D"),
@@ -1525,7 +1577,10 @@ internal sealed partial class WordFormulaService
                                 sourceMode)
                             : 0,
                         MathTypeNumberPosition = mathTypeNumberPosition,
-                        FontSizePt = FormulaFontSize.Normalize(metadata.FontSizePt),
+                        FontSizePt = FormulaFontSize.Normalize(sourceFontSizePt),
+                        SourceMathTypePresentationScale = sourceMathTypePresentationScale,
+                        SourceInlineWordPosition = sourceInlineWordPosition,
+                        SourceInlineBottomWhitespacePoints = sourceInlineBottomWhitespacePoints,
                         MathTypeDisplayColumnWidth = mathTypeDisplayColumnWidth,
                         Metadata = metadata,
                     };
@@ -1552,6 +1607,41 @@ internal sealed partial class WordFormulaService
             Release(shapes);
             Release(scope);
             Release(selection);
+            Release(document);
+        }
+    }
+
+    private static float? ReadInlineOleHostFontSize(InlineShape shape)
+    {
+        Range? range = null;
+        Range? probe = null;
+        Document? document = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            range = shape.Range;
+            document = range.Document;
+            for (var position = range.Start; position < range.End; position++)
+            {
+                Release(font);
+                font = null;
+                Release(probe);
+                probe = document.Range(position, position + 1);
+                if (!string.Equals(probe.Text, "\u0001", StringComparison.Ordinal))
+                    continue;
+                font = probe.Font;
+                return TryNormalizeDefinedWordFontSize(font.Size, out var size)
+                    ? size
+                    : null;
+            }
+            return null;
+        }
+        catch { return null; }
+        finally
+        {
+            Release(font);
+            Release(probe);
+            Release(range);
             Release(document);
         }
     }
@@ -1918,7 +2008,7 @@ internal sealed partial class WordFormulaService
                     MathTypeNumberPosition = metadata.Numbered
                         ? ReadMathTypeNumberPositionPreference(document)
                         : "right",
-                    FontSizePt = FormulaFontSize.Normalize(metadata.FontSizePt),
+                    FontSizePt = ReadFormulaFontSizeWithoutMutation(range, metadata),
                     Metadata = metadata,
                 };
                 CaptureTableInlineFollowingBoundary(document, range, metadata, conversionTarget);
@@ -2008,7 +2098,7 @@ internal sealed partial class WordFormulaService
                 MathTypeNumberPosition = metadata.Numbered
                     ? ReadMathTypeNumberPositionPreference(document)
                     : "right",
-                FontSizePt = FormulaFontSize.Normalize(metadata.FontSizePt),
+                FontSizePt = ReadFormulaFontSizeWithoutMutation(equationRange, metadata),
                 Metadata = metadata,
             };
             CaptureTableInlineFollowingBoundary(document, equationRange, metadata, conversionTarget);
@@ -2933,7 +3023,16 @@ internal sealed partial class WordFormulaService
                                     target.DisplayMode,
                                     "block",
                                     StringComparison.Ordinal),
-                            preserveCapturedInsertion: true);
+                            // Preserve semantic font size in the session.  A
+                            // MathType source may also carry a document-specific
+                            // Word presentation scale resolved before mutation; that
+                            // scale changes only the VisualTeX OLE extent, while the
+                            // target family computes its own baseline.
+                            preserveCapturedInsertion: true,
+                            presentationScaleX:
+                                target.SourceMathTypePresentationScale,
+                            presentationScaleY:
+                                target.SourceMathTypePresentationScale);
                     }
                     TracePerf("insert-target");
                     TraceConversionUndoState("after-target-insert");

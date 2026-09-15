@@ -35,6 +35,12 @@ export interface VisualTeXFormulaMetadata {
   /** Physical Word inline OLE extent retained across OLE/OMML conversions. */
   wordInlineOleWidthPt?: number;
   wordInlineOleHeightPt?: number;
+  /** Whole-point Word object-character offset retained for inline formulas. */
+  wordInlineOlePositionPt?: number;
+  /** Source MathType preview whitespace retained for sub-point baseline repair. */
+  wordInlineSourceBottomWhitespacePt?: number;
+  /** In-frame vertical preview compensation already applied, in render pixels. */
+  wordInlinePreviewShiftPx?: number;
   /** Fingerprint of the exact Word-native OMML source. */
   nativeOmmlFingerprint?: string;
   createdWithVersion: string;
@@ -60,6 +66,9 @@ export interface CreateFormulaMetadataInput {
   formulaChineseFont?: FormulaChineseFont;
   wordInlineOleWidthPt?: number;
   wordInlineOleHeightPt?: number;
+  wordInlineOlePositionPt?: number;
+  wordInlineSourceBottomWhitespacePt?: number;
+  wordInlinePreviewShiftPx?: number;
   appVersion?: string;
   original?: VisualTeXFormulaMetadata | null;
 }
@@ -179,6 +188,24 @@ export function isVisualTeXFormulaMetadata(
         typeof candidate.wordInlineOleHeightPt === "number" &&
         Number.isFinite(candidate.wordInlineOleHeightPt) &&
         candidate.wordInlineOleHeightPt > 0)) &&
+    (candidate.wordInlineOlePositionPt === undefined ||
+      (candidate.displayMode === "inline" &&
+        typeof candidate.wordInlineOlePositionPt === "number" &&
+        Number.isInteger(candidate.wordInlineOlePositionPt) &&
+        candidate.wordInlineOlePositionPt >= -256 &&
+        candidate.wordInlineOlePositionPt <= 256)) &&
+    (candidate.wordInlineSourceBottomWhitespacePt === undefined ||
+      (candidate.displayMode === "inline" &&
+        typeof candidate.wordInlineSourceBottomWhitespacePt === "number" &&
+        Number.isFinite(candidate.wordInlineSourceBottomWhitespacePt) &&
+        candidate.wordInlineSourceBottomWhitespacePt >= 0 &&
+        candidate.wordInlineSourceBottomWhitespacePt <= 256)) &&
+    (candidate.wordInlinePreviewShiftPx === undefined ||
+      (candidate.displayMode === "inline" &&
+        typeof candidate.wordInlinePreviewShiftPx === "number" &&
+        Number.isFinite(candidate.wordInlinePreviewShiftPx) &&
+        candidate.wordInlinePreviewShiftPx >= -2 &&
+        candidate.wordInlinePreviewShiftPx <= 2)) &&
     (candidate.nativeOmmlFingerprint === undefined ||
       (typeof candidate.nativeOmmlFingerprint === "string" &&
         /^[0-9a-f]{64}$/i.test(candidate.nativeOmmlFingerprint))) &&
@@ -206,6 +233,9 @@ export function createFormulaMetadata({
   formulaChineseFont,
   wordInlineOleWidthPt,
   wordInlineOleHeightPt,
+  wordInlineOlePositionPt,
+  wordInlineSourceBottomWhitespacePt,
+  wordInlinePreviewShiftPx,
   appVersion = CURRENT_VISUALTEX_VERSION,
   original = null,
 }: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
@@ -282,6 +312,31 @@ export function createFormulaMetadata({
       ? { formulaChineseFont: formulaChineseFont ?? original?.formulaChineseFont }
       : {}),
     ...resolvedInlineOleSize,
+    ...(displayMode === "inline" &&
+    Number.isInteger(wordInlineOlePositionPt ?? original?.wordInlineOlePositionPt)
+      ? {
+          wordInlineOlePositionPt:
+            (wordInlineOlePositionPt ?? original?.wordInlineOlePositionPt) as number,
+        }
+      : {}),
+    ...(displayMode === "inline" &&
+    Number.isFinite(
+      wordInlineSourceBottomWhitespacePt ??
+        original?.wordInlineSourceBottomWhitespacePt,
+    )
+      ? {
+          wordInlineSourceBottomWhitespacePt:
+            (wordInlineSourceBottomWhitespacePt ??
+              original?.wordInlineSourceBottomWhitespacePt) as number,
+        }
+      : {}),
+    ...(displayMode === "inline" &&
+    Number.isFinite(wordInlinePreviewShiftPx ?? original?.wordInlinePreviewShiftPx)
+      ? {
+          wordInlinePreviewShiftPx:
+            (wordInlinePreviewShiftPx ?? original?.wordInlinePreviewShiftPx) as number,
+        }
+      : {}),
     ...(original?.nativeOmmlFingerprint
       ? { nativeOmmlFingerprint: original.nativeOmmlFingerprint }
       : {}),

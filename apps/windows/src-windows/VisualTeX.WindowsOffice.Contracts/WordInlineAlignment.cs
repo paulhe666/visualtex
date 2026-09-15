@@ -2,10 +2,73 @@ using System;
 
 namespace VisualTeX.WindowsOffice.Contracts;
 
+// Values correspond to Word's documented WdBaselineAlignment enumeration.
+// This describes the host's character anchoring, not the equation's origin.
+public enum WordInlineHostAlignment
+{
+    Top = 0,
+    Center = 1,
+    Baseline = 2,
+    FarEast50 = 3,
+    Automatic = 4,
+}
+
 public static class WordInlineAlignment
 {
     public const float LegacyDescentRatio = 0.25f;
     public const float WholePointSnapTolerancePoints = 0.0101f;
+
+    public static int CalculateFontPositionForHost(
+        WordInlineHostAlignment hostAlignment,
+        float actualHeightPoints,
+        float exportedHeight,
+        float? exportedBaseline,
+        float? existingFontPosition = null,
+        double sourceSemanticFontSizePoints = 14,
+        double targetSemanticFontSizePoints = 14)
+    {
+        switch (hostAlignment)
+        {
+            // In these explicit paragraph modes Word aligns character boxes
+            // itself. A picture-bottom-to-baseline descent would apply a second,
+            // incompatible displacement. Respect the host without rewriting it.
+            case WordInlineHostAlignment.Center:
+            case WordInlineHostAlignment.Top:
+                return 0;
+            // FarEast50 follows the East-Asian half-height baseline convention.
+            // Word centers the font's em box around that host baseline, so an
+            // inline OLE that is taller than its semantic font size only needs
+            // half of the excess height lowered. Using the full picture descent
+            // double-shifts tall formulas in FarEast50 paragraphs.
+            case WordInlineHostAlignment.FarEast50:
+                return CalculateFarEast50FontPosition(
+                    actualHeightPoints,
+                    targetSemanticFontSizePoints);
+            case WordInlineHostAlignment.Automatic:
+            case WordInlineHostAlignment.Baseline:
+                return CalculateFontPositionWithLegacyFallback(
+                    actualHeightPoints, exportedHeight, exportedBaseline,
+                    existingFontPosition, sourceSemanticFontSizePoints,
+                    targetSemanticFontSizePoints);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(hostAlignment));
+        }
+    }
+
+    private static int CalculateFarEast50FontPosition(
+        float actualHeightPoints,
+        double targetSemanticFontSizePoints)
+    {
+        if (!(actualHeightPoints > 0) || !IsFinite(actualHeightPoints))
+            return 0;
+        var semanticSize = FormulaFontSize.Normalize(targetSemanticFontSizePoints);
+        var excessHeight = Math.Max(0f, actualHeightPoints - semanticSize);
+        return -Math.Max(
+            0,
+            (int)Math.Round(
+                excessHeight * 0.5f,
+                MidpointRounding.AwayFromZero));
+    }
 
     public static int CalculateFontPositionWithLegacyFallback(
         float actualHeightPoints,
@@ -50,6 +113,31 @@ public static class WordInlineAlignment
             (int)Math.Round(
                 actualHeightPoints * LegacyDescentRatio,
                 MidpointRounding.AwayFromZero));
+    }
+
+    public static float CalculatePreviewBaselineSnapShiftPoints(
+        float actualHeightPoints,
+        float exportedHeight,
+        float? exportedBaseline)
+    {
+        if (!(actualHeightPoints > 0)
+            || !IsFinite(actualHeightPoints)
+            || !HasValidExportedBaseline(exportedHeight, exportedBaseline))
+            return 0f;
+
+        var baseline = exportedBaseline.GetValueOrDefault();
+        var descentRatio = (exportedHeight - baseline) / exportedHeight;
+        var descentPoints = actualHeightPoints * descentRatio;
+        if (!(descentPoints >= 0) || !IsFinite(descentPoints))
+            return 0f;
+
+        var snappedDescent = (float)Math.Round(
+            descentPoints,
+            MidpointRounding.AwayFromZero);
+        var shift = descentPoints - snappedDescent;
+        if (Math.Abs(shift) <= WholePointSnapTolerancePoints)
+            return 0f;
+        return Math.Max(-0.5f, Math.Min(0.5f, shift));
     }
 
     public static int CalculateFontPosition(

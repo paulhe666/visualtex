@@ -135,6 +135,42 @@ public sealed class WordInlineAlignmentTests
     }
 
     [Theory]
+    [InlineData(11.75d, 18.015625d, 13d, 0.2712489d)]
+    [InlineData(11.1d, 14.8226d, 12.6746d, -0.3914563d)]
+    [InlineData(16.3d, 24.952d, 18.432d, 0.2592177d)]
+    public void PreviewBaselineSnapReturnsOnlyTheSubPointRemainder(
+        double actualHeight,
+        double exportedHeight,
+        double baseline,
+        double expectedShift)
+    {
+        var shift = WordInlineAlignment.CalculatePreviewBaselineSnapShiftPoints(
+            (float)actualHeight,
+            (float)exportedHeight,
+            (float)baseline);
+        Assert.InRange(shift, (float)expectedShift - 0.0002f, (float)expectedShift + 0.0002f);
+        Assert.InRange(shift, -0.5f, 0.5f);
+    }
+
+    [Theory]
+    [InlineData(10d, 10d, 9d, 0d)]
+    [InlineData(20d, 20d, null, 0d)]
+    [InlineData(20d, 0d, 0d, 0d)]
+    public void PreviewBaselineSnapIsIdempotentAtWholePointDescent(
+        double actualHeight,
+        double exportedHeight,
+        double? baseline,
+        double expectedShift)
+    {
+        Assert.Equal(
+            (float)expectedShift,
+            WordInlineAlignment.CalculatePreviewBaselineSnapShiftPoints(
+                (float)actualHeight,
+                (float)exportedHeight,
+                baseline is null ? null : (float)baseline.Value));
+    }
+
+    [Theory]
     [InlineData(20d, 20d, null)]
     [InlineData(20d, 0d, 0d)]
     [InlineData(20d, 20d, -1d)]

@@ -461,6 +461,7 @@ internal static class MathTypeOleStorage
                     ? MathTypeMtefCodec.RewriteEquationNativeAtFontSize(sourceNative, mathMl, inline, fullFontSizePt.Value)
                     : MathTypeMtefCodec.RewriteEquationNative(sourceNative, mathMl, inline);
                 WriteStream(storage, "Equation Native", rewritten.EquationNative);
+                NormalizeMathTypeObjInfoForWmfPresentation(storage);
                 storage.Commit(0);
             }
             finally { Release(storage); }
@@ -474,6 +475,35 @@ internal static class MathTypeOleStorage
             };
         }
         finally { TryDelete(path); }
+    }
+
+    private static void NormalizeMathTypeObjInfoForWmfPresentation(IStorageNative storage)
+    {
+        try
+        {
+            var objInfo = ReadStream(storage, "\u0003ObjInfo");
+            if (objInfo.Length < 6
+                || BitConverter.ToUInt16(objInfo, 2) != 0x0003)
+                return;
+
+            // [MS-DOC] ODT: cf=0x0003 denotes a metafile presentation. The final
+            // ODTPersist2 word describes how Word should interpret that
+            // presentation. VisualTeX writes an external image/x-wmf part, so it
+            // must match MathType 7's native WMF state: fEMF=0,
+            // fQueriedEMF=1, fStoredAsEMF=0 => 0x0004. Keeping a legacy 0x0001
+            // here tells Word that the document presentation is EMF while the
+            // actual presentation is WMF, which leaves the rematerialized inline
+            // OLE with a different host-layout state from a MathType-saved object.
+            objInfo[4] = 0x04;
+            objInfo[5] = 0x00;
+            WriteStream(storage, "\u0003ObjInfo", objInfo);
+        }
+        catch (COMException)
+        {
+            // Older/foreign MathType-compatible storages can omit ObjInfo. Their
+            // Equation Native rewrite remains valid; do not make this metadata
+            // normalization a new compatibility requirement.
+        }
     }
 
     internal static MathTypeOleInterop.StorageIdentity ReadCompoundFileIdentity(

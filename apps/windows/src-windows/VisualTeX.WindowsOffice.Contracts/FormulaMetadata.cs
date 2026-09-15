@@ -63,6 +63,15 @@ public sealed class FormulaMetadata
     [JsonPropertyName("wordInlineOleHeightPt")]
     public double? WordInlineOleHeightPt { get; set; }
 
+    [JsonPropertyName("wordInlineOlePositionPt")]
+    public int? WordInlineOlePositionPt { get; set; }
+
+    [JsonPropertyName("wordInlineSourceBottomWhitespacePt")]
+    public double? WordInlineSourceBottomWhitespacePt { get; set; }
+
+    [JsonPropertyName("wordInlinePreviewShiftPx")]
+    public double? WordInlinePreviewShiftPx { get; set; }
+
     [JsonPropertyName("nativeOmmlFingerprint")]
     public string? NativeOmmlFingerprint { get; set; }
 
@@ -134,6 +143,28 @@ public sealed class FormulaMetadata
                 || double.IsInfinity(WordInlineOleHeightPt.Value)))
             throw new InvalidOperationException(
                 "VisualTeX Word inline OLE dimensions must be positive finite values.");
+        if (WordInlineOlePositionPt.HasValue
+            && (!string.Equals(DisplayMode, "inline", StringComparison.OrdinalIgnoreCase)
+                || WordInlineOlePositionPt.Value < -256
+                || WordInlineOlePositionPt.Value > 256))
+            throw new InvalidOperationException(
+                "VisualTeX Word inline OLE position must be an inline whole-point offset between -256 and 256.");
+        if (WordInlineSourceBottomWhitespacePt.HasValue
+            && (!string.Equals(DisplayMode, "inline", StringComparison.OrdinalIgnoreCase)
+                || WordInlineSourceBottomWhitespacePt.Value < 0
+                || WordInlineSourceBottomWhitespacePt.Value > 256
+                || double.IsNaN(WordInlineSourceBottomWhitespacePt.Value)
+                || double.IsInfinity(WordInlineSourceBottomWhitespacePt.Value)))
+            throw new InvalidOperationException(
+                "VisualTeX source inline bottom whitespace must be a finite inline point value between 0 and 256.");
+        if (WordInlinePreviewShiftPx.HasValue
+            && (!string.Equals(DisplayMode, "inline", StringComparison.OrdinalIgnoreCase)
+                || WordInlinePreviewShiftPx.Value < -2
+                || WordInlinePreviewShiftPx.Value > 2
+                || double.IsNaN(WordInlinePreviewShiftPx.Value)
+                || double.IsInfinity(WordInlinePreviewShiftPx.Value)))
+            throw new InvalidOperationException(
+                "VisualTeX inline preview shift must be a finite pixel value between -2 and 2.");
     }
 
     private static bool IsSupportedFormulaLetterFont(string value)
