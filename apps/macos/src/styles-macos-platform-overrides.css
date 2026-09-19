@@ -11,6 +11,14 @@
   display: flex;
 }
 
+/* The desktop classic header is portaled into the macOS top toolbar and hidden
+   inside the workspace. Anchor the collapsed tile-rail affordance to the
+   formula canvas itself instead of reserving the old in-workspace header row. */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-expand-button {
+  top: 8px;
+}
+
 /* At very narrow resident-editor widths the tile rail can leave roughly 100px
    for the first classic-bottom grid cell. Keep all formatting actions
    accessible by horizontal scrolling instead of letting their intrinsic width
@@ -45,7 +53,100 @@
     position: fixed;
     top: auto;
     right: auto;
-    bottom: 38px;
+    bottom: calc(var(--classic-dock-height, 240px) + 21px);
+    left: 8px;
+    max-width: min(196px, calc(100vw - 16px));
+    z-index: var(--z-popover, 190);
+  }
+}
+
+/* Keep the Office dock on one compact line. The formatting strip owns only the
+   flexible first column; at narrow widths it scrolls internally instead of
+   pushing the tools/source tabs or the collapse action onto another row. */
+.office-dialog-shell .classic-bottom-dock:not(.is-collapsed) {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-rows: 30px;
+  gap: 2px;
+  padding-inline: 4px;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  max-width: 100%;
+  min-height: 30px;
+  padding-left: 0;
+  justify-self: stretch;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot::-webkit-scrollbar {
+  display: none;
+}
+
+.office-dialog-shell
+  .classic-bottom-formatting-slot
+  .formula-alignment-controls,
+.office-dialog-shell
+  .classic-bottom-formatting-slot
+  .formula-formatting-controls {
+  width: max-content;
+  min-width: max-content;
+  flex-wrap: nowrap;
+}
+
+.office-dialog-shell .classic-bottom-tab-group {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: max-content;
+}
+
+.office-dialog-shell .classic-bottom-actions {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: max-content;
+  overflow: visible;
+}
+
+@container (max-width: 560px) {
+  .office-dialog-shell .classic-bottom-tabs {
+    overflow: hidden;
+  }
+
+  .office-dialog-shell .classic-bottom-formatting-slot {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group {
+    gap: 0;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group button {
+    min-width: 32px;
+    padding-inline: 6px;
+    gap: 0;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-color-popover {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: calc(var(--classic-dock-height, 240px) + 21px);
     left: 8px;
     max-width: min(196px, calc(100vw - 16px));
     z-index: var(--z-popover, 190);

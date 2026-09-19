@@ -633,11 +633,6 @@ const categories = [
 type ToolbarCategory = (typeof categories)[number];
 type ToolbarPreviewMode = "full" | "static";
 
-const staticToolbarPreviewCategories = new Set<ToolbarCategory>([
-  "arrow",
-  "physics",
-  "set",
-]);
 const toolbarPreviewOverscanRatio = 1.35;
 const toolbarScrollIdleDelayMs = 110;
 
@@ -710,6 +705,9 @@ const wideToolbarCommandIds = new Set([
 ]);
 const minimumToolbarPreviewInsetRatio = 0.58;
 const maximumToolbarPreviewInsetRatio = 0.94;
+const compactToolbarPreviewInsetRatio = 0.8;
+const compactToolbarPreviewMaximumScale = 0.82;
+const compactCasesPreviewMaximumScale = 0.92;
 
 const calculusPreviewById: Record<string, string> = {
   intplain: "\\int",
@@ -908,17 +906,19 @@ export function FormulaToolbar({
   const effectiveFormulaToolButtonPadding = compactDensity
     ? Math.max(0, formulaToolButtonPadding - 1)
     : formulaToolButtonPadding;
-  const toolbarPreviewInsetRatio = Math.max(
+  const fullSizeToolbarPreviewInsetRatio = Math.max(
     minimumToolbarPreviewInsetRatio,
     Math.min(
       maximumToolbarPreviewInsetRatio,
       maximumToolbarPreviewInsetRatio - effectiveFormulaToolButtonPadding * 0.03,
     ),
   );
-  const toolbarPreviewMaximumScale = Math.min(
-    1.55,
-    Math.max(1, effectiveFormulaToolButtonSize / 42),
-  );
+  const toolbarPreviewInsetRatio = compactDensity
+    ? Math.min(compactToolbarPreviewInsetRatio, fullSizeToolbarPreviewInsetRatio)
+    : fullSizeToolbarPreviewInsetRatio;
+  const toolbarPreviewMaximumScale = compactDensity
+    ? compactToolbarPreviewMaximumScale
+    : Math.min(1.55, Math.max(1, effectiveFormulaToolButtonSize / 42));
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const hotkeyBindings = useFormulaHotkeyStore((state) => state.bindings);
@@ -1202,16 +1202,11 @@ export function FormulaToolbar({
       const renderStart = viewportStart - overscan;
       const renderEnd = viewportEnd + overscan;
       const nextFullPreviewCategories = geometry.flatMap((item) =>
-        !staticToolbarPreviewCategories.has(item.category) &&
-        item.end >= renderStart &&
-        item.start <= renderEnd
+        item.end >= renderStart && item.start <= renderEnd
           ? [item.category]
           : [],
       );
-      if (
-        !staticToolbarPreviewCategories.has(resolved) &&
-        !nextFullPreviewCategories.includes(resolved)
-      ) {
+      if (!nextFullPreviewCategories.includes(resolved)) {
         nextFullPreviewCategories.push(resolved);
       }
 
@@ -1527,8 +1522,8 @@ export function FormulaToolbar({
     category: ToolbarCategory,
   ): ToolbarPreviewMode =>
     layout !== "horizontal" ||
-    (!staticToolbarPreviewCategories.has(category) &&
-      fullPreviewCategories.includes(category))
+    category === activeCategory ||
+    fullPreviewCategories.includes(category)
       ? "full"
       : "static";
 
@@ -1933,11 +1928,15 @@ export function FormulaToolbar({
           staticLayout={previewMode === "static"}
           maximumFitScale={
             enlargedCasesPreview
-              ? Math.max(1.85, toolbarPreviewMaximumScale)
+              ? compactDensity
+                ? compactCasesPreviewMaximumScale
+                : Math.max(1.85, toolbarPreviewMaximumScale)
               : toolbarPreviewMaximumScale
           }
           fitInsetRatio={
-            enlargedCasesPreview ? 0.98 : toolbarPreviewInsetRatio
+            enlargedCasesPreview && !compactDensity
+              ? 0.98
+              : toolbarPreviewInsetRatio
           }
         />
       </button>

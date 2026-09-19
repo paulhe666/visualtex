@@ -506,6 +506,78 @@ async function main() {
 
     const wide = await inspect(1600, 900);
     const compact = await inspect(1280, 820);
+    const formulaToolOverflow = await client.evaluate(`(async () => {
+      const physicsTab = document.querySelector(
+        '.classic-bottom-toolbar .toolbar-tab[data-category="physics"]',
+      );
+      if (!(physicsTab instanceof HTMLButtonElement)) return null;
+      physicsTab.click();
+      await new Promise((resolve) => setTimeout(resolve, 180));
+
+      const inspectCategory = (category) => {
+        const section = document.querySelector(
+          '[data-toolbar-category-section="' + category + '"]',
+        );
+        if (!(section instanceof HTMLElement)) return null;
+        const previews = Array.from(
+          section.querySelectorAll(':scope > .template-button'),
+        ).map((button) => {
+          const host = button.querySelector('.math-preview');
+          const content = button.querySelector('.math-preview-fit-content');
+          const buttonRect = button.getBoundingClientRect();
+          const hostRect = host?.getBoundingClientRect();
+          const contentRect = content?.getBoundingClientRect();
+          const inside = Boolean(
+            hostRect && contentRect &&
+            contentRect.left >= hostRect.left - 0.75 &&
+            contentRect.right <= hostRect.right + 0.75 &&
+            contentRect.top >= hostRect.top - 0.75 &&
+            contentRect.bottom <= hostRect.bottom + 0.75 &&
+            contentRect.left >= buttonRect.left - 0.75 &&
+            contentRect.right <= buttonRect.right + 0.75 &&
+            contentRect.top >= buttonRect.top - 0.75 &&
+            contentRect.bottom <= buttonRect.bottom + 0.75
+          );
+          return {
+            commandId: button.getAttribute('data-command-id'),
+            fitReady: host?.dataset.fitReady ?? '',
+            inside,
+          };
+        });
+        return {
+          category,
+          previewMode: section.dataset.previewMode ?? '',
+          count: previews.length,
+          measuredCount: previews.filter((preview) => preview.fitReady === 'true').length,
+          insideCount: previews.filter((preview) => preview.inside).length,
+          failures: previews.filter((preview) => !preview.inside).slice(0, 5),
+        };
+      };
+
+      return {
+        physics: inspectCategory('physics'),
+        set: inspectCategory('set'),
+      };
+    })()`);
+    assert.ok(formulaToolOverflow?.physics, JSON.stringify(formulaToolOverflow));
+    assert.ok(formulaToolOverflow?.set, JSON.stringify(formulaToolOverflow));
+    for (const category of [
+      formulaToolOverflow.physics,
+      formulaToolOverflow.set,
+    ]) {
+      assert.equal(category.previewMode, "full", JSON.stringify(formulaToolOverflow));
+      assert.ok(category.count > 0, JSON.stringify(formulaToolOverflow));
+      assert.equal(
+        category.measuredCount,
+        category.count,
+        JSON.stringify(formulaToolOverflow),
+      );
+      assert.equal(
+        category.insideCount,
+        category.count,
+        JSON.stringify(formulaToolOverflow),
+      );
+    }
     await inspect(700, 500);
     const initialCompactTileResize = await client.evaluate(`(() => {
       const tiles = document.querySelector('.classic-tile-toolbar');
@@ -1192,6 +1264,7 @@ async function main() {
     console.log(JSON.stringify({
       wide,
       compact,
+      formulaToolOverflow,
       narrow,
       inputBehaviorGeometry,
       expandedTileGeometry,
