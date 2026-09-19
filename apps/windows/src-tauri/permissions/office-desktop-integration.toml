@@ -1,0 +1,30 @@
+[[permission]]
+identifier = "allow-office-desktop-integration"
+description = "Allow the trusted embedded VisualTeX main window to read, configure, verify, repair and launch the local Microsoft Office integration."
+commands.allow = [
+  "set_app_theme",
+  "set_app_editor_layout",
+  "set_app_editor_preferences",
+  "set_powerpoint_default_font_size",
+  "get_powerpoint_default_font_size",
+  "get_mathtype_double_click_edit_enabled",
+  "set_mathtype_double_click_edit_enabled",
+  "get_office_companion_status",
+  "start_office_companion",
+  "stop_office_companion",
+  "get_office_integration_status",
+  "get_office_platform_status",
+  "set_office_background_start",
+  "set_office_integration_mode",
+  "install_windows_ole_integration",
+  "uninstall_windows_ole_integration",
+  "repair_windows_office_integration",
+  "test_windows_office_runtime",
+  "open_windows_office_logs",
+  "install_office_integration",
+  "repair_office_integration",
+  "uninstall_office_integration",
+  "regenerate_office_certificate",
+  "open_word",
+  "open_powerpoint"
+]

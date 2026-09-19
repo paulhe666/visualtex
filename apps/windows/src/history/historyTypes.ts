@@ -107,8 +107,11 @@ export type ReplaceDocumentSource =
   | "new-document"
   | "open-document"
   | "split-line"
+  | "multiline-row-break"
   | "merge-line"
   | "delete-multi-line"
+  | "replace-multi-line"
+  | "format-multi-line"
   | "paste-multi-line"
   | "ocr";
 

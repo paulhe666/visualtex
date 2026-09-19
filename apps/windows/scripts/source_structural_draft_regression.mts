@@ -1,7 +1,8 @@
 #!/usr/bin/env -S npx tsx
 
 import assert from "node:assert/strict";
-import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { formatLatexLines, parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import type { LatexCodeFormat } from "../src/types/formula.ts";
 import { convertVisualTexLatexToMarkup } from "../src/editor/mathLiveIntegralCompatibility.ts";
 import { compatibilityRequiredArgumentCounts } from "../src/autocomplete/compatibilityCommands.ts";
 import { latexCompletions } from "codemirror-lang-latex";
@@ -10,6 +11,52 @@ import {
   normalizeFormulaLines,
   useEditorStore,
 } from "../src/stores/editorStore.ts";
+
+// Deleting the final character in CodeMirror must leave a valid empty formula,
+// so clicking the visual field can leave source-preview/read-only mode.
+for (const format of [
+  "raw", "inline-dollar", "inline-paren", "display-dollar", "display-bracket",
+  "equation", "equation-star", "align", "align-star", "aligned", "gather",
+  "gather-star", "multline", "multline-star", "equation-split", "equation-star-split",
+  "mixed-inline-display", "inline-text-double-dollar",
+] satisfies LatexCodeFormat[]) {
+  const source = formatLatexLines([""], format);
+  const draft = parseLatexSourceDraft(source, format);
+  assert.equal(draft.valid, true, `empty ${format} must remain editable: ${source}`);
+  assert.equal(draft.values.length, 1, `empty ${format} must stay one formula`);
+}
+for (const [source, format] of [
+  ["$$\n\n$$", "display-dollar"],
+  ["$$a$$\n\n$$\n\n$$\n\n$$b$$", "display-dollar"],
+  [String.raw`\(\)`, "inline-paren"],
+  [String.raw`\[\]`, "display-bracket"],
+] satisfies Array<[string, LatexCodeFormat]>) {
+  const draft = parseLatexSourceDraft(source, format);
+  assert.equal(draft.valid, true, `complete empty wrappers are valid: ${source}`);
+  assert.deepEqual(draft.values, source.includes("a") ? ["a", "", "b"] : [""]);
+}
+for (const source of ["$$", "$$\na", "$$a$$\ntrailing", "$$a$$\n$$"]) {
+  assert.equal(parseLatexSourceDraft(source, "display-dollar").valid, false,
+    `unclosed or uncovered wrappers must remain drafts: ${source}`);
+}
+for (const source of ["$", "$a", "$a$$"]) {
+  assert.equal(parseLatexSourceDraft(source, "inline-dollar").valid, false,
+    `a single delimiter or mismatched inline wrapper must remain a draft: ${source}`);
+}
+
+// The toolbar catalog is only a subset of MathLive's supported LaTeX. Native
+// symbols and delimiter aliases must survive source-to-visual round trips.
+for (const source of [
+  String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}`,
+  String.raw`\left\lbrace a\right\rbrace`,
+  String.raw`a\mp b\div c\times d`,
+  String.raw`\langle a\rangle+\vert b\vert+\Vert c\Vert`,
+]) {
+  const parsed = parseLatexSourceDraft(source, "raw");
+  assert.equal(parsed.valid, true, `native MathLive commands must stay editable: ${source} (${parsed.error})`);
+  const markup = convertVisualTexLatexToMarkup(source, { defaultMode: "math" });
+  assert.doesNotMatch(markup, /ML__error/);
+}
 
 for (const source of ["\\", String.raw`\begin`, String.raw`\begin{}`]) {
   const parsed = parseLatexSourceDraft(source, "raw");

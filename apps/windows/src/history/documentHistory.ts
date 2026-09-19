@@ -62,7 +62,9 @@ export function documentSnapshotsEquivalent(
         line.id === rightLine?.id &&
         line.latex === rightLine?.latex &&
         (line.mode === "inline" ? "inline" : "display") ===
-          (rightLine?.mode === "inline" ? "inline" : "display")
+          (rightLine?.mode === "inline" ? "inline" : "display") &&
+        (line.displayStyle ?? "default") ===
+          (rightLine?.displayStyle ?? "default")
       );
     })
   );
@@ -72,6 +74,7 @@ export function reconcileFormulaLines(
   values: readonly string[],
   currentLines: readonly FormulaLine[],
   modes?: readonly FormulaLine["mode"][],
+  displayStyles?: readonly FormulaLine["displayStyle"][],
 ): FormulaLine[] {
   const normalizedValues = values.length ? values : [""];
   return normalizedValues.map((latex, index) => ({
@@ -83,6 +86,10 @@ export function reconcileFormulaLines(
         : modes?.[index] === "display"
           ? "display"
           : currentLines[index]?.mode ?? "display",
+    displayStyle:
+      displayStyles?.[index] ??
+      currentLines[index]?.displayStyle ??
+      "default",
   }));
 }
 
