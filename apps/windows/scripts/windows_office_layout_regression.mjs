@@ -290,18 +290,25 @@ async function main() {
         const headerControls = header?.querySelector(".editor-pane-header-controls");
         const editorPane = document.querySelector(".formula-workspace.editor-pane");
         const scroll = document.querySelector(".editor-pane-scroll");
-        const emptyLine = document.querySelector(".formula-line.is-empty");
+        const formulaLine = document.querySelector(".formula-line");
         const field = document.querySelector("math-field");
         const status = document.querySelector(".editor-statusbar, .editor-status, .classic-status");
         const bottomTabs = document.querySelector(".classic-bottom-tabs");
+        const inputBehaviorTrigger = header?.querySelector(
+          ".canvas-input-behavior-trigger",
+        );
+        const inputBehaviorLabel = inputBehaviorTrigger?.querySelector("span");
+        const inputBehaviorArrow = inputBehaviorTrigger?.querySelector(
+          "svg:last-child",
+        );
         const headerRect = header?.getBoundingClientRect();
         const controlsRect = headerControls?.getBoundingClientRect();
         const editorRect = editorPane?.getBoundingClientRect();
         const scrollRect = scroll?.getBoundingClientRect();
-        const lineRect = emptyLine?.getBoundingClientRect();
+        const lineRect = formulaLine?.getBoundingClientRect();
         const fieldRect = field?.getBoundingClientRect();
         const bottomRect = bottomTabs?.getBoundingClientRect();
-        const lineStyle = emptyLine ? getComputedStyle(emptyLine) : null;
+        const lineStyle = formulaLine ? getComputedStyle(formulaLine) : null;
         const headerChildren = header
           ? [...header.querySelectorAll(
               ":scope .office-inline-options, :scope .office-formatting-mount, :scope .desktop-editor-header-controls, :scope .canvas-tool-group, :scope .office-inline-actions",
@@ -348,9 +355,16 @@ async function main() {
             allHeaderInside &&
             lineRect.height >= 40 &&
             fieldRect.height >= 30 &&
+            !formulaLine?.classList.contains("is-empty") &&
+            lineStyle?.boxShadow === "none" &&
+            inputBehaviorTrigger instanceof HTMLElement &&
+            inputBehaviorLabel instanceof HTMLElement &&
+            getComputedStyle(inputBehaviorLabel).display !== "none" &&
+            inputBehaviorLabel.textContent?.trim().length > 0 &&
+            inputBehaviorArrow instanceof SVGElement &&
+            getComputedStyle(inputBehaviorArrow).display !== "none" &&
             lineRect.top >= scrollRect.top - 1 &&
             lineRect.bottom <= scrollRect.bottom + 1 &&
-            lineStyle?.boxShadow !== "none" &&
             (!bottomRect || bottomRect.top >= scrollRect.top + 40),
           shellClass: shell?.className ?? "",
           workspaceClass: workspace?.className ?? "",
@@ -369,8 +383,14 @@ async function main() {
           scroll: scrollRect
             ? { top: scrollRect.top, bottom: scrollRect.bottom, height: scrollRect.height }
             : null,
-          emptyLine: lineRect
-            ? { top: lineRect.top, bottom: lineRect.bottom, height: lineRect.height, boxShadow: lineStyle?.boxShadow ?? "" }
+          formulaLine: lineRect
+            ? {
+                top: lineRect.top,
+                bottom: lineRect.bottom,
+                height: lineRect.height,
+                background: lineStyle?.backgroundColor ?? "",
+                boxShadow: lineStyle?.boxShadow ?? "",
+              }
             : null,
           field: fieldRect
             ? { top: fieldRect.top, bottom: fieldRect.bottom, height: fieldRect.height, focused: field?.hasFocus?.() ?? false, position: field?.position ?? -1, lastOffset: field?.lastOffset ?? -1 }
@@ -378,8 +398,20 @@ async function main() {
           bottomTabs: bottomRect
             ? { top: bottomRect.top, bottom: bottomRect.bottom, height: bottomRect.height }
             : null,
+          inputBehavior: {
+            text: inputBehaviorLabel?.textContent?.trim() ?? "",
+            labelDisplay:
+              inputBehaviorLabel instanceof HTMLElement
+                ? getComputedStyle(inputBehaviorLabel).display
+                : "",
+            arrowDisplay:
+              inputBehaviorArrow instanceof SVGElement
+                ? getComputedStyle(inputBehaviorArrow).display
+                : "",
+          },
           bodyOverflowX: document.documentElement.scrollWidth - window.innerWidth,
           lineCount: document.querySelectorAll(".formula-line").length,
+          emptyVisualClassCount: document.querySelectorAll(".formula-line.is-empty").length,
           modeToggleCount: document.querySelectorAll("[data-formula-line-mode-toggle]").length,
         };
       })()`,
@@ -389,14 +421,19 @@ async function main() {
     assert.equal(layout.visibleHeaderRows, 1);
     assert.equal(layout.allHeaderInside, true);
     assert.equal(layout.lineCount, 1);
+    assert.equal(layout.emptyVisualClassCount, 0);
+    assert.equal(layout.formulaLine.boxShadow, "none");
+    assert.match(layout.inputBehavior.text, /操作逻辑|Input behavior/);
+    assert.notEqual(layout.inputBehavior.labelDisplay, "none");
+    assert.notEqual(layout.inputBehavior.arrowDisplay, "none");
     assert.equal(layout.modeToggleCount, 0);
-    assert.ok(layout.emptyLine.height >= 40);
+    assert.ok(layout.formulaLine.height >= 40);
     assert.ok(layout.field.height >= 30);
     assert.ok(layout.bodyOverflowX <= 1);
 
     console.log(JSON.stringify(layout, null, 2));
     console.log(
-      "Windows Office layout regression passed: single header row, visible empty formula field, no desktop-shell bleed.",
+      "Windows Office layout regression passed: single header row, normal formula field geometry, no desktop-shell bleed.",
     );
   } finally {
     client?.close();

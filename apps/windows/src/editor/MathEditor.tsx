@@ -7382,7 +7382,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                 className={
                   "formula-line " +
                   (lineId === activeLineIdRef.current ? "is-active " : "") +
-                  (line.latex.trim() ? "" : "is-empty ") +
                   (multiLineSelectedIdsRef.current.has(lineId)
                     ? "is-multi-line-selected"
                     : "")
