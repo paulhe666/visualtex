@@ -51,6 +51,22 @@
   --toolbar-category-set: #c8e4d9;
   --control-height: 30px;
   --panel-header-height: 52px;
+  /* Global stacking order. Workspace chrome and menus stay below blocking
+     surfaces; nested dialogs and toasts remain visible above their owner. */
+  --z-workspace-footer: 50;
+  --z-workspace-floating: 60;
+  --z-workspace-resizer: 70;
+  --z-workspace-header: 80;
+  --z-menu-dismiss: 110;
+  --z-app-header: 120;
+  --z-app-menu: 120;
+  --z-popover: 190;
+  --z-context-menu: 2050;
+  --z-modal: 2200;
+  --z-panel-backdrop: 2200;
+  --z-panel: 2210;
+  --z-modal-nested: 2300;
+  --z-toast: 2400;
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
@@ -2063,10 +2079,17 @@ kbd {
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 110;
   background: var(--bg-scrim);
   backdrop-filter: blur(3px);
   animation: fade-in 140ms ease;
+}
+
+.modal-backdrop {
+  z-index: var(--z-modal);
+}
+
+.panel-backdrop {
+  z-index: var(--z-panel-backdrop);
 }
 
 .settings-dialog {
@@ -2087,7 +2110,7 @@ kbd {
 }
 
 .help-manual-backdrop {
-  z-index: 145;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -2450,7 +2473,7 @@ kbd {
 .settings-subdialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 130;
+  z-index: var(--z-modal-nested);
   display: grid;
   place-items: center;
   padding: 16px;
@@ -2976,7 +2999,7 @@ kbd {
 
 .history-panel {
   position: fixed;
-  z-index: 130;
+  z-index: var(--z-panel);
   top: 0;
   right: 0;
   bottom: 0;
@@ -2995,7 +3018,7 @@ kbd {
 }
 
 .panel-backdrop {
-  z-index: 120;
+  z-index: var(--z-panel-backdrop);
 }
 
 .history-list {
@@ -3101,7 +3124,7 @@ kbd {
 
 .toast {
   position: fixed;
-  z-index: 200;
+  z-index: var(--z-toast);
   left: 50%;
   bottom: 42px;
   display: flex;
@@ -5570,7 +5593,7 @@ button:disabled {
 .office-first-run-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 230;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -6076,7 +6099,7 @@ button:disabled {
 .onboarding-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 220;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -7649,7 +7672,7 @@ textarea:disabled {
 
 /* Application update dialog: restrained macOS utility styling. */
 .update-backdrop {
-  z-index: 230;
+  z-index: var(--z-modal);
 }
 
 .update-dialog {
@@ -10288,7 +10311,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .formula-editor-context-menu {
   position: fixed;
-  z-index: 2050;
+  z-index: var(--z-context-menu);
   min-width: 176px;
   padding: 4px;
   border: 1px solid var(--border-strong);
@@ -10333,7 +10356,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .formula-tile-context-menu {
   position: fixed;
-  z-index: 1800;
+  z-index: var(--z-context-menu);
   min-width: 144px;
   padding: 4px;
   border: 1px solid var(--border-strong);
@@ -10415,7 +10438,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 }
 
 .formula-hotkey-modal-backdrop {
-  z-index: 2100;
+  z-index: var(--z-modal-nested);
 }
 
 .formula-hotkey-recorder-dialog,
@@ -13764,7 +13787,7 @@ body[data-workspace-resize="dock"] * {
 }
 
 .custom-symbol-designer-backdrop {
-  z-index: 145;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 16px;
