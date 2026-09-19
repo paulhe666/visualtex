@@ -1213,13 +1213,13 @@
    separate grid row. It is overlaid onto the workspace's existing header row,
    while the former editor-header controls move into the Formula tools / LaTeX
    source tab strip below the canvas. */
-.app-shell:not(.is-keypad-mode) {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
   --desktop-top-tools-width: clamp(560px, 47vw, 790px);
   position: relative;
   grid-template-rows: minmax(0, 1fr) 24px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
   position: absolute;
   top: 0;
   left: 0;
@@ -1236,51 +1236,51 @@
   box-shadow: none;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .menu-button,
-.app-shell:not(.is-keypad-mode) > .app-header .icon-button {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .menu-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .icon-button {
   width: 28px;
   height: 28px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .brand-area {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-area {
   gap: 5px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .brand-mark {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-mark {
   width: 28px;
   height: 28px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .visualtex-brand-logo {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .visualtex-brand-logo {
   width: 25px;
   height: 25px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .brand-copy strong {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy strong {
   font-size: 13px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .document-title-area input {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area input {
   height: 30px;
   min-height: 30px;
   padding-block: 0;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .header-actions {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
   gap: 4px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .action-group {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .action-group {
   gap: 1px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-primary {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
   min-height: 30px;
   height: 30px;
   padding-block: 0;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .copy-chevron {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .copy-chevron {
   min-height: 30px;
   height: 30px;
 }
@@ -1435,12 +1435,12 @@
    real app header; the classic editor header is only a portal source and does
    not consume layout space. This removes the previous two-layer seam and
    prevents independently-positioned headers from overlapping at narrow widths. */
-.app-shell:not(.is-keypad-mode) {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
   --desktop-toolbar-control-size: 32px;
   grid-template-rows: var(--panel-header-height, 52px) minmax(0, 1fr) 24px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
   position: relative;
   inset: auto;
   z-index: var(--z-app-header, 120);
@@ -1457,23 +1457,23 @@
   border-bottom: 1px solid var(--border);
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .brand-area {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-area {
   flex: 0 0 auto;
   min-width: 0;
   gap: 5px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .brand-copy {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
   white-space: nowrap;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .document-title-area {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
   flex: 0 1 230px;
   min-width: 104px;
   max-width: 260px;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .header-actions {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
   flex: 1 1 auto;
   min-width: 0;
   margin-left: auto;
@@ -1484,15 +1484,15 @@
   white-space: nowrap;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .header-actions .icon-button,
-.app-shell:not(.is-keypad-mode) > .app-header .menu-button,
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-primary,
-.app-shell:not(.is-keypad-mode) > .app-header .keypad-mode-toggle,
-.app-shell:not(.is-keypad-mode) > .app-header .workspace-export-trigger,
-.app-shell:not(.is-keypad-mode) > .app-header .canvas-input-behavior-trigger,
-.app-shell:not(.is-keypad-mode) > .app-header .quick-ocr-button,
-.app-shell:not(.is-keypad-mode) > .app-header .silent-ocr-toggle,
-.app-shell:not(.is-keypad-mode) > .app-header .canvas-ocr-model {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions .icon-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .menu-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .keypad-mode-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .workspace-export-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-input-behavior-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .quick-ocr-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .silent-ocr-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-ocr-model {
   box-sizing: border-box;
   width: var(--desktop-toolbar-control-size);
   min-width: var(--desktop-toolbar-control-size);
@@ -1504,20 +1504,20 @@
   place-items: center;
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-control {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-control {
   flex: 0 0 var(--desktop-toolbar-control-size);
   width: var(--desktop-toolbar-control-size);
   min-width: var(--desktop-toolbar-control-size);
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-primary {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
 }
 
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-primary:hover,
-.app-shell:not(.is-keypad-mode) > .app-header .code-format-primary[aria-expanded="true"] {
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary:hover,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary[aria-expanded="true"] {
   border-color: var(--border);
   background: var(--surface-hover);
   color: var(--accent);
@@ -1685,23 +1685,23 @@
 }
 
 @media (max-width: 980px) {
-  .app-shell:not(.is-keypad-mode) > .app-header .document-title-area {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
     display: none;
   }
 
-  .app-shell:not(.is-keypad-mode) > .app-header .header-actions {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
     justify-content: flex-end;
   }
 }
 
 @media (max-width: 760px) {
-  .app-shell:not(.is-keypad-mode) > .app-header .file-actions,
-  .app-shell:not(.is-keypad-mode) > .app-header .edit-actions,
-  .app-shell:not(.is-keypad-mode)
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .file-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .edit-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
     > .app-header
     .header-actions
     > .workspace-action,
-  .app-shell:not(.is-keypad-mode)
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
     > .app-header
     .header-actions
     > .settings-toggle {
@@ -1714,7 +1714,7 @@
 }
 
 @media (max-width: 620px) {
-  .app-shell:not(.is-keypad-mode) > .app-header .brand-copy {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
     display: none;
   }
 
@@ -1755,7 +1755,7 @@
 }
 
 @media (max-width: 460px) {
-  .app-shell:not(.is-keypad-mode) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
     --desktop-toolbar-control-size: 28px;
   }
 
@@ -2938,6 +2938,26 @@
   --panel-header-height: 46px;
 }
 
+/* An empty Office Session is still a real editable formula row. Keep a
+   visible editing target even when line numbers and $/$$ mode controls are
+   intentionally hidden. */
+.office-dialog-shell
+  .workspace.is-office-workspace
+  .formula-line.is-empty {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--border-strong) 74%, transparent);
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace
+  .formula-line.is-empty.is-active {
+  background: color-mix(in srgb, var(--accent-soft) 18%, var(--surface));
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
 .office-dialog-shell .workspace.is-office-workspace.is-standard-layout,
 .office-dialog-shell .workspace.is-office-workspace.is-classic-layout {
   grid-template-rows: minmax(0, 1fr);
@@ -3055,6 +3075,17 @@
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
   margin-left: 0;
   padding-left: 7px;
+}
+
+.editor-pane-header.is-office-editor-header .editor-pane-header-trailing {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  overflow: visible;
 }
 
 .editor-pane-header.is-office-editor-header .canvas-tool-group {
