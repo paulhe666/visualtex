@@ -11,6 +11,7 @@ import { MathPreview } from "./MathPreview";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   MousePointerClick,
   Search,
 } from "lucide-react";
@@ -337,6 +338,8 @@ export function InputBehaviorMenu() {
         title={isEn ? "Input behavior" : "操作逻辑"}
       >
         <MousePointerClick size={16} />
+        <span>{isEn ? "Input behavior" : "操作逻辑"}</span>
+        <ChevronDown size={13} aria-hidden="true" />
       </button>
 
       {open &&
