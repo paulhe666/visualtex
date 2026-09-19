@@ -1,0 +1,212 @@
+    const value = this.getAttribute("max-matrix-cols");
+    return value ? parseInt(value, 10) : void 0;
+  }
+  set maxMatrixCols(value) {
+    if (value === void 0) this.removeAttribute("max-matrix-cols");
+    else this.setAttribute("max-matrix-cols", String(value));
+  }
+  /**
+   * Manually trigger a re-render of the content
+   */
+  render() {
+    var _a3, _b3, _c2;
+    try {
+      const content = (_b3 = (_a3 = this.textContent) == null ? void 0 : _a3.trim()) != null ? _b3 : "";
+      if (!content) {
+        this._renderContainer.innerHTML = "";
+        this._errorFallback.style.display = "none";
+        this._renderContainer.style.display = "none";
+        this._removeMathML();
+        return;
+      }
+      this._contentSlot.textContent = content;
+      let latex;
+      const format = this.format;
+      if (format === "ascii-math") {
+        latex = convertAsciiMathToLatex(content);
+      } else if (format === "math-json") {
+        const mathJson = JSON.parse(content);
+        latex = convertMathJsonToLatex(mathJson);
+      } else {
+        latex = content;
+      }
+      const options = {
+        defaultMode: this.mode === "displaystyle" ? "math" : "inline-math"
+      };
+      if (this.letterShapeStyle)
+        options.letterShapeStyle = this.letterShapeStyle;
+      if (this.macros) {
+        try {
+          options.macros = JSON.parse(this.macros);
+        } catch (e) {
+          console.warn("Invalid macros JSON:", e);
+        }
+      }
+      if (this.minFontScale !== void 0)
+        options.minFontScale = this.minFontScale;
+      if (this.maxMatrixCols !== void 0)
+        options.maxMatrixCols = this.maxMatrixCols;
+      const markup = convertLatexToMarkup(latex, options);
+      this._renderContainer.innerHTML = markup;
+      this._renderContainer.style.display = this.getDefaultDisplay();
+      this._errorFallback.style.display = "none";
+      this._updateAccessibility(latex);
+      this._hasRendered = true;
+      this.dispatchEvent(
+        new CustomEvent("render", {
+          bubbles: true,
+          composed: true,
+          detail: { format, content: latex }
+        })
+      );
+    } catch (error) {
+      console.error("MathLive static element render error:", error);
+      this._renderContainer.style.display = "none";
+      this._errorFallback.textContent = (_c2 = this.textContent) != null ? _c2 : "";
+      this._errorFallback.style.display = "block";
+      this._removeMathML();
+      this.dispatchEvent(
+        new CustomEvent("render-error", {
+          bubbles: true,
+          composed: true,
+          detail: { error, content: this.textContent }
+        })
+      );
+    }
+  }
+  /**
+   * Update accessibility features (ARIA labels and MathML)
+   */
+  _updateAccessibility(latex) {
+    if (!this.hasAttribute("aria-label")) {
+      try {
+        const speakableText2 = convertLatexToSpeakableText(latex);
+        this.setAttribute("aria-label", speakableText2);
+      } catch (error) {
+        console.warn("Could not generate speakable text:", error);
+      }
+    }
+    if (!this.hasAttribute("role")) this.setAttribute("role", "img");
+    this._addMathML(latex);
+  }
+  /**
+   * Add hidden MathML for screen readers (accessibility enhancement)
+   */
+  _addMathML(latex) {
+    try {
+      const mathML = convertLatexToMathMl(latex);
+      if (!this._mathMLContainer) {
+        this._mathMLContainer = document.createElement("div");
+        this._mathMLContainer.style.position = "absolute";
+        this._mathMLContainer.style.width = "1px";
+        this._mathMLContainer.style.height = "1px";
+        this._mathMLContainer.style.overflow = "hidden";
+        this._mathMLContainer.style.clip = "rect(0, 0, 0, 0)";
+        this._mathMLContainer.setAttribute("aria-hidden", "false");
+        this._shadowRoot.appendChild(this._mathMLContainer);
+      }
+      this._mathMLContainer.innerHTML = mathML;
+    } catch (error) {
+      console.warn("Could not generate MathML:", error);
+    }
+  }
+  /**
+   * Remove MathML container
+   */
+  _removeMathML() {
+    if (this._mathMLContainer) {
+      this._mathMLContainer.remove();
+      this._mathMLContainer = void 0;
+    }
+  }
+};
+var MathSpanElement = class extends MathStaticElement {
+  getDefaultMathstyle() {
+    return "textstyle";
+  }
+  getDefaultDisplay() {
+    return "inline-flex";
+  }
+};
+var MathDivElement = class extends MathStaticElement {
+  getDefaultMathstyle() {
+    return "displaystyle";
+  }
+  getDefaultDisplay() {
+    return "flex";
+  }
+};
+function registerStaticElements() {
+  var _a3, _b3, _c2, _d2;
+  if (typeof window === "undefined") return;
+  if (!((_a3 = window.customElements) == null ? void 0 : _a3.get("math-span")))
+    (_b3 = window.customElements) == null ? void 0 : _b3.define("math-span", MathSpanElement);
+  if (!((_c2 = window.customElements) == null ? void 0 : _c2.get("math-div")))
+    (_d2 = window.customElements) == null ? void 0 : _d2.define("math-div", MathDivElement);
+}
+registerStaticElements();
+
+// src/mathlive.ts
+function globalMathLive() {
+  var _a3, _b3;
+  (_b3 = globalThis[_a3 = Symbol.for("io.cortexjs.mathlive")]) != null ? _b3 : globalThis[_a3] = {};
+  return globalThis[Symbol.for("io.cortexjs.mathlive")];
+}
+function renderMathInDocument(options) {
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => renderMathInElement(document.body, options)
+    );
+  } else renderMathInElement(document.body, options);
+}
+function getElement(element) {
+  if (typeof element === "string") {
+    const result = document.getElementById(element);
+    if (result === null)
+      throw new Error(`The element with ID "${element}" could not be found.`);
+    return result;
+  }
+  return element;
+}
+function renderMathInElement(element, options) {
+  var _a3, _b3, _c2, _d2;
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => renderMathInElement(element, options)
+    );
+    return;
+  }
+  const el = getElement(element);
+  if (!el) return;
+  const optionsPrivate = options != null ? options : {};
+  (_a3 = optionsPrivate.renderToMarkup) != null ? _a3 : optionsPrivate.renderToMarkup = convertLatexToMarkup;
+  (_b3 = optionsPrivate.renderToMathML) != null ? _b3 : optionsPrivate.renderToMathML = convertLatexToMathMl;
+  (_c2 = optionsPrivate.renderToSpeakableText) != null ? _c2 : optionsPrivate.renderToSpeakableText = convertLatexToSpeakableText;
+  (_d2 = optionsPrivate.serializeToLatex) != null ? _d2 : optionsPrivate.serializeToLatex = convertMathJsonToLatex;
+  _renderMathInElement(el, optionsPrivate);
+}
+var version = {
+  mathlive: "0.109.2"
+};
+export {
+  MathDivElement,
+  MathSpanElement,
+  MathfieldElement,
+  _renderMathInElement,
+  convertAsciiMathToLatex,
+  convertLatexToAsciiMath,
+  convertLatexToMarkup,
+  convertLatexToMathMl,
+  convertLatexToSpeakableText,
+  convertMathJsonToLatex,
+  globalMathLive,
+  mountMathVirtualKeyboard as initVirtualKeyboardInCurrentBrowsingContext,
+  renderMathInDocument,
+  renderMathInElement,
+  setKeyboardLayout2 as setKeyboardLayout,
+  setKeyboardLayoutLocale2 as setKeyboardLayoutLocale,
+  validateLatex2 as validateLatex,
+  version
+};
