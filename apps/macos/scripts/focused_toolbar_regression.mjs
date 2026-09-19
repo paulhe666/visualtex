@@ -960,6 +960,9 @@ async function main() {
               (item) => item.dataset.toolbarCategorySection === category,
             );
             const previews = [...(section?.querySelectorAll('.math-preview') ?? [])];
+            const commandIds = [...(section?.querySelectorAll(
+              ':scope > .template-button[data-command-id]',
+            ) ?? [])].map((button) => button.dataset.commandId);
             const insideCount = previews.filter((preview) => {
               const content = preview.querySelector('.math-preview-fit-content');
               const hostBounds = preview.getBoundingClientRect();
@@ -982,6 +985,7 @@ async function main() {
                 (preview) => preview.dataset.fitReady === 'true',
               ).length,
               insideCount,
+              commandIds,
             }];
           }),
         );
@@ -1103,6 +1107,32 @@ async function main() {
         physicsState.staticCategoryDetails.physics.insideCount,
         physicsState.staticCategoryDetails.physics.previewCount,
       );
+      const physicsCommandIds =
+        physicsState.staticCategoryDetails.physics.commandIds;
+      for (const canonicalId of [
+        'bra',
+        'ket',
+        'expectation',
+        'braket',
+        'commutator',
+        'anticommutator',
+        'outerproduct',
+        'matrixelement',
+      ]) {
+        assert.ok(physicsCommandIds.includes(canonicalId), canonicalId);
+      }
+      for (const duplicateId of [
+        'shortcut-bra',
+        'shortcut-ket',
+        'shortcut-expval',
+        'shortcut-braket',
+        'shortcut-comm',
+        'shortcut-acomm',
+        'shortcut-ketbra',
+        'shortcut-mel',
+      ]) {
+        assert.equal(physicsCommandIds.includes(duplicateId), false, duplicateId);
+      }
       console.log(JSON.stringify({ initialState, shiftedState, arrowState, physicsState }));
     }
 

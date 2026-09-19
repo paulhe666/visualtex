@@ -839,6 +839,71 @@ async function main() {
         );
       }
 
+      const packageMacroNavigationCases = [
+        ["comm", String.raw`\comm{\placeholder{}}{\placeholder{}}`, 2],
+        ["acomm", String.raw`\acomm{\placeholder{}}{\placeholder{}}`, 2],
+        ["pb", String.raw`\pb{\placeholder{}}{\placeholder{}}`, 2],
+        ["dv", String.raw`\dv{\placeholder{}}{\placeholder{}}`, 2],
+        ["pdv", String.raw`\pdv{\placeholder{}}{\placeholder{}}`, 2],
+        ["braket", String.raw`\braket{\placeholder{}}{\placeholder{}}`, 2],
+        ["ketbra", String.raw`\ketbra{\placeholder{}}{\placeholder{}}`, 2],
+        ["mel", String.raw`\mel{\placeholder{}}{\placeholder{}}{\placeholder{}}`, 3],
+      ];
+      const packageMacroNavigation = {};
+      const readPackageMacroNavigationState = () => evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const root = field?.shadowRoot;
+        if (!field || !model) return { ready: false };
+        const selected = model.at(Math.max(model.position, model.anchor));
+        let argument = selected;
+        while (argument && argument.type !== "macro-argument") {
+          argument = argument.parent;
+        }
+        const atom = model.at(model.position);
+        return {
+          ready: true,
+          value: field.value,
+          position: model.position,
+          anchor: model.anchor,
+          atomType: atom?.type ?? null,
+          parentType: atom?.parent?.type ?? null,
+          selectionIsPlaceholder: model.selectionIsPlaceholder ?? false,
+          argumentIndex: argument?.argumentIndex ?? null,
+          caretNodes: root?.querySelectorAll(
+            ".ML__caret, .visualtex-structural-placeholder-caret, .ML__placeholder-selected"
+          ).length ?? -1,
+        };
+      })()`);
+      for (const [name, latex, argumentCount] of packageMacroNavigationCases) {
+        await setFormula(latex, "placeholder");
+        const states = [await readPackageMacroNavigationState()];
+        for (let index = 1; index < argumentCount; index += 1) {
+          await key("ArrowRight", "ArrowRight", 39);
+          states.push(await readPackageMacroNavigationState());
+        }
+        await key("ArrowRight", "ArrowRight", 39);
+        states.push(await readPackageMacroNavigationState());
+        packageMacroNavigation[name] = states;
+
+        const argumentStates = states.slice(0, argumentCount);
+        const argumentsAreDirect = argumentStates.every(
+          (state, index) =>
+            state.selectionIsPlaceholder && state.argumentIndex === index + 1,
+        );
+        const exitState = states.at(-1);
+        if (
+          !argumentsAreDirect ||
+          !exitState?.caretNodes ||
+          exitState.caretNodes <= 0 ||
+          exitState.atomType !== "macro"
+        ) {
+          throw new Error(
+            `${name} did not provide one visible caret step per argument: ${JSON.stringify(states)}`,
+          );
+        }
+      }
+
       await clearField();
       await typeText("\\ketbra");
       await key(" ", "Space", 32);
@@ -1133,6 +1198,7 @@ async function main() {
         placeholderDeletion,
         ketbraInitial,
         ketbraArrowStates,
+        packageMacroNavigation,
         rawOuterGeometry,
         ketbraGeometry,
         diracSpacing,

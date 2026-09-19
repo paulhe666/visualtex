@@ -53,7 +53,7 @@ export const VISUALTEX_MATHLIVE_PACKAGE_MACROS = Object.freeze({
     3,
   ),
   ketbra: macro(
-    "\\left\\lvert #1\\middle\\rangle\\!\\middle\\langle #2\\right\\rvert",
+    "\\left\\lvert #1\\right\\rangle\\!\\left\\langle #2\\right\\rvert",
     2,
   ),
   vb: macro("\\mathbf{#1}", 1),

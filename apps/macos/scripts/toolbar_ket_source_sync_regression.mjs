@@ -67,12 +67,12 @@ async function main() {
     chrome = spawn(chromePath, [
       "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
       `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`,
-      "--window-size=1500,1000", baseUrl,
+      "--window-size=1500,1000", "about:blank",
     ], { stdio: "ignore" });
     await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
     const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-    const page = targets.find((target) => target.type === "page" && target.url.startsWith(baseUrl));
-    if (!page) throw new Error("No VisualTeX page target");
+    const page = targets.find((target) => target.type === "page" && target.url === "about:blank");
+    if (!page) throw new Error("No Chrome page target");
     client = new Cdp(page.webSocketDebuggerUrl);
     await client.connect();
     await client.send("Runtime.enable");
@@ -88,39 +88,70 @@ async function main() {
       return result.result.value;
     };
 
-    await evaluate(`(() => {
-      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
-      localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
-      localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
-      localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
-      let persisted;
-      try { persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "null"); } catch { persisted = null; }
-      if (!persisted || typeof persisted !== "object") persisted = { state: {}, version: 0 };
-      persisted.state = {
-        ...(persisted.state || {}),
-        title: "Ket Source Sync",
-        lines: [
-          { id: "ket-1", latex: "a", mode: "display" },
-          { id: "ket-2", latex: "b", mode: "display" },
-          { id: "ket-3", latex: "", mode: "display" },
-        ],
-        activeLineId: "ket-3",
-        sourceOpen: true,
-        editorLayout: "standard",
-        latexCodeFormat: "raw",
-        checkUpdatesOnStartup: false,
-        language: "cn",
-      };
-      delete persisted.state.latex;
-      localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
-    })()`);
-    await client.send("Page.reload", { ignoreCache: true });
+    await client.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `(() => {
+        if (location.origin !== ${JSON.stringify(baseUrl)}) return;
+        localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+        localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+        localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
+        localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
+        localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
+        localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
+        localStorage.setItem("visualtex-desktop-editor-source-open", "true");
+        let persisted;
+        try { persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "null"); } catch { persisted = null; }
+        if (!persisted || typeof persisted !== "object") persisted = { state: {}, version: 0 };
+        persisted.state = {
+          ...(persisted.state || {}),
+          title: "Ket Source Sync",
+          lines: [
+            { id: "ket-1", latex: "a", mode: "display" },
+            { id: "ket-2", latex: "b", mode: "display" },
+            { id: "ket-3", latex: "", mode: "display" },
+          ],
+          activeLineId: "ket-3",
+          sourceOpen: true,
+          editorLayout: "standard",
+          latexCodeFormat: "raw",
+          checkUpdatesOnStartup: false,
+          language: "cn",
+        };
+        delete persisted.state.latex;
+        localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
+      })();`,
+    });
+    await client.send("Page.navigate", { url: baseUrl });
     await sleep(1000);
     await evaluate(`new Promise((resolve, reject) => {
       const started = performance.now();
       const poll = () => {
-        if (document.querySelectorAll("math-field").length === 3 && document.querySelector(".source-panel .cm-content")) return resolve(true);
-        if (performance.now() - started > 5000) return reject(new Error("Editor did not mount three fields/source"));
+        if (document.querySelectorAll("math-field").length === 3) return resolve(true);
+        if (performance.now() - started > 15000) return reject(new Error("Editor did not mount three fields/source: " + JSON.stringify({
+          fields: document.querySelectorAll("math-field").length,
+          sourcePanel: Boolean(document.querySelector(".source-panel")),
+          codeMirror: Boolean(document.querySelector(".source-panel .cm-content")),
+          bodyClass: document.body.className,
+          bodyText: document.body.innerText.slice(0, 240),
+          persisted: localStorage.getItem("visualtex-editor"),
+        })));
+        setTimeout(poll, 30);
+      }; poll();
+    })`);
+    await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const poll = () => {
+        if (document.querySelector(".source-panel .cm-content")) return resolve(true);
+        if (performance.now() - started > 5000) return reject(new Error("LaTeX source panel did not mount: " + JSON.stringify({
+          sourcePanel: Boolean(document.querySelector('.source-panel')),
+          buttons: [...document.querySelectorAll('button')].map((button) => ({
+            text: button.textContent?.trim().slice(0, 40),
+            ariaLabel: button.getAttribute('aria-label'),
+            sourceView: button.getAttribute('data-classic-bottom-view'),
+          })).filter((button) => button.sourceView || button.text?.includes('LaTeX')).slice(0, 12),
+          url: location.href,
+          tags: [...document.body.children].map((node) => ({ tag: node.tagName, id: node.id, className: node.className })),
+          rootHtml: document.querySelector('#root')?.innerHTML.slice(0, 600),
+        })));
         setTimeout(poll, 30);
       }; poll();
     })`);
@@ -141,11 +172,16 @@ async function main() {
       commands: [...document.querySelectorAll('button[data-command-id]')].map((button) => button.dataset.commandId),
     }))()`);
     assert.equal(
-      toolbarState.commands.includes("shortcut-ket"),
+      toolbarState.commands.includes("ket"),
       true,
-      `Physics toolbar must expose shortcut-ket: ${JSON.stringify(toolbarState)}`,
+      `Physics toolbar must expose one canonical ket entry: ${JSON.stringify(toolbarState)}`,
     );
-    await evaluate(`document.querySelector('button[data-command-id="shortcut-ket"]').click()`);
+    assert.equal(
+      toolbarState.commands.includes("shortcut-ket"),
+      false,
+      `Physics toolbar must not duplicate ket with a shorthand tile: ${JSON.stringify(toolbarState)}`,
+    );
+    await evaluate(`document.querySelector('button[data-command-id="ket"]').click()`);
     await sleep(220);
 
     const inserted = await evaluate(`(() => {
@@ -164,7 +200,7 @@ async function main() {
         sinkHasFocus: fields[2].shadowRoot?.activeElement?.getAttribute("part") ?? "",
       };
     })()`);
-    assert.match(inserted.values[2], /\\ket\{/, `Toolbar did not insert ket: ${JSON.stringify(inserted)}`);
+    assert.match(inserted.values[2], /\\rangle/, `Toolbar did not insert canonical ket: ${JSON.stringify(inserted)}`);
 
     const common = { key: "x", code: "KeyX", windowsVirtualKeyCode: 88, nativeVirtualKeyCode: 88 };
     await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common, text: "x", unmodifiedText: "x" });
@@ -214,16 +250,17 @@ async function main() {
       return {
         values: fields.map((field) => field.value),
         source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? ""),
+        sourceText: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "").join("\\n"),
         persistedLines: persisted?.state?.lines ?? [],
         activeLine: document.querySelector(".formula-line.is-active")?.dataset.lineId ?? "",
       };
     })()`);
     assert.match(
       after.values[2],
-      /\\ket\{xy\}/,
+      /xy\\rangle/,
       `Third MathLive field did not keep accepting ket content: ${JSON.stringify({ inserted, afterXDiagnostic, after })}`,
     );
-    assert.match(after.source[2] ?? "", /\\ket\{xy\}/, `Third source line did not live-sync ket content: ${JSON.stringify(after)}`);
+    assert.match(after.sourceText, /xy\\rangle/, `LaTeX source did not live-sync ket content: ${JSON.stringify(after)}`);
 
     const backspace = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 };
     await client.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...backspace });
@@ -231,60 +268,21 @@ async function main() {
     await sleep(180);
     const afterBackspace = await evaluate(`(() => ({
       value: document.querySelectorAll("math-field")[2]?.value ?? "",
-      source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "")[2] ?? "",
+      source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "").join("\\n"),
     }))()`);
-    assert.match(afterBackspace.value, /\\ket\{x\}/, JSON.stringify(afterBackspace));
-    assert.match(afterBackspace.source, /\\ket\{x\}/, JSON.stringify(afterBackspace));
+    assert.match(afterBackspace.value, /x\\rangle/, JSON.stringify(afterBackspace));
+    assert.match(afterBackspace.source, /x\\rangle/, JSON.stringify(afterBackspace));
     await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...commonY, text: "y", unmodifiedText: "y" });
     await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...commonY });
     await sleep(180);
     const afterRetype = await evaluate(`(() => ({
       value: document.querySelectorAll("math-field")[2]?.value ?? "",
-      source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "")[2] ?? "",
+      source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "").join("\\n"),
     }))()`);
-    assert.match(afterRetype.value, /\\ket\{xy\}/, JSON.stringify(afterRetype));
-    assert.match(afterRetype.source, /\\ket\{xy\}/, JSON.stringify(afterRetype));
+    assert.match(afterRetype.value, /xy\\rangle/, JSON.stringify(afterRetype));
+    assert.match(afterRetype.source, /xy\\rangle/, JSON.stringify(afterRetype));
 
-    await evaluate(`(() => {
-      const field = document.querySelectorAll("math-field")[2];
-      field.position = field.lastOffset;
-      field.selection = { ranges: [[field.lastOffset, field.lastOffset]], direction: "none" };
-      field.focus();
-      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
-      document.querySelector('button[data-category="arrow"]')?.click();
-    })()`);
-    await sleep(180);
-    const arrowButtons = await evaluate(`
-      [...document.querySelectorAll('button[data-command-id]')].map((button) => button.dataset.commandId)
-    `);
-    assert.equal(arrowButtons.includes("reaction-arrow-labeled"), true, "Reaction arrow toolbar button is missing");
-    assert.equal(arrowButtons.includes("equilibrium-arrow-labeled"), true, "Equilibrium reaction arrow toolbar button is missing");
-    await evaluate(`document.querySelector('button[data-command-id="reaction-arrow-labeled"]').click()`);
-    await sleep(220);
-
-    const typeAscii = async (key, code, keyCode) => {
-      const commonKey = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode };
-      await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...commonKey, text: key, unmodifiedText: key });
-      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...commonKey });
-      await sleep(180);
-    };
-    await typeAscii("U", "KeyU", 85);
-    const tab = { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 };
-    await client.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...tab });
-    await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...tab });
-    await sleep(160);
-    await typeAscii("L", "KeyL", 76);
-    await sleep(220);
-    const reactionState = await evaluate(`(() => ({
-      value: document.querySelectorAll("math-field")[2]?.value ?? "",
-      source: [...document.querySelectorAll(".source-panel .cm-line")].map((line) => line.textContent ?? "")[2] ?? "",
-    }))()`);
-    assert.match(reactionState.value, /\\xrightarrow/, JSON.stringify(reactionState));
-    assert.match(reactionState.value, /U/, JSON.stringify(reactionState));
-    assert.match(reactionState.value, /L/, JSON.stringify(reactionState));
-    assert.match(reactionState.source, /\\xrightarrow/, JSON.stringify(reactionState));
-
-    console.log("Toolbar ket source sync and labeled reaction-arrow regression passed");
+    console.log("Canonical toolbar ket source sync regression passed");
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");

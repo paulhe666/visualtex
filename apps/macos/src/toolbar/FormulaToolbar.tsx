@@ -694,7 +694,21 @@ const matrixDelimiterOptions: Array<{
   },
 ];
 
-const hiddenToolbarCommandIds = new Set(["time-ordering"]);
+// Package shorthands remain available through autocomplete and raw LaTeX, but
+// the toolbar should expose each semantic template only once. Prefer the
+// primitive templates here: they render more compactly and give each visible
+// placeholder a direct, predictable caret stop.
+const hiddenToolbarCommandIds = new Set([
+  "time-ordering",
+  "shortcut-bra",
+  "shortcut-ket",
+  "shortcut-expval",
+  "shortcut-comm",
+  "shortcut-acomm",
+  "shortcut-braket",
+  "shortcut-ketbra",
+  "shortcut-mel",
+]);
 const wideToolbarCommandIds = new Set([
   "matrixelement",
   "expectation-operator",

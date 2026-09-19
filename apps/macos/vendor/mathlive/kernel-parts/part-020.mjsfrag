@@ -375,16 +375,19 @@ function nextValidPosition(model, pos, direction) {
 }
 function visualTexIsMacroInternalCaretBoundary(atom) {
   if (!atom) return false;
-  let macro = atom.parent;
-  while (macro && macro.type !== "macro") macro = macro.parent;
+  let parent = atom.parent;
+  let insideMacroArgument = atom.type === "macro-argument";
+  while (parent && parent.type !== "macro") {
+    if (parent.type === "macro-argument") insideMacroArgument = true;
+    parent = parent.parent;
+  }
+  const macro = parent;
   if (!macro) return false;
-  // The MacroAtom itself remains the single outer caret stop. Internal
-  // sentinels, glue and top-level structural containers are rendering/model
-  // machinery, not editable content positions.
-  if (atom.type === "first" || atom.type === "spacing" || atom.type === "middle")
-    return true;
-  if (atom.parent === macro && atom.hasChildren) return true;
-  return false;
+  // A package macro exposes its tracked arguments as the only editable
+  // interior branches. Everything else in the expansion (delimiters,
+  // punctuation, operators, spacing and structural containers) is rendering
+  // machinery and must not become an invisible or redundant caret stop.
+  return !insideMacroArgument;
 }
 function isValidPosition(model, pos) {
   var _a3;
