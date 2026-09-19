@@ -1,8 +1,7 @@
 import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
 import type { WorkspaceMode } from "./workspaceTypes";
 
-export type WorkspacePanelPreference = "toolbar" | "tiles";
-
+export type WorkspacePanelPreference = "toolbar" | "tiles" | "source";
 type WorkspacePanelScope = "desktop" | "office";
 
 const workspacePanelStorageKeys: Record<
@@ -12,10 +11,12 @@ const workspacePanelStorageKeys: Record<
   desktop: {
     toolbar: "visualtex-desktop-editor-toolbar-open",
     tiles: "visualtex-desktop-editor-tiles-open",
+    source: "visualtex-desktop-editor-source-open",
   },
   office: {
     toolbar: "visualtex-office-editor-toolbar-open",
     tiles: "visualtex-office-editor-tiles-open",
+    source: "visualtex-office-editor-source-open",
   },
 };
 

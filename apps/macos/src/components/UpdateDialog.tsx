@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   Download,
+  Github,
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  Star,
+  UserRound,
   UsersRound,
   WifiOff,
   Wrench,
@@ -35,6 +38,7 @@ interface Props {
   onCheckOnStartupChange: (enabled: boolean) => void;
   onRetry: () => void;
   onOpenRelease: () => void;
+  onOpenProject: () => void;
   onClose: () => void;
 }
 
@@ -50,6 +54,7 @@ export function UpdateDialog({
   onCheckOnStartupChange,
   onRetry,
   onOpenRelease,
+  onOpenProject,
   onClose,
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -271,6 +276,31 @@ export function UpdateDialog({
                     : "你正在使用最新的稳定版本。"}
                 </p>
               )}
+
+              <section className="update-project-card" aria-label={isEn ? "Project information" : "项目信息"}>
+                <div className="update-project-author">
+                  <UserRound size={15} aria-hidden="true" />
+                  <span>
+                    <small>{isEn ? "Author" : "作者"}</small>
+                    <strong>paulhe666</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="update-project-link"
+                  onClick={onOpenProject}
+                  title="https://github.com/paulhe666/visualtex"
+                >
+                  <Github size={15} aria-hidden="true" />
+                  <span>github.com/paulhe666/visualtex</span>
+                </button>
+                <p>
+                  <Star size={14} aria-hidden="true" />
+                  {isEn
+                    ? "If you like the project, please give it a Star!"
+                    : "如果觉得项目不错请点个 Star 噢！"}
+                </p>
+              </section>
 
               <section
                 className="update-community-card"

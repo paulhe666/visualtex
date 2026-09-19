@@ -1,0 +1,1436 @@
+/** MathLive 0.109.2 */
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __restKey = (key) => typeof key === "symbol" ? key : key + "";
+var __objRest = (source, exclude) => {
+  var target = {};
+  for (var prop in source)
+    if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+      target[prop] = source[prop];
+  if (source != null && __getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(source)) {
+      if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+        target[prop] = source[prop];
+    }
+  return target;
+};
+
+// src/ui/utils/capabilities.ts
+function isBrowser() {
+  return "window" in globalThis && "document" in globalThis;
+}
+function isTouchCapable() {
+  if ("matchMedia" in window)
+    return window.matchMedia("(pointer: coarse)").matches;
+  return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+}
+function isInIframe() {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+function canVibrate() {
+  return typeof navigator.vibrate === "function";
+}
+function osPlatform() {
+  var _a3, _b3;
+  if (!isBrowser()) return "other";
+  const platform2 = (_b3 = (_a3 = navigator["userAgentData"]) == null ? void 0 : _a3.platform) != null ? _b3 : navigator.platform;
+  if (/^mac/i.test(platform2)) {
+    if (navigator.maxTouchPoints === 5) return "ios";
+    return "macos";
+  }
+  if (/^win/i.test(platform2)) return "windows";
+  if (/android/i.test(navigator.userAgent)) return "android";
+  if (/iphone|ipod|ipad/i.test(navigator.userAgent)) return "ios";
+  if (/\bcros\b/i.test(navigator.userAgent)) return "chromeos";
+  return "other";
+}
+function supportRegexPropertyEscape() {
+  if (!isBrowser()) return true;
+  if (/firefox/i.test(navigator.userAgent)) {
+    const m = navigator.userAgent.match(/firefox\/(\d+)/i);
+    if (!m) return false;
+    const version2 = parseInt(m[1]);
+    return version2 >= 78;
+  }
+  if (/trident/i.test(navigator.userAgent)) return false;
+  if (/edge/i.test(navigator.userAgent)) {
+    const m = navigator.userAgent.match(/edg\/(\d+)/i);
+    if (!m) return false;
+    const version2 = parseInt(m[1]);
+    return version2 >= 79;
+  }
+  return true;
+}
+function supportPopover() {
+  return HTMLElement.prototype.hasOwnProperty("popover");
+}
+
+// src/editor/keyboard-layouts/dvorak.ts
+var DVORAK = {
+  id: "dvorak",
+  locale: "en",
+  displayName: "Dvorak",
+  virtualLayout: "dvorak",
+  platform: "",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE5", "\xC5"],
+    KeyB: ["x", "X", "\u2248", "\u02DB"],
+    KeyC: ["j", "J", "\u2206", "\xD4"],
+    KeyD: ["e", "E", "\xB4", "\xB4"],
+    KeyE: [".", ">", "\u2265", "\u02D8"],
+    KeyF: ["u", "U", "\xA8", "\xA8"],
+    KeyG: ["i", "I", "\u02C6", "\u02C6"],
+    KeyH: ["d", "D", "\u2202", "\xCE"],
+    KeyI: ["c", "C", "\xE7", "\xC7"],
+    KeyJ: ["h", "H", "\u02D9", "\xD3"],
+    KeyK: ["t", "T", "\u2020", "\u02C7"],
+    KeyL: ["n", "N", "\u02DC", "\u02DC"],
+    KeyM: ["m", "M", "\xB5", "\xC2"],
+    KeyN: ["b", "B", "\u222B", "\u0131"],
+    KeyO: ["r", "R", "\xAE", "\u2030"],
+    KeyP: ["l", "L", "\xAC", "\xD2"],
+    KeyQ: ["'", '"', "\xE6", "\xC6"],
+    KeyR: ["p", "P", "\u03C0", "\u220F"],
+    KeyS: ["o", "O", "\xF8", "\xD8"],
+    KeyT: ["y", "Y", "\xA5", "\xC1"],
+    KeyU: ["g", "G", "\xA9", "\u02DD"],
+    KeyV: ["k", "K", "\u02DA", "\uF8FF"],
+    KeyW: [",", "<", "\u2264", "\xAF"],
+    KeyX: ["q", "Q", "\u0153", "\u0152"],
+    KeyY: ["f", "F", "\u0192", "\xCF"],
+    KeyZ: [";", ":", "\u2026", "\xDA"],
+    Digit1: ["1", "!", "\xA1", "\u2044"],
+    Digit2: ["2", "@", "\u2122", "\u20AC"],
+    Digit3: ["3", "#", "\xA3", "\u2039"],
+    Digit4: ["4", "$", "\xA2", "\u203A"],
+    Digit5: ["5", "%", "\u221E", "\uFB01"],
+    Digit6: ["6", "^", "\xA7", "\uFB02"],
+    Digit7: ["7", "&", "\xB6", "\u2021"],
+    Digit8: ["8", "*", "\u2022", "\xB0"],
+    Digit9: ["9", "(", "\xAA", "\xB7"],
+    Digit0: ["0", ")", "\xBA", "\u201A"],
+    Space: [" ", " ", " ", " "],
+    Minus: ["[", "{", "\u201C", "\u201D"],
+    Equal: ["]", "}", "\u2018", "\u2019"],
+    BracketLeft: ["/", "?", "\xF7", "\xBF"],
+    BracketRight: ["=", "+", "\u2260", "\xB1"],
+    Backslash: ["\\", "|", "\xAB", "\xBB"],
+    Semicolon: ["s", "S", "\xDF", "\xCD"],
+    Quote: ["-", "_", "\u2013", "\u2014"],
+    Backquote: ["`", "~", "`", "`"],
+    Comma: ["w", "W", "\u2211", "\u201E"],
+    Period: ["v", "V", "\u221A", "\u25CA"],
+    Slash: ["z", "Z", "\u03A9", "\xB8"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    Numpad1: ["1", "1", "1", "1"],
+    Numpad2: ["2", "2", "2", "2"],
+    Numpad3: ["3", "3", "3", "3"],
+    Numpad4: ["4", "4", "4", "4"],
+    Numpad5: ["5", "5", "5", "5"],
+    Numpad6: ["6", "6", "6", "6"],
+    Numpad7: ["7", "7", "7", "7"],
+    Numpad8: ["8", "8", "8", "8"],
+    Numpad9: ["9", "9", "9", "9"],
+    Numpad0: ["0", "0", "0", "0"],
+    NumpadDecimal: [".", ".", ".", "."],
+    IntlBackslash: ["\xA7", "\xB1", "\xA7", "\xB1"],
+    NumpadEqual: ["=", "=", "=", "="],
+    AudioVolumeUp: ["", "=", "", "="]
+  }
+};
+
+// src/editor/keyboard-layouts/english.ts
+var APPLE_ENGLISH = {
+  id: "apple.en-intl",
+  displayName: "English (international)",
+  virtualLayout: "qwerty",
+  platform: "apple",
+  locale: "en",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE5", "\xC5"],
+    KeyB: ["b", "B", "\u222B", "\u0131"],
+    KeyC: ["c", "C", "\xE7", "\xC7"],
+    KeyD: ["d", "D", "\u2202", "\xCE"],
+    KeyE: ["e", "E", "\xB4", "\xB4"],
+    KeyF: ["f", "F", "\u0192", "\xCF"],
+    KeyG: ["g", "G", "\xA9", "\u02DD"],
+    KeyH: ["h", "H", "\u02D9", "\xD3"],
+    KeyI: ["i", "I", "\u02C6", "\u02C6"],
+    KeyJ: ["j", "J", "\u2206", "\xD4"],
+    KeyK: ["k", "K", "\u02DA", "\uF8FF"],
+    KeyL: ["l", "L", "\xAC", "\xD2"],
+    KeyM: ["m", "M", "\xB5", "\xC2"],
+    KeyN: ["n", "N", "\u02DC", "\u02DC"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\u03C0", "\u220F"],
+    KeyQ: ["q", "Q", "\u0153", "\u0152"],
+    KeyR: ["r", "R", "\xAE", "\u2030"],
+    KeyS: ["s", "S", "\xDF", "\xCD"],
+    KeyT: ["t", "T", "\u2020", "\u02C7"],
+    KeyU: ["u", "U", "\xA8", "\xA8"],
+    KeyV: ["v", "V", "\u221A", "\u25CA"],
+    KeyW: ["w", "W", "\u2211", "\u201E"],
+    KeyX: ["x", "X", "\u2248", "\u02DB"],
+    KeyY: ["y", "Y", "\xA5", "\xC1"],
+    KeyZ: ["z", "Z", "\u03A9", "\xB8"],
+    Digit1: ["1", "!", "\xA1", "\u2044"],
+    Digit2: ["2", "@", "\u2122", "\u20AC"],
+    Digit3: ["3", "#", "\xA3", "\u2039"],
+    Digit4: ["4", "$", "\xA2", "\u203A"],
+    Digit5: ["5", "%", "\u221E", "\uFB01"],
+    Digit6: ["6", "^", "\xA7", "\uFB02"],
+    Digit7: ["7", "&", "\xB6", "\u2021"],
+    Digit8: ["8", "*", "\u2022", "\xB0"],
+    Digit9: ["9", "(", "\xAA", "\xB7"],
+    Digit0: ["0", ")", "\xBA", "\u201A"],
+    Space: [" ", " ", " ", " "],
+    Minus: ["-", "_", "\u2013", "\u2014"],
+    Equal: ["=", "+", "\u2260", "\xB1"],
+    BracketLeft: ["[", "{", "\u201C", "\u201D"],
+    BracketRight: ["]", "}", "\u2018", "\u2019"],
+    Backslash: ["\\", "|", "\xAB", "\xBB"],
+    Semicolon: [";", ":", "\u2026", "\xDA"],
+    Quote: ["'", '"', "\xE6", "\xC6"],
+    Backquote: ["`", "\u02DC", "`", "`"],
+    Comma: [",", "<", "\u2264", "\xAF"],
+    Period: [".", ">", "\u2265", "\u02D8"],
+    Slash: ["/", "?", "\xF7", "\xBF"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    Numpad1: ["1", "1", "1", "1"],
+    Numpad2: ["2", "2", "2", "2"],
+    Numpad3: ["3", "3", "3", "3"],
+    Numpad4: ["4", "4", "4", "4"],
+    Numpad5: ["5", "5", "5", "5"],
+    Numpad6: ["6", "6", "6", "6"],
+    Numpad7: ["7", "7", "7", "7"],
+    Numpad8: ["8", "8", "8", "8"],
+    Numpad9: ["9", "9", "9", "9"],
+    Numpad0: ["0", "0", "0", "0"],
+    NumpadDecimal: [".", ".", ".", "."],
+    IntlBackslash: ["\xA7", "\xB1", "\xA7", "\xB1"],
+    NumpadEqual: ["=", "=", "=", "="],
+    AudioVolumeUp: ["", "=", "", "="]
+  }
+};
+var WINDOWS_ENGLISH = {
+  id: "windows.en-intl",
+  displayName: "English (international)",
+  platform: "windows",
+  virtualLayout: "qwerty",
+  locale: "en",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE1", "\xC1"],
+    KeyB: ["b", "B", "", ""],
+    KeyC: ["c", "C", "\xA9", "\xA2"],
+    KeyD: ["d", "D", "\xF0", "\xD0"],
+    KeyE: ["e", "E", "\xE9", "\xC9"],
+    KeyF: ["f", "F", "", ""],
+    KeyG: ["g", "G", "", ""],
+    KeyH: ["h", "H", "", ""],
+    KeyI: ["i", "I", "\xED", "\xCD"],
+    KeyJ: ["j", "J", "", ""],
+    KeyK: ["k", "K", "", ""],
+    KeyL: ["l", "L", "\xF8", "\xD8"],
+    KeyM: ["m", "M", "\xB5", ""],
+    KeyN: ["n", "N", "\xF1", "\xD1"],
+    KeyO: ["o", "O", "\xF3", "\xD3"],
+    KeyP: ["p", "P", "\xF6", "\xD6"],
+    KeyQ: ["q", "Q", "\xE4", "\xC4"],
+    KeyR: ["r", "R", "\xAE", ""],
+    KeyS: ["s", "S", "\xDF", "\xA7"],
+    KeyT: ["t", "T", "\xFE", "\xDE"],
+    KeyU: ["u", "U", "\xFA", "\xDA"],
+    KeyV: ["v", "V", "", ""],
+    KeyW: ["w", "W", "\xE5", "\xC5"],
+    KeyX: ["x", "X", "", ""],
+    KeyY: ["y", "Y", "\xFC", "\xDC"],
+    KeyZ: ["z", "Z", "\xE6", "\xC6"],
+    Digit1: ["1", "!", "\xA1", "\xB9"],
+    Digit2: ["2", "@", "\xB2", ""],
+    Digit3: ["3", "#", "\xB3", ""],
+    Digit4: ["4", "$", "\xA4", "\xA3"],
+    Digit5: ["5", "%", "\u20AC", ""],
+    Digit6: ["6", "^", "\xBC", ""],
+    Digit7: ["7", "&", "\xBD", ""],
+    Digit8: ["8", "*", "\xBE", ""],
+    Digit9: ["9", "(", "\u2018", ""],
+    Digit0: ["0", ")", "\u2019", ""],
+    Space: [" ", " ", "", ""],
+    Minus: ["-", "_", "\xA5", ""],
+    Equal: ["=", "+", "\xD7", "\xF7"],
+    BracketLeft: ["[", "{", "\xAB", ""],
+    BracketRight: ["]", "}", "\xBB", ""],
+    Backslash: ["\\", "|", "\xAC", "\xA6"],
+    Semicolon: [";", ":", "\xB6", "\xB0"],
+    Quote: ["'", '"', "\xB4", "\xA8"],
+    Backquote: ["`", "~", "", ""],
+    Comma: [",", "<", "\xE7", "\xC7"],
+    Period: [".", ">", "", ""],
+    Slash: ["/", "?", "\xBF", ""],
+    NumpadDivide: ["/", "/", "", ""],
+    NumpadMultiply: ["*", "*", "", ""],
+    NumpadSubtract: ["-", "-", "", ""],
+    NumpadAdd: ["+", "+", "", ""],
+    IntlBackslash: ["\\", "|", "", ""]
+  }
+};
+var LINUX_ENGLISH = {
+  id: "linux.en",
+  displayName: "English",
+  platform: "linux",
+  virtualLayout: "qwerty",
+  locale: "en",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "a", "A"],
+    KeyB: ["b", "B", "b", "B"],
+    KeyC: ["c", "C", "c", "C"],
+    KeyD: ["d", "D", "d", "D"],
+    KeyE: ["e", "E", "e", "E"],
+    KeyF: ["f", "F", "f", "F"],
+    KeyG: ["g", "G", "g", "G"],
+    KeyH: ["h", "H", "h", "H"],
+    KeyI: ["i", "I", "i", "I"],
+    KeyJ: ["j", "J", "j", "J"],
+    KeyK: ["k", "K", "k", "K"],
+    KeyL: ["l", "L", "l", "L"],
+    KeyM: ["m", "M", "m", "M"],
+    KeyN: ["n", "N", "n", "N"],
+    KeyO: ["o", "O", "o", "O"],
+    KeyP: ["p", "P", "p", "P"],
+    KeyQ: ["q", "Q", "q", "Q"],
+    KeyR: ["r", "R", "r", "R"],
+    KeyS: ["s", "S", "s", "S"],
+    KeyT: ["t", "T", "t", "T"],
+    KeyU: ["u", "U", "u", "U"],
+    KeyV: ["v", "V", "v", "V"],
+    KeyW: ["w", "W", "w", "W"],
+    KeyX: ["x", "X", "x", "X"],
+    KeyY: ["y", "Y", "y", "Y"],
+    KeyZ: ["z", "Z", "z", "Z"],
+    Digit1: ["1", "!", "1", "!"],
+    Digit2: ["2", "@", "2", "@"],
+    Digit3: ["3", "#", "3", "#"],
+    Digit4: ["4", "$", "4", "$"],
+    Digit5: ["5", "%", "5", "%"],
+    Digit6: ["6", "^", "6", "^"],
+    Digit7: ["7", "&", "7", "&"],
+    Digit8: ["8", "*", "8", "*"],
+    Digit9: ["9", "(", "9", "("],
+    Digit0: ["0", ")", "0", ")"],
+    Space: [" ", " ", " ", " "],
+    Minus: ["-", "_", "-", "_"],
+    Equal: ["=", "+", "=", "+"],
+    BracketLeft: ["[", "{", "[", "{"],
+    BracketRight: ["]", "}", "]", "}"],
+    Backslash: ["\\", "|", "\\", "|"],
+    Semicolon: [";", ":", ";", ":"],
+    Quote: ["'", '"', "'", '"'],
+    Backquote: ["`", "~", "`", "~"],
+    Comma: [",", "<", ",", "<"],
+    Period: [".", ">", ".", ">"],
+    Slash: ["/", "?", "/", "?"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    Numpad1: ["1", "1", "1", "1"],
+    Numpad2: ["2", "2", "2", "2"],
+    Numpad3: ["3", "3", "3", "3"],
+    Numpad4: ["4", "4", "4", "4"],
+    Numpad5: ["5", "5", "5", "5"],
+    Numpad6: ["6", "6", "6", "6"],
+    Numpad7: ["7", "7", "7", "7"],
+    Numpad8: ["8", "8", "8", "8"],
+    Numpad9: ["9", "9", "9", "9"],
+    Numpad0: ["0", "0", "0", "0"],
+    NumpadDecimal: ["", ".", "", "."],
+    IntlBackslash: ["<", ">", "|", "\xA6"],
+    NumpadEqual: ["=", "=", "=", "="],
+    NumpadComma: [".", ".", ".", "."],
+    NumpadParenLeft: ["(", "(", "(", "("],
+    NumpadParenRight: [")", ")", ")", ")"]
+  }
+};
+
+// src/editor/keyboard-layouts/french.ts
+var APPLE_FRENCH = {
+  id: "apple.french",
+  locale: "fr",
+  displayName: "French",
+  platform: "apple",
+  virtualLayout: "azerty",
+  score: 0,
+  mapping: {
+    KeyA: ["q", "Q", "\u2021", "\u03A9"],
+    KeyB: ["b", "B", "\xDF", "\u222B"],
+    KeyC: ["c", "C", "\xA9", "\xA2"],
+    KeyD: ["d", "D", "\u2202", "\u2206"],
+    KeyE: ["e", "E", "\xEA", "\xCA"],
+    KeyF: ["f", "F", "\u0192", "\xB7"],
+    KeyG: ["g", "G", "\uFB01", "\uFB02"],
+    KeyH: ["h", "H", "\xCC", "\xCE"],
+    KeyI: ["i", "I", "\xEE", "\xEF"],
+    KeyJ: ["j", "J", "\xCF", "\xCD"],
+    KeyK: ["k", "K", "\xC8", "\xCB"],
+    KeyL: ["l", "L", "\xAC", "|"],
+    KeyM: [",", "?", "\u221E", "\xBF"],
+    KeyN: ["n", "N", "~", "\u0131"],
+    KeyO: ["o", "O", "\u0153", "\u0152"],
+    KeyP: ["p", "P", "\u03C0", "\u220F"],
+    KeyQ: ["a", "A", "\xE6", "\xC6"],
+    KeyR: ["r", "R", "\xAE", "\u201A"],
+    KeyS: ["s", "S", "\xD2", "\u2211"],
+    KeyT: ["t", "T", "\u2020", "\u2122"],
+    KeyU: ["u", "U", "\xBA", "\xAA"],
+    KeyV: ["v", "V", "\u25CA", "\u221A"],
+    KeyW: ["z", "Z", "\xC2", "\xC5"],
+    KeyX: ["x", "X", "\u2248", "\u2044"],
+    KeyY: ["y", "Y", "\xDA", "\u0178"],
+    KeyZ: ["w", "W", "\u2039", "\u203A"],
+    Digit1: ["&", "1", "\uF8FF", "\xB4"],
+    Digit2: ["\xE9", "2", "\xEB", "\u201E"],
+    Digit3: ['"', "3", "\u201C", "\u201D"],
+    Digit4: ["'", "4", "\u2018", "\u2019"],
+    Digit5: ["(", "5", "{", "["],
+    Digit6: ["\xA7", "6", "\xB6", "\xE5"],
+    Digit7: ["\xE8", "7", "\xAB", "\xBB"],
+    Digit8: ["!", "8", "\xA1", "\xDB"],
+    Digit9: ["\xE7", "9", "\xC7", "\xC1"],
+    Digit0: ["\xE0", "0", "\xF8", "\xD8"],
+    Space: [" ", " ", " ", " "],
+    Minus: [")", "\xB0", "}", "]"],
+    Equal: ["-", "_", "\u2014", "\u2013"],
+    BracketLeft: ["^", "\xA8", "\xF4", "\xD4"],
+    BracketRight: ["$", "*", "\u20AC", "\xA5"],
+    Backslash: ["`", "\xA3", "@", "#"],
+    Semicolon: ["m", "M", "\xB5", "\xD3"],
+    Quote: ["\xF9", "%", "\xD9", "\u2030"],
+    Backquote: ["<", ">", "\u2264", "\u2265"],
+    Comma: [";", ".", "\u2026", "\u2022"],
+    Period: [":", "/", "\xF7", "\\"],
+    Slash: ["=", "+", "\u2260", "\xB1"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    NumpadDecimal: [",", ".", ",", "."],
+    IntlBackslash: ["@", "#", "\u2022", "\u0178"],
+    NumpadEqual: ["=", "=", "=", "="]
+  }
+};
+var WINDOWS_FRENCH = {
+  id: "windows.french",
+  locale: "fr",
+  displayName: "French",
+  virtualLayout: "azerty",
+  platform: "windows",
+  score: 0,
+  mapping: {
+    KeyA: ["q", "Q", "", ""],
+    KeyB: ["b", "B", "", ""],
+    KeyC: ["c", "C", "", ""],
+    KeyD: ["d", "D", "", ""],
+    KeyE: ["e", "E", "\u20AC", ""],
+    KeyF: ["f", "F", "", ""],
+    KeyG: ["g", "G", "", ""],
+    KeyH: ["h", "H", "", ""],
+    KeyI: ["i", "I", "", ""],
+    KeyJ: ["j", "J", "", ""],
+    KeyK: ["k", "K", "", ""],
+    KeyL: ["l", "L", "", ""],
+    KeyM: [",", "?", "", ""],
+    KeyN: ["n", "N", "", ""],
+    KeyO: ["o", "O", "", ""],
+    KeyP: ["p", "P", "", ""],
+    KeyQ: ["a", "A", "", ""],
+    KeyR: ["r", "R", "", ""],
+    KeyS: ["s", "S", "", ""],
+    KeyT: ["t", "T", "", ""],
+    KeyU: ["u", "U", "", ""],
+    KeyV: ["v", "V", "", ""],
+    KeyW: ["z", "Z", "", ""],
+    KeyX: ["x", "X", "", ""],
+    KeyY: ["y", "Y", "", ""],
+    KeyZ: ["w", "W", "", ""],
+    Digit1: ["&", "1", "", ""],
+    Digit2: ["\xE9", "2", "~", ""],
+    Digit3: ['"', "3", "#", ""],
+    Digit4: ["'", "4", "{", ""],
+    Digit5: ["(", "5", "[", ""],
+    Digit6: ["-", "6", "|", ""],
+    Digit7: ["\xE8", "7", "`", ""],
+    Digit8: ["_", "8", "\\", ""],
+    Digit9: ["\xE7", "9", "^", ""],
+    Digit0: ["\xE0", "0", "@", ""],
+    Space: [" ", " ", "", ""],
+    Minus: [")", "\xB0", "]", ""],
+    Equal: ["=", "+", "}", ""],
+    BracketLeft: ["^", "\xA8", "", ""],
+    BracketRight: ["$", "\xA3", "\xA4", ""],
+    Backslash: ["*", "\xB5", "", ""],
+    Semicolon: ["m", "M", "", ""],
+    Quote: ["\xF9", "%", "", ""],
+    Backquote: ["\xB2", "", "", ""],
+    Comma: [";", ".", "", ""],
+    Period: [":", "/", "", ""],
+    Slash: ["!", "\xA7", "", ""],
+    NumpadDivide: ["/", "/", "", ""],
+    NumpadMultiply: ["*", "*", "", ""],
+    NumpadSubtract: ["-", "-", "", ""],
+    NumpadAdd: ["+", "+", "", ""],
+    IntlBackslash: ["<", ">", "", ""]
+  }
+};
+var LINUX_FRENCH = {
+  id: "linux.french",
+  locale: "fr",
+  displayName: "French",
+  virtualLayout: "azerty",
+  platform: "linux",
+  score: 0,
+  mapping: {
+    KeyA: ["q", "Q", "@", "\u03A9"],
+    KeyB: ["b", "B", "\u201D", "\u2019"],
+    KeyC: ["c", "C", "\xA2", "\xA9"],
+    KeyD: ["d", "D", "\xF0", "\xD0"],
+    KeyE: ["e", "E", "\u20AC", "\xA2"],
+    KeyF: ["f", "F", "\u0111", "\xAA"],
+    KeyG: ["g", "G", "\u014B", "\u014A"],
+    KeyH: ["h", "H", "\u0127", "\u0126"],
+    KeyI: ["i", "I", "\u2192", "\u0131"],
+    KeyJ: ["j", "J", "\u0309", "\u031B"],
+    KeyK: ["k", "K", "\u0138", "&"],
+    KeyL: ["l", "L", "\u0142", "\u0141"],
+    KeyM: [",", "?", "\u0301", "\u030B"],
+    KeyN: ["n", "N", "n", "N"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\xFE", "\xDE"],
+    KeyQ: ["a", "A", "\xE6", "\xC6"],
+    KeyR: ["r", "R", "\xB6", "\xAE"],
+    KeyS: ["s", "S", "\xDF", "\xA7"],
+    KeyT: ["t", "T", "\u0167", "\u0166"],
+    KeyU: ["u", "U", "\u2193", "\u2191"],
+    KeyV: ["v", "V", "\u201C", "\u2018"],
+    KeyW: ["z", "Z", "\xAB", "<"],
+    KeyX: ["x", "X", "\xBB", ">"],
+    KeyY: ["y", "Y", "\u2190", "\xA5"],
+    KeyZ: ["w", "W", "\u0142", "\u0141"],
+    Digit1: ["&", "1", "\xB9", "\xA1"],
+    Digit2: ["\xE9", "2", "~", "\u215B"],
+    Digit3: ['"', "3", "#", "\xA3"],
+    Digit4: ["'", "4", "{", "$"],
+    Digit5: ["(", "5", "[", "\u215C"],
+    Digit6: ["-", "6", "|", "\u215D"],
+    Digit7: ["\xE8", "7", "`", "\u215E"],
+    Digit8: ["_", "8", "\\", "\u2122"],
+    Digit9: ["\xE7", "9", "^", "\xB1"],
+    Digit0: ["\xE0", "0", "@", "\xB0"],
+    Enter: ["\r", "\r", "\r", "\r"],
+    Escape: ["\x1B", "\x1B", "\x1B", "\x1B"],
+    Backspace: ["\b", "\b", "\b", "\b"],
+    Tab: ["	", "", "	", ""],
+    Space: [" ", " ", " ", " "],
+    Minus: [")", "\xB0", "]", "\xBF"],
+    Equal: ["=", "+", "}", "\u0328"],
+    BracketLeft: ["\u0302", "\u0308", "\u0308", "\u030A"],
+    BracketRight: ["$", "\xA3", "\xA4", "\u0304"],
+    Backslash: ["*", "\xB5", "\u0300", "\u0306"],
+    Semicolon: ["m", "M", "\xB5", "\xBA"],
+    Quote: ["\xF9", "%", "\u0302", "\u030C"],
+    Backquote: ["\xB2", "~", "\xAC", "\xAC"],
+    Comma: [";", ".", "\u2500", "\xD7"],
+    Period: [":", "/", "\xB7", "\xF7"],
+    Slash: ["!", "\xA7", "\u0323", "\u0307"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    NumpadDecimal: ["", ".", "", "."],
+    IntlBackslash: ["<", ">", "|", "\xA6"]
+  }
+};
+
+// src/editor/keyboard-layouts/german.ts
+var APPLE_GERMAN = {
+  id: "apple.german",
+  locale: "de",
+  displayName: "German",
+  virtualLayout: "qwertz",
+  platform: "apple",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE5", "\xC5"],
+    KeyB: ["b", "B", "\u222B", "\u2039"],
+    KeyC: ["c", "C", "\xE7", "\xC7"],
+    KeyD: ["d", "D", "\u2202", "\u2122"],
+    KeyE: ["e", "E", "\u20AC", "\u2030"],
+    KeyF: ["f", "F", "\u0192", "\xCF"],
+    KeyG: ["g", "G", "\xA9", "\xCC"],
+    KeyH: ["h", "H", "\xAA", "\xD3"],
+    KeyI: ["i", "I", "\u2044", "\xDB"],
+    KeyJ: ["j", "J", "\xBA", "\u0131"],
+    KeyK: ["k", "K", "\u2206", "\u02C6"],
+    KeyL: ["l", "L", "@", "\uFB02"],
+    KeyM: ["m", "M", "\xB5", "\u02D8"],
+    KeyN: ["n", "N", "~", "\u203A"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\u03C0", "\u220F"],
+    KeyQ: ["q", "Q", "\xAB", "\xBB"],
+    KeyR: ["r", "R", "\xAE", "\xB8"],
+    KeyS: ["s", "S", "\u201A", "\xCD"],
+    KeyT: ["t", "T", "\u2020", "\u02DD"],
+    KeyU: ["u", "U", "\xA8", "\xC1"],
+    KeyV: ["v", "V", "\u221A", "\u25CA"],
+    KeyW: ["w", "W", "\u2211", "\u201E"],
+    KeyX: ["x", "X", "\u2248", "\xD9"],
+    KeyY: ["z", "Z", "\u03A9", "\u02C7"],
+    KeyZ: ["y", "Y", "\xA5", "\u2021"],
+    Digit1: ["1", "!", "\xA1", "\xAC"],
+    Digit2: ["2", '"', "\u201C", "\u201D"],
+    Digit3: ["3", "\xA7", "\xB6", "#"],
+    Digit4: ["4", "$", "\xA2", "\xA3"],
+    Digit5: ["5", "%", "[", "\uFB01"],
+    Digit6: ["6", "&", "]", "^"],
+    Digit7: ["7", "/", "|", "\\"],
+    Digit8: ["8", "(", "{", "\u02DC"],
+    Digit9: ["9", ")", "}", "\xB7"],
+    Digit0: ["0", "=", "\u2260", "\xAF"],
+    Space: [" ", " ", " ", " "],
+    Minus: ["\xDF", "?", "\xBF", "\u02D9"],
+    Equal: ["\xB4", "`", "'", "\u02DA"],
+    BracketLeft: ["\xFC", "\xDC", "\u2022", "\xB0"],
+    BracketRight: ["+", "*", "\xB1", "\uF8FF"],
+    Backslash: ["#", "'", "\u2018", "\u2019"],
+    Semicolon: ["\xF6", "\xD6", "\u0153", "\u0152"],
+    Quote: ["\xE4", "\xC4", "\xE6", "\xC6"],
+    Backquote: ["<", ">", "\u2264", "\u2265"],
+    Comma: [",", ";", "\u221E", "\u02DB"],
+    Period: [".", ":", "\u2026", "\xF7"],
+    Slash: ["-", "_", "\u2013", "\u2014"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    NumpadDecimal: [",", ",", ".", "."],
+    IntlBackslash: ["^", "\xB0", "\u201E", "\u201C"],
+    NumpadEqual: ["=", "=", "=", "="]
+  }
+};
+var WINDOWS_GERMAN = {
+  id: "windows.german",
+  locale: "de",
+  displayName: "German",
+  platform: "windows",
+  virtualLayout: "qwertz",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "", ""],
+    KeyB: ["b", "B", "", ""],
+    KeyC: ["c", "C", "", ""],
+    KeyD: ["d", "D", "", ""],
+    KeyE: ["e", "E", "\u20AC", ""],
+    KeyF: ["f", "F", "", ""],
+    KeyG: ["g", "G", "", ""],
+    KeyH: ["h", "H", "", ""],
+    KeyI: ["i", "I", "", ""],
+    KeyJ: ["j", "J", "", ""],
+    KeyK: ["k", "K", "", ""],
+    KeyL: ["l", "L", "", ""],
+    KeyM: ["m", "M", "\xB5", ""],
+    KeyN: ["n", "N", "", ""],
+    KeyO: ["o", "O", "", ""],
+    KeyP: ["p", "P", "", ""],
+    KeyQ: ["q", "Q", "@", ""],
+    KeyR: ["r", "R", "", ""],
+    KeyS: ["s", "S", "", ""],
+    KeyT: ["t", "T", "", ""],
+    KeyU: ["u", "U", "", ""],
+    KeyV: ["v", "V", "", ""],
+    KeyW: ["w", "W", "", ""],
+    KeyX: ["x", "X", "", ""],
+    KeyY: ["z", "Z", "", ""],
+    KeyZ: ["y", "Y", "", ""],
+    Digit1: ["1", "!", "", ""],
+    Digit2: ["2", '"', "\xB2", ""],
+    Digit3: ["3", "\xA7", "\xB3", ""],
+    Digit4: ["4", "$", "", ""],
+    Digit5: ["5", "%", "", ""],
+    Digit6: ["6", "&", "", ""],
+    Digit7: ["7", "/", "{", ""],
+    Digit8: ["8", "(", "[", ""],
+    Digit9: ["9", ")", "]", ""],
+    Digit0: ["0", "=", "}", ""],
+    Space: [" ", " ", "", ""],
+    Minus: ["\xDF", "?", "\\", "\u1E9E"],
+    Equal: ["\xB4", "`", "", ""],
+    BracketLeft: ["\xFC", "\xDC", "", ""],
+    BracketRight: ["+", "*", "~", ""],
+    Backslash: ["#", "'", "", ""],
+    Semicolon: ["\xF6", "\xD6", "", ""],
+    Quote: ["\xE4", "\xC4", "", ""],
+    Backquote: ["^", "\xB0", "", ""],
+    Comma: [",", ";", "", ""],
+    Period: [".", ":", "", ""],
+    Slash: ["-", "_", "", ""],
+    NumpadDivide: ["/", "/", "", ""],
+    NumpadMultiply: ["*", "*", "", ""],
+    NumpadSubtract: ["-", "-", "", ""],
+    NumpadAdd: ["+", "+", "", ""],
+    IntlBackslash: ["<", ">", "|", ""]
+  }
+};
+var LINUX_GERMAN = {
+  id: "linux.german",
+  locale: "de",
+  displayName: "German",
+  platform: "windows",
+  virtualLayout: "qwertz",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE6", "\xC6"],
+    KeyB: ["b", "B", "\u201C", "\u2018"],
+    KeyC: ["c", "C", "\xA2", "\xA9"],
+    KeyD: ["d", "D", "\xF0", "\xD0"],
+    KeyE: ["e", "E", "\u20AC", "\u20AC"],
+    KeyF: ["f", "F", "\u0111", "\xAA"],
+    KeyG: ["g", "G", "\u014B", "\u014A"],
+    KeyH: ["h", "H", "\u0127", "\u0126"],
+    KeyI: ["i", "I", "\u2192", "\u0131"],
+    KeyJ: ["j", "J", "\u0323", "\u0307"],
+    KeyK: ["k", "K", "\u0138", "&"],
+    KeyL: ["l", "L", "\u0142", "\u0141"],
+    KeyM: ["m", "M", "\xB5", "\xBA"],
+    KeyN: ["n", "N", "\u201D", "\u2019"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\xFE", "\xDE"],
+    KeyQ: ["q", "Q", "@", "\u03A9"],
+    KeyR: ["r", "R", "\xB6", "\xAE"],
+    KeyS: ["s", "S", "\u017F", "\u1E9E"],
+    KeyT: ["t", "T", "\u0167", "\u0166"],
+    KeyU: ["u", "U", "\u2193", "\u2191"],
+    KeyV: ["v", "V", "\u201E", "\u201A"],
+    KeyW: ["w", "W", "\u0142", "\u0141"],
+    KeyX: ["x", "X", "\xAB", "\u2039"],
+    KeyY: ["z", "Z", "\u2190", "\xA5"],
+    KeyZ: ["y", "Y", "\xBB", "\u203A"],
+    Digit1: ["1", "!", "\xB9", "\xA1"],
+    Digit2: ["2", '"', "\xB2", "\u215B"],
+    Digit3: ["3", "\xA7", "\xB3", "\xA3"],
+    Digit4: ["4", "$", "\xBC", "\xA4"],
+    Digit5: ["5", "%", "\xBD", "\u215C"],
+    Digit6: ["6", "&", "\xAC", "\u215D"],
+    Digit7: ["7", "/", "{", "\u215E"],
+    Digit8: ["8", "(", "[", "\u2122"],
+    Digit9: ["9", ")", "]", "\xB1"],
+    Digit0: ["0", "=", "}", "\xB0"],
+    Enter: ["\r", "\r", "\r", "\r"],
+    Escape: ["\x1B", "\x1B", "\x1B", "\x1B"],
+    Backspace: ["\b", "\b", "\b", "\b"],
+    Tab: ["	", "", "	", ""],
+    Space: [" ", " ", " ", " "],
+    Minus: ["\xDF", "?", "\\", "\xBF"],
+    Equal: ["\u0301", "\u0300", "\u0327", "\u0328"],
+    BracketLeft: ["\xFC", "\xDC", "\u0308", "\u030A"],
+    BracketRight: ["+", "*", "~", "\xAF"],
+    Backslash: ["#", "'", "\u2019", "\u0306"],
+    Semicolon: ["\xF6", "\xD6", "\u030B", "\u0323"],
+    Quote: ["\xE4", "\xC4", "\u0302", "\u030C"],
+    Backquote: ["\u0302", "\xB0", "\u2032", "\u2033"],
+    Comma: [",", ";", "\xB7", "\xD7"],
+    Period: [".", ":", "\u2026", "\xF7"],
+    Slash: ["-", "_", "\u2013", "\u2014"],
+    PrintScreen: ["", "", "", ""],
+    PageUp: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    Numpad1: ["", "1", "", "1"],
+    Numpad2: ["", "2", "", "2"],
+    Numpad3: ["", "3", "", "3"],
+    Numpad4: ["", "4", "", "4"],
+    Numpad5: ["", "5", "", "5"],
+    Numpad6: ["", "6", "", "6"],
+    Numpad7: ["", "7", "", "7"],
+    Numpad8: ["", "8", "", "8"],
+    Numpad9: ["", "9", "", "9"],
+    Numpad0: ["", "0", "", "0"],
+    NumpadDecimal: ["", ",", "", ","],
+    IntlBackslash: ["<", ">", "|", "\u0331"],
+    AltRight: ["\r", "\r", "\r", "\r"],
+    MetaRight: [".", ".", ".", "."]
+  }
+};
+
+// src/editor/keyboard-layouts/spanish.ts
+var APPLE_SPANISH = {
+  id: "apple.spanish",
+  locale: "es",
+  displayName: "Spanish ISO",
+  platform: "apple",
+  virtualLayout: "qwerty",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE5", "\xC5"],
+    KeyB: ["b", "B", "\xDF", ""],
+    KeyC: ["c", "C", "\xA9", " "],
+    KeyD: ["d", "D", "\u2202", "\u2206"],
+    KeyE: ["e", "E", "\u20AC", "\u20AC"],
+    KeyF: ["f", "F", "\u0192", "\uFB01"],
+    KeyG: ["g", "G", "\uF8FF", "\uFB02"],
+    KeyH: ["h", "H", "\u2122", " "],
+    KeyI: ["i", "I", " ", " "],
+    KeyJ: ["j", "J", "\xB6", "\xAF"],
+    KeyK: ["k", "K", "\xA7", "\u02C7"],
+    KeyL: ["l", "L", " ", "\u02D8"],
+    KeyM: ["m", "M", "\xB5", "\u02DA"],
+    KeyN: ["n", "N", " ", "\u02D9"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\u03C0", "\u220F"],
+    KeyQ: ["q", "Q", "\u0153", "\u0152"],
+    KeyR: ["r", "R", "\xAE", " "],
+    KeyS: ["s", "S", "\u222B", " "],
+    KeyT: ["t", "T", "\u2020", "\u2021"],
+    KeyU: ["u", "U", " ", " "],
+    KeyV: ["v", "V", "\u221A", "\u25CA"],
+    KeyW: ["w", "W", "\xE6", "\xC6"],
+    KeyX: ["x", "X", "\u2211", "\u203A"],
+    KeyY: ["y", "Y", "\xA5", " "],
+    KeyZ: ["z", "Z", "\u03A9", "\u2039"],
+    Digit1: ["1", "!", "|", "\u0131"],
+    Digit2: ["2", '"', "@", "\u02DD"],
+    Digit3: ["3", "\xB7", "#", "\u2022"],
+    Digit4: ["4", "$", "\xA2", "\xA3"],
+    Digit5: ["5", "%", "\u221E", "\u2030"],
+    Digit6: ["6", "&", "\xAC", " "],
+    Digit7: ["7", "/", "\xF7", "\u2044"],
+    Digit8: ["8", "(", "\u201C", "\u2018"],
+    Digit9: ["9", ")", "\u201D", "\u2019"],
+    Digit0: ["0", "=", "\u2260", "\u2248"],
+    Space: [" ", " ", " ", " "],
+    Minus: ["'", "?", "\xB4", "\xB8"],
+    Equal: ["\xA1", "\xBF", "\u201A", "\u02DB"],
+    BracketLeft: ["`", "^", "[", "\u02C6"],
+    BracketRight: ["+", "*", "]", "\xB1"],
+    Backslash: ["\xE7", "\xC7", "}", "\xBB"],
+    Semicolon: ["\xF1", "\xD1", "~", "\u02DC"],
+    Quote: ["\xB4", "\xA8", "{", "\xAB"],
+    Backquote: ["<", ">", "\u2264", "\u2265"],
+    Comma: [",", ";", "\u201E", ""],
+    Period: [".", ":", "\u2026", "\u2026"],
+    Slash: ["-", "_", "\u2013", "\u2014"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    Numpad1: ["1", "1", "1", "1"],
+    Numpad2: ["2", "2", "2", "2"],
+    Numpad3: ["3", "3", "3", "3"],
+    Numpad4: ["4", "4", "4", "4"],
+    Numpad5: ["5", "5", "5", "5"],
+    Numpad6: ["6", "6", "6", "6"],
+    Numpad7: ["7", "7", "7", "7"],
+    Numpad8: ["8", "8", "8", "8"],
+    Numpad9: ["9", "9", "9", "9"],
+    Numpad0: ["0", "0", "0", "0"],
+    NumpadDecimal: [",", ",", ",", ","],
+    IntlBackslash: ["\xBA", "\xAA", "\\", "\xB0"]
+  }
+};
+var WINDOWS_SPANISH = {
+  id: "windows.spanish",
+  locale: "es",
+  displayName: "Spanish",
+  platform: "windows",
+  virtualLayout: "qwerty",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "", ""],
+    KeyB: ["b", "B", "", ""],
+    KeyC: ["c", "C", "", ""],
+    KeyD: ["d", "D", "", ""],
+    KeyE: ["e", "E", "\u20AC", ""],
+    KeyF: ["f", "F", "", ""],
+    KeyG: ["g", "G", "", ""],
+    KeyH: ["h", "H", "", ""],
+    KeyI: ["i", "I", "", ""],
+    KeyJ: ["j", "J", "", ""],
+    KeyK: ["k", "K", "", ""],
+    KeyL: ["l", "L", "", ""],
+    KeyM: ["m", "M", "", ""],
+    KeyN: ["n", "N", "", ""],
+    KeyO: ["o", "O", "", ""],
+    KeyP: ["p", "P", "", ""],
+    KeyQ: ["q", "Q", "", ""],
+    KeyR: ["r", "R", "", ""],
+    KeyS: ["s", "S", "", ""],
+    KeyT: ["t", "T", "", ""],
+    KeyU: ["u", "U", "", ""],
+    KeyV: ["v", "V", "", ""],
+    KeyW: ["w", "W", "", ""],
+    KeyX: ["x", "X", "", ""],
+    KeyY: ["y", "Y", "", ""],
+    KeyZ: ["z", "Z", "", ""],
+    Digit1: ["1", "!", "|", ""],
+    Digit2: ["2", '"', "@", ""],
+    Digit3: ["3", "\xB7", "#", ""],
+    Digit4: ["4", "$", "~", ""],
+    Digit5: ["5", "%", "\u20AC", ""],
+    Digit6: ["6", "&", "\xAC", ""],
+    Digit7: ["7", "/", "", ""],
+    Digit8: ["8", "(", "", ""],
+    Digit9: ["9", ")", "", ""],
+    Digit0: ["0", "=", "", ""],
+    Space: [" ", " ", "", ""],
+    Minus: ["'", "?", "", ""],
+    Equal: ["\xA1", "\xBF", "", ""],
+    BracketLeft: ["`", "^", "[", ""],
+    BracketRight: ["+", "*", "]", ""],
+    Backslash: ["\xE7", "\xC7", "}", ""],
+    Semicolon: ["\xF1", "\xD1", "", ""],
+    Quote: ["\xB4", "\xA8", "{", ""],
+    Backquote: ["\xBA", "\xAA", "\\", ""],
+    Comma: [",", ";", "", ""],
+    Period: [".", ":", "", ""],
+    Slash: ["-", "_", "", ""],
+    NumpadDivide: ["/", "/", "", ""],
+    NumpadMultiply: ["*", "*", "", ""],
+    NumpadSubtract: ["-", "-", "", ""],
+    NumpadAdd: ["+", "+", "", ""],
+    IntlBackslash: ["<", ">", "", ""]
+  }
+};
+var LINUX_SPANISH = {
+  id: "linux.spanish",
+  locale: "es",
+  displayName: "Spanish",
+  platform: "linux",
+  virtualLayout: "qwerty",
+  score: 0,
+  mapping: {
+    KeyA: ["a", "A", "\xE6", "\xC6"],
+    KeyB: ["b", "B", "\u201D", "\u2019"],
+    KeyC: ["c", "C", "\xA2", "\xA9"],
+    KeyD: ["d", "D", "\xF0", "\xD0"],
+    KeyE: ["e", "E", "\u20AC", "\xA2"],
+    KeyF: ["f", "F", "\u0111", "\xAA"],
+    KeyG: ["g", "G", "\u014B", "\u014A"],
+    KeyH: ["h", "H", "\u0127", "\u0126"],
+    KeyI: ["i", "I", "\u2192", "\u0131"],
+    KeyJ: ["j", "J", "\u0309", "\u031B"],
+    KeyK: ["k", "K", "\u0138", "&"],
+    KeyL: ["l", "L", "\u0142", "\u0141"],
+    KeyM: ["m", "M", "\xB5", "\xBA"],
+    KeyN: ["n", "N", "n", "N"],
+    KeyO: ["o", "O", "\xF8", "\xD8"],
+    KeyP: ["p", "P", "\xFE", "\xDE"],
+    KeyQ: ["q", "Q", "@", "\u03A9"],
+    KeyR: ["r", "R", "\xB6", "\xAE"],
+    KeyS: ["s", "S", "\xDF", "\xA7"],
+    KeyT: ["t", "T", "\u0167", "\u0166"],
+    KeyU: ["u", "U", "\u2193", "\u2191"],
+    KeyV: ["v", "V", "\u201C", "\u2018"],
+    KeyW: ["w", "W", "\u0142", "\u0141"],
+    KeyX: ["x", "X", "\xBB", ">"],
+    KeyY: ["y", "Y", "\u2190", "\xA5"],
+    KeyZ: ["z", "Z", "\xAB", "<"],
+    Digit1: ["1", "!", "|", "\xA1"],
+    Digit2: ["2", '"', "@", "\u215B"],
+    Digit3: ["3", "\xB7", "#", "\xA3"],
+    Digit4: ["4", "$", "~", "$"],
+    Digit5: ["5", "%", "\xBD", "\u215C"],
+    Digit6: ["6", "&", "\xAC", "\u215D"],
+    Digit7: ["7", "/", "{", "\u215E"],
+    Digit8: ["8", "(", "[", "\u2122"],
+    Digit9: ["9", ")", "]", "\xB1"],
+    Digit0: ["0", "=", "}", "\xB0"],
+    Enter: ["\r", "\r", "\r", "\r"],
+    Escape: ["\x1B", "\x1B", "\x1B", "\x1B"],
+    Backspace: ["\b", "\b", "\b", "\b"],
+    Tab: ["	", "", "	", ""],
+    Space: [" ", " ", " ", " "],
+    Minus: ["'", "?", "\\", "\xBF"],
+    Equal: ["\xA1", "\xBF", "\u0303", "~"],
+    BracketLeft: ["\u0300", "\u0302", "[", "\u030A"],
+    BracketRight: ["+", "*", "]", "\u0304"],
+    Backslash: ["\xE7", "\xC7", "}", "\u0306"],
+    Semicolon: ["\xF1", "\xD1", "~", "\u030B"],
+    Quote: ["\u0301", "\u0308", "{", "{"],
+    Backquote: ["\xBA", "\xAA", "\\", "\\"],
+    Comma: [",", ";", "\u2500", "\xD7"],
+    Period: [".", ":", "\xB7", "\xF7"],
+    Slash: ["-", "_", "\u0323", "\u0307"],
+    NumpadDivide: ["/", "/", "/", "/"],
+    NumpadMultiply: ["*", "*", "*", "*"],
+    NumpadSubtract: ["-", "-", "-", "-"],
+    NumpadAdd: ["+", "+", "+", "+"],
+    NumpadEnter: ["\r", "\r", "\r", "\r"],
+    Numpad1: ["", "1", "", "1"],
+    Numpad2: ["", "2", "", "2"],
+    Numpad3: ["", "3", "", "3"],
+    Numpad4: ["", "4", "", "4"],
+    Numpad5: ["", "5", "", "5"],
+    Numpad6: ["", "6", "", "6"],
+    Numpad7: ["", "7", "", "7"],
+    Numpad8: ["", "8", "", "8"],
+    Numpad9: ["", "9", "", "9"],
+    Numpad0: ["", "0", "", "0"],
+    NumpadDecimal: ["", ".", "", "."],
+    IntlBackslash: ["<", ">", "|", "\xA6"],
+    NumpadEqual: ["=", "=", "=", "="],
+    NumpadComma: [".", ".", ".", "."],
+    NumpadParenLeft: ["(", "(", "(", "("],
+    NumpadParenRight: [")", ")", ")", ")"]
+  }
+};
+
+// src/editor/keyboard-layout.ts
+function keystrokeModifiersFromString(key) {
+  const segments = key.split("+");
+  const result = {
+    shift: false,
+    alt: false,
+    cmd: false,
+    win: false,
+    meta: false,
+    ctrl: false,
+    key: segments.pop()
+  };
+  if (segments.includes("shift")) result.shift = true;
+  if (segments.includes("alt")) result.alt = true;
+  if (segments.includes("ctrl")) result.ctrl = true;
+  if (segments.includes("cmd")) result.cmd = true;
+  if (segments.includes("win")) result.win = true;
+  if (segments.includes("meta")) result.meta = true;
+  return result;
+}
+function keystrokeModifiersToString(key) {
+  let result = "";
+  if (key.shift) result += "shift+";
+  if (key.alt) result += "alt+";
+  if (key.ctrl) result += "ctrl+";
+  if (key.cmd) result += "cmd+";
+  if (key.win) result += "win+";
+  if (key.meta) result += "meta+";
+  return result + key.key;
+}
+var BASE_LAYOUT_MAPPING = {
+  enter: "[Enter]",
+  escape: "[Escape]",
+  backspace: "[Backspace]",
+  tab: "[Tab]",
+  space: "[Space]",
+  pausebreak: "[Pause]",
+  insert: "[Insert]",
+  home: "[Home]",
+  pageup: "[PageUp]",
+  delete: "[Delete]",
+  end: "[End]",
+  pagedown: "[PageDown]",
+  right: "[ArrowRight]",
+  left: "[ArrowLeft]",
+  down: "[ArrowDown]",
+  up: "[ArrowUp]",
+  numpad0: "[Numpad0]",
+  numpad1: "[Numpad1]",
+  numpad2: "[Numpad2]",
+  numpad3: "[Numpad3]",
+  numpad4: "[Numpad4]",
+  numpad5: "[Numpad5]",
+  numpad6: "[Numpad6]",
+  numpad7: "[Numpad7]",
+  numpad8: "[Numpad8]",
+  numpad9: "[Numpad9]",
+  "numpad_divide": "[NumpadDivide]",
+  "numpad_multiply": "[NumpadMultiply]",
+  "numpad_subtract": "[NumpadSubtract]",
+  "numpad_add": "[NumpadAdd]",
+  "numpad_decimal": "[NumpadDecimal]",
+  "numpad_separator": "[NumpadComma]",
+  capslock: "[Capslock]",
+  f1: "[F1]",
+  f2: "[F2]",
+  f3: "[F3]",
+  f4: "[F4]",
+  f5: "[F5]",
+  f6: "[F6]",
+  f7: "[F7]",
+  f8: "[F8]",
+  f9: "[F9]",
+  f10: "[F10]",
+  f11: "[F11]",
+  f12: "[F12]",
+  f13: "[F13]",
+  f14: "[F14]",
+  f15: "[F15]",
+  f16: "[F16]",
+  f17: "[F17]",
+  f18: "[F18]",
+  f19: "[F19]"
+};
+var gKeyboardLayouts = [];
+var gKeyboardLayout;
+function platform() {
+  switch (osPlatform()) {
+    case "macos":
+    case "ios":
+      return "apple";
+    case "windows":
+      return "windows";
+  }
+  return "linux";
+}
+function register(layout) {
+  if (!layout.platform || layout.platform === platform())
+    gKeyboardLayouts.push(layout);
+}
+function getCodeForKey(k, layout) {
+  var _a3;
+  const result = {
+    shift: false,
+    alt: false,
+    cmd: false,
+    win: false,
+    meta: false,
+    ctrl: false,
+    key: ""
+  };
+  if (!k) return result;
+  for (const [key, value] of Object.entries(layout.mapping)) {
+    if (value[0] === k) {
+      result.key = `[${key}]`;
+      return result;
+    }
+    if (value[1] === k) {
+      result.shift = true;
+      result.key = `[${key}]`;
+      return result;
+    }
+    if (value[2] === k) {
+      result.alt = true;
+      result.key = `[${key}]`;
+      return result;
+    }
+    if (value[3] === k) {
+      result.shift = true;
+      result.alt = true;
+      result.key = `[${key}]`;
+      return result;
+    }
+  }
+  result.key = (_a3 = BASE_LAYOUT_MAPPING[k]) != null ? _a3 : "";
+  return result;
+}
+function normalizeKeyboardEvent(evt) {
+  if (evt.code) return evt;
+  const mapping = Object.entries(getActiveKeyboardLayout().mapping);
+  let altKey = false;
+  let shiftKey = false;
+  let code = "";
+  for (let index = 0; index < 4; index++) {
+    for (const [key, value] of mapping) {
+      if (value[index] === evt.key) {
+        code = key;
+        if (index === 3) {
+          altKey = true;
+          shiftKey = true;
+        } else if (index === 2) altKey = true;
+        else if (index === 1) shiftKey = true;
+        break;
+      }
+    }
+    if (code) break;
+  }
+  return new KeyboardEvent(evt.type, __spreadProps(__spreadValues({}, evt), { altKey, shiftKey, code }));
+}
+function validateKeyboardLayout(evt) {
+  var _a3, _b3;
+  if (!evt) return;
+  if (evt.key === "Unidentified") return;
+  if (evt.key === "Dead") return;
+  const index = evt.shiftKey && evt.altKey ? 3 : evt.altKey ? 2 : evt.shiftKey ? 1 : 0;
+  for (const layout of gKeyboardLayouts) {
+    if (((_a3 = layout.mapping[evt.code]) == null ? void 0 : _a3[index]) === evt.key) {
+      layout.score += 1;
+    } else if ((_b3 = layout.mapping[evt.code]) == null ? void 0 : _b3[index]) {
+      layout.score = 0;
+    }
+  }
+  gKeyboardLayouts.sort((a, b) => b.score - a.score);
+}
+function setKeyboardLayoutLocale(locale) {
+  gKeyboardLayout = gKeyboardLayouts.find((x) => locale.startsWith(x.locale));
+}
+function setKeyboardLayout(name) {
+  gKeyboardLayout = gKeyboardLayouts.find((x) => x.id === name);
+  return gKeyboardLayout;
+}
+function getActiveKeyboardLayout() {
+  return gKeyboardLayout != null ? gKeyboardLayout : gKeyboardLayouts[0];
+}
+function getDefaultKeyboardLayout() {
+  switch (platform()) {
+    case "apple":
+      return APPLE_ENGLISH;
+    case "windows":
+      return WINDOWS_ENGLISH;
+    case "linux":
+      return LINUX_ENGLISH;
+  }
+  return APPLE_ENGLISH;
+}
+switch (platform()) {
+  case "apple":
+    register(APPLE_ENGLISH);
+    register(APPLE_FRENCH);
+    register(APPLE_SPANISH);
+    register(APPLE_GERMAN);
+    break;
+  case "windows":
+    register(WINDOWS_ENGLISH);
+    register(WINDOWS_FRENCH);
+    register(WINDOWS_SPANISH);
+    register(WINDOWS_GERMAN);
+    break;
+  case "linux":
+    register(LINUX_ENGLISH);
+    register(LINUX_FRENCH);
+    register(LINUX_SPANISH);
+    register(LINUX_GERMAN);
+    break;
+}
+register(DVORAK);
+
+// src/public/keyboard-layout.ts
+function setKeyboardLayout2(name) {
+  setKeyboardLayout(name);
+}
+function setKeyboardLayoutLocale2(locale) {
+  setKeyboardLayoutLocale(locale);
+}
+
+// src/common/types.ts
+function isArray(x) {
+  return Array.isArray(x);
+}
+
+// src/editor/l10n-strings.ts
+var STRINGS = {
+  "en": {
+    "keyboard.tooltip.symbols": "Symbols",
+    "keyboard.tooltip.greek": "Greek Letters",
+    "keyboard.tooltip.numeric": "Numeric",
+    "keyboard.tooltip.alphabetic": "Roman Letters",
+    "tooltip.copy to clipboard": "Copy to Clipboard",
+    "tooltip.cut to clipboard": "Cut to Clipboard",
+    "tooltip.paste from clipboard": "Paste from Clipboard",
+    "tooltip.redo": "Redo",
+    "tooltip.toggle virtual keyboard": "Toggle Virtual Keyboard",
+    "tooltip.menu": "Menu",
+    "tooltip.undo": "Undo",
+    "menu.borders": "Borders",
+    "menu.insert matrix": "Insert Matrix",
+    "menu.array.add row above": "Add Row Before",
+    "menu.array.add row below": "Add Row After",
+    "menu.array.add column after": "Add Column After",
+    "menu.array.add column before": "Add Column Before",
+    "menu.array.delete row": "Delete Row",
+    "menu.array.delete rows": "Delete Selected Rows",
+    "menu.array.delete column": "Delete Column",
+    "menu.array.delete columns": "Delete Selected Columns",
+    "menu.mode": "Mode",
+    "menu.mode-math": "Math",
+    "menu.mode-text": "Text",
+    "menu.mode-latex": "LaTeX",
+    "menu.insert": "Insert",
+    "menu.insert.abs": "Absolute Value",
+    "menu.insert.abs-template": "\\left|x\\right|",
+    "menu.insert.nth-root": "n<sup>th</sup> Root",
+    "menu.insert.nth-root-template": "\\sqrt[n]{x}",
+    "menu.insert.log-base": "Logarithm base a",
+    "menu.insert.log-base-template": "\\log_a(x)",
+    "menu.insert.heading-calculus": "Calculus",
+    "menu.insert.derivative": "Derivative",
+    "menu.insert.derivative-template": "\\dfrac{\\mathrm{d}}{\\mathrm{d}x}f(x)\\bigm|_{x=a}",
+    "menu.insert.nth-derivative": "n<sup>th</sup> derivative",
+    "menu.insert.nth-derivative-template": "\\dfrac{\\mathrm{d}^n}{\\mathrm{d}x^n}f(x)\\bigm|_{x=a}",
+    "menu.insert.integral": "Integral",
+    "menu.insert.integral-template": "$\\int_a^b f(x)\\,\\mathrm{d}x$",
+    "menu.insert.sum": "Sum",
+    "menu.insert.sum-template": "$\\sum_{i=1}^n x_i$",
+    "menu.insert.product": "Product",
+    "menu.insert.product-template": "\\prod_{i=1}^n x_i",
+    "menu.insert.heading-complex-numbers": "Complex Numbers",
+    "menu.insert.modulus": "Modulus",
+    "menu.insert.modulus-template": "\\lvert z \\rvert",
+    "menu.insert.argument": "Argument",
+    "menu.insert.argument-template": "\\arg(z)",
+    "menu.insert.real-part": "Real Part",
+    "menu.insert.real-part-template": "\\Re(z)",
+    "menu.insert.imaginary-part": "Imaginary Part",
+    "menu.insert.imaginary-part-template": "\\Im(z)",
+    "menu.insert.conjugate": "Conjugate",
+    "menu.insert.conjugate-template": "\\overline{z}",
+    "tooltip.blackboard": "Blackboard",
+    "tooltip.bold": "Bold",
+    "tooltip.italic": "Italic",
+    "tooltip.fraktur": "Fraktur",
+    "tooltip.script": "Script",
+    "tooltip.caligraphic": "Caligraphic",
+    "tooltip.typewriter": "Typewriter",
+    "tooltip.roman-upright": "Roman Upright",
+    "tooltip.row-by-col": "%@ \xD7 %@",
+    "menu.font-style": "Font Style",
+    "menu.accent": "Accent",
+    "menu.decoration": "Decoration",
+    "menu.color": "Color",
+    "menu.background-color": "Background",
+    "menu.evaluate": "Evaluate",
+    "menu.simplify": "Simplify",
+    "menu.solve": "Solve",
+    "menu.solve-for": "Solve for %@",
+    "menu.cut": "Cut",
+    "menu.copy": "Copy",
+    "menu.copy-as-latex": "Copy as LaTeX",
+    "menu.copy-as-typst": "Copy as Typst",
+    "menu.copy-as-ascii-math": "Copy as ASCII Math",
+    "menu.copy-as-mathml": "Copy as MathML",
+    "menu.paste": "Paste",
+    "menu.select-all": "Select All",
+    // Colors (accessible labels in color swatches)
+    "color.red": "Red",
+    "color.orange": "Orange",
+    "color.yellow": "Yellow",
+    "color.lime": "Lime",
+    "color.green": "Green",
+    "color.teal": "Teal",
+    "color.cyan": "Cyan",
+    "color.blue": "Blue",
+    "color.indigo": "Indigo",
+    "color.purple": "Purple",
+    "color.magenta": "Magenta",
+    "color.black": "Black",
+    "color.dark-grey": "Dark Grey",
+    "color.grey": "Grey",
+    "color.light-grey": "Light Grey",
+    "color.white": "White"
+  },
+  // Arabic
+  "ar": {
+    "keyboard.tooltip.symbols": "\u062D\u0631\u0641 \u0627\u0648 \u0631\u0645\u0632",
+    "keyboard.tooltip.greek": "\u062D\u0631\u0648\u0641 \u064A\u0648\u0646\u0627\u0646\u064A\u0629",
+    "keyboard.tooltip.numeric": "\u0627\u0644\u0631\u0642\u0645\u064A\u0629",
+    "keyboard.tooltip.alphabetic": "\u0631\u0645\u0648\u0632 \u0627\u0644\u0627\u062D\u0631\u0641 \u0627\u0644\u0631\u0648\u0645\u0627\u0646\u064A\u0629",
+    "tooltip.copy to clipboard": "\u0646\u0633\u062E \u0625\u0644\u0649 \u0627\u0644\u062D\u0627\u0641\u0638\u0629",
+    "tooltip.cut to clipboard": "\u0642\u0635 \u0625\u0644\u0649 \u0627\u0644\u062D\u0627\u0641\u0638\u0629",
+    "tooltip.paste from clipboard": "\u0644\u0635\u0642 \u0645\u0646 \u0627\u0644\u062D\u0627\u0641\u0638\u0629",
+    "tooltip.redo": "\u0627\u0644\u0625\u0639\u0627\u062F\u0629",
+    "tooltip.toggle virtual keyboard": "\u062A\u0628\u062F\u064A\u0644 \u0644\u0648\u062D\u0629 \u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D \u0627\u0644\u0625\u0641\u062A\u0631\u0627\u0636\u064A\u0629",
+    "tooltip.undo": "\u0625\u0644\u063A\u0627\u0621",
+    "menu.insert matrix": "\u0623\u062F\u062E\u0644 \u0627\u0644\u0645\u0635\u0641\u0648\u0641\u0629",
+    "menu.borders": "\u0645\u062D\u062F\u062F\u0627\u062A \u0627\u0644\u0645\u0635\u0641\u0648\u0641\u0629",
+    "menu.array.add row above": "\u0623\u0636\u0641 \u0635\u0641\u064B\u0627 \u0628\u0639\u062F \u0630\u0644\u0643",
+    "menu.array.add row below": "\u0623\u0636\u0641 \u0627\u0644\u0635\u0641 \u0642\u0628\u0644",
+    "menu.array.add column after": "\u0623\u0636\u0641 \u0627\u0644\u0639\u0645\u0648\u062F \u0628\u0639\u062F \u0630\u0644\u0643",
+    "menu.array.add column before": "\u0623\u0636\u0641 \u0627\u0644\u0639\u0645\u0648\u062F \u0642\u0628\u0644",
+    "menu.array.delete row": "\u0627\u062D\u0630\u0641 \u0635\u0641",
+    "menu.array.delete rows": "\u062D\u0630\u0641 \u0627\u0644\u0635\u0641\u0648\u0641 \u0627\u0644\u0645\u062D\u062F\u062F\u0629",
+    "menu.array.delete column": "\u062D\u0630\u0641 \u0627\u0644\u0639\u0645\u0648\u062F",
+    "menu.array.delete columns": "\u062D\u0630\u0641 \u0627\u0644\u0623\u0639\u0645\u062F\u0629 \u0627\u0644\u0645\u062D\u062F\u062F\u0629",
+    "menu.mode": "\u0648\u0636\u0639",
+    "menu.mode-math": "\u0631\u064A\u0627\u0636\u064A\u0627\u062A",
+    "menu.mode-text": "\u0646\u0635",
+    "menu.mode-latex": "\u0644\u0627\u062A\u0643\u0633",
+    "tooltip.blackboard": "\u0633\u0628\u0648\u0631\u0629",
+    "tooltip.bold": "\u0639\u0631\u064A\u0636",
+    "tooltip.italic": "\u0645\u0627\u0626\u0644",
+    "tooltip.fraktur": "\u0641\u0631\u0627\u0643\u062A\u0648\u0631",
+    "tooltip.script": "\u0633\u0643\u0631\u064A\u0628\u062A",
+    "tooltip.caligraphic": "\u0643\u0627\u0644\u064A\u062C\u0631\u0627\u0641\u064A\u0643",
+    "tooltip.typewriter": "\u0622\u0644\u0629 \u0643\u0627\u062A\u0628\u0629",
+    "tooltip.roman-upright": "\u0631\u0648\u0645\u0627\u0646\u064A \u0645\u0633\u062A\u0642\u064A\u0645",
+    "tooltip.row-by-col": "%@ \xD7 %@",
+    "menu.font-style": "\u0646\u0645\u0637 \u0627\u0644\u062E\u0637",
+    "menu.accent": "\u062A\u0634\u0643\u064A\u0644",
+    "menu.decoration": "\u0632\u062E\u0631\u0641\u0629",
+    "menu.color": "\u0644\u0648\u0646",
+    "menu.background-color": "\u0627\u0644\u062E\u0644\u0641\u064A\u0629",
+    "menu.evaluate": "\u062A\u0642\u064A\u064A\u0645",
+    "menu.simplify": "\u062A\u0628\u0633\u064A\u0637",
+    "menu.solve": "\u062D\u0644",
+    "menu.solve-for": "\u062D\u0644 \u0644\u0640 %@",
+    "menu.cut": "\u0642\u0635",
+    "menu.copy": "\u0646\u0633\u062E",
+    "menu.copy-as-latex": "\u0646\u0633\u062E \u0643\u0640 LaTeX",
+    "menu.copy-as-ascii-math": "\u0646\u0633\u062E \u0643\u0640 ASCII Math",
+    "menu.copy-as-mathml": "\u0646\u0633\u062E \u0643\u0640 MathML",
+    "menu.paste": "\u0644\u0635\u0642",
+    "menu.select-all": "\u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0643\u0644",
+    // Colors (accessible labels in color swatches)
+    "color.red": "\u0623\u062D\u0645\u0631",
+    "color.orange": "\u0628\u0631\u062A\u0642\u0627\u0644\u064A",
+    "color.yellow": "\u0623\u0635\u0641\u0631",
+    "color.lime": "\u0644\u064A\u0645\u0648\u0646\u064A",
+    "color.green": "\u0623\u062E\u0636\u0631",
+    "color.teal": "\u0633\u0645\u0627\u0648\u064A",
+    "color.cyan": "\u0633\u0645\u0627\u0648\u064A \u0641\u0627\u062A\u062D",
+    "color.blue": "\u0623\u0632\u0631\u0642",
+    "color.indigo": "\u0646\u064A\u0644\u064A",
+    "color.purple": "\u0628\u0646\u0641\u0633\u062C\u064A",
+    "color.magenta": "\u0623\u0631\u062C\u0648\u0627\u0646\u064A",
+    "color.black": "\u0623\u0633\u0648\u062F",
+    "color.dark-grey": "\u0631\u0645\u0627\u062F\u064A \u063A\u0627\u0645\u0642",
+    "color.grey": "\u0631\u0645\u0627\u062F\u064A",
+    "color.light-grey": "\u0631\u0645\u0627\u062F\u064A \u0641\u0627\u062A\u062D",
+    "color.white": "\u0623\u0628\u064A\u0636"
+  },
+  // German
+  "de": {
+    "keyboard.tooltip.symbols": "Symbole",
+    "keyboard.tooltip.greek": "Griechische Buchstaben",
+    "keyboard.tooltip.numeric": "Numerisch",
+    "keyboard.tooltip.alphabetic": "R\xF6mische Buchstaben",
+    "tooltip.copy to clipboard": "In die Zwischenablage kopieren",
+    "tooltip.redo": "Wiederholen",
+    "tooltip.toggle virtual keyboard": "Virtuelle Tastatur umschalten",
+    "tooltip.undo": "Widerrufen",
+    "menu.insert matrix": "Matrix einf\xFCgen",
+    "menu.borders": "Matrixtrennzeichen",
+    "menu.array.add row above": "Zeile hinzuf\xFCgen nach",
+    "menu.array.add row below": "Zeile hinzuf\xFCgen vor",
+    "menu.array.add column after": "Spalte hinzuf\xFCgen nach",
+    "menu.array.add column before": "Spalte hinzuf\xFCgen vor",
+    "menu.array.delete row": "Zeile l\xF6schen",
+    "menu.array.delete rows": "Ausgew\xE4hlte Zeilen l\xF6schen",
+    "menu.array.delete column": "Spalte l\xF6schen",
+    "menu.array.delete columns": "Ausgew\xE4hlte Spalten l\xF6schen",
+    "menu.mode": "Modus",

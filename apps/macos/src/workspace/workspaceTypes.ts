@@ -1,6 +1,5 @@
 import type { ReactNode, RefObject } from "react";
 import type { QuickOcrCaptureMode } from "../ocr/quickOcr";
-import type { OcrQuickSelectionOption } from "../ocr/ocrQuickSelection";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
@@ -15,6 +14,13 @@ export type WorkspaceMode =
 
 export type WorkspaceExportFormat = "markdown" | "svg" | "png";
 
+export interface WorkspaceOcrRecognizerOption {
+  id: string;
+  group?: "local" | "api";
+  labelZh: string;
+  labelEn: string;
+}
+
 export interface EditorWorkspaceProps {
   mode: WorkspaceMode;
 
@@ -27,6 +33,7 @@ export interface EditorWorkspaceProps {
   officeHeaderLeadingControls?: ReactNode;
   officeHeaderTrailingActions?: ReactNode;
   desktopHeaderControls?: ReactNode;
+  desktopTopToolsMount?: HTMLElement | null;
   keypadMode?: boolean;
 
   onPrimaryAction?: () => Promise<void>;
@@ -35,6 +42,7 @@ export interface EditorWorkspaceProps {
 
   editorRef: RefObject<MathEditorHandle | null>;
   editorInstanceKey?: string;
+  sourceDocumentRevision?: number;
   reuseEditorLineSlots?: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
@@ -50,15 +58,15 @@ export interface EditorWorkspaceProps {
     source: ReplaceDocumentEntry["source"],
   ) => boolean;
 
-  ocrSelection?: string;
-  ocrOptions?: readonly OcrQuickSelectionOption[];
+  ocrRecognizer?: string;
+  ocrRecognizers?: readonly WorkspaceOcrRecognizerOption[];
   ocrBusy?: boolean;
-  onOcrOptionsRequest?: () => void;
-  onOcrSelectionChange?: (selection: string) => void;
+  onOcrRecognizerChange?: (recognizer: string) => void;
   onQuickOcr?: () => void;
   quickOcrCaptureMode?: QuickOcrCaptureMode;
   onQuickOcrCaptureModeChange?: (mode: QuickOcrCaptureMode) => void;
   silentOcrEnabled?: boolean;
+  silentOcrShortcut?: string;
   onSilentOcrEnabledChange?: (enabled: boolean) => void;
   ocrOverlay?: ReactNode;
 }

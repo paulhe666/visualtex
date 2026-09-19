@@ -19,8 +19,12 @@ export function customSymbolCommands(): LatexCommand[] {
 }
 
 export function getRuntimeCommandRegistry() {
-  const custom = customSymbolCommands();
-  return custom.length ? [...commandRegistry, ...custom] : commandRegistry;
+  const byId = new Map<string, LatexCommand>();
+  for (const command of commandRegistry) {
+    if (!byId.has(command.id)) byId.set(command.id, command);
+  }
+  for (const command of customSymbolCommands()) byId.set(command.id, command);
+  return [...byId.values()];
 }
 
 export function findRuntimeCommandByCommand(command: string) {

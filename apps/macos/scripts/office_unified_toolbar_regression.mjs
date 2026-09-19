@@ -424,6 +424,14 @@ async function main() {
               formattingSlot && formattingControls && formattingSlot.contains(formattingControls),
             ),
             buttonCount: formattingButtons.length,
+            // Windows 7e9c8050 adds four persistent-input formatting controls
+            // alongside three alignments and four selection-only controls.
+            persistentControls: ['bold', 'italic', 'color', 'background'].filter(
+              (name) => formattingSlot?.querySelector('[data-formula-persistent-' + name + ']'),
+            ),
+            selectionControls: ['bold', 'italic', 'color', 'background'].filter(
+              (name) => formattingSlot?.querySelector('[data-formula-selection-' + name + ']'),
+            ),
             buttonSizes: formattingButtons,
             slot: formattingSlotRect
               ? {
@@ -774,7 +782,11 @@ async function main() {
         true,
         JSON.stringify(state),
       );
-      assert.equal(state.formattingPlacement.buttonCount, 7, JSON.stringify(state));
+      assert.equal(state.formattingPlacement.buttonCount, 11, JSON.stringify(state));
+      assert.deepEqual(state.formattingPlacement.persistentControls,
+        ['bold', 'italic', 'color', 'background'], JSON.stringify(state));
+      assert.deepEqual(state.formattingPlacement.selectionControls,
+        ['bold', 'italic', 'color', 'background'], JSON.stringify(state));
       assert.ok(
         state.formattingPlacement.buttonSizes.every(
           (button) => button.height >= 28 && button.height <= 30,

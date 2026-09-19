@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "../styles.css";
 import "../styles-editor-parity.css";
+import "../styles-windows-shared-latest.css";
+import "../styles-macos-platform-overrides.css";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { OfficeDialogApp } from "./dialog/OfficeDialogApp";

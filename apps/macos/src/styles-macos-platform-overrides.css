@@ -1,0 +1,53 @@
+/* macOS-only presentation overrides loaded after the pinned Windows shared CSS.
+   Keep platform session architecture and extreme-narrow resident-window behavior
+   separate from the shared editor rules. */
+
+/* The resident macOS Office editor keeps Apply/Cancel and session controls in
+   the fixed editor header. Do not inherit a Windows-only hidden classic header. */
+.office-dialog-shell
+  .workspace.is-office-workspace.is-classic-layout
+  > .formula-workspace.editor-pane
+  > .editor-pane-header.is-office-editor-header {
+  display: flex;
+}
+
+/* At very narrow resident-editor widths the tile rail can leave roughly 100px
+   for the first classic-bottom grid cell. Keep all formatting actions
+   accessible by horizontal scrolling instead of letting their intrinsic width
+   overlap the centred panel tabs and right-side actions. */
+@media (max-width: 560px) {
+  .office-dialog-shell .classic-bottom-formatting-slot {
+    width: 100%;
+    max-width: 100%;
+    justify-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .office-dialog-shell .classic-bottom-formatting-slot::-webkit-scrollbar {
+    display: none;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-alignment-controls {
+    width: max-content;
+    min-width: max-content;
+  }
+
+  /* An absolute color picker would be clipped by the scrolling first cell.
+     In the extreme-narrow layout it becomes a viewport floating layer. */
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-color-popover {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: 38px;
+    left: 8px;
+    max-width: min(196px, calc(100vw - 16px));
+    z-index: var(--z-popover, 190);
+  }
+}

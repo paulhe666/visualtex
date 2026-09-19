@@ -17,6 +17,7 @@
     "tauri:dev": "node scripts/tauri_dev.mjs",
     "register:macos-dev-url": "node scripts/register_macos_dev_url_handler.mjs",
     "tauri:build": "node scripts/tauri_build.mjs",
+    "tauri:build:no-ocr": "node scripts/build_macos_api_only.mjs",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
     "test:radical-render": "npm run build:desktop && node scripts/radical_render_regression.mjs",
     "test:formula-hotkeys": "npm run build:desktop && node scripts/formula_hotkey_regression.mjs",
@@ -68,7 +69,8 @@
     "test:platform-onboarding": "tsx scripts/platform_onboarding_smoke.mjs",
     "test:startup-compatibility": "tsx scripts/startup_compatibility_smoke.mjs",
     "test:startup-browser": "node scripts/startup_browser_regression.mjs",
-    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
+    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh",
+    "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

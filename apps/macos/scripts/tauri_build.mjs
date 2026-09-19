@@ -58,7 +58,12 @@ const hasExplicitFeatures = forwardedArgs.some(
 const releaseFeatures = hasExplicitFeatures
   ? []
   : ["--features", "tauri/custom-protocol"];
-run(tauri, ["build", ...releaseFeatures, ...forwardedArgs], {
+const apiOnlyOcr = process.env.VISUALTEX_API_ONLY_OCR === "1";
+const macosFullOcrConfig =
+  process.platform === "darwin" && !apiOnlyOcr
+    ? ["--config", "src-tauri/tauri.macos.full-ocr.conf.json"]
+    : [];
+run(tauri, ["build", ...releaseFeatures, ...macosFullOcrConfig, ...forwardedArgs], {
   ...process.env,
   VISUALTEX_TAURI_NATIVE_PREBUILT: "1",
 });

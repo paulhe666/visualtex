@@ -1,11 +1,11 @@
 import type { FormulaLine } from "../types/formula";
+import { createUuid } from "../runtime/browserCompatibility";
 import {
   cloneFormulaLines,
   createFormulaLine,
   normalizeFormulaLines,
   useEditorStore,
 } from "../stores/editorStore";
-import { createUuid } from "../runtime/browserCompatibility";
 import type {
   DocumentSnapshot,
   HistoryEntry,
@@ -56,12 +56,17 @@ export function documentSnapshotsEquivalent(
     (left.formulaAlignment ?? "left") ===
       (right.formulaAlignment ?? "left") &&
     left.lines.length === right.lines.length &&
-    left.lines.every(
-      (line, index) =>
-        line.id === right.lines[index]?.id &&
-        line.latex === right.lines[index]?.latex &&
-        line.mode === right.lines[index]?.mode,
-    )
+    left.lines.every((line, index) => {
+      const rightLine = right.lines[index];
+      return (
+        line.id === rightLine?.id &&
+        line.latex === rightLine?.latex &&
+        (line.mode === "inline" ? "inline" : "display") ===
+          (rightLine?.mode === "inline" ? "inline" : "display") &&
+        (line.displayStyle ?? "default") ===
+          (rightLine?.displayStyle ?? "default")
+      );
+    })
   );
 }
 
@@ -69,6 +74,7 @@ export function reconcileFormulaLines(
   values: readonly string[],
   currentLines: readonly FormulaLine[],
   modes?: readonly FormulaLine["mode"][],
+  displayStyles?: readonly FormulaLine["displayStyle"][],
 ): FormulaLine[] {
   const normalizedValues = values.length ? values : [""];
   return normalizedValues.map((latex, index) => ({
@@ -80,6 +86,10 @@ export function reconcileFormulaLines(
         : modes?.[index] === "display"
           ? "display"
           : currentLines[index]?.mode ?? "display",
+    displayStyle:
+      displayStyles?.[index] ??
+      currentLines[index]?.displayStyle ??
+      "default",
   }));
 }
 
