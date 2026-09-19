@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { normalizePath, type Plugin } from "vite";
+import { type Plugin } from "vite";
 import { patchVisualTexMathLiveRuntimeSafety } from "./vite.mathliveRuntimeSafety";
+import { patchVisualTexMathLiveBehavior } from "./vite.visualtexMathLiveBehaviorFork";
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,
@@ -68,14 +70,33 @@ function loadRareIntegralGlyphPayload(): RareIntegralGlyphPayload {
 const rareIntegralPayload = loadRareIntegralGlyphPayload();
 
 /**
- * The MathLive browser entry must be pinned explicitly so both the desktop
- * editor and the native Windows Office dialog receive the same build-time
- * symbol registration patch.
+ * VisualTeX owns its MathLive browser kernel. The kernel is stored as source
+ * fragments only to keep the 1.4 MB upstream single-file module manageable in
+ * code-review/editing tools. Vite concatenates the fragments byte-for-byte;
+ * there is no behavioral source rewrite in this loader.
  */
-export const mathLiveBrowserEntry = fileURLToPath(
-  new URL("./node_modules/mathlive/mathlive.mjs", import.meta.url),
+export const mathLiveBrowserEntry = "virtual:visualtex-mathlive-kernel";
+const resolvedMathLiveBrowserEntry = "\0visualtex-mathlive-kernel";
+const mathLiveKernelPartsDirectory = fileURLToPath(
+  new URL("./vendor/mathlive/kernel-parts/", import.meta.url),
 );
-const normalizedMathLiveBrowserEntry = normalizePath(mathLiveBrowserEntry);
+
+export function loadVisualTexMathLiveKernel() {
+  const parts = readdirSync(mathLiveKernelPartsDirectory)
+    .filter((name) => /^part-\d{3}\.mjsfrag$/.test(name))
+    .sort();
+  if (parts.length === 0) {
+    throw new Error("VisualTeX MathLive kernel source fragments are missing.");
+  }
+  return parts
+    .map((name) =>
+      readFileSync(
+        new URL("./vendor/mathlive/kernel-parts/" + name, import.meta.url),
+        "utf8",
+      ),
+    )
+    .join("");
+}
 
 /**
  * Register the uncommon integral glyphs used by the macOS implementation in
@@ -142,10 +163,16 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
   return {
     name: "visualtex-mathlive-integral-compatibility",
     enforce: "pre",
+    resolveId(source) {
+      if (source === mathLiveBrowserEntry) return resolvedMathLiveBrowserEntry;
+      return null;
+    },
+    load(id) {
+      if (id === resolvedMathLiveBrowserEntry) return loadVisualTexMathLiveKernel();
+      return null;
+    },
     transform(source, id) {
-      if (normalizePath(id.split("?", 1)[0]) !== normalizedMathLiveBrowserEntry) {
-        return null;
-      }
+      if (id !== resolvedMathLiveBrowserEntry) return null;
 
       const svgBodyMatches = source.split(svgBodyAnchor).length - 1;
       const baseMatches = source.split(baseAnchor).length - 1;
@@ -165,8 +192,9 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
         );
       }
 
-      const patched = patchVisualTexMathLiveRuntimeSafety(
-        source
+      const patched = patchVisualTexMathLiveBehavior(
+        patchVisualTexMathLiveRuntimeSafety(
+          source
         .replace(
           svgBodyAnchor,
           [
@@ -227,6 +255,7 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
         .replace(
           symbolsAnchor,
           [symbolsAnchor, rareIntegralCharacterEntries].join("\n"),
+        ),
         ),
       );
 

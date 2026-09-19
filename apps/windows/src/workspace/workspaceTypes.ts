@@ -33,6 +33,7 @@ export interface EditorWorkspaceProps {
   officeHeaderLeadingControls?: ReactNode;
   officeHeaderTrailingActions?: ReactNode;
   desktopHeaderControls?: ReactNode;
+  desktopTopToolsMount?: HTMLElement | null;
   keypadMode?: boolean;
 
   onPrimaryAction?: () => Promise<void>;
@@ -41,6 +42,7 @@ export interface EditorWorkspaceProps {
 
   editorRef: RefObject<MathEditorHandle | null>;
   editorInstanceKey?: string;
+  sourceDocumentRevision?: number;
   reuseEditorLineSlots?: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;

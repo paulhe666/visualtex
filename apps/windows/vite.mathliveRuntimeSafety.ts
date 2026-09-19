@@ -28,12 +28,17 @@ export function escapeMathLiveTextForXml(value: string) {
 }
 
 /**
- * Apply the two narrow runtime corrections VisualTeX needs while it remains on
+ * Apply the narrow runtime corrections VisualTeX needs while it remains on
  * MathLive 0.109.2:
  *
  * 1. Match MathLive 0.110.0's text/MathML escaping fix for CVE-2026-54705.
  * 2. Avoid writing `mode` through an absent root child when options are changed
  *    on an empty, already-mounted mathfield.
+ * 3. Replace the whole model for replaceAll instead of range-deleting atoms.
+ *    Range deletion could skip empty structures and retain a root environment.
+ * 4. Preserve upright bold uppercase Greek when serializing nested atoms.
+ * 5. Keep matrix pointer hits in the selected row when atom bounds overlap.
+ * 6. Include sentinel-only structures in selection, deletion and serialization.
  *
  * Every replacement is guarded by an exact single-match assertion. A future
  * MathLive source change therefore fails the build instead of silently shipping
@@ -41,6 +46,75 @@ export function escapeMathLiveTextForXml(value: string) {
  */
 export function patchVisualTexMathLiveRuntimeSafety(source: string) {
   let patched = source;
+
+  // An empty structural atom still occupies a selectable model position.
+  // Its sentinel-only branch must not exclude it from getAtoms(), otherwise
+  // select-all/delete, replacement and selection serialization silently skip it.
+  patched = replaceExactly(
+    patched,
+    [
+      '  const firstChild = includeFirstAtoms ? atom.firstChild : firstNonFirstChild(atom);',
+      '  if (!firstChild) return false;',
+    ].join("\n"),
+    [
+      '  const firstChild = includeFirstAtoms ? atom.firstChild : firstNonFirstChild(atom);',
+      '  if (!firstChild) return true;',
+    ].join("\n"),
+    "empty structural atom selection",
+  );
+
+  // Array hit testing first selects a row, then erroneously visits children
+  // from every row again. Overlapping accent bounds in a later row can win a
+  // zero-distance tie over the fraction denominator that was actually clicked.
+  // Only matrix-level scripts remain outside the row traversal.
+  patched = replaceExactly(
+    patched,
+    [
+      '    if (!atom.isMultiline) {',
+      '      for (const child of atom.children) {',
+      '        const r = nearestAtomFromPointRecursive(mathfield, cache, child, x, y);',
+      '        if (r[0] <= result[0]) result = r;',
+      '      }',
+      '    }',
+    ].join("\n"),
+    [
+      '    if (!atom.isMultiline) {',
+      '      for (const branch of ["superscript", "subscript"]) {',
+      '        for (const child of atom.branch(branch) || []) {',
+      '          const r = nearestAtomFromPointRecursive(mathfield, cache, child, x, y);',
+      '          if (r[0] <= result[0]) result = r;',
+      '        }',
+      '      }',
+      '    }',
+    ].join("\n"),
+    "matrix row pointer hit testing",
+  );
+
+  // The serializer only recognizes ASCII alphanumerics as a mathbf run. An
+  // accent must serialize its body again, so upright bold Delta becomes bm,
+  // which loses the explicit upright intent used by subsequent style toggles.
+  patched = replaceExactly(
+    patched,
+    '    if (/^[a-zA-Z0-9]+$/.test(value))',
+    '    if (/^[a-zA-Z0-9]+$/.test(value) || (x.every((atom) => atom.style.variant === "normal" && atom.style.variantStyle === "bold") && /^[a-zA-Z0-9ΓΔΘΛΞΠΣΥΦΨΩ]+$/.test(value)))',
+    "upright bold uppercase Greek serialization",
+  );
+
+  // getAtoms([0, -1]) previously excluded sentinel-only structures (e.g.
+  // \\vec{}), leaving them behind to accumulate on macro reparse and setValue.
+  // Even with selection corrected above, a document replacement must start
+  // from a fresh root, including when the previous root was a multiline array.
+  patched = replaceExactly(
+    patched,
+    '    else if (options.insertionMode === "replaceAll") model.deleteAtoms();',
+    [
+      '    else if (options.insertionMode === "replaceAll") {',
+      '      model.root = new Atom({ type: "root", mode: "math", body: [] });',
+      '      model.position = 0;',
+      '    }',
+    ].join("\n"),
+    "complete model replacement",
+  );
 
   patched = replaceExactly(
     patched,

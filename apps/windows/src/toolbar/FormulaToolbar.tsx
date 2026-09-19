@@ -1062,10 +1062,7 @@ export function FormulaToolbar({
       sectionStart,
       section.offsetLeft + section.offsetWidth - strip.clientWidth,
     );
-    strip.scrollTo({
-      left: edge === "end" ? sectionEnd : sectionStart,
-      behavior: "smooth",
-    });
+    strip.scrollLeft = edge === "end" ? sectionEnd : sectionStart;
     setActiveCategory(category);
     root
       .querySelector<HTMLElement>(`.toolbar-tab[data-category="${category}"]`)
@@ -1078,7 +1075,8 @@ export function FormulaToolbar({
   };
 
   useLayoutEffect(() => {
-    const activeTab = toolbarRef.current?.querySelector<HTMLElement>(
+    const root = toolbarRef.current;
+    const activeTab = root?.querySelector<HTMLElement>(
       `.toolbar-tab[data-category="${activeCategory}"]`,
     );
     activeTab?.scrollIntoView({
@@ -1086,7 +1084,30 @@ export function FormulaToolbar({
       inline: "nearest",
       behavior: "auto",
     });
-  }, [activeCategory]);
+
+    if (layout !== "horizontal" || activeView !== "tools") return;
+    const strip = root?.querySelector<HTMLElement>(
+      ".template-strip.is-continuous-categories",
+    );
+    const section = strip?.querySelector<HTMLElement>(
+      `[data-toolbar-category-section="${activeCategory}"]`,
+    );
+    if (!strip || !section) return;
+
+    // Horizontal row-count changes reflow every category section. Keep the
+    // active category anchored to its new geometry immediately; otherwise the
+    // old scrollLeft can leave the selected section far outside the viewport.
+    const targetLeft = Math.max(
+      0,
+      Math.min(
+        section.offsetLeft,
+        Math.max(0, strip.scrollWidth - strip.clientWidth),
+      ),
+    );
+    if (Math.abs(strip.scrollLeft - targetLeft) > 1) {
+      strip.scrollTo({ left: targetLeft, top: 0, behavior: "auto" });
+    }
+  }, [activeCategory, activeView, horizontalRowCount, layout]);
 
   useEffect(() => {
     if (layout !== "horizontal" || activeView !== "tools") return;
@@ -1307,13 +1328,24 @@ export function FormulaToolbar({
             (availableHeight + rowGap) / (targetRowHeight + rowGap),
           ),
         );
-        const matrixPickerSize = Math.max(
+        const matrixMainWidth = Math.max(
           40,
-          Math.min(152, Math.floor(availableHeight - 8)),
+          effectiveFormulaToolButtonSize * 5 - 44,
+        );
+        const matrixPickerSize = Math.max(
+          32,
+          Math.min(
+            matrixMainWidth,
+            Math.floor(availableHeight - 32),
+          ),
         );
 
         root.style.setProperty("--toolbar-row-count", String(nextRowCount));
         root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty(
+          "--matrix-panel-height",
+          `${Math.max(56, Math.floor(availableHeight))}px`,
+        );
         root.dataset.toolbarRowCount = String(nextRowCount);
         setHorizontalRowCount((current) =>
           current === nextRowCount ? current : nextRowCount,
@@ -1323,12 +1355,87 @@ export function FormulaToolbar({
 
     const observer = new ResizeObserver(measureRows);
     observer.observe(root);
+    observer.observe(strip);
     measureRows();
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
   }, [activeCategory, activeView, effectiveFormulaToolButtonSize, layout]);
+
+  useLayoutEffect(() => {
+    if (layout === "horizontal" || activeView !== "tools") return;
+    const root = toolbarRef.current;
+    const strip = root?.querySelector<HTMLElement>(".template-strip");
+    if (!root || !strip) return;
+
+    let frame = 0;
+    const measureMatrix = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const styles = window.getComputedStyle(strip);
+        const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+        const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+        const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+        const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+        const availableHeight = Math.max(
+          0,
+          strip.clientHeight - paddingTop - paddingBottom,
+        );
+        const availableWidth = Math.max(
+          0,
+          strip.clientWidth - paddingLeft - paddingRight,
+        );
+        const railWidth = 32;
+        const builderGap = 6;
+        const builderHorizontalPadding = 12;
+        const headingHeight = 20;
+        const insertHeight = 28;
+        const verticalGaps = 10;
+        const builderVerticalPadding = 12;
+        const widthBound = Math.max(
+          44,
+          availableWidth - railWidth - builderGap - builderHorizontalPadding,
+        );
+        const heightBound = Math.max(
+          44,
+          availableHeight -
+            headingHeight -
+            insertHeight -
+            verticalGaps -
+            builderVerticalPadding,
+        );
+        const matrixPickerSize = Math.max(
+          44,
+          Math.min(220, Math.floor(widthBound), Math.floor(heightBound)),
+        );
+        const matrixPanelHeight = Math.max(
+          112,
+          Math.min(
+            Math.floor(availableHeight),
+            matrixPickerSize +
+              headingHeight +
+              insertHeight +
+              verticalGaps +
+              builderVerticalPadding,
+          ),
+        );
+
+        root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty("--matrix-panel-height", `${matrixPanelHeight}px`);
+        root.dataset.matrixPickerSize = String(matrixPickerSize);
+      });
+    };
+
+    const observer = new ResizeObserver(measureMatrix);
+    observer.observe(root);
+    observer.observe(strip);
+    measureMatrix();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [activeCategory, activeView, layout]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1670,44 +1777,62 @@ export function FormulaToolbar({
       className="matrix-builder"
       aria-label={isEn ? "Custom matrix" : "自定义矩阵"}
     >
-      <div className="matrix-options-column">
+      <div className="matrix-main-picker">
         <div className="matrix-builder-heading">
-          <strong>{isEn ? "Custom matrix" : "自定义矩阵"}</strong>
+          <strong>{isEn ? "Matrix" : "矩阵"}</strong>
           <span className="matrix-size-badge" aria-live="polite">
             {previewRows} × {previewColumns}
           </span>
         </div>
-        <div className="matrix-delimiter-picker">
-          <span className="matrix-control-label">
-            {isEn ? "Delimiter" : "边界样式"}
-          </span>
+        <div className="matrix-size-picker">
           <div
-            className="matrix-delimiter-options"
-            role="group"
-            aria-label={isEn ? "Matrix delimiter" : "矩阵边界"}
+            className="matrix-size-grid"
+            role="grid"
+            aria-label={
+              isEn
+                ? "Select matrix rows and columns"
+                : "选择矩阵行数和列数"
+            }
+            aria-rowcount={10}
+            aria-colcount={10}
+            onPointerLeave={() => setMatrixHover(null)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setMatrixHover(null);
+              }
+            }}
           >
-            {matrixDelimiterOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={matrixDelimiter === option.id ? "is-active" : ""}
-                aria-pressed={matrixDelimiter === option.id}
-                onClick={() => setMatrixDelimiter(option.id)}
-                title={isEn ? option.labelEn : option.labelZh}
-                aria-label={isEn ? option.labelEn : option.labelZh}
-              >
-                <MathPreview
-                  latex={option.preview}
+            {matrixGridCells.map(({ row, column }) => {
+              const previewed = row <= previewRows && column <= previewColumns;
+              const selectedCorner = row === matrixRows && column === matrixColumns;
+              return (
+                <button
+                  key={`${row}-${column}`}
+                  type="button"
+                  role="gridcell"
                   className={
-                    previewMode === "static" ? "toolbar-static-preview" : ""
+                    "matrix-size-cell" +
+                    (previewed ? " is-previewed" : "") +
+                    (selectedCorner ? " is-selected-corner" : "")
                   }
-                  fit
-                  staticLayout={previewMode === "static"}
-                  maximumFitScale={1.15}
-                  fitInsetRatio={0.72}
+                  aria-label={
+                    isEn
+                      ? `${row} rows by ${column} columns`
+                      : `${row} 行 ${column} 列`
+                  }
+                  aria-selected={selectedCorner}
+                  data-matrix-rows={row}
+                  data-matrix-columns={column}
+                  onPointerEnter={() => setMatrixHover({ rows: row, columns: column })}
+                  onFocus={() => setMatrixHover({ rows: row, columns: column })}
+                  onClick={() => {
+                    setMatrixRows(row);
+                    setMatrixColumns(column);
+                    setMatrixHover(null);
+                  }}
                 />
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
         <button
@@ -1729,56 +1854,38 @@ export function FormulaToolbar({
             : `插入 ${matrixRows} × ${matrixColumns}`}
         </button>
       </div>
-      <div className="matrix-size-picker">
-        <span className="matrix-control-label">{isEn ? "Size" : "矩阵尺寸"}</span>
+
+      <div className="matrix-compact-options">
+        <span className="matrix-control-label">
+          {isEn ? "Border" : "边界"}
+        </span>
         <div
-          className="matrix-size-grid"
-          role="grid"
-          aria-label={
-            isEn
-              ? "Select matrix rows and columns"
-              : "选择矩阵行数和列数"
-          }
-          aria-rowcount={10}
-          aria-colcount={10}
-          onPointerLeave={() => setMatrixHover(null)}
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setMatrixHover(null);
-            }
-          }}
+          className="matrix-delimiter-options"
+          role="group"
+          aria-label={isEn ? "Matrix delimiter" : "矩阵边界"}
         >
-          {matrixGridCells.map(({ row, column }) => {
-            const previewed = row <= previewRows && column <= previewColumns;
-            const selectedCorner = row === matrixRows && column === matrixColumns;
-            return (
-              <button
-                key={`${row}-${column}`}
-                type="button"
-                role="gridcell"
+          {matrixDelimiterOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={matrixDelimiter === option.id ? "is-active" : ""}
+              aria-pressed={matrixDelimiter === option.id}
+              onClick={() => setMatrixDelimiter(option.id)}
+              title={isEn ? option.labelEn : option.labelZh}
+              aria-label={isEn ? option.labelEn : option.labelZh}
+            >
+              <MathPreview
+                latex={option.preview}
                 className={
-                  "matrix-size-cell" +
-                  (previewed ? " is-previewed" : "") +
-                  (selectedCorner ? " is-selected-corner" : "")
+                  previewMode === "static" ? "toolbar-static-preview" : ""
                 }
-                aria-label={
-                  isEn
-                    ? `${row} rows by ${column} columns`
-                    : `${row} 行 ${column} 列`
-                }
-                aria-selected={selectedCorner}
-                data-matrix-rows={row}
-                data-matrix-columns={column}
-                onPointerEnter={() => setMatrixHover({ rows: row, columns: column })}
-                onFocus={() => setMatrixHover({ rows: row, columns: column })}
-                onClick={() => {
-                  setMatrixRows(row);
-                  setMatrixColumns(column);
-                  setMatrixHover(null);
-                }}
+                fit
+                staticLayout={previewMode === "static"}
+                maximumFitScale={1.15}
+                fitInsetRatio={0.72}
               />
-            );
-          })}
+            </button>
+          ))}
         </div>
       </div>
     </section>

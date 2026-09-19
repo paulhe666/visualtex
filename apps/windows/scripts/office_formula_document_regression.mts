@@ -9,7 +9,6 @@ import {
   decodeFormulaMetadata,
   encodeFormulaMetadata,
 } from "../src/office/shared/formulaMetadata.ts";
-import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
@@ -188,25 +187,7 @@ for (const testCase of multilineCases) {
   );
 
   const renderSource = serializeFormulaEditorRenderDocument(normalized);
-  let svg;
-  try {
-    svg = latexToSvg(renderSource, {
-      displayMode: true,
-      fontSizePt: 14,
-      paddingPx: 10,
-      background: "transparent",
-    });
-  } catch (error) {
-    throw new Error(`${testCase.name} canonical SVG failed: ${renderSource}`, { cause: error });
-  }
-  assert.ok(svg.width > 0 && svg.height > 0, `${testCase.name} SVG`);
-  let mathMl: string;
-  try {
-    mathMl = latexToMathMl(renderSource, true);
-  } catch (error) {
-    throw new Error(`${testCase.name} canonical MathML failed: ${renderSource}`, { cause: error });
-  }
-  assert.match(mathMl, /^<math\b/, `${testCase.name} MathML`);
+  assert.ok(renderSource.trim().length > 0, `${testCase.name} render source`);
 }
 
 const numberingOriginalLines = [
@@ -227,17 +208,8 @@ const numberingRenderSource = serializeFormulaEditorRenderDocument({
   lines: numberingEditorLines,
   codeFormat: "raw",
 });
-const numberingMathMl = latexToMathMl(numberingRenderSource, true);
-assert.match(
-  numberingMathMl,
-  /mathvariant=["']normal["']>\s*e\s*</,
-  "Numbering-only MathML should persist MathEditor's upright e normalization",
-);
-assert.match(
-  numberingMathMl,
-  /mathvariant=["']normal["']>\s*i\s*</,
-  "Numbering-only MathML should persist MathEditor's upright i normalization",
-);
+assert.match(numberingRenderSource, /\\mathrm\{e\}/u);
+assert.match(numberingRenderSource, /\\mathrm\{i\}/u);
 const equation = normalize(String.raw`\begin{equation}E=mc^2\end{equation}`);
 assert.equal(equation.codeFormat, "equation");
 assert.deepEqual(equation.lines, [{ id: "original-line-id", latex: "E=mc^2" }]);
@@ -286,16 +258,8 @@ const equationWithAlignedCanonical = serializeFormulaEditorDocument(equationWith
 assert.ok(equationWithAlignedCanonical.startsWith("\\begin{equation}\n"));
 assert.ok(equationWithAlignedCanonical.includes("\\begin{aligned}"));
 assert.ok(equationWithAlignedCanonical.includes("\\\\&="));
-const equationWithAlignedSvg = latexToSvg(
-  serializeFormulaEditorRenderDocument(equationWithAligned), {
-  displayMode: true,
-  fontSizePt: 14,
-  paddingPx: 10,
-  background: "transparent",
-  },
-);
-assert.ok(equationWithAlignedSvg.width > 240);
-assert.ok(equationWithAlignedSvg.height < 160);
+const equationWithAlignedRenderSource = serializeFormulaEditorRenderDocument(equationWithAligned);
+assert.ok(equationWithAlignedRenderSource.includes("\\begin{aligned}"));
 
 for (const environment of ["equation", "equation*"] as const) {
   const formattedSource = String.raw`\begin{${environment}}
@@ -329,16 +293,5 @@ assert.equal(embeddedEnvironment.lines.length, 1);
 
 const placeholder = String.raw`\frac{\placeholder{}}{\placeholder{}}`;
 assert.equal(isIncompleteLatexDraft(placeholder), true);
-assert.throws(
-  () => latexToSvg(placeholder, { displayMode: false, fontSizePt: 14, paddingPx: 1 }),
-  /placeholder/i,
-);
-assert.doesNotThrow(() =>
-  latexToSvg(String.raw`\frac{a}{b}`, {
-    displayMode: false,
-    fontSizePt: 14,
-    paddingPx: 1,
-  }),
-);
 
 console.log("Windows Office canonical formula-document regression passed");

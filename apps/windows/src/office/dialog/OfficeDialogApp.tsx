@@ -34,7 +34,7 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyFormulaLines,
+  copyFormulaLinesUniversal,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type {
@@ -402,6 +402,7 @@ export function OfficeDialogApp() {
   const commitFromShortcutRef = useRef<() => void>(() => undefined);
   const closeFromNativeWindowRef = useRef<() => void>(() => undefined);
   const exportRunIdRef = useRef(0);
+  const activeSessionIdentityRef = useRef({ sessionId: "", formulaId: "" });
   const conversionStartedRef = useRef(false);
   const batchConversionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const initialEditorFocusSessionRef = useRef("");
@@ -447,6 +448,13 @@ export function OfficeDialogApp() {
   const { sessionId, session, loading, error, reload, save } = useOfficeSession();
 
   useEffect(() => {
+    activeSessionIdentityRef.current = {
+      sessionId: session?.id ?? "",
+      formulaId: session?.formulaId ?? "",
+    };
+  }, [session?.id, session?.formulaId]);
+
+  useEffect(() => {
     if (readLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY) !== "done") {
       useEditorStore.getState().setZoom(0.6);
       writeLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY, "done");
@@ -474,6 +482,7 @@ export function OfficeDialogApp() {
   const setTheme = useEditorStore((state) => state.setTheme);
   const setEditorLayout = useEditorStore((state) => state.setEditorLayout);
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
   const addHistory = useEditorStore((state) => state.addHistory);
@@ -757,7 +766,8 @@ export function OfficeDialogApp() {
       }
     };
     const formulaHasFocus = () =>
-      document.activeElement?.tagName === "MATH-FIELD";
+      document.activeElement?.tagName === "MATH-FIELD" ||
+      document.activeElement?.classList.contains("vt-core-input") === true;
     const focusWhenVisible = () => {
       if (document.visibilityState === "visible") focusFirstLine();
     };
@@ -833,7 +843,13 @@ export function OfficeDialogApp() {
       applyEntry: async (entry, direction) => {
         const target = applyHistoryEntryToEditor(entry, direction);
         if (!target) return;
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (
+          entry.type === "add-line" ||
+          entry.type === "remove-line" ||
+          entry.type === "replace-document"
+        ) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
         await editorRef.current?.restoreSelection(
           target.lineId,
           target.latex,
@@ -877,14 +893,14 @@ export function OfficeDialogApp() {
   );
   const sessionRenderedLatex = persistedRenderedLatex;
 
-  const generateSvgExportResult = useCallback((
+  const generateSvgExportResult = useCallback(async (
     sourceLatex: string = currentRenderedLatex,
     sourceDisplayMode: "inline" | "block" = displayMode,
     sourceFontSizePt: number = officeFontSizePt,
     sourceFormulaLetterFont: FormulaLetterFont = formulaLetterFont,
     sourceFormulaChineseFont: FormulaChineseFont = formulaChineseFont,
     sourceObjectMode: OfficeObjectMode = objectMode,
-  ): OfficeExportResult | null => {
+  ): Promise<OfficeExportResult | null> => {
     if (!sourceLatex.trim()) return null;
     // A MathType OLE's Word preview represents MathType, not VisualTeX's editor
     // theme.  The standalone Equation Native prefix uses MathType's Times-based
@@ -905,7 +921,7 @@ export function OfficeDialogApp() {
     const outputFontSizePt = sourceFontSizePt;
     const outputDisplayMode = isMathTypeOle || sourceDisplayMode === "block";
     const mathTypeVerticalPaddingPx = outputFontSizePt * 0.5;
-    const svg = latexToSvg(sourceLatex, {
+    const svg = await latexToSvg(sourceLatex, {
       displayMode: outputDisplayMode,
       fontSizePt: outputFontSizePt,
       paddingPx: isMathTypeOle ? 0 : sourceDisplayMode === "inline" ? 1 : 10,
@@ -919,7 +935,7 @@ export function OfficeDialogApp() {
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
     });
-    const rawMathMl = latexToMathMl(sourceLatex, outputDisplayMode);
+    const rawMathMl = await latexToMathMl(sourceLatex, outputDisplayMode);
     const mathMl = isMathTypeOle
       ? annotateMathTypeAlignmentGeometry(rawMathMl, svg.svg, svg.width)
       : rawMathMl;
@@ -969,7 +985,7 @@ export function OfficeDialogApp() {
     sourceDisplayMode: "inline" | "block" = displayMode,
     sourceFontSizePt: number = officeFontSizePt,
   ): Promise<OfficeExportResult | null> => {
-    const base = generateSvgExportResult(
+    const base = await generateSvgExportResult(
       sourceLatex,
       sourceDisplayMode,
       sourceFontSizePt,
@@ -1011,7 +1027,7 @@ export function OfficeDialogApp() {
     const sourceFormulaChineseFont =
       sourceSession.originalMetadata?.formulaChineseFont ?? formulaChineseFont;
     if (sourceSession.objectMode === "wordOmml") {
-      const mathMl = latexToMathMl(
+      const mathMl = await latexToMathMl(
         conversionLatex,
         sourceSession.displayMode === "block",
       );
@@ -1035,7 +1051,7 @@ export function OfficeDialogApp() {
         formulaChineseFont: sourceFormulaChineseFont,
       };
     }
-    const base = generateSvgExportResult(
+    const base = await generateSvgExportResult(
       conversionLatex,
       sourceSession.displayMode,
       conversionFontSizePt,
@@ -1325,105 +1341,81 @@ export function OfficeDialogApp() {
       saveIncompleteDraft();
       return;
     }
-    try {
-      // MathJax SVG generation is synchronous. Persist it immediately instead
-      // of waiting for PNG rasterization, so closing the Office dialog cannot
-      // lose the final keystrokes.
-      const exportResult = generateSvgExportResult(
-        sessionRenderedLatex,
-        displayMode,
-        officeFontSizePt,
-        formulaLetterFont,
-        formulaChineseFont,
-        objectMode,
+    const draftUpdate = {
+      title,
+      lines: persistedLines,
+      activeLineId: persistedActiveLineId,
+      codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
+      displayMode,
+      objectMode,
+      numbered: displayMode === "block" && numbered,
+      mathTypeNumberPosition,
+      fontSizePt: officeFontSizePt,
+      dirty,
+      status: "editing",
+      autoCommitOnClose,
+      exportResult: null,
+      exportWidth: 0,
+      exportHeight: 0,
+      error: null,
+    } as const;
+    latestCompleteExportRef.current = null;
+    void save(draftUpdate).catch((reason) => {
+      if (runId !== exportRunIdRef.current) return;
+      setToast(
+        readErrorMessage(
+          reason,
+          isEn ? "Unable to save the Office formula" : "无法保存 Office 公式",
+        ),
       );
-      const draftUpdate = {
-        title,
-        lines: persistedLines,
-        activeLineId: persistedActiveLineId,
-        codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
-        displayMode,
-        objectMode,
-        numbered: displayMode === "block" && numbered,
-        mathTypeNumberPosition,
-        fontSizePt: officeFontSizePt,
-        dirty,
-        status: "editing",
-        autoCommitOnClose,
-        exportResult,
-        exportWidth: exportResult?.width ?? 0,
-        exportHeight: exportResult?.height ?? 0,
-        error: null,
-      } as const;
-      void save(draftUpdate)
-        .then((saved) => {
-          if (saved && runId === exportRunIdRef.current) {
-            lastSavedFingerprintRef.current = currentFingerprint;
-          }
-        })
-        .catch((reason) => {
-          const message =
-            reason instanceof Error
-              ? reason.message
-              : isEn
-                ? "Unable to save the Office formula"
-                : "无法保存 Office 公式";
-          setToast(message);
-        });
-      // Windows OLE inserts a PNG file. Keep rasterization off the critical
-      // keystroke-save path, but persist the full export as soon as it is
-      // ready so the title-bar close button has a committable final draft.
-      if (
-        exportResult &&
-        !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
-      ) {
-        void generateExportResult(
+    });
+    void (async () => {
+      try {
+        const base = await generateSvgExportResult(
           sessionRenderedLatex,
           displayMode,
           officeFontSizePt,
-        ).then((completeExport) => {
-            if (
-              !completeExport?.pngBase64 ||
-              runId !== exportRunIdRef.current ||
-              finalizingRef.current
-            ) {
-              return;
-            }
-            latestCompleteExportRef.current = {
-              fingerprint: currentFingerprint,
-              exportResult: completeExport,
-            };
-            return save({
-              ...draftUpdate,
-              exportResult: completeExport,
-              exportWidth: completeExport.width,
-              exportHeight: completeExport.height,
-            }).then((saved) => {
-              if (saved && runId === exportRunIdRef.current) {
-                lastSavedFingerprintRef.current = currentFingerprint;
-              }
-            });
-          })
-          .catch(() => {
-            // The immediate SVG save is still recoverable. The explicit
-            // insert/update path reports rasterization errors to the user.
-          });
-      } else {
-        latestCompleteExportRef.current = null;
+          formulaLetterFont,
+          formulaChineseFont,
+          objectMode,
+        );
+        if (!base || runId !== exportRunIdRef.current || finalizingRef.current) return;
+        const requirePng =
+          objectMode !== "wordOmml" &&
+          objectMode !== "mathTypeOle" &&
+          !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT);
+        const completeExport = requirePng
+          ? await rasterizeSvgExportResult(base)
+          : base;
+        if (runId !== exportRunIdRef.current || finalizingRef.current) return;
+        if (requirePng && !completeExport.pngBase64) return;
+        latestCompleteExportRef.current = {
+          fingerprint: currentFingerprint,
+          exportResult: completeExport,
+        };
+        const saved = await save({
+          ...draftUpdate,
+          exportResult: completeExport,
+          exportWidth: completeExport.width,
+          exportHeight: completeExport.height,
+        });
+        if (saved && runId === exportRunIdRef.current) {
+          lastSavedFingerprintRef.current = currentFingerprint;
+        }
+      } catch (reason) {
+        if (runId !== exportRunIdRef.current || finalizingRef.current) return;
+        if (isIncompleteLatexDraft(latex, reason)) {
+          saveIncompleteDraft();
+          return;
+        }
+        setToast(
+          readErrorMessage(
+            reason,
+            isEn ? "Unable to export the Office formula" : "无法导出 Office 公式",
+          ),
+        );
       }
-    } catch (reason) {
-      if (isIncompleteLatexDraft(latex, reason)) {
-        saveIncompleteDraft();
-        return;
-      }
-      const message =
-        reason instanceof Error
-          ? reason.message
-          : isEn
-            ? "Unable to export the Office formula"
-            : "无法导出 Office 公式";
-      setToast(message);
-    }
+    })();
   }, [
     sessionId,
     session?.id,
@@ -1456,22 +1448,17 @@ export function OfficeDialogApp() {
     const finalDraftUpdate = (status: "editing" | "committing") => {
       const cached = latestCompleteExportRef.current;
       const unchangedEdit = session?.mode === "edit" && !dirty;
+      // Unload/keepalive is deliberately synchronous. Never start a fresh
+      // WASM/font export here; use only an export that already completed while
+      // the editor was open. The regular Session effect persists new core
+      // exports as soon as their fingerprint is current.
       const exportResult = unchangedEdit
         ? cached?.fingerprint === currentFingerprint
           ? cached.exportResult
           : session?.exportResult ?? null
         : cached?.fingerprint === currentFingerprint
           ? cached.exportResult
-          : isIncompleteLatexDraft(latex)
-            ? null
-            : generateSvgExportResult(
-                sessionRenderedLatex,
-                displayMode,
-                officeFontSizePt,
-                formulaLetterFont,
-                formulaChineseFont,
-                objectMode,
-              );
+          : null;
       return {
         title,
         lines: persistedLines,
@@ -1611,7 +1598,10 @@ export function OfficeDialogApp() {
     const markEditorReady = () => {
       if (cancelled) return;
       const field = document.querySelector<HTMLElement>("math-field");
-      if (!field?.isConnected && attempt < 20) {
+      const coreEditor = document.querySelector<HTMLElement>(
+        '[data-engine="visualtex-core"] .vt-core-input',
+      );
+      if (!field?.isConnected && !coreEditor?.isConnected && attempt < 20) {
         attempt += 1;
         window.setTimeout(markEditorReady, 16);
         return;
@@ -1924,13 +1914,15 @@ export function OfficeDialogApp() {
   const saveCurrentSession = useCallback(
     async (status: "editing" | "committing" | "cancelled") => {
       if (!session) throw new Error("Office Session 尚未加载。");
-      const exportResult =
-        status === "cancelled"
-          ? session.exportResult
-          : objectMode === "wordOmml" ||
-              objectMode === "mathTypeOle" ||
-              (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
-            ? generateSvgExportResult(
+      let exportResult: OfficeExportResult | null;
+      if (status === "cancelled") {
+        exportResult = session.exportResult;
+      } else {
+        exportResult =
+          objectMode === "wordOmml" ||
+          objectMode === "mathTypeOle" ||
+          (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+            ? await generateSvgExportResult(
                 sessionRenderedLatex,
                 displayMode,
                 officeFontSizePt,
@@ -1943,6 +1935,7 @@ export function OfficeDialogApp() {
                 displayMode,
                 officeFontSizePt,
               );
+      }
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
       }
@@ -2107,13 +2100,14 @@ export function OfficeDialogApp() {
   }, [sessionId]);
 
   const handleCopy = async () => {
-    await copyFormulaLines(lines, latexCodeFormat);
+    await copyFormulaLinesUniversal(lines, latexFormatProfile);
     addHistory(latex);
     setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
   };
 
   if (
     loading ||
+    (session && loadedSessionIdRef.current !== session.id) ||
     (session?.host === "powerpoint" &&
       session.mode === "create" &&
       session.status === "created" &&
@@ -2141,35 +2135,17 @@ export function OfficeDialogApp() {
     );
   }
 
+  if (IS_VSTO_CONVERT_RUNTIME) {
+    return (
+      <div className="office-dialog-state" data-office-headless-converter>
+        <LoaderCircle className="is-spinning" size={28} />
+        <strong>{isEn ? "Converting Office formulas…" : "正在转换 Office 公式…"}</strong>
+      </div>
+    );
+  }
+
   const officeHeaderLeadingControls = (
     <>
-      {session.host === "word" ? (
-        <div
-          className="office-display-mode-setting"
-          role="group"
-          aria-label={isEn ? "Word formula layout" : "Word 公式排版"}
-        >
-          <button
-            type="button"
-            className={displayMode === "inline" ? "is-active" : ""}
-            onClick={() => {
-              setDisplayMode("inline");
-              setNumbered(false);
-            }}
-            disabled={session.mode === "edit"}
-          >
-            {isEn ? "Inline" : "行内"}
-          </button>
-          <button
-            type="button"
-            className={displayMode === "block" ? "is-active" : ""}
-            onClick={() => setDisplayMode("block")}
-            disabled={session.mode === "edit"}
-          >
-            {isEn ? "Display" : "行间"}
-          </button>
-        </div>
-      ) : null}
       {session.host === "word" &&
       ((session.mode === "create" && session.objectMode !== "wordOmml") ||
         (session.mode === "edit" &&

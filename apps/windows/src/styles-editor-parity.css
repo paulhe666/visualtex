@@ -35,6 +35,30 @@
   opacity: 0.72;
 }
 
+.formula-formatting-subdivider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.formula-formatting-button.is-persistent-action::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.38;
+}
+
+.formula-formatting-button.is-persistent-action.is-active::before {
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
 .formula-formatting-button.is-color-action::after {
   content: "";
   position: absolute;

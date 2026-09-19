@@ -99,6 +99,7 @@ const editorSettingKeys = [
   "zoom",
   "formulaAlignment",
   "latexCodeFormat",
+  "latexFormatProfile",
   "editorLayout",
   "language",
   "sourceOpen",

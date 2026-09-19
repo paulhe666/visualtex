@@ -195,13 +195,16 @@ async function main() {
         const rows = [...document.querySelectorAll('.formula-line')];
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         const modes = persisted?.state?.lines?.map((line) => line.mode) ?? [];
-        const toggles = rows.map((row) => ({
-          id: row.getAttribute('data-line-id'),
-          inlineActive: row.querySelector('.formula-line-mode-toggle button:first-child')?.classList.contains('is-active') ?? false,
-          displayActive: row.querySelector('.formula-line-mode-toggle button:last-child')?.classList.contains('is-active') ?? false,
-        }));
+        const toggles = rows.map((row) => {
+          const button = row.querySelector('[data-formula-line-mode-toggle]');
+          return {
+            id: row.getAttribute('data-line-id'),
+            mode: button?.getAttribute('data-formula-line-mode') ?? null,
+            text: button?.textContent?.trim() ?? '',
+          };
+        });
         return {
-          ready: rows.length === 2 && toggles.every((item) => item.inlineActive || item.displayActive),
+          ready: rows.length === 2 && toggles.every((item) => item.mode === 'inline' || item.mode === 'display'),
           modes,
           toggles,
           format: persisted?.state?.latexCodeFormat ?? null,
@@ -212,14 +215,14 @@ async function main() {
     assert.equal(initial.format, "mixed-inline-display", JSON.stringify(initial));
     assert.deepEqual(initial.modes, ["inline", "display"], JSON.stringify(initial));
     assert.deepEqual(
-      initial.toggles.map((item) => [item.inlineActive, item.displayActive]),
-      [[true, false], [false, true]],
+      initial.toggles.map((item) => [item.mode, item.text]),
+      [["inline", "$"], ["display", "$$"]],
       JSON.stringify(initial),
     );
 
     await client.evaluate(`(() => {
       const row = document.querySelector('.formula-line[data-line-id="mixed-display"]');
-      row?.querySelector('.formula-line-mode-toggle button:first-child')?.click();
+      row?.querySelector('[data-formula-line-mode-toggle]')?.click();
       return true;
     })()`);
     const toggled = await waitForEvaluation(
@@ -229,7 +232,9 @@ async function main() {
         const row = document.querySelector('.formula-line[data-line-id="mixed-display"]');
         const mode = persisted?.state?.lines?.find((line) => line.id === 'mixed-display')?.mode;
         return {
-          ready: mode === 'inline' && Boolean(row?.querySelector('.formula-line-mode-toggle button:first-child.is-active')),
+          ready:
+            mode === 'inline' &&
+            row?.querySelector('[data-formula-line-mode-toggle]')?.getAttribute('data-formula-line-mode') === 'inline',
           mode,
         };
       })()`,
@@ -245,7 +250,7 @@ async function main() {
       field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
       return true;
     })()`);
-    await dispatchEnter(client, 1); // Alt+Enter => display row on Windows.
+    await dispatchEnter(client, 1); // Alt+Enter forces a display row.
     const afterAltEnter = await waitForEvaluation(
       client,
       `(() => {
@@ -257,48 +262,70 @@ async function main() {
           activeLineId: persisted?.state?.activeLineId ?? null,
         };
       })()`,
-      "Alt+Enter display row",
+      "Alt+Enter forces display row",
     );
     assert.deepEqual(afterAltEnter.modes, ["inline", "inline", "display"]);
 
-    await dispatchEnter(client, 8); // Shift+Enter => inline row.
+    await client.evaluate(`(() => {
+      const field = document.querySelector('.formula-line[data-line-id="mixed-inline"] math-field');
+      field.position = field.lastOffset;
+      field.selection = { ranges: [[field.lastOffset, field.lastOffset]], direction: 'none' };
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      return true;
+    })()`);
+    await dispatchEnter(client, 8); // Shift+Enter => internal multiline environment.
     const afterShiftEnter = await waitForEvaluation(
       client,
       `(() => {
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         const lines = persisted?.state?.lines ?? [];
+        const first = lines[0];
         return {
-          ready: lines.length === 4 && lines[3]?.mode === 'inline',
+          ready:
+            lines.length === 3 &&
+            /\\\\begin\\{gathered\\}/.test(first?.latex ?? ''),
           modes: lines.map((line) => line.mode),
-          activeLineId: persisted?.state?.activeLineId ?? null,
+          firstLatex: first?.latex ?? '',
+          firstMode:
+            document.querySelector('.formula-line[data-line-id="mixed-inline"] [data-formula-line-mode-toggle]')?.getAttribute('data-formula-line-mode') ?? null,
+          firstToggleDisabled:
+            document.querySelector('.formula-line[data-line-id="mixed-inline"] [data-formula-line-mode-toggle]')?.disabled === true,
         };
       })()`,
-      "Shift+Enter inline row",
+      "Shift+Enter internal gathered row",
     );
-    assert.deepEqual(afterShiftEnter.modes, ["inline", "inline", "display", "inline"]);
+    assert.deepEqual(afterShiftEnter.modes, ["display", "inline", "display"]);
+    assert.equal(afterShiftEnter.firstMode, "display", JSON.stringify(afterShiftEnter));
+    assert.equal(afterShiftEnter.firstToggleDisabled, true, JSON.stringify(afterShiftEnter));
 
-    await dispatchEnter(client, 0); // Plain Enter inherits inline.
+    await client.evaluate(`(() => {
+      const field = document.querySelector('.formula-line[data-line-id="mixed-display"] math-field');
+      field.position = field.lastOffset;
+      field.selection = { ranges: [[field.lastOffset, field.lastOffset]], direction: 'none' };
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      return true;
+    })()`);
+    await dispatchEnter(client, 0); // Plain Enter inherits the row mode.
     const inherited = await waitForEvaluation(
       client,
       `(() => {
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         const lines = persisted?.state?.lines ?? [];
         return {
-          ready: lines.length === 5 && lines[4]?.mode === 'inline',
+          ready: lines.length === 4 && lines[2]?.mode === 'inline',
           modes: lines.map((line) => line.mode),
           activeLineId: persisted?.state?.activeLineId ?? null,
         };
       })()`,
       "plain Enter inherited row mode",
     );
-    assert.deepEqual(
-      inherited.modes,
-      ["inline", "inline", "display", "inline", "inline"],
-    );
+    assert.deepEqual(inherited.modes, ["display", "inline", "inline", "display"]);
 
     await client.evaluate(`(() => {
-      const row = document.querySelector('.formula-line[data-line-id="mixed-inline"]');
-      row?.querySelector('.formula-line-mode-toggle button:last-child')?.click();
+      const row = document.querySelector('.formula-line[data-line-id="mixed-display"]');
+      row?.querySelector('[data-formula-line-mode-toggle]')?.click();
       return true;
     })()`);
     await waitForEvaluation(
@@ -306,7 +333,8 @@ async function main() {
       `(() => {
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         return {
-          ready: persisted?.state?.lines?.[0]?.mode === 'display',
+          ready:
+            persisted?.state?.lines?.find((line) => line.id === 'mixed-display')?.mode === 'display',
           modes: persisted?.state?.lines?.map((line) => line.mode) ?? [],
         };
       })()`,
@@ -320,31 +348,31 @@ async function main() {
         const rows = [...document.querySelectorAll('.formula-line')];
         const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
         const modes = persisted?.state?.lines?.map((line) => line.mode) ?? [];
-        const activeButtons = rows.map((row) => ({
-          inline: row.querySelector('.formula-line-mode-toggle button:first-child')?.classList.contains('is-active') ?? false,
-          display: row.querySelector('.formula-line-mode-toggle button:last-child')?.classList.contains('is-active') ?? false,
+        const toggles = rows.map((row) => ({
+          mode: row.querySelector('[data-formula-line-mode-toggle]')?.getAttribute('data-formula-line-mode') ?? null,
+          text: row.querySelector('[data-formula-line-mode-toggle]')?.textContent?.trim() ?? '',
         }));
         return {
-          ready: rows.length === 5 && activeButtons.every((item) => item.inline || item.display),
+          ready: rows.length === 4 && toggles.every((item) => item.mode === 'inline' || item.mode === 'display'),
           modes,
-          activeButtons,
+          toggles,
         };
       })()`,
       "mixed modes after reload",
     );
     assert.deepEqual(
       reopened.modes,
-      ["display", "inline", "display", "inline", "inline"],
+      ["display", "display", "inline", "display"],
       JSON.stringify(reopened),
     );
     assert.deepEqual(
-      reopened.activeButtons.map((item) => [item.inline, item.display]),
-      [[false, true], [true, false], [false, true], [true, false], [true, false]],
+      reopened.toggles.map((item) => [item.mode, item.text]),
+      [["display", "$$"], ["display", "$$"], ["inline", "$"], ["display", "$$"]],
       JSON.stringify(reopened),
     );
 
     console.log(
-      "Windows mixed inline/display editor regression passed: manual toggles, Alt/Shift/plain Enter and reload persistence",
+      "Windows universal row-mode regression passed: single-symbol row toggles, forced Alt+Enter display, Shift+Enter multiline, Enter inheritance and reload persistence",
     );
   } finally {
     client?.close();
