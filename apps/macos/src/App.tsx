@@ -487,9 +487,12 @@ function App() {
         setToast(
           error instanceof Error
             ? error.message
-            : isEn
-              ? "Unable to enable silent OCR"
-              : "无法启用静默 OCR",
+            : String(
+                error ||
+                  (isEn
+                    ? "Unable to enable silent OCR"
+                    : "无法启用静默 OCR"),
+              ),
         );
       });
     return () => {
