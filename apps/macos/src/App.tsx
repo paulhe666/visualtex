@@ -1170,7 +1170,10 @@ function App() {
       }
 
       if (!primaryModifier) return;
-      if (key === "n") {
+      if (key === "k" && event.shiftKey) {
+        event.preventDefault();
+        void handleKeypadModeToggle();
+      } else if (key === "n") {
         event.preventDefault();
         newFormula();
       } else if (key === "o") {
@@ -1463,15 +1466,16 @@ function App() {
       type="button"
       className={`keypad-mode-toggle${keypadMode ? " is-active" : ""}`}
       aria-pressed={keypadMode}
+      aria-keyshortcuts="Meta+Shift+K Control+Shift+K"
       data-keypad-mode-toggle
       title={
         keypadMode
           ? isEn
-            ? "Exit keypad mode"
-            : "退出小键盘模式"
+            ? "Exit keypad mode · Cmd/Ctrl+Shift+K"
+            : "退出小键盘模式 · ⌘/Ctrl+Shift+K"
           : isEn
-            ? "Enter keypad mode"
-            : "进入小键盘模式"
+            ? "Enter keypad mode · Cmd/Ctrl+Shift+K"
+            : "进入小键盘模式 · ⌘/Ctrl+Shift+K"
       }
       onClick={() => void handleKeypadModeToggle()}
     >

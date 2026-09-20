@@ -1373,7 +1373,7 @@ export function EditorWorkspace({
               </PortalOrInline>
               <PortalOrInline
                 target={
-                  !isOfficeWorkspace && editorLayout === "classic"
+                  !isOfficeWorkspace && !keypadMode && editorLayout === "classic"
                     ? desktopTopToolsMount ?? null
                     : null
                 }

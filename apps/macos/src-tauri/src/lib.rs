@@ -339,6 +339,16 @@ fn set_main_window_keypad_mode(app: AppHandle, enabled: bool) -> Result<(), Stri
 }
 
 #[tauri::command]
+fn minimize_visualtex_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
+    window
+        .minimize()
+        .map_err(|error| format!("Unable to minimize VisualTeX: {error}"))
+}
+
+#[tauri::command]
 fn get_app_window_configuration(app: AppHandle) -> Result<AppWindowConfiguration, String> {
     #[cfg(target_os = "macos")]
     let office_editor = office::macos_offline::configuration_office_editor_window_size(&app)
@@ -2096,6 +2106,7 @@ pub fn run() {
             apply_app_window_configuration,
             switch_main_window_mode,
             set_main_window_keypad_mode,
+            minimize_visualtex_main_window,
             system_math_glyphs::probe_macos_math_fonts,
             system_math_glyphs::extract_macos_math_glyph,
             get_ocr_provider_configuration,
