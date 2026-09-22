@@ -41,4 +41,38 @@ public sealed class MathTypeFenceRoundTripTests
         const string paired = "<math><mfenced open='{' close='}'><mi>x</mi></mfenced></math>";
         Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(leftOnly), MathTypeMtefCodec.SemanticSignature(paired));
     }
+
+    [Fact]
+    public void OneSidedWordFenceEqualsLooseLeftDelimiterAndTable()
+    {
+        const string loose =
+            "<math><mrow><mo fence='true' stretchy='true'>{</mo>"
+            + "<mtable><mtr><mtd><mi>x</mi></mtd><mtd><mi>y</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr></mtable>"
+            + "<mo fence='true' stretchy='true'></mo></mrow></math>";
+        const string word =
+            "<math><mfenced open='{' close=''><mtable>"
+            + "<mtr><mtd><mi>x</mi></mtd><mtd><mi>y</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr>"
+            + "</mtable></mfenced></math>";
+        Assert.Equal(
+            MathTypeMtefCodec.SemanticSignature(loose),
+            MathTypeMtefCodec.SemanticSignature(word));
+    }
+
+    [Fact]
+    public void NamedOperatorEqualsWordUprightLetterRun()
+    {
+        const string named =
+            "<math><msub><mi>x</mi><mo>max</mo></msub></math>";
+        const string upright =
+            "<math><msub><mi>x</mi><mrow>"
+            + "<mi mathvariant='normal'>m</mi>"
+            + "<mi mathvariant='normal'>a</mi>"
+            + "<mi mathvariant='normal'>x</mi>"
+            + "</mrow></msub></math>";
+        Assert.Equal(
+            MathTypeMtefCodec.SemanticSignature(named),
+            MathTypeMtefCodec.SemanticSignature(upright));
+    }
 }

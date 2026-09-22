@@ -1828,14 +1828,16 @@ internal static class WordOmmlConverter
         Range? result = null;
         try
         {
-            if (display)
-            {
-                followingEmptyParagraphGuard =
-                    TryCreateFollowingEmptyParagraphGuard(
-                        targetDocument,
-                        targetRange,
-                        out followingEmptyParagraphGuardText);
-            }
+            // Word's paragraph-level InsertXML can absorb an immediately
+            // following empty paragraph even when the inserted OMath is inline.
+            // Preserve that user-authored paragraph with a temporary ordinary
+            // text witness for every paragraph-local OMML replacement, then
+            // remove only the witness after Word has materialized the equation.
+            followingEmptyParagraphGuard =
+                TryCreateFollowingEmptyParagraphGuard(
+                    targetDocument,
+                    targetRange,
+                    out followingEmptyParagraphGuardText);
 
             markerRange =
                 targetRange.Duplicate;
@@ -2261,7 +2263,7 @@ internal static class WordOmmlConverter
             mathParagraphs = mathRange.Paragraphs;
             if (mathParagraphs.Count != 1)
                 throw new InvalidDataException(
-                    "The inserted display OMML no longer belongs to exactly one Word paragraph while restoring its boundary.");
+                    "The inserted OMML no longer belongs to exactly one Word paragraph while restoring its boundary.");
             mathParagraph = mathParagraphs[1];
             mathParagraphRange =
                 mathParagraph.Range.Duplicate;
@@ -2278,13 +2280,13 @@ internal static class WordOmmlConverter
             nextParagraphs = nextProbe.Paragraphs;
             if (nextParagraphs.Count != 1)
                 throw new InvalidDataException(
-                    "The preserved paragraph after display OMML has ambiguous Word paragraph ownership.");
+                    "The preserved paragraph after OMML has ambiguous Word paragraph ownership.");
             nextParagraph = nextParagraphs[1];
             nextRange = nextParagraph.Range.Duplicate;
             if (nextRange.Start !=
                 mathParagraphRange.End)
                 throw new InvalidDataException(
-                    "Word moved the preserved paragraph away from the display OMML boundary.");
+                    "Word moved the preserved paragraph away from the OMML boundary.");
             var nextText = nextRange.Text
                 ?? string.Empty;
             if (!nextText.StartsWith(
@@ -6284,6 +6286,137 @@ internal static class WordOmmlConverter
             formulaId);
     }
 
+    /// <summary>
+    /// Detects Word's native display-equation-number host independently of
+    /// VisualTeX ownership. Word linear input such as "#(2)" is normalized to
+    /// one m:eqArr/m:e whose mathematical body is followed by a top-level '#'
+    /// run and one parenthesized m:d number. Pure Word documents have no
+    /// VisualTeX bookmark, metadata or SEQ field, so semantic readers must use
+    /// the host topology rather than ownership markers.
+    /// </summary>
+    internal static bool HasWordNativeEquationNumberHost(string wordOpenXml)
+    {
+        var equation = XElement.Parse(
+            ExtractSingleOMath(wordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        return TryResolveWordNativeEquationNumberHost(
+            equation,
+            out _,
+            out _,
+            out _);
+    }
+
+    /// <summary>
+    /// Returns only the mathematical body of a Word-native numbered OMath.
+    /// This is a semantic projection: it never claims ownership of the number
+    /// and never mutates SEQ/REF/bookmark state in the document.
+    /// </summary>
+    internal static string StripWordNativeEquationNumberHost(
+        string wordOpenXml)
+    {
+        var equation = XElement.Parse(
+            ExtractSingleOMath(wordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        var removed = 0;
+        while (TryResolveWordNativeEquationNumberHost(
+                   equation,
+                   out var body,
+                   out var separatorIndex,
+                   out _)
+               && body is not null
+               && separatorIndex >= 0)
+        {
+            equation = StripEquationNumberWrapperBody(
+                body,
+                separatorIndex,
+                "The Word-native equation-number wrapper contains no formula body.");
+            removed++;
+            if (removed > 8)
+                throw new InvalidDataException(
+                    "The Word-native equation-number wrapper is recursively malformed.");
+        }
+
+        return equation.ToString(SaveOptions.DisableFormatting);
+    }
+
+    /// <summary>
+    /// Replaces only the mathematical body of one Word-native numbered OMath.
+    /// The original m:eqArr host, '#'-separator, number delimiter, field codes,
+    /// bookmarks, and control properties are retained verbatim. This is the
+    /// required edit path for a formula whose numbering is owned by Word.
+    /// </summary>
+    internal static string ReplaceWordNativeEquationNumberHostBody(
+        string numberedWordOpenXml,
+        string semanticOmml)
+    {
+        if (string.IsNullOrWhiteSpace(numberedWordOpenXml))
+            throw new ArgumentException(
+                "A numbered Word OMML host is required.",
+                nameof(numberedWordOpenXml));
+        if (string.IsNullOrWhiteSpace(semanticOmml))
+            throw new ArgumentException(
+                "Semantic OMML is required.",
+                nameof(semanticOmml));
+
+        var numberedEquation = XElement.Parse(
+            ExtractSingleOMath(numberedWordOpenXml),
+            LoadOptions.PreserveWhitespace);
+        if (!TryResolveWordNativeEquationNumberHost(
+                numberedEquation,
+                out var numberedBody,
+                out var separatorIndex,
+                out _)
+            || numberedBody is null
+            || separatorIndex < 0)
+        {
+            throw new InvalidDataException(
+                "The source OMML is not one Word-native numbered equation host.");
+        }
+
+        var semanticEquation = XElement.Parse(
+            ExtractSingleOMath(semanticOmml),
+            LoadOptions.PreserveWhitespace);
+        if (TryResolveWordNativeEquationNumberHost(
+                semanticEquation,
+                out _,
+                out _,
+                out _))
+        {
+            semanticEquation = XElement.Parse(
+                StripWordNativeEquationNumberHost(semanticOmml),
+                LoadOptions.PreserveWhitespace);
+        }
+
+        XNamespace math = MathNamespace;
+        var replacementBody = semanticEquation
+            .Elements()
+            .Where(element => element.Name != math + "ctrlPr")
+            .Select(element => new XElement(element))
+            .ToArray();
+        if (replacementBody.Length == 0)
+            throw new InvalidDataException(
+                "The replacement OMML contains no mathematical body.");
+
+        var numberedChildren = numberedBody.Elements().ToArray();
+        if (separatorIndex >= numberedChildren.Length)
+            throw new InvalidDataException(
+                "The Word-native equation-number separator is outside its equation body.");
+
+        var separator = NormalizeWordNativeNumberSeparator(
+            numberedChildren[separatorIndex]);
+        var preservedSuffix = numberedChildren
+            .Skip(separatorIndex + 1)
+            .Select(element => new XElement(element))
+            .ToArray();
+
+        numberedBody.ReplaceNodes(
+            replacementBody
+                .Concat(new[] { separator })
+                .Concat(preservedSuffix));
+
+        return numberedEquation.ToString(SaveOptions.DisableFormatting);
+    }
+
     internal static string StripVisualTeXNativeEquationNumber(string wordOpenXml) =>
         StripVisualTeXNativeEquationNumberCore(
             wordOpenXml,
@@ -6310,7 +6443,6 @@ internal static class WordOmmlConverter
         var equation = XElement.Parse(
             ExtractSingleOMath(wordOpenXml),
             LoadOptions.PreserveWhitespace);
-        XNamespace math = MathNamespace;
         var removed = 0;
         while (TryResolveVisualTeXNativeEquationNumber(
                    equation,
@@ -6321,38 +6453,191 @@ internal static class WordOmmlConverter
                && body is not null
                && separatorIndex >= 0)
         {
-            var bodyElements = body.Elements().ToArray();
-            var formulaElements = bodyElements
-                .Take(separatorIndex)
-                .Select(element => new XElement(element))
-                .ToList();
-            var separator = bodyElements[separatorIndex];
-            var separatorText = string.Concat(
-                separator.Elements(math + "t").Select(text => text.Value));
-            if (separatorText.Length > 1
-                && separatorText.EndsWith("#", StringComparison.Ordinal))
-            {
-                var mergedTail = new XElement(separator);
-                var tailTexts = mergedTail.Elements(math + "t").ToArray();
-                if (tailTexts.Length > 0)
-                {
-                    var lastText = tailTexts[tailTexts.Length - 1];
-                    if (lastText.Value.EndsWith("#", StringComparison.Ordinal))
-                        lastText.Value = lastText.Value.Substring(0, lastText.Value.Length - 1);
-                    if (tailTexts.Any(text => !string.IsNullOrEmpty(text.Value)))
-                        formulaElements.Add(mergedTail);
-                }
-            }
-            if (formulaElements.Count == 0)
-                throw new InvalidDataException(
-                    "The generated VisualTeX equation-number wrapper contains no formula body.");
-            equation = new XElement(math + "oMath", formulaElements);
+            equation = StripEquationNumberWrapperBody(
+                body,
+                separatorIndex,
+                "The generated VisualTeX equation-number wrapper contains no formula body.");
             removed++;
             if (removed > 8)
                 throw new InvalidDataException(
                     "The VisualTeX native equation-number wrapper is recursively malformed.");
         }
         return equation.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static XElement StripEquationNumberWrapperBody(
+        XElement body,
+        int separatorIndex,
+        string emptyBodyMessage)
+    {
+        XNamespace math = MathNamespace;
+        var bodyElements = body.Elements().ToArray();
+        if (separatorIndex < 0 || separatorIndex >= bodyElements.Length)
+            throw new InvalidDataException(
+                "The equation-number wrapper separator is outside its equation body.");
+
+        var formulaElements = bodyElements
+            .Take(separatorIndex)
+            .Select(element => new XElement(element))
+            .ToList();
+        var separator = bodyElements[separatorIndex];
+        var separatorText = string.Concat(
+            separator.Elements(math + "t").Select(text => text.Value));
+        if (separatorText.Length > 1
+            && separatorText.EndsWith("#", StringComparison.Ordinal))
+        {
+            var mergedTail = new XElement(separator);
+            var tailTexts = mergedTail.Elements(math + "t").ToArray();
+            if (tailTexts.Length > 0)
+            {
+                var lastText = tailTexts[tailTexts.Length - 1];
+                if (lastText.Value.EndsWith("#", StringComparison.Ordinal))
+                    lastText.Value =
+                        lastText.Value.Substring(
+                            0,
+                            lastText.Value.Length - 1);
+                if (tailTexts.Any(text => !string.IsNullOrEmpty(text.Value)))
+                    formulaElements.Add(mergedTail);
+            }
+        }
+
+        if (formulaElements.Count == 0)
+            throw new InvalidDataException(emptyBodyMessage);
+
+        return new XElement(math + "oMath", formulaElements);
+    }
+
+    private static XElement NormalizeWordNativeNumberSeparator(
+        XElement separator)
+    {
+        XNamespace math = MathNamespace;
+        var separatorText = string.Concat(
+            separator.Elements(math + "t").Select(text => text.Value));
+        if (string.Equals(
+                separatorText,
+                "#",
+                StringComparison.Ordinal))
+            return new XElement(separator);
+
+        if (!separatorText.EndsWith(
+                "#",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The Word-native equation-number separator no longer ends with '#'.");
+        }
+
+        // Word can merge the final formula text and '#' into one math run.
+        // During an edit, only the '#' belongs to the numbering host. Keep the
+        // original run properties but discard the formula-text prefix because
+        // the replacement body already supplies the updated mathematics.
+        var normalized = new XElement(math + "r");
+        var runProperties = separator.Element(math + "rPr");
+        if (runProperties is not null)
+            normalized.Add(new XElement(runProperties));
+        normalized.Add(new XElement(math + "t", "#"));
+        return normalized;
+    }
+
+    private static bool TryResolveWordNativeEquationNumberHost(
+        XElement equation,
+        out XElement? body,
+        out int separatorIndex,
+        out XElement? numberDelimiter)
+    {
+        body = null;
+        separatorIndex = -1;
+        numberDelimiter = null;
+        XNamespace math = MathNamespace;
+
+        // A Word-native numbered display equation is a host wrapper around one
+        // equation array. Refuse to strip a '#' construct from an OMath that has
+        // any other mathematical root sibling: that is ordinary formula syntax,
+        // not the native numbering host.
+        var rootChildren = equation.Elements()
+            .Where(element => element.Name != math + "ctrlPr")
+            .ToArray();
+        if (rootChildren.Length != 1
+            || rootChildren[0].Name != math + "eqArr")
+            return false;
+
+        var equationArray = rootChildren[0];
+        var entries = equationArray.Elements(math + "e").ToArray();
+        if (entries.Length != 1)
+            return false;
+
+        var candidateBody = entries[0];
+        var children = candidateBody.Elements().ToArray();
+        var found = false;
+        for (var index = 0; index + 1 < children.Length; index++)
+        {
+            var separator = children[index];
+            if (separator.Name != math + "r")
+                continue;
+            var separatorText = string.Concat(
+                separator.Elements(math + "t").Select(text => text.Value));
+            if (!separatorText.EndsWith("#", StringComparison.Ordinal))
+                continue;
+
+            var delimiter = children[index + 1];
+            if (delimiter.Name != math + "d"
+                || !IsWordNativeEquationNumberDelimiter(delimiter))
+                continue;
+
+            // Word may append m:ctrlPr to m:e after normalizing the native
+            // '#(...)' host. Any later mathematical node means the delimiter is
+            // still part of the formula, so do not reinterpret it as numbering.
+            if (children
+                .Skip(index + 2)
+                .Any(element => element.Name != math + "ctrlPr"))
+                continue;
+
+            if (found)
+            {
+                // Multiple plausible native-number suffixes make the host
+                // ambiguous. Semantic extraction must never guess.
+                body = null;
+                separatorIndex = -1;
+                numberDelimiter = null;
+                return false;
+            }
+
+            body = candidateBody;
+            separatorIndex = index;
+            numberDelimiter = delimiter;
+            found = true;
+        }
+
+        return found;
+    }
+
+    private static bool IsWordNativeEquationNumberDelimiter(
+        XElement delimiter)
+    {
+        XNamespace math = MathNamespace;
+        var entries = delimiter.Elements(math + "e").ToArray();
+        if (entries.Length != 1)
+            return false;
+
+        var properties = delimiter.Element(math + "dPr");
+        var begin = (string?)properties
+            ?.Element(math + "begChr")
+            ?.Attribute(math + "val");
+        var end = (string?)properties
+            ?.Element(math + "endChr")
+            ?.Attribute(math + "val");
+
+        // Missing dPr means Word's default parenthesis delimiter. If Word emits
+        // explicit characters, require the same native '#(...)' shape observed
+        // for built-in numbered equations.
+        if (!string.IsNullOrEmpty(begin)
+            && !string.Equals(begin, "(", StringComparison.Ordinal))
+            return false;
+        if (!string.IsNullOrEmpty(end)
+            && !string.Equals(end, ")", StringComparison.Ordinal))
+            return false;
+
+        return true;
     }
 
     private static bool TryResolveVisualTeXNativeEquationNumber(

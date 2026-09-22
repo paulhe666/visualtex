@@ -56,18 +56,14 @@ internal static class WordFormulaHostSemanticReader
 
             var display = math.Type == WdOMathType.wdOMathDisplay;
             var hostXml = ReadLocalEquationXml(exact);
-            var semanticXml = hostXml;
-            if (display
-                && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                    hostXml,
-                    formulaId: null))
-            {
-                // Word's native #(SEQ) is host structure, not formula semantics.
-                // Every editor/conversion path receives only the mathematical body.
-                semanticXml = WordOmmlConverter
-                    .StripManagedVisualTeXNativeEquationNumber(
-                        hostXml);
-            }
+            // Word-native '#(...)' numbering is host structure regardless of
+            // whether its payload is a VisualTeX SEQ field, a chapter number,
+            // or a literal number typed by Word itself. Editor/conversion
+            // semantics always expose only the mathematical body.
+            var semanticXml = display
+                ? WordOmmlConverter.StripWordNativeEquationNumberHost(
+                    hostXml)
+                : hostXml;
 
             var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
                 semanticXml,

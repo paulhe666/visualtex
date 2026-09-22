@@ -98,6 +98,89 @@ public sealed class WordOmmlNativeSequenceXmlTests
     }
 
     [Fact]
+    public void PureWordNativeHashNumberIsSemanticHostWithoutVisualTeXOwnership()
+    {
+        var omml = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: false);
+
+        Assert.False(
+            WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(
+            WordOmmlConverter.HasWordNativeEquationNumberHost(omml));
+
+        var semantic =
+            WordOmmlConverter.StripWordNativeEquationNumberHost(omml);
+        var document =
+            XDocument.Parse(
+                semantic,
+                LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+
+        Assert.Empty(document.Descendants(math + "eqArr"));
+        Assert.Equal(
+            "x+1",
+            string.Concat(
+                document
+                    .Descendants(math + "t")
+                    .Select(node => node.Value)));
+    }
+
+    [Fact]
+    public void HashDelimiterFollowedByMoreMathematicsIsNotClaimedAsNativeNumber()
+    {
+        var omml = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: true);
+
+        Assert.False(
+            WordOmmlConverter.HasWordNativeEquationNumberHost(omml));
+        Assert.Equal(
+            WordOmmlConverter.ExtractSingleOMath(omml),
+            WordOmmlConverter.StripWordNativeEquationNumberHost(omml));
+    }
+
+    [Fact]
+    public void FieldFreeWordNativeNumberSuffixSurvivesSemanticBodyReplacement()
+    {
+        var math = (XNamespace)MathNamespace;
+        var original = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: false);
+        var replacement = new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                MathRun(math, "y"),
+                MathRun(math, "+"),
+                MathRun(math, "2"))
+            .ToString(SaveOptions.DisableFormatting);
+
+        var merged =
+            WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+                original,
+                replacement);
+
+        Assert.True(
+            WordOmmlConverter.HasWordNativeEquationNumberHost(merged));
+        var semantic =
+            XDocument.Parse(
+                WordOmmlConverter.StripWordNativeEquationNumberHost(merged),
+                LoadOptions.PreserveWhitespace);
+        Assert.Equal(
+            "y+2",
+            string.Concat(
+                semantic.Descendants(math + "t")
+                    .Select(node => node.Value)));
+
+        var originalDocument =
+            XDocument.Parse(original, LoadOptions.PreserveWhitespace);
+        var mergedDocument =
+            XDocument.Parse(merged, LoadOptions.PreserveWhitespace);
+        Assert.Equal(
+            originalDocument.Descendants(math + "d").Single()
+                .ToString(SaveOptions.DisableFormatting),
+            mergedDocument.Descendants(math + "d").Single()
+                .ToString(SaveOptions.DisableFormatting));
+    }
+
+    [Fact]
     public void ManagedStripCanRecoverDirectSequenceAfterAllAliasesAreLost()
     {
         var omml = BuildDirectSequenceOmml(
@@ -284,6 +367,66 @@ public sealed class WordOmmlNativeSequenceXmlTests
         Assert.Empty(document.Descendants(math + "eqArr"));
         Assert.Equal("x+1", string.Concat(document.Descendants(math + "t").Select(node => node.Value)));
         Assert.Empty(document.Descendants(word + "instrText"));
+    }
+
+    private static string BuildWordNativeStaticNumberOmml(
+        bool appendMathematicsAfterNumber)
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var body = new List<object>
+        {
+            MathRun(math, "x"),
+            MathRun(math, "+"),
+            MathRun(math, "1"),
+            MathRun(math, "#"),
+            new XElement(
+                math + "d",
+                new XElement(
+                    math + "dPr",
+                    new XElement(
+                        math + "begChr",
+                        new XAttribute(math + "val", "(")),
+                    new XElement(
+                        math + "endChr",
+                        new XAttribute(math + "val", ")")),
+                    new XElement(
+                        math + "grow",
+                        new XAttribute(math + "val", "0"))),
+                new XElement(
+                    math + "e",
+                    MathRun(math, "2"))),
+        };
+        if (appendMathematicsAfterNumber)
+        {
+            body.Add(MathRun(math, "+"));
+            body.Add(MathRun(math, "y"));
+        }
+
+        // Current Word 16 appends m:ctrlPr after the native number delimiter in
+        // a display OMath created through its own '#(2)' equation UI.
+        body.Add(
+            new XElement(
+                math + "ctrlPr",
+                new XElement(
+                    word + "rPr",
+                    new XElement(word + "noProof"))));
+
+        return new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+                new XElement(
+                    math + "eqArr",
+                    new XElement(
+                        math + "eqArrPr",
+                        new XElement(
+                            math + "maxDist",
+                            new XAttribute(math + "val", "1"))),
+                    new XElement(
+                        math + "e",
+                        body)))
+            .ToString(SaveOptions.DisableFormatting);
     }
 
     private static string BuildDirectSequenceOmml(

@@ -456,6 +456,83 @@ internal static partial class Program
         Console.SetError(new TeeTextWriter(originalError, log));
         Console.WriteLine($"Acceptance mode: {mode}");
 
+        if (string.Equals(
+                mode,
+                "word-active-omml-semantic-audit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var activeAuditMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunActiveOmmlSemanticAuditAcceptance();
+                Console.WriteLine("VisualTeX active OMML semantic audit passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(
+                mode,
+                "word-active-native-number-semantic-audit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var activeNativeNumberMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunActiveNativeNumberSemanticAuditAcceptance();
+                Console.WriteLine(
+                    "VisualTeX active Word-native number semantic audit passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine(
+                    $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(
+                mode,
+                "word-field-free-native-number-edit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var fieldFreeNativeNumberMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunWordFieldFreeNativeNumberEditAcceptance(
+                    artifactRoot);
+                Console.WriteLine(
+                    "VisualTeX field-free Word-native number edit acceptance passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine(
+                    $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
         // This exact-document core mode owns all of its input and prepares OMML
         // locally. Run it before companion startup and keep every initialization
         // step inside the same exception boundary so a harness problem is logged
@@ -463,6 +540,10 @@ internal static partial class Program
         if (string.Equals(
                 mode,
                 "word-exact-mathtype-omml-core-clone",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-exact-mathtype-visualtex-core-clone",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -475,7 +556,19 @@ internal static partial class Program
                         "Word",
                         "VisualTeX.WordVsto");
                 Console.WriteLine("Exact core initialization complete.");
-                RunExactMathTypeOmmlCoreCloneAcceptance(artifactRoot);
+                if (string.Equals(
+                        mode,
+                        "word-exact-mathtype-visualtex-core-clone",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    RunExactMathTypeVisualTeXCoreCloneAcceptance(
+                        artifactRoot);
+                }
+                else
+                {
+                    RunExactMathTypeOmmlCoreCloneAcceptance(
+                        artifactRoot);
+                }
                 Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
                 Console.WriteLine($"Artifacts: {artifactRoot}");
                 return 0;
@@ -1389,6 +1482,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-editor-native-close", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordEditorNativeClose(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-complex-omml-session-commit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordComplexOmmlCommitClose(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-numbered-omml-tab-scale", StringComparison.OrdinalIgnoreCase))
             {

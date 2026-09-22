@@ -621,10 +621,12 @@ internal static partial class MathTypeMtefCodec
         var local = element.Name.LocalName;
         var ownVariant = ((string?)element.Attribute("mathvariant"))?.Trim();
         var variant = string.IsNullOrWhiteSpace(ownVariant) ? inheritedMathVariant : ownVariant;
-        string Children(string? childVariant = null) => string.Concat(
-            element.Elements()
-                .Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
-                .Select(child => CanonicalizeMathMl(child, childVariant ?? variant)));
+        string Children(string? childVariant = null) =>
+            CanonicalizeElementSequence(
+                element.Elements()
+                    .Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
+                    .ToArray(),
+                childVariant ?? variant);
         var children = element.Elements()
             .Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
             .ToArray();
@@ -632,19 +634,9 @@ internal static partial class MathTypeMtefCodec
         {
             case "math":
             case "mpadded":
-            {
-                if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
-                    return splitFencedSuperscript;
-                if (TryCanonicalizeLooseBinomialSequence(children, variant, out var looseBinomialSequence))
-                    return looseBinomialSequence;
                 return Children();
-            }
             case "mrow":
             {
-                if (TryCanonicalizeSplitFencedSuperscriptSequence(children, variant, out var splitFencedSuperscript))
-                    return splitFencedSuperscript;
-                if (TryCanonicalizeLooseBinomialSequence(children, variant, out var looseBinomialSequence))
-                    return looseBinomialSequence;
                 if (TryCanonicalizeMathJaxFencedSuperscriptRow(element, variant, out var fencedSuperscript))
                     return fencedSuperscript;
                 if (TryGetMathJaxFenceRow(element, out var open, out var close, out var fenceChildren))
@@ -656,8 +648,14 @@ internal static partial class MathTypeMtefCodec
                             variant,
                             out var binomial))
                         return binomial;
-                    return "fence(" + NormalizeFence(open) + "," + NormalizeFence(close) + ","
-                        + string.Concat(fenceChildren.Select(child => CanonicalizeMathMl(child, variant))) + ")";
+                    var normalizedOpen = NormalizeFence(open);
+                    var normalizedClose = NormalizeFence(close);
+                    var fencedChildrenSignature =
+                        string.Concat(fenceChildren.Select(child => CanonicalizeMathMl(child, variant)));
+                    return CanonicalFenceSignature(
+                        normalizedOpen,
+                        normalizedClose,
+                        fencedChildrenSignature);
                 }
                 return Children();
             }
@@ -822,7 +820,17 @@ internal static partial class MathTypeMtefCodec
                     return binomial;
                 var open = NormalizeFence((string?)element.Attribute("open") ?? "(");
                 var close = NormalizeFence((string?)element.Attribute("close") ?? ")");
-                return "fence(" + open + "," + close + "," + Children() + ")";
+                var fencedChildren = Children();
+                // Word OMML materializes a one-sided system/cases delimiter as
+                // a real delimiter object (m:d / MathML mfenced with an empty
+                // opposite fence), while MathJax can represent the same visible
+                // mathematics as a loose <mo> delimiter followed by the table.
+                // Canonicalize only one-sided fences to that explicit token form;
+                // paired fences remain structurally strict.
+                return CanonicalFenceSignature(
+                    open,
+                    close,
+                    fencedChildren);
             }
             case "mtable":
                 return "table(" + string.Join(";", children.Select(row =>
@@ -1583,6 +1591,34 @@ internal static partial class MathTypeMtefCodec
         }
     }
 
+    private static string CanonicalizeElementSequence(
+        XElement[] elements,
+        string? variant)
+    {
+        if (elements.Length == 0)
+            return string.Empty;
+        if (TryCanonicalizeSplitFencedScriptSequence(
+                elements,
+                variant,
+                out var splitFencedScript))
+            return splitFencedScript;
+        if (TryCanonicalizeLooseBinomialSequence(
+                elements,
+                variant,
+                out var looseBinomialSequence))
+            return looseBinomialSequence;
+        if (TryCanonicalizeLooseFenceSequence(
+                elements,
+                variant,
+                out var looseFenceSequence))
+            return looseFenceSequence;
+        return string.Concat(
+            elements.Select(
+                child => CanonicalizeMathMl(
+                    child,
+                    variant)));
+    }
+
     private static bool TryCanonicalizeLooseBinomialSequence(
         XElement[] elements,
         string? variant,
@@ -1617,6 +1653,313 @@ internal static partial class MathTypeMtefCodec
         if (!replaced) return false;
         signature = builder.ToString();
         return true;
+    }
+
+    private static bool TryCanonicalizeLooseFenceSequence(
+        XElement[] elements,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        if (elements.Length < 2) return false;
+
+        var builder = new StringBuilder();
+        var replaced = false;
+        for (var index = 0; index < elements.Length;)
+        {
+            if (TryGetLooseOpeningFenceToken(
+                    elements[index],
+                    out var open)
+                && TryFindMatchingLooseFence(
+                    elements,
+                    index,
+                    open,
+                    out var closeIndex,
+                    out var close))
+            {
+                var innerElements =
+                    elements
+                        .Skip(index + 1)
+                        .Take(closeIndex - index - 1)
+                        .ToArray();
+                innerElements =
+                    StripRedundantNestedLooseFenceLayers(
+                        innerElements,
+                        open,
+                        close);
+                var innerSignature =
+                    CanonicalizeElementSequence(
+                        innerElements,
+                        variant);
+
+                builder.Append(
+                    CanonicalFenceSignature(
+                        open,
+                        close,
+                        innerSignature));
+                index = closeIndex + 1;
+                replaced = true;
+                continue;
+            }
+
+            builder.Append(
+                CanonicalizeMathMl(
+                    elements[index],
+                    variant));
+            index++;
+        }
+
+        if (!replaced) return false;
+        signature = builder.ToString();
+        return true;
+    }
+
+    private static bool TryFindMatchingLooseFence(
+        XElement[] elements,
+        int openIndex,
+        string open,
+        out int closeIndex,
+        out string close)
+    {
+        closeIndex = -1;
+        close = string.Empty;
+        var normalizedOpen = NormalizeFence(open);
+        var expectedClose =
+            MatchingClosingFence(
+                normalizedOpen);
+        if (expectedClose.Length == 0)
+            return false;
+
+        var depth = 0;
+        for (var index = openIndex + 1;
+             index < elements.Length;
+             index++)
+        {
+            if (TryGetLooseOpeningFenceToken(
+                    elements[index],
+                    out var nestedOpen)
+                && string.Equals(
+                    NormalizeFence(nestedOpen),
+                    normalizedOpen,
+                    StringComparison.Ordinal))
+            {
+                depth++;
+                continue;
+            }
+
+            if (!TryGetLooseClosingFenceToken(
+                    elements[index],
+                    out var candidateClose)
+                || !string.Equals(
+                    NormalizeFence(candidateClose),
+                    expectedClose,
+                    StringComparison.Ordinal))
+                continue;
+
+            if (depth > 0)
+            {
+                depth--;
+                continue;
+            }
+
+            closeIndex = index;
+            close = candidateClose;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetLooseOpeningFenceToken(
+        XElement candidate,
+        out string fence)
+    {
+        if (!TryGetLooseFenceToken(
+                candidate,
+                out fence))
+            return false;
+
+        var normalized =
+            NormalizeFence(
+                fence);
+        if (normalized is "(" or "[" or "{" or "⟨" or "⌈" or "⌊")
+            return true;
+
+        if (normalized is "|" or "‖")
+            return HasExplicitFenceRole(
+                candidate,
+                "OPEN");
+
+        return false;
+    }
+
+    private static bool TryGetLooseClosingFenceToken(
+        XElement candidate,
+        out string fence)
+    {
+        if (!TryGetLooseFenceToken(
+                candidate,
+                out fence))
+            return false;
+
+        var normalized =
+            NormalizeFence(
+                fence);
+        if (normalized is ")" or "]" or "}" or "⟩" or "⌉" or "⌋")
+            return true;
+
+        if (normalized is "|" or "‖")
+            return HasExplicitFenceRole(
+                candidate,
+                "CLOSE");
+
+        return false;
+    }
+
+    private static bool HasExplicitFenceRole(
+        XElement candidate,
+        string expectedRole)
+    {
+        XElement token = candidate;
+        if (candidate.Name.LocalName == "mrow")
+        {
+            var children = candidate.Elements().ToArray();
+            if (children.Length != 1
+                || children[0].Name.LocalName != "mo")
+                return false;
+            token = children[0];
+        }
+
+        var candidateClass =
+            ((string?)candidate.Attribute(
+                "data-mjx-texclass")
+             ?? string.Empty).Trim();
+        var tokenClass =
+            ((string?)token.Attribute(
+                "data-mjx-texclass")
+             ?? string.Empty).Trim();
+        if (string.Equals(
+                candidateClass,
+                expectedRole,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                tokenClass,
+                expectedRole,
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(
+                (string?)token.Attribute(
+                    "fence"),
+                "true",
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                (string?)token.Attribute(
+                    "stretchy"),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string MatchingClosingFence(
+        string open) =>
+        NormalizeFence(
+            open) switch
+        {
+            "(" => ")",
+            "[" => "]",
+            "{" => "}",
+            "⟨" => "⟩",
+            "⌈" => "⌉",
+            "⌊" => "⌋",
+            "|" => "|",
+            "‖" => "‖",
+            _ => string.Empty,
+        };
+
+    private static XElement[] StripRedundantNestedLooseFenceLayers(
+        XElement[] elements,
+        string outerOpen,
+        string outerClose)
+    {
+        var normalizedOuterOpen =
+            NormalizeFence(
+                outerOpen);
+        var normalizedOuterClose =
+            NormalizeFence(
+                outerClose);
+        var current =
+            elements;
+        while (current.Length >= 2
+               && TryGetLooseOpeningFenceToken(
+                    current[0],
+                    out var nestedOpen)
+               && TryFindMatchingLooseFence(
+                    current,
+                    0,
+                    nestedOpen,
+                    out var nestedCloseIndex,
+                    out var nestedClose)
+               && nestedCloseIndex ==
+                    current.Length - 1
+               && string.Equals(
+                    NormalizeFence(
+                        nestedOpen),
+                    normalizedOuterOpen,
+                    StringComparison.Ordinal)
+               && string.Equals(
+                    NormalizeFence(
+                        nestedClose),
+                    normalizedOuterClose,
+                    StringComparison.Ordinal))
+        {
+            current =
+                current
+                    .Skip(1)
+                    .Take(
+                        current.Length - 2)
+                    .ToArray();
+        }
+
+        return current;
+    }
+
+    private static string CanonicalFenceSignature(
+        string open,
+        string close,
+        string innerSignature)
+    {
+        var normalizedOpen =
+            NormalizeFence(
+                open);
+        var normalizedClose =
+            NormalizeFence(
+                close);
+
+        if (normalizedOpen.Length > 0
+            && normalizedClose.Length == 0)
+        {
+            return "o("
+                + normalizedOpen
+                + ")"
+                + innerSignature;
+        }
+
+        if (normalizedOpen.Length == 0
+            && normalizedClose.Length > 0)
+        {
+            return innerSignature
+                + "o("
+                + normalizedClose
+                + ")";
+        }
+
+        return "fence("
+            + normalizedOpen
+            + ","
+            + normalizedClose
+            + ","
+            + innerSignature
+            + ")";
     }
 
     private static bool TryCanonicalizeLooseBinomialBody(
@@ -1749,41 +2092,153 @@ internal static partial class MathTypeMtefCodec
         return true;
     }
 
-    private static bool TryCanonicalizeSplitFencedSuperscriptSequence(
+    private static bool TryCanonicalizeSplitFencedScriptSequence(
         XElement[] elements,
         string? variant,
         out string signature)
     {
         signature = string.Empty;
         if (elements.Length < 3) return false;
-        if (!TryGetLooseFenceToken(elements[0], out var open)) return false;
+        if (!TryGetLooseOpeningFenceToken(
+                elements[0],
+                out var open))
+            return false;
 
-        for (var scriptIndex = 2; scriptIndex < elements.Length; scriptIndex++)
+        for (var scriptIndex = 2;
+             scriptIndex < elements.Length;
+             scriptIndex++)
         {
             var script = elements[scriptIndex];
-            if (script.Name.LocalName != "msup") continue;
-            var scriptChildren = script.Elements().ToArray();
-            if (scriptChildren.Length < 2) continue;
-            if (!TryGetLooseFenceToken(scriptChildren[0], out var close)) continue;
-            if (!AreMatchingFences(open, close)) continue;
+            var scriptKind = script.Name.LocalName;
+            if (scriptKind is not ("msub" or "msup" or "msubsup"))
+                continue;
 
-            var inner = string.Concat(elements
-                .Skip(1)
-                .Take(scriptIndex - 1)
-                .Select(child => CanonicalizeMathMl(child, variant)));
-            if (inner.Length == 0) continue;
-            var exponentSignature = CanonicalizeMathMl(scriptChildren[1], variant);
-            if (exponentSignature.Length == 0) continue;
+            var scriptChildren =
+                script.Elements().ToArray();
+            var minimumChildren =
+                scriptKind == "msubsup"
+                    ? 3
+                    : 2;
+            if (scriptChildren.Length < minimumChildren)
+                continue;
+            if (!TryGetLooseClosingFenceToken(
+                    scriptChildren[0],
+                    out var close))
+                continue;
+            if (!AreMatchingFences(
+                    open,
+                    close))
+                continue;
 
-            var baseSignature = "o(" + NormalizeFence(open) + ")"
-                + inner
-                + "o(" + NormalizeFence(close) + ")";
-            var tail = string.Concat(elements
-                .Skip(scriptIndex + 1)
-                .Select(child => CanonicalizeMathMl(child, variant)));
-            signature = "sup(" + baseSignature + "," + exponentSignature + ")" + tail;
+            var innerElements =
+                elements
+                    .Skip(1)
+                    .Take(scriptIndex - 1)
+                    .ToArray();
+            innerElements =
+                StripRedundantNestedLooseFenceLayers(
+                    innerElements,
+                    open,
+                    close);
+            var innerSignature =
+                CanonicalizeElementSequence(
+                    innerElements,
+                    variant);
+            if (innerSignature.Length == 0)
+                continue;
+
+            var baseSignature =
+                CanonicalFenceSignature(
+                    open,
+                    close,
+                    innerSignature);
+            string scriptedSignature;
+            if (scriptKind == "msub")
+            {
+                var subSignature =
+                    CanonicalizeMathMl(
+                        scriptChildren[1],
+                        variant);
+                if (subSignature.Length == 0)
+                    continue;
+                scriptedSignature =
+                    "sub("
+                    + baseSignature
+                    + ","
+                    + subSignature
+                    + ")";
+            }
+            else if (scriptKind == "msup")
+            {
+                var supSignature =
+                    CanonicalizeMathMl(
+                        scriptChildren[1],
+                        variant);
+                if (supSignature.Length == 0)
+                    continue;
+                scriptedSignature =
+                    "sup("
+                    + baseSignature
+                    + ","
+                    + supSignature
+                    + ")";
+            }
+            else
+            {
+                var subSignature =
+                    CanonicalizeMathMl(
+                        scriptChildren[1],
+                        variant);
+                var supSignature =
+                    CanonicalizeMathMl(
+                        scriptChildren[2],
+                        variant);
+                if (subSignature.Length == 0
+                    && supSignature.Length == 0)
+                    continue;
+                if (subSignature.Length == 0)
+                {
+                    scriptedSignature =
+                        "sup("
+                        + baseSignature
+                        + ","
+                        + supSignature
+                        + ")";
+                }
+                else if (supSignature.Length == 0)
+                {
+                    scriptedSignature =
+                        "sub("
+                        + baseSignature
+                        + ","
+                        + subSignature
+                        + ")";
+                }
+                else
+                {
+                    scriptedSignature =
+                        "subsup("
+                        + baseSignature
+                        + ","
+                        + subSignature
+                        + ","
+                        + supSignature
+                        + ")";
+                }
+            }
+
+            var tail =
+                CanonicalizeElementSequence(
+                    elements
+                        .Skip(scriptIndex + 1)
+                        .ToArray(),
+                    variant);
+            signature =
+                scriptedSignature
+                + tail;
             return true;
         }
+
         return false;
     }
 

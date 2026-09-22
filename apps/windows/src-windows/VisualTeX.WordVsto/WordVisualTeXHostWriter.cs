@@ -46,8 +46,12 @@ internal static class WordVisualTeXHostWriter
             WordFormulaHostLayout.ApplyVisualTeXGeometry(
                 shape,
                 metadata,
-                request.WidthPoints > 0 ? request.WidthPoints : 1f,
-                request.HeightPoints > 0 ? request.HeightPoints : 1f,
+                request.WidthPoints > 0
+                    ? request.WidthPoints
+                    : 1f,
+                request.HeightPoints > 0
+                    ? request.HeightPoints
+                    : 1f,
                 request.ExportedHeightPixels,
                 request.ExportedBaselinePixels);
 

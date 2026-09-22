@@ -10,6 +10,49 @@ internal static partial class Program
     private static void RunWordHostCorePureOmmlAcceptance(
         string artifactRoot)
     {
+        AssertEqual(
+            "(ax-1)(x+1)>(2a+1)x-a",
+            WordFormulaMutationValidator.NormalizeWordNativeLatexSemantics(
+                @"\left(ax-1\right)\left(x+1\right)>\left(2a+1\right)x-a"),
+            "Word-native delimiter sizing was not normalized for the reported OMML regression.");
+        AssertEqual(
+            @"\leftarrowx\rightarrowy",
+            WordFormulaMutationValidator.NormalizeWordNativeLatexSemantics(
+                @"\leftarrow x\rightarrow y"),
+            "Word-native delimiter normalization corrupted arrow commands.");
+        AssertEqual(
+            @"M=\{x∣a-4\lex\lea+4\}",
+            WordFormulaMutationValidator.NormalizeWordNativeLatexSemantics(
+                @"M=\left\{x\mid a-4\le x\le a+4\right\}"),
+            "Word-native relation normalization did not preserve MathType \\mid semantics.");
+        AssertEqual(
+            @"\{x",
+            WordFormulaMutationValidator.NormalizeWordNativeLatexSemantics(
+                @"\left\{x\right."),
+            "Word-native invisible right delimiter was not discarded.");
+        const string looseOneSidedMatrix =
+            "<math><mrow><mo fence='true' stretchy='true'>{</mo>"
+            + "<mtable><mtr><mtd><mi>x</mi></mtd><mtd><mi>y</mi></mtd></mtr></mtable>"
+            + "<mo fence='true' stretchy='true'></mo></mrow></math>";
+        const string fencedOneSidedMatrix =
+            "<math><mfenced open='{' close=''><mtable>"
+            + "<mtr><mtd><mi>x</mi></mtd><mtd><mi>y</mi></mtd></mtr>"
+            + "</mtable></mfenced></math>";
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(looseOneSidedMatrix),
+            MathTypeMtefCodec.SemanticSignature(fencedOneSidedMatrix),
+            "One-sided Word mfenced semantics did not match a loose left delimiter plus matrix.");
+        const string namedMax =
+            "<math><msub><mi>x</mi><mo>max</mo></msub></math>";
+        const string uprightMax =
+            "<math><msub><mi>x</mi><mrow>"
+            + "<mi mathvariant='normal'>m</mi><mi mathvariant='normal'>a</mi><mi mathvariant='normal'>x</mi>"
+            + "</mrow></msub></math>";
+        AssertEqual(
+            MathTypeMtefCodec.SemanticSignature(namedMax),
+            MathTypeMtefCodec.SemanticSignature(uprightMax),
+            "Named max operator did not match Word's upright-letter normalization.");
+
         const string editedNativeMathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow><mi>y</mi><mo>+</mo><mn>2</mn></mrow></math>";
         const string displayMathMl =
@@ -474,6 +517,9 @@ internal static partial class Program
         RunPureOmmlHeadingNumberingAcceptance();
         RunPureOmmlMissingHeadingFallbackAcceptance();
         RunPureOmmlAdjacentInlineAcceptance();
+        RunReportedOmmlParenthesisNormalizationAcceptance();
+        RunReportedOmmlOneSidedMatrixAcceptance();
+        RunWordNativeSemanticCorpusAcceptance();
         RunPureOmmlVisualTeXComplexAdjacentInlineConversionAcceptance(
             artifactRoot);
         RunPureOmmlCrossFormatAcceptance(
@@ -1021,6 +1067,265 @@ internal static partial class Program
 
         Console.WriteLine(
             $"[host-core pure OMML] adjacent inline insertion accepted Word's native topology (OMaths={index.Omml.Count}) without separators or VisualTeX metadata.");
+    }
+
+    private static void RunReportedOmmlParenthesisNormalizationAcceptance()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow>"
+            + "<mo>(</mo><mi>a</mi><mi>x</mi><mo>-</mo><mn>1</mn><mo>)</mo>"
+            + "<mo>(</mo><mi>x</mi><mo>+</mo><mn>1</mn><mo>)</mo>"
+            + "<mo>&gt;</mo>"
+            + "<mo>(</mo><mn>2</mn><mi>a</mi><mo>+</mo><mn>1</mn><mo>)</mo>"
+            + "<mi>x</mi><mo>-</mo><mi>a</mi></mrow></math>";
+
+        using var host =
+            new WordPerformanceHost(
+                documentPath: null);
+        var application =
+            host.Application;
+        var document =
+            host.Document;
+        var service =
+            new WordFormulaService(
+                application);
+
+        document.Content.Text = "L R";
+        Word.Range? insertion = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? range = null;
+        try
+        {
+            insertion =
+                document.Range(
+                    1,
+                    1);
+            insertion.Select();
+            _ = service.InsertOmml(
+                CreateOmmlMathTypeAcceptanceSession(
+                    mathMl,
+                    "inline",
+                    numbered: false,
+                    FormulaOleContract.WordOmmlMode),
+                mathMl);
+
+            maths = document.OMaths;
+            AssertEqual(
+                1,
+                maths.Count,
+                "Reported OMML parenthesis regression did not create one native Word equation.");
+            math = maths[1];
+            range = math.Range.Duplicate;
+            var resolved =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    range,
+                    WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Reported OMML parenthesis regression could not resolve the inserted equation.");
+            var payload =
+                WordFormulaHostSemanticReader.Read(
+                    document,
+                    resolved);
+            AssertEqual(
+                "(ax-1)(x+1)>(2a+1)x-a",
+                WordFormulaMutationValidator.NormalizeWordNativeLatexSemantics(
+                    payload.Latex),
+                "Reported OMML parenthesis regression changed mathematical content after Word BuildUp.");
+
+            Console.WriteLine(
+                "[host-core pure OMML] reported (ax-1)(x+1)>(2a+1)x-a Word BuildUp normalization passed without a false write error.");
+        }
+        finally
+        {
+            Release(range);
+            Release(math);
+            Release(maths);
+            Release(insertion);
+        }
+    }
+
+    private static void RunReportedOmmlOneSidedMatrixAcceptance()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mrow>"
+            + "<mo fence=\"true\" stretchy=\"true\">{</mo>"
+            + "<mtable>"
+            + "<mtr><mtd><msub><mo>min</mo><mrow><mi mathvariant=\"bold\">x</mi><mo>∈</mo><msub><mi>Ω</mi><mi>s</mi></msub></mrow></msub></mtd>"
+            + "<mtd><msub><mfenced><msub><mi mathvariant=\"bold\">σ</mi><mrow><mi>v</mi><mi>m</mi></mrow></msub></mfenced><mo>max</mo></msub></mtd></mtr>"
+            + "<mtr><mtd><msub><mo>min</mo><mrow><mi mathvariant=\"bold\">x</mi><mo>∈</mo><msub><mi>Ω</mi><mi>c</mi></msub></mrow></msub></mtd>"
+            + "<mtd><msup><mi mathvariant=\"bold\">F</mi><mi>T</mi></msup><mi mathvariant=\"bold\">u</mi></mtd></mtr>"
+            + "<mtr><mtd><mtext>s.t.</mtext></mtd><mtd><mi>f</mi><mo>*</mo><msub><mi mathvariant=\"bold\">V</mi><mn>0</mn></msub><mo>-</mo><mi>x</mi><mo>=</mo><mn>0</mn></mtd></mtr>"
+            + "<mtr><mtd></mtd><mtd><msub><mi mathvariant=\"bold\">x</mi><mi>i</mi></msub><mo>∈</mo><mfenced open=\"{\" close=\"}\"><mrow><mn>0</mn><mo>,</mo><mn>1</mn></mrow></mfenced></mtd></mtr>"
+            + "</mtable><mo fence=\"true\" stretchy=\"true\"></mo></mrow></math>";
+
+        using var host =
+            new WordPerformanceHost(
+                documentPath: null);
+        var application = host.Application;
+        var document = host.Document;
+        var service = new WordFormulaService(application);
+        Word.Range? insertion = null;
+        Word.OMath? math = null;
+        Word.Range? range = null;
+        try
+        {
+            insertion = document.Range(0, 0);
+            insertion.Select();
+            _ = service.InsertOmml(
+                CreateOmmlMathTypeAcceptanceSession(
+                    mathMl,
+                    "block",
+                    numbered: false,
+                    FormulaOleContract.WordOmmlMode),
+                mathMl);
+            AssertEqual(
+                1,
+                document.OMaths.Count,
+                "Reported one-sided matrix OMML regression did not create one native Word equation.");
+            math = document.OMaths[1];
+            range = math.Range.Duplicate;
+            var xml = range.WordOpenXML ?? string.Empty;
+            AssertTrue(
+                xml.IndexOf(
+                    "m:begChr m:val=\"{\"",
+                    StringComparison.Ordinal) >= 0
+                && xml.IndexOf(
+                    "m:endChr m:val=\"\"",
+                    StringComparison.Ordinal) >= 0,
+                "Word did not materialize the reported matrix as a one-sided native delimiter.");
+            var resolved =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    range,
+                    WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Reported one-sided matrix OMML regression could not resolve the inserted equation.");
+            var payload = WordFormulaHostSemanticReader.Read(document, resolved);
+            AssertTrue(
+                payload.Latex.IndexOf(
+                    @"\begin{matrix}",
+                    StringComparison.Ordinal) >= 0
+                && payload.Latex.IndexOf(
+                    "max",
+                    StringComparison.OrdinalIgnoreCase) >= 0,
+                "Reported one-sided matrix OMML regression lost matrix/max content.");
+            Console.WriteLine(
+                "[host-core pure OMML] reported one-sided brace + matrix + max Word BuildUp passed semantic postcondition validation.");
+        }
+        finally
+        {
+            Release(range);
+            Release(math);
+            Release(insertion);
+        }
+    }
+
+    private static void RunWordNativeSemanticCorpusAcceptance()
+    {
+        var cases = new (string Name, string DisplayMode, string MathMl)[]
+        {
+            (
+                "fraction-root",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><msqrt><mi>c</mi></msqrt></mfrac></math>"),
+            (
+                "subsup-sum",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msubsup><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></msubsup><msub><mi>x</mi><mi>i</mi></msub></math>"),
+            (
+                "integral-limits",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msubsup><mo>∫</mo><mn>0</mn><mo>∞</mo></msubsup><mi>f</mi><mfenced><mi>x</mi></mfenced><mi>d</mi><mi>x</mi></math>"),
+            (
+                "paired-matrix",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mfenced open=\"(\" close=\")\"><mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr></mtable></mfenced></math>"),
+            (
+                "one-sided-cases",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mrow><mo fence=\"true\" stretchy=\"true\">{</mo><mtable><mtr><mtd><mi>x</mi></mtd><mtd><mrow><mi>x</mi><mo>&gt;</mo><mn>0</mn></mrow></mtd></mtr><mtr><mtd><mo>−</mo><mi>x</mi></mtd><mtd><mrow><mi>x</mi><mo>≤</mo><mn>0</mn></mrow></mtd></mtr></mtable><mo fence=\"true\" stretchy=\"true\"></mo></mrow></math>"),
+            (
+                "floor-ceiling",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfenced open=\"⌊\" close=\"⌋\"><mi>x</mi></mfenced><mo>+</mo><mfenced open=\"⌈\" close=\"⌉\"><mi>y</mi></mfenced></math>"),
+            (
+                "absolute-norm",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfenced open=\"|\" close=\"|\"><mi>x</mi></mfenced><mo>+</mo><mfenced open=\"‖\" close=\"‖\"><mi>v</mi></mfenced></math>"),
+            (
+                "named-operators",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msub><mo>max</mo><mrow><mi>x</mi><mo>∈</mo><mi>Ω</mi></mrow></msub><mi>f</mi><mfenced><mi>x</mi></mfenced><mo>+</mo><msub><mo>min</mo><mi>y</mi></msub><mi>g</mi><mfenced><mi>y</mi></mfenced></math>"),
+            (
+                "accents",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mover accent=\"true\"><mi>x</mi><mo>→</mo></mover><mo>+</mo><mover accent=\"true\"><mi>y</mi><mo>¯</mo></mover><mo>+</mo><mover accent=\"true\"><mi>z</mi><mo>^</mo></mover></math>"),
+            (
+                "binomial",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfenced><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac></mfenced></math>"),
+            (
+                "align-like-table",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mtable displaystyle=\"true\" columnalign=\"right left\"><mtr><mtd><mi>a</mi></mtd><mtd><mo>=</mo><mi>b</mi><mo>+</mo><mi>c</mi></mtd></mtr><mtr><mtd><mi>d</mi></mtd><mtd><mo>=</mo><mi>e</mi><mo>−</mo><mi>f</mi></mtd></mtr></mtable></math>"),
+            (
+                "set-relations",
+                "inline",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>∣</mo><mi>x</mi><mo>∈</mo><mi>A</mi><mo>∧</mo><mi>x</mi><mo>≤</mo><mi>b</mi><mo>∧</mo><mi>A</mi><mo>⊂</mo><mi>B</mi></math>"),
+            (
+                "nested-structures",
+                "block",
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mfrac><mrow><msqrt><mrow><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mn>1</mn></mrow></msqrt></mrow><mrow><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><mi>n</mi></mfrac></mrow></mfrac></math>"),
+        };
+
+        foreach (var item in cases)
+        {
+            using var host =
+                new WordPerformanceHost(
+                    documentPath: null);
+            var application = host.Application;
+            var document = host.Document;
+            var service = new WordFormulaService(application);
+            Word.Range? insertion = null;
+            try
+            {
+                insertion = document.Range(0, 0);
+                insertion.Select();
+                _ = service.InsertOmml(
+                    CreateOmmlMathTypeAcceptanceSession(
+                        item.MathMl,
+                        item.DisplayMode,
+                        numbered: false,
+                        FormulaOleContract.WordOmmlMode),
+                    item.MathMl);
+                AssertTrue(
+                    document.OMaths.Count >= 1,
+                    $"Word-native semantic corpus '{item.Name}' produced no OMath.");
+            }
+            finally
+            {
+                Release(insertion);
+            }
+        }
+
+        const string plusOne =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>+</mo><mn>1</mn></math>";
+        const string minusOne =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>−</mo><mn>1</mn></math>";
+        var plusOmml = WordOmmlConverter.TransformMathMlToOmml(plusOne);
+        var minusOmml = WordOmmlConverter.TransformMathMlToOmml(minusOne);
+        var negative = WordNativeOmmlSemanticComparer.CompareOmml(
+            plusOmml,
+            minusOmml,
+            display: false);
+        AssertTrue(
+            !negative.Equivalent,
+            "Word-native semantic comparer became too permissive: x+1 matched x-1.");
+
+        Console.WriteLine(
+            $"[host-core pure OMML] Word-native semantic corpus passed {cases.Length} complex structures plus a strict negative-control mismatch.");
     }
 
     private static void RunPureOmmlVisualTeXComplexAdjacentInlineConversionAcceptance(
@@ -2365,6 +2670,15 @@ internal static partial class Program
                 svgPath,
                 260,
                 96);
+        var pngPath =
+            Path.Combine(
+                assetRoot,
+                "preview.png");
+        WriteAcceptancePng(
+            pngPath,
+            "m+3",
+            260,
+            96);
 
         var previousNativePreview =
             Environment.GetEnvironmentVariable(
@@ -2648,8 +2962,131 @@ internal static partial class Program
                         shape)),
                 "Pure OMML→MathType changed formula semantics.");
 
+            SetInlineOleObjectCharacterFontSizeForAcceptance(
+                document,
+                shape,
+                10.5f);
+            shapeRange.Select();
+            var toVisualTeXPlan =
+                service.CaptureFormulaFormatConversionPlan(
+                    wholeDocument: false,
+                    FormulaOleContract.MathTypeOleMode,
+                    FormulaOleContract.NativeOleMode);
+            AssertEqual(
+                1,
+                toVisualTeXPlan.Targets.Count,
+                "MathType→VisualTeX presentation-scale regression did not capture one source.");
+            var toVisualTeXTarget =
+                toVisualTeXPlan.Targets.Single();
+            AssertNear(
+                10.5f,
+                (float)toVisualTeXTarget.FontSizePt,
+                0.01f,
+                "MathType→VisualTeX did not persist the Word-visible 10.5 pt size.");
+
+            var toVisualTeXPrepared =
+                new Dictionary<string, PreparedWordBulkFormula>(
+                    StringComparer.Ordinal)
+                {
+                    [toVisualTeXTarget.Id] =
+                        new PreparedWordBulkFormula
+                        {
+                            Run = new WordBulkRun
+                            {
+                                Id = toVisualTeXTarget.Id,
+                                IsFormula = true,
+                                Latex = toVisualTeXTarget.Latex,
+                                DisplayMode = toVisualTeXTarget.DisplayMode,
+                            },
+                            Session = CreateSimpleFormatTargetSession(
+                                toVisualTeXTarget,
+                                FormulaOleContract.NativeOleMode,
+                                mathMl),
+                            MathMl = mathMl,
+                            PngPath = pngPath,
+                            EmfPath = emfPath,
+                        },
+                };
+            var toVisualTeXResult =
+                service.ApplyFormulaFormatConversionPlan(
+                    toVisualTeXPlan,
+                    toVisualTeXPrepared);
+            AssertEqual(
+                1,
+                toVisualTeXResult.FormulaCount,
+                "MathType→VisualTeX presentation-scale regression did not convert one formula.");
+            AssertEqual(
+                0,
+                toVisualTeXResult.FailedFormulaCount,
+                "MathType→VisualTeX presentation-scale regression reported a failure.");
+            AssertEqual(
+                0,
+                CountMathTypeOleShapes(document),
+                "MathType→VisualTeX presentation-scale regression left the MathType source alive.");
+
+            Release(shapeRange);
+            shapeRange = null;
+            Release(shape);
+            shape = null;
+            Release(shapes);
+            shapes = document.InlineShapes;
+            for (var index = 1;
+                 index <= shapes.Count;
+                 index++)
+            {
+                Word.InlineShape? candidate = null;
+                try
+                {
+                    candidate = shapes[index];
+                    if (!WordFormulaMetadataReader.IsNativeOle(candidate))
+                        continue;
+                    shape = candidate;
+                    candidate = null;
+                    break;
+                }
+                finally
+                {
+                    Release(candidate);
+                }
+            }
+            AssertTrue(
+                shape is not null,
+                "MathType→VisualTeX presentation-scale regression produced no VisualTeX target.");
+            var visualMetadata =
+                WordFormulaMetadataReader.TryReadEmbeddedNativeOle(
+                    shape!)
+                ?? throw new InvalidDataException(
+                    "MathType→VisualTeX presentation-scale target has no embedded metadata.");
+            AssertNear(
+                10.5f,
+                (float)(visualMetadata.FontSizePt ?? 0),
+                0.01f,
+                "MathType→VisualTeX embedded metadata did not retain the Word-visible 10.5 pt size.");
+            AssertNear(
+                10.5f,
+                (float)(visualMetadata.RenderFontSizePt ?? 0),
+                0.01f,
+                "MathType→VisualTeX render metadata did not retain the Word-visible 10.5 pt size.");
+            shape!.Range.Select();
+            var reopenedVisualTeX = service.ReadSelection();
+            AssertNear(
+                10.5f,
+                (float)(reopenedVisualTeX.Metadata?.FontSizePt ?? 0),
+                0.01f,
+                "Reopening the converted VisualTeX formula restored the hidden 12 pt MathType size.");
+            AssertNear(
+                260f * 0.75f,
+                shape.Width,
+                0.75f,
+                "MathType→VisualTeX unexpectedly applied an extra presentation scale to width.");
+            AssertNear(
+                96f * 0.75f,
+                shape.Height,
+                0.75f,
+                "MathType→VisualTeX unexpectedly applied an extra presentation scale to height.");
+
             Console.WriteLine(
-                "[host-core pure OMML] MathType↔OMML preserved semantics/text while OMML remained marker-free.");
+                "[host-core pure OMML] MathType↔OMML preserved semantics/text; MathType→VisualTeX stores/reopens the Word-visible 10.5 pt size without a second presentation scale.");
         }
         finally
         {
@@ -2662,6 +3099,49 @@ internal static partial class Program
             Release(shapes);
             Release(insertion);
             Release(selection);
+        }
+    }
+
+    private static void SetInlineOleObjectCharacterFontSizeForAcceptance(
+        Word.Document document,
+        Word.InlineShape shape,
+        float fontSizePoints)
+    {
+        Word.Range? shapeRange = null;
+        Word.Range? probe = null;
+        Word.Font? font = null;
+        try
+        {
+            shapeRange = shape.Range.Duplicate;
+            for (var position = shapeRange.Start;
+                 position < shapeRange.End;
+                 position++)
+            {
+                Release(font);
+                font = null;
+                Release(probe);
+                probe = document.Range(
+                    position,
+                    position + 1);
+                if (!string.Equals(
+                        probe.Text,
+                        "\u0001",
+                        StringComparison.Ordinal))
+                    continue;
+
+                font = probe.Font;
+                font.Size = fontSizePoints;
+                return;
+            }
+
+            throw new InvalidDataException(
+                "Acceptance MathType OLE has no U+0001 object character.");
+        }
+        finally
+        {
+            Release(font);
+            Release(probe);
+            Release(shapeRange);
         }
     }
 

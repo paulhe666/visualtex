@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 using WordApplication = Microsoft.Office.Interop.Word.Application;
 
@@ -11,6 +14,233 @@ namespace VisualTeX.WordVsto;
 /// </summary>
 internal static class WordOmmlHostWriter
 {
+    internal static bool HasFieldFreeWordNativeNumberHost(
+        Document document,
+        WordFormulaHostDescriptor source)
+    {
+        if (document is null || source is null)
+            return false;
+        if (source.Kind != WordFormulaHostKind.Omml
+            || !source.Display)
+            return false;
+
+        Range? exact = null;
+        Fields? fields = null;
+        try
+        {
+            exact = WordFormulaHostSemanticReader.CreateRange(
+                document,
+                source.Range);
+            if (!WordOmmlConverter.HasWordNativeEquationNumberHost(
+                    exact.WordOpenXML ?? string.Empty))
+                return false;
+
+            fields = exact.Fields;
+            return fields.Count == 0;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(fields);
+            Release(exact);
+        }
+    }
+
+    internal static WordFormulaHostWriteResult ReplacePreservingWordNativeNumberHost(
+        Document document,
+        WordFormulaHostDescriptor source,
+        WordFormulaHostWriteRequest request)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
+        if (request is null)
+            throw new ArgumentNullException(nameof(request));
+        if (source.Kind != WordFormulaHostKind.Omml
+            || !source.Display
+            || request.Kind != WordFormulaHostKind.Omml
+            || !string.Equals(
+                request.DisplayMode,
+                "block",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Preserving a Word-native number host requires display OMML -> display OMML.");
+        }
+        if (!HasFieldFreeWordNativeNumberHost(
+                document,
+                source))
+        {
+            throw new InvalidOperationException(
+                "The source is not a field-free Word-native numbered OMML host.");
+        }
+        if (string.IsNullOrWhiteSpace(request.MathMl)
+            || !request.MathMl!.TrimStart().StartsWith(
+                "<math",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "OMML replacement requires valid MathML.");
+        }
+
+        Range? exact = null;
+        Range? replacement = null;
+        try
+        {
+            exact = WordFormulaHostSemanticReader.CreateRange(
+                document,
+                source.Range);
+            var sourceXml = exact.WordOpenXML ?? string.Empty;
+            if (!WordOmmlConverter.HasWordNativeEquationNumberHost(sourceXml))
+            {
+                throw new InvalidDataException(
+                    "The source OMML no longer contains one Word-native equation-number host.");
+            }
+
+            var semanticOmml =
+                WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+            WordOmmlConverter.ValidateOmmlResult(
+                semanticOmml,
+                request.MathMl!);
+            semanticOmml =
+                ApplySemanticOmmlTypography(
+                    semanticOmml,
+                    request.FontSizePoints);
+
+            // Keep Word's existing equation-number host verbatim. Only the
+            // mathematical prefix of m:eqArr/m:e is replaced. VisualTeX does
+            // not regenerate, renumber, or reinterpret the native suffix.
+            var preservedHostOmml =
+                WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+                    sourceXml,
+                    semanticOmml);
+
+            replacement =
+                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                    document,
+                    exact,
+                    preservedHostOmml,
+                    display: true,
+                    mathFontName: document.OMathFontName);
+
+            // Typography was applied to the replacement mathematical body
+            // before it was merged with the source host. Do not set Range.Font
+            // on the completed OMath: that would also rewrite the field-free
+            // native number payload, which VisualTeX deliberately does not own.
+            WordFormulaHostLayout.ConfigureDisplayParagraph(
+                replacement);
+
+            var described = DescribeInsertedOmml(
+                replacement,
+                requestedNumbered: false,
+                semanticOmml,
+                request.AdditionalValidOmmlContentSignatures);
+            return new WordFormulaHostWriteResult
+            {
+                Host = described.Host,
+                SemanticPostconditionValidated =
+                    described.SemanticValidated,
+            };
+        }
+        finally
+        {
+            Release(replacement);
+            Release(exact);
+        }
+    }
+
+    private static string ApplySemanticOmmlTypography(
+        string omml,
+        double fontSizePoints)
+    {
+        var equation = XElement.Parse(
+            WordOmmlConverter.ExtractSingleOMath(omml),
+            LoadOptions.PreserveWhitespace);
+        XNamespace math =
+            "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        XNamespace word =
+            "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var halfPoints = ((int)Math.Round(
+                FormulaFontSize.NormalizeWordOmmlSize(fontSizePoints) * 2d,
+                MidpointRounding.AwayFromZero))
+            .ToString(CultureInfo.InvariantCulture);
+
+        foreach (var run in equation.DescendantsAndSelf(math + "r"))
+        {
+            var properties = run.Element(word + "rPr");
+            if (properties is null)
+            {
+                properties = new XElement(word + "rPr");
+                var mathProperties = run.Element(math + "rPr");
+                if (mathProperties is not null)
+                    mathProperties.AddAfterSelf(properties);
+                else
+                    run.AddFirst(properties);
+            }
+            SetWordRunTypography(
+                properties,
+                word,
+                halfPoints);
+        }
+
+        foreach (var control in equation.DescendantsAndSelf(math + "ctrlPr"))
+        {
+            var properties = control.Element(word + "rPr");
+            if (properties is null)
+            {
+                properties = new XElement(word + "rPr");
+                control.Add(properties);
+            }
+            SetWordRunTypography(
+                properties,
+                word,
+                halfPoints);
+        }
+
+        return equation.ToString(
+            SaveOptions.DisableFormatting);
+    }
+
+    private static void SetWordRunTypography(
+        XElement properties,
+        XNamespace word,
+        string halfPoints)
+    {
+        var size = properties.Element(word + "sz");
+        if (size is null)
+        {
+            size = new XElement(word + "sz");
+            properties.Add(size);
+        }
+        size.SetAttributeValue(
+            word + "val",
+            halfPoints);
+
+        var complexSize = properties.Element(word + "szCs");
+        if (complexSize is null)
+        {
+            complexSize = new XElement(word + "szCs");
+            properties.Add(complexSize);
+        }
+        complexSize.SetAttributeValue(
+            word + "val",
+            halfPoints);
+
+        var position = properties.Element(word + "position");
+        if (position is null)
+        {
+            position = new XElement(word + "position");
+            properties.Add(position);
+        }
+        position.SetAttributeValue(
+            word + "val",
+            "0");
+    }
+
     internal static WordFormulaHostWriteResult Insert(
         WordApplication application,
         Document document,
@@ -194,12 +424,6 @@ internal static class WordOmmlHostWriter
                     insertion.Duplicate,
                     preparedOmml);
 
-            AddRequiredLatexFragment(
-                request,
-                MathMlToLatexConverter.Convert(
-                    request.MathMl
-                    ?? string.Empty));
-
             var targetStart =
                 sourceStart;
             var targetEnd =
@@ -209,16 +433,6 @@ internal static class WordOmmlHostWriter
             if (leftRange is not null
                 && rightRange is not null)
             {
-                AddRequiredLatexFragment(
-                    request,
-                    ReadExactInlineLatex(
-                        document,
-                        leftRange));
-                AddRequiredLatexFragment(
-                    request,
-                    ReadExactInlineLatex(
-                        document,
-                        rightRange));
                 combinedOmml =
                     WordOmmlConverter.CombineInlineOmml(
                         leftRange.WordOpenXML,
@@ -231,11 +445,6 @@ internal static class WordOmmlHostWriter
             }
             else if (leftRange is not null)
             {
-                AddRequiredLatexFragment(
-                    request,
-                    ReadExactInlineLatex(
-                        document,
-                        leftRange));
                 combinedOmml =
                     WordOmmlConverter.CombineInlineOmml(
                         leftRange.WordOpenXML,
@@ -247,11 +456,6 @@ internal static class WordOmmlHostWriter
             }
             else
             {
-                AddRequiredLatexFragment(
-                    request,
-                    ReadExactInlineLatex(
-                        document,
-                        rightRange!));
                 combinedOmml =
                     WordOmmlConverter.CombineInlineOmml(
                         preparedOmml,
@@ -289,51 +493,6 @@ internal static class WordOmmlHostWriter
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
-        }
-    }
-
-    private static string ReadExactInlineLatex(
-        Document document,
-        Range exact)
-    {
-        var descriptor =
-            new WordFormulaHostDescriptor
-            {
-                Kind =
-                    WordFormulaHostKind.Omml,
-                DisplayMode =
-                    "inline",
-                Range =
-                    new WordFormulaRangeAddress
-                    {
-                        StoryType =
-                            exact.StoryType,
-                        Start =
-                            exact.Start,
-                        End =
-                            exact.End,
-                    },
-            };
-        return WordFormulaHostSemanticReader
-            .Read(
-                document,
-                descriptor)
-            .Latex;
-    }
-
-    private static void AddRequiredLatexFragment(
-        WordFormulaHostWriteRequest request,
-        string? latex)
-    {
-        if (string.IsNullOrWhiteSpace(
-                latex))
-            return;
-        if (!request.RequiredOmmlLatexFragments.Contains(
-                latex!,
-                StringComparer.Ordinal))
-        {
-            request.RequiredOmmlLatexFragments.Add(
-                latex!);
         }
     }
 
@@ -803,73 +962,28 @@ internal static class WordOmmlHostWriter
             var actualSemanticXml =
                 exact.WordOpenXML
                 ?? string.Empty;
-            if (requestedNumbered
-                && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+
+            var display =
+                math.Type ==
+                WdOMathType.wdOMathDisplay;
+            var comparison =
+                WordNativeOmmlSemanticComparer.CompareOmml(
+                    expectedSemanticOmml,
                     actualSemanticXml,
-                    formulaId: null))
+                    display,
+                    additionalValidSignatures);
+            if (!comparison.Equivalent)
             {
-                actualSemanticXml =
-                    WordOmmlConverter
-                        .StripManagedVisualTeXNativeEquationNumber(
-                            actualSemanticXml);
+                throw new InvalidDataException(
+                    "Word materialized an OMML equation whose canonical mathematical semantics differ from the requested content. "
+                    + $"display={(display ? "block" : "inline")}; "
+                    + $"expectedOmmlSignature=[{comparison.ExpectedOmmlSignature}]; "
+                    + $"actualOmmlSignature=[{comparison.ActualOmmlSignature}]; "
+                    + $"expectedMathMlSignature=[{comparison.ExpectedMathMlSignature}]; "
+                    + $"actualMathMlSignature=[{comparison.ActualMathMlSignature}]; "
+                    + $"semanticExtractionError=[{comparison.SemanticExtractionError ?? string.Empty}].");
             }
-
-            var actualSignature =
-                WordOmmlConverter.ComputeImportedOmmlContentSignature(
-                    actualSemanticXml);
-            var expectedSignature =
-                WordOmmlConverter.ComputeImportedOmmlContentSignature(
-                    expectedSemanticOmml);
-            var semanticValidated =
-                string.Equals(
-                    actualSignature,
-                    expectedSignature,
-                    StringComparison.Ordinal)
-                || additionalValidSignatures.Any(signature =>
-                    string.Equals(
-                        signature,
-                        actualSignature,
-                        StringComparison.Ordinal));
-
-            if (!semanticValidated)
-            {
-                // Word is free to canonicalize the OMML tree while BuildUp
-                // materializes an inline equation. This is especially visible
-                // when two directly adjacent inline equations are naturally
-                // merged into one physical OMath: fenced-parenthesis runs,
-                // n-ary limits and fraction/binomial structures can all acquire
-                // a different but mathematically equivalent OMML shape. The
-                // writer already knows the exact Word-native merged OMML it
-                // requested, so validate those two complete mathematical trees
-                // semantically before falling back to the outer mutation
-                // validator. Do not reduce this to LaTeX substring matching.
-                try
-                {
-                    var display =
-                        math.Type ==
-                        WdOMathType.wdOMathDisplay;
-                    var expectedMathMl =
-                        WordOmmlConverter.TransformOmmlToMathMl(
-                            expectedSemanticOmml,
-                            display);
-                    var actualMathMl =
-                        WordOmmlConverter.TransformOmmlToMathMl(
-                            actualSemanticXml,
-                            display);
-                    semanticValidated =
-                        string.Equals(
-                            MathTypeMtefCodec.SemanticSignature(
-                                expectedMathMl),
-                            MathTypeMtefCodec.SemanticSignature(
-                                actualMathMl),
-                            StringComparison.Ordinal);
-                }
-                catch
-                {
-                    // Keep the existing outer validator as the fail-closed
-                    // fallback if semantic extraction itself is unavailable.
-                }
-            }
+            var semanticValidated = true;
 
             var address =
                 new WordFormulaRangeAddress

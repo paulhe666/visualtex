@@ -71,12 +71,6 @@ internal sealed class WordFormulaFormatConversionTarget
     internal int PrecedingPlainBlankParagraphCount { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";
     internal double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;
-    // MathType's MTEF full size is the semantic font size. Word can display the
-    // embedded object at a different document/user scale; the U+0001 OLE result
-    // character carries that Word-layer size without changing MTEF semantics.
-    // Preserve that ratio only as target presentation geometry. Never write it
-    // back into FontSizePt and never infer it from formula-specific outer extents.
-    internal float? SourceMathTypePresentationScale { get; set; }
     // Preserve the source Word-layer inline baseline during MathType -> VisualTeX
     // conversion. MathType already presents the formula at this object-character
     // Position; recalculating a fresh VisualTeX descent here can visibly push an

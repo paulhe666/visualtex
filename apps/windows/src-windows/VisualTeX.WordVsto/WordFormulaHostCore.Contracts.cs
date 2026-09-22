@@ -95,11 +95,6 @@ internal sealed class WordFormulaHostWriteRequest
     // insertion; they are operation-only and are never serialized.
     internal List<string> AdditionalValidOmmlContentSignatures { get; } = new();
 
-    // When Word naturally merges a collapsed inline insertion into one adjacent
-    // inline OMath, its internal run/OMML normalization is Word-owned. In that
-    // case validation falls back to these operation-only semantic fragments
-    // instead of requiring an exact XML signature.
-    internal List<string> RequiredOmmlLatexFragments { get; } = new();
 }
 
 internal sealed class WordFormulaHostWriteResult

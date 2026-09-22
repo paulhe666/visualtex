@@ -194,6 +194,366 @@ internal static partial class Program
         }
     }
 
+    private static void RunWordComplexOmmlCommitClose(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        AssertTrue(
+            !AttachActiveWord,
+            "The complex OMML editor Apply acceptance must own its Word process.");
+        Directory.CreateDirectory(artifactRoot);
+        AssertDirectOfficeEditorCloseLatency(client);
+        var sessionPath =
+            Environment.GetEnvironmentVariable(
+                "VISUALTEX_COMPLEX_OMML_SESSION_PATH");
+        if (string.IsNullOrWhiteSpace(sessionPath))
+            throw new InvalidOperationException(
+                "VISUALTEX_COMPLEX_OMML_SESSION_PATH must point to the exact user-reported editor session.");
+        sessionPath = Path.GetFullPath(sessionPath);
+        if (!File.Exists(sessionPath))
+            throw new FileNotFoundException(
+                "The complex OMML source session is missing.",
+                sessionPath);
+
+        var expectedMathMl =
+            ReadSessionExportMathMl(sessionPath);
+        var expectedLatex =
+            ReadSessionLatex(sessionPath);
+        if (string.IsNullOrWhiteSpace(expectedLatex))
+            throw new InvalidDataException(
+                "The complex OMML source session has no LaTeX line.");
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        VisualTeX.WordVsto.ThisAddIn? addIn = null;
+        Word.OMath? math = null;
+        Word.Range? range = null;
+        Array custom = Array.Empty<object>();
+        string? sessionId = null;
+        string? reloadSessionId = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Add();
+            document.Range(0, 0).Select();
+
+            addIn = new VisualTeX.WordVsto.ThisAddIn();
+            addIn.OnConnection(
+                application,
+                ext_ConnectMode.ext_cm_AfterStartup,
+                addIn,
+                ref custom);
+
+            var existing = SnapshotSessionIds();
+            addIn.OnInsertDisplayOmml(new object());
+            sessionId = WaitForNewSession(
+                existing,
+                "word",
+                TimeSpan.FromSeconds(30));
+            _ = WaitForVisibleOfficeEditorWindow(
+                TimeSpan.FromSeconds(20));
+
+            var session = client.GetSessionAsync(
+                    sessionId,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            AssertEqual(
+                "wordOmml",
+                session.ObjectMode,
+                "Complex OMML editor acceptance did not create a wordOmml Session.");
+            AssertEqual(
+                "create",
+                session.Mode,
+                "Complex OMML editor acceptance did not create a create Session.");
+
+            // Load the exact user-reported source into the real Office editor.
+            // Reopen the same Session after patching so React/MathLive initializes
+            // from this source instead of racing the original blank create payload.
+            var lineId =
+                session.Lines.FirstOrDefault()?.Id
+                ?? throw new InvalidDataException(
+                    "Complex OMML create Session has no editable line.");
+            // Move the reusable WebView to a temporary Session first.
+            // That stops the blank create page from autosaving over the source
+            // while we seed the real Session from the user-reported formula.
+            var reloadLineId = Guid.NewGuid().ToString("D");
+            var reloadSession = client.CreateSessionAsync(
+                    new CreateVstoSessionRequest
+                    {
+                        Mode = "create",
+                        Host = "word",
+                        FormulaId = Guid.NewGuid().ToString("D"),
+                        SourceDocumentId = Guid.NewGuid().ToString("D"),
+                        SourceObjectId = "acceptance-reload",
+                        Title = "Complex OMML reload bridge",
+                        Lines = new List<FormulaLine>
+                        {
+                            new()
+                            {
+                                Id = reloadLineId,
+                                Latex = "x",
+                            },
+                        },
+                        ActiveLineId = reloadLineId,
+                        CodeFormat = "latex",
+                        DisplayMode = "inline",
+                        ObjectMode = FormulaOleContract.WordOmmlMode,
+                        FontSizePt = 11,
+                    },
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            reloadSessionId = reloadSession.Id;
+            client.OpenEditorAsync(
+                    reloadSessionId,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Thread.Sleep(500);
+
+            session = client.PatchAsync(
+                    sessionId,
+                    new
+                    {
+                        lines = new[]
+                        {
+                            new
+                            {
+                                id = lineId,
+                                latex = expectedLatex,
+                            },
+                        },
+                        activeLineId = lineId,
+                        codeFormat = "latex",
+                        displayMode = "block",
+                        objectMode = "wordOmml",
+                        numbered = false,
+                        dirty = true,
+                        status = "editing",
+                        error = (string?)null,
+                    },
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            // Switching back to a different Session id uses the production
+            // visualtex-office-session event and forces useOfficeSession to GET
+            // the freshly patched payload without closing/cancelling the window.
+            client.OpenEditorAsync(
+                    sessionId,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            var editorWindow =
+                WaitForVisibleOfficeEditorWindow(
+                    TimeSpan.FromSeconds(20));
+            Thread.Sleep(900);
+            var reloaded = client.GetSessionAsync(
+                    sessionId,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            AssertEqual(
+                expectedLatex,
+                reloaded.Lines.FirstOrDefault()?.Latex ?? string.Empty,
+                "OfficeDialog reloaded a source different from the exact user-reported formula.");
+
+            client.PatchAsync(
+                    reloadSessionId,
+                    new
+                    {
+                        status = "cancelled",
+                        explicitCancel = true,
+                        error = (string?)null,
+                    },
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            if (!SetForegroundWindow(editorWindow))
+                throw new InvalidOperationException(
+                    "Unable to foreground the VisualTeX Office editor for Ctrl+S Apply.");
+            Thread.Sleep(300);
+
+            // Ctrl+S is OfficeDialogApp's production Apply-and-close shortcut.
+            // From here onward the acceptance does not patch committing and
+            // does not call CloseEditorAsync: the real editor owns export,
+            // commit, host acknowledgement, and window closure.
+            var apply = Stopwatch.StartNew();
+            WinForms.SendKeys.SendWait("^s");
+
+            OfficeSessionDocument? terminal = null;
+            TimeSpan? completedElapsed = null;
+            TimeSpan? hiddenElapsed = null;
+            var observationDeadline =
+                DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            while (DateTime.UtcNow < observationDeadline
+                   && (terminal is null || hiddenElapsed is null))
+            {
+                WinForms.Application.DoEvents();
+                if (hiddenElapsed is null
+                    && FindVisibleOfficeEditorWindow() == IntPtr.Zero)
+                {
+                    hiddenElapsed = apply.Elapsed;
+                }
+
+                var current = client.GetSessionAsync(
+                        sessionId,
+                        CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                if (current.Status is
+                    "completed" or "failed" or "cancelled")
+                {
+                    terminal = current;
+                    completedElapsed ??= apply.Elapsed;
+                }
+                if (terminal is not null && hiddenElapsed is not null)
+                    break;
+                Thread.Sleep(40);
+            }
+
+            if (terminal is null)
+                throw new TimeoutException(
+                    "Complex OMML editor Ctrl+S Apply did not reach a terminal Session state.");
+            AssertEqual(
+                "completed",
+                terminal.Status,
+                terminal.Error
+                ?? "Complex OMML editor Ctrl+S Apply did not complete.");
+            if (hiddenElapsed is null)
+                throw new TimeoutException(
+                    "Complex OMML editor did not hide after the completed Session.");
+
+            // Gate cleanup is host bookkeeping and must not be counted as the
+            // user-visible editor close latency.
+            WaitForAddInIdle(
+                addIn,
+                TimeSpan.FromSeconds(10));
+            if (hiddenElapsed.Value >= TimeSpan.FromSeconds(3))
+            {
+                throw new InvalidDataException(
+                    "Complex OMML Apply completed but the Office editor did not close through the normal Session flow quickly enough. "
+                    + $"completedMs={completedElapsed.Value.TotalMilliseconds:0}; "
+                    + $"hiddenMs={hiddenElapsed.Value.TotalMilliseconds:0}.");
+            }
+
+            AssertEqual(
+                1,
+                document.OMaths.Count,
+                "Complex OMML editor commit did not leave exactly one Word equation.");
+            math = document.OMaths[1];
+            range = math.Range.Duplicate;
+            var resolved =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    range,
+                    WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Complex OMML editor commit could not resolve the inserted Word equation.");
+            var payload =
+                WordFormulaHostSemanticReader.Read(
+                    document,
+                    resolved);
+            if (string.IsNullOrWhiteSpace(payload.WordOpenXml))
+                throw new InvalidDataException(
+                    "Complex OMML editor commit returned no semantic WordOpenXML.");
+            var comparison =
+                WordNativeOmmlSemanticComparer
+                    .CompareMathMlToWordOpenXml(
+                        expectedMathMl,
+                        payload.WordOpenXml!,
+                        display: true);
+            if (!comparison.Equivalent)
+            {
+                throw new InvalidDataException(
+                    "Complex OMML editor commit changed mathematical semantics. "
+                    + $"expectedMathMlSignature=[{comparison.ExpectedMathMlSignature}]; "
+                    + $"actualMathMlSignature=[{comparison.ActualMathMlSignature}]; "
+                    + $"error=[{comparison.SemanticExtractionError ?? string.Empty}].");
+            }
+
+            Console.WriteLine(
+                "[COMPLEX OMML EDITOR APPLY PASS] "
+                + $"sessionId={sessionId}; "
+                + $"completedMs={completedElapsed.Value.TotalMilliseconds:0}; "
+                + $"hiddenMs={hiddenElapsed.Value.TotalMilliseconds:0}; "
+                + $"semanticSignature={comparison.ActualMathMlSignature}");
+            sessionId = null;
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(reloadSessionId))
+            {
+                try
+                {
+                    client.PatchAsync(
+                            reloadSessionId!,
+                            new
+                            {
+                                status = "cancelled",
+                                explicitCancel = true,
+                                error = (string?)null,
+                            },
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+                catch { }
+            }
+            if (!string.IsNullOrWhiteSpace(sessionId))
+            {
+                try
+                {
+                    var current = client.GetSessionAsync(
+                            sessionId!,
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    if (current.Status is not
+                        ("completed" or "cancelled" or "failed"))
+                    {
+                        client.PatchAsync(
+                                sessionId!,
+                                new
+                                {
+                                    status = "cancelled",
+                                    explicitCancel = true,
+                                    error = (string?)null,
+                                },
+                                CancellationToken.None)
+                            .GetAwaiter().GetResult();
+                    }
+                    client.CloseEditorAsync(
+                            sessionId!,
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+                catch { }
+            }
+            if (addIn is not null)
+            {
+                try
+                {
+                    addIn.OnDisconnection(
+                        ext_DisconnectMode.ext_dm_UserClosed,
+                        ref custom);
+                }
+                catch { }
+            }
+            Release(range);
+            Release(math);
+            if (document is not null)
+            {
+                try
+                {
+                    document.Close(
+                        Word.WdSaveOptions.wdDoNotSaveChanges);
+                }
+                catch { }
+            }
+            try
+            {
+                QuitWordApplicationIfOwned(application);
+            }
+            catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
     private static void AssertStaleRibbonSessionRecovery(
         VisualTeXSessionClient client,
         VisualTeX.WordVsto.ThisAddIn addIn,
@@ -296,6 +656,83 @@ internal static partial class Program
                 gate.Release();
                 Interlocked.Exchange(ref released, 1);
             }
+        }
+    }
+
+    private static void AssertDirectOfficeEditorCloseLatency(
+        VisualTeXSessionClient client)
+    {
+        var lineId = Guid.NewGuid().ToString("D");
+        var session = client.CreateSessionAsync(
+                new CreateVstoSessionRequest
+                {
+                    Mode = "create",
+                    Host = "word",
+                    FormulaId = Guid.NewGuid().ToString("D"),
+                    SourceDocumentId = Guid.NewGuid().ToString("D"),
+                    SourceObjectId = "direct-close-latency",
+                    Title = "Direct close latency acceptance",
+                    Lines = new List<FormulaLine>
+                    {
+                        new() { Id = lineId, Latex = "x" },
+                    },
+                    ActiveLineId = lineId,
+                    CodeFormat = "latex",
+                    DisplayMode = "inline",
+                    ObjectMode = FormulaOleContract.WordOmmlMode,
+                    FontSizePt = 11,
+                    AutoCommitOnClose = false,
+                },
+                CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        try
+        {
+            client.OpenEditorAsync(
+                    session.Id,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            _ = WaitForVisibleOfficeEditorWindow(
+                TimeSpan.FromSeconds(20));
+
+            var watch = Stopwatch.StartNew();
+            client.CloseEditorAsync(
+                    session.Id,
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+            var responseElapsed = watch.Elapsed;
+            WaitForOfficeEditorHidden(
+                TimeSpan.FromSeconds(10));
+            var hiddenElapsed = watch.Elapsed;
+
+            Console.WriteLine(
+                "[DIRECT OFFICE EDITOR CLOSE] "
+                + $"responseMs={responseElapsed.TotalMilliseconds:0}; "
+                + $"hiddenMs={hiddenElapsed.TotalMilliseconds:0}");
+        }
+        finally
+        {
+            try
+            {
+                var current = client.GetSessionAsync(
+                        session.Id,
+                        CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                if (current.Status is not ("completed" or "cancelled" or "failed"))
+                {
+                    client.PatchAsync(
+                            session.Id,
+                            new
+                            {
+                                status = "cancelled",
+                                explicitCancel = true,
+                                error = (string?)null,
+                            },
+                            CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+            }
+            catch { }
         }
     }
 
@@ -417,10 +854,35 @@ internal static partial class Program
         ref Word.Bookmark? bookmark,
         ref Word.Range? equationRange)
     {
-        bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
-            ?? throw new InvalidDataException("The native close fixture lost its OMML bookmark.");
-        equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
-        equationRange.Select();
+        bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
+        if (bookmark is not null)
+        {
+            equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
+            equationRange.Select();
+            return;
+        }
+
+        // Current native OMML deliberately carries no VisualTeX durable
+        // bookmark/identity. This acceptance fixture owns a document with one
+        // OMath, so select that exact Word-native host instead of reintroducing
+        // retired VisualTeX metadata just to satisfy the test harness.
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        try
+        {
+            maths = document.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException(
+                    $"The native close fixture expected one bookmark-free OMath; found {maths.Count}.");
+            math = maths[1];
+            equationRange = math.Range.Duplicate;
+            equationRange.Select();
+        }
+        finally
+        {
+            Release(math);
+            Release(maths);
+        }
     }
 
     private static IntPtr WaitForVisibleOfficeEditorWindow(TimeSpan timeout)
