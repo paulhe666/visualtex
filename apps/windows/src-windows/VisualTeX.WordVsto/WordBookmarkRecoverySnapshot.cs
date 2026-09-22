@@ -27,6 +27,16 @@ internal sealed class WordBookmarkRecoverySnapshot
             .Select(prefix => prefix + suffix);
     }
 
+    internal static IEnumerable<string> NamesForUnnumberedOmmlFormula(
+        string formulaId)
+    {
+        var suffix = Guid.Parse(formulaId).ToString("N");
+        // A healthy unnumbered native formula owns only its durable OMML anchor
+        // plus an optional interrupted inline-boundary sentinel. Numbering, OLE
+        // and reference aliases cannot belong to this host.
+        return new[] { "VTOMML_" + suffix, "VTBL_" + suffix };
+    }
+
     internal WordBookmarkRecoverySnapshot(Document document, Range scope, string normalizedBody,
         IEnumerable<string> ownedNames)
     {
@@ -77,8 +87,40 @@ internal sealed class WordBookmarkRecoverySnapshot
                 }
                 finally { Release(range); Release(bookmark); }
             }
-            if (changed.Count == 0) return;
-            VerifyOnlyBookmarkSpansChanged(originalBody, currentBody, changed.Select(span => span.Name).ToArray());
+            if (changed.Count == 0)
+            {
+                if (string.Equals(
+                        originalBody,
+                        currentBody,
+                        StringComparison.Ordinal))
+                    return;
+
+                // Word 2021 can restore a collapsed bookmark to the same COM
+                // Range.Start/End while serializing the marker on the opposite
+                // side of an inline OMath. The logical range therefore looks
+                // unchanged through Bookmarks.Item(...).Range even though
+                // WordOpenXML proves that its boundary affinity drifted. If the
+                // normalized body becomes byte-for-byte identical after removing
+                // only this operation's owned bookmark markers, rebind those
+                // bookmarks from their captured spans to restore the original
+                // serialization boundary. No user bookmark or document content is
+                // eligible for this fallback.
+                VerifyOnlyBookmarkSpansChanged(
+                    originalBody,
+                    currentBody,
+                    spans.Select(span => span.Name).ToArray());
+                changed.AddRange(spans);
+                WordDoubleClickHook.TraceMessage(
+                    $"word-undo-bookmark-rebind-forced serialized-boundary-drift count={changed.Count}");
+            }
+            else
+            {
+                VerifyOnlyBookmarkSpansChanged(
+                    originalBody,
+                    currentBody,
+                    changed.Select(span => span.Name).ToArray());
+            }
+
             // Validate every destination before the first mutation. This does not
             // delete bookmark contents, Frames, fields or reference aliases.
             foreach (var span in changed)

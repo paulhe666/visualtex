@@ -1307,14 +1307,49 @@ internal static partial class Program
             var contentEnd = document.Content.End;
             AssertTrue(captionParagraphEnd < contentEnd,
                 "Caption repair did not leave any following body paragraph.");
-            bodyProbe = document.Range(
-                captionParagraphEnd,
-                Math.Min(contentEnd, captionParagraphEnd + 1));
+
+            // A Word Frame is paragraph-based and keeps one zero-text anchor
+            // paragraph immediately after its visible caption paragraph. That
+            // anchor cannot be deleted: removing its paragraph mark expands the
+            // Frame back across the following body paragraph. Skip only empty
+            // structural anchor paragraphs and validate the first real body
+            // paragraph instead.
+            Release(paragraph);
+            paragraph = null;
+            Release(paragraphs);
+            paragraphs = document.Paragraphs;
+            for (var paragraphIndex = 1;
+                 paragraphIndex <= paragraphs.Count;
+                 paragraphIndex++)
+            {
+                Word.Paragraph? candidateParagraph = null;
+                Word.Range? candidateRange = null;
+                try
+                {
+                    candidateParagraph = paragraphs[paragraphIndex];
+                    candidateRange = candidateParagraph.Range;
+                    if (candidateRange.End <= captionParagraphEnd)
+                        continue;
+                    var candidateText = (candidateRange.Text ?? string.Empty)
+                        .Replace("\r", string.Empty)
+                        .Replace("\a", string.Empty)
+                        .Trim();
+                    if (candidateText.Length == 0)
+                        continue;
+                    bodyProbe = candidateRange.Duplicate;
+                    break;
+                }
+                finally
+                {
+                    Release(candidateRange);
+                    Release(candidateParagraph);
+                }
+            }
+            AssertTrue(bodyProbe is not null,
+                "Caption repair did not preserve a non-empty following body paragraph.");
             AssertEqual(0, bodyProbe.Frames.Count,
                 "Caption repair still leaves the following body text inside the hidden Frame.");
-            AssertTrue(bodyProbe.Paragraphs.Count > 0,
-                "Caption repair did not preserve a standalone body paragraph.");
-            var followingParagraphText = bodyProbe.Paragraphs[1].Range.Text ?? string.Empty;
+            var followingParagraphText = bodyProbe.Text ?? string.Empty;
             AssertTrue(
                 followingParagraphText.IndexOf("BODY_AFTER_CAPTION", StringComparison.Ordinal) >= 0,
                 "Caption repair deleted or displaced the following body text.");

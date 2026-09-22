@@ -101,10 +101,10 @@ internal static partial class Program
                 insertTimings.Add(watch.ElapsedMilliseconds);
                 formulaIds.Add(formulaId);
 
-                // A successful numbered display insertion must leave the caret
-                // in ordinary body text. If Word keeps it inside the three-cell
-                // equation table or the clipped native-caption frame, the next
-                // user keystroke becomes part of numbering infrastructure.
+                // A successful numbered OLE insertion must leave the caret in an
+                // ordinary body paragraph after its table-free tab host. If Word
+                // keeps it in generated numbering infrastructure, the next user
+                // keystroke becomes part of the formula number.
                 Word.Range? typingProbe = null;
                 Word.Frames? typingProbeFrames = null;
                 try
@@ -131,8 +131,8 @@ internal static partial class Program
                 }
             }
 
-            AssertEqual(targetFormulaCount, document.Tables.Count,
-                $"Numbered OLE performance fixture did not create {targetFormulaCount} equation tables.");
+            AssertEqual(0, document.Tables.Count,
+                "Numbered OLE performance fixture regressed from table-free tab paragraphs to equation tables.");
             AssertNumberedFormulaArtifacts(document, formulaIds);
             AssertVisibleEquationNumbers(document, formulaIds, 1);
 
@@ -219,27 +219,32 @@ internal static partial class Program
                 Release(ommlSourceShape);
             }
 
-            Word.Table? sourceTable = null;
-            Word.Range? sourceTableRange = null;
-            Word.Table? copySourceTable = null;
+            Word.InlineShape? sourceShape = null;
+            Word.Range? sourceOwnerRange = null;
             Word.Range? copySourceRange = null;
             Word.InlineShape? copiedShape = null;
             Word.Range? copiedShapeRange = null;
             var copiedFormulaIds = new List<string>();
             try
             {
-                sourceTable = document.Tables[1];
-                sourceTableRange = sourceTable.Range.Duplicate;
-                sourceTableRange.Copy();
+                sourceShape = FindNumberedOleByFormulaId(document, formulaIds[0]);
+                sourceOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                        document,
+                        formulaIds[0])
+                    ?? throw new InvalidOperationException(
+                        "Numbered OLE copy performance fixture lost its tab-paragraph owner.");
+                sourceOwnerRange.Copy();
 
                 copyDocument = application.Documents.Add();
                 copyDocument.Activate();
                 WordEquationNumbering.SetEquationNumberFormatPreference(copyDocument, "continuous");
                 application.Selection.Paste();
-                AssertEqual(1, copyDocument.Tables.Count,
+                AssertEqual(0, copyDocument.Tables.Count,
+                    "Numbered OLE copy performance fixture created a legacy table host.");
+                AssertEqual(1, copyDocument.InlineShapes.Count,
                     "Numbered OLE copy performance fixture could not seed the copy document.");
 
-                copiedShape = copyDocument.Tables[1].Cell(1, 2).Range.InlineShapes[1];
+                copiedShape = copyDocument.InlineShapes[1];
                 copiedShapeRange = copiedShape.Range;
                 copiedShapeRange.Select();
                 var firstSelection = service.ReadSelection();
@@ -247,16 +252,6 @@ internal static partial class Program
                     || firstSelection.Metadata is null)
                     throw new InvalidOperationException(
                         "Seeded numbered OLE formula was not recognized in the copy document.");
-                // A table copied into a different document carries the visible
-                // number cell but not VisualTeX's hidden caption paragraph. Seed
-                // the destination document with one complete local numbering
-                // scaffold before measuring same-document duplication.
-                WordEquationNumbering.ReconcileFormula(
-                    copyDocument,
-                    copiedShapeRange,
-                    copiedShape.Height,
-                    firstSelection.Metadata,
-                    numberingOrderMayHaveChanged: true);
                 copiedFormulaIds.Add(firstSelection.FormulaId!);
                 Release(copiedShapeRange);
                 copiedShapeRange = null;
@@ -269,9 +264,11 @@ internal static partial class Program
                 {
                     Release(copySourceRange);
                     copySourceRange = null;
-                    Release(copySourceTable);
-                    copySourceTable = copyDocument.Tables[copyIndex - 1];
-                    copySourceRange = copySourceTable.Range.Duplicate;
+                    copySourceRange = WordEquationNumbering.FindNumberingOwnerRange(
+                            copyDocument,
+                            copiedFormulaIds[copyIndex - 2])
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OLE copy performance fixture lost tab host {copyIndex - 1}.");
                     copySourceRange.Copy();
                     application.Selection.EndKey(Word.WdUnits.wdStory);
                     application.Selection.TypeParagraph();
@@ -279,13 +276,15 @@ internal static partial class Program
                     var pasteWatch = Stopwatch.StartNew();
                     application.Selection.Paste();
                     pasteWatch.Stop();
-                    AssertEqual(copyIndex, copyDocument.Tables.Count,
-                        $"Numbered OLE copy performance fixture did not paste table {copyIndex}.");
+                    AssertEqual(0, copyDocument.Tables.Count,
+                        $"Numbered OLE copy performance fixture created a table at copy {copyIndex}.");
+                    AssertEqual(copyIndex, copyDocument.InlineShapes.Count,
+                        $"Numbered OLE copy performance fixture did not paste formula {copyIndex}.");
 
                     Release(copiedShapeRange);
                     copiedShapeRange = null;
                     Release(copiedShape);
-                    copiedShape = copyDocument.Tables[copyIndex].Cell(1, 2).Range.InlineShapes[1];
+                    copiedShape = copyDocument.InlineShapes[copyIndex];
                     copiedShapeRange = copiedShape.Range;
                     copiedShapeRange.Select();
                     var repairWatch = Stopwatch.StartNew();
@@ -307,12 +306,15 @@ internal static partial class Program
                 }
 
                 Console.WriteLine(
-                    $"    [perf] seventh numbered OLE table paste: {finalPasteMs}ms; "
+                    $"    [perf] seventh numbered OLE tab-paragraph paste: {finalPasteMs}ms; "
                     + $"identity/number repair: {finalRepairMs}ms");
                 if (finalRepairMs > 1500)
                     throw new InvalidDataException(
                         $"Numbered OLE copy identity/number repair still took {finalRepairMs}ms at seven formulas.");
-                AssertNumberedFormulaArtifacts(copyDocument, copiedFormulaIds);
+                AssertNumberedFormulaArtifacts(
+                    copyDocument,
+                    copiedFormulaIds,
+                    "seven-copy tab-paragraph document");
                 AssertVisibleEquationNumbers(copyDocument, copiedFormulaIds, 1);
             }
             finally
@@ -320,9 +322,8 @@ internal static partial class Program
                 Release(copiedShapeRange);
                 Release(copiedShape);
                 Release(copySourceRange);
-                Release(copySourceTable);
-                Release(sourceTableRange);
-                Release(sourceTable);
+                Release(sourceOwnerRange);
+                Release(sourceShape);
                 if (copyDocument is not null)
                 {
                     try { copyDocument.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
@@ -332,7 +333,10 @@ internal static partial class Program
                 }
             }
 
-            AssertNumberedFormulaArtifacts(document, formulaIds);
+            AssertNumberedFormulaArtifacts(
+                document,
+                formulaIds,
+                "source document after OLE-to-OMML edit and copy probe");
             AssertVisibleEquationNumbers(document, formulaIds, 1);
             Console.WriteLine(
                 $"    [perf] final numbered OLE insert #{targetFormulaCount}: "
@@ -373,7 +377,7 @@ internal static partial class Program
             }
             Console.WriteLine(
                 $"Word numbered formula performance acceptance passed: {targetFormulaCount}-formula OLE/OMML append, "
-                + "OLE edit, OMML edit and copied-table identity repair stayed on localized numbering paths.");
+                + "OLE edit, OMML edit and copied-tab-paragraph identity repair stayed on localized numbering paths.");
         }
         finally
         {
@@ -764,10 +768,14 @@ internal static partial class Program
                 ReadOnly: true,
                 AddToRecentFiles: false,
                 Visible: false);
-            var formulaIds = ReadNumberedFormulaIdsInDocumentOrder(inventoryDocument);
-            if (formulaIds.Count != 100)
+            var formulaIds = ReadNumberedFormulaIdsInDocumentOrder(inventoryDocument)
+                .Select(id => Guid.TryParseExact(id, "N", out var parsedId)
+                    ? parsedId.ToString("D")
+                    : id)
+                .ToArray();
+            if (formulaIds.Length != 100)
                 throw new InvalidDataException(
-                    $"Structural performance base document must contain 100 numbered formulas; found {formulaIds.Count}.");
+                    $"Structural performance base document must contain 100 numbered formulas; found {formulaIds.Length}.");
             inventoryDocument.Close(Word.WdSaveOptions.wdDoNotSaveChanges);
             Release(inventoryDocument);
             inventoryDocument = null;
@@ -934,8 +942,8 @@ internal static partial class Program
 
             var expectedFormulaIds = formulaIds.ToList();
             expectedFormulaIds.Insert(20, formulaId);
-            AssertEqual(101, document.Tables.Count,
-                "Middle insertion did not create the 101st numbered table.");
+            AssertEqual(1, document.Tables.Count,
+                "Middle OLE insertion changed the one OMML formula table in the mixed 100-formula fixture.");
             AssertNumberedFormulaArtifacts(document, expectedFormulaIds);
             AssertVisibleEquationNumbers(document, expectedFormulaIds, 1);
             document.Save();
@@ -1048,9 +1056,8 @@ internal static partial class Program
             "word-numbered-copy-50-to-end-performance.docx");
         File.Copy(baseDocumentPath, scenarioPath, overwrite: true);
         Word.Document? document = null;
-        Word.Table? sourceTable = null;
+        Word.InlineShape? sourceShape = null;
         Word.Range? sourceRange = null;
-        Word.Table? copiedTable = null;
         Word.InlineShape? copiedShape = null;
         Word.Range? copiedShapeRange = null;
         try
@@ -1062,8 +1069,12 @@ internal static partial class Program
                 Visible: false);
             document.Activate();
             var service = new WordFormulaService(application);
-            sourceTable = document.Tables[50];
-            sourceRange = sourceTable.Range.Duplicate;
+            sourceShape = FindNumberedOleByFormulaId(document, formulaIds[49]);
+            sourceRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    document,
+                    formulaIds[49])
+                ?? throw new InvalidOperationException(
+                    "Copy-to-end source #50 lost its tab-paragraph numbering owner.");
             sourceRange.Copy();
             application.Selection.EndKey(Word.WdUnits.wdStory);
             application.Selection.TypeParagraph();
@@ -1071,11 +1082,12 @@ internal static partial class Program
             var pasteWatch = Stopwatch.StartNew();
             application.Selection.Paste();
             pasteWatch.Stop();
-            AssertEqual(101, document.Tables.Count,
-                "Copy-to-end scenario did not paste the 101st numbered table.");
+            AssertEqual(1, document.Tables.Count,
+                "Copy-to-end OLE scenario created a legacy table instead of a tab paragraph.");
+            AssertEqual(100, document.InlineShapes.Count,
+                "Copy-to-end scenario did not paste the 100th VisualTeX OLE object beside the one OMML formula.");
 
-            copiedTable = document.Tables[101];
-            copiedShape = copiedTable.Cell(1, 2).Range.InlineShapes[1];
+            copiedShape = document.InlineShapes[document.InlineShapes.Count];
             copiedShapeRange = copiedShape.Range;
             copiedShapeRange.Select();
             var repairWatch = Stopwatch.StartNew();
@@ -1094,7 +1106,7 @@ internal static partial class Program
                     "Copied #50 formula did not receive an independent FormulaId.");
 
             Console.WriteLine(
-                $"    [perf] copy #50 table to end at 100 formulas: paste={pasteWatch.ElapsedMilliseconds}ms; "
+                $"    [perf] copy #50 tab paragraph to end at 100 formulas: paste={pasteWatch.ElapsedMilliseconds}ms; "
                 + $"identity/number repair={repairWatch.ElapsedMilliseconds}ms");
             var expectedFormulaIds = formulaIds.ToList();
             expectedFormulaIds.Add(copiedSelection.FormulaId!);
@@ -1106,9 +1118,8 @@ internal static partial class Program
         {
             Release(copiedShapeRange);
             Release(copiedShape);
-            Release(copiedTable);
             Release(sourceRange);
-            Release(sourceTable);
+            Release(sourceShape);
             try { document?.Close(Word.WdSaveOptions.wdSaveChanges); } catch { }
             Release(document);
         }
@@ -1544,11 +1555,13 @@ internal static partial class Program
         IReadOnlyList<string> formulaIds)
     {
         Word.Shapes? shapes = null;
+        Word.Tables? documentTables = null;
         Word.Range? content = null;
         try
         {
-            AssertEqual(0, document.Tables.Count,
-                "Numbered OMML scale fixture created a Word table.");
+            documentTables = document.Tables;
+            AssertEqual(formulaIds.Count, documentTables.Count,
+                "Numbered OMML scale fixture did not retain one managed 1x3 table per formula.");
             shapes = document.Shapes;
             AssertEqual(0, shapes.Count,
                 "Numbered OMML scale fixture created a legacy floating number Shape.");
@@ -1559,8 +1572,8 @@ internal static partial class Program
                 @"<m:eqArr(?:\s|>)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase
                 | System.Text.RegularExpressions.RegexOptions.CultureInvariant).Count;
-            AssertEqual(formulaIds.Count, equationArrayCount,
-                "Numbered OMML scale fixture does not contain exactly one native m:eqArr/#(SEQ) host per formula.");
+            AssertEqual(0, equationArrayCount,
+                "Numbered OMML scale fixture retained a retired mathematical m:eqArr/#(SEQ) host.");
             AssertTrue(documentXml.IndexOf(
                     "VTEqShape_",
                     StringComparison.OrdinalIgnoreCase) < 0,
@@ -1577,10 +1590,15 @@ internal static partial class Program
                 Word.OMaths? maths = null;
                 Word.OMath? math = null;
                 Word.Fields? equationFields = null;
+                Word.Table? table = null;
+                Word.Rows? rows = null;
+                Word.Columns? columns = null;
+                Word.Cell? numberCell = null;
+                Word.Range? numberCellRange = null;
+                Word.OMaths? numberMaths = null;
+                Word.Fields? numberFields = null;
                 Word.Field? sequenceField = null;
                 Word.Range? sequenceCode = null;
-                Word.Range? ownerRange = null;
-                Word.InlineShapes? ownerInlineShapes = null;
                 Word.Range? visibleRange = null;
                 try
                 {
@@ -1594,9 +1612,9 @@ internal static partial class Program
                         document,
                         formulaId,
                         metadata);
-                    AssertTrue(!(bool)equationRange.get_Information(
+                    AssertTrue((bool)equationRange.get_Information(
                             Word.WdInformation.wdWithInTable),
-                        $"Numbered OMML scale formula {formulaId} is still inside a table.");
+                        $"Numbered OMML scale formula {formulaId} left its managed table.");
                     maths = equationRange.OMaths;
                     AssertEqual(1, maths.Count,
                         $"Numbered OMML scale formula {formulaId} does not contain exactly one OMath.");
@@ -1604,9 +1622,36 @@ internal static partial class Program
                     AssertEqual(Word.WdOMathType.wdOMathDisplay, math.Type,
                         $"Numbered OMML scale formula {formulaId} is not genuine Word Display math.");
                     equationFields = equationRange.Fields;
-                    AssertEqual(1, equationFields.Count,
-                        $"Numbered OMML scale formula {formulaId} does not own exactly one mathematical SEQ field.");
-                    sequenceField = equationFields[1];
+                    AssertEqual(0, equationFields.Count,
+                        $"Numbered OMML scale formula {formulaId} contains a field inside math.");
+
+                    table = WordEquationNumbering.FindNumberedEquationTable(
+                            document,
+                            formulaId)
+                        ?? throw new InvalidOperationException(
+                            $"Numbered OMML scale formula {formulaId} lost its managed table.");
+                    rows = table.Rows;
+                    columns = table.Columns;
+                    AssertEqual(1, rows.Count,
+                        $"Numbered OMML scale formula {formulaId} table is not one row.");
+                    AssertEqual(3, columns.Count,
+                        $"Numbered OMML scale formula {formulaId} table is not three columns.");
+                    AssertTrue(
+                        WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                            table,
+                            equationRange,
+                            expectedColumnIndex: 2,
+                            out var rowIndex),
+                        $"Numbered OMML scale formula {formulaId} left center cell (1,2).");
+                    numberCell = table.Cell(rowIndex, 3);
+                    numberCellRange = numberCell.Range.Duplicate;
+                    numberMaths = numberCellRange.OMaths;
+                    AssertEqual(0, numberMaths.Count,
+                        $"Numbered OMML scale formula {formulaId} put its number inside math.");
+                    numberFields = numberCellRange.Fields;
+                    AssertEqual(1, numberFields.Count,
+                        $"Numbered OMML scale formula {formulaId} number cell does not own exactly one SEQ field.");
+                    sequenceField = numberFields[1];
                     sequenceCode = sequenceField.Code;
                     AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(
                             sequenceCode.Text),
@@ -1614,25 +1659,7 @@ internal static partial class Program
                     AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
                             "REF VTEqNum_",
                             StringComparison.OrdinalIgnoreCase) < 0,
-                        $"Numbered OMML scale formula {formulaId} incorrectly embeds REF inside #().");
-
-                    ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
-                        ?? throw new InvalidOperationException(
-                            $"Numbered OMML scale formula {formulaId} lost its formula paragraph.");
-                    var ownerXml = ownerRange.WordOpenXML ?? string.Empty;
-                    AssertTrue(ownerXml.IndexOf("<m:oMathPara", StringComparison.OrdinalIgnoreCase) >= 0,
-                        $"Numbered OMML scale formula {formulaId} lost m:oMathPara.");
-                    AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                            ownerXml,
-                            formulaId),
-                        $"Numbered OMML scale formula {formulaId} lost its native #(SEQ) structure or aliases.");
-                    AssertTrue(ownerXml.IndexOf(
-                            "REF VTEqNum_",
-                            StringComparison.OrdinalIgnoreCase) < 0,
-                        $"Numbered OMML scale formula {formulaId} contains a mathematical REF.");
-                    ownerInlineShapes = ownerRange.InlineShapes;
-                    AssertEqual(0, ownerInlineShapes.Count,
-                        $"Numbered OMML scale formula {formulaId} retained an inline drawing/object in its paragraph.");
+                        $"Numbered OMML scale formula {formulaId} number cell contains generated REF indirection.");
 
                     visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(
                         document,
@@ -1640,18 +1667,23 @@ internal static partial class Program
                         ?? throw new InvalidOperationException(
                             $"Numbered OMML scale formula {formulaId} lost its VTEq_ number alias.");
                     AssertEqual(Word.WdStoryType.wdMainTextStory, visibleRange.StoryType,
-                        $"Numbered OMML scale formula {formulaId} number alias left the main mathematical story.");
-                    AssertTrue(visibleRange.Start >= equationRange.Start
-                               && visibleRange.End <= equationRange.End,
-                        $"Numbered OMML scale formula {formulaId} number alias is outside its OMath.");
+                        $"Numbered OMML scale formula {formulaId} number alias left the main story.");
+                    AssertTrue(visibleRange.Start >= numberCellRange.Start
+                               && visibleRange.End <= numberCellRange.End,
+                        $"Numbered OMML scale formula {formulaId} number alias left right cell (1,3).");
                 }
                 finally
                 {
                     Release(visibleRange);
-                    Release(ownerInlineShapes);
-                    Release(ownerRange);
                     Release(sequenceCode);
                     Release(sequenceField);
+                    Release(numberFields);
+                    Release(numberMaths);
+                    Release(numberCellRange);
+                    Release(numberCell);
+                    Release(columns);
+                    Release(rows);
+                    Release(table);
                     Release(equationFields);
                     Release(math);
                     Release(maths);
@@ -1663,19 +1695,22 @@ internal static partial class Program
         finally
         {
             Release(content);
+            Release(documentTables);
             Release(shapes);
         }
     }
 
     private static void AssertNumberedFormulaArtifacts(
         Word.Document document,
-        IReadOnlyList<string> formulaIds)
+        IReadOnlyList<string> formulaIds,
+        string? context = null)
     {
         foreach (var formulaId in formulaIds)
         {
             AssertTrue(
                 WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(document, formulaId),
-                $"Numbered formula {formulaId} lost its numbering artifacts.");
+                $"Numbered formula {formulaId} lost its numbering artifacts"
+                + (string.IsNullOrWhiteSpace(context) ? "." : $" in {context}."));
         }
     }
 

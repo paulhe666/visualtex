@@ -6,6 +6,8 @@ namespace VisualTeX.WindowsOffice.Contracts;
 
 public static class FormulaOleInterop
 {
+    private const uint OleCloseSaveIfDirty = 0;
+
     public static void Initialize(
         IVisualTeXFormulaObject formula,
         FormulaMetadata metadata,
@@ -62,6 +64,17 @@ public static class FormulaOleInterop
             "Unable to update metadata in the VisualTeX native OLE object.");
     }
 
+    public static void CloseAfterSave(IVisualTeXFormulaObject formula)
+    {
+        if (formula is null) throw new ArgumentNullException(nameof(formula));
+        if (formula is not IOleObjectClose oleObject)
+            throw new NotSupportedException(
+                "The VisualTeX native OLE object does not expose IOleObject.Close.");
+        ThrowIfFailed(
+            oleObject.Close(OleCloseSaveIfDirty),
+            "Unable to close the persisted VisualTeX native OLE object.");
+    }
+
     private static void ThrowIfFailed(int hresult, string message)
     {
         if (hresult >= 0) return;
@@ -69,5 +82,18 @@ public static class FormulaOleInterop
         throw new COMException(
             error is null ? message : $"{message} {error.Message}",
             hresult);
+    }
+
+    [ComImport]
+    [Guid("00000112-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IOleObjectClose
+    {
+        [PreserveSig] int SetClientSite(IntPtr clientSite);
+        [PreserveSig] int GetClientSite(out IntPtr clientSite);
+        [PreserveSig] int SetHostNames(
+            [MarshalAs(UnmanagedType.LPWStr)] string containerApp,
+            [MarshalAs(UnmanagedType.LPWStr)] string containerObject);
+        [PreserveSig] int Close(uint saveOption);
     }
 }

@@ -83,6 +83,11 @@ internal static partial class Program
                     middleRange.End,
                     latex: @"y=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
                     originalMetadata: middleMetadata);
+                // Pixel/geometry probes can leave a hidden Word instance with
+                // no ActiveDocument even though this document is still open.
+                // A real ribbon edit always has the source document active, so
+                // restore that same precondition before invoking the service.
+                document.Activate();
                 service.ReplaceOmml(
                     editSession,
                     QuadraticFormulaMathMl().Replace("<mi>x</mi>", "<mi>y</mi>"));
@@ -134,6 +139,7 @@ internal static partial class Program
                     latex: @"y=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
                     originalMetadata: middleMetadata);
                 unnumberSession.Numbered = false;
+                document.Activate();
                 service.ReplaceOmml(
                     unnumberSession,
                     QuadraticFormulaMathMl().Replace("<mi>x</mi>", "<mi>y</mi>"));
@@ -198,6 +204,7 @@ internal static partial class Program
                     unnumberedRange.End,
                     latex: @"y=\frac{-b\pm\sqrt{b^2-4ac}}{2a}",
                     originalMetadata: unnumberedMetadata);
+                document.Activate();
                 service.ReplaceOmml(
                     renumberSession,
                     QuadraticFormulaMathMl().Replace("<mi>x</mi>", "<mi>y</mi>"));
@@ -359,7 +366,17 @@ internal static partial class Program
         string mathMl)
     {
         var insertion = document.Content.End - 1;
-        application.Selection.SetRange(insertion, insertion);
+        Word.Range? insertionRange = null;
+        try
+        {
+            // A hidden Word instance can temporarily expose Application.Selection
+            // as null after a table insertion even though the document remains
+            // active. Selecting the document-owned range is the stable equivalent
+            // and matches the product's saved numeric insertion coordinates.
+            insertionRange = document.Range(insertion, insertion);
+            insertionRange.Select();
+        }
+        finally { Release(insertionRange); }
         var session = CreateNumberedOmmlTabSession(
             formulaId,
             document.FullName,

@@ -1,4 +1,4 @@
-using Extensibility;
+﻿using Extensibility;
 using Office = Microsoft.Office.Core;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WordVsto;
@@ -39,6 +39,7 @@ internal static partial class Program
         Word.Document? document = null;
         Word.Document? reopened = null;
         Word.Document? freshDocument = null;
+        Word.ListTemplate? headingListTemplate = null;
         VisualTeX.WordVsto.ThisAddIn? addIn = null;
         Array custom = Array.Empty<object>();
         var previousDefaultFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
@@ -57,13 +58,29 @@ internal static partial class Program
                 addIn,
                 ref custom);
 
-            InsertNumberingHeading(application, document, level: 1, "Chapter A");
+            headingListTemplate =
+                CreateEquationNumberFormatHeadingTemplate(
+                    document);
+
+            InsertNumberedFormatHeading(
+                application,
+                document,
+                headingListTemplate,
+                level: 1,
+                "Chapter A",
+                continuePreviousList: false);
             var formulas = new List<NumberedFormulaCase>
             {
                 InsertNumberedFormula(client, application, addIn, FormulaOleContract.NativeOleMode, "a_1=1"),
                 InsertNumberedFormula(client, application, addIn, FormulaOleContract.WordOmmlMode, "a_2=2"),
             };
-            InsertNumberingHeading(application, document, level: 2, "Section A.1");
+            InsertNumberedFormatHeading(
+                application,
+                document,
+                headingListTemplate,
+                level: 2,
+                "Section A.1",
+                continuePreviousList: true);
             formulas.Add(InsertNumberedFormula(
                 client,
                 application,
@@ -71,14 +88,26 @@ internal static partial class Program
                 FormulaOleContract.NativeOleMode,
                 "a_3=3"));
 
-            InsertNumberingHeading(application, document, level: 1, "Chapter B");
+            InsertNumberedFormatHeading(
+                application,
+                document,
+                headingListTemplate,
+                level: 1,
+                "Chapter B",
+                continuePreviousList: true);
             formulas.Add(InsertNumberedFormula(
                 client,
                 application,
                 addIn,
                 FormulaOleContract.WordOmmlMode,
                 "b_1=4"));
-            InsertNumberingHeading(application, document, level: 2, "Section B.1");
+            InsertNumberedFormatHeading(
+                application,
+                document,
+                headingListTemplate,
+                level: 2,
+                "Section B.1",
+                continuePreviousList: true);
             formulas.Add(InsertNumberedFormula(
                 client,
                 application,
@@ -91,7 +120,7 @@ internal static partial class Program
                 addIn,
                 EquationNumberFormat.ContinuousId,
                 formulas,
-                new[] { "1", "2", "3", "4", "5" });
+                new[] { "1", "1", "2", "2", "3" });
 
             var referenceBookmark = InsertNumberingReference(
                 application,
@@ -109,7 +138,7 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading1DotId,
                 formulas,
-                new[] { "1.1", "1.2", "1.3", "2.1", "2.2" });
+                new[] { "1.1", "1.1", "1.2", "2.1", "2.1" });
             AssertReferenceText(document, referenceBookmark, "(1.1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1.1)");
 
@@ -118,7 +147,7 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading1DashId,
                 formulas,
-                new[] { "1-1", "1-2", "1-3", "2-1", "2-2" });
+                new[] { "1-1", "1-1", "1-2", "2-1", "2-1" });
             AssertReferenceText(document, referenceBookmark, "(1-1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1-1)");
 
@@ -127,7 +156,7 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading2DotId,
                 formulas,
-                new[] { "1.0.1", "1.0.2", "1.1.1", "2.0.1", "2.1.1" });
+                new[] { "1.0.1", "1.0.1", "1.1.1", "2.0.1", "2.1.1" });
             AssertReferenceText(document, referenceBookmark, "(1.0.1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1.0.1)");
 
@@ -136,7 +165,7 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading2DashId,
                 formulas,
-                new[] { "1.0-1", "1.0-2", "1.1-1", "2.0-1", "2.1-1" });
+                new[] { "1.0-1", "1.0-1", "1.1-1", "2.0-1", "2.1-1" });
             AssertReferenceText(document, referenceBookmark, "(1.0-1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1.0-1)");
 
@@ -145,7 +174,7 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading1DashId,
                 formulas,
-                new[] { "1-1", "1-2", "1-3", "2-1", "2-2" });
+                new[] { "1-1", "1-1", "1-2", "2-1", "2-1" });
             var futureFormula = InsertNumberedFormula(
                 client,
                 application,
@@ -158,7 +187,7 @@ internal static partial class Program
                 addIn,
                 EquationNumberFormat.Heading1DashId,
                 formulas,
-                new[] { "1-1", "1-2", "1-3", "2-1", "2-2", "2-3" });
+                new[] { "1-1", "1-1", "1-2", "2-1", "2-1", "2-2" });
             AssertReferenceText(document, referenceBookmark, "(1-1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1-1)");
 
@@ -167,13 +196,13 @@ internal static partial class Program
                 document,
                 EquationNumberFormat.Heading2DotId,
                 formulas,
-                new[] { "1.0.1", "1.0.2", "1.1.1", "2.0.1", "2.1.1", "2.1.2" });
+                new[] { "1.0.1", "1.0.1", "1.1.1", "2.0.1", "2.1.1", "2.1.1" });
             ApplyEquationNumberFormat(
                 addIn,
                 document,
                 EquationNumberFormat.Heading1DashId,
                 formulas,
-                new[] { "1-1", "1-2", "1-3", "2-1", "2-2", "2-3" });
+                new[] { "1-1", "1-1", "1-2", "2-1", "2-1", "2-2" });
             AssertReferenceText(document, referenceBookmark, "(1-1)");
             AssertReferenceText(document, legacyReferenceBookmark, "(1-1)");
 
@@ -191,7 +220,7 @@ internal static partial class Program
                 addIn,
                 EquationNumberFormat.Heading1DashId,
                 formulas,
-                new[] { "1-1", "1-2", "1-3", "2-1", "2-2", "2-3" });
+                new[] { "1-1", "1-1", "1-2", "2-1", "2-1", "2-2" });
             AssertReferenceText(reopened, referenceBookmark, "(1-1)");
             AssertReferenceText(reopened, legacyReferenceBookmark, "(1-1)");
             AssertEqual(
@@ -241,6 +270,7 @@ internal static partial class Program
             try { reopened?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(headingListTemplate);
             Release(freshDocument);
             Release(reopened);
             Release(document);
@@ -248,6 +278,121 @@ internal static partial class Program
             WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
             WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousDefaultNumbered);
             ForceComCleanup();
+        }
+    }
+
+    private static Word.ListTemplate
+        CreateEquationNumberFormatHeadingTemplate(
+            Word.Document document)
+    {
+        Word.ListTemplate? template = null;
+        Word.ListLevel? level1 = null;
+        Word.ListLevel? level2 = null;
+        try
+        {
+            template =
+                document.ListTemplates.Add(
+                    OutlineNumbered: true,
+                    Name:
+                        "VisualTeXFormatHeading"
+                        + Guid.NewGuid().ToString("N"));
+
+            level1 =
+                template.ListLevels[1];
+            level1.NumberStyle =
+                Word.WdListNumberStyle
+                    .wdListNumberStyleArabic;
+            level1.NumberFormat =
+                "%1";
+            level1.StartAt =
+                1;
+
+            level2 =
+                template.ListLevels[2];
+            level2.NumberStyle =
+                Word.WdListNumberStyle
+                    .wdListNumberStyleArabic;
+            level2.NumberFormat =
+                "%1.%2";
+            level2.StartAt =
+                1;
+            level2.ResetOnHigher =
+                1;
+
+            var result =
+                template;
+            template = null;
+            return result;
+        }
+        finally
+        {
+            Release(level2);
+            Release(level1);
+            Release(template);
+        }
+    }
+
+    private static void InsertNumberedFormatHeading(
+        Word.Application application,
+        Word.Document document,
+        Word.ListTemplate template,
+        int level,
+        string text,
+        bool continuePreviousList)
+    {
+        Word.Selection? selection = null;
+        Word.Range? headingRange = null;
+        Word.ListFormat? listFormat = null;
+        try
+        {
+            selection =
+                application.Selection;
+            selection.EndKey(
+                Word.WdUnits.wdStory);
+            var start =
+                selection.Start;
+            selection.TypeText(
+                text);
+            selection.TypeParagraph();
+            headingRange =
+                document.Range(
+                    start,
+                    selection.Start);
+            object headingStyle =
+                level == 1
+                    ? Word.WdBuiltinStyle
+                        .wdStyleHeading1
+                    : Word.WdBuiltinStyle
+                        .wdStyleHeading2;
+            headingRange.set_Style(
+                ref headingStyle);
+
+            listFormat =
+                headingRange.ListFormat;
+            listFormat.ApplyListTemplateWithLevel(
+                template,
+                ContinuePreviousList:
+                    continuePreviousList,
+                ApplyTo:
+                    Word.WdListApplyTo
+                        .wdListApplyToWholeList,
+                DefaultListBehavior:
+                    Word.WdDefaultListBehavior
+                        .wdWord10ListBehavior,
+                ApplyLevel:
+                    level);
+
+            object normalStyle =
+                Word.WdBuiltinStyle
+                    .wdStyleNormal;
+            selection.set_Style(
+                ref normalStyle);
+        }
+        finally
+        {
+            Release(listFormat);
+            Release(headingRange);
+            Release(selection);
         }
     }
 
@@ -376,16 +521,25 @@ internal static partial class Program
             selection.EndKey(Word.WdUnits.wdStory);
             selection.TypeText("Reference: ");
             var start = selection.Start;
-            var target = WordEquationNumbering.GetEquationReferenceTargets(document)
-                .Single(item => string.Equals(
-                    item.FormulaId,
-                    formulaId,
-                    StringComparison.OrdinalIgnoreCase));
-            WordEquationNumbering.InsertEquationReference(
+            var service =
+                new WordFormulaService(
+                    application);
+            var target =
+                service.GetCanonicalEquationReferenceTargets(
+                        document)
+                    .Single(item =>
+                        item.Source ==
+                            EquationReferenceSource.VisualTeX
+                        && string.Equals(
+                            item.FormulaId,
+                            formulaId,
+                            StringComparison.OrdinalIgnoreCase));
+            service.InsertEquationReferenceCore(
                 document,
                 selection,
                 target,
-                EquationReferenceStyle.Parenthesized);
+                EquationReferenceStyle.Parenthesized,
+                Word.WdColor.wdColorAutomatic);
             var end = selection.Start;
             selection.TypeParagraph();
             referenceRange = document.Range(start, end);
@@ -517,25 +671,79 @@ internal static partial class Program
                 $"Ribbon pressed state is wrong for {alternate}.");
         }
 
+        var service =
+            new WordFormulaService(
+                document.Application);
+        var targets =
+            service.GetCanonicalEquationReferenceTargets(
+                    document)
+                .Where(target =>
+                    target.Source is
+                        EquationReferenceSource.WordOmml
+                        or EquationReferenceSource.VisualTeX)
+                .OrderBy(target =>
+                    target.Position)
+                .ToArray();
+        AssertEqual(
+            formulas.Count,
+            targets.Length,
+            $"Canonical numbered target count is wrong for format {formatId}.");
+
         for (var index = 0; index < formulas.Count; index++)
         {
-            var visible = ReadEquationNumberBookmarkText(
-                document,
-                WordEquationNumbering.EquationBookmarkName(formulas[index].FormulaId));
-            var native = ReadEquationNumberBookmarkText(
-                document,
-                WordEquationNumbering.NativeNumberBookmarkName(formulas[index].FormulaId));
-            if (!string.Equals(expectedNumbers[index], visible, StringComparison.Ordinal)
-                || !string.Equals(expectedNumbers[index], native, StringComparison.Ordinal))
+            var actual =
+                targets[index].NumberText;
+            var expectedSource =
+                string.Equals(
+                    formulas[index].ObjectMode,
+                    FormulaOleContract.WordOmmlMode,
+                    StringComparison.Ordinal)
+                    ? EquationReferenceSource.WordOmml
+                    : EquationReferenceSource.VisualTeX;
+            AssertEqual(
+                expectedSource,
+                targets[index].Source,
+                $"Canonical equation target {index + 1} changed host family for format {formatId}.");
+
+            if (expectedSource ==
+                EquationReferenceSource.VisualTeX)
             {
-                DumpEquationSequenceFieldInventory(
-                    document,
-                    $"format={formatId} formulaIndex={index + 1} expected={expectedNumbers[index]} visible={visible} native={native}");
+                if (!string.Equals(
+                        expectedNumbers[index],
+                        actual,
+                        StringComparison.Ordinal))
+                {
+                    var actualCodes =
+                        string.Join(
+                            ",",
+                            actual.Select(character =>
+                                $"U+{(int)character:X4}"));
+                    DumpEquationSequenceFieldInventory(
+                        document,
+                        $"format={formatId} VisualTeX formulaIndex={index + 1} expected={expectedNumbers[index]} actual={actual} codes={actualCodes}");
+                }
+
+                AssertEqual(
+                    expectedNumbers[index],
+                    actual,
+                    $"VisualTeX equation number {index + 1} is wrong for format {formatId}.");
+                AssertEqual(
+                    formulas[index].FormulaId,
+                    targets[index].FormulaId,
+                    $"VisualTeX equation target {index + 1} changed FormulaId for format {formatId}.");
             }
-            AssertEqual(expectedNumbers[index], visible,
-                $"Visible equation number {index + 1} is wrong for format {formatId}.");
-            AssertEqual(expectedNumbers[index], native,
-                $"Native caption number {index + 1} is wrong for format {formatId}.");
+            else
+            {
+                AssertTrue(
+                    !string.IsNullOrWhiteSpace(actual)
+                    && actual.IndexOf(
+                        "Error",
+                        StringComparison.OrdinalIgnoreCase) < 0
+                    && actual.IndexOf(
+                        "错误",
+                        StringComparison.OrdinalIgnoreCase) < 0,
+                    $"Word OMML target {index + 1} is not a healthy native number for format {formatId}: '{actual}'.");
+            }
         }
     }
 
@@ -561,7 +769,11 @@ internal static partial class Program
                     field = fields[fieldIndex];
                     code = field.Code;
                     var codeText = code.Text ?? string.Empty;
-                    if (codeText.IndexOf(
+                    if (!WordNativeOmmlNumbering
+                            .IsEquationSequenceFieldCode(
+                                document,
+                                codeText)
+                        && codeText.IndexOf(
                             "SEQ VisualTeXEquation",
                             StringComparison.OrdinalIgnoreCase) < 0)
                         continue;

@@ -186,7 +186,7 @@ internal static partial class Program
             objectMode: FormulaOleContract.WordOmmlMode,
             wholeDocument: false,
             expectedFileName: "VisualTeX-Word-Latex-Redraw-OMML-Only.docx");
-        RunWordLatexRedrawNumberedOmmlSpacingScenario(artifactRoot);
+        RunWordOmmlComplexRecoveryAcceptance(artifactRoot);
     }
 
     private static void RunWordLatexRedrawNumberedOmmlSpacingScenario(
@@ -2398,6 +2398,19 @@ internal static partial class Program
             var expectedPosition = precedingFont.Position;
             if (expectedPosition == (int)Word.WdConstants.wdUndefined)
                 expectedPosition = 0;
+
+            // Fresh OLE insertion intentionally restores the immediate typing
+            // caret without mutating Word again inside the object-creation COM
+            // transaction. The durable VTBL anchor is created by the same
+            // SelectionChange normalization path used in real Word as soon as the
+            // caret reaches InlineShape.End. Exercise that production transition
+            // before asserting the persisted boundary owner.
+            selection = host.Application.Selection;
+            selection.SetRange(formulaRange.End, formulaRange.End);
+            var typingBoundaryService = new WordFormulaService(host.Application);
+            typingBoundaryService.NormalizeTypingCaretAfterInlineFormula(selection);
+            Release(selection);
+            selection = null;
 
             AssertInlineOleTypingAnchor(
                 host.Document,

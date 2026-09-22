@@ -353,12 +353,12 @@ internal static class WordOmmlNativeSource
 
         internal void MarkVerifiedOwners(IEnumerable<string> formulaIds)
         {
-            foreach (var formulaId in formulaIds.Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                if (!owners.ContainsKey(formulaId))
-                    throw new InvalidDataException($"Fresh OMML owner {formulaId} was not retained for verified reuse.");
-                verifiedOwners.Add(formulaId);
-            }
+            var ids = formulaIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var missing = ids.Where(id => !owners.ContainsKey(id)).ToArray();
+            if (missing.Length > 0)
+                throw new InvalidDataException($"Fresh OMML owners were not retained for verified reuse: {string.Join(", ", missing)}.");
+            // Verification is an atomic state transition, never a partly accepted batch.
+            foreach (var formulaId in ids) verifiedOwners.Add(formulaId);
         }
 
         internal Range? TryReadVerifiedOwner(string formulaId)
@@ -450,6 +450,68 @@ internal static class WordOmmlNativeSource
                 }
             }
             return true;
+        }
+
+        internal int NormalizeVerifiedOwnerTypesWithoutExport(
+            IReadOnlyDictionary<string, string> displayModes)
+        {
+            if (displayModes is null
+                || displayModes.Count == 0
+                || displayModes.Count != verifiedOwners.Count
+                || displayModes.Keys.Any(formulaId => !verifiedOwners.Contains(formulaId)))
+                throw new InvalidDataException(
+                    "Fresh OMML type normalization requires the exact verified owner inventory.");
+
+            var normalized = 0;
+            foreach (var pair in displayModes)
+            {
+                Range? range = null;
+                OMaths? maths = null;
+                OMath? math = null;
+                Range? actual = null;
+                try
+                {
+                    range = TryReadVerifiedOwner(pair.Key)
+                        ?? throw new InvalidDataException(
+                            $"Verified OMML owner {pair.Key} disappeared before final type normalization.");
+                    maths = range.OMaths;
+                    if (maths.Count != 1)
+                        throw new InvalidDataException(
+                            $"Verified OMML owner {pair.Key} does not contain exactly one equation during final type normalization.");
+                    math = maths[1];
+                    var expectedType = string.Equals(
+                            pair.Value,
+                            "block",
+                            StringComparison.OrdinalIgnoreCase)
+                        ? WdOMathType.wdOMathDisplay
+                        : WdOMathType.wdOMathInline;
+                    if (math.Type != expectedType)
+                    {
+                        var previous = math.Type;
+                        math.Type = expectedType;
+                        if (math.Type != expectedType)
+                            throw new InvalidDataException(
+                                $"Word did not retain the final OMath type for verified owner {pair.Key}.");
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-final-omml-type-normalized formulaId={pair.Key} from={previous} to={expectedType} source=verified-owner");
+                    }
+                    actual = math.Range;
+                    if (actual.StoryType != range.StoryType
+                        || actual.Start != range.Start
+                        || actual.End != range.End)
+                        throw new InvalidDataException(
+                            $"Verified OMML owner {pair.Key} changed its physical range during final type normalization.");
+                    normalized++;
+                }
+                finally
+                {
+                    Release(actual);
+                    Release(math);
+                    Release(maths);
+                    Release(range);
+                }
+            }
+            return normalized;
         }
 
         internal IReadOnlyDictionary<string, int> CaptureIndices(OMaths maths)
@@ -612,8 +674,8 @@ internal static class WordOmmlNativeSource
                     document,
                     bookmark,
                     metadata);
-                var beforeFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
-                    ReadCompleteEquationWordOpenXml(document, range, pair.Key));
+                var beforeFingerprint = WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+                    ReadCompleteEquationWordOpenXml(document, range, pair.Key), metadata.NativeOmmlFingerprint ?? string.Empty);
                 if (!string.Equals(
                         beforeFingerprint,
                         metadata.NativeOmmlFingerprint,
@@ -644,8 +706,8 @@ internal static class WordOmmlNativeSource
                 }
 
                 finalRange = math.Range.Duplicate;
-                var afterFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
-                    ReadCompleteEquationWordOpenXml(document, finalRange, pair.Key));
+                var afterFingerprint = WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+                    ReadCompleteEquationWordOpenXml(document, finalRange, pair.Key), metadata.NativeOmmlFingerprint ?? string.Empty);
                 if (!string.Equals(
                         afterFingerprint,
                         metadata.NativeOmmlFingerprint,
@@ -833,6 +895,26 @@ internal static class WordOmmlNativeSource
             document,
             equationRange,
             formulaId);
+        return CreateForNativeFromCapturedWordOpenXml(
+            equationRange,
+            wordOpenXml,
+            formulaId);
+    }
+
+    internal static FormulaMetadata CreateForNativeFromCapturedWordOpenXml(
+        Range equationRange,
+        string wordOpenXml,
+        string? formulaId = null)
+    {
+        if (equationRange is null)
+            throw new ArgumentNullException(nameof(equationRange));
+        if (string.IsNullOrWhiteSpace(wordOpenXml))
+            throw new InvalidDataException(
+                "The Word-native OMML equation has no captured WordOpenXML.");
+        formulaId = string.IsNullOrWhiteSpace(formulaId)
+            ? Guid.NewGuid().ToString("D")
+            : formulaId;
+
         var displayMode = ReadDisplayMode(equationRange);
         var numbered = string.Equals(
                 displayMode,
@@ -885,6 +967,7 @@ internal static class WordOmmlNativeSource
         Bookmark bookmark,
         FormulaMetadata stored)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordOmmlNativeSource.RefreshForVisualTeX");
         Range? equationRange = null;
         try
         {
@@ -906,19 +989,17 @@ internal static class WordOmmlNativeSource
         FormulaMetadata stored,
         string wordOpenXml)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordOmmlNativeSource.RefreshForVisualTeXFromCapturedWordOpenXml");
         if (stored is null) throw new ArgumentNullException(nameof(stored));
         if (string.IsNullOrWhiteSpace(wordOpenXml))
             throw new ArgumentException("Captured Word OMML is required.", nameof(wordOpenXml));
 
         var sanitizedStored = Clone(stored);
         SanitizeMetadataBoundaryArtifacts(sanitizedStored);
-        var fingerprint = WordOmmlConverter.ComputeOmmlFingerprint(wordOpenXml);
-        if (string.Equals(
-                stored.NativeOmmlFingerprint,
-                fingerprint,
-                StringComparison.OrdinalIgnoreCase))
-            return sanitizedStored;
+        if (WordOmmlConverter.MatchesStoredOmmlFingerprint(wordOpenXml, stored.NativeOmmlFingerprint))
+            return sanitizedStored; // Preserve original LaTeX and v1 on read/cancel; commit stamps v2.
 
+        var fingerprint = WordOmmlConverter.ComputeOmmlFingerprint(wordOpenXml);
         var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
             wordOpenXml,
             display: string.Equals(
@@ -972,6 +1053,232 @@ internal static class WordOmmlNativeSource
         StampFingerprint(metadata, equationRange);
     }
 
+    internal static int PrepareFreshConversionOwnersWithoutExport(
+        Document document,
+        IReadOnlyCollection<string> formulaIds,
+        IReadOnlyDictionary<string, string> freshSourceOmml,
+        LiveInsertionOwners liveInsertions,
+        IDictionary<string, FormulaMetadata> verifiedMetadata)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (formulaIds is null) throw new ArgumentNullException(nameof(formulaIds));
+        if (freshSourceOmml is null) throw new ArgumentNullException(nameof(freshSourceOmml));
+        if (liveInsertions is null) throw new ArgumentNullException(nameof(liveInsertions));
+        if (verifiedMetadata is null) throw new ArgumentNullException(nameof(verifiedMetadata));
+
+        var ids = formulaIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (ids.Length == 0
+            || ids.Length != formulaIds.Count
+            || freshSourceOmml.Count != ids.Length)
+            throw new InvalidDataException(
+                "Fresh OMML conversion ownership requires one independent prepared source per formula.");
+
+        var preparedMetadata = new Dictionary<string, FormulaMetadata>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var formulaId in ids)
+        {
+            if (!freshSourceOmml.TryGetValue(formulaId, out var preparedOmml)
+                || string.IsNullOrWhiteSpace(preparedOmml))
+                throw new InvalidDataException(
+                    $"Fresh OMML conversion source {formulaId} is missing.");
+
+            var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
+                ?? throw new InvalidDataException(
+                    $"Fresh OMML conversion metadata {formulaId} is missing.");
+            if (!string.Equals(
+                    metadata.FormulaId,
+                    formulaId,
+                    StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(metadata.NativeOmmlFingerprint)
+                || !WordOmmlConverter.MatchesStoredOmmlFingerprint(
+                    preparedOmml,
+                    metadata.NativeOmmlFingerprint))
+                throw new InvalidDataException(
+                    $"Fresh OMML conversion metadata {formulaId} does not match its prepared source.");
+
+            Range? owner = null;
+            OMaths? maths = null;
+            OMath? math = null;
+            Range? actual = null;
+            Bookmark? bookmark = null;
+            try
+            {
+                owner = liveInsertions.TryReadCurrentOwner(formulaId)
+                    ?? throw new InvalidDataException(
+                        $"Fresh OMML conversion owner {formulaId} was not retained.");
+                maths = owner.OMaths;
+                if (maths.Count != 1)
+                    throw new InvalidDataException(
+                        $"Fresh OMML conversion owner {formulaId} does not contain exactly one equation.");
+                math = maths[1];
+                actual = math.Range;
+                if (actual.StoryType != owner.StoryType
+                    || actual.Start != owner.Start
+                    || actual.End != owner.End
+                    || actual.End <= actual.Start)
+                    throw new InvalidDataException(
+                        $"Fresh OMML conversion owner {formulaId} changed its physical range.");
+
+                var expectedType = string.Equals(
+                        metadata.DisplayMode,
+                        "block",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? WdOMathType.wdOMathDisplay
+                    : WdOMathType.wdOMathInline;
+                if (math.Type != expectedType)
+                    throw new InvalidDataException(
+                        $"Fresh OMML conversion owner {formulaId} has the wrong equation type before numbering.");
+
+                bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
+                if (!WordOmmlFormulaStore.IsCanonicalAnchor(bookmark, actual))
+                {
+                    Release(bookmark);
+                    bookmark = WordOmmlFormulaStore.Wrap(
+                        document,
+                        actual,
+                        metadata,
+                        replaceExisting: true);
+                }
+                if (!WordOmmlFormulaStore.IsCanonicalAnchor(bookmark, actual))
+                    throw new InvalidDataException(
+                        $"Fresh OMML conversion owner {formulaId} did not retain its canonical anchor.");
+            }
+            finally
+            {
+                Release(bookmark);
+                Release(actual);
+                Release(math);
+                Release(maths);
+                Release(owner);
+            }
+            preparedMetadata.Add(formulaId, metadata);
+        }
+
+        // Verification becomes visible to numbering only after EVERY source,
+        // metadata record, physical owner and durable anchor has passed. No
+        // WordOpenXML is requested while the caller's CustomRecord is active.
+        liveInsertions.MarkVerifiedOwners(ids);
+        verifiedMetadata.Clear();
+        foreach (var pair in preparedMetadata)
+            verifiedMetadata.Add(pair.Key, pair.Value);
+        return ids.Length;
+    }
+
+    internal static int ValidateCompletedFreshConversionFromDocumentOpenXml(
+        Document document,
+        IReadOnlyCollection<string> formulaIds,
+        IReadOnlyDictionary<string, FormulaMetadata> expectedMetadata)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (formulaIds is null) throw new ArgumentNullException(nameof(formulaIds));
+        if (expectedMetadata is null) throw new ArgumentNullException(nameof(expectedMetadata));
+
+        var ids = formulaIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (ids.Length == 0
+            || ids.Length != formulaIds.Count
+            || expectedMetadata.Count != ids.Length
+            || ids.Any(id => !expectedMetadata.ContainsKey(id)))
+            throw new InvalidDataException(
+                "Completed OMML conversion metadata does not match its requested formula set.");
+
+        Range? content = null;
+        OMaths? maths = null;
+        try
+        {
+            content = document.Content;
+            var package = XDocument.Parse(WordDocumentXml.Read(document));
+            XNamespace w =
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            XNamespace m =
+                "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            var body = package.Descendants(w + "body").Single();
+            var xmlEquations = body.Descendants(m + "oMath").ToArray();
+            maths = document.OMaths;
+            if (maths.Count != xmlEquations.Length)
+                throw new InvalidDataException(
+                    "COM and Word XML disagree on the completed OMML conversion inventory.");
+
+            var expectedFingerprints = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var formulaId in ids)
+            {
+                var expected = expectedMetadata[formulaId];
+                if (!string.Equals(
+                        expected.FormulaId,
+                        formulaId,
+                        StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(expected.NativeOmmlFingerprint))
+                    throw new InvalidDataException(
+                        $"Completed OMML conversion metadata {formulaId} has no durable content identity.");
+
+                var stored = WordOmmlFormulaStore.TryRead(document, formulaId)
+                    ?? throw new InvalidDataException(
+                        $"Completed OMML conversion metadata {formulaId} is missing from Word.");
+                if (!string.Equals(
+                        stored.FormulaId,
+                        expected.FormulaId,
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(
+                        stored.NativeOmmlFingerprint,
+                        expected.NativeOmmlFingerprint,
+                        StringComparison.OrdinalIgnoreCase)
+                    || stored.Numbered != expected.Numbered
+                    || !string.Equals(
+                        stored.DisplayMode,
+                        expected.DisplayMode,
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        $"Completed OMML conversion metadata {formulaId} differs from its verified transaction state.");
+
+                expectedFingerprints.Add(
+                    formulaId,
+                    expected.NativeOmmlFingerprint!);
+            }
+
+            // A collapsed bookmark at the beginning of a body equation can be
+            // exported by Word as a sibling outside the equation paragraph. The
+            // post-commit pass has both the complete XML package and the live COM
+            // inventory, so prove that otherwise ambiguous ownership from the
+            // bookmark's exact live story/start position. This remains strict: the
+            // indexer still requires the bookmarked physical equation to match the
+            // prepared fingerprint and rejects shared or duplicate owners.
+            var exactAnchorOwners = CaptureExactAnchorOwners(
+                document,
+                maths,
+                ids);
+            var identities = IndexConversionEquationIdentities(
+                body,
+                expectedFingerprints,
+                exactAnchorOwners: exactAnchorOwners);
+            if (identities.Count != ids.Length)
+                throw new InvalidDataException(
+                    "The completed OMML conversion identity inventory is incomplete.");
+            var nonCanonical = identities
+                .Where(pair => !pair.Value.Canonical)
+                .Select(pair => pair.Key)
+                .ToArray();
+            if (nonCanonical.Length > 0)
+                throw new InvalidDataException(
+                    "The completed OMML conversion has non-canonical formula owners: "
+                    + string.Join(", ", nonCanonical));
+
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-omml-postcommit-verified formulas={identities.Count} xmlEquations={xmlEquations.Length}");
+            return identities.Count;
+        }
+        finally
+        {
+            Release(maths);
+            Release(content);
+        }
+    }
+
     internal static int RefreshFingerprintsFromDocumentOpenXml(
         Document document,
         IReadOnlyCollection<string> formulaIds,
@@ -1005,7 +1312,7 @@ internal static class WordOmmlNativeSource
                 if (freshSourceOmml is not null)
                 {
                     if (freshSourceOmml.Count != 1 || !freshSourceOmml.TryGetValue(id, out var prepared)
-                        || WordOmmlConverter.ComputeOmmlFingerprint(prepared) != item.NativeOmmlFingerprint)
+                        || !WordOmmlConverter.MatchesStoredOmmlFingerprint(prepared, item.NativeOmmlFingerprint))
                         throw new InvalidDataException("Initial OMML finalization does not match its prepared source identity.");
                     local = liveInsertions?.TryReadOnlyOwner(id);
                     // Legacy callers without retained physical ownership keep the
@@ -1040,7 +1347,7 @@ internal static class WordOmmlNativeSource
                     local = liveInsertions?.TryReadVerifiedOwner(id)
                         ?? WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(document, id, item);
                     var actual = ReadCompleteEquationWordOpenXml(document, local, id);
-                    if (WordOmmlConverter.ComputeOmmlFingerprint(actual) != item.NativeOmmlFingerprint)
+                    if (!WordOmmlConverter.MatchesStoredOmmlFingerprint(actual, item.NativeOmmlFingerprint))
                         throw new InvalidDataException("The final single converted OMML content changed.");
                     if (finalizedMetadata is not null)
                     {
@@ -1089,14 +1396,16 @@ internal static class WordOmmlNativeSource
                 id => id, ReadExpected, StringComparer.OrdinalIgnoreCase);
             if (freshSourceOmml is not null && (freshSourceOmml.Count != metadata.Count
                 || metadata.Any(pair => !freshSourceOmml.TryGetValue(pair.Key, out var source)
-                    || WordOmmlConverter.ComputeOmmlFingerprint(source) != pair.Value.NativeOmmlFingerprint)))
+                    || !WordOmmlConverter.MatchesStoredOmmlFingerprint(source, pair.Value.NativeOmmlFingerprint))))
                 throw new InvalidDataException("Initial OMML finalization does not match its prepared source identities.");
-            Func<string, string> fingerprint = freshSourceOmml is null
-                ? WordOmmlConverter.ComputeOmmlFingerprint
+            // Null selects version-aware durable identity; custom projections
+            // are reserved for a fresh source's nonpersistent import proof.
+            Func<string, string>? fingerprint = freshSourceOmml is null
+                ? null
                 : WordOmmlConverter.ComputeImportedOmmlContentSignature;
             var expected = metadata.ToDictionary(pair => pair.Key,
                 pair => freshSourceOmml is null ? pair.Value.NativeOmmlFingerprint ?? string.Empty
-                    : fingerprint(freshSourceOmml[pair.Key]), StringComparer.OrdinalIgnoreCase);
+                    : fingerprint!(freshSourceOmml[pair.Key]), StringComparer.OrdinalIgnoreCase);
             IReadOnlyDictionary<string, (int Index, bool Canonical)> identities;
             try
             {
@@ -1205,7 +1514,7 @@ internal static class WordOmmlNativeSource
                     }
                     else
                     {
-                        var actual = WordOmmlConverter.ComputeOmmlFingerprint(actualXml);
+                        var actual = WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(actualXml, item.NativeOmmlFingerprint ?? string.Empty);
                         if (!string.Equals(actual, item.NativeOmmlFingerprint, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException($"COM equation content does not own OMML identity {identity.Key}.");
                     }
@@ -1295,7 +1604,7 @@ internal static class WordOmmlNativeSource
         {
             if (!freshSourceOmml.TryGetValue(pair.Key, out var source)
                 || !string.Equals(
-                    WordOmmlConverter.ComputeOmmlFingerprint(source),
+                    WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(source, pair.Value.NativeOmmlFingerprint ?? string.Empty),
                     pair.Value.NativeOmmlFingerprint,
                     StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Fresh OMML redraw source {pair.Key} does not match its prepared identity.");
@@ -1369,7 +1678,7 @@ internal static class WordOmmlNativeSource
                 {
                     math = maths[identity.Value.Index + 1];
                     range = math.Range;
-                    var actual = WordOmmlConverter.ComputeOmmlFingerprint(range.WordOpenXML);
+                    var actual = WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(range.WordOpenXML, item.NativeOmmlFingerprint ?? string.Empty);
                     if (!string.Equals(actual, item.NativeOmmlFingerprint, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"COM equation content does not own fresh OMML identity {identity.Key}.");
                     rebound = WordOmmlFormulaStore.Wrap(
@@ -1396,11 +1705,13 @@ internal static class WordOmmlNativeSource
         }
     }
 
-    private static IReadOnlyDictionary<string, int> CaptureExactAnchorOwners(
+    internal static IReadOnlyDictionary<string, int> CaptureExactAnchorOwners(
         Document document,
         OMaths maths,
         IReadOnlyCollection<string> formulaIds)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+            "WordOmmlNativeSource.CaptureExactAnchorOwners");
         // Word may export a collapsed bookmark at an equation start as a child of
         // w:body, outside the equation paragraph. XML proximity cannot establish
         // that ownership; exact live positions can, without serializing each math.
@@ -1420,29 +1731,203 @@ internal static class WordOmmlNativeSource
             }
             finally { Release(range); Release(math); }
         }
+
+        var names = formulaIds
+            .Where(formulaId => !string.IsNullOrWhiteSpace(formulaId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                WordOmmlFormulaStore.BookmarkName,
+                formulaId => formulaId,
+                StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         Bookmarks? bookmarks = null;
         try
         {
             bookmarks = document.Bookmarks;
-            foreach (var formulaId in formulaIds)
+            for (var index = 1; index <= bookmarks.Count; index++)
             {
-                var name = WordOmmlFormulaStore.BookmarkName(formulaId);
-                if (!bookmarks.Exists(name)) continue;
                 Bookmark? bookmark = null;
                 Range? range = null;
                 try
                 {
-                    bookmark = bookmarks[name];
+                    bookmark = bookmarks[index];
+                    if (!names.TryGetValue(bookmark.Name, out var formulaId))
+                        continue;
                     range = bookmark.Range;
-                    if (range.Start == range.End
-                        && starts.TryGetValue((range.StoryType, range.Start), out var index))
-                        result.Add(formulaId, index);
+                    if (range.Start != range.End
+                        || !starts.TryGetValue(
+                            (range.StoryType, range.Start),
+                            out var ownerIndex))
+                        continue;
+                    if (result.ContainsKey(formulaId))
+                        throw new InvalidDataException(
+                            $"OMML identity {formulaId} has more than one exact live owner.");
+                    result.Add(formulaId, ownerIndex);
                 }
                 finally { Release(range); Release(bookmark); }
             }
         }
         finally { Release(bookmarks); }
+        return result;
+    }
+
+    internal static IReadOnlyDictionary<string, (int Index, bool Canonical, bool NumberHostVerified)>
+        IndexReadableConversionEquationIdentities(
+            XElement body,
+            IReadOnlyDictionary<string, string> expectedFingerprints,
+            ISet<string> unresolvedIdentities)
+    {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+            "WordOmmlNativeSource.IndexReadableConversionEquationIdentities");
+        if (body is null) throw new ArgumentNullException(nameof(body));
+        if (expectedFingerprints is null)
+            throw new ArgumentNullException(nameof(expectedFingerprints));
+        if (unresolvedIdentities is null)
+            throw new ArgumentNullException(nameof(unresolvedIdentities));
+
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        var equations = body.Descendants(m + "oMath").ToArray();
+        var equationXml = equations
+            .Select(equation => equation.ToString(SaveOptions.DisableFormatting))
+            .ToArray();
+        var fingerprintsByVersion = new Dictionary<int, string[]>();
+        var bookmarks = body.Descendants(w + "bookmarkStart")
+            .GroupBy(
+                element => (string?)element.Attribute(w + "name") ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, (int Index, bool Canonical, bool NumberHostVerified)>(
+            StringComparer.OrdinalIgnoreCase);
+        var claimed = new HashSet<int>();
+
+        foreach (var entry in expectedFingerprints)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Value))
+                throw new InvalidDataException(
+                    $"Readable OMML {entry.Key} has no captured content fingerprint.");
+
+            var version = OmmlFingerprintFormat.GetVersion(entry.Value);
+            if (!fingerprintsByVersion.TryGetValue(version, out var fingerprints))
+            {
+                fingerprints = equationXml
+                    .Select(xml => WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+                        xml,
+                        entry.Value))
+                    .ToArray();
+                fingerprintsByVersion.Add(version, fingerprints);
+            }
+
+            XElement? anchor = null;
+            var anchorName = WordOmmlFormulaStore.BookmarkName(entry.Key);
+            if (bookmarks.TryGetValue(anchorName, out var anchors))
+            {
+                if (anchors.Length != 1)
+                    throw new InvalidDataException(
+                        $"OMML identity {anchorName} is duplicated.");
+                anchor = anchors[0];
+            }
+
+            XElement? candidate = null;
+            var canonical = false;
+            var numberHostVerified = false;
+            if (bookmarks.TryGetValue(
+                    WordEquationNumbering.NativeNumberBookmarkName(entry.Key),
+                    out var numbers))
+            {
+                if (numbers.Length != 1)
+                    throw new InvalidDataException(
+                        $"OMML number identity {entry.Key} is duplicated.");
+                XElement? numberOwner = numbers[0]
+                    .Ancestors(m + "oMath")
+                    .FirstOrDefault();
+                var cell = numbers[0].Ancestors(w + "tc").FirstOrDefault();
+                var row = cell?.Parent;
+                if (numberOwner is null && row?.Name == w + "tr")
+                {
+                    var cells = row.Elements(w + "tc").ToArray();
+                    if (cells.Length != 3 || cells[2] != cell)
+                        throw new InvalidDataException(
+                            $"OMML number {entry.Key} does not own column three of its row.");
+                    var rowEquations = cells[1].Descendants(m + "oMath").ToArray();
+                    if (rowEquations.Length == 0)
+                    {
+                        unresolvedIdentities.Add(entry.Key);
+                        continue;
+                    }
+                    if (rowEquations.Length != 1)
+                        throw new InvalidDataException(
+                            $"OMML number {entry.Key} has more than one center equation.");
+                    numberOwner = rowEquations[0];
+                }
+                if (numberOwner is null)
+                {
+                    unresolvedIdentities.Add(entry.Key);
+                    continue;
+                }
+                candidate = numberOwner;
+                canonical = true;
+                numberHostVerified = true;
+            }
+
+            var paragraph = anchor?.Ancestors(w + "p").FirstOrDefault();
+            var adjacent = paragraph?.Descendants(m + "oMath")
+                .FirstOrDefault(equation =>
+                    XNode.CompareDocumentOrder(anchor!, equation) < 0);
+            var canonicalAdjacent = false;
+            if (anchor is not null && paragraph is not null && adjacent is not null)
+            {
+                var bookmarkId = (string?)anchor.Attribute(w + "id");
+                var ends = paragraph.Descendants(w + "bookmarkEnd")
+                    .Where(end => (string?)end.Attribute(w + "id") == bookmarkId)
+                    .ToArray();
+                canonicalAdjacent = ends.Length == 1
+                    && XNode.CompareDocumentOrder(anchor, ends[0]) < 0
+                    && XNode.CompareDocumentOrder(ends[0], adjacent) < 0
+                    && !paragraph.Descendants().Any(element =>
+                        (element.Name == m + "t"
+                            || element.Name == w + "t"
+                            || element.Name == w + "instrText")
+                        && XNode.CompareDocumentOrder(anchor, element) < 0
+                        && XNode.CompareDocumentOrder(element, ends[0]) < 0);
+            }
+            if (canonicalAdjacent)
+            {
+                if (candidate is not null && candidate != adjacent)
+                    throw new InvalidDataException(
+                        $"OMML anchor and number {entry.Key} own different equations.");
+                candidate = adjacent;
+                canonical = true;
+            }
+
+            if (candidate is null)
+            {
+                var matches = Enumerable.Range(0, equations.Length)
+                    .Where(index => string.Equals(
+                        fingerprints[index],
+                        entry.Value,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (matches.Length != 1)
+                {
+                    unresolvedIdentities.Add(entry.Key);
+                    continue;
+                }
+                candidate = equations[matches[0]];
+            }
+
+            var equationIndex = Array.IndexOf(equations, candidate);
+            if (equationIndex < 0)
+                throw new InvalidDataException(
+                    $"Readable OMML identity {entry.Key} has no XML equation owner.");
+            if (!claimed.Add(equationIndex))
+                throw new InvalidDataException(
+                    "Two logical OMML identities claim the same physical equation.");
+            result.Add(entry.Key, (equationIndex, canonical, numberHostVerified));
+        }
         return result;
     }
 
@@ -1457,12 +1942,16 @@ internal static class WordOmmlNativeSource
         IReadOnlyDictionary<string, int>? liveInsertedOwners = null,
         bool allowFreshOwnerFingerprintRecovery = false)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordOmmlNativeSource.IndexConversionEquationIdentities");
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
         var equations = body.Descendants(m + "oMath").ToArray();
-        fingerprint ??= WordOmmlConverter.ComputeOmmlFingerprint;
-        var fingerprints = equations.Select(e => fingerprint(
-            e.ToString(SaveOptions.DisableFormatting))).ToArray();
+        var equationXml = equations.Select(e => e.ToString(SaveOptions.DisableFormatting)).ToArray();
+        // Mixed versions need at most two O(N) projections, not a scan per
+        // identity. Both use the same physical-owner and claimed-index checks.
+        var fingerprintsByVersion = new Dictionary<int, string[]>();
+        if (fingerprint is not null)
+            fingerprintsByVersion[0] = equationXml.Select(fingerprint).ToArray();
         var bookmarks = body.Descendants(w + "bookmarkStart")
             .GroupBy(e => (string?)e.Attribute(w + "name") ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -1474,6 +1963,13 @@ internal static class WordOmmlNativeSource
         {
             if (string.IsNullOrWhiteSpace(entry.Value))
                 throw new InvalidDataException($"Converted OMML {entry.Key} has no captured content fingerprint.");
+            var version = fingerprint is null ? OmmlFingerprintFormat.GetVersion(entry.Value) : 0;
+            if (!fingerprintsByVersion.TryGetValue(version, out var fingerprints))
+            {
+                fingerprints = equationXml.Select(xml =>
+                    WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(xml, entry.Value)).ToArray();
+                fingerprintsByVersion.Add(version, fingerprints);
+            }
             XElement? anchor = null;
             XElement? candidate = null;
             var name = WordOmmlFormulaStore.BookmarkName(entry.Key);
@@ -1597,6 +2093,7 @@ internal static class WordOmmlNativeSource
         Range equationRange,
         string formulaId)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordOmmlNativeSource.ReadCompleteEquationWordOpenXml");
         Range? content = null;
         Range? probe = null;
         Bookmarks? bookmarks = null;

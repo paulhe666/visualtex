@@ -1161,7 +1161,38 @@ HRESULT CFormulaOleObject::InitializeOrUpdate(
     UpdateExtentFromEmf(requireUninitialized);
     NotifyChanged();
 
-    if (clientSite_ != nullptr)
+    if (storage_ != nullptr)
+    {
+        // The host already handed this embedded object its own IStorage through
+        // InitNew/Load. Persist directly into that storage instead of calling
+        // IOleClientSite::SaveObject synchronously from the out-of-process
+        // LocalServer. SaveObject re-enters Word's container-save path while Word
+        // is still creating/updating the OLE object; with dozens of embedded
+        // formulas that can deadlock both STAs. Direct storage persistence keeps
+        // the same durable streams without a container callback.
+        TraceOleCall(L"InitializeOrUpdate direct storage save enter");
+        HRESULT saveResult = Save(storage_, TRUE);
+        if (SUCCEEDED(saveResult))
+            saveResult = SaveCompleted(storage_);
+        if (FAILED(saveResult))
+        {
+            TraceOleCall(L"InitializeOrUpdate direct storage save failed");
+            metadataJson_ = std::move(previousMetadata);
+            emfBytes_ = std::move(previousEmf);
+            pngBytes_ = std::move(previousPng);
+            extent_ = previousExtent;
+            naturalExtent_ = previousNaturalExtent;
+            presentationExtent_ = previousPresentationExtent;
+            presentationExtentLocked_ = previousPresentationExtentLocked;
+            initialized_ = previousInitialized;
+            dirty_ = previousDirty;
+            NotifyChanged();
+            return saveResult;
+        }
+        TraceOleCall(L"InitializeOrUpdate direct storage save succeeded");
+        NotifyChanged();
+    }
+    else if (clientSite_ != nullptr)
     {
         TraceOleCall(L"InitializeOrUpdate requesting container save");
         const HRESULT saveResult = clientSite_->SaveObject();

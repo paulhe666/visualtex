@@ -1,177 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
-using Microsoft.Office.Interop.Word;
-using VisualTeX.WindowsOffice.Contracts;
-using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
 
-// A verification checkpoint for a local Word undo transaction. It never restores
-// a document by rebuilding its XML, and captures only the affected paragraph/row.
-internal sealed class WordLocalEditSnapshot
+// Canonical Flat-OPC signature utility used only to compare Word recovery
+// evidence. It has no formula identity, metadata, lookup, or rollback authority.
+internal static class WordLocalEditSnapshot
 {
-    private readonly int start;
-    private readonly int end;
-    private readonly int documentEnd;
-    private readonly string bodySignature;
-    private readonly string capturedScopeXml;
-    private readonly int scopeOmmlCount;
-    private readonly string mathFont;
-    private readonly WordUndoHistorySnapshot undoHistory;
-    private readonly WordBookmarkRecoverySnapshot bookmarkRecovery;
-
-    internal WordLocalEditSnapshot(Document document, Range formulaRange, string formulaId)
-    {
-        var watch = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF") == "1"
-            ? System.Diagnostics.Stopwatch.StartNew() : null;
-        long checkpoint = 0;
-        void Trace(string stage)
-        {
-            if (watch is null) return;
-            var elapsed = watch.ElapsedMilliseconds;
-            WordDoubleClickHook.TraceMessage($"local-checkpoint-perf stage={stage} deltaMs={elapsed - checkpoint} totalMs={elapsed}");
-            checkpoint = elapsed;
-        }
-        Range? scope = null;
-        Range? content = null;
-        Tables? tables = null;
-        Table? table = null;
-        Rows? rows = null;
-        Row? row = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        OMaths? scopeMaths = null;
-        try
-        {
-            tables = formulaRange.Tables;
-            if (tables.Count == 1)
-            {
-                table = tables[1];
-                if (WordEquationNumbering.TryGetManagedNumberTableRowIndex(table, formulaRange, 2, out var rowIndex))
-                {
-                    rows = table.Rows;
-                    row = rows[rowIndex];
-                    scope = row.Range;
-                }
-            }
-            if (scope is null)
-            {
-                // An ordinary user table is not a managed numbering host. Its
-                // containing paragraph is still a valid local edit checkpoint.
-                paragraphs = formulaRange.Paragraphs;
-                paragraph = paragraphs[1];
-                scope = paragraph.Range;
-            }
-            start = scope.Start;
-            end = scope.End;
-            content = document.Content;
-            documentEnd = content.End;
-            mathFont = document.OMathFontName;
-            scopeMaths = scope.OMaths;
-            scopeOmmlCount = scopeMaths.Count;
-            Trace("scope");
-            var originalXml = scope.WordOpenXML;
-            capturedScopeXml = originalXml;
-            Trace("xml");
-            var geometry = WordInlineObjectGeometry.Capture(scope);
-            bodySignature = Signature(originalXml, geometry);
-            Trace("signature");
-            bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, scope,
-                NormalizedBody(originalXml, geometry), WordBookmarkRecoverySnapshot.NamesForFormula(formulaId));
-            Trace("bookmarks");
-            undoHistory = new WordUndoHistorySnapshot(document);
-            Trace("undo-history");
-        }
-        finally
-        {
-            Release(scopeMaths);
-            Release(scope);
-            Release(content);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(row);
-            Release(rows);
-            Release(table);
-            Release(tables);
-        }
-    }
-
-    // Reuse this transaction's exact local snapshot for source verification only
-    // when it contains one physical OMath. A multi-equation paragraph still uses
-    // the identity-bound exporter; no positional or process-lifetime cache is used.
-    internal bool TryGetSingleOmmlSource(out string omml)
-    {
-        omml = string.Empty;
-        if (scopeOmmlCount != 1) return false;
-        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
-        var body = XDocument.Parse(capturedScopeXml).Descendants(w + "body").Single();
-        var equations = body.Descendants(m + "oMath").Take(2).ToArray();
-        if (equations.Length != 1) return false;
-        omml = equations[0].ToString(SaveOptions.DisableFormatting);
-        return true;
-    }
-
-    internal void VerifyRestored(Document document)
-    {
-        if (!Matches(document))
-            throw new InvalidDataException("Word undo did not restore the formula row, numbering, bookmarks and formatting.");
-    }
-
-    internal bool Matches(Document document)
-        => string.Equals(document.OMathFontName, mathFont, StringComparison.Ordinal)
-            && ContentMatches(document);
-
-    private bool ContentMatches(Document document)
-    {
-        Range? restored = null;
-        Range? content = null;
-        try
-        {
-            content = document.Content;
-            if (content.End != documentEnd)
-                return false;
-            restored = document.Range(start, end);
-            return string.Equals(Signature(restored.WordOpenXML, WordInlineObjectGeometry.Capture(restored)), bodySignature, StringComparison.Ordinal);
-        }
-        finally { Release(restored); Release(content); }
-    }
-
-    // The caller must end its owned custom undo record first. Custom XML and
-    // document math-font preferences are restored explicitly; neither may justify
-    // undoing a preceding user action when this edit made no content change.
-    internal void RestoreOmml(Document document, string formulaId, FormulaMetadata? metadata)
-    {
-        undoHistory.UndoChanges(document);
-        if (!ContentMatches(document))
-        {
-            Range? restoredScope = null;
-            Range? content = null;
-            try
-            {
-                content = document.Content;
-                if (content.End != documentEnd)
-                    throw new InvalidDataException("Word undo has not restored the original document extent.");
-                restoredScope = document.Range(start, end);
-                bookmarkRecovery.Restore(document,
-                    NormalizedBody(restoredScope.WordOpenXML, WordInlineObjectGeometry.Capture(restoredScope)));
-            }
-            finally { Release(restoredScope); Release(content); }
-        }
-        if (!string.Equals(document.OMathFontName, mathFont, StringComparison.Ordinal))
-            document.OMathFontName = mathFont;
-        WordOmmlFormulaStore.InvalidateDocumentCache(document);
-        if (metadata is not null) WordOmmlFormulaStore.Save(document, metadata);
-        else WordOmmlFormulaStore.Delete(document, formulaId);
-        VerifyRestored(document);
-        var restored = WordOmmlFormulaStore.TryRead(document, formulaId);
-        if ((restored is null) != (metadata is null)
-            || (restored is not null && metadata is not null
-                && !string.Equals(FormulaMetadataCodec.Encode(restored), FormulaMetadataCodec.Encode(metadata), StringComparison.Ordinal)))
-            throw new InvalidDataException("Formula metadata was not restored after the failed edit.");
-    }
-
     internal static string Signature(string xml, IReadOnlyList<WordInlineObjectGeometry.Item>? geometry = null)
     {
         using var hash = SHA256.Create();
@@ -273,11 +109,5 @@ internal sealed class WordLocalEditSnapshot
             }
         }
         return body.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static void Release(object? value)
-    {
-        if (value is not null && System.Runtime.InteropServices.Marshal.IsComObject(value))
-            System.Runtime.InteropServices.Marshal.ReleaseComObject(value);
     }
 }

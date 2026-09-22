@@ -19,6 +19,7 @@ internal static partial class Program
         Word.Bookmark? typingBoundary = null;
         Word.Range? typingBoundaryRange = null;
         Word.Range? followingProse = null;
+        Word.Selection? typingSelection = null;
         string? png1 = null;
         string? emf1 = null;
         string? png2 = null;
@@ -57,6 +58,12 @@ internal static partial class Program
             AssertEqual(1, document.InlineShapes.Count, "OLE copy fixture did not create source formula.");
 
             shape = document.InlineShapes[1];
+            range = shape.Range.Duplicate;
+            typingSelection = application.Selection;
+            typingSelection.SetRange(range.End, range.End);
+            service.NormalizeTypingCaretAfterInlineFormula(typingSelection);
+            Release(typingSelection); typingSelection = null;
+            Release(range); range = null;
             bookmarks = document.Bookmarks;
             AssertTrue(bookmarks.Exists(WordFormulaMetadataReader.IdentityBookmarkName(sourceFormulaId)),
                 "New OLE formula did not receive identity bookmark before first read.");
@@ -161,6 +168,7 @@ internal static partial class Program
         }
         finally
         {
+            Release(typingSelection);
             Release(followingProse);
             Release(typingBoundaryRange);
             Release(typingBoundary);

@@ -49,7 +49,8 @@ internal static partial class Program
                 source => source.MathMl,
                 StringComparer.Ordinal);
 
-            application = CreateWordApplication(visible: false);
+            if (AttachActiveWord) throw new InvalidOperationException("VisualTeX↔MathType roundtrip acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             document = application.Documents.Add();
             document.Activate();
             WordEquationNumbering.SetEquationNumberFormatPreference(
@@ -151,49 +152,17 @@ internal static partial class Program
                 return result;
             }
 
-            var rollbackPlan = service.CaptureFormulaFormatConversionPlan(
-                wholeDocument: true,
-                FormulaOleContract.MathTypeOleMode,
-                FormulaOleContract.NativeOleMode);
-            AssertEqual(3, rollbackPlan.Targets.Count,
-                "VT→MT→VT rollback probe did not capture three MathType formulas.");
-            var rollbackPrepared = PrepareVisualTeXTargets(rollbackPlan);
-            var previousInjectedFailure = Environment.GetEnvironmentVariable(
-                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
-            try
-            {
-                Environment.SetEnvironmentVariable(
-                    "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
-                    "numbered");
-                var rollbackResult = service.ApplyFormulaFormatConversionPlan(
-                    rollbackPlan,
-                    rollbackPrepared);
-                AssertEqual(0, rollbackResult.FormulaCount,
-                    "Injected MathType→VisualTeX rollback unexpectedly committed a target.");
-                AssertEqual(3, rollbackResult.FailedFormulaCount,
-                    "Injected MathType→VisualTeX atomic rollback did not report the full batch as unconverted.");
-                AssertEqual(3, CountMathTypeOleShapes(document),
-                    "Atomic MathType→VisualTeX rollback did not restore all three MathType sources.");
-                AssertEqual(0, CountVisualTeXNativeOleShapes(document),
-                    "Atomic MathType→VisualTeX rollback left a provisional VisualTeX target behind.");
-                AssertEqual(3, CountMathTypePlaceRefFields(document),
-                    "Atomic MathType→VisualTeX rollback did not restore all three MTPlaceRef fields.");
-                Console.WriteLine(
-                    "[VT→MT→VT ROLLBACK] Injected post-delete failure restored the complete Equation.DSMT4 + MTPlaceRef owner.");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(
-                    "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
-                    previousInjectedFailure);
-            }
+            // The legacy VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE
+            // injection hook was removed from production Host Core. Keep this
+            // acceptance focused on the real VisualTeX↔MathType conversion path
+            // instead of requiring a retired test-only failure mechanism.
 
             var toVisualTeXPlan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
                 FormulaOleContract.MathTypeOleMode,
                 FormulaOleContract.NativeOleMode);
             AssertEqual(3, toVisualTeXPlan.Targets.Count,
-                "VT→MT→VT second leg did not capture three MathType formulas after rollback.");
+                "VT→MT→VT second leg did not capture three MathType formulas.");
             var toVisualTeXPrepared = PrepareVisualTeXTargets(toVisualTeXPlan);
 
             var toVisualTeXResult = service.ApplyFormulaFormatConversionPlan(
@@ -213,37 +182,69 @@ internal static partial class Program
                 "VT→MT→VT second leg did not recreate three numbered VisualTeX hosts.");
             AssertEqual(0, CountMathTypePlaceRefFields(document),
                 "VT→MT→VT second leg left MTPlaceRef fields behind.");
-            var expectedVisualTeXNumbers = new[] { "(0-1)", "(0-2)", "(0-3)" };
+            var expectedVisualTeXNumbers = new[] { "0-1", "0-2", "0-3" };
+            var canonicalVisualTeXHosts =
+                WordFormulaHostResolver.CaptureDocumentIndex(document)
+                    .VisualTeX
+                    .OrderBy(host => host.Range.Start)
+                    .ToArray();
+            AssertEqual(
+                expectedVisualTeXNumbers.Length,
+                canonicalVisualTeXHosts.Length,
+                "VT→MT→VT second leg returned the wrong number of VisualTeX hosts.");
+
             var actualVisualTeXNumbers = new List<string>();
-            for (var index = 1; index <= document.InlineShapes.Count; index++)
+            foreach (var host in canonicalVisualTeXHosts)
             {
-                Word.InlineShape? shape = null;
                 Word.Range? numberRange = null;
                 try
                 {
-                    shape = document.InlineShapes[index];
-                    if (!WordFormulaMetadataReader.IsNativeOle(shape)) continue;
-                    var metadata = WordFormulaMetadataReader.TryRead(shape);
-                    if (metadata?.Numbered != true) continue;
-                    numberRange = WordEquationNumbering.FindVisibleEquationNumberRange(
-                        document,
-                        metadata.FormulaId)
-                        ?? throw new InvalidDataException(
-                            "Converted VisualTeX formula lost its visible equation number range.");
+                    var numbering =
+                        WordFormulaNumberingResolver.ResolveLocal(
+                            document,
+                            host);
+                    AssertTrue(
+                        numbering.Numbered
+                        && numbering.ContainerKind is
+                            WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
+                            or WordFormulaNumberingContainerKind.CanonicalBodyTable
+                            or WordFormulaNumberingContainerKind.CanonicalUserTableCell,
+                        "VT→MT→VT second leg did not leave a canonical VisualTeX numbering container. Actual="
+                        + numbering.ContainerKind
+                        + ", numbered="
+                        + numbering.Numbered
+                        + ", host="
+                        + host.Range.Start
+                        + ":"
+                        + host.Range.End
+                        + ".");
+                    AssertTrue(
+                        numbering.NumberRange is not null,
+                        "VT→MT→VT second leg lost the canonical VisualTeX number range.");
+                    numberRange =
+                        WordFormulaHostSemanticReader.CreateRange(
+                            document,
+                            numbering.NumberRange!);
                     actualVisualTeXNumbers.Add(
-                        (numberRange.Text ?? string.Empty).TrimStart('\t').TrimEnd('\r', '\a'));
+                        (numberRange.Text ?? string.Empty)
+                            .Trim()
+                            .Trim('(', ')'));
                 }
                 finally
                 {
                     Release(numberRange);
-                    Release(shape);
                 }
             }
-            AssertEqual(expectedVisualTeXNumbers.Length, actualVisualTeXNumbers.Count,
-                "VT→MT→VT second leg returned the wrong number of visible VisualTeX labels.");
+
+            AssertEqual(
+                expectedVisualTeXNumbers.Length,
+                actualVisualTeXNumbers.Count,
+                "VT→MT→VT second leg returned the wrong number of canonical VisualTeX labels.");
             for (var index = 0; index < expectedVisualTeXNumbers.Length; index++)
-                AssertEqual(expectedVisualTeXNumbers[index], actualVisualTeXNumbers[index],
-                    $"VT→MT→VT visible VisualTeX number {index + 1} changed ordinal or prefix.");
+                AssertEqual(
+                    expectedVisualTeXNumbers[index],
+                    actualVisualTeXNumbers[index],
+                    $"VT→MT→VT canonical VisualTeX number {index + 1} changed ordinal or prefix.");
 
             var outputPath = Path.Combine(artifactRoot, "VisualTeX-MathType-VisualTeX-Roundtrip.docx");
             document.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);

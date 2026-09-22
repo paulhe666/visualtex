@@ -63,6 +63,14 @@ internal sealed class WordLatexRedrawPlan
     internal string SourceText { get; set; } = string.Empty;
     internal bool NumberDisplayFormulas { get; set; }
     internal List<WordLatexRedrawTarget> Targets { get; set; } = new();
+    internal List<DeletedNumberedOmmlResidue> DeletedNumberedOmmlResidues { get; set; } = new();
+}
+
+internal sealed class DeletedNumberedOmmlResidue
+{
+    internal string FormulaId { get; set; } = string.Empty;
+    internal int OwnerStart { get; set; }
+    internal int OwnerEnd { get; set; }
 }
 
 internal sealed class WordLatexRedrawResult

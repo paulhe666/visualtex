@@ -2,6 +2,7 @@
 #include <atlcom.h>
 #include <gdiplus.h>
 
+#include <atomic>
 #include <string>
 
 #include "FormulaOleContract.h"
@@ -95,12 +96,13 @@ public:
     HRESULT PreMessageLoop(int showCommand) noexcept
     {
         TraceModule("PreMessageLoop enter");
-        HoldStartupGraceLock();
+        HoldActivityGraceLock();
+        RefreshActivityGrace();
         Gdiplus::GdiplusStartupInput startupInput;
         if (Gdiplus::GdiplusStartup(&gdiplusToken_, &startupInput, nullptr) != Gdiplus::Ok)
         {
             TraceModule("GdiplusStartup failed");
-            ReleaseStartupGraceLockImmediately();
+            ReleaseActivityGraceLockImmediately();
             return E_FAIL;
         }
         TraceModule("GdiplusStartup succeeded");
@@ -110,11 +112,11 @@ public:
         {
             Gdiplus::GdiplusShutdown(gdiplusToken_);
             gdiplusToken_ = 0;
-            ReleaseStartupGraceLockImmediately();
+            ReleaseActivityGraceLockImmediately();
         }
         else
         {
-            ArmStartupGraceRelease();
+            ArmActivityGraceRelease();
         }
         return result;
     }
@@ -122,66 +124,126 @@ public:
     HRESULT PostMessageLoop() noexcept
     {
         TraceModule("PostMessageLoop enter");
+        if (activityEvent_ != nullptr)
+            SetEvent(activityEvent_);
         const HRESULT result = __super::PostMessageLoop();
         if (gdiplusToken_ != 0)
         {
             Gdiplus::GdiplusShutdown(gdiplusToken_);
             gdiplusToken_ = 0;
         }
+        if (activityThread_ != nullptr)
+        {
+            WaitForSingleObject(activityThread_, 1000);
+            CloseHandle(activityThread_);
+            activityThread_ = nullptr;
+        }
+        if (activityEvent_ != nullptr)
+        {
+            CloseHandle(activityEvent_);
+            activityEvent_ = nullptr;
+        }
         return result;
     }
 
-private:
-    static constexpr DWORD StartupGraceMilliseconds = 15000;
-
-    void HoldStartupGraceLock() noexcept
+    void RefreshActivityGrace() noexcept
     {
-        if (InterlockedCompareExchange(&startupGraceHeld_, 1, 0) != 0)
-            return;
-        Lock();
-        TraceModule("startup grace lock acquired");
+        lastActivityTick_.store(GetTickCount64(), std::memory_order_relaxed);
+        if (activityEvent_ != nullptr)
+            SetEvent(activityEvent_);
     }
 
-    void ArmStartupGraceRelease() noexcept
+private:
+    static constexpr DWORD ActivityGraceMilliseconds = 15000;
+
+    void HoldActivityGraceLock() noexcept
     {
-        HANDLE thread = CreateThread(
+        if (InterlockedCompareExchange(&activityGraceHeld_, 1, 0) != 0)
+            return;
+        Lock();
+        TraceModule("activity grace lock acquired");
+    }
+
+    void ArmActivityGraceRelease() noexcept
+    {
+        activityEvent_ = CreateEventW(
+            nullptr,
+            FALSE,
+            FALSE,
+            nullptr);
+        if (activityEvent_ == nullptr)
+        {
+            TraceModule("activity grace event failed");
+            ReleaseActivityGraceLockImmediately();
+            return;
+        }
+        activityThread_ = CreateThread(
             nullptr,
             0,
-            &ReleaseStartupGraceProc,
+            &ReleaseActivityGraceProc,
             this,
             0,
             nullptr);
-        if (thread == nullptr)
+        if (activityThread_ == nullptr)
         {
-            TraceModule("startup grace thread failed");
-            ReleaseStartupGraceLockImmediately();
+            TraceModule("activity grace thread failed");
+            CloseHandle(activityEvent_);
+            activityEvent_ = nullptr;
+            ReleaseActivityGraceLockImmediately();
             return;
         }
-        CloseHandle(thread);
-        TraceModule("startup grace release armed");
+        TraceModule("activity grace release armed");
     }
 
-    void ReleaseStartupGraceLockImmediately() noexcept
+    void ReleaseActivityGraceLockImmediately() noexcept
     {
-        if (InterlockedExchange(&startupGraceHeld_, 0) == 0)
+        if (InterlockedExchange(&activityGraceHeld_, 0) == 0)
             return;
         Unlock();
-        TraceModule("startup grace lock released");
+        TraceModule("activity grace lock released");
     }
 
-    static DWORD WINAPI ReleaseStartupGraceProc(void* context) noexcept
+    static DWORD WINAPI ReleaseActivityGraceProc(void* context) noexcept
     {
-        Sleep(StartupGraceMilliseconds);
         auto* module = static_cast<CVisualTeXFormulaOleServerModule*>(context);
-        module->ReleaseStartupGraceLockImmediately();
+        for (;;)
+        {
+            const ULONGLONG lastActivity =
+                module->lastActivityTick_.load(std::memory_order_relaxed);
+            const ULONGLONG now = GetTickCount64();
+            const ULONGLONG elapsed =
+                now >= lastActivity ? now - lastActivity : 0;
+            if (elapsed >= ActivityGraceMilliseconds)
+            {
+                module->ReleaseActivityGraceLockImmediately();
+                break;
+            }
+            const DWORD remaining = static_cast<DWORD>(
+                ActivityGraceMilliseconds - elapsed);
+            const DWORD waitResult =
+                WaitForSingleObject(module->activityEvent_, remaining);
+            if (waitResult == WAIT_FAILED)
+            {
+                module->ReleaseActivityGraceLockImmediately();
+                break;
+            }
+        }
         return 0;
     }
 
     ULONG_PTR gdiplusToken_ = 0;
-    volatile LONG startupGraceHeld_ = 0;
+    volatile LONG activityGraceHeld_ = 0;
+    std::atomic<ULONGLONG> lastActivityTick_{0};
+    HANDLE activityEvent_ = nullptr;
+    HANDLE activityThread_ = nullptr;
 };
 
 CVisualTeXFormulaOleServerModule _AtlModule;
+
+void NotifyOleServerActivity() noexcept
+{
+    _AtlModule.RefreshActivityGrace();
+}
 
 extern "C" int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int showCommand)
 {

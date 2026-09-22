@@ -194,13 +194,29 @@ internal static partial class Program
             document.Activate();
 
             var service = new WordFormulaService(application);
-            var plan = service.CaptureFormulaFormatConversionPlan(
-                wholeDocument: true,
-                FormulaOleContract.WordOmmlMode,
-                FormulaOleContract.MathTypeOleMode);
+            var metrics = new WordOperationMetrics();
+            var captureWatch = Stopwatch.StartNew();
+            WordFormulaFormatConversionPlan plan;
+            using (metrics)
+            {
+                plan = service.CaptureFormulaFormatConversionPlan(
+                    wholeDocument: true,
+                    FormulaOleContract.WordOmmlMode,
+                    FormulaOleContract.MathTypeOleMode);
+            }
+            captureWatch.Stop();
             Console.WriteLine(
                 $"[USER OMML AUDIT] targets={plan.Targets.Count}; omaths={document.OMaths.Count}; "
-                + $"paragraphs={document.Paragraphs.Count}; inlineShapes={document.InlineShapes.Count}");
+                + $"paragraphs={document.Paragraphs.Count}; inlineShapes={document.InlineShapes.Count}; "
+                + $"captureMs={captureWatch.Elapsed.TotalMilliseconds:0.###}");
+            foreach (var metric in metrics.Entries
+                         .OrderByDescending(pair => pair.Value.Milliseconds)
+                         .ThenBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                Console.WriteLine(
+                    $"[USER OMML AUDIT METRIC] name={metric.Key}; "
+                    + $"calls={metric.Value.Calls}; ms={metric.Value.Milliseconds:0.###}");
+            }
 
             var mismatches = 0;
             foreach (var pair in plan.Targets

@@ -705,6 +705,16 @@ internal static partial class Program
         try
         {
             range = ResolveFormulaToLatexRange(host.Document, formula);
+            var rangeBeforeStart = range.Start;
+            var rangeBeforeEnd = range.End;
+            content = host.Document.Content;
+            var textBefore = content.Text ?? string.Empty;
+            var anchorsBefore = Enumerable.Range(0, textBefore.Length)
+                .Where(index => textBefore[index] == '\u200C')
+                .Select(index => content.Start + index)
+                .ToArray();
+            Release(content);
+            content = null;
             selection = host.Application.Selection;
             selection.SetRange(range.End, range.End);
             var service = new WordFormulaService(host.Application);
@@ -712,6 +722,14 @@ internal static partial class Program
             content = host.Document.Content;
             var text = content.Text ?? string.Empty;
             var anchorCount = text.Count(character => character == '\u200C');
+            var anchorPositions = Enumerable.Range(0, text.Length)
+                .Where(index => text[index] == '\u200C')
+                .Select(index => content.Start + index)
+                .ToArray();
+            Console.WriteLine(
+                $"Formula-to-LaTeX typing-anchor probe: OLE-before={rangeBeforeStart}:{rangeBeforeEnd}; "
+                + $"anchors-before=[{string.Join(",", anchorsBefore)}]; OLE-after={range.Start}:{range.End}; "
+                + $"anchors-after=[{string.Join(",", anchorPositions)}].");
             AssertEqual(
                 1,
                 anchorCount,

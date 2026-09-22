@@ -460,6 +460,12 @@ internal static partial class Program
                 formulaName + ": numbered OMML row is not using its native-display minimum height.");
             AssertTrue(row.Height > 0f && row.Height < 1000000f,
                 formulaName + ": numbered OMML row minimum height is invalid.");
+            var numberedMeasuredHeight =
+                WordEquationNumbering.TryMeasureNativeDisplayHeightPoints(document, numberedRange);
+            var plainMeasuredHeight =
+                WordEquationNumbering.TryMeasureNativeDisplayHeightPoints(document, plainRange);
+            Console.WriteLine(
+                $"    height-source {formulaName}: rowMin={row.Height:0.###}pt numberedMeasure={numberedMeasuredHeight:0.###}pt plainMeasure={plainMeasuredHeight:0.###}pt.");
             tableRange = table.Range;
             window = document.ActiveWindow;
             var originalZoom = window.View.Zoom.Percentage;
@@ -488,6 +494,7 @@ internal static partial class Program
                         formulaName
                         + $": at {zoom}% the 1x3 host is only {tableHeight}px high, "
                         + $"below the ordinary Word display height {plainHeight}px; "
+                        + $"numberedMath={numberedMathHeight}px rowMin={row.Height:0.###}pt; "
                         + "the formula can be clipped at the table boundary.");
                     Console.WriteLine(
                         $"    zoom-height {formulaName} {zoom}%: table={tableHeight}px numberedMath={numberedMathHeight}px plain={plainHeight}px tableMargin={tableHeight - plainHeight}px mathRatio={(plainHeight > 0 ? numberedMathHeight / (double)plainHeight : 0):0.###} rowMin={row.Height:0.###}pt.");

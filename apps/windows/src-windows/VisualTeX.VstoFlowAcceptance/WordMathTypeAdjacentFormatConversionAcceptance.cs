@@ -28,6 +28,13 @@ internal static partial class Program
         RunDisplayToVisualTeXBoundary();
         Console.WriteLine("[ADJACENT FORMAT PASS] zero-gap MathType OLE pair survived MT→VisualTeX and MT→OMML without cross-formula contamination; every unnumbered display conversion direction among MathType, VisualTeX and OMML preserved its paragraph boundary without an extra blank line.");
 
+        Word.Application CreateOwnedAutomationWord(string scenario)
+        {
+            var scenarioRoot = Path.Combine(artifactRoot, scenario);
+            Directory.CreateDirectory(scenarioRoot);
+            return CreateFreshAcceptanceAutomationWord(scenarioRoot);
+        }
+
         void ProbeAdjacentOmmlGroupInsertion()
         {
             Word.Application? application = null;
@@ -37,7 +44,7 @@ internal static partial class Program
             IReadOnlyList<Word.Range>? inserted = null;
             try
             {
-                application = CreateWordApplication(visible: false);
+                application = CreateOwnedAutomationWord("adjacent-omml-group");
                 document = application.Documents.Add();
                 document.Content.Text = "AB";
                 var firstId = Guid.NewGuid().ToString("D");
@@ -49,12 +56,16 @@ internal static partial class Program
                         (FormulaId: firstId, MathMl: firstMathMl),
                         (FormulaId: secondId, MathMl: secondMathMl),
                     });
+                source.PrepareGroup(application, new[] { firstId, secondId }, display: false);
+                using var owners = new WordOmmlNativeSource.LiveInsertionOwners();
                 target = document.Range(0, 2);
                 inserted = source.InsertAdjacentInlineGroup(
                     application,
                     document,
                     target,
-                    new[] { firstId, secondId });
+                    new[] { firstId, secondId },
+                    owners.Capture);
+                owners.MarkVerifiedOwners(new[] { firstId, secondId });
                 AssertEqual(2, inserted.Count,
                     "Adjacent OMML group paste did not return two equation ranges.");
                 AssertEqual(2, document.OMaths.Count,
@@ -93,7 +104,7 @@ internal static partial class Program
                 Environment.SetEnvironmentVariable(
                     "VISUALTEX_WORD_HOOK_TRACE_PATH",
                     tracePath);
-                application = CreateWordApplication(visible: false);
+                application = CreateOwnedAutomationWord("numbered-display-group");
                 document = application.Documents.Add();
                 // Paragraphs 2 and 3 are deliberately consecutive numbered
                 // MTDisplayEquation hosts. Their MathType number fields make each
@@ -240,40 +251,43 @@ internal static partial class Program
                         "format-conversion-block-omml-groups groups=1 formulas=2",
                         StringComparison.Ordinal) >= 0),
                     "Numbered display-group regression did not exercise the 2-formula atomic block path.");
-                var trailingLiveLine = trace.FirstOrDefault(line =>
-                    line.IndexOf(
-                        "format-conversion-forward-source-live formulaId=" + ordered[2].SourceFormulaId,
-                        StringComparison.Ordinal) >= 0);
-                AssertTrue(!string.IsNullOrWhiteSpace(trailingLiveLine),
-                    "Numbered display-group regression did not capture the trailing source's live range after group replacement.");
-                var rangeMarker = trailingLiveLine!.IndexOf(" range=", StringComparison.Ordinal);
-                AssertTrue(rangeMarker >= 0,
-                    "Trailing-source trace has no live range: " + trailingLiveLine);
-                var liveRangeText = trailingLiveLine.Substring(rangeMarker + 7).Split(' ')[0];
-                var liveParts = liveRangeText.Split(':');
-                var liveStart = 0;
-                var liveEnd = 0;
-                AssertTrue(liveParts.Length == 2
-                    && int.TryParse(liveParts[0], out liveStart)
-                    && int.TryParse(liveParts[1], out liveEnd),
-                    "Trailing-source live range could not be parsed: " + trailingLiveLine);
-                static bool Overlaps(
-                    (int Start, int End) left,
-                    (int Start, int End) right) =>
-                    left.Start < right.End && left.End > right.Start;
-                var liveTrailing = (Start: liveStart, End: liveEnd);
                 AssertTrue(
-                    Overlaps(liveTrailing, frozenFirst)
-                    || Overlaps(liveTrailing, frozenSecond),
-                    "The regression fixture did not reproduce the stale-range collision: "
-                    + $"frozen1={frozenFirst.Start}:{frozenFirst.End}; "
-                    + $"frozen2={frozenSecond.Start}:{frozenSecond.End}; "
-                    + $"trailingLive={liveStart}:{liveEnd}.");
+                    trace.Any(line => line.IndexOf(
+                        "format-conversion-block-omml-group-complete count=2",
+                        StringComparison.Ordinal) >= 0),
+                    "Numbered display-group regression did not complete the atomic block replacement.");
+                AssertTrue(
+                    trace.Any(line => line.IndexOf(
+                        "format-conversion-transaction-completed targets=3",
+                        StringComparison.Ordinal) >= 0),
+                    "Numbered display-group regression did not commit all three targets.");
+
+                var conversionUndoBegins = trace.Count(line => line.IndexOf(
+                    "word-undo-begin name=VisualTeX Convert Formula Format",
+                    StringComparison.Ordinal) >= 0);
+                AssertEqual(1, conversionUndoBegins,
+                    "One format conversion must create exactly one target-document custom Undo record.");
+                AssertTrue(
+                    !trace.Any(line => line.IndexOf(
+                        "word-undo-begin name=VisualTeX Finalize Formula Conversion",
+                        StringComparison.Ordinal) >= 0),
+                    "OMML finalization split one conversion into a second native Undo record.");
+
+                // The grouped source documents are opened before the custom record
+                // and closed after it. One native Undo must therefore restore all
+                // three MathType sources, not merely undo final numbering metadata.
+                object undoTimes = 1;
+                AssertTrue(document.Undo(ref undoTimes),
+                    "Word did not expose one native Undo for the completed conversion.");
+                AssertEqual(3, CountMathTypeOleShapes(document),
+                    "One Undo did not restore all three MathType source formulas.");
+                AssertEqual(0, document.OMaths.Count,
+                    "One Undo left converted OMML equations behind.");
 
                 Console.WriteLine(
-                    "[NUMBERED DISPLAY GROUP RANGE-DRIFT PASS] Two consecutive numbered MathType paragraphs were replaced atomically; "
-                    + $"the trailing MathType drifted to {liveStart}:{liveEnd} and overlapped a frozen group-member range, "
-                    + "yet all 3 targets converted with exact semantics and both numbered targets remained 1x3 direct-SEQ.");
+                    "[NUMBERED DISPLAY GROUP SINGLE-UNDO PASS] Two consecutive numbered MathType paragraphs were replaced atomically; "
+                    + "all 3 targets converted with exact semantics, both numbered targets remained 1x3 direct-SEQ, "
+                    + "and one native Undo restored all 3 MathType sources.");
             }
             finally
             {
@@ -318,7 +332,7 @@ internal static partial class Program
                     "VISUALTEX_WORD_HOOK_TRACE_PATH",
                     tracePath);
                 var mathTypeBaseline = SnapshotMathTypeProcessIds();
-                application = CreateWordApplication(visible: false);
+                application = CreateOwnedAutomationWord("display-to-visualtex-boundary");
                 document = application.Documents.Add();
                 document.Content.Text = "display-before\r\rdisplay-after\r";
                 paragraphs = document.Paragraphs;
@@ -526,7 +540,8 @@ internal static partial class Program
                 Environment.SetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE", "1");
                 Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
                 var mathTypeBaseline = SnapshotMathTypeProcessIds();
-                application = CreateWordApplication(visible: false);
+                application = CreateOwnedAutomationWord(
+                    targetVisualTeX ? "zero-gap-mt-to-vt" : "zero-gap-mt-to-omml");
                 document = application.Documents.Add();
                 document.Activate();
                 var service = new WordFormulaService(application);

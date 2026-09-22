@@ -1,170 +1,76 @@
-using System;
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
-using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.WordVsto;
 
 public sealed partial class ThisAddIn
 {
-    private bool _ommlDisplayMigrationAttached;
-    private bool _ommlDisplayMigrationRunning;
-
-    private void AttachOmmlDisplayMigration()
+    /// <summary>
+    /// Explicit compatibility migration for documents that still contain a
+    /// retired VisualTeX numbering topology.
+    ///
+    /// Current OMath.Type is authoritative and is never rewritten from legacy
+    /// metadata. The host core performs one immutable inventory pass only to
+    /// decide whether a legacy numbering container is actually present. The old
+    /// numbering reconciler is invoked only as a one-shot legacy importer; normal
+    /// open/read/edit/save paths never enter it and all newly written structures
+    /// are owned by the canonical numbering core.
+    /// </summary>
+    internal static int MigrateManagedOmmlDisplayTypes(
+        Document document)
     {
-        if (_ommlDisplayMigrationAttached || _application is null) return;
-        _ommlDisplayMigrationAttached = true;
-        _application.DocumentChange += Application_DocumentChangeForOmmlDisplayMigration;
-        TryMigrateActiveDocumentOmmlDisplayTypes();
-    }
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (document.ReadOnly)
+            throw new UnauthorizedAccessException(
+                "Cannot migrate formula numbering in a read-only document.");
 
-    private void DetachOmmlDisplayMigration()
-    {
-        if (!_ommlDisplayMigrationAttached) return;
-        _ommlDisplayMigrationAttached = false;
-        try
-        {
-            if (_application is not null)
-                _application.DocumentChange -= Application_DocumentChangeForOmmlDisplayMigration;
-        }
-        catch
-        {
-            // Word may already be shutting down its event connection point.
-        }
-    }
+        var index =
+            WordFormulaHostResolver.CaptureDocumentIndex(
+                document);
+        var legacyCount = 0;
 
-    private void Application_DocumentChangeForOmmlDisplayMigration()
-    {
-        TryMigrateActiveDocumentOmmlDisplayTypes();
-    }
+        foreach (var host in index.Omml
+                     .Concat(index.VisualTeX))
+        {
+            var numbering =
+                WordFormulaNumberingResolver.ResolveLocal(
+                    document,
+                    host);
+            if (numbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.Legacy)
+                legacyCount++;
+        }
 
-    private void TryMigrateActiveDocumentOmmlDisplayTypes()
-    {
-        if (_ommlDisplayMigrationRunning) return;
-        Document? document = null;
-        try
-        {
-            document = _application?.ActiveDocument;
-            if (document is null || document.ReadOnly) return;
-            _ommlDisplayMigrationRunning = true;
-            _ = MigrateManagedOmmlDisplayTypes(document);
-        }
-        catch (COMException)
-        {
-            // A transient protected/read-only/document-switch state must not block
-            // Word startup. The next DocumentChange or explicit edit retries.
-        }
-        finally
-        {
-            _ommlDisplayMigrationRunning = false;
-            ReleaseMigrationComObject(document);
-        }
-    }
+        if (legacyCount == 0)
+            return 0;
 
-    internal static int MigrateManagedOmmlDisplayTypes(Document document)
-    {
-        if (document is null) throw new ArgumentNullException(nameof(document));
-        OMaths? maths = null;
-        var migrated = 0;
-        // Include legacy VisualTeX OLE numbering hosts in the same one-pass
-        // document upgrade. Previously this flag was raised only while walking
-        // managed OMaths, so a document containing only an old numbered OLE table
-        // could open without ever entering structural reconciliation.
-        var requiresNumberingReconcile =
-            WordEquationNumbering.NeedsLegacyManagedNumberingMigration(document);
-        try
-        {
-            maths = document.OMaths;
-            // Work backwards because changing OMath.Type can rematerialize ranges.
-            for (var index = maths.Count; index >= 1; index--)
-            {
-                OMath? math = null;
-                Range? range = null;
-                Bookmark? bookmark = null;
-                try
-                {
-                    math = maths[index];
-                    range = math.Range.Duplicate;
-                    bookmark = WordOmmlFormulaStore.FindAtRange(document, range);
-                    if (bookmark is null) continue;
-                    var metadata = WordOmmlFormulaStore.TryRead(document, bookmark);
-                    if (metadata is null) continue;
-                    var block = string.Equals(
-                        metadata.DisplayMode,
-                        "block",
-                        StringComparison.OrdinalIgnoreCase);
-                    if (block && metadata.Numbered)
-                    {
-                        // Numbered OMML is a document structure, not merely an
-                        // OMath.Type flag. Old 1x3/2x3 tables, inline-tab hosts and
-                        // m:eqArr/# wrappers must enter one document-wide numbering
-                        // reconciliation so FormulaId, SEQ, REF and cross-references
-                        // are migrated together. Never force these formulas inline.
-                        requiresNumberingReconcile |=
-                            math.Type != WdOMathType.wdOMathDisplay
-                            || !WordEquationNumbering
-                                .HasStructurallyReusableNumberedNativeOmmlDisplayHost(
-                                    document,
-                                    range,
-                                    metadata.FormulaId);
-                        continue;
-                    }
+        // Compatibility boundary only. This method exists for explicit upgrade
+        // of retired documents/acceptance fixtures. It is intentionally not
+        // subscribed to DocumentChange/DocumentOpen and is never a fallback from
+        // a local operation.
+        var migrated =
+            WordEquationNumbering.UpdateEquationNumbers(
+                document);
 
-                    var target = block
-                        ? WdOMathType.wdOMathDisplay
-                        : WdOMathType.wdOMathInline;
-                    if (math.Type == target) continue;
+        // Re-prove the result from current local Word structure. A legacy importer
+        // may not declare success merely because its own bookkeeping completed.
+        var after =
+            WordFormulaHostResolver.CaptureDocumentIndex(
+                document);
+        foreach (var host in after.Omml
+                     .Concat(after.VisualTeX))
+        {
+            var numbering =
+                WordFormulaNumberingResolver.ResolveLocal(
+                    document,
+                    host);
+            if (numbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.Legacy)
+                throw new InvalidDataException(
+                    "Legacy numbering migration left a retired formula host in the document.");
+        }
 
-                    math.Type = target;
-                    ReleaseMigrationComObject(range);
-                    range = math.Range.Duplicate;
-                    WordOmmlNativeSource.StampFingerprint(metadata, range);
-                    ReleaseMigrationComObject(bookmark);
-                    bookmark = WordOmmlFormulaStore.Wrap(
-                        document,
-                        range,
-                        metadata,
-                        replaceExisting: true);
-                    WordOmmlFormulaStore.Save(document, metadata);
-                    migrated += 1;
-                }
-                finally
-                {
-                    ReleaseMigrationComObject(bookmark);
-                    ReleaseMigrationComObject(range);
-                    ReleaseMigrationComObject(math);
-                }
-            }
-            if (requiresNumberingReconcile)
-            {
-                // UpdateEquationNumbers now treats only the final table-free OLE
-                // tab paragraph and the pure m:oMathPara + external REF Shape host
-                // as healthy. Every legacy table/inline/eqArr structure therefore
-                // falls through to structural migration in this single pass.
-                migrated += WordEquationNumbering.UpdateEquationNumbers(document);
-            }
-            if (migrated > 0)
-            {
-                try { document.Repaginate(); } catch { }
-            }
-            return migrated;
-        }
-        finally
-        {
-            ReleaseMigrationComObject(maths);
-        }
-    }
-
-    private static void ReleaseMigrationComObject(object? value)
-    {
-        if (value is null) return;
-        try
-        {
-            if (Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
-        }
-        catch
-        {
-            // Best-effort release during Word event handling.
-        }
+        return migrated;
     }
 }

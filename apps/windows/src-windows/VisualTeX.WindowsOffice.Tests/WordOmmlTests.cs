@@ -53,16 +53,18 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
-    public void OfficeMathMlTransformRejectsLiteralUnresolvedLatexCommands()
+    public void OfficeMathMlTransformRejectsParserErrorNodes()
     {
+        // Unknown commands now fail in the TeX producer. At this already-parsed
+        // MathML boundary a red literal mtext alone is not proof of an error.
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
-            + "<mtext mathcolor=\"red\">\\bm</mtext><mi>v</mi></math>";
+            + "<merror><mtext>\\bm</mtext></merror><mi>v</mi></math>";
 
         var error = Assert.Throws<InvalidDataException>(() =>
             WordOmmlConverter.TransformMathMlToOmml(mathMl));
 
-        Assert.Contains("unresolved LaTeX command", error.Message, StringComparison.Ordinal);
+        Assert.Contains("error node", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

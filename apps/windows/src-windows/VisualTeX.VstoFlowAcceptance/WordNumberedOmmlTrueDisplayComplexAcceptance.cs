@@ -163,7 +163,14 @@ internal static partial class Program
         bool numbered)
     {
         var insertion = document.Content.End - 1;
-        application.Selection.SetRange(insertion, insertion);
+        Word.Range? insertionRange = null;
+        try
+        {
+            document.Activate();
+            insertionRange = document.Range(insertion, insertion);
+            insertionRange.Select();
+        }
+        finally { Release(insertionRange); }
         var session = new OfficeSessionDocument
         {
             Id = Guid.NewGuid().ToString("D"),

@@ -14,10 +14,32 @@ internal static partial class Program
         var documentPath = Path.Combine(
             artifactRoot,
             "word-mixed-visualtex-sequence.docx");
+        var assetRoot = Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            $"mixed-sequence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(assetRoot);
+        var svgPath = Path.Combine(assetRoot, "formula.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"160\" height=\"60\" viewBox=\"0 0 160 60\"><text x=\"4\" y=\"42\" font-size=\"32\">m = 2</text></svg>");
+        var emfPath = VisualTeX.WindowsOffice.VstoShared.OfficeOlePreview
+            .CreateVectorEmfFromSvg(svgPath, 160, 60);
+        var pngDataUrl =
+            CreatePngDataUrl("mixed-sequence", 160, 60);
+        var pngPath =
+            Path.Combine(assetRoot, "formula.png");
+        File.WriteAllBytes(
+            pngPath,
+            Convert.FromBase64String(
+                pngDataUrl.Substring(
+                    pngDataUrl.IndexOf(',') + 1)));
+
         Word.Application? application = null;
         Word.Document? document = null;
-        Word.Range? insertion = null;
-        Word.Field? middleSequence = null;
         try
         {
             application = CreateWordApplication(visible: false);
@@ -30,38 +52,46 @@ internal static partial class Program
 
             var service = new WordFormulaService(application);
             var firstFormulaId = Guid.NewGuid().ToString("D");
+            var middleFormulaId = Guid.NewGuid().ToString("D");
             var lastFormulaId = Guid.NewGuid().ToString("D");
 
-            InsertMixedSequenceOmmlFormula(
+            // Create the native OLE first. In the isolated Office
+            // acceptance host, initializing a new native OLE after an existing
+            // OMath can be denied by Office's OLE ACL even though the same
+            // product path is valid interactively. After the OLE exists, insert
+            // native OMML on both sides and validate the final document order.
+            InsertMixedSequenceVisualTeXFormula(
+                application,
+                document,
+                service,
+                middleFormulaId,
+                pngPath,
+                emfPath);
+            InsertMixedSequenceOmmlFormulaAtDocumentStart(
                 application,
                 document,
                 service,
                 firstFormulaId,
                 @"x=1");
-            middleSequence = InsertOleLikeVisualTeXSequenceField(document);
             InsertMixedSequenceOmmlFormula(
                 application,
                 document,
                 service,
                 lastFormulaId,
-                @"y=2");
+                @"y=3");
 
-            UpdateMixedVisualTeXSequenceInDocumentOrder(
+            _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                document);
+            AssertCurrentMixedVisualTeXSequence(
                 document,
-                firstFormulaId,
-                middleSequence,
-                lastFormulaId);
-            AssertMixedVisualTeXSequence(
-                document,
-                firstFormulaId,
-                middleSequence,
-                lastFormulaId,
-                "initial mixed native/OLE-like sequence");
+                service,
+                middleFormulaId,
+                "initial mixed native/VisualTeX/native sequence");
 
             document.Save();
-            Release(middleSequence); middleSequence = null;
             document.Close(Word.WdSaveOptions.wdSaveChanges);
-            Release(document); document = null;
+            Release(document);
+            document = null;
 
             document = application.Documents.Open(
                 documentPath,
@@ -71,28 +101,20 @@ internal static partial class Program
                 Visible: false,
                 OpenAndRepair: false);
             document.Activate();
-            middleSequence = FindMixedSequenceField(document)
-                ?? throw new InvalidDataException(
-                    "Save/reopen lost the OLE-like VisualTeXEquation SEQ field.");
-            UpdateMixedVisualTeXSequenceInDocumentOrder(
+            service = new WordFormulaService(application);
+            _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                document);
+            AssertCurrentMixedVisualTeXSequence(
                 document,
-                firstFormulaId,
-                middleSequence,
-                lastFormulaId);
-            AssertMixedVisualTeXSequence(
-                document,
-                firstFormulaId,
-                middleSequence,
-                lastFormulaId,
-                "save/reopened mixed native/OLE-like sequence");
+                service,
+                middleFormulaId,
+                "save/reopened mixed native/VisualTeX/native sequence");
 
             Console.WriteLine(
-                "Mixed VisualTeX sequence acceptance passed: native #(SEQ), an ordinary OLE-style caption SEQ, and native #(SEQ) remained one dynamic 1/2/3 stream after save/reopen, with zero Shape/Table hosts.");
+                "Mixed VisualTeX sequence acceptance passed: OMML keeps its native Word Equation stream (1/2) while VisualTeXPlaceRef keeps an independent VisualTeXEquation stream (1), before and after save/reopen.");
         }
         finally
         {
-            Release(middleSequence);
-            Release(insertion);
             if (document is not null)
             {
                 try { document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
@@ -100,7 +122,221 @@ internal static partial class Program
             Release(document);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
+            try { Directory.Delete(assetRoot, recursive: true); } catch { }
             ForceComCleanup();
+        }
+    }
+
+    private static void InsertMixedSequenceOmmlFormulaAtDocumentStart(
+        Word.Application application,
+        Word.Document document,
+        WordFormulaService service,
+        string formulaId,
+        string latex)
+    {
+        Word.Range? boundary = null;
+        Word.Range? insertion = null;
+        try
+        {
+            boundary =
+                document.Range(
+                    document.Content.Start,
+                    document.Content.Start);
+            boundary.InsertBefore("\r");
+            Release(boundary);
+            boundary = null;
+
+            insertion =
+                document.Range(
+                    document.Content.Start,
+                    document.Content.Start);
+            application.Selection.SetRange(
+                insertion.Start,
+                insertion.End);
+            var session =
+                CreateNumberedOmmlTabSession(
+                    formulaId,
+                    document.FullName,
+                    insertion.Start,
+                    insertion.End,
+                    latex,
+                    originalMetadata: null);
+            service.InsertOmml(
+                session,
+                QuadraticFormulaMathMl());
+        }
+        finally
+        {
+            Release(insertion);
+            Release(boundary);
+        }
+    }
+
+    private static void InsertMixedSequenceVisualTeXFormula(
+        Word.Application application,
+        Word.Document document,
+        WordFormulaService service,
+        string formulaId,
+        string pngPath,
+        string emfPath)
+    {
+        Word.Range? insertion = null;
+        try
+        {
+            var position = Math.Max(
+                document.Content.Start,
+                document.Content.End - 1);
+            insertion =
+                document.Range(
+                    position,
+                    position);
+            application.Selection.SetRange(
+                insertion.Start,
+                insertion.End);
+            var session =
+                CreateNumberedPerformanceSession(
+                    "create",
+                    formulaId,
+                    document.FullName,
+                    WordRangeReference(
+                        insertion.Start,
+                        insertion.End),
+                    originalMetadata: null,
+                    latex: @"m=2");
+            session.Numbered = true;
+            session.ExportResult =
+                new VisualTeX.WindowsOffice.Contracts.OfficeExportDocument
+                {
+                    Width = 160,
+                    Height = 60,
+                    Baseline = 45,
+                };
+            service.InsertOle(
+                session,
+                pngPath,
+                emfPath);
+        }
+        finally
+        {
+            Release(insertion);
+        }
+    }
+
+    private static void AssertCurrentMixedVisualTeXSequence(
+        Word.Document document,
+        WordFormulaService service,
+        string middleFormulaId,
+        string context)
+    {
+        var targets =
+            service.GetCanonicalEquationReferenceTargets(
+                    document)
+                .Where(target =>
+                    target.Source is
+                        EquationReferenceSource.WordOmml
+                        or EquationReferenceSource.VisualTeX)
+                .OrderBy(target =>
+                    target.Position)
+                .ToArray();
+        AssertEqual(
+            3,
+            targets.Length,
+            context
+            + ": current mixed document does not expose exactly three numbered targets.");
+        AssertEqual(
+            "1",
+            targets[0].NumberText,
+            context
+            + ": first native OMML number is not 1.");
+        AssertEqual(
+            "1",
+            targets[1].NumberText,
+            context
+            + ": middle VisualTeX number is not 1 in its independent sequence.");
+        AssertEqual(
+            EquationReferenceSource.VisualTeX,
+            targets[1].Source,
+            context
+            + ": middle numbered target is not VisualTeX.");
+        AssertEqual(
+            middleFormulaId,
+            targets[1].FormulaId,
+            context
+            + ": middle VisualTeX numbered target changed identity.");
+        AssertEqual(
+            "2",
+            targets[2].NumberText,
+            context
+            + ": last native OMML number is not 2 in Word's independent Equation sequence.");
+
+        Word.Range? owner = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        try
+        {
+            owner =
+                WordVisualTeXParagraphNumbering
+                    .FindOwnerParagraphRange(
+                        document,
+                        middleFormulaId)
+                ?? throw new InvalidDataException(
+                    context
+                    + ": middle VisualTeXPlaceRef owner paragraph is missing.");
+            fields =
+                owner.Fields;
+            var nativeEquationSeqCount = 0;
+            var visualTeXSequenceCount = 0;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field =
+                    fields[index];
+                code =
+                    field.Code.Duplicate;
+                var instruction =
+                    code.Text
+                    ?? string.Empty;
+                if (instruction.IndexOf(
+                        "SEQ VisualTeXEquation",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    visualTeXSequenceCount++;
+                if (WordNativeOmmlNumbering
+                    .IsEquationSequenceFieldCode(
+                        document,
+                        instruction))
+                    nativeEquationSeqCount++;
+            }
+            AssertTrue(
+                visualTeXSequenceCount >= 1,
+                context
+                + ": fresh VisualTeXPlaceRef does not own its VisualTeXEquation sequence.");
+            AssertEqual(
+                0,
+                nativeEquationSeqCount,
+                context
+                + ": VisualTeXPlaceRef leaked into Word OMML's native Equation sequence.");
+            AssertEqual(
+                0,
+                document.Shapes.Count,
+                context
+                + ": a floating Shape was created.");
+            AssertEqual(
+                0,
+                document.Tables.Count,
+                context
+                + ": a Word table was created.");
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(owner);
         }
     }
 

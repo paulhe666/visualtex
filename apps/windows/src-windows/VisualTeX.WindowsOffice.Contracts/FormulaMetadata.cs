@@ -72,6 +72,12 @@ public sealed class FormulaMetadata
     [JsonPropertyName("wordInlinePreviewShiftPx")]
     public double? WordInlinePreviewShiftPx { get; set; }
 
+    [JsonPropertyName("wordDisplayPreviewInkHeightRatio")]
+    public double? WordDisplayPreviewInkHeightRatio { get; set; }
+
+    [JsonPropertyName("wordDisplayPreviewBottomWhitespaceRatio")]
+    public double? WordDisplayPreviewBottomWhitespaceRatio { get; set; }
+
     [JsonPropertyName("nativeOmmlFingerprint")]
     public string? NativeOmmlFingerprint { get; set; }
 
@@ -165,6 +171,24 @@ public sealed class FormulaMetadata
                 || double.IsInfinity(WordInlinePreviewShiftPx.Value)))
             throw new InvalidOperationException(
                 "VisualTeX inline preview shift must be a finite pixel value between -2 and 2.");
+        if (WordDisplayPreviewInkHeightRatio.HasValue
+            != WordDisplayPreviewBottomWhitespaceRatio.HasValue)
+            throw new InvalidOperationException(
+                "VisualTeX display preview ink metrics must be stored together.");
+        if (WordDisplayPreviewInkHeightRatio.HasValue
+            && (!string.Equals(DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                || WordDisplayPreviewInkHeightRatio.Value <= 0
+                || WordDisplayPreviewInkHeightRatio.Value > 1
+                || WordDisplayPreviewBottomWhitespaceRatio!.Value < 0
+                || WordDisplayPreviewBottomWhitespaceRatio.Value > 1
+                || WordDisplayPreviewInkHeightRatio.Value
+                    + WordDisplayPreviewBottomWhitespaceRatio.Value > 1.001
+                || double.IsNaN(WordDisplayPreviewInkHeightRatio.Value)
+                || double.IsInfinity(WordDisplayPreviewInkHeightRatio.Value)
+                || double.IsNaN(WordDisplayPreviewBottomWhitespaceRatio.Value)
+                || double.IsInfinity(WordDisplayPreviewBottomWhitespaceRatio.Value)))
+            throw new InvalidOperationException(
+                "VisualTeX display preview ink metrics must describe finite ratios inside the OLE frame.");
     }
 
     private static bool IsSupportedFormulaLetterFont(string value)

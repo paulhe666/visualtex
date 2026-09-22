@@ -33,7 +33,10 @@ internal static partial class Program
         Word.Document? document = null;
         try
         {
-            application = CreateWordApplication(visible: false);
+            if (AttachActiveWord)
+                throw new InvalidOperationException(
+                    "Deep format/table acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             document = application.Documents.Open(
                 workingPath,
                 ReadOnly: false,
@@ -56,6 +59,11 @@ internal static partial class Program
                 "Deep rollback fixture user table row count changed.");
             AssertEqual(2, document.Tables[1].Columns.Count,
                 "Deep rollback fixture user table column count changed.");
+            var tableTargetCount = plan.Targets.Count(target => target.SourceWithinTable);
+            AssertTrue(tableTargetCount > 0,
+                "Deep rollback fixture does not exercise a formula inside the user table.");
+            AssertTrue(tableTargetCount < plan.Targets.Count,
+                "Deep rollback fixture does not exercise a formula outside/near the user table.");
 
             var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
             foreach (var target in plan.Targets)
@@ -151,10 +159,10 @@ internal static partial class Program
 
             var checks = new Dictionary<string, bool>(StringComparer.Ordinal)
             {
-                ["deepUndo"] = ownedUndo > 100,
+                ["deepUndo"] = ownedUndo == 1,
                 ["primaryFailurePreserved"] =
                     failureText.IndexOf(
-                        "Injected format-conversion failure after final OMML fingerprint refresh.",
+                        "Injected format-conversion failure after post-commit OMML validation.",
                         StringComparison.OrdinalIgnoreCase) >= 0
                     && expectedFailure is not AggregateException,
                 ["body"] = string.Equals(bodyBefore, bodyAfter, StringComparison.Ordinal),
@@ -198,6 +206,173 @@ internal static partial class Program
                 throw new InvalidDataException(
                     "Deep finalization rollback did not restore every verified boundary. "
                     + string.Join(", ", checks.Where(pair => !pair.Value).Select(pair => pair.Key)));
+
+            var verifiedRestoredPlan = restoredPlan
+                ?? throw new InvalidDataException(
+                    "Deep table success phase has no restored MathType conversion plan.");
+            var successPrepared =
+                new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
+            foreach (var target in verifiedRestoredPlan.Targets)
+            {
+                var sourceMathMl = target.SourceMathMl
+                    ?? throw new InvalidDataException(
+                        $"Restored MathType source {target.SourceFormulaId} lost MathML before table success conversion.");
+                successPrepared[target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleFormatTargetSession(
+                        target,
+                        FormulaOleContract.WordOmmlMode,
+                        sourceMathMl),
+                    MathMl = sourceMathMl,
+                };
+            }
+
+            var successResult = service.ApplyFormulaFormatConversionPlan(
+                verifiedRestoredPlan,
+                successPrepared);
+            AssertEqual(5, successResult.FormulaCount,
+                "User-table MathType→OMML success phase did not convert all five formulas.");
+            AssertEqual(0, successResult.FailedFormulaCount,
+                "User-table MathType→OMML success phase reported a conversion failure: "
+                + string.Join(" | ", successResult.Failures));
+            AssertEqual(0, CountMathTypeOleShapes(document),
+                "User-table MathType→OMML success phase left MathType sources behind.");
+            AssertEqual(5, document.OMaths.Count,
+                "User-table MathType→OMML success phase did not leave five OMath targets.");
+
+            int CountOriginalTwoByTwoUserTables()
+            {
+                var count = 0;
+                for (var tableIndex = 1;
+                     tableIndex <= document.Tables.Count;
+                     tableIndex++)
+                {
+                    Word.Table? table = null;
+                    Word.Rows? rows = null;
+                    Word.Columns? columns = null;
+                    try
+                    {
+                        table = document.Tables[tableIndex];
+                        rows = table.Rows;
+                        columns = table.Columns;
+                        if (rows.Count == firstTableRowsBefore
+                            && columns.Count == firstTableColumnsBefore)
+                            count++;
+                    }
+                    finally
+                    {
+                        Release(columns);
+                        Release(rows);
+                        Release(table);
+                    }
+                }
+                return count;
+            }
+
+            void VerifyConvertedTableOwnership(string phase)
+            {
+                AssertEqual(1, CountOriginalTwoByTwoUserTables(),
+                    phase + ": the original 2x2 user table was removed, duplicated or reshaped.");
+                foreach (var target in verifiedRestoredPlan.Targets)
+                {
+                    var convertedFormulaId =
+                        successPrepared[target.Id].Session.FormulaId;
+                    Word.Bookmark? bookmark = null;
+                    Word.Range? range = null;
+                    Word.Tables? ownerTables = null;
+                    Word.Table? ownerTable = null;
+                    Word.Rows? ownerRows = null;
+                    Word.Columns? ownerColumns = null;
+                    try
+                    {
+                        bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                                document,
+                                convertedFormulaId)
+                            ?? throw new InvalidDataException(
+                                phase + ": converted OMML target lost its VTOMML identity: "
+                                + convertedFormulaId);
+                        range = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                        var insideTable =
+                            WordEquationNumbering.RangeIsWhollyWithinTable(range);
+                        if (target.SourceWithinTable)
+                        {
+                            AssertTrue(insideTable,
+                                phase + ": a formula originally inside the user table moved into the body.");
+                            ownerTables = range.Tables;
+                            AssertEqual(1, ownerTables.Count,
+                                phase + ": a user-table formula has an ambiguous table owner.");
+                            ownerTable = ownerTables[1];
+                            ownerRows = ownerTable.Rows;
+                            ownerColumns = ownerTable.Columns;
+                            AssertEqual(firstTableRowsBefore, ownerRows.Count,
+                                phase + ": a user-table formula moved into a managed/non-user row topology.");
+                            AssertEqual(firstTableColumnsBefore, ownerColumns.Count,
+                                phase + ": a user-table formula moved into a managed/non-user column topology.");
+                        }
+                        else if (!target.Numbered)
+                        {
+                            AssertTrue(!insideTable,
+                                phase + ": an unnumbered body formula was pulled into a table.");
+                        }
+                        else if (insideTable)
+                        {
+                            ownerTables = range.Tables;
+                            AssertEqual(1, ownerTables.Count,
+                                phase + ": a numbered body formula has an ambiguous managed table owner.");
+                            ownerTable = ownerTables[1];
+                            ownerRows = ownerTable.Rows;
+                            ownerColumns = ownerTable.Columns;
+                            AssertEqual(1, ownerRows.Count,
+                                phase + ": a numbered body formula did not use a standard managed row.");
+                            AssertEqual(3, ownerColumns.Count,
+                                phase + ": a numbered body formula did not use a standard 1x3 managed host.");
+                        }
+                    }
+                    finally
+                    {
+                        Release(ownerColumns);
+                        Release(ownerRows);
+                        Release(ownerTable);
+                        Release(ownerTables);
+                        Release(range);
+                        Release(bookmark);
+                    }
+                }
+            }
+
+            VerifyConvertedTableOwnership("user-table success");
+
+            var successPath = Path.Combine(
+                artifactRoot,
+                "deep-user-table-mathtype-to-omml-success.docx");
+            document.SaveAs2(
+                successPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                successPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            document.Activate();
+            AssertEqual(0, CountMathTypeOleShapes(document),
+                "User-table MathType→OMML save/reopen restored MathType sources.");
+            AssertEqual(5, document.OMaths.Count,
+                "User-table MathType→OMML save/reopen changed the OMath count.");
+            VerifyConvertedTableOwnership("user-table save/reopen");
+            Console.WriteLine(
+                $"[USER TABLE FORMAT PASS] inside={tableTargetCount}; outside={plan.Targets.Count - tableTargetCount}; "
+                + "MathType→OMML conversion and save/reopen preserved the original 2x2 user table.");
         }
         finally
         {

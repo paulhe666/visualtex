@@ -78,7 +78,7 @@ internal sealed class EquationReferenceDialog : Form
         if (_visualTexTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(
                 EquationReferenceSource.VisualTeX,
-                T("VisualTeX 编号公式", "Numbered VisualTeX equations"),
+                T("Word / VisualTeX 编号公式", "Numbered Word / VisualTeX equations"),
                 _visualTexTargets.Count));
         if (_mathTypeTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(

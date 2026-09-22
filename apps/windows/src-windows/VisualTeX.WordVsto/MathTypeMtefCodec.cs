@@ -852,25 +852,28 @@ internal static partial class MathTypeMtefCodec
                 return "phantom(" + Children() + ")";
             case "mmultiscripts":
             {
-                if (children.Length >= 3
-                    && children.All(child => child.Name.LocalName != "mprescripts"))
+                if (children.Length == 0) return string.Empty;
+                var result = CanonicalizeScriptBase(children[0], variant);
+                var precedes = false;
+                for (var index = 1; index < children.Length;)
                 {
-                    var baseSignature = CanonicalizeMathMl(children[0], variant);
-                    var subSignature = children[1].Name.LocalName == "none"
-                        ? string.Empty
-                        : CanonicalizeMathMl(children[1], variant);
-                    var supSignature = children[2].Name.LocalName == "none"
-                        ? string.Empty
-                        : CanonicalizeMathMl(children[2], variant);
-                    if (subSignature.Length > 0 && supSignature.Length > 0)
-                        return "subsup(" + baseSignature + "," + subSignature + "," + supSignature + ")";
-                    if (subSignature.Length > 0)
-                        return "sub(" + baseSignature + "," + subSignature + ")";
-                    if (supSignature.Length > 0)
-                        return "sup(" + baseSignature + "," + supSignature + ")";
-                    return baseSignature;
+                    if (children[index].Name.LocalName == "mprescripts")
+                    {
+                        if (precedes) throw new InvalidDataException("Duplicate MathML prescript separator.");
+                        precedes = true; index++; continue;
+                    }
+                    if (index + 1 >= children.Length || children[index + 1].Name.LocalName == "mprescripts")
+                        throw new InvalidDataException("MathML multiscripts require complete sub/sup pairs.");
+                    var subSignature = children[index].Name.LocalName == "none" ? string.Empty : CanonicalizeMathMl(children[index], variant);
+                    var supSignature = children[index + 1].Name.LocalName == "none" ? string.Empty : CanonicalizeMathMl(children[index + 1], variant);
+                    if (subSignature.Length > 0 || supSignature.Length > 0)
+                        result = precedes ? "pre(" + result + "," + subSignature + "," + supSignature + ")"
+                            : subSignature.Length > 0 && supSignature.Length > 0 ? "subsup(" + result + "," + subSignature + "," + supSignature + ")"
+                            : subSignature.Length > 0 ? "sub(" + result + "," + subSignature + ")"
+                            : "sup(" + result + "," + supSignature + ")";
+                    index += 2;
                 }
-                return "multi(" + Children() + ")";
+                return result;
             }
             default:
                 return children.Length > 0
@@ -3361,7 +3364,8 @@ internal static partial class MathTypeMtefCodec
     {
         var children = element.Elements().ToArray();
         if (children.Length == 0) return;
-        EmitNode(children[0], output);
+        if (RequiresGroupedScriptBase(children[0])) EmitLine(children[0], output);
+        else EmitNode(children[0], output);
         var index = 1;
         while (index < children.Length
             && children[index].Name.LocalName != "mprescripts")
@@ -3387,9 +3391,9 @@ internal static partial class MathTypeMtefCodec
             }
             index += 2;
         }
-        // Prescripts are uncommon in Office equations. Keep them editable rather
-        // than rejecting the whole formula; they are appended as ordinary scripts
-        // until a dedicated preceding-script writer is needed.
+        // MTEF v5 tvSU_PRECEDES=1 positions the script to the left of its base.
+        // The record still follows its base in the object list; both script slots
+        // are serialized, with LINE_NULL for a genuinely absent half.
         if (index < children.Length && children[index].Name.LocalName == "mprescripts")
         {
             index++;
@@ -3397,8 +3401,19 @@ internal static partial class MathTypeMtefCodec
             {
                 var sub = children[index];
                 var sup = index + 1 < children.Length ? children[index + 1] : null;
-                if (sub.Name.LocalName != "none") EmitTrailingScript(sub, true, output);
-                if (sup is not null && sup.Name.LocalName != "none") EmitTrailingScript(sup, false, output);
+                var hasSub = sub.Name.LocalName != "none";
+                var hasSup = sup is not null && sup.Name.LocalName != "none";
+                if (hasSub || hasSup)
+                {
+                    var selector = hasSub && hasSup ? TemplateSubSup : hasSub ? TemplateSub : TemplateSup;
+                    output.AddRange(new byte[] { RecordTemplate, 0, selector, 1, 0, RecordSub });
+                    if (hasSub) EmitLine(sub, output);
+                    else output.AddRange(new byte[] { RecordLine, LineNull });
+                    if (hasSup) EmitLine(sup!, output);
+                    else output.AddRange(new byte[] { RecordLine, LineNull });
+                    output.Add(RecordEnd);
+                    output.Add(RecordFull);
+                }
                 index += 2;
             }
         }
@@ -5177,6 +5192,7 @@ internal static partial class MathTypeMtefCodec
         private sealed class ParsedTemplate
         {
             internal byte ScriptKind { get; set; }
+            internal bool ScriptPrecedes { get; set; }
             internal XElement? Node { get; set; }
             internal XElement? Subscript { get; set; }
             internal XElement? Superscript { get; set; }
@@ -5234,6 +5250,7 @@ internal static partial class MathTypeMtefCodec
                     return new ParsedTemplate
                     {
                         ScriptKind = selector,
+                        ScriptPrecedes = (variation & 1) != 0,
                         Subscript = subscript,
                         Superscript = superscript,
                     };
@@ -5502,6 +5519,10 @@ internal static partial class MathTypeMtefCodec
             var sup = template.Superscript is null
                 ? new XElement("mrow")
                 : CollapseRow(template.Superscript);
+            if (template.ScriptPrecedes)
+                return new XElement("mmultiscripts", baseNode, new XElement("mprescripts"),
+                    template.ScriptKind == TemplateSup ? new XElement("none") : sub,
+                    template.ScriptKind == TemplateSub ? new XElement("none") : sup);
             if (template.ScriptKind == TemplateSub)
                 return new XElement("msub", baseNode, sub);
             if (template.ScriptKind == TemplateSup)

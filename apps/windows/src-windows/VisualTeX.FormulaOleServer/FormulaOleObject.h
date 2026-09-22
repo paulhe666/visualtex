@@ -11,12 +11,14 @@
 #include "resource.h"
 
 void TraceOleFactoryCall(const wchar_t* method) noexcept;
+void NotifyOleServerActivity() noexcept;
 
 class CVisualTeXFormulaClassFactory : public ATL::CComClassFactory
 {
 public:
     STDMETHOD(CreateInstance)(LPUNKNOWN outer, REFIID interfaceId, void** object) override
     {
+        NotifyOleServerActivity();
         TraceOleFactoryCall(L"IClassFactory::CreateInstance enter");
         const HRESULT result = __super::CreateInstance(outer, interfaceId, object);
         TraceOleFactoryCall(
@@ -28,6 +30,7 @@ public:
 
     STDMETHOD(LockServer)(BOOL lock) override
     {
+        NotifyOleServerActivity();
         TraceOleFactoryCall(lock
             ? L"IClassFactory::LockServer true"
             : L"IClassFactory::LockServer false");
