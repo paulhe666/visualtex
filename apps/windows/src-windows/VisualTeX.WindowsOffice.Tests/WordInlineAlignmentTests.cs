@@ -188,4 +188,23 @@ public sealed class WordInlineAlignmentTests
                 (float)exportedHeight,
                 baseline is null ? null : (float)baseline.Value));
     }
+
+    [Theory]
+    [InlineData(45.05d, 0.3625d, 0.2916666667d, 10.5d, -17)]
+    [InlineData(75.05d, 0.5625d, 0.1666666667d, 10.5d, -29)]
+    public void DisplayInkCenterAlignmentUsesPreviewGeometryInsteadOfFormulaType(
+        double actualHeight,
+        double inkHeightRatio,
+        double bottomWhitespaceRatio,
+        double paragraphMarkFontSize,
+        int expectedPosition)
+    {
+        Assert.Equal(
+            expectedPosition,
+            WordInlineAlignment.CalculateDisplayInkCenterPosition(
+                (float)actualHeight,
+                (float)inkHeightRatio,
+                (float)bottomWhitespaceRatio,
+                (float)paragraphMarkFontSize));
+    }
 }

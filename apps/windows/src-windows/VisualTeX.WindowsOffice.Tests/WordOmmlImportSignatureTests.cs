@@ -51,7 +51,11 @@ public sealed class WordOmmlImportSignatureTests
     {
         var prepared = Math(Sup);
         var actual = Math(Sup.Replace("<m:sSup>", "<m:sSup><m:sSupPr/>"));
-        Assert.NotEqual(WordOmmlConverter.ComputeOmmlFingerprint(prepared),
+        // v1 encoded this harmless Word property-container rewrite differently.
+        // v2 deliberately uses the import content model for persistent identity.
+        Assert.NotEqual(WordOmmlConverter.ComputeLegacyOmmlFingerprint(prepared),
+            WordOmmlConverter.ComputeLegacyOmmlFingerprint(actual));
+        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(prepared),
             WordOmmlConverter.ComputeOmmlFingerprint(actual));
         Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(actual),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(prepared, actual));
@@ -107,6 +111,25 @@ public sealed class WordOmmlImportSignatureTests
 
         Assert.Equal(Signature(prepared), Signature(materialized));
         Assert.NotEqual(Signature(prepared), Signature(changed));
+    }
+
+    [Fact]
+    public void WordDropsMathAlphabetScriptFromSymbolOnlyRun()
+    {
+        const string prepared =
+            "<m:r><m:rPr><m:scr m:val=\"script\"/></m:rPr><m:t>∁</m:t></m:r>";
+        const string materialized = "<m:r><m:t>∁</m:t></m:r>";
+        const string scriptedLetter =
+            "<m:r><m:rPr><m:scr m:val=\"script\"/></m:rPr><m:t>R</m:t></m:r>";
+        const string plainLetter = "<m:r><m:t>R</m:t></m:r>";
+
+        Assert.Equal(Signature(prepared), Signature(materialized));
+        Assert.Equal(
+            WordOmmlConverter.ComputeOmmlFingerprint(Math(materialized)),
+            WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(
+                Math(prepared),
+                Math(materialized)));
+        Assert.NotEqual(Signature(scriptedLetter), Signature(plainLetter));
     }
 
     [Fact]

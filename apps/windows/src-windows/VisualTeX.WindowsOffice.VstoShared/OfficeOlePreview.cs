@@ -56,6 +56,20 @@ internal sealed class OfficeOleInkSafeVectorPreview
     internal float BaselinePixels { get; }
 }
 
+internal readonly struct OfficeOleVerticalInkMetrics
+{
+    internal OfficeOleVerticalInkMetrics(
+        float inkHeightRatio,
+        float bottomWhitespaceRatio)
+    {
+        InkHeightRatio = inkHeightRatio;
+        BottomWhitespaceRatio = bottomWhitespaceRatio;
+    }
+
+    internal float InkHeightRatio { get; }
+    internal float BottomWhitespaceRatio { get; }
+}
+
 internal static class OfficeOlePreview
 {
     private const long MaximumSvgBytes = 16L * 1024L * 1024L;
@@ -64,6 +78,77 @@ internal static class OfficeOlePreview
     private const int DesktopVertRes = 117;
     private const int DesktopHorzRes = 118;
     internal static string LastRecordingDiagnostics { get; private set; } = string.Empty;
+
+    internal static OfficeOleVerticalInkMetrics? TryMeasureVerticalInkMetrics(
+        string emfPath)
+    {
+        if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
+            return null;
+        try
+        {
+            using var metafile = new Metafile(emfPath);
+            return MeasureVerticalInkMetrics(metafile);
+        }
+        catch { return null; }
+    }
+
+    internal static OfficeOleVerticalInkMetrics? TryMeasureVerticalInkMetrics(
+        byte[] emfBytes)
+    {
+        if (emfBytes is null || emfBytes.Length == 0) return null;
+        try
+        {
+            using var stream = new MemoryStream(emfBytes, writable: false);
+            using var metafile = new Metafile(stream);
+            return MeasureVerticalInkMetrics(metafile);
+        }
+        catch { return null; }
+    }
+
+    private static OfficeOleVerticalInkMetrics? MeasureVerticalInkMetrics(
+        Metafile metafile)
+    {
+        const int width = 640;
+        const int height = 240;
+        using var bitmap = new Bitmap(
+            width,
+            height,
+            PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            graphics.DrawImage(metafile, 0, 0, width, height);
+        }
+
+        var minY = height;
+        var maxY = -1;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.R >= 245
+                    && pixel.G >= 245
+                    && pixel.B >= 245)
+                    continue;
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+        if (maxY < minY) return null;
+
+        var inkHeightRatio = (maxY - minY + 1f) / height;
+        var bottomWhitespaceRatio = (height - 1f - maxY) / height;
+        if (!(inkHeightRatio > 0.01f)
+            || float.IsNaN(inkHeightRatio)
+            || float.IsInfinity(inkHeightRatio)
+            || float.IsNaN(bottomWhitespaceRatio)
+            || float.IsInfinity(bottomWhitespaceRatio))
+            return null;
+        return new OfficeOleVerticalInkMetrics(
+            inkHeightRatio,
+            bottomWhitespaceRatio);
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RectLong

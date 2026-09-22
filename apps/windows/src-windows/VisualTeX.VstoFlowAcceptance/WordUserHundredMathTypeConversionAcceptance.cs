@@ -1342,6 +1342,407 @@ internal static partial class Program
         }
     }
 
+    private static void RunInstalledExactMathTypeOmmlCloneAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var sourcePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_EXACT_MT_OMML_SOURCE");
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new InvalidOperationException(
+                "VISUALTEX_EXACT_MT_OMML_SOURCE must point to the captured user-document clone.");
+        sourcePath = Path.GetFullPath(sourcePath);
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException(
+                "The captured user-document clone is missing.",
+                sourcePath);
+
+        var inputPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Input.docx");
+        var resultPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Result.docx");
+        var failedPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Failed.docx");
+        var tracePath = Path.Combine(
+            artifactRoot,
+            "exact-mathtype-to-omml.trace.log");
+        File.Copy(sourcePath, inputPath, overwrite: true);
+        try { File.Delete(resultPath); } catch { }
+        try { File.Delete(failedPath); } catch { }
+        try { File.Delete(tracePath); } catch { }
+
+        var previousFormatAcceptance = Environment.GetEnvironmentVariable(
+            "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
+        var previousTracePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_WORD_HOOK_TRACE_PATH");
+        var previousAcceptance = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_ACCEPTANCE");
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Microsoft.Office.Core.COMAddIns? addIns = null;
+        Microsoft.Office.Core.COMAddIn? installedAddIn = null;
+        object? callbacksObject = null;
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                "1");
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                tracePath);
+            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", null);
+
+            var mathTypeBaseline = SnapshotMathTypeProcessIds();
+            application = CreateWordApplication(visible: true);
+            document = application.Documents.Open(
+                inputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: true);
+            document.Activate();
+            callbacksObject = GetInstalledStressCallbacks(
+                application,
+                out addIns,
+                out installedAddIn);
+            dynamic callbacks = callbacksObject;
+
+            var sourceMathType = CountMathTypeOleShapes(document);
+            var sourceOmml = document.OMaths.Count;
+            var sourceInlineShapes = document.InlineShapes.Count;
+            var sourceParagraphs = document.Paragraphs.Count;
+            if (sourceMathType == 0)
+                throw new InvalidDataException(
+                    "The exact source clone contains no MathType equations.");
+            Console.WriteLine(
+                $"[EXACT INSTALLED MT→OMML BEFORE] source={sourcePath}; "
+                + $"mathType={sourceMathType}; omml={sourceOmml}; "
+                + $"inlineShapes={sourceInlineShapes}; paragraphs={sourceParagraphs}");
+
+            ResetInstalledFormatConversionTrace(tracePath);
+            var watch = Stopwatch.StartNew();
+            callbacks.OnConvertMathTypeToOmmlDocument(null);
+            WaitForInstalledOmmlMathTypeConversion(
+                tracePath,
+                "source=MathType target=OMML",
+                mathTypeBaseline);
+            watch.Stop();
+
+            var targetMathType = CountMathTypeOleShapes(document);
+            var targetOmml = document.OMaths.Count;
+            var targetInlineShapes = document.InlineShapes.Count;
+            Console.WriteLine(
+                $"[EXACT INSTALLED MT→OMML AFTER] mathType={sourceMathType}->{targetMathType}; "
+                + $"omml={sourceOmml}->{targetOmml}; inlineShapes={sourceInlineShapes}->{targetInlineShapes}; "
+                + $"paragraphs={document.Paragraphs.Count}; elapsedMs={watch.ElapsedMilliseconds}");
+            AssertEqual(0, targetMathType,
+                "Installed exact-source MathType→OMML left MathType sources behind.");
+            AssertEqual(sourceOmml + sourceMathType, targetOmml,
+                "Installed exact-source MathType→OMML changed the expected OMML count.");
+            AssertEqual(sourceInlineShapes - sourceMathType, targetInlineShapes,
+                "Installed exact-source MathType→OMML changed unrelated inline objects.");
+            AssertEqual(sourceParagraphs, document.Paragraphs.Count,
+                "Installed exact-source MathType→OMML changed the document paragraph topology.");
+            AssertNoNewMathTypeProcess(
+                mathTypeBaseline,
+                "installed exact-source MathType→OMML");
+
+            document.SaveAs2(
+                resultPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            Console.WriteLine(
+                $"[EXACT INSTALLED MT→OMML PASS] result={resultPath}");
+        }
+        catch
+        {
+            if (document is not null)
+            {
+                try
+                {
+                    document.SaveAs2(
+                        failedPath,
+                        Word.WdSaveFormat.wdFormatXMLDocument,
+                        AddToRecentFiles: false);
+                    Console.WriteLine(
+                        $"[EXACT INSTALLED MT→OMML FAILED COPY] result={failedPath}");
+                }
+                catch { }
+            }
+            throw;
+        }
+        finally
+        {
+            Release(callbacksObject);
+            Release(installedAddIn);
+            Release(addIns);
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE",
+                previousFormatAcceptance);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                previousTracePath);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_ACCEPTANCE",
+                previousAcceptance);
+        }
+    }
+
+    private static void RunExactMathTypeOmmlCoreCloneAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var sourcePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_EXACT_MT_OMML_SOURCE");
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new InvalidOperationException(
+                "VISUALTEX_EXACT_MT_OMML_SOURCE must point to the captured user-document clone.");
+        sourcePath = Path.GetFullPath(sourcePath);
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException(
+                "The captured user-document clone is missing.",
+                sourcePath);
+
+        var inputPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Core-Input.docx");
+        var resultPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Core-Result.docx");
+        var failedPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Core-Failed.docx");
+        var tracePath = Path.Combine(
+            artifactRoot,
+            "exact-mathtype-to-omml-core.trace.log");
+        File.Copy(sourcePath, inputPath, overwrite: true);
+        try { File.Delete(resultPath); } catch { }
+        try { File.Delete(failedPath); } catch { }
+        try { File.Delete(tracePath); } catch { }
+
+        var previousTracePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_WORD_HOOK_TRACE_PATH");
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                tracePath);
+            application = CreateWordApplication(visible: true);
+            document = application.Documents.Open(
+                inputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: true);
+            document.Activate();
+
+            var sourceMathType = CountMathTypeOleShapes(document);
+            var sourceOmml = document.OMaths.Count;
+            var sourceInlineShapes = document.InlineShapes.Count;
+            var sourceParagraphs = document.Paragraphs.Count;
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(sourceMathType, plan.Targets.Count,
+                "Exact core clone did not capture every MathType source.");
+            var prepared = PrepareOmmlMathTypeTargets(plan, string.Empty);
+            var expectedByFormulaId = plan.Targets.ToDictionary(
+                target => prepared[target.Id].Session.FormulaId,
+                target => new
+                {
+                    Signature = MathTypeMtefCodec.SemanticSignature(
+                        target.SourceMathMl
+                        ?? throw new InvalidDataException(
+                            $"MathType source {target.SourceFormulaId} has no source MathML.")),
+                    target.FontSizePt,
+                    target.DisplayMode,
+                },
+                StringComparer.OrdinalIgnoreCase);
+            Console.WriteLine(
+                $"[EXACT CORE MT→OMML BEFORE] source={sourcePath}; "
+                + $"mathType={sourceMathType}; omml={sourceOmml}; "
+                + $"inlineShapes={sourceInlineShapes}; paragraphs={sourceParagraphs}");
+
+            var watch = Stopwatch.StartNew();
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            watch.Stop();
+            if (result.FailedFormulaCount != 0)
+                throw new InvalidDataException(
+                    "Exact core conversion reported failures: "
+                    + string.Join(" || ", result.Failures));
+
+            var targetMathType = CountMathTypeOleShapes(document);
+            var targetOmml = document.OMaths.Count;
+            var targetInlineShapes = document.InlineShapes.Count;
+            Console.WriteLine(
+                $"[EXACT CORE MT→OMML AFTER] converted={result.FormulaCount}; "
+                + $"mathType={sourceMathType}->{targetMathType}; "
+                + $"omml={sourceOmml}->{targetOmml}; inlineShapes={sourceInlineShapes}->{targetInlineShapes}; "
+                + $"paragraphs={document.Paragraphs.Count}; elapsedMs={watch.ElapsedMilliseconds}");
+            AssertEqual(sourceMathType, result.FormulaCount,
+                "Exact core conversion did not report every MathType source.");
+            AssertEqual(0, targetMathType,
+                "Exact core MathType→OMML left MathType sources behind.");
+            AssertEqual(sourceOmml + sourceMathType, targetOmml,
+                "Exact core MathType→OMML changed the expected OMML count.");
+            AssertEqual(sourceInlineShapes - sourceMathType, targetInlineShapes,
+                "Exact core MathType→OMML changed unrelated inline objects.");
+            AssertEqual(sourceParagraphs, document.Paragraphs.Count,
+                "Exact core MathType→OMML changed the document paragraph topology.");
+            if (watch.ElapsedMilliseconds > 30_000)
+                throw new InvalidDataException(
+                    $"Exact core MathType→OMML exceeded the 30-second performance budget: {watch.ElapsedMilliseconds}ms.");
+
+            var verified = 0;
+            foreach (var entry in expectedByFormulaId)
+            {
+                Word.Bookmark? bookmark = null;
+                Word.Range? range = null;
+                Word.Font? font = null;
+                try
+                {
+                    bookmark = WordOmmlFormulaStore.FindByFormulaId(
+                            document,
+                            entry.Key)
+                        ?? throw new InvalidDataException(
+                            $"Converted OMML formula {entry.Key} lost its VTOMML bookmark.");
+                    range = WordOmmlFormulaStore.GetEquationRange(bookmark);
+                    var actualMathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                        range.WordOpenXML,
+                        display: false);
+                    var actualSignature = MathTypeMtefCodec.SemanticSignature(
+                        actualMathMl);
+                    AssertEqual(entry.Value.Signature, actualSignature,
+                        $"Converted OMML formula {entry.Key} changed semantics.");
+                    font = range.Font;
+                    if (Math.Abs(font.Size - entry.Value.FontSizePt) > 0.05)
+                        throw new InvalidDataException(
+                            $"Converted OMML formula {entry.Key} changed the Word presentation size: "
+                            + $"expected={entry.Value.FontSizePt:0.##}pt, actual={font.Size:0.##}pt.");
+                    if (Math.Abs(font.Position) > 0.05)
+                        throw new InvalidDataException(
+                            $"Converted OMML formula {entry.Key} retained a non-zero Word baseline offset: "
+                            + $"position={font.Position:0.##}pt.");
+                    verified++;
+                }
+                finally
+                {
+                    Release(font);
+                    Release(range);
+                    Release(bookmark);
+                }
+            }
+            AssertEqual(expectedByFormulaId.Count, verified,
+                "Exact core conversion did not semantically verify every new OMML formula.");
+
+            document.SaveAs2(
+                resultPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            const string postConversionInsertMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\">"
+                + "<mi>z</mi><mo>=</mo><mn>1</mn></math>";
+            var insertSession = CreateOmmlMathTypeAcceptanceSession(
+                postConversionInsertMathMl,
+                "inline",
+                false,
+                FormulaOleContract.WordOmmlMode);
+            insertSession.FontSizePt = 10.5;
+            SelectDocumentEnd(document);
+            var expectedInsertionPosition = application.Selection.Start;
+            var captureWatch = Stopwatch.StartNew();
+            var capturedCreateSelection = service.ReadCreateSelection();
+            captureWatch.Stop();
+            insertSession.SourceDocumentId = capturedCreateSelection.DocumentId;
+            insertSession.SourceObjectId = capturedCreateSelection.ObjectId;
+            // Model the external editor taking focus and Word moving its live
+            // Selection before commit. The insertion must use the synchronous
+            // create capture above, not the later live Selection.
+            application.Selection.SetRange(0, 0);
+            var insertOmmlBefore = document.OMaths.Count;
+            var insertWatch = Stopwatch.StartNew();
+            service.InsertOmml(insertSession, postConversionInsertMathMl);
+            insertWatch.Stop();
+            AssertEqual(insertOmmlBefore + 1, document.OMaths.Count,
+                "Post-conversion OMML insertion did not create exactly one formula.");
+            Word.Bookmark? insertedBookmark = null;
+            Word.Range? insertedRange = null;
+            Word.Font? insertedFont = null;
+            var actualInsertionPosition = -1;
+            try
+            {
+                insertedBookmark = WordOmmlFormulaStore.FindByFormulaId(
+                        document,
+                        insertSession.FormulaId)
+                    ?? throw new InvalidDataException(
+                        "Post-conversion OMML insertion lost its durable bookmark.");
+                insertedRange = WordOmmlFormulaStore.GetEquationRange(insertedBookmark);
+                insertedFont = insertedRange.Font;
+                actualInsertionPosition = insertedRange.Start;
+                if (Math.Abs(actualInsertionPosition - expectedInsertionPosition) > 3)
+                    throw new InvalidDataException(
+                        $"Post-conversion OMML insertion moved away from its captured caret: "
+                        + $"expected={expectedInsertionPosition}, actual={actualInsertionPosition}.");
+                if (Math.Abs(insertedFont.Size - 10.5) > 0.05
+                    || Math.Abs(insertedFont.Position) > 0.05)
+                    throw new InvalidDataException(
+                        $"Post-conversion OMML insertion changed typography: size={insertedFont.Size:0.##}pt, position={insertedFont.Position:0.##}pt.");
+            }
+            finally
+            {
+                Release(insertedFont);
+                Release(insertedRange);
+                Release(insertedBookmark);
+            }
+            if (insertWatch.ElapsedMilliseconds > 10_000)
+                throw new InvalidDataException(
+                    $"Post-conversion OMML insertion exceeded the 10-second performance budget: {insertWatch.ElapsedMilliseconds}ms.");
+            if (captureWatch.ElapsedMilliseconds > 1_000)
+                throw new InvalidDataException(
+                    $"Post-conversion create-position capture scanned the formula collection: {captureWatch.ElapsedMilliseconds}ms.");
+            Console.WriteLine(
+                $"[EXACT POST-CONVERSION OMML INSERT PASS] omml={insertOmmlBefore}->{document.OMaths.Count}; captureMs={captureWatch.ElapsedMilliseconds}; elapsedMs={insertWatch.ElapsedMilliseconds}; insertion={expectedInsertionPosition}->{actualInsertionPosition}; size=10.5pt; position=0");
+            Console.WriteLine(
+                $"[EXACT CORE MT→OMML PASS] semantics={verified}/{expectedByFormulaId.Count}; result={resultPath}");
+        }
+        catch
+        {
+            if (document is not null)
+            {
+                try
+                {
+                    document.SaveAs2(
+                        failedPath,
+                        Word.WdSaveFormat.wdFormatXMLDocument,
+                        AddToRecentFiles: false);
+                    Console.WriteLine(
+                        $"[EXACT CORE MT→OMML FAILED COPY] result={failedPath}");
+                }
+                catch { }
+            }
+            throw;
+        }
+        finally
+        {
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_WORD_HOOK_TRACE_PATH",
+                previousTracePath);
+        }
+    }
+
     private static void RunUserHundredMathTypeReverseAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);

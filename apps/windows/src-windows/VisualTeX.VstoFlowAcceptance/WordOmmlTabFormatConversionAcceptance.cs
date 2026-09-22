@@ -43,7 +43,10 @@ internal static partial class Program
         Word.Field? externalReference = null;
         try
         {
-            application = CreateWordApplication(visible: false);
+            if (AttachActiveWord)
+                throw new InvalidOperationException(
+                    "OMML↔VisualTeX external-REF acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();

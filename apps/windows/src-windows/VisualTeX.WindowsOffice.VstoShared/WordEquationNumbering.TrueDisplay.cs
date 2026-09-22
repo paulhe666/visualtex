@@ -503,12 +503,14 @@ internal static partial class WordEquationNumbering
     internal static bool HasReusableNumberedNativeOmmlHashSequenceHost(
         Document document,
         Range formulaRange,
-        string formulaId)
+        string formulaId,
+        bool skipWordOpenXmlSequenceProof = false)
     {
         if (!HasReusableNumberedNativeOmmlHashSequenceHostCore(
                 document,
                 formulaRange,
-                formulaId))
+                formulaId,
+                skipWordOpenXmlSequenceProof))
             return false;
         Bookmarks? ownershipBookmarks = null;
         try
@@ -610,7 +612,8 @@ internal static partial class WordEquationNumbering
     private static bool HasReusableNumberedNativeOmmlHashSequenceHostCore(
         Document document,
         Range formulaRange,
-        string formulaId)
+        string formulaId,
+        bool skipWordOpenXmlSequenceProof = false)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (formulaRange is null) throw new ArgumentNullException(nameof(formulaRange));
@@ -619,8 +622,9 @@ internal static partial class WordEquationNumbering
             document,
             formulaRange,
             formulaId,
-            requireCurrentFieldResult: false);
-        if (!reusable)
+            requireCurrentFieldResult: false,
+            skipWordOpenXmlSequenceProof: skipWordOpenXmlSequenceProof);
+        if (!reusable && !skipWordOpenXmlSequenceProof)
         {
             TraceNativeOmmlHashSequenceDiagnostics(
                 document,
@@ -894,10 +898,6 @@ internal static partial class WordEquationNumbering
                 return 0;
             }
             storedMetadata[formulaId] = metadata;
-            storedFingerprintCounts.TryGetValue(
-                metadata.NativeOmmlFingerprint!,
-                out var count);
-            storedFingerprintCounts[metadata.NativeOmmlFingerprint!] = count + 1;
         }
         if (storedMetadata.Count == 0) return 0;
 
@@ -922,45 +922,39 @@ internal static partial class WordEquationNumbering
         }
 
         var managedRanges = new List<(int Start, int End)>();
-        var managedFingerprints = new HashSet<string>(
-            storedFingerprintCounts.Keys,
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
+        var managedFingerprints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in storedMetadata)
         {
+            var formulaId = pair.Key;
+            var metadata = pair.Value;
             Range? formulaRange = null;
             try
             {
-                if (!storedMetadata.TryGetValue(formulaId, out var metadata))
-                    continue;
-                formulaRange =
-                    TryResolveManagedNativeHashSequenceRangeForAliasRepair(
-                        document,
-                        formulaId,
-                        metadata);
-                if (formulaRange is null) continue;
-                var formulaXml = formulaRange.WordOpenXML ?? string.Empty;
-                if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                        formulaXml))
-                    continue;
+                formulaRange = TryResolveManagedNativeHashSequenceRangeForAliasRepair(
+                    document, formulaId, metadata)
+                    ?? WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(document, formulaId, metadata);
+                var formulaXml = WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
+                    document, formulaRange, formulaId);
+                var directSequence = WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(formulaXml);
+                var semantic = directSequence
+                    ? WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(formulaXml)
+                    : formulaXml;
+                // Logical counts must share one content model even when old and
+                // new versions coexist. Project ONLY verified live owners; a hash
+                // alone cannot be converted, nor can a missing owner prove surplus.
+                var canonical = WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(
+                    semantic, metadata.NativeOmmlFingerprint!);
+                storedFingerprintCounts.TryGetValue(canonical, out var count);
+                storedFingerprintCounts[canonical] = count + 1;
+                if (!directSequence) continue;
                 managedRanges.Add((formulaRange.Start, formulaRange.End));
-                try
-                {
-                    var semantic = WordOmmlConverter
-                        .StripManagedVisualTeXNativeEquationNumber(formulaXml);
-                    managedFingerprints.Add(
-                        WordOmmlConverter.ComputeOmmlFingerprint(semantic));
-                }
-                catch
-                {
-                    if (!string.IsNullOrWhiteSpace(metadata.NativeOmmlFingerprint))
-                        managedFingerprints.Add(metadata.NativeOmmlFingerprint!);
-                }
+                managedFingerprints.Add(canonical);
             }
             catch
             {
-                // A damaged managed formula remains the responsibility of the
-                // normal identity/migration repair path. It is not evidence that an
-                // unrelated unowned OMath should be adopted as a pasted copy.
+                // An incomplete logical inventory cannot prove pasted copies.
+                // Keep explicit selection adoption available instead of guessing.
+                return 0;
             }
             finally { Release(formulaRange); }
         }
@@ -1210,7 +1204,7 @@ internal static partial class WordEquationNumbering
                         var semanticOmml = WordOmmlConverter
                             .StripManagedVisualTeXNativeEquationNumber(candidateXml);
                         var candidateFingerprint =
-                            WordOmmlConverter.ComputeOmmlFingerprint(semanticOmml);
+                            WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(semanticOmml, expectedFingerprint);
                         fingerprintMatches = string.Equals(
                             candidateFingerprint,
                             expectedFingerprint,

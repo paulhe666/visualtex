@@ -62,6 +62,10 @@ internal static partial class Program
                     Baseline = 52.5f,
                 };
                 service.InsertOle(createSession, pngPath, emfPath);
+                AssertAndExerciseNumberedVisualTeXTypingParagraph(
+                    application,
+                    document,
+                    formulaId);
             }
             finally { Release(insertion); }
 
@@ -108,8 +112,26 @@ internal static partial class Program
                 updateReference: true,
                 context: "numbered VisualTeX save/reopen");
 
+            AssertLazySelfContainedVisualTeXReference(
+                application,
+                document,
+                service,
+                formulaId);
+
+            document.Save();
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document = application.Documents.Open(
+                documentPath,
+                ReadOnly: false,
+                Visible: false);
+            AssertPersistedLazySelfContainedVisualTeXReference(
+                document,
+                formulaId);
+
             Console.WriteLine(
-                "VisualTeX tab-numbering acceptance passed: fresh insert, REF update, edit/reconcile and save/reopen kept one justified paragraph with centered/right tab stops and parentheses outside REF.Result.");
+                "VisualTeX self-contained numbering acceptance passed: fresh insert, safe post-formula typing, edit/reconcile, lazy reference creation and save/reopen kept one MathType-style TAB + OLE + TAB + VisualTeXPlaceRef paragraph with no VTEqCap.");
         }
         finally
         {
@@ -124,6 +146,498 @@ internal static partial class Program
             Release(application);
             try { Directory.Delete(assetRoot, recursive: true); } catch { }
             ForceComCleanup();
+        }
+    }
+
+    private static void AssertAndExerciseNumberedVisualTeXTypingParagraph(
+        Word.Application application,
+        Word.Document document,
+        string formulaId)
+    {
+        Word.Selection? selection = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Range? caretRange = null;
+        Word.Range? ownerRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Frames? frames = null;
+        try
+        {
+            selection =
+                application.Selection;
+            caretRange =
+                selection.Range.Duplicate;
+            bookmarks =
+                document.Bookmarks;
+
+            var captionName =
+                "VTEqCap_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            var numberName =
+                "VTEqNum_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+
+            AssertTrue(
+                !bookmarks.Exists(
+                    captionName),
+                "Fresh self-contained VisualTeX numbering unexpectedly created a VTEqCap hidden-caption bookmark.");
+            AssertTrue(
+                !bookmarks.Exists(
+                    numberName),
+                "Fresh self-contained VisualTeX numbering eagerly created VTEqNum before any body reference exists.");
+
+            ownerRange =
+                WordVisualTeXParagraphNumbering
+                    .FindOwnerParagraphRange(
+                        document,
+                        formulaId)
+                ?? throw new InvalidDataException(
+                    "Fresh self-contained VisualTeX numbering has no owner paragraph.");
+
+            AssertTrue(
+                caretRange.Start >=
+                    ownerRange.End,
+                "Fresh numbered VisualTeX insertion left the caret inside its formula/number paragraph.");
+
+            paragraphs =
+                caretRange.Paragraphs;
+            AssertEqual(
+                1,
+                paragraphs.Count,
+                "Fresh numbered VisualTeX insertion caret does not belong to one ordinary typing paragraph.");
+            paragraph =
+                paragraphs[1];
+            paragraphRange =
+                paragraph.Range.Duplicate;
+            frames =
+                paragraphRange.Frames;
+            AssertEqual(
+                0,
+                frames.Count,
+                "Fresh numbered VisualTeX insertion left the caret inside a hidden Frame.");
+            AssertEqual(
+                0,
+                paragraphRange.InlineShapes.Count,
+                "Fresh numbered VisualTeX insertion typing paragraph already owns an OLE.");
+            AssertEqual(
+                0,
+                paragraphRange.OMaths.Count,
+                "Fresh numbered VisualTeX insertion typing paragraph already owns OMML.");
+            AssertEqual(
+                paragraphRange.Start,
+                caretRange.Start,
+                "Fresh numbered VisualTeX insertion did not place the caret at the start of its ordinary typing paragraph.");
+
+            var ownerStartBefore =
+                ownerRange.Start;
+            var ownerEndBefore =
+                ownerRange.End;
+            var ownerTextBefore =
+                ownerRange.Text
+                ?? string.Empty;
+
+            selection.TypeParagraph();
+            selection.TypeText(
+                "after-numbered");
+
+            Release(ownerRange);
+            ownerRange =
+                WordVisualTeXParagraphNumbering
+                    .FindOwnerParagraphRange(
+                        document,
+                        formulaId)
+                ?? throw new InvalidDataException(
+                    "Typing after a numbered VisualTeX formula lost its self-contained owner paragraph.");
+            AssertEqual(
+                ownerStartBefore,
+                ownerRange.Start,
+                "Typing after a numbered VisualTeX formula moved the owner paragraph start.");
+            AssertEqual(
+                ownerEndBefore,
+                ownerRange.End,
+                "Pressing Enter/typing after a numbered VisualTeX formula expanded its self-contained owner paragraph.");
+            AssertEqual(
+                ownerTextBefore,
+                ownerRange.Text
+                    ?? string.Empty,
+                "Typing after a numbered VisualTeX formula changed its self-contained numbering paragraph.");
+            AssertTrue(
+                !bookmarks.Exists(
+                    captionName),
+                "Typing after a new numbered VisualTeX formula recreated a hidden VTEqCap bookmark.");
+            AssertTrue(
+                !bookmarks.Exists(
+                    numberName),
+                "Typing after a new numbered VisualTeX formula created a reference bookmark without a reference.");
+        }
+        finally
+        {
+            Release(frames);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(ownerRange);
+            Release(caretRange);
+            Release(bookmarks);
+            Release(selection);
+        }
+    }
+
+    private static void AssertLazySelfContainedVisualTeXReference(
+        Word.Application application,
+        Word.Document document,
+        WordFormulaService service,
+        string formulaId)
+    {
+        document.Activate();
+        Word.Bookmarks? bookmarks = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Selection? selection = null;
+        Word.Bookmark? numberBookmark = null;
+        Word.Range? numberRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? result = null;
+        try
+        {
+            var bookmarkName =
+                "VTEqNum_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            bookmarks =
+                document.Bookmarks;
+            AssertTrue(
+                !bookmarks.Exists(
+                    bookmarkName),
+                "A fresh self-contained VisualTeX number already had VTEqNum before the first reference.");
+
+            var targets =
+                service.GetCanonicalEquationReferenceTargets(
+                    document);
+            var target =
+                targets.SingleOrDefault(candidate =>
+                    candidate.Source ==
+                        EquationReferenceSource.VisualTeX
+                    && string.Equals(
+                        candidate.FormulaId,
+                        formulaId,
+                        StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException(
+                    "The self-contained VisualTeX number was not discoverable by the product reference picker.");
+
+            selection =
+                application.Selection;
+            var referenceInsertion =
+                Math.Max(
+                    document.Content.Start,
+                    document.Content.End - 1);
+            selection.SetRange(
+                referenceInsertion,
+                referenceInsertion);
+            selection.TypeParagraph();
+            service.InsertEquationReferenceCore(
+                document,
+                selection,
+                target,
+                EquationReferenceStyle.NumberOnly,
+                Word.WdColor.wdColorAutomatic);
+
+            AssertTrue(
+                bookmarks.Exists(
+                    bookmarkName),
+                "The first VisualTeX body reference did not lazily create VTEqNum.");
+            numberBookmark =
+                bookmarks[bookmarkName];
+            numberRange =
+                numberBookmark.Range.Duplicate;
+            AssertEqual(
+                target.NumberText,
+                (numberRange.Text
+                    ?? string.Empty)
+                    .Trim(),
+                "The lazy VTEqNum bookmark does not cover only the visible equation number.");
+
+            fields =
+                document.Fields;
+            var matchingRefs = 0;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field =
+                    fields[index];
+                if (field.Type !=
+                    Word.WdFieldType.wdFieldRef)
+                    continue;
+                code =
+                    field.Code.Duplicate;
+                if ((code.Text
+                        ?? string.Empty)
+                    .IndexOf(
+                        "REF "
+                        + bookmarkName,
+                        StringComparison.OrdinalIgnoreCase)
+                    < 0)
+                    continue;
+                matchingRefs++;
+                result =
+                    field.Result.Duplicate;
+                AssertEqual(
+                    target.NumberText,
+                    (result.Text
+                        ?? string.Empty)
+                        .Trim(),
+                    "The lazy VisualTeX body REF does not display the current equation number.");
+            }
+            AssertEqual(
+                1,
+                matchingRefs,
+                "The first VisualTeX reference did not create exactly one body REF.");
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(numberRange);
+            Release(numberBookmark);
+            Release(selection);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(bookmarks);
+        }
+    }
+
+    private static void AssertPersistedLazySelfContainedVisualTeXReference(
+        Word.Document document,
+        string formulaId)
+    {
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? bookmark = null;
+        Word.Range? bookmarkRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? result = null;
+        try
+        {
+            var bookmarkName =
+                "VTEqNum_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            var host =
+                WordFormulaHostResolver
+                    .CaptureDocumentIndex(
+                        document)
+                    .VisualTeX
+                    .Single(candidate =>
+                        string.Equals(
+                            candidate.FormulaId,
+                            formulaId,
+                            StringComparison.OrdinalIgnoreCase));
+            var expectedNumber =
+                WordVisualTeXParagraphNumbering
+                    .ReadVisibleNumberText(
+                        document,
+                        host);
+            bookmarks =
+                document.Bookmarks;
+            AssertTrue(
+                bookmarks.Exists(
+                    bookmarkName),
+                "Saved/reopened self-contained VisualTeX reference lost its lazy VTEqNum target.");
+            bookmark =
+                bookmarks[bookmarkName];
+            bookmarkRange =
+                bookmark.Range.Duplicate;
+            AssertEqual(
+                expectedNumber,
+                (bookmarkRange.Text
+                    ?? string.Empty)
+                    .Trim(),
+                "Saved/reopened lazy VTEqNum moved off the visible number.");
+
+            fields =
+                document.Fields;
+            var matchingRefs = 0;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field =
+                    fields[index];
+                if (field.Type !=
+                    Word.WdFieldType.wdFieldRef)
+                    continue;
+                code =
+                    field.Code.Duplicate;
+                if ((code.Text
+                        ?? string.Empty)
+                    .IndexOf(
+                        "REF "
+                        + bookmarkName,
+                        StringComparison.OrdinalIgnoreCase)
+                    < 0)
+                    continue;
+                field.Update();
+                result =
+                    field.Result.Duplicate;
+                AssertEqual(
+                    expectedNumber,
+                    (result.Text
+                        ?? string.Empty)
+                        .Trim(),
+                    "Saved/reopened lazy VisualTeX REF no longer resolves to the self-contained number.");
+                matchingRefs++;
+            }
+            AssertEqual(
+                1,
+                matchingRefs,
+                "Saved/reopened document changed the lazy VisualTeX reference count.");
+
+            var captionName =
+                "VTEqCap_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            AssertTrue(
+                !bookmarks.Exists(
+                    captionName),
+                "Saved/reopened self-contained VisualTeX reference recreated VTEqCap.");
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static void TrimVisualTeXVisibleNumberLayoutTab(
+        Word.Range range)
+    {
+        var text = range.Text ?? string.Empty;
+        var trim = 0;
+        while (trim < text.Length
+               && text[trim] == '\t')
+            trim++;
+        if (trim > 0)
+            range.SetRange(
+                Math.Min(range.End, range.Start + trim),
+                range.End);
+    }
+
+    private static Word.Range? ResolveVisualTeXVisibleRefDisplayRange(
+        Word.Document document,
+        Word.Range shapeRange,
+        string formulaId)
+    {
+        Word.Range? result = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Range? fieldResult = null;
+        Word.Range? before = null;
+        Word.Range? after = null;
+        Word.Range? found = null;
+        try
+        {
+            var selfContained =
+                WordVisualTeXParagraphNumbering
+                    .FindVisibleLabelRange(
+                        document,
+                        formulaId);
+            if (selfContained is not null)
+                return selfContained;
+
+            var host =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    shapeRange,
+                    WordFormulaHostKind.VisualTeX);
+            if (host is null)
+                return null;
+            if (string.IsNullOrWhiteSpace(host.FormulaId))
+                host.FormulaId = formulaId;
+            if (!string.Equals(
+                    host.FormulaId,
+                    formulaId,
+                    StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var numbering =
+                WordFormulaNumberingResolver.ResolveLocal(
+                    document,
+                    host);
+            if (!numbering.Numbered
+                || numbering.ContainerKind !=
+                    WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
+                || numbering.NumberRange is null)
+                return null;
+
+            result =
+                WordEquationNumbering.FindVisibleEquationNumberRange(
+                    document,
+                    formulaId);
+            if (result is null
+                || result.StoryType != shapeRange.StoryType
+                || result.Start < shapeRange.End)
+                return null;
+
+            paragraphs = shapeRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                return null;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            if (result.Start < paragraphRange.Start
+                || result.End > paragraphRange.End)
+                return null;
+
+            var resolved = result;
+            result = null;
+            return resolved;
+
+        }
+        finally
+        {
+            Release(found);
+            Release(after);
+            Release(before);
+            Release(fieldResult);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(result);
         }
     }
 
@@ -240,6 +754,17 @@ internal static partial class Program
                     context + ": the tab paragraph belongs to another VisualTeX formula.");
             }
             shapeRange = shape.Range;
+            var resolvedHost =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    shapeRange,
+                    WordFormulaHostKind.VisualTeX);
+            var selfContainedNumbering =
+                resolvedHost is not null
+                && WordVisualTeXParagraphNumbering
+                    .IsSelfContainedHost(
+                        document,
+                        resolvedHost);
 
             if (requireNativeOle && metadata is not null)
             {
@@ -296,8 +821,11 @@ internal static partial class Program
             AssertEqual("\t", precedingShape.Text,
                 context + ": formula is not positioned after the center tab.");
 
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(document, formulaId)
-                ?? throw new InvalidDataException(context + ": visible equation-number range is missing.");
+            visibleRange = ResolveVisualTeXVisibleRefDisplayRange(
+                    document,
+                    shapeRange,
+                    formulaId)
+                ?? throw new InvalidDataException(context + ": visible equation-number REF range is missing.");
             AssertTrue(visibleRange.Start >= shapeRange.End,
                 context + ": visible equation number precedes or overlaps the formula.");
             betweenFormulaAndNumber = document.Range(shapeRange.End, visibleRange.Start);
@@ -312,10 +840,8 @@ internal static partial class Program
                 context + ": formula and equation number are not separated by the right tab.");
 
             var visible = rawVisible.TrimStart('\t').TrimEnd('\r', '\a');
-            visibleTextRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
-                    document,
-                    formulaId)
-                ?? throw new InvalidDataException(context + ": pure visible equation-number text range is missing.");
+            visibleTextRange = visibleRange.Duplicate;
+            TrimVisualTeXVisibleNumberLayoutTab(visibleTextRange);
             AssertEqual(
                 visible,
                 (visibleTextRange.Text ?? string.Empty).TrimEnd('\r', '\a'),
@@ -346,14 +872,35 @@ internal static partial class Program
             numberEnd.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
             var numberEndX = Convert.ToSingle(
                 numberEnd.Information[Word.WdInformation.wdHorizontalPositionRelativeToTextBoundary]);
-            AssertNear(expected.Right, numberEndX, 0.75f,
-                context + ": visible equation number does not end on the right tab stop.");
+            if (!selfContainedNumbering)
+            {
+                AssertNear(expected.Right, numberEndX, 0.75f,
+                    context + ": legacy visible equation number does not end on the right tab stop.");
+            }
             var numberY = Convert.ToSingle(
                 visibleTextRange.Information[Word.WdInformation.wdVerticalPositionRelativeToPage]);
             var paragraphMarkY = Convert.ToSingle(
                 paragraphMark.Information[Word.WdInformation.wdVerticalPositionRelativeToPage]);
             AssertNear(paragraphMarkY, numberY, 0.75f,
                 context + ": equation number and paragraph mark are not on the same Word baseline.");
+
+            if (selfContainedNumbering)
+            {
+                AssertSelfContainedVisualTeXNumberFieldTree(
+                    document,
+                    ownerRange,
+                    formulaId,
+                    visible,
+                    updateReference,
+                    context);
+                Console.WriteLine(
+                    $"  {context}: self-contained VisualTeXPlaceRef owner={ownerRange.Start}-{ownerRange.End}, "
+                    + $"formula={shapeRange.Start}-{shapeRange.End}, visible='{visible}', "
+                    + $"tabs={centerPosition:0.##}/{rightPosition:0.##}, "
+                    + $"olePosition={objectResultFont?.Position ?? 0}, numberPosition={visibleFont.Position}, "
+                    + $"numberFont='{visibleFontName}', numberY={numberY:0.##}, markY={paragraphMarkY:0.##}.");
+                return;
+            }
 
             fields = visibleRange.Fields;
             for (var index = 1; index <= fields.Count; index++)
@@ -388,8 +935,11 @@ internal static partial class Program
                 }
             }
             Release(visibleRange); visibleRange = null;
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(document, formulaId)
-                ?? throw new InvalidDataException(context + ": REF update removed the visible equation-number range.");
+            visibleRange = ResolveVisualTeXVisibleRefDisplayRange(
+                    document,
+                    shapeRange,
+                    formulaId)
+                ?? throw new InvalidDataException(context + ": REF update removed the visible equation-number REF range.");
             visible = (visibleRange.Text ?? string.Empty)
                 .TrimStart('\t')
                 .TrimEnd('\r', '\a');
@@ -400,10 +950,8 @@ internal static partial class Program
 
             Release(visibleFont); visibleFont = null;
             Release(visibleTextRange); visibleTextRange = null;
-            visibleTextRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
-                    document,
-                    formulaId)
-                ?? throw new InvalidDataException(context + ": number update removed the pure equation-number text range.");
+            visibleTextRange = visibleRange.Duplicate;
+            TrimVisualTeXVisibleNumberLayoutTab(visibleTextRange);
             visibleFont = visibleTextRange.Font;
             AssertNear(0f, visibleFont.Position, 0.1f,
                 context + ": F9/update-number moved the tab-layout number off the paragraph baseline.");
@@ -461,6 +1009,367 @@ internal static partial class Program
             Release(visibleTextRange);
             Release(visibleRange);
             Release(ownerRange);
+        }
+    }
+
+    private static void AssertSelfContainedVisualTeXNumberFieldTree(
+        Word.Document document,
+        Word.Range ownerRange,
+        string formulaId,
+        string visibleNumber,
+        bool updateNumber,
+        string context)
+    {
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        Word.Field? placeRef = null;
+        Word.Fields? nested = null;
+        Word.Field? child = null;
+        Word.Range? childCode = null;
+        Word.Bookmarks? bookmarks = null;
+        Word.Range? refreshedVisible = null;
+        try
+        {
+            fields =
+                ownerRange.Fields;
+            var placeRefCount = 0;
+            var directVisualTeXRefCount = 0;
+            var externalChapterStateCount = 0;
+            var externalSectionStateCount = 0;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field =
+                    fields[index];
+                code =
+                    field.Code.Duplicate;
+                var instruction =
+                    code.Text
+                    ?? string.Empty;
+                var normalizedInstruction =
+                    instruction.Trim();
+                if (normalizedInstruction.StartsWith(
+                        "SEQ VisualTeXChapter ",
+                        StringComparison.OrdinalIgnoreCase)
+                    && normalizedInstruction.IndexOf(
+                        "\\r",
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                    && normalizedInstruction.IndexOf(
+                        "\\h",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    externalChapterStateCount++;
+                }
+                if (normalizedInstruction.StartsWith(
+                        "SEQ VisualTeXSection ",
+                        StringComparison.OrdinalIgnoreCase)
+                    && normalizedInstruction.IndexOf(
+                        "\\r",
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                    && normalizedInstruction.IndexOf(
+                        "\\h",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    externalSectionStateCount++;
+                }
+
+                if (field.Type ==
+                        Word.WdFieldType.wdFieldMacroButton
+                    && WordVisualTeXParagraphNumbering
+                        .IsPlaceRefCode(
+                            instruction))
+                {
+                    placeRefCount++;
+                    Release(placeRef);
+                    placeRef =
+                        field;
+                    field = null;
+                    continue;
+                }
+
+                if (field.Type ==
+                        Word.WdFieldType.wdFieldRef
+                    && instruction.IndexOf(
+                        "VTEqNum_",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    directVisualTeXRefCount++;
+            }
+
+            AssertEqual(
+                1,
+                placeRefCount,
+                context
+                + ": self-contained VisualTeX paragraph does not own exactly one VisualTeXPlaceRef field.");
+            AssertEqual(
+                0,
+                directVisualTeXRefCount,
+                context
+                + ": self-contained VisualTeX paragraph still contains the legacy REF-to-VTEqNum visible-number field.");
+            AssertTrue(
+                placeRef is not null,
+                context
+                + ": self-contained VisualTeXPlaceRef field was not retained for nested-field validation.");
+
+            var expectedFormat =
+                EquationNumberFormat.Resolve(
+                    WordEquationNumbering
+                        .GetEquationNumberFormatId(
+                            document));
+            AssertEqual(
+                expectedFormat.HeadingLevel >= 1 ? 1 : 0,
+                externalChapterStateCount,
+                context
+                + ": owner paragraph has the wrong external VisualTeXChapter state-field count.");
+            AssertEqual(
+                expectedFormat.HeadingLevel >= 2 ? 1 : 0,
+                externalSectionStateCount,
+                context
+                + ": owner paragraph has the wrong external VisualTeXSection state-field count.");
+
+            Release(code);
+            code = null;
+            code =
+                placeRef!.Code.Duplicate;
+            nested =
+                code.Fields;
+            var hiddenIncrementCount = 0;
+            var currentValueCount = 0;
+            var chapterRestartCount = 0;
+            var chapterCurrentCount = 0;
+            var sectionRestartCount = 0;
+            var sectionCurrentCount = 0;
+            var styleRefCount = 0;
+            for (var index = 1;
+                 index <= nested.Count;
+                 index++)
+            {
+                Release(childCode);
+                childCode = null;
+                Release(child);
+                child =
+                    nested[index];
+                childCode =
+                    child.Code.Duplicate;
+                var instruction =
+                    (childCode.Text
+                        ?? string.Empty)
+                    .Trim();
+
+                if (instruction.StartsWith(
+                        "SEQ VisualTeXEquation ",
+                        StringComparison.OrdinalIgnoreCase)
+                    && instruction.IndexOf(
+                        "\\h",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hiddenIncrementCount++;
+                    continue;
+                }
+
+                if (instruction.StartsWith(
+                        "SEQ VisualTeXEquation ",
+                        StringComparison.OrdinalIgnoreCase)
+                    && instruction.IndexOf(
+                        "\\c",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    currentValueCount++;
+                    continue;
+                }
+
+                if (instruction.StartsWith(
+                        "SEQ VisualTeXChapter ",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    if (instruction.IndexOf(
+                            "\\r",
+                            StringComparison.OrdinalIgnoreCase) >= 0
+                        && instruction.IndexOf(
+                            "\\h",
+                            StringComparison.OrdinalIgnoreCase) >= 0)
+                        chapterRestartCount++;
+                    else if (instruction.IndexOf(
+                                 "\\c",
+                                 StringComparison.OrdinalIgnoreCase) >= 0)
+                        chapterCurrentCount++;
+                    else
+                        throw new InvalidDataException(
+                            context
+                            + ": VisualTeXChapter field has an unsupported shape: '"
+                            + instruction
+                            + "'.");
+                    continue;
+                }
+
+                if (instruction.StartsWith(
+                        "SEQ VisualTeXSection ",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    if (instruction.IndexOf(
+                            "\\r",
+                            StringComparison.OrdinalIgnoreCase) >= 0
+                        && instruction.IndexOf(
+                            "\\h",
+                            StringComparison.OrdinalIgnoreCase) >= 0)
+                        sectionRestartCount++;
+                    else if (instruction.IndexOf(
+                                 "\\c",
+                                 StringComparison.OrdinalIgnoreCase) >= 0)
+                        sectionCurrentCount++;
+                    else
+                        throw new InvalidDataException(
+                            context
+                            + ": VisualTeXSection field has an unsupported shape: '"
+                            + instruction
+                            + "'.");
+                    continue;
+                }
+
+                if (instruction.StartsWith(
+                        "STYLEREF ",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    styleRefCount++;
+                    continue;
+                }
+
+                throw new InvalidDataException(
+                    context
+                    + ": VisualTeXPlaceRef contains a non-canonical nested field: '"
+                    + instruction
+                    + "'.");
+            }
+
+            AssertEqual(
+                1,
+                hiddenIncrementCount,
+                context
+                + ": VisualTeXPlaceRef lost its single hidden SEQ increment.");
+            AssertEqual(
+                1,
+                currentValueCount,
+                context
+                + ": VisualTeXPlaceRef lost its single visible current-value SEQ.");
+            var format =
+                EquationNumberFormat.Resolve(
+                    WordEquationNumbering
+                        .GetEquationNumberFormatId(
+                            document));
+            AssertEqual(
+                0,
+                chapterRestartCount,
+                context
+                + ": VisualTeXPlaceRef must not contain the external VisualTeXChapter restart field.");
+            AssertEqual(
+                format.HeadingLevel >= 1 ? 1 : 0,
+                chapterCurrentCount,
+                context
+                + ": VisualTeXPlaceRef has the wrong VisualTeXChapter current-value count.");
+            AssertEqual(
+                0,
+                sectionRestartCount,
+                context
+                + ": VisualTeXPlaceRef must not contain the external VisualTeXSection restart field.");
+            AssertEqual(
+                format.HeadingLevel >= 2 ? 1 : 0,
+                sectionCurrentCount,
+                context
+                + ": VisualTeXPlaceRef has the wrong VisualTeXSection current-value count.");
+            AssertEqual(
+                0,
+                styleRefCount,
+                context
+                + ": VisualTeXPlaceRef must not depend on Word/OMML STYLEREF state.");
+            AssertTrue(
+                visibleNumber.StartsWith(
+                    "(",
+                    StringComparison.Ordinal)
+                && visibleNumber.EndsWith(
+                    ")",
+                    StringComparison.Ordinal)
+                && visibleNumber.IndexOf(
+                    "Error",
+                    StringComparison.OrdinalIgnoreCase) < 0
+                && visibleNumber.IndexOf(
+                    "错误",
+                    StringComparison.OrdinalIgnoreCase) < 0,
+                context
+                + ": self-contained VisualTeXPlaceRef does not expose a healthy parenthesized number: '"
+                + visibleNumber
+                + "'.");
+
+            bookmarks =
+                document.Bookmarks;
+            var captionName =
+                "VTEqCap_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            var numberName =
+                "VTEqNum_"
+                + Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            AssertTrue(
+                !bookmarks.Exists(
+                    captionName),
+                context
+                + ": new self-contained VisualTeX numbering created a VTEqCap hidden-caption bookmark.");
+            AssertTrue(
+                !bookmarks.Exists(
+                    numberName),
+                context
+                + ": new self-contained VisualTeX numbering eagerly created VTEqNum before a body reference exists.");
+
+            if (updateNumber)
+            {
+                AssertTrue(
+                    WordFormulaNumberingKernel
+                        .RefreshCanonicalNumbers(
+                            document) >= 1,
+                    context
+                    + ": canonical number refresh did not see the self-contained VisualTeXPlaceRef host.");
+
+                refreshedVisible =
+                    WordVisualTeXParagraphNumbering
+                        .FindVisibleLabelRange(
+                            document,
+                            formulaId)
+                    ?? throw new InvalidDataException(
+                        context
+                        + ": canonical number refresh removed the VisualTeXPlaceRef visible number.");
+                var refreshedText =
+                    (refreshedVisible.Text
+                        ?? string.Empty)
+                    .Trim();
+                AssertEqual(
+                    visibleNumber,
+                    refreshedText,
+                    context
+                    + ": canonical number refresh changed the self-contained visible number unexpectedly.");
+                AssertTrue(
+                    !bookmarks.Exists(
+                        captionName),
+                    context
+                    + ": number refresh recreated the retired VTEqCap hidden-caption bookmark.");
+            }
+        }
+        finally
+        {
+            Release(refreshedVisible);
+            Release(bookmarks);
+            Release(childCode);
+            Release(child);
+            Release(nested);
+            Release(placeRef);
+            Release(code);
+            Release(field);
+            Release(fields);
         }
     }
 }

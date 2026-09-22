@@ -5,6 +5,100 @@ namespace VisualTeX.WordVsto;
 
 internal sealed partial class WordFormulaService
 {
+    private static bool IsSafeMathTypeDisplayParagraph(
+        Range paragraphRange)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            fields =
+                WordFormulaHost.GetLocalFields(
+                    paragraphRange);
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (!IsKnownMathTypeDisplayFieldCode(
+                        code.Text))
+                    return false;
+            }
+
+            var text =
+                paragraphRange.Text
+                ?? string.Empty;
+            var fieldDepth = 0;
+            foreach (var character in text)
+            {
+                if (character == '\u0013')
+                {
+                    fieldDepth++;
+                    continue;
+                }
+                if (character == '\u0015')
+                {
+                    if (fieldDepth > 0)
+                        fieldDepth--;
+                    continue;
+                }
+                if (fieldDepth > 0
+                    || character == '\u0014')
+                    continue;
+
+                if (char.IsWhiteSpace(character)
+                    || char.IsDigit(character)
+                    || character < ' '
+                    || character is '\u0001'
+                        or '\uFFFC'
+                    || "()[]{}.-–—_:;,+/\\"
+                        .IndexOf(character) >= 0)
+                    continue;
+                return false;
+            }
+
+            return fieldDepth == 0;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static bool IsKnownMathTypeDisplayFieldCode(
+        string? value)
+    {
+        var code =
+            (value ?? string.Empty).Trim();
+        if (code.Length == 0)
+            return false;
+        if (code.IndexOf(
+                "EMBED Equation.DSMT4",
+                StringComparison.OrdinalIgnoreCase)
+            >= 0)
+            return true;
+        if (code.StartsWith(
+                "MACROBUTTON MTPlaceRef",
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+        return code.StartsWith(
+                "SEQ MTEqn ",
+                StringComparison.OrdinalIgnoreCase)
+            || code.StartsWith(
+                "SEQ MTChap ",
+                StringComparison.OrdinalIgnoreCase)
+            || code.StartsWith(
+                "SEQ MTSec ",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsSafeMathTypeRowWithSectionPrefix(Document document, Range paragraph, Range equation)
     {
         if (!MathTypeSourceHost.TryGetSectionPrefixSplit(document, paragraph, equation, out var split))

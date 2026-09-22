@@ -17,6 +17,7 @@ public static class WordInlineAlignment
 {
     public const float LegacyDescentRatio = 0.25f;
     public const float WholePointSnapTolerancePoints = 0.0101f;
+    public const float WordParagraphMarkOpticalCenterEmRatio = 0.41f;
 
     public static int CalculateFontPositionForHost(
         WordInlineHostAlignment hostAlignment,
@@ -169,6 +170,39 @@ public static class WordInlineAlignment
             (int)Math.Floor(
                 downwardShiftPoints + WholePointSnapTolerancePoints));
         return -wholePointDescent;
+    }
+
+    public static int CalculateDisplayInkCenterPosition(
+        float actualHeightPoints,
+        float inkHeightRatio,
+        float bottomWhitespaceRatio,
+        float paragraphMarkFontSizePoints)
+    {
+        if (!(actualHeightPoints > 0)
+            || !IsFinite(actualHeightPoints)
+            || !(inkHeightRatio > 0)
+            || inkHeightRatio > 1
+            || !IsFinite(inkHeightRatio)
+            || bottomWhitespaceRatio < 0
+            || bottomWhitespaceRatio > 1
+            || !IsFinite(bottomWhitespaceRatio)
+            || inkHeightRatio + bottomWhitespaceRatio > 1.001f
+            || !(paragraphMarkFontSizePoints > 0)
+            || !IsFinite(paragraphMarkFontSizePoints))
+            return 0;
+
+        var inkCenterFromBottomPoints = actualHeightPoints
+            * (bottomWhitespaceRatio + (inkHeightRatio * 0.5f));
+        var paragraphMarkCenterAboveBaselinePoints =
+            paragraphMarkFontSizePoints * WordParagraphMarkOpticalCenterEmRatio;
+        var downwardShiftPoints = Math.Max(
+            0f,
+            inkCenterFromBottomPoints - paragraphMarkCenterAboveBaselinePoints);
+        return -Math.Max(
+            0,
+            (int)Math.Round(
+                downwardShiftPoints,
+                MidpointRounding.AwayFromZero));
     }
 
     private static bool HasValidExportedBaseline(
