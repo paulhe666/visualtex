@@ -434,6 +434,31 @@ internal static class WordFormulaHostMutationKernel
             freshSource,
             target);
 
+        // A field-free Word-native '#(...)' number is not part of VisualTeX's
+        // numbering subsystem. During an ordinary OMML edit the editor sees
+        // Numbered=false, but the existing Word-owned suffix must remain
+        // untouched. Preserve that suffix and replace only the mathematical
+        // body; do not detach, renumber, refresh, or adopt it.
+        if (freshSource.Kind == WordFormulaHostKind.Omml
+            && freshSource.Display
+            && target.Kind == WordFormulaHostKind.Omml
+            && string.Equals(
+                target.DisplayMode,
+                "block",
+                StringComparison.OrdinalIgnoreCase)
+            && !target.Numbered
+            && WordOmmlHostWriter.HasFieldFreeWordNativeNumberHost(
+                document,
+                freshSource))
+        {
+            var preserved =
+                WordOmmlHostWriter.ReplacePreservingWordNativeNumberHost(
+                    document,
+                    freshSource,
+                    target);
+            return preserved.Host;
+        }
+
         var sourceUsesSelfContainedVisualTeXNumbering =
             freshSource.Kind == WordFormulaHostKind.VisualTeX
             && sourceNumbering.ContainerKind ==

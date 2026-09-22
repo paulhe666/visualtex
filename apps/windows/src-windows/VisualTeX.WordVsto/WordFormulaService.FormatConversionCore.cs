@@ -45,6 +45,7 @@ internal sealed partial class WordFormulaService
                 : (selection = _application.Selection).Range.Duplicate;
 
             var sourceKind = ObjectModeToHostKind(sourceMode);
+            var targetKind = ObjectModeToHostKind(targetMode);
             IReadOnlyList<WordFormulaHostDescriptor> hosts;
 
             if (!wholeDocument
@@ -106,6 +107,7 @@ internal sealed partial class WordFormulaService
                     document,
                     host,
                     sourceKind,
+                    targetKind,
                     targetMathTypeNumberPosition);
                 plan.Targets.Add(target);
             }
@@ -216,7 +218,6 @@ internal sealed partial class WordFormulaService
                                 preparedFormula.MathMl,
                                 preparedFormula.PngPath,
                                 preparedFormula.EmfPath);
-
                             replacedHost =
                                 WordFormulaHostMutationKernel
                                     .ReplaceInActiveTransaction(
@@ -375,6 +376,7 @@ internal sealed partial class WordFormulaService
         Document document,
         WordFormulaHostDescriptor host,
         WordFormulaHostKind sourceKind,
+        WordFormulaHostKind targetKind,
         string targetMathTypeNumberPosition)
     {
         FormulaMetadata metadata;
@@ -477,9 +479,52 @@ internal sealed partial class WordFormulaService
                 && metadata.Numbered);
         metadata.Validate();
 
-        var fontSize =
+        var semanticFontSize =
             FormulaFontSize.ResolveSemanticFontSize(
                 metadata);
+        var fontSize =
+            semanticFontSize;
+
+        if (sourceKind == WordFormulaHostKind.MathType
+            && string.Equals(
+                host.DisplayMode,
+                "inline",
+                StringComparison.OrdinalIgnoreCase)
+            && targetKind is WordFormulaHostKind.Omml
+                or WordFormulaHostKind.VisualTeX)
+        {
+            InlineShape? sourceShape = null;
+            try
+            {
+                sourceShape = FindMathTypeOleByRange(
+                    document,
+                    RangeReferenceFromAddress(host.Range),
+                    allowGlobalFallback: false);
+                if (sourceShape is not null)
+                {
+                    var wordPresentationFontSize =
+                        ReadMathTypeInlinePresentationFontSize(
+                            sourceShape);
+                    if (wordPresentationFontSize is > 0)
+                    {
+                        // For both pure OMML and VisualTeX, preserve the font
+                        // size the user actually sees in Word. MathType's MTEF
+                        // Full size can differ from its Word OLE presentation
+                        // size (for example 12 pt internally but 10.5 pt in the
+                        // document). Persisting the hidden MTEF size into
+                        // VisualTeX metadata makes the next edit/apply jump back
+                        // to 12 pt. Store the Word presentation size as the
+                        // target's durable font size instead.
+                        fontSize =
+                            wordPresentationFontSize.Value;
+                    }
+                }
+            }
+            finally
+            {
+                Release(sourceShape);
+            }
+        }
 
         return new WordFormulaFormatConversionTarget
         {
@@ -508,6 +553,56 @@ internal sealed partial class WordFormulaService
             FontSizePt = fontSize,
             Metadata = metadata,
         };
+    }
+
+    private static float? ReadMathTypeInlinePresentationFontSize(
+        InlineShape shape)
+    {
+        Range? shapeRange = null;
+        Range? probe = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        Document? document = null;
+        try
+        {
+            shapeRange = shape.Range;
+            document = shapeRange.Document;
+            for (var position = shapeRange.Start;
+                 position < shapeRange.End;
+                 position++)
+            {
+                Release(font);
+                font = null;
+                Release(probe);
+                probe = document.Range(
+                    position,
+                    position + 1);
+                if (!string.Equals(
+                        probe.Text,
+                        "\u0001",
+                        StringComparison.Ordinal))
+                    continue;
+
+                font = probe.Font;
+                return TryNormalizeDefinedWordFontSize(
+                        font.Size,
+                        out var size)
+                    ? size
+                    : null;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(font);
+            Release(probe);
+            Release(document);
+            Release(shapeRange);
+        }
     }
 
     private static void PrepareCoreTargetSession(

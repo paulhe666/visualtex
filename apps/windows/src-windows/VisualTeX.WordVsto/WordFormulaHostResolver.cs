@@ -712,9 +712,9 @@ internal static class WordFormulaHostResolver
     {
         try
         {
-            // Numbering truth for OMML comes from this exact OMath only. The
-            // structural detector recognizes Word's native m:eqArr + # + SEQ
-            // delimiter regardless of the localized Equation sequence name.
+            // Numbering managed by VisualTeX must have Word's native sequence
+            // field topology. A field-free Word '#(2)' host is intentionally
+            // not part of the VisualTeX numbering system.
             return WordOmmlConverter
                 .HasVisualTeXDirectSequenceEquationNumber(
                     equationRange.WordOpenXML
